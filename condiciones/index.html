@@ -382,6 +382,7 @@ const FB_MAY='https://turnero-mateu-default-rtdb.firebaseio.com/condiciones/may.
 function save1(){ fetch(FB_CC,{method:'PUT',body:JSON.stringify(DATA1),headers:{'Content-Type':'application/json'}}); }
 function save2(){ fetch(FB_MAY,{method:'PUT',body:JSON.stringify(DATA2),headers:{'Content-Type':'application/json'}}); }
 let DATA1=[], DATA2=[];
+let _hash1='', _hash2='';
 async function loadAll(){
   try{
     const [r1,r2]=await Promise.all([fetch(FB_CC),fetch(FB_MAY)]);
@@ -390,11 +391,23 @@ async function loadAll(){
     DATA2=d2||JSON.parse(JSON.stringify(SEED2));
     if(!d1)save1();
     if(!d2)save2();
+    _hash1=JSON.stringify(DATA1); _hash2=JSON.stringify(DATA2);
   }catch(e){
     DATA1=JSON.parse(JSON.stringify(SEED1));
     DATA2=JSON.parse(JSON.stringify(SEED2));
   }
   render1();render2();filt1();
+  setTimeout(pollCondiciones,5000);
+}
+async function pollCondiciones(){
+  try{
+    const [r1,r2]=await Promise.all([fetch(FB_CC),fetch(FB_MAY)]);
+    const [d1,d2]=await Promise.all([r1.json(),r2.json()]);
+    const h1=JSON.stringify(d1), h2=JSON.stringify(d2);
+    if(d1&&h1!==_hash1){ _hash1=h1; DATA1=d1; render1(); filt1(); }
+    if(d2&&h2!==_hash2){ _hash2=h2; DATA2=d2; render2(); }
+  }catch(e){}
+  setTimeout(pollCondiciones,5000);
 }
 let editIdx = -1;
 let editIdx2 = -1;

@@ -7264,6 +7264,7 @@ const setF8s=d=>{ _F8S=d; fetch(FB_F8S,{method:'PUT',body:JSON.stringify(d),head
 function getCtrl(){ return _CTRL||[]; }
 const setCtrl=d=>{ _CTRL=d; fetch(FB_CTRL,{method:'PUT',body:JSON.stringify(d),headers:{'Content-Type':'application/json'}}); };
 
+let _F8S_HASH='', _CTRL_HASH='';
 async function loadEquipo(){
   try{
     const [r1,r2]=await Promise.all([fetch(FB_F8S),fetch(FB_CTRL)]);
@@ -7271,7 +7272,18 @@ async function loadEquipo(){
     _F8S=d1||[...SEED_F8S];
     _CTRL=d2||[];
     if(!d1){ fetch(FB_F8S,{method:'PUT',body:JSON.stringify(SEED_F8S),headers:{'Content-Type':'application/json'}}); }
+    _F8S_HASH=JSON.stringify(_F8S); _CTRL_HASH=JSON.stringify(_CTRL);
   }catch(e){ _F8S=[...SEED_F8S]; _CTRL=[]; }
+}
+async function pollEquipo(){
+  try{
+    const [r1,r2]=await Promise.all([fetch(FB_F8S),fetch(FB_CTRL)]);
+    const [d1,d2]=await Promise.all([r1.json(),r2.json()]);
+    const h1=JSON.stringify(d1), h2=JSON.stringify(d2);
+    if(d1&&h1!==_F8S_HASH){ _F8S_HASH=h1; _F8S=d1; renderDashboard(); renderHistory(); }
+    if(d2&&h2!==_CTRL_HASH){ _CTRL_HASH=h2; _CTRL=d2; }
+  }catch(e){}
+  setTimeout(pollEquipo,5000);
 }
 
 function resetApp(){
@@ -7633,7 +7645,7 @@ function showToast(msg,err=false){
 }
 
 // ═══════════════ INIT ═══════════════
-loadEquipo().then(()=>{ buildF8CruceFromSeed(); renderDashboard(); });
+loadEquipo().then(()=>{ buildF8CruceFromSeed(); renderDashboard(); setTimeout(pollEquipo,5000); });
 </script>
 </body>
 </html>
