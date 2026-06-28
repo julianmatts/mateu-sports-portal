@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Turnero Depósito — Mateu Sports</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f4f8;color:#1a2a4a;min-height:100vh}
+
+.top-header{background:#1a2a6c;padding:.9rem 1.5rem;border-bottom:4px solid #cc1122;position:relative;display:flex;align-items:center;justify-content:center;min-height:70px}
+.logo-img{height:42px;filter:brightness(0) invert(1);display:block}
+.header-admin-area{position:absolute;right:1.2rem;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:6px}
+.sync-dot{width:6px;height:6px;border-radius:50%;background:#22cc55;display:inline-block;flex-shrink:0}
+.sync-dot.offline{background:#cc4422}
+.admin-btn{font-size:11px;padding:5px 12px;border-radius:6px;border:1.5px solid rgba(255,255,255,.3);background:transparent;color:rgba(255,255,255,.65);cursor:pointer;font-weight:600}
+.admin-btn:hover{background:rgba(255,255,255,.12);color:#fff}
+.admin-btn.active{background:#cc1122;border-color:#cc1122;color:#fff;cursor:default}
+.logout-btn{font-size:11px;padding:5px 10px;border-radius:6px;border:1.5px solid rgba(204,17,34,.5);background:transparent;color:rgba(255,160,160,.85);cursor:pointer;font-weight:600}
+.logout-btn:hover{background:rgba(204,17,34,.2)}
+
+.sub-header{background:#152060;padding:.6rem 1rem;text-align:center;border-bottom:2px solid rgba(255,255,255,.07)}
+.sub-title{font-size:14px;font-weight:700;color:#fff;letter-spacing:.01em}
+.sub-year{font-size:11px;color:#7090c0;font-weight:500;margin-left:.5rem}
+
+.content{padding:1rem}
+.stats-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:1rem}
+.stat-card{background:#fff;border:1.5px solid #dce6f4;border-radius:10px;padding:.65rem .8rem;border-top:3px solid #1a2a6c}
+.stat-label{font-size:9px;color:#6080a0;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;font-weight:600}
+.stat-val{font-size:20px;font-weight:700;color:#1a2a6c}
+
+.legend{display:flex;gap:10px;margin-bottom:.9rem;flex-wrap:wrap;padding:.55rem .75rem;background:#fff;border-radius:8px;border:1px solid #dce6f4}
+.legend-item{display:flex;align-items:center;gap:4px;font-size:10px;color:#6080a0;font-weight:500}
+.legend-dot{width:11px;height:11px;border-radius:3px;flex-shrink:0}
+
+.week-nav{display:flex;align-items:center;gap:6px;margin-bottom:.5rem}
+.nav-btn{width:30px;height:30px;display:flex;align-items:center;justify-content:center;border:1.5px solid #b0c4de;border-radius:7px;background:#fff;cursor:pointer;color:#1a2a6c;font-size:18px;font-weight:700;transition:all .15s;flex-shrink:0}
+.nav-btn:hover{background:#1a2a6c;color:#fff;border-color:#1a2a6c}
+.week-label{font-size:12px;font-weight:700;color:#1a2a6c;text-align:center;flex:1}
+.week-select{font-size:11px;padding:5px 8px;border-radius:7px;border:1.5px solid #b0c4de;background:#fff;color:#1a2a6c;cursor:pointer;font-weight:600;width:100%;margin-bottom:.7rem}
+
+.calendar-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:1.25rem;border-radius:12px;border:1.5px solid #b0c4de;box-shadow:0 2px 8px rgba(26,42,108,.08)}
+.calendar-grid{display:grid;grid-template-columns:48px repeat(5,minmax(90px,1fr));background:#fff;min-width:500px}
+.col-head{font-size:9px;font-weight:700;color:#6080a0;text-align:center;padding:7px 2px;border-bottom:1.5px solid #dce6f4;background:#f5f8ff;text-transform:uppercase;letter-spacing:.04em;line-height:1.4}
+.col-head.today{color:#cc1122;background:#fff0f2}
+.col-head.holiday{color:#b06000;background:#fff8ee}
+.time-label{font-size:9px;color:#a0b4cc;padding:0 4px;display:flex;align-items:flex-start;padding-top:5px;border-right:1.5px solid #dce6f4;background:#f8faff}
+
+.slot{border:.5px solid #e8eff8;min-height:46px;padding:2px;position:relative;cursor:pointer;transition:background .1s}
+.slot:hover{background:#eef4ff}
+.slot.holiday-slot{cursor:not-allowed;background:#fffbf0}
+.slot.holiday-slot:hover{background:#fffbf0}
+.slot.blocked-slot{background:#fff0f0}
+.slot.blocked-slot:hover{background:#ffe8e8}
+
+.lunch-label{display:flex;align-items:center;justify-content:center;height:100%;font-size:8px;color:#b0c4de;gap:2px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+
+.block-tag{background:#ffe0e0;color:#8a0a16;border-left:3px solid #cc1122;border-radius:4px;padding:3px 6px;font-size:9px;font-weight:700;margin-bottom:2px;display:flex;align-items:center;justify-content:space-between}
+.block-tag .unblock-btn{background:transparent;border:none;cursor:pointer;font-size:13px;color:#8a0a16;opacity:.7;line-height:1;margin-left:4px}
+.block-tag .unblock-btn:hover{opacity:1}
+
+.booking{border-radius:4px;padding:3px 5px;font-size:10px;font-weight:600;position:relative;margin-bottom:2px}
+.booking .prov-name{font-size:10px;font-weight:700;padding-right:14px}
+.booking .prov-detail{font-size:8px;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.booking .del-btn{position:absolute;top:2px;right:3px;background:transparent;border:none;cursor:pointer;font-size:13px;line-height:1;display:none;opacity:.7;color:inherit}
+.booking:hover .del-btn{display:block}
+.add-more-hint{font-size:16px;color:#c0d0e8;position:absolute;bottom:2px;right:5px;pointer-events:none;font-weight:300;line-height:1}
+
+.occ-tag{border-radius:4px;padding:3px 5px;font-size:10px;font-weight:700;margin-bottom:2px;background:#ffeef0;color:#8a0a16;border-left:3px solid #cc1122}
+.occ-blocked{border-radius:4px;padding:3px 5px;font-size:10px;font-weight:700;margin-bottom:2px;background:#ffe0e0;color:#8a0a16;border-left:3px solid #cc1122}
+
+/* TOAST */
+.toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:#1a2a6c;color:#fff;padding:.6rem 1.2rem;border-radius:8px;font-size:12px;font-weight:600;z-index:999;box-shadow:0 4px 16px rgba(0,0,0,.2);opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+.toast.error{background:#8a0a16}
+
+/* MODAL */
+.modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(10,20,60,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:1rem}
+.modal{background:#fff;border-radius:14px;border:1.5px solid #dce6f4;width:100%;max-width:340px;padding:1.25rem;box-shadow:0 8px 32px rgba(26,42,108,.18);max-height:90vh;overflow-y:auto}
+.modal h3{font-size:14px;font-weight:700;margin-bottom:3px;color:#1a2a6c}
+.modal .slot-info{font-size:11px;color:#6080a0;margin-bottom:1rem;font-weight:500}
+.modal label{font-size:10px;color:#6080a0;display:block;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.modal select,.modal textarea,.modal input[type=text],.modal input[type=email]{width:100%;margin-bottom:10px;font-size:13px;border:1.5px solid #b0c4de;border-radius:8px;color:#1a2a6c;padding:8px 10px;background:#f8faff}
+.modal textarea{height:56px;resize:vertical}
+.modal-divider{border:none;border-top:1px solid #dce6f4;margin:.75rem 0}
+.modal-block-btn{width:100%;padding:8px;font-size:12px;font-weight:600;background:#fff0f0;border:1.5px solid #f0c0c0;border-radius:8px;color:#8a0a16;cursor:pointer;margin-bottom:4px}
+.modal-block-btn:hover{background:#ffe0e0}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end}
+.btn{font-size:12px;padding:7px 16px;border-radius:8px;border:1.5px solid #b0c4de;background:#fff;color:#6080a0;cursor:pointer;font-weight:600}
+.btn-primary{background:#1a2a6c;border-color:#1a2a6c;color:#fff}
+.btn-primary:hover{background:#cc1122;border-color:#cc1122}
+
+/* LOGIN */
+.login-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(10,20,60,.65);display:flex;align-items:center;justify-content:center;z-index:200;padding:1rem}
+.login-card{background:#fff;border-radius:16px;padding:1.75rem 1.5rem;width:100%;max-width:290px;text-align:center;box-shadow:0 8px 32px rgba(26,42,108,.2)}
+.login-logo{height:40px;margin-bottom:1.1rem;filter:brightness(0) invert(0)}
+.login-card h2{font-size:14px;font-weight:700;color:#1a2a6c;margin-bottom:.2rem}
+.login-card p{font-size:11px;color:#6080a0;margin-bottom:1.1rem}
+.login-card input{width:100%;font-size:15px;padding:10px 14px;border:1.5px solid #b0c4de;border-radius:9px;color:#1a2a6c;margin-bottom:8px;background:#f8faff;text-align:center;letter-spacing:.15em}
+.login-error{font-size:11px;color:#cc1122;margin-bottom:8px;min-height:15px;font-weight:500}
+.btn-login{width:100%;padding:10px;font-size:13px;font-weight:700;background:#1a2a6c;color:#fff;border:none;border-radius:9px;cursor:pointer}
+.btn-login:hover{background:#cc1122}
+
+/* PROVIDERS */
+.section-title{font-size:10px;font-weight:700;color:#6080a0;text-transform:uppercase;letter-spacing:.08em;margin:1.1rem 0 .5rem}
+.provider-list{display:flex;flex-direction:column;gap:5px;margin-bottom:8px}
+.prov-row{display:flex;align-items:center;gap:9px;padding:.5rem .75rem;border:1.5px solid #dce6f4;border-radius:9px;background:#fff;flex-wrap:wrap}
+.prov-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.prov-name-full{font-size:12px;font-weight:700;color:#1a2a6c;flex:1;min-width:80px}
+.prov-email{font-size:10px;color:#6080a0;flex:2;min-width:120px;font-style:italic}
+.prov-count{font-size:10px;color:#6080a0;white-space:nowrap}
+.del-prov-btn{background:transparent;border:none;cursor:pointer;color:#b0c4de;font-size:16px;padding:0 2px;line-height:1}
+.del-prov-btn:hover{color:#cc1122}
+.edit-prov-btn{background:transparent;border:none;cursor:pointer;color:#6080a0;font-size:12px;padding:0 4px;line-height:1}
+.edit-prov-btn:hover{color:#1a2a6c}
+.add-prov-row{display:flex;gap:6px;flex-wrap:wrap}
+.add-prov-row input{font-size:12px;border:1.5px solid #b0c4de;border-radius:8px;color:#1a2a6c;padding:7px 10px;background:#f8faff;flex:1;min-width:100px}
+.add-prov-row button{font-size:12px;padding:7px 12px;border-radius:8px;border:1.5px solid #1a2a6c;background:#1a2a6c;color:#fff;cursor:pointer;font-weight:600;white-space:nowrap}
+.add-prov-row button:hover{background:#cc1122;border-color:#cc1122}
+.public-info{font-size:11px;color:#6080a0;margin-bottom:.85rem;padding:.65rem .85rem;background:#fff;border:1.5px solid #dce6f4;border-radius:9px;border-left:4px solid #1a2a6c;line-height:1.6}
+.loading{text-align:center;padding:3rem;color:#6080a0;font-size:13px}
+
+@media(min-width:640px){
+  .week-select{width:auto;min-width:170px;margin-bottom:.7rem}
+  .week-nav{flex-wrap:nowrap}
+  .week-label{flex:none;min-width:200px}
+  .content{padding:1.25rem 1.5rem}
+  .stats-bar{grid-template-columns:repeat(4,1fr)}
+}
+@media(max-width:639px){
+  .stats-bar{grid-template-columns:repeat(2,1fr)}
+  .header-admin-area{right:.8rem}
+}
+</style>
+</head>
+<body>
+<div id="app"><div class="loading">Conectando…</div></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, onValue, set, remove, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+// EmailJS
+emailjs.init({publicKey:'ScAxpzSsbZQPE3nJ3'});
+const EJS_SERVICE='service_jed8vnr';
+const EJS_TEMPLATE='template_9har977';
+
+const LOGO_B64="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";
+const ADMIN_PASS="mateu1905";
+const firebaseConfig={
+  apiKey:"AIzaSyBJQaR7d2hD1okbgHTsFagxh7H4K45lrs0",
+  authDomain:"turnero-mateu.firebaseapp.com",
+  databaseURL:"https://turnero-mateu-default-rtdb.firebaseio.com",
+  projectId:"turnero-mateu",
+  storageBucket:"turnero-mateu.firebasestorage.app",
+  messagingSenderId:"483269150657",
+  appId:"1:483269150657:web:6e2bcb1d46911ecb611140"
+};
+const fbApp=initializeApp(firebaseConfig);
+const db=getDatabase(fbApp);
+
+const DEFAULT_PROVIDERS=[
+  {id:'adidas',name:'Adidas',email:'',color:'#1a2a6c',bg:'#e8eeff',text:'#1a2a6c'},
+  {id:'puma',name:'Puma',email:'',color:'#1a6c2a',bg:'#e8f5ee',text:'#1a4a20'},
+  {id:'nike',name:'Nike',email:'',color:'#cc1122',bg:'#ffeef0',text:'#8a0a16'},
+  {id:'wilson',name:'Wilson',email:'',color:'#b06000',bg:'#fff4e0',text:'#7a3d00'},
+  {id:'topper',name:'Topper',email:'',color:'#5a1a8c',bg:'#f0e8ff',text:'#3a0a6a'},
+];
+const HOLIDAYS={
+  '2026-01-01':'Año Nuevo','2026-02-16':'Carnaval','2026-02-17':'Carnaval',
+  '2026-03-23':'Puente turístico','2026-03-24':'Día de la Memoria',
+  '2026-04-02':'Día del Veterano','2026-04-03':'Viernes Santo',
+  '2026-05-01':'Día del Trabajador','2026-05-25':'Revolución de Mayo',
+  '2026-06-15':'Güemes','2026-06-20':'Día de la Bandera',
+  '2026-07-09':'Día de la Independencia','2026-07-10':'Puente turístico',
+  '2026-08-17':'San Martín','2026-10-12':'Diversidad Cultural',
+  '2026-11-23':'Soberanía Nacional','2026-12-07':'Puente turístico',
+  '2026-12-08':'Inmaculada Concepción','2026-12-25':'Navidad',
+};
+const PUENTES=new Set(['2026-03-23','2026-07-10','2026-12-07']);
+const SLOTS=['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00'];
+const DAYS_ES=['Lun','Mar','Mié','Jue','Vie'];
+const DAYS_FULL=['Lunes','Martes','Miércoles','Jueves','Viernes'];
+const MONTHS=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const MONTHS_SHORT=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+function getMonday(d){const dd=new Date(d);const day=dd.getDay();dd.setDate(dd.getDate()-day+(day===0?-6:1));return dd}
+function addDays(d,n){const dd=new Date(d);dd.setDate(dd.getDate()+n);return dd}
+function fmtKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function fmtDateLabel(dateKey){
+  const[y,m,d]=dateKey.split('-');
+  const dt=new Date(Number(y),Number(m)-1,Number(d));
+  return DAYS_FULL[dt.getDay()===0?6:dt.getDay()-1]+' '+Number(d)+' de '+MONTHS[Number(m)-1]+' '+y;
+}
+
+const YEAR_START=new Date(2026,0,5);
+const YEAR_END=new Date(2026,11,28);
+function getWeekMonday(o){return addDays(getMonday(YEAR_START),o*7)}
+function weekOffsetFromDate(d){return Math.round((getMonday(d)-getMonday(YEAR_START))/(7*86400000))}
+const MAX_OFFSET=weekOffsetFromDate(YEAR_END);
+
+let state={
+  isAdmin:false,showLoginModal:false,
+  weekOffset:Math.max(0,Math.min(weekOffsetFromDate(new Date()),MAX_OFFSET)),
+  bookings:{},blocks:{},providers:[...DEFAULT_PROVIDERS],
+  modal:null,editProvModal:null,newProvName:'',newProvEmail:'',synced:false,
+};
+
+onValue(ref(db,'bookings2'),snap=>{state.bookings=snap.val()||{};state.synced=true;render();});
+onValue(ref(db,'blocks'),snap=>{state.blocks=snap.val()||{};render();});
+onValue(ref(db,'providers'),snap=>{
+  const v=snap.val();
+  if(v) state.providers=Array.isArray(v)?v:Object.values(v);
+  else set(ref(db,'providers'),DEFAULT_PROVIDERS);
+  render();
+});
+
+async function addBooking(date,slot,providerId,note){
+  await push(ref(db,'bookings2/'+date+'/'+slot),{providerId,note:note||''});
+}
+async function deleteBooking(date,slot,key){await remove(ref(db,'bookings2/'+date+'/'+slot+'/'+key));}
+async function blockSlot(date,slot,reason){await push(ref(db,'blocks/'+date+'/'+slot),{reason:reason||'No disponible'});}
+async function unblockSlot(date,slot,key){await remove(ref(db,'blocks/'+date+'/'+slot+'/'+key));}
+async function saveProviders(p){await set(ref(db,'providers'),p);}
+
+function showToast(msg,isError=false){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.className='toast show'+(isError?' error':'');
+  setTimeout(()=>t.className='toast',3000);
+}
+
+async function sendEmail(providerId,dateKey,slot,note){
+  const prov=state.providers.find(p=>p.id===providerId);
+  if(!prov||!prov.email) return; // no email set, skip silently
+  try{
+    await emailjs.send(EJS_SERVICE,EJS_TEMPLATE,{
+      to_email:prov.email,
+      to_name:prov.name,
+      fecha:fmtDateLabel(dateKey),
+      horario:slot+' hs',
+      nota:note||'Sin observaciones',
+    });
+    showToast('✉️ Mail enviado a '+prov.name);
+  }catch(e){
+    showToast('⚠️ Error al enviar mail a '+prov.name,true);
+  }
+}
+
+function getWeekDates(){return Array.from({length:5},(_,i)=>addDays(getWeekMonday(state.weekOffset),i))}
+function getSlotBookings(date,slot){const d=state.bookings[date];if(!d||!d[slot])return[];return Object.entries(d[slot]).map(([k,v])=>({key:k,...v}));}
+function getSlotBlocks(date,slot){const d=state.blocks[date];if(!d||!d[slot])return[];return Object.entries(d[slot]).map(([k,v])=>({key:k,...v}));}
+
+function bookingsThisWeek(){let c=0;getWeekDates().map(fmtKey).forEach(d=>{if(!state.bookings[d])return;Object.values(state.bookings[d]).forEach(s=>{c+=Object.keys(s).length;});});return c;}
+function uniqueProvsThisWeek(){const s=new Set();getWeekDates().map(fmtKey).forEach(d=>{if(!state.bookings[d])return;Object.values(state.bookings[d]).forEach(sl=>{Object.values(sl).forEach(b=>s.add(b.providerId));});});return s.size;}
+function totalBookings(){let t=0;Object.values(state.bookings).forEach(d=>{Object.values(d).forEach(s=>{t+=Object.keys(s).length;});});return t;}
+function weekHasHoliday(o){const m=getWeekMonday(o);for(let i=0;i<5;i++)if(HOLIDAYS[fmtKey(addDays(m,i))])return true;return false;}
+
+function buildWeekSelect(){
+  let o='';
+  for(let i=0;i<=MAX_OFFSET;i++){
+    const m=getWeekMonday(i),f=addDays(m,4);
+    o+='<option value="'+i+'"'+(i===state.weekOffset?' selected':'')+'>'+m.getDate()+' '+MONTHS_SHORT[m.getMonth()]+' – '+f.getDate()+' '+MONTHS_SHORT[f.getMonth()]+(weekHasHoliday(i)?' 🟠':'')+'</option>';
+  }
+  return '<select class="week-select" id="week-select">'+o+'</select>';
+}
+
+function renderGrid(){
+  const dates=getWeekDates(),todayKey=fmtKey(new Date());
+  let html='<div class="calendar-grid"><div class="col-head" style="background:#f0f4ff"></div>';
+  dates.forEach((d,i)=>{
+    const key=fmtKey(d),isToday=key===todayKey,isH=!!HOLIDAYS[key],isPte=PUENTES.has(key);
+    const sub=isH?'<span style="display:block;font-size:7px;margin-top:1px;opacity:.85">'+HOLIDAYS[key]+'</span>':isPte?'<span style="display:block;font-size:7px;opacity:.6">puente</span>':'';
+    html+='<div class="col-head'+(isToday?' today':isH?' holiday':'')+'">'+DAYS_ES[i]+' '+d.getDate()+sub+'</div>';
+  });
+  SLOTS.forEach(slot=>{
+    html+='<div class="time-label">'+slot+'</div>';
+    dates.forEach(d=>{
+      const key=fmtKey(d),isH=!!HOLIDAYS[key];
+      if(isH){html+='<div class="slot holiday-slot"><div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:8px;color:#c09040;font-weight:600;text-align:center;padding:2px">'+HOLIDAYS[key]+'</div></div>';return;}
+      const bookings=getSlotBookings(key,slot);
+      const blocks=getSlotBlocks(key,slot);
+      const hasBlock=blocks.length>0;
+      if(state.isAdmin){
+        html+='<div class="slot'+(hasBlock?' blocked-slot':'')+'" data-date="'+key+'" data-slot="'+slot+'">';
+        blocks.forEach(bl=>{html+='<div class="block-tag">🔒 '+bl.reason+'<button class="unblock-btn" data-date="'+key+'" data-slot="'+slot+'" data-key="'+bl.key+'">×</button></div>';});
+        bookings.forEach(b=>{
+          const p=state.providers.find(p=>p.id===b.providerId)||{name:b.providerId,bg:'#f0f4f8',text:'#1a2a6c',color:'#6080a0'};
+          html+='<div class="booking" style="background:'+p.bg+';color:'+p.text+';border-left:3px solid '+p.color+'">'
+            +'<div class="prov-name">'+p.name+'</div>'
+            +(b.note?'<div class="prov-detail">'+b.note+'</div>':'')
+            +'<button class="del-btn" data-date="'+key+'" data-slot="'+slot+'" data-key="'+b.key+'">×</button></div>';
+        });
+        html+='<span class="add-more-hint">+</span></div>';
+      } else {
+        html+='<div class="slot">';
+        if(hasBlock){html+='<div class="occ-blocked">No disponible</div>';}
+        else{bookings.forEach(()=>{html+='<div class="occ-tag">Ocupado</div>';});}
+        html+='</div>';
+      }
+    });
+  });
+  return html+'</div>';
+}
+
+function renderLoginModal(){
+  return '<div class="login-overlay" id="login-overlay"><div class="login-card">'
+    +'<img class="login-logo" src="data:image/webp;base64,'+LOGO_B64+'" alt="Mateu Sports">'
+    +'<h2>Acceso Administrador</h2><p>Ingresá la contraseña del depósito</p>'
+    +'<input type="password" id="pwd-input" placeholder="••••••••" maxlength="20" autocomplete="off">'
+    +'<div class="login-error" id="pwd-error"></div>'
+    +'<button class="btn-login" id="pwd-btn">Ingresar</button>'
+    +'</div></div>';
+}
+
+function renderSlotModal(){
+  const {date,slot}=state.modal,parts=date.split('-');
+  const dayIdx=getWeekDates().findIndex(d=>fmtKey(d)===date);
+  const bookings=getSlotBookings(date,slot);
+  const blocks=getSlotBlocks(date,slot);
+  return '<div class="modal-overlay" id="modal-overlay"><div class="modal">'
+    +'<h3>'+slot+' hs — '+(dayIdx>=0?DAYS_FULL[dayIdx]:date)+'</h3>'
+    +'<div class="slot-info">'+Number(parts[2])+'/'+Number(parts[1])+'/'+parts[0]
+    +(bookings.length?' · <b>'+bookings.length+'</b> turno'+(bookings.length>1?'s':''):'')
+    +(blocks.length?' · <b style="color:#cc1122">BLOQUEADO</b>':'')
+    +'</div>'
+    +'<label>Proveedor</label>'
+    +'<select id="modal-prov">'+state.providers.map(p=>'<option value="'+p.id+'">'+(p.name)+(p.email?' ('+p.email+')':'')+'</option>').join('')+'</select>'
+    +'<label>Nota (opcional)</label>'
+    +'<textarea id="modal-note" placeholder="Ej: entrega SS26, llegada 9:30..."></textarea>'
+    +'<div class="modal-actions"><button class="btn" id="modal-cancel">Cancelar</button><button class="btn btn-primary" id="modal-save">✓ Asignar turno</button></div>'
+    +'<hr class="modal-divider">'
+    +'<button class="modal-block-btn" id="modal-block">🔒 Bloquear este slot</button>'
+    +'</div></div>';
+}
+
+function renderEditProvModal(){
+  const p=state.editProvModal;
+  return '<div class="modal-overlay" id="edit-prov-overlay"><div class="modal">'
+    +'<h3>Editar proveedor</h3>'
+    +'<div class="slot-info">Actualizá el nombre o el mail de contacto</div>'
+    +'<label>Nombre</label>'
+    +'<input type="text" id="edit-prov-name" value="'+p.name+'">'
+    +'<label>Mail de contacto</label>'
+    +'<input type="email" id="edit-prov-email" placeholder="proveedor@empresa.com" value="'+(p.email||'')+'">'
+    +'<div class="modal-actions"><button class="btn" id="edit-prov-cancel">Cancelar</button><button class="btn btn-primary" id="edit-prov-save">Guardar</button></div>'
+    +'</div></div>';
+}
+
+function renderMain(){
+  const dates=getWeekDates(),mon=dates[0],fri=dates[4];
+  const weekLabel=mon.getDate()+' '+MONTHS[mon.getMonth()]+' – '+fri.getDate()+' '+MONTHS[fri.getMonth()]+' '+fri.getFullYear();
+  let html='<div class="top-header">'
+    +'<img class="logo-img" src="data:image/webp;base64,'+LOGO_B64+'" alt="Mateu Sports">'
+    +'<div class="header-admin-area"><span class="sync-dot'+(state.synced?'':' offline')+'"></span>'
+    +(state.isAdmin
+      ?'<button class="admin-btn active">✓ Admin</button><button class="logout-btn" id="logout-btn">Salir</button>'
+      :'<button class="admin-btn" id="open-login-btn">Admin</button>')
+    +'</div></div>'
+    +'<div class="sub-header"><span class="sub-title">Disponibilidad de Turnos — Depósito Central</span><span class="sub-year">2026</span></div>'
+    +'<div class="content">';
+
+  if(state.isAdmin){
+    html+='<div class="stats-bar">'
+      +'<div class="stat-card"><div class="stat-label">Turnos semana</div><div class="stat-val">'+bookingsThisWeek()+'</div></div>'
+      +'<div class="stat-card"><div class="stat-label">Proveedores</div><div class="stat-val">'+uniqueProvsThisWeek()+'</div></div>'
+      +'<div class="stat-card"><div class="stat-label">Total histórico</div><div class="stat-val">'+totalBookings()+'</div></div>'
+      +'<div class="stat-card"><div class="stat-label">Tip</div><div class="stat-val" style="font-size:10px;color:#6080a0;line-height:1.3;padding-top:2px">Clic en slot → asignar o bloquear</div></div>'
+      +'</div>'
+      +'<div class="legend">'
+      +'<div class="legend-item"><div class="legend-dot" style="background:#fff6e0;border:1.5px solid #e0b060"></div>Feriado</div>'
+      +'<div class="legend-item"><div class="legend-dot" style="background:#f0fff4;border:1.5px solid #80c090"></div>Libre</div>'
+      +'<div class="legend-item"><div class="legend-dot" style="background:#e8eeff;border:1.5px solid #1a2a6c"></div>Con turno(s)</div>'
+      +'<div class="legend-item"><div class="legend-dot" style="background:#ffe0e0;border:1.5px solid #cc1122"></div>Bloqueado</div>'
+      +'</div>';
+  } else {
+    html+='<div class="public-info">🟠 Feriado sin recepción &nbsp;·&nbsp; 🟢 Libre &nbsp;·&nbsp; 🔴 Ocupado / No disponible<br>Para coordinar un turno contactá al depósito.</div>';
+  }
+
+  html+='<div class="week-nav">'
+    +'<button class="nav-btn" id="prev-week">‹</button>'
+    +'<span class="week-label">'+weekLabel+'</span>'
+    +'<button class="nav-btn" id="next-week">›</button>'
+    +'</div>'+buildWeekSelect()
+    +'<div class="calendar-wrap">'+renderGrid()+'</div>';
+
+  if(state.isAdmin){
+    html+='<div class="section-title">Proveedores</div>'
+      +'<div class="provider-list">'+state.providers.map(p=>{
+        let c=0;
+        Object.values(state.bookings).forEach(day=>{Object.values(day).forEach(sl=>{Object.values(sl).forEach(b=>{if(b.providerId===p.id)c++;});});});
+        return '<div class="prov-row">'
+          +'<div class="prov-dot" style="background:'+p.color+'"></div>'
+          +'<span class="prov-name-full">'+p.name+'</span>'
+          +'<span class="prov-email">'+(p.email?'✉️ '+p.email:'<span style="color:#c0c8d8">sin mail</span>')+'</span>'
+          +'<span class="prov-count">'+c+' turno'+(c!==1?'s':'')+'</span>'
+          +'<button class="edit-prov-btn" data-provid="'+p.id+'" title="Editar">✏️</button>'
+          +'<button class="del-prov-btn" data-provid="'+p.id+'">×</button>'
+          +'</div>';
+      }).join('')+'</div>'
+      +'<div class="add-prov-row">'
+      +'<input type="text" id="new-prov-name" placeholder="Nombre..." value="'+state.newProvName+'">'
+      +'<input type="email" id="new-prov-email" placeholder="mail@proveedor.com" value="'+state.newProvEmail+'">'
+      +'<button id="add-prov-btn">+ Agregar</button>'
+      +'</div>';
+  }
+
+  html+='</div>';
+  if(state.showLoginModal) html+=renderLoginModal();
+  if(state.modal) html+=renderSlotModal();
+  if(state.editProvModal) html+=renderEditProvModal();
+  return html;
+}
+
+function render(){document.getElementById('app').innerHTML=renderMain();bindEvents();}
+
+function bindEvents(){
+  const prev=document.getElementById('prev-week'),next=document.getElementById('next-week'),sel=document.getElementById('week-select');
+  if(prev) prev.addEventListener('click',()=>{if(state.weekOffset>0){state.weekOffset--;render();}});
+  if(next) next.addEventListener('click',()=>{if(state.weekOffset<MAX_OFFSET){state.weekOffset++;render();}});
+  if(sel) sel.addEventListener('change',()=>{state.weekOffset=Number(sel.value);render();});
+
+  const openBtn=document.getElementById('open-login-btn');
+  if(openBtn) openBtn.addEventListener('click',()=>{state.showLoginModal=true;render();setTimeout(()=>{const i=document.getElementById('pwd-input');if(i)i.focus();},50);});
+  const logoutBtn=document.getElementById('logout-btn');
+  if(logoutBtn) logoutBtn.addEventListener('click',()=>{state.isAdmin=false;state.modal=null;render();});
+
+  const loginOverlay=document.getElementById('login-overlay');
+  if(loginOverlay){
+    loginOverlay.addEventListener('click',e=>{if(e.target===loginOverlay){state.showLoginModal=false;render();}});
+    const pwdBtn=document.getElementById('pwd-btn'),pwdInp=document.getElementById('pwd-input'),pwdErr=document.getElementById('pwd-error');
+    function tryLogin(){
+      if(pwdInp.value===ADMIN_PASS){state.isAdmin=true;state.showLoginModal=false;render();}
+      else{pwdErr.textContent='Contraseña incorrecta';pwdInp.value='';pwdInp.focus();}
+    }
+    pwdBtn.addEventListener('click',tryLogin);
+    pwdInp.addEventListener('keydown',e=>{if(e.key==='Enter')tryLogin();});
+  }
+
+  if(state.isAdmin){
+    // slot click
+    document.querySelectorAll('.slot:not(.holiday-slot)').forEach(slot=>{
+      slot.addEventListener('click',e=>{
+        if(e.target.closest('.del-btn')||e.target.closest('.unblock-btn')||!slot.dataset.date) return;
+        state.modal={date:slot.dataset.date,slot:slot.dataset.slot};render();
+      });
+    });
+    document.querySelectorAll('.del-btn').forEach(btn=>{
+      btn.addEventListener('click',async e=>{e.stopPropagation();await deleteBooking(btn.dataset.date,btn.dataset.slot,btn.dataset.key);});
+    });
+    document.querySelectorAll('.unblock-btn').forEach(btn=>{
+      btn.addEventListener('click',async e=>{e.stopPropagation();await unblockSlot(btn.dataset.date,btn.dataset.slot,btn.dataset.key);});
+    });
+
+    // providers
+    const nn=document.getElementById('new-prov-name'),ne=document.getElementById('new-prov-email'),na=document.getElementById('add-prov-btn');
+    if(nn) nn.addEventListener('input',e=>state.newProvName=e.target.value);
+    if(ne) ne.addEventListener('input',e=>state.newProvEmail=e.target.value);
+    if(na) na.addEventListener('click',async()=>{
+      const name=(state.newProvName||'').trim(),email=(state.newProvEmail||'').trim();
+      if(!name) return;
+      const colors=['#1a2a6c','#1a6c2a','#cc1122','#b06000','#5a1a8c','#006080','#8c1a5a'];
+      const bgs=['#e8eeff','#e8f5ee','#ffeef0','#fff4e0','#f0e8ff','#e0f4f8','#ffe8f4'];
+      const texts=['#1a2a6c','#1a4a20','#8a0a16','#7a3d00','#3a0a6a','#004060','#6a0a3a'];
+      const idx=state.providers.length%colors.length;
+      const id=name.toLowerCase().replace(/\s+/g,'-')+'-'+Date.now();
+      state.newProvName='';state.newProvEmail='';
+      await saveProviders([...state.providers,{id,name,email,color:colors[idx],bg:bgs[idx],text:texts[idx]}]);
+    });
+    document.querySelectorAll('.del-prov-btn').forEach(btn=>{
+      btn.addEventListener('click',async()=>await saveProviders(state.providers.filter(p=>p.id!==btn.dataset.provid)));
+    });
+    document.querySelectorAll('.edit-prov-btn').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        const p=state.providers.find(p=>p.id===btn.dataset.provid);
+        if(p){state.editProvModal=p;render();}
+      });
+    });
+
+    // slot modal
+    const overlay=document.getElementById('modal-overlay');
+    if(overlay){
+      overlay.addEventListener('click',e=>{if(e.target===overlay){state.modal=null;render();}});
+      document.getElementById('modal-cancel').addEventListener('click',()=>{state.modal=null;render();});
+      document.getElementById('modal-save').addEventListener('click',async()=>{
+        const {date,slot}=state.modal;
+        const provId=document.getElementById('modal-prov').value;
+        const note=document.getElementById('modal-note').value.trim();
+        const prov=state.providers.find(p=>p.id===provId);
+        // Cerrar modal inmediatamente
+        state.modal=null;
+        render();
+        // Guardar en Firebase y enviar mail en segundo plano
+        addBooking(date,slot,provId,note);
+        sendEmail(provId,date,slot,note);
+        showToast('✅ Turno asignado a '+(prov?prov.name:provId));
+      });
+      document.getElementById('modal-block').addEventListener('click',async()=>{
+        const {date,slot}=state.modal;
+        const reason=prompt('Motivo del bloqueo (opcional):','No disponible');
+        if(reason===null) return;
+        await blockSlot(date,slot,reason||'No disponible');
+        state.modal=null;
+      });
+    }
+
+    // edit prov modal
+    const editOverlay=document.getElementById('edit-prov-overlay');
+    if(editOverlay){
+      editOverlay.addEventListener('click',e=>{if(e.target===editOverlay){state.editProvModal=null;render();}});
+      document.getElementById('edit-prov-cancel').addEventListener('click',()=>{state.editProvModal=null;render();});
+      document.getElementById('edit-prov-save').addEventListener('click',async()=>{
+        const newName=document.getElementById('edit-prov-name').value.trim();
+        const newEmail=document.getElementById('edit-prov-email').value.trim();
+        if(!newName) return;
+        const updated=state.providers.map(p=>p.id===state.editProvModal.id?{...p,name:newName,email:newEmail}:p);
+        state.editProvModal=null;
+        await saveProviders(updated);
+      });
+    }
+  }
+}
+
+render();
+</script>
+</body>
+</html>
