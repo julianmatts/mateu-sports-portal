@@ -7256,26 +7256,26 @@ const STATUS_CLASS={'Hecho':'st-hecho','Incompleto':'st-incompleto','Sin hacer':
 const BRAND_MAP=[['ADI','Adidas'],['NIK','Nike'],['PUM','Puma'],['RUG','RUGE/EDLP'],['MAT','Mateu'],['UMB','Umbro'],['UA','Under Armour'],['NB2','New Balance'],['CHV','Chevignon'],['VAN','Vans'],['GIV','Givova'],['TOP','Topper'],['KAP','Kappa'],['COL','Columbia'],['HEA','Head'],['AUR','Aurelius'],['SAU','Saucony'],['FIL','Fila'],['RBK','Reebok']];
 
 // ═══════════════ STORAGE ═══════════════
-function getF8s(){
+const FB_F8S='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/f8s.json';
+const FB_CTRL='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/ctrl.json';
+let _F8S=null, _CTRL=null;
+function getF8s(){ return _F8S||[...SEED_F8S]; }
+const setF8s=d=>{ _F8S=d; fetch(FB_F8S,{method:'PUT',body:JSON.stringify(d),headers:{'Content-Type':'application/json'}}); };
+function getCtrl(){ return _CTRL||[]; }
+const setCtrl=d=>{ _CTRL=d; fetch(FB_CTRL,{method:'PUT',body:JSON.stringify(d),headers:{'Content-Type':'application/json'}}); };
+
+async function loadEquipo(){
   try{
-    const s=localStorage.getItem('mateu_f8s_v6');
-    if(s){
-      const a=JSON.parse(s);
-      if(a&&a.length>=32&&a.some(x=>x.operator==='David')&&a.some(x=>x.operator==='Daniel'))return a;
-    }
-  }catch(e){}
-  localStorage.setItem('mateu_f8s_v6',JSON.stringify(SEED_F8S));
-  return[...SEED_F8S];
+    const [r1,r2]=await Promise.all([fetch(FB_F8S),fetch(FB_CTRL)]);
+    const [d1,d2]=await Promise.all([r1.json(),r2.json()]);
+    _F8S=d1||[...SEED_F8S];
+    _CTRL=d2||[];
+    if(!d1){ fetch(FB_F8S,{method:'PUT',body:JSON.stringify(SEED_F8S),headers:{'Content-Type':'application/json'}}); }
+  }catch(e){ _F8S=[...SEED_F8S]; _CTRL=[]; }
 }
-const setF8s=d=>localStorage.setItem('mateu_f8s_v6',JSON.stringify(d));
-const getCtrl=()=>JSON.parse(localStorage.getItem('mateu_ctrl')||'[]');
-const setCtrl=d=>localStorage.setItem('mateu_ctrl',JSON.stringify(d));
 
 function resetApp(){
-  if(confirm('¿Limpiar caché y recargar?')){
-    localStorage.clear();
-    location.reload();
-  }
+  if(confirm('¿Recargar la página?')) location.reload();
 }
 
 // ═══════════════ WEEK HELPERS ═══════════════
@@ -7633,8 +7633,7 @@ function showToast(msg,err=false){
 }
 
 // ═══════════════ INIT ═══════════════
-buildF8CruceFromSeed();
-renderDashboard();
+loadEquipo().then(()=>{ buildF8CruceFromSeed(); renderDashboard(); });
 </script>
 </body>
 </html>
