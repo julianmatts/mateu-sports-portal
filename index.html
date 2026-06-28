@@ -153,7 +153,7 @@ footer{text-align:center;padding:24px;font-family:var(--font-c);font-size:11px;l
 
 // 1) Usuarios. Cambiá las contraseñas por las que quieras.
 const USERS = {
-  'juli':     { name:'Julián',   pass:'mateu',    role:'admin'    },
+  'admin':    { name:'Julián',   pass:'mateu',    role:'admin'    },
   'david':    { name:'David',    pass:'producto', role:'producto' },
   'daniel':   { name:'Daniel',   pass:'producto', role:'producto' },
   'deposito': { name:'Depósito', pass:'deposito', role:'deposito' },
@@ -185,9 +185,9 @@ const SESSION_KEY = 'mateu_portal_session';
 const $ = id => document.getElementById(id);
 
 // localStorage envuelto en try/catch (así no rompe en previews sin storage)
-function saveSession(u){ try{ localStorage.setItem(SESSION_KEY, u); }catch(e){ window.__sess = u; } }
-function readSession(){ try{ return localStorage.getItem(SESSION_KEY); }catch(e){ return window.__sess || null; } }
-function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){ window.__sess = null; } }
+function saveSession(u){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify({user:u,role:USERS[u].role})); }catch(e){ window.__sess={user:u,role:USERS[u].role}; } }
+function readSession(){ try{ const s=localStorage.getItem(SESSION_KEY); if(!s)return null; try{ return JSON.parse(s); }catch(e){ return {user:s,role:USERS[s]?.role}; } }catch(e){ return window.__sess||null; } }
+function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){ window.__sess=null; } }
 
 function showLogin(){ $('login').style.display='flex'; $('app').style.display='none'; $('p').value=''; }
 function showApp(){ $('login').style.display='none'; $('app').style.display='block'; }
@@ -251,7 +251,7 @@ $('logoutBtn').addEventListener('click', logout);
 // Al cargar: si hay sesión válida, entrar directo
 (function init(){
   const s = readSession();
-  if(s && USERS[s]) render(s); else showLogin();
+  if(s && s.user && USERS[s.user]) render(s.user); else showLogin();
 })();
 </script>
 </body>
