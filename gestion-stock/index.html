@@ -79,6 +79,10 @@ input,select{font-family:inherit}
 .main-tab.active{color:#fff;border-bottom-color:var(--red)}
 .main-tab-panel{display:none}
 .main-tab-panel.active{display:block}
+.admin-actions{display:none;background:#fff;border-bottom:1px solid var(--border);padding:10px 28px;justify-content:flex-end;gap:10px}
+.admin-actions.show{display:flex}
+.admin-actions .btn{padding:8px 14px}
+.admin-actions .icon-btn{width:38px;height:38px;justify-content:center;padding:0;font-size:16px;letter-spacing:0}
 
 nav{background:#fff;border-bottom:1px solid var(--border);padding:0 28px;display:flex;gap:2px;
   overflow-x:auto;position:sticky;top:0;z-index:50}
@@ -168,10 +172,13 @@ th.r{text-align:right}
 td{padding:8px 10px;border-bottom:1px solid #eef0f7}
 tr.tot td{font-weight:700;background:#f6f8fd;border-top:2px solid var(--navy)}
 tr:hover td{background:#f8f9fe}
-tr.gs-mia td{background:#fff3cd!important;font-weight:700;border-left:3px solid var(--red)}
-tr.gs-mia:hover td{background:#ffe9a8!important}
-.gs-badge-mia{display:inline-block;background:var(--red);color:#fff;font-size:10px;font-weight:700;
+tr.gs-mia td{background:rgba(26,47,85,.07)!important;font-weight:700;box-shadow:inset 0 1px 0 rgba(26,47,85,.16), inset 0 -1px 0 rgba(26,47,85,.16)}
+tr.gs-mia td:first-child{border-radius:8px 0 0 8px}
+tr.gs-mia td:last-child{border-radius:0 8px 8px 0}
+tr.gs-mia:hover td{background:#eef4ff!important}
+.gs-badge-mia{display:inline-block;background:#eef4ff;color:var(--navy-mid);border:1px solid rgba(26,47,85,.28);font-size:10px;font-weight:700;
   letter-spacing:.5px;text-transform:uppercase;padding:1px 6px;border-radius:4px;margin-left:6px}
+.gs-bar-row.gs-mia{background:rgba(26,47,85,.07);box-shadow:inset 0 1px 0 rgba(26,47,85,.16), inset 0 -1px 0 rgba(26,47,85,.16);border-radius:8px;padding:4px 6px}
 .gs-nota-worse{color:var(--bad)!important;font-weight:700}
 .gs-nota-better{color:var(--ok)!important;font-weight:700}
 .gs-center{text-align:center!important}
@@ -206,6 +213,10 @@ tr.gs-mia:hover td{background:#ffe9a8!important}
 .badge-ok{background:#e8f5e9;color:var(--ok)}
 .badge-bad{background:#fce4e4;color:var(--bad)}
 .badge-warn{background:#fff3e0;color:var(--warn)}
+.tr-repite td{background:rgba(204,0,0,.07)!important;box-shadow:inset 0 1px 0 rgba(204,0,0,.16), inset 0 -1px 0 rgba(204,0,0,.16)}
+.tr-repite td:first-child{border-radius:8px 0 0 8px}
+.tr-repite td:last-child{border-radius:0 8px 8px 0}
+.tr-repite:hover td{background:rgba(204,0,0,.11)!important}
 
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
 .dot-ok{background:var(--ok)}
@@ -221,7 +232,7 @@ tr.gs-mia:hover td{background:#ffe9a8!important}
 .val-bad{color:var(--bad);font-weight:700}
 
 /* ===== GRAFICO ===== */
-.chart{display:flex;align-items:flex-end;gap:6px;height:160px;padding:10px 4px}
+.chart{display:flex;align-items:flex-end;gap:6px;height:170px;padding:26px 4px 10px;margin-top:4px}
 .chart-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
 .chart-bar{width:100%;background:var(--navy-mid);border-radius:4px 4px 0 0;transition:height .4s}
 .chart-bar.hi{background:var(--red)}
@@ -275,6 +286,10 @@ textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radiu
   <div class="main-tabs" id="mainTabs">
     <button class="main-tab" data-maintab="gestion-stock">Gestión de Stock</button>
     <button class="main-tab" data-maintab="discontinuos">Discontinuos</button>
+  </div>
+  <div class="admin-actions" id="adminActions">
+    <button class="btn btn-outline btn-sm icon-btn" id="btnAdminConfig" title="Configuración">⚙</button>
+    <button class="btn btn-outline btn-sm" id="btnAdminCarga">Carga mensual</button>
   </div>
 
   <div class="main-tab-panel" id="mainTab-gestion-stock">
@@ -527,6 +542,7 @@ function activateMainTab(id){
   document.querySelectorAll('.main-tab').forEach(b=> b.classList.toggle('active', b.dataset.maintab===id));
   document.querySelectorAll('.main-tab-panel').forEach(p=> p.classList.remove('active'));
   $('mainTab-'+id).classList.add('active');
+  updateAdminCargaAction(id);
   if(!ingresoRegistradoPorSeccion[id]){
     ingresoRegistradoPorSeccion[id] = true;
     postFireAndForget(FB+'/actividad/'+currentYYYYMM()+'/logins.json', {
@@ -545,7 +561,36 @@ function setupMainTabs(session){
   document.querySelectorAll('.main-tab').forEach(b=>{
     b.addEventListener('click', ()=> activateMainTab(b.dataset.maintab));
   });
+  const cargaBtn = $('btnAdminCarga');
+  if(cargaBtn){
+    cargaBtn.addEventListener('click', ()=>{
+      const active = document.querySelector('.main-tab.active');
+      const id = active ? active.dataset.maintab : 'discontinuos';
+      if(id==='gestion-stock'){
+        const c = $('view-gestion-stock');
+        c.dataset.showCarga = c.dataset.showCarga==='1' ? '' : '1';
+        renderGestionStockPanel(c);
+      }else{
+        goToView('carga');
+        renderCargaView($('view-carga'));
+      }
+    });
+  }
+  const configBtn = $('btnAdminConfig');
+  if(configBtn){
+    configBtn.addEventListener('click', ()=>{
+      activateMainTab('discontinuos');
+      goToView('config');
+      renderConfigView($('view-config'));
+    });
+  }
   activateMainTab('discontinuos');
+}
+function updateAdminCargaAction(id){
+  const bar = $('adminActions'), btn = $('btnAdminCarga');
+  if(!bar || !btn) return;
+  bar.classList.toggle('show', SESSION && SESSION.rol==='admin');
+  btn.textContent = id==='gestion-stock' ? 'Cargar Gestión de Stock' : 'Cargar Discontinuos';
 }
 
 function buildNav(session){
@@ -558,9 +603,7 @@ function buildNav(session){
   if(session.rol==='outlet') tabs.push({id:'outlet', label:'Mi Outlet'});
   if(session.rol==='admin'){
     tabs.push({id:'admin-dashboard', label:'Dashboard'});
-    tabs.push({id:'carga', label:'Carga Mensual'});
     tabs.push({id:'control', label:'Control'});
-    tabs.push({id:'config', label:'Configuración'});
   }
   tabs.forEach(t=>{
     const b = document.createElement('button');
@@ -569,9 +612,7 @@ function buildNav(session){
       goToView(t.id);
       if(t.id==='historico') renderHistoricoView(session.sucursal, $('view-historico'));
       if(t.id==='admin-dashboard') renderAdminDashboard($('view-admin-dashboard'));
-      if(t.id==='carga') renderCargaView($('view-carga'));
       if(t.id==='control') renderControlView($('view-control'));
-      if(t.id==='config') renderConfigView($('view-config'));
     });
     nav.appendChild(b);
   });
@@ -644,11 +685,12 @@ async function renderSucursalView(slug, container, opts){
   // variación vs mes anterior (Total y por rubro)
   const idxActual = meses.indexOf(ym);
   let vTotal=null, vCalzado=null, vIndumentaria=null, vAccesorios=null;
+  let prevYm=null, prevItems=[], cmpArticulos=null;
   if(idxActual < meses.length-1){
-    const prevYm = meses[idxActual+1];
+    prevYm = meses[idxActual+1];
     const prevData = await getMonthData(prevYm);
     const prevSuc = prevData[slug] || {items:[], total:0};
-    const prevItems = prevSuc.items || [];
+    prevItems = prevSuc.items || [];
     const prevCalzado = prevItems.filter(i=>normStr(i.rubro)==='CALZADO').reduce((a,i)=>a+i.cantidad,0);
     const prevIndumentaria = prevItems.filter(i=>normStr(i.rubro)==='INDUMENTARIA').reduce((a,i)=>a+i.cantidad,0);
     const prevAccesorios = prevItems.filter(i=>normStr(i.rubro)==='ACCESORIOS').reduce((a,i)=>a+i.cantidad,0);
@@ -656,6 +698,7 @@ async function renderSucursalView(slug, container, opts){
     vCalzado = diffInfo(calzado, prevCalzado);
     vIndumentaria = diffInfo(indumentaria, prevIndumentaria);
     vAccesorios = diffInfo(accesorios, prevAccesorios);
+    cmpArticulos = compararArticulosMes(items, prevItems);
   }
 
   let badgeHtml = '';
@@ -684,9 +727,10 @@ async function renderSucursalView(slug, container, opts){
       kpiHtml('Indumentaria', indumentaria, vIndumentaria)+
       kpiHtml('Accesorios', accesorios, vAccesorios)+
     '</div>'+
+    controlArticulosHtml(cmpArticulos, prevYm, 'Control por artículo discontinuo')+
     '<button class="btn btn-primary btn-block" id="btnExportSuc">📤 Exportar detalle para envío</button>'+
     '<div class="card" style="margin-top:18px">'+
-      '<div class="card-title">Detalle de artículos</div>'+
+      '<div class="card-title">Detalle de articulos <span class="hint" style="font-family:var(--font-b);font-size:12px;font-weight:600;margin-left:8px;color:var(--bad)">Filas resaltadas: repiten vs mes anterior</span></div>'+
       '<div class="toolbar">'+
         '<input class="search-box" id="sucSearch" placeholder="Buscar código, artículo, descripción, marca…">'+
         '<select class="sel" id="sucFiltroRubro"><option value="">Rubro (todos)</option></select>'+
@@ -706,6 +750,7 @@ async function renderSucursalView(slug, container, opts){
 
   const conEnvio = items.filter(i=>i.destino);
   const sinEnvio = items.filter(i=>!i.destino);
+  const prevKeys = articuloKeySet(prevItems);
 
   fillSelectOptions('sucFiltroRubro', uniqueVals(items,'rubro'));
   fillSelectOptions('sucFiltroMarca', uniqueVals(items,'marca'));
@@ -727,6 +772,7 @@ async function renderSucursalView(slug, container, opts){
     const tbody = document.querySelector('#sucTable tbody'); tbody.innerHTML='';
     filtered.forEach(i=>{
       const tr = document.createElement('tr');
+      if(prevKeys[articuloKey(i)]) tr.className = 'tr-repite';
       tr.innerHTML = '<td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td>'+
         '<td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td>'+esc(i.descripcion)+'</td>'+
         '<td class="td-num">'+fmtNum(i.cantidad)+'</td><td>'+(i.destino?(OUTLET_BY_ID[i.destino]?OUTLET_BY_ID[i.destino].nombre:i.destino):'—')+'</td>';
@@ -747,7 +793,7 @@ async function renderSucursalView(slug, container, opts){
       '<div class="collapsible-body" id="sinEnvioBody"><div class="table-wrap"><table><thead><tr>'+
         '<th>Rubro</th><th>Grupo 2</th><th>Marca</th><th>Código</th><th>Artículo</th><th>Descripción</th><th class="r">Cant.</th>'+
       '</tr></thead><tbody>'+
-      sinEnvio.map(i=>'<tr><td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td><td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td>'+esc(i.descripcion)+'</td><td class="td-num">'+fmtNum(i.cantidad)+'</td></tr>').join('')+
+      sinEnvio.map(i=>'<tr'+(prevKeys[articuloKey(i)]?' class="tr-repite"':'')+'><td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td><td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td>'+esc(i.descripcion)+'</td><td class="td-num">'+fmtNum(i.cantidad)+'</td></tr>').join('')+
       '</tbody></table></div></div></div>';
     $('sinEnvioHead').addEventListener('click', ()=>{
       $('sinEnvioBody').classList.toggle('open');
@@ -779,6 +825,85 @@ function kpiHtml(label, val, v){
   }
   return '<div class="kpi"><div class="kpi-label">'+label+'</div><div class="kpi-val">'+fmtNum(val)+'</div>'+sub+'</div>';
 }
+function articuloKey(i){
+  const codigo = normLower(i && i.codigo).replace(/\s+/g,'');
+  if(codigo) return 'cod:'+codigo;
+  const fallback = normLower([i&&i.articulo, i&&i.descripcion, i&&i.marca].join(' ')).replace(/\s+/g,' ').trim();
+  return fallback ? 'art:'+fallback : '';
+}
+function articuloMap(items){
+  const map = {};
+  (items||[]).forEach(i=>{
+    const key = articuloKey(i);
+    if(!key) return;
+    if(!map[key]) map[key] = {item:i, cantidad:0, ocurrencias:0};
+    map[key].cantidad += Number(i.cantidad)||0;
+    map[key].ocurrencias++;
+  });
+  return map;
+}
+function articuloKeySet(items){
+  const set = {};
+  Object.keys(articuloMap(items)).forEach(k=>{ set[k]=true; });
+  return set;
+}
+function compararArticulosMes(currItems, prevItems){
+  const curr = articuloMap(currItems), prev = articuloMap(prevItems);
+  const currKeys = Object.keys(curr), prevKeys = Object.keys(prev);
+  const repetidos = currKeys.filter(k=>prev[k]).map(k=>({key:k, item:curr[k].item, cantidad:curr[k].cantidad, cantidadAnterior:prev[k].cantidad}));
+  const nuevos = currKeys.filter(k=>!prev[k]);
+  const resueltos = prevKeys.filter(k=>!curr[k]);
+  const pct = currKeys.length ? (repetidos.length/currKeys.length)*100 : null;
+  return {actual:currKeys.length, anterior:prevKeys.length, repetidos, nuevos:nuevos.length, resueltos:resueltos.length, pct};
+}
+async function prevKeysParaSucursal(slug, ym){
+  const meses = await monthsForSucursal(slug);
+  const idx = meses.indexOf(ym);
+  if(idx < 0 || idx >= meses.length-1) return {};
+  const prevData = await getMonthData(meses[idx+1]);
+  return articuloKeySet(((prevData[slug]||{}).items)||[]);
+}
+function repetidosNegativoHtml(cmp){
+  return '<span class="kpi-sub worse" style="display:inline;font-weight:800;color:var(--bad)">'+fmtNum(cmp.repetidos.length)+'</span>';
+}
+function controlArticulosPorSucursalHtml(monthData, prevData, prevYm){
+  if(!prevYm || !prevData){
+    return '<div class="card"><div class="card-title">Control por artículo discontinuo</div>'+
+      '<div class="empty">Para calcular este control hace falta tener cargado el mes vigente y el mes anterior.</div></div>';
+  }
+  const filas = SUCURSALES.map(s=>{
+    const currItems = ((monthData[s.slug]||{}).items)||[];
+    const prevItems = ((prevData[s.slug]||{}).items)||[];
+    return {slug:s.slug, nombre:s.nombre, cmp:compararArticulosMes(currItems, prevItems)};
+  }).sort((a,b)=>b.cmp.repetidos.length-a.cmp.repetidos.length);
+  return '<div class="card">'+
+    '<div class="card-title">Control por artículo discontinuo por sucursal</div>'+
+    '<div class="hint" style="margin-bottom:12px">Cruza articulos unicos contra '+ymToLabel(prevYm)+'. Repetidos indica articulos que siguen mes a mes sin trabajarse.</div>'+
+    '<div class="table-wrap"><table><thead><tr>'+
+      '<th>Sucursal</th><th class="r">Arts actuales</th><th class="r">Nuevos</th><th class="r">Repetidos</th><th class="r">Resueltos</th>'+
+    '</tr></thead><tbody>'+
+    filas.map(f=>'<tr><td>'+esc(f.nombre)+'</td><td class="td-num">'+fmtNum(f.cmp.actual)+'</td><td class="td-num">'+fmtNum(f.cmp.nuevos)+'</td><td class="td-num">'+repetidosNegativoHtml(f.cmp)+'</td><td class="td-num">'+fmtNum(f.cmp.resueltos)+'</td></tr>').join('')+
+    '</tbody></table></div></div>';
+}
+function controlArticulosHtml(cmp, prevYm, titulo){
+  if(!prevYm || !cmp){
+    return '<div class="card">'+
+      '<div class="card-title">'+titulo+'</div>'+
+      '<div class="empty">Para calcular este control hace falta tener cargado el mes vigente y el mes anterior.</div>'+
+    '</div>';
+  }
+  const repetidos = cmp.repetidos.length;
+  return '<div class="card">'+
+    '<div class="card-title">'+titulo+'</div>'+
+    '<div class="hint" style="margin-bottom:12px">Cruza articulos unicos contra '+ymToLabel(prevYm)+'. Repetidos indica articulos que siguen mes a mes sin trabajarse.</div>'+
+    '<div class="kpi-bar">'+
+      '<div class="kpi"><div class="kpi-label">Repetidos</div><div class="kpi-val" style="color:var(--bad)">'+fmtNum(repetidos)+'</div><div class="kpi-sub worse">No trabajados mes a mes</div></div>'+
+      '<div class="kpi"><div class="kpi-label">Articulos actuales</div><div class="kpi-val">'+fmtNum(cmp.actual)+'</div></div>'+
+      '<div class="kpi"><div class="kpi-label">Nuevos</div><div class="kpi-val">'+fmtNum(cmp.nuevos)+'</div></div>'+
+      '<div class="kpi"><div class="kpi-label">Resueltos</div><div class="kpi-val">'+fmtNum(cmp.resueltos)+'</div></div>'+
+    '</div>'+
+  '</div>';
+}
 function uniqueVals(items, field){
   return Array.from(new Set(items.map(i=>i[field]).filter(Boolean))).sort();
 }
@@ -793,6 +918,7 @@ function esc(s){ return (s===null||s===undefined)?'':String(s).replace(/[&<>"]/g
 const BRAND = {
   navy:'FF0B1527', red:'FFCC0000', white:'FFFFFFFF',
   band:'FFF5F7FC', border:'FFDCE3F0', totalBg:'FFF6F8FD',
+  repeatBg:'FFFCE8E8',
   notaBg:'FFFFF8E1', notaBorder:'FFF4A025', notaText:'FF7A5B00',
 };
 const COLS_ENVIO = ['RUBRO','GRUPO 2','MARCA','CÓDIGO','ARTÍCULO','DESCRIPCIÓN','CANT.','ENVIADO','OBSERVACIONES'];
@@ -813,6 +939,7 @@ function thinBorder(color){
 
 async function exportSucursalXlsx(slug, ym, items){
   const info = SUCURSAL_BY_SLUG[slug];
+  const prevKeys = await prevKeysParaSucursal(slug, ym);
   const conEnvio = items.filter(i=>i.destino);
   const porDestino = {};
   conEnvio.forEach(i=>{ (porDestino[i.destino] = porDestino[i.destino]||[]).push(i); });
@@ -880,12 +1007,13 @@ async function exportSucursalXlsx(slug, ym, items){
     let tot = 0;
     ordenados.forEach((it, i)=>{
       const vals = [it.rubro, it.grupo2, it.marca, it.codigo, it.articulo, it.descripcion, it.cantidad, '', ''];
+      const repite = !!prevKeys[articuloKey(it)];
       vals.forEach((v, idx)=>{
         const c = ws.getCell(r, idx+1);
         c.value = v;
         c.font = {size:10.5, name:'Calibri', color:{argb:BRAND.navy}};
         c.alignment = {horizontal: idx===6?'right':'left', vertical:'middle', wrapText: idx===5};
-        c.fill = {type:'pattern', pattern:'solid', fgColor:{argb: i%2===0 ? BRAND.white : BRAND.band}};
+        c.fill = {type:'pattern', pattern:'solid', fgColor:{argb: repite ? BRAND.repeatBg : (i%2===0 ? BRAND.white : BRAND.band)}};
         c.border = thinBorder(BRAND.border);
       });
       tot += it.cantidad;
@@ -1095,7 +1223,7 @@ function exportOutletXlsx(outletId, ym, porSucursal){
 async function renderAdminDashboard(container){
   const meses = await getMonthsList();
   if(!meses.length){
-    container.innerHTML = '<div class="pg-title">Dashboard</div><div class="empty">Todavía no se cargó ningún mes. Andá a "Carga Mensual".</div>';
+    container.innerHTML = '<div class="pg-title">Dashboard</div><div class="empty">Todavia no se cargo ningun mes. Usa el boton de carga mensual para subir el primer informe.</div>';
     return;
   }
   const ym = meses[0];
@@ -1110,6 +1238,17 @@ async function renderAdminDashboard(container){
     porSucursalTotal[s.slug] = t;
     totalGlobal += t;
   });
+  const allItems = [];
+  const prevAllItems = [];
+  SUCURSALES.forEach(s=>{
+    ((monthData[s.slug]||{}).items||[]).forEach(i=> allItems.push(Object.assign({sucursal:s.slug, sucursalNombre:s.nombre}, i)));
+    if(prevData) ((prevData[s.slug]||{}).items||[]).forEach(i=> prevAllItems.push(Object.assign({sucursal:s.slug, sucursalNombre:s.nombre}, i)));
+  });
+  const prevKeysPorSucursal = {};
+  if(prevData){
+    SUCURSALES.forEach(s=>{ prevKeysPorSucursal[s.slug] = articuloKeySet(((prevData[s.slug]||{}).items)||[]); });
+    allItems.forEach(i=>{ i.repiteMesAnterior = !!(prevKeysPorSucursal[i.sucursal] && prevKeysPorSucursal[i.sucursal][articuloKey(i)]); });
+  }
 
   container.innerHTML =
     '<div class="pg-title">Dashboard</div>'+
@@ -1119,12 +1258,13 @@ async function renderAdminDashboard(container){
       '<div class="kpi"><div class="kpi-label">Sucursales con datos</div><div class="kpi-val">'+Object.keys(monthData).filter(k=>k!=='meta').length+'</div></div>'+
       '<div class="kpi"><div class="kpi-label">Meses cargados</div><div class="kpi-val">'+meses.length+'</div></div>'+
     '</div>'+
+    controlArticulosPorSucursalHtml(monthData, prevData, prevYm)+
     '<div class="grid-2">'+
       '<div class="card"><div class="card-title">Ranking de sucursales</div><div id="dashRanking"></div></div>'+
       '<div class="card"><div class="card-title">Evolución mensual</div><div id="dashChart"></div></div>'+
     '</div>'+
     '<div class="card">'+
-      '<div class="card-title">Buscador global</div>'+
+      '<div class="card-title">Buscador global <span class="hint" style="font-family:var(--font-b);font-size:12px;font-weight:600;margin-left:8px;color:var(--bad)">Filas resaltadas: repiten vs mes anterior</span></div>'+ 
       '<div class="toolbar">'+
         '<select class="sel" id="dashFiltroSuc"><option value="">Sucursal (todas)</option>'+SUCURSALES.map(s=>'<option value="'+s.slug+'">'+s.nombre+'</option>').join('')+'</select>'+
         '<select class="sel" id="dashFiltroOutlet"><option value="">Outlet destino (todos)</option>'+OUTLETS_LIST.map(o=>'<option value="'+o.id+'">'+o.nombre+'</option>').join('')+'</select>'+
@@ -1155,10 +1295,6 @@ async function renderAdminDashboard(container){
   // Chart evolución (usa periodoAnual del ciclo más reciente si existe)
   renderEvolutionChart($('dashChart'));
 
-  const allItems = [];
-  SUCURSALES.forEach(s=>{
-    ((monthData[s.slug]||{}).items||[]).forEach(i=> allItems.push(Object.assign({sucursal:s.slug, sucursalNombre:s.nombre}, i)));
-  });
   fillSelectOptions('dashFiltroRubro', uniqueVals(allItems,'rubro'));
   fillSelectOptions('dashFiltroMarca', uniqueVals(allItems,'marca'));
 
@@ -1176,6 +1312,7 @@ async function renderAdminDashboard(container){
     const tbody = document.querySelector('#dashTable tbody'); tbody.innerHTML='';
     filtered.forEach(i=>{
       const tr = document.createElement('tr');
+      if(i.repiteMesAnterior) tr.className = 'tr-repite';
       tr.innerHTML = '<td>'+i.sucursalNombre+'</td><td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td><td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td class="td-num">'+fmtNum(i.cantidad)+'</td><td>'+(i.destino?(OUTLET_BY_ID[i.destino]?OUTLET_BY_ID[i.destino].nombre:i.destino):'—')+'</td>';
       tbody.appendChild(tr);
     });
@@ -1224,21 +1361,58 @@ function drillInto(tipo, id){
   else renderOutletView(id, body, {});
 }
 
-function exportTodoXlsx(ym, monthData){
-  const wb = XLSX.utils.book_new();
-  SUCURSALES.forEach(s=>{
+async function exportTodoXlsx(ym, monthData){
+  const wb = new ExcelJS.Workbook();
+  for(const s of SUCURSALES){
     const suc = monthData[s.slug] || {items:[], total:0};
     const items = suc.items || [];
-    const rows = [['MATEU SPORTS — DISCONTINUOS '+s.nombre.toUpperCase()+' — '+ymToLabel(ym).toUpperCase()], []];
-    rows.push(['RUBRO','GRUPO 2','MARCA','CÓDIGO','ARTÍCULO','DESCRIPCIÓN','CANT.','DESTINO']);
-    items.forEach(i=> rows.push([i.rubro,i.grupo2,i.marca,i.codigo,i.articulo,i.descripcion,i.cantidad, i.destino?(OUTLET_BY_ID[i.destino]?OUTLET_BY_ID[i.destino].nombre:i.destino):'Sin envío']));
-    rows.push(['','','','','','TOTAL', suc.total||0,'']);
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{wch:14},{wch:26},{wch:14},{wch:12},{wch:16},{wch:38},{wch:8},{wch:16}];
-    let sheetName = s.nombre.substring(0,31);
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
-  });
-  XLSX.writeFile(wb, 'Discontinuos_TODO_'+ym+'.xlsx');
+    const prevKeys = await prevKeysParaSucursal(s.slug, ym);
+    const ws = wb.addWorksheet(s.nombre.substring(0,31), {views:[{showGridLines:false, state:'frozen', ySplit:3}]});
+    ws.columns = [{width:14},{width:26},{width:14},{width:12},{width:16},{width:38},{width:8},{width:16}];
+    let r = 1;
+    ws.mergeCells(r,1,r,8);
+    const titleCell = ws.getCell(r,1);
+    titleCell.value = 'MATEU SPORTS - DISCONTINUOS '+s.nombre.toUpperCase()+' - '+ymToLabel(ym).toUpperCase();
+    titleCell.font = {bold:true, color:{argb:BRAND.white}, size:13, name:'Calibri'};
+    titleCell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.navy}};
+    titleCell.alignment = {horizontal:'center', vertical:'middle'};
+    ws.getRow(r).height = 24; r += 2;
+    ['RUBRO','GRUPO 2','MARCA','CODIGO','ARTICULO','DESCRIPCION','CANT.','DESTINO'].forEach((h,idx)=>{
+      const c = ws.getCell(r, idx+1);
+      c.value = h;
+      c.font = {bold:true, color:{argb:BRAND.white}, size:10.5, name:'Calibri'};
+      c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.navy}};
+      c.alignment = {horizontal: idx===6?'right':'left', vertical:'middle'};
+      c.border = thinBorder(BRAND.navy);
+    });
+    r++;
+    items.forEach((it, i)=>{
+      const destino = it.destino ? (OUTLET_BY_ID[it.destino]?OUTLET_BY_ID[it.destino].nombre:it.destino) : 'Sin envio';
+      const vals = [it.rubro,it.grupo2,it.marca,it.codigo,it.articulo,it.descripcion,it.cantidad,destino];
+      const repite = !!prevKeys[articuloKey(it)];
+      vals.forEach((v,idx)=>{
+        const c = ws.getCell(r, idx+1);
+        c.value = v;
+        c.font = {size:10.5, name:'Calibri', color:{argb:BRAND.navy}};
+        c.alignment = {horizontal: idx===6?'right':'left', vertical:'middle', wrapText: idx===5};
+        c.fill = {type:'pattern', pattern:'solid', fgColor:{argb: repite ? BRAND.repeatBg : (i%2===0 ? BRAND.white : BRAND.band)}};
+        c.border = thinBorder(BRAND.border);
+      });
+      r++;
+    });
+    ws.mergeCells(r,1,r,5);
+    ws.getCell(r,1).value = 'TOTAL';
+    ws.getCell(r,1).font = {bold:true, color:{argb:BRAND.navy}, name:'Calibri'};
+    ws.getCell(r,1).alignment = {horizontal:'right'};
+    ws.getCell(r,7).value = suc.total||0;
+    ws.getCell(r,7).font = {bold:true, color:{argb:BRAND.navy}, name:'Calibri'};
+    ws.getCell(r,7).alignment = {horizontal:'right'};
+    for(let c=1;c<=8;c++){
+      ws.getCell(r,c).fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.totalBg}};
+      ws.getCell(r,c).border = {top:{style:'medium',color:{argb:BRAND.navy}}};
+    }
+  }
+  await downloadWorkbook(wb, 'Discontinuos_TODO_'+ym+'.xlsx');
   logDescarga('todo', ym);
 }
 
@@ -1627,7 +1801,7 @@ function gsTablaHoras(data, miSlug){
     const sinDato = h.horas===null || h.horas===undefined;
     const cls = sinDato ? '' : (h.horas<55?'gs-ok':(h.horas<80?'gs-warn':'gs-bad'));
     const w = sinDato ? 0 : Math.round((h.horas/max)*100);
-    return '<div class="gs-bar-row'+(mia?' gs-mia':'')+'" style="'+(mia?'background:#fff3cd;border-radius:6px;padding:4px 6px':'')+'">'+
+    return '<div class="gs-bar-row'+(mia?' gs-mia':'')+'">'+
       '<div class="gs-bar-label">'+esc(nombreDeSlug(h.slug))+(mia?' <span class="gs-badge-mia">MI SUCURSAL</span>':'')+'</div>'+
       '<div class="gs-bar-track"><div class="gs-bar-fill '+cls+'" data-w="'+w+'" style="'+(sinDato?'background:#dce3f0':'')+'"></div></div>'+
       '<div class="gs-bar-val">'+(sinDato?'S/D':gsNum(h.horas)+' hs')+'</div></div>';
@@ -1716,6 +1890,7 @@ async function gsConfirmarCarga(container){
   });
   delete GS_MONTH_CACHE[ym];
   container.dataset.mes = ym;
+  container.dataset.showCarga = '';
   container.querySelector('#gsCargaResultado').innerHTML = '<div class="val-ok">✓ Carga de '+ymToLabel(ym)+' subida correctamente.</div>';
   await renderGestionStockPanel(container);
 }
@@ -1723,9 +1898,9 @@ async function gsConfirmarCarga(container){
 async function renderGestionStockPanel(container){
   const meses = await gsGetMonthsList();
   if(!meses.length){
-    container.innerHTML = '<div class="pg-title">Gestión de Stock</div>'+
-      (SESSION.rol==='admin' ? gsCargaHtml() : '<div class="empty">Todavía no hay datos cargados.</div>');
-    if(SESSION.rol==='admin') wireGsCarga(container);
+    container.innerHTML = '<div class="pg-title">Gestion de Stock</div>'+
+      (container.dataset.showCarga==='1' && SESSION.rol==='admin' ? gsCargaHtml() : '<div class="empty">Todavia no hay datos cargados. Usa el boton de carga mensual para subir el primer informe.</div>');
+    if(container.dataset.showCarga==='1' && SESSION.rol==='admin') wireGsCarga(container);
     return;
   }
   const ym = container.dataset.mes || meses[0];
@@ -1745,7 +1920,7 @@ async function renderGestionStockPanel(container){
       '<div class="gs-hero-title">Gestión de<br>Stock <span>Mensual</span></div>'+
       '<div class="gs-hero-sub">Almacenes · Indicadores · Meses de stock</div>'+
     '</div>';
-  if(SESSION.rol==='admin') html += gsCargaHtml();
+  if(container.dataset.showCarga==='1' && SESSION.rol==='admin') html += gsCargaHtml();
   html += gsKpisClaveHtml(data);
   html += gsTablaAlmacenes(data, miSlug);
   html += gsTablaResumen(data, miSlug);
@@ -1757,7 +1932,7 @@ async function renderGestionStockPanel(container){
   container.innerHTML = html;
   container.querySelector('#gsMesSel').addEventListener('change', e=>{ container.dataset.mes = e.target.value; renderGestionStockPanel(container); });
   container.querySelector('#gsBtnExportar').addEventListener('click', ()=> gsExportarXlsx(ym, data));
-  if(SESSION.rol==='admin') wireGsCarga(container);
+  if(container.dataset.showCarga==='1' && SESSION.rol==='admin') wireGsCarga(container);
   gsAnimateBars(container);
 }
 
