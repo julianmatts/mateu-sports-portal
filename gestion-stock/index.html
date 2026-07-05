@@ -82,8 +82,8 @@ input,select{font-family:inherit}
 .admin-actions{display:none;height:0;background:transparent;border:0;padding:0 28px;justify-content:flex-end;gap:10px;
   position:relative;z-index:70;pointer-events:none}
 .admin-actions.show{display:flex}
-.admin-actions .btn{padding:8px 14px;margin-top:8px;background:#fff;pointer-events:auto}
-.admin-actions .icon-btn{width:38px;height:38px;justify-content:center;padding:0;font-size:16px;letter-spacing:0}
+.admin-actions .btn{height:34px;padding:0 16px;margin-top:9px;background:#fff;pointer-events:auto;align-items:center}
+.admin-actions .icon-btn{width:34px;height:34px;justify-content:center;padding:0;font-size:15px;letter-spacing:0}
 
 nav{background:#fff;border-bottom:1px solid var(--border);padding:0 270px 0 28px;display:flex;gap:2px;
   overflow-x:auto;position:sticky;top:0;z-index:50}
@@ -244,7 +244,10 @@ tr.gs-mia:hover td{background:#eef4ff!important}
 .rank-row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid #eef0f7;cursor:pointer}
 .rank-row:hover{background:#f8f9fe}
 .rank-n{font-family:var(--font-d);font-size:16px;color:var(--muted-light);width:22px}
-.rank-name{flex:1;font-size:14px;font-weight:600}
+.rank-main{flex:1;min-width:0}
+.rank-name{font-size:14px;font-weight:600}
+.rank-track{height:8px;background:#eef1f8;border-radius:999px;overflow:hidden;margin-top:6px}
+.rank-fill{height:100%;background:linear-gradient(90deg,var(--navy-mid),var(--red));border-radius:999px}
 .rank-val{font-family:var(--font-d);font-size:17px;color:var(--navy)}
 
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -1283,12 +1286,14 @@ async function renderAdminDashboard(container){
   const ranking = SUCURSALES.map(s=>({slug:s.slug, nombre:s.nombre, total:porSucursalTotal[s.slug]||0}))
     .sort((a,b)=>b.total-a.total);
   const rankBox = $('dashRanking');
+  const maxRank = Math.max(1, ...ranking.map(r=>r.total));
   ranking.forEach((r,idx)=>{
     const prevTotal = prevData ? ((prevData[r.slug]||{}).total||0) : null;
     let sub = '';
     if(prevTotal){ const v=((r.total-prevTotal)/prevTotal)*100; sub = ' <span style="font-size:11px;color:'+(v<=0?'var(--ok)':'var(--bad)')+'">'+fmtPct(v)+'</span>'; }
     const row = document.createElement('div'); row.className='rank-row';
-    row.innerHTML = '<div class="rank-n">'+(idx+1)+'</div><div class="rank-name">'+r.nombre+sub+'</div><div class="rank-val">'+fmtNum(r.total)+'</div>';
+    const w = Math.max(3, Math.round((r.total/maxRank)*100));
+    row.innerHTML = '<div class="rank-n">'+(idx+1)+'</div><div class="rank-main"><div class="rank-name">'+r.nombre+sub+'</div><div class="rank-track"><div class="rank-fill" style="width:'+w+'%"></div></div></div><div class="rank-val">'+fmtNum(r.total)+'</div>';
     row.addEventListener('click', ()=> drillInto('sucursal', r.slug));
     rankBox.appendChild(row);
   });
