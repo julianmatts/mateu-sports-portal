@@ -479,7 +479,13 @@ const DEFAULT_DATA = {
 };
 
 // Firebase REST API - no SDK needed
-(function(){try{const s=JSON.parse(localStorage.getItem('mateu_portal_session')||'null');if(!s||!(s.herramientas||[]).includes('marcas'))location.href='../';}catch(e){location.href='../'}})();
+let SESSION = null;
+(function(){
+  try{
+    SESSION = JSON.parse(localStorage.getItem('mateu_portal_session')||'null');
+    if(!SESSION || !(SESSION.herramientas||[]).includes('marcas')) location.href='../';
+  }catch(e){ location.href='../'; }
+})();
 const FB_URL = 'https://asignacion-marcas-mateu-default-rtdb.firebaseio.com/asignacion_marcas.json';
 
 async function fbGet() {
@@ -529,6 +535,39 @@ let editMode = false;
 let brandFilter = '';
 let canalActivo = 'todos';
 let currentSucId = null;
+const SUCURSAL_PORTAL_TO_MARCAS = {
+  'calle-12':'ms-c12',
+  'city-bell':'ms-cb',
+  'diagonal':'ms-d80',
+  'calle-47':'ms-c47',
+  'calle-49':'ms-c49',
+  'los-hornos':'ms-lh',
+  'plaza':'ms-pi',
+  'berisso':'ms-ber',
+  'ensenada':'ms-ens',
+  'kids':'ms-kids',
+  'ecommerce':'ms-ecom',
+  'aurelius-12':'aur-c12',
+  'aurelius-5':'aur-c5',
+  'aurelius-10':'aur-c10',
+  'aurelius-cb':'aur-cb',
+  'adidas-12':'adi-c12',
+  'adidas':'adi-7',
+  'originals':'adi-ori'
+};
+const OUTLET_PORTAL_TO_MARCAS = {'gonnet':'out-gon','av-44':'out-44','calle-55':'out-55'};
+
+function isAdminSession(){ return SESSION && SESSION.rol === 'admin'; }
+function allowedSucId(){
+  if(!SESSION || isAdminSession()) return null;
+  if(SESSION.rol === 'sucursal') return SUCURSAL_PORTAL_TO_MARCAS[SESSION.sucursal] || null;
+  if(SESSION.rol === 'outlet') return OUTLET_PORTAL_TO_MARCAS[SESSION.outlet_id] || null;
+  return null;
+}
+function canSeeSuc(id){
+  const allowed = allowedSucId();
+  return !allowed || id === allowed;
+}
 
 function findSuc(id) {
   for (const canal of Object.values(DATA)) {
@@ -606,13 +645,15 @@ function renderCard(suc) {
 function renderCanal(key) {
   const canal = DATA[key];
   if (!canal) return '';
+  const visibles = canal.sucursales.filter(s => canSeeSuc(s.id));
+  if (!visibles.length) return '';
   let h = `<div class="canal-block">
     <div class="canal-hdr">
       <span class="canal-title">${canal.label}</span>
-      <span class="canal-count">${canal.sucursales.length} sucursales</span>
+      <span class="canal-count">${visibles.length} sucursal${visibles.length===1?'':'es'}</span>
     </div>
     <div class="suc-grid">`;
-  canal.sucursales.forEach(s => { h += renderCard(s); });
+  visibles.forEach(s => { h += renderCard(s); });
   h += '</div></div>';
   return h;
 }
@@ -622,7 +663,7 @@ function populateBrandFilter() {
   const existing = new Set(Array.from(sel.options).map(o => o.value).filter(Boolean));
   const all = new Set();
   Object.values(DATA).forEach(canal => {
-    canal.sucursales.forEach(s => s.brands.forEach(b => all.add(b.n)));
+    canal.sucursales.filter(s => canSeeSuc(s.id)).forEach(s => s.brands.forEach(b => all.add(b.n)));
   });
   [...all].sort().forEach(name => {
     if (!existing.has(name)) {
@@ -646,11 +687,13 @@ function render() {
     todos:['aurelius','linea','outlet','adidas'],
     aurelius:['aurelius'],linea:['linea'],outlet:['outlet'],adidas:['adidas']
   };
-  document.getElementById('content').innerHTML = (map[canalActivo]||[]).map(renderCanal).join('');
+  const html = (map[canalActivo]||[]).map(renderCanal).join('');
+  document.getElementById('content').innerHTML = html || '<div style="padding:2rem;text-align:center;color:#9a9890;font-family:Barlow Condensed,sans-serif;font-size:14px;letter-spacing:0.1em;text-transform:uppercase;">No hay una sucursal asociada para este usuario.</div>';
   populateBrandFilter();
 }
 
 function setCanal(c) {
+  if(!isAdminSession()) c = 'todos';
   canalActivo = c;
   const labels = {todos:'todos',aurelius:'aurelius',linea:'línea',outlet:'outlet',adidas:'adidas'};
   document.querySelectorAll('.chip').forEach(el => {
@@ -659,7 +702,21 @@ function setCanal(c) {
   render();
 }
 
+function applySessionUI() {
+  if(isAdminSession()) return;
+  editMode = false;
+  document.getElementById('btnEdit').style.display = 'none';
+  document.getElementById('btnSave').style.display = 'none';
+  document.getElementById('btnReset').style.display = 'none';
+  document.getElementById('btnNuevaMarca').style.display = 'none';
+  document.getElementById('editBadge').classList.remove('show');
+  document.querySelectorAll('.toolbar .chip').forEach(btn => { btn.style.display = 'none'; });
+  const tlabel = document.querySelector('.toolbar .tlabel');
+  if(tlabel) tlabel.textContent = 'Mi sucursal';
+}
+
 function toggleEdit() {
+  if(!isAdminSession()) return;
   editMode = true;
   document.getElementById('editBadge').classList.add('show');
   document.getElementById('btnEdit').style.display = 'none';
@@ -671,6 +728,7 @@ function toggleEdit() {
 }
 
 function saveChanges() {
+  if(!isAdminSession()) return;
   const payload = { data: DATA, marcas_extra: MARCAS_EXTRA };
   localStorage.setItem('mateu_brands_v2', JSON.stringify(DATA));
   localStorage.setItem('mateu_marcas_extra', JSON.stringify(MARCAS_EXTRA));
@@ -688,6 +746,7 @@ function saveChanges() {
 }
 
 function resetAll() {
+  if(!isAdminSession()) return;
   if (!confirm('¿Descartar todos los cambios y volver a la asignación original?')) return;
   DATA = JSON.parse(JSON.stringify(DEFAULT_DATA));
   MARCAS_EXTRA = [];
@@ -704,6 +763,7 @@ function resetAll() {
 }
 
 function removeBrand(sucId, brandName) {
+  if(!isAdminSession()) return;
   const suc = findSuc(sucId);
   if (!suc) return;
   suc.brands = suc.brands.filter(b => b.n !== brandName);
@@ -711,6 +771,7 @@ function removeBrand(sucId, brandName) {
 }
 
 function openAsignar(sucId) {
+  if(!isAdminSession()) return;
   currentSucId = sucId;
   const suc = findSuc(sucId);
   if (!suc) return;
@@ -740,6 +801,7 @@ function openAsignar(sucId) {
 }
 
 function addBrandToSuc(brandName) {
+  if(!isAdminSession()) return;
   const suc = findSuc(currentSucId);
   if (!suc || suc.brands.find(b => b.n === brandName)) return;
   const m = MARCAS_DISPONIBLES.find(m => m.n === brandName);
@@ -795,6 +857,7 @@ function renderSucDetalleBody() {
 }
 
 function addDisciplina(brandIdx, inputEl) {
+  if(!isAdminSession()) return;
   const val = inputEl.value.trim();
   if (!val) return;
   const suc = findSuc(currentDetailSucId);
@@ -809,6 +872,7 @@ function addDisciplina(brandIdx, inputEl) {
 }
 
 function removeDisciplina(brandIdx, discIdx) {
+  if(!isAdminSession()) return;
   const suc = findSuc(currentDetailSucId);
   if (!suc) return;
   const b = suc.brands[brandIdx];
@@ -818,6 +882,7 @@ function removeDisciplina(brandIdx, discIdx) {
 }
 
 function openNuevaMarcaModal() {
+  if(!isAdminSession()) return;
   document.getElementById('nmNombre').value = '';
   document.getElementById('nmError').style.display = 'none';
   document.querySelector('input[name="nmTipo"][value="sec"]').checked = true;
@@ -826,6 +891,7 @@ function openNuevaMarcaModal() {
 }
 
 function confirmarNuevaMarca() {
+  if(!isAdminSession()) return;
   const nombre = document.getElementById('nmNombre').value.trim().toUpperCase();
   const tipo = document.querySelector('input[name="nmTipo"]:checked').value;
   const errEl = document.getElementById('nmError');
@@ -859,6 +925,7 @@ let dragSrcSuc = null;
 let dragSrcIdx = null;
 
 function dragStart(e) {
+  if(!isAdminSession()) return;
   const el = e.currentTarget;
   dragSrcSuc = el.dataset.suc;
   dragSrcIdx = parseInt(el.dataset.idx);
@@ -884,6 +951,7 @@ function dragEnd(e) {
 }
 
 function dragDrop(e) {
+  if(!isAdminSession()) return;
   e.preventDefault();
   e.stopPropagation();
   const targetEl = e.currentTarget;
@@ -903,6 +971,7 @@ function dragDrop(e) {
 
 // Load from Firebase on start, then poll
 document.getElementById('content').innerHTML = '<div style="padding:3rem;text-align:center;color:#9a9890;font-family:Barlow Condensed,sans-serif;font-size:14px;letter-spacing:0.1em;text-transform:uppercase;">Cargando datos...</div>';
+applySessionUI();
 fbGet().then(val => {
   if (val && val.data) {
     DATA = val.data;
@@ -914,10 +983,12 @@ fbGet().then(val => {
       });
     }
   }
+  applySessionUI();
   render();
   populateBrandFilter();
   setTimeout(pollFirebase, 5000);
 }).catch(() => {
+  applySessionUI();
   render();
   populateBrandFilter();
   setTimeout(pollFirebase, 5000);
