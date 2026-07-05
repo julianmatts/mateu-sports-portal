@@ -151,6 +151,14 @@ body { font-family: 'Barlow', sans-serif; background: var(--gray-100); color: va
 }
 .add-btn:hover { border-color: var(--navy); color: var(--navy); background: var(--gray-100); }
 
+.detail-btn {
+  font-family: 'Barlow Condensed', sans-serif; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--gray-400);
+  background: none; border: none; padding: 0; cursor: pointer; text-align: left;
+  text-decoration: underline dotted; width: fit-content;
+}
+.detail-btn:hover { color: var(--navy); }
+
 .outlet-src {
   font-size: 11px; color: var(--gray-400); margin-top: 8px; padding-top: 8px;
   border-top: 1px solid var(--gray-200); line-height: 1.7;
@@ -189,6 +197,13 @@ body { font-family: 'Barlow', sans-serif; background: var(--gray-100); color: va
 }
 .modal-brand-btn:hover { background: var(--navy); color: #fff; border-color: var(--navy); }
 .modal-brand-btn.already { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+.disc-input {
+  font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase; padding: 4px 8px; border-radius: 2px;
+  border: 1px dashed var(--gray-400); background: transparent; outline: none; width: 160px;
+}
+.disc-input:focus { border-color: var(--navy); border-style: solid; }
+.disc-empty { font-size: 12px; color: var(--gray-400); margin: 4px 0 12px; }
 .modal-footer { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--gray-200); display: flex; justify-content: flex-end; gap: 8px; }
 
 .form-label {
@@ -267,6 +282,17 @@ body { font-family: 'Barlow', sans-serif; background: var(--gray-100); color: va
     <div id="modalAsignarBody"></div>
     <div class="modal-footer">
       <button class="btn-hdr" style="border-color:#ccc;color:#666;" onclick="document.getElementById('modalAsignar').classList.remove('show')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal detalle de sucursal: disciplinas por marca -->
+<div class="modal-overlay" id="modalDetalle" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title" id="modalDetalleTitle">Disciplinas</div>
+    <div id="modalDetalleBody"></div>
+    <div class="modal-footer">
+      <button class="btn-hdr" style="border-color:#ccc;color:#666;" onclick="document.getElementById('modalDetalle').classList.remove('show')">Cerrar</button>
     </div>
   </div>
 </div>
@@ -569,6 +595,7 @@ function renderCard(suc) {
       <div class="suc-header-left">
         ${logoObj ? `<div class="canal-logo-wrap">${logoObj}</div>` : ''}
         <span class="suc-name">${suc.nombre}</span>
+        <button class="detail-btn" onclick="openSucDetail('${suc.id}')">Disciplinas ▸</button>
       </div>
       ${badge}
     </div>
@@ -640,6 +667,7 @@ function toggleEdit() {
   document.getElementById('btnReset').style.display = 'block';
   document.getElementById('btnNuevaMarca').style.display = 'block';
   render();
+  if (document.getElementById('modalDetalle').classList.contains('show')) renderSucDetalleBody();
 }
 
 function saveChanges() {
@@ -656,6 +684,7 @@ function saveChanges() {
   document.getElementById('btnReset').style.display = 'none';
   document.getElementById('btnNuevaMarca').style.display = 'none';
   render();
+  if (document.getElementById('modalDetalle').classList.contains('show')) renderSucDetalleBody();
 }
 
 function resetAll() {
@@ -670,6 +699,7 @@ function resetAll() {
   document.getElementById('btnReset').style.display = 'none';
   document.getElementById('btnNuevaMarca').style.display = 'none';
   render();
+  if (document.getElementById('modalDetalle').classList.contains('show')) renderSucDetalleBody();
   showToast('Cambios descartados');
 }
 
@@ -717,6 +747,74 @@ function addBrandToSuc(brandName) {
   document.getElementById('modalAsignar').classList.remove('show');
   render();
   showToast(`${brandName} agregada a ${suc.nombre}`);
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+let currentDetailSucId = null;
+
+function openSucDetail(sucId) {
+  currentDetailSucId = sucId;
+  const suc = findSuc(sucId);
+  if (!suc) return;
+  document.getElementById('modalDetalleTitle').textContent = `Disciplinas — ${suc.nombre}`;
+  renderSucDetalleBody();
+  document.getElementById('modalDetalle').classList.add('show');
+}
+
+function renderSucDetalleBody() {
+  const suc = findSuc(currentDetailSucId);
+  const body = document.getElementById('modalDetalleBody');
+  if (!suc) return;
+  if (!suc.brands.length) {
+    body.innerHTML = '<p class="disc-empty">Esta sucursal no tiene marcas asignadas todavía.</p>';
+    return;
+  }
+  let html = '';
+  suc.brands.forEach((b, i) => {
+    html += `<div class="modal-sec">${escapeHtml(b.n)}</div><div class="modal-brands">`;
+    const disciplinas = b.d || [];
+    if (!disciplinas.length && !editMode) {
+      html += `<span style="font-size:12px;color:var(--gray-400);">Sin disciplinas asignadas</span>`;
+    }
+    disciplinas.forEach((d, di) => {
+      html += editMode
+        ? `<span class="brand-tag removable" onclick="removeDisciplina(${i},${di})">${escapeHtml(d)}</span>`
+        : `<span class="brand-tag">${escapeHtml(d)}</span>`;
+    });
+    html += '</div>';
+    if (editMode) {
+      html += `<div class="add-row show" style="margin-top:4px;margin-bottom:10px;">
+        <input type="text" class="disc-input" data-idx="${i}" placeholder="+ disciplina" onkeydown="if(event.key==='Enter'){addDisciplina(${i}, this)}">
+      </div>`;
+    }
+  });
+  body.innerHTML = html;
+}
+
+function addDisciplina(brandIdx, inputEl) {
+  const val = inputEl.value.trim();
+  if (!val) return;
+  const suc = findSuc(currentDetailSucId);
+  if (!suc) return;
+  const b = suc.brands[brandIdx];
+  if (!b.d) b.d = [];
+  if (b.d.some(d => d.toLowerCase() === val.toLowerCase())) { inputEl.value = ''; return; }
+  b.d.push(val);
+  renderSucDetalleBody();
+  const input = document.querySelector(`.disc-input[data-idx="${brandIdx}"]`);
+  if (input) input.focus();
+}
+
+function removeDisciplina(brandIdx, discIdx) {
+  const suc = findSuc(currentDetailSucId);
+  if (!suc) return;
+  const b = suc.brands[brandIdx];
+  if (!b.d) return;
+  b.d.splice(discIdx, 1);
+  renderSucDetalleBody();
 }
 
 function openNuevaMarcaModal() {
