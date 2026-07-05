@@ -124,11 +124,13 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
   <div class="nav-tabs">
     <button class="nav-tab active" onclick="showView('dashboard',this)">Dashboard</button>
     <button class="nav-tab" onclick="showView('control',this)">Control F8</button>
-    <button class="nav-tab" onclick="showView('cruce',this)">F8 vs Transferencias</button>
     <button class="nav-tab" onclick="showView('historial',this)">Historial</button>
     <button class="nav-tab minor" onclick="showView('carga',this)">⬆ Cargar F8</button>
   </div>
-  <button class="reset-btn" onclick="resetApp()">↺ Reset</button>
+  <div style="display:flex;gap:8px">
+    <button class="reset-btn" onclick="resetF8sData()">🗑 Reiniciar F8s</button>
+    <button class="reset-btn" onclick="resetApp()">↺ Reset</button>
+  </div>
 </nav>
 
 <!-- DASHBOARD -->
@@ -166,6 +168,13 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
 
 <!-- CONTROL F8 -->
 <div class="view" id="view-control">
+  <div class="card" style="padding:14px 20px;margin-bottom:20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <div style="font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted)">F8 activo</div>
+    <select id="f8-activo-select" onchange="selectF8Activo()" style="font-size:12px;min-width:260px">
+      <option value="">— Elegir F8 —</option>
+    </select>
+    <div id="f8-activo-info" style="font-family:var(--font-c);font-size:12px;color:var(--muted)"></div>
+  </div>
   <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px">
     <div>
       <div style="font-family:var(--font-d);font-size:26px;letter-spacing:1px;color:var(--navy)">Control F8</div>
@@ -208,11 +217,9 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
     </div>
     <div class="f8-dates-list" id="f8-dates-list"><div class="empty">No hay fechas registradas.</div></div>
   </div>
-</div>
 
-<!-- F8 VS TRANSFERENCIAS -->
-<div class="view" id="view-cruce">
-  <div style="font-family:var(--font-d);font-size:26px;letter-spacing:1px;color:var(--navy);margin-bottom:6px">F8 vs Transferencias</div>
+  <div class="section-title" style="margin-top:32px">F8 vs Transferencias</div>
+  <div style="font-family:var(--font-c);font-size:13px;color:var(--muted);margin-bottom:6px">Comparación del F8 activo contra las transferencias reales, a la fecha de hoy.</div>
   <div style="margin-bottom:20px">
     <div style="font-family:var(--font-c);font-size:13px;color:var(--muted);margin-bottom:16px">Subí el export de transferencias (con columnas Mes y Día). Clave de cruce: <strong>origen + código + destino</strong>, ventana 15 días.</div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
@@ -267,13 +274,8 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
 <!-- HISTORIAL -->
 <div class="view" id="view-historial">
   <div style="font-family:var(--font-d);font-size:26px;letter-spacing:1px;color:var(--navy);margin-bottom:18px">Historial completo de F8s</div>
-  <div class="card" style="overflow:hidden">
-    <table class="history-table">
-      <thead><tr><th>Fecha</th><th>Semana</th><th>Operador</th><th>Tipo</th><th>Líneas</th><th>Movimientos</th><th>Artículos</th><th>Unidades</th><th>Top marcas</th></tr></thead>
-      <tbody id="hist-body"></tbody>
-    </table>
-    <div id="hist-empty" class="empty" style="display:none">Sin F8s registrados.</div>
-  </div>
+  <div class="f8-dates-list" id="hist-weeks"></div>
+  <div id="hist-empty" class="empty" style="display:none">Sin F8s registrados.</div>
 </div>
 
 <!-- CARGAR F8 -->
@@ -7290,6 +7292,14 @@ function resetApp(){
   if(confirm('¿Recargar la página?')) location.reload();
 }
 
+function resetF8sData(){
+  if(!confirm('¿Reiniciar los F8s cargados? Esto borra todos los F8s subidos (Dashboard, Historial y F8 activo). No afecta el registro manual de Control F8.'))return;
+  setF8s([]);
+  ['res-david','res-daniel'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  renderDashboard();renderHistory();renderF8ActivoSelect();
+  showToast('F8s reiniciados ✓');
+}
+
 // ═══════════════ WEEK HELPERS ═══════════════
 let weekOffset=0;
 let activeOp=null;
@@ -7440,6 +7450,7 @@ function renderSucursalDash(){
 
 // ═══════════════ CONTROL F8 MANUAL ═══════════════
 function renderControl(){
+  renderF8ActivoSelect();
   const ctrl=getCtrl();const c=document.getElementById('f8-dates-list');
   if(!ctrl.length){c.innerHTML='<div class="empty">No hay fechas registradas.</div>';return;}
   c.innerHTML=ctrl.map(e=>{
@@ -7472,6 +7483,27 @@ function nextStatus(date,suc){
 }
 
 function toggleF8(h){const g=h.nextElementSibling;g.style.display=g.style.display==='none'?'grid':'none';}
+
+// ═══════════════ F8 ACTIVO ═══════════════
+function renderF8ActivoSelect(){
+  const sel=document.getElementById('f8-activo-select');if(!sel)return;
+  const f8s=getF8s().slice().sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
+  const prevVal=sel.value;
+  sel.innerHTML='<option value="">— Elegir F8 —</option>'+f8s.map(f=>`<option value="${f.id}">${f.date} · ${f.operator} · ${f.filename}</option>`).join('');
+  if(prevVal&&f8s.some(f=>String(f.id)===prevVal))sel.value=prevVal;
+  else if(f8s[0])sel.value=String(f8s[0].id);
+  selectF8Activo();
+}
+function selectF8Activo(){
+  const sel=document.getElementById('f8-activo-select');const info=document.getElementById('f8-activo-info');
+  if(!sel||!info)return;
+  if(!sel.value){info.textContent='';return;}
+  const f=getF8s().find(x=>String(x.id)===sel.value);
+  if(!f){info.textContent='';return;}
+  info.innerHTML=`<strong style="color:var(--navy)">${f.withMovCount}</strong> movimientos · <strong style="color:var(--navy)">${f.totalUnits.toLocaleString()}</strong> unidades · ${f.date}`;
+  const opSel=document.getElementById('f-operador');
+  if(opSel){opSel.value=f.operator;if(transfIndex)renderCruce();}
+}
 
 // ═══════════════ CARGAR F8 ═══════════════
 const BRAND_MAP2=[['ADI','Adidas'],['NIK','Nike'],['PUM','Puma'],['RUG','RUGE/EDLP'],['MAT','Mateu'],['UMB','Umbro'],['UA','Under Armour'],['NB2','New Balance'],['CHV','Chevignon'],['VAN','Vans'],['GIV','Givova'],['TOP','Topper'],['KAP','Kappa'],['COL','Columbia'],['HEA','Head'],['AUR','Aurelius'],['SAU','Saucony'],['FIL','Fila'],['RBK','Reebok']];
@@ -7629,12 +7661,33 @@ function renderCruce(){
 }
 
 // ═══════════════ HISTORIAL ═══════════════
+function weekKeyRange(wk){
+  const[y,w]=wk.split('-W').map(Number);
+  const jan4=new Date(Date.UTC(y,0,4));
+  const jan4Day=jan4.getUTCDay()||7;
+  const week1Mon=new Date(jan4);week1Mon.setUTCDate(jan4.getUTCDate()-jan4Day+1);
+  const mon=new Date(week1Mon);mon.setUTCDate(week1Mon.getUTCDate()+(w-1)*7);
+  const sun=new Date(mon);sun.setUTCDate(mon.getUTCDate()+6);
+  const f=x=>x.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
+  return f(mon)+' — '+f(sun);
+}
+function toggleHistWeek(h){const g=h.nextElementSibling;g.style.display=g.style.display==='none'?'block':'none';}
 function renderHistory(){
-  const f8s=getF8s().slice().reverse();
-  const body=document.getElementById('hist-body');const empty=document.getElementById('hist-empty');
-  if(!f8s.length){body.innerHTML='';empty.style.display='block';return;}
+  const f8s=getF8s();
+  const container=document.getElementById('hist-weeks');const empty=document.getElementById('hist-empty');
+  if(!container)return;
+  if(!f8s.length){container.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
-  body.innerHTML=f8s.map(f=>`<tr><td>${f.date}</td><td>${f.wk}</td><td><span class="op-tag op-${f.operator.toLowerCase()}">${f.operator}</span></td><td><span style="font-family:var(--font-c);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">${f.tipo||'—'}</span></td><td>${f.totalRows}</td><td><strong style="color:var(--red)">${f.withMovCount}</strong></td><td>${f.uniqueArts}</td><td>${f.totalUnits.toLocaleString()}</td><td>${(f.topBrands||[]).slice(0,3).map(([b,c])=>'<span class="brand-pill">'+b+' '+c+'</span>').join('')}</td></tr>`).join('');
+  const byWeek={};
+  f8s.forEach(f=>{(byWeek[f.wk]=byWeek[f.wk]||[]).push(f);});
+  const weeks=Object.keys(byWeek).sort().reverse();
+  container.innerHTML=weeks.map(wk=>{
+    const items=byWeek[wk].slice().sort((a,b)=>b.date.localeCompare(a.date));
+    const dCount=items.filter(f=>f.operator==='David').length;
+    const dnCount=items.filter(f=>f.operator==='Daniel').length;
+    const rows=items.map(f=>`<tr><td>${f.date}</td><td><span class="op-tag op-${f.operator.toLowerCase()}">${f.operator}</span></td><td><span style="font-family:var(--font-c);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">${f.tipo||'—'}</span></td><td>${f.totalRows}</td><td><strong style="color:var(--red)">${f.withMovCount}</strong></td><td>${f.uniqueArts}</td><td>${f.totalUnits.toLocaleString()}</td><td>${(f.topBrands||[]).slice(0,3).map(([b,c])=>'<span class="brand-pill">'+b+' '+c+'</span>').join('')}</td></tr>`).join('');
+    return`<div class="f8-date-row"><div class="f8-date-header" onclick="toggleHistWeek(this)"><div><div style="font-family:var(--font-d);font-size:18px;letter-spacing:1px;color:var(--navy)">Semana ${wk.split('-W')[1]} — ${weekKeyRange(wk)}</div><div style="font-family:var(--font-c);font-size:11px;color:var(--muted);margin-top:3px">David: ${dCount} F8s · Daniel: ${dnCount} F8s</div></div><div style="font-family:var(--font-d);font-size:24px;color:var(--navy-mid)">${items.length}</div></div><div style="display:none;border-top:1px solid var(--border);overflow:hidden"><table class="history-table" style="width:100%"><thead><tr><th>Fecha</th><th>Operador</th><th>Tipo</th><th>Líneas</th><th>Movimientos</th><th>Artículos</th><th>Unidades</th><th>Top marcas</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }).join('');
 }
 
 // ═══════════════ TOAST ═══════════════
