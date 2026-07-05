@@ -108,15 +108,15 @@ footer{text-align:center;padding:24px;font-family:var(--font-c);font-size:11px;l
     </div>
     <div class="login-body">
       <div class="fld">
-        <label for="u">Usuario</label>
-        <input id="u" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="usuario">
+        <label for="u">Email</label>
+        <input id="u" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="tu@mateu.com.ar">
       </div>
       <div class="fld">
-        <label for="p">Contraseña</label>
-        <input id="p" type="password" autocomplete="current-password" placeholder="••••••">
+        <label for="p">PIN (4 dígitos)</label>
+        <input id="p" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password" placeholder="••••">
       </div>
       <button class="login-btn" id="loginBtn">Entrar</button>
-      <div class="login-err" id="loginErr">Usuario o contraseña incorrectos.</div>
+      <div class="login-err" id="loginErr">Email o PIN incorrectos.</div>
     </div>
   </div>
 </div>
@@ -146,36 +146,28 @@ footer{text-align:center;padding:24px;font-family:var(--font-c);font-size:11px;l
 <script>
 /* ============================================================
    CONFIGURACIÓN — editá esto cuando quieras.
-   ⚠ Esto es un control de acceso "blando": las contraseñas viajan
-   en el código y un usuario avanzado podría verlas. Sirve para
-   ordenar quién entra a qué, NO como seguridad real. Si en algún
-   momento necesitás seguridad de verdad, se hace con Firebase Auth.
+   Login por email + PIN contra Firebase (misma base que usa
+   Gestión de Stock: discontinuos-mateu-default-rtdb/usuarios).
+   Es un control de acceso "blando" (sin Firebase Auth real),
+   pero ya no hay contraseñas en el código: cada usuario valida
+   su PIN contra la base y el acceso a cada herramienta depende
+   del campo "herramientas" de su registro.
    ============================================================ */
 
-// 1) Usuarios. Cambiá las contraseñas por las que quieras.
-const USERS = {
-  'admin':    { name:'Julián',   pass:'mateu',     role:'admin'    },
-  'producto': { name:'Producto', pass:'mateu1905', role:'producto' },
-  'deposito': { name:'Depósito', pass:'mateu1905', role:'deposito' },
-};
+const FB_USUARIOS = 'https://discontinuos-mateu-default-rtdb.firebaseio.com/usuarios.json';
 
-// 2) Qué herramientas ve cada rol (en este orden).
-const ROLE_ACCESS = {
-  admin:    ['turnero','marcas','equipo','condiciones','recepcion'],
-  producto: ['turnero','marcas','equipo'],
-  deposito: ['turnero','marcas','condiciones','recepcion'],
-};
-
-// 3) Las herramientas. La url es la carpeta dentro del monorepo.
+// Las herramientas. La url es la carpeta dentro del monorepo.
 const TOOLS = {
-  turnero:     { name:'Turnero Depósito',     desc:'Agenda de turnos de proveedores.',                 icon:'📅', url:'./turnero/',     red:false },
-  marcas:      { name:'Asignación de Marcas',  desc:'Qué marcas lleva cada canal de venta.',            icon:'🏷️', url:'./marcas/',      red:true  },
-  equipo:      { name:'Área de Producto',      desc:'Transferencias entre sucursales y performance.',   icon:'📦', url:'./equipo/',      red:false },
-  condiciones: { name:'Condiciones Comerciales',desc:'Términos comerciales por marca y proveedor.',     icon:'📄', url:'./condiciones/', red:true  },
-  recepcion:   { name:'Recepción Adidas SS27',   desc:'Tablero de recepción preventa Adidas Dic 2026 – May 2027.', icon:'🚚', url:'./recepcion/', red:false },
+  turnero:       { name:'Turnero Depósito',      desc:'Agenda de turnos de proveedores.',                 icon:'📅', url:'./turnero/',       red:false },
+  marcas:        { name:'Asignación de Marcas',   desc:'Qué marcas lleva cada canal de venta.',            icon:'🏷️', url:'./marcas/',        red:true  },
+  equipo:        { name:'Área de Producto',       desc:'Transferencias entre sucursales y performance.',   icon:'📦', url:'./equipo/',        red:false },
+  condiciones:   { name:'Condiciones Comerciales',desc:'Términos comerciales por marca y proveedor.',      icon:'📄', url:'./condiciones/',   red:true  },
+  recepcion:     { name:'Recepción Adidas SS27',  desc:'Tablero de recepción preventa Adidas Dic 2026 – May 2027.', icon:'🚚', url:'./recepcion/', red:false },
+  'gestion-stock': { name:'Gestión de Stock',     desc:'Discontinuos por sucursal y reporte de gestión de stock.', icon:'📊', url:'./gestion-stock/', red:true },
+  managment:     { name:'Managment',              desc:'Desarrollo, OC y seguimiento de ingresos por proveedor.', icon:'🧾', url:'./managment/', red:false },
 };
 
-const ROLE_LABEL = { admin:'Administrador', producto:'Área de Producto', deposito:'Depósito' };
+const ROLE_LABEL = { admin:'Administrador', sucursal:'Sucursal', outlet:'Outlet' };
 const SESSION_KEY = 'mateu_portal_session';
 
 /* ============================================================
@@ -184,36 +176,46 @@ const SESSION_KEY = 'mateu_portal_session';
 const $ = id => document.getElementById(id);
 
 // localStorage envuelto en try/catch (así no rompe en previews sin storage)
-function saveSession(u){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify({user:u,role:USERS[u].role})); }catch(e){ window.__sess={user:u,role:USERS[u].role}; } }
-function readSession(){ try{ const s=localStorage.getItem(SESSION_KEY); if(!s)return null; try{ return JSON.parse(s); }catch(e){ return {user:s,role:USERS[s]?.role}; } }catch(e){ return window.__sess||null; } }
+function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){ window.__sess=s; } }
+function readSession(){ try{ const s=localStorage.getItem(SESSION_KEY); return s? JSON.parse(s):null; }catch(e){ return window.__sess||null; } }
 function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){ window.__sess=null; } }
 
 function showLogin(){ $('login').style.display='flex'; $('app').style.display='none'; $('p').value=''; }
 function showApp(){ $('login').style.display='none'; $('app').style.display='block'; }
+function showLoginErr(){ $('loginErr').classList.add('show'); }
+function hideLoginErr(){ $('loginErr').classList.remove('show'); }
 
-function login(){
-  const user = ($('u').value || '').trim().toLowerCase();
-  const pass = $('p').value || '';
-  const rec = USERS[user];
-  if(rec && rec.pass === pass){
-    saveSession(user);
-    $('loginErr').classList.remove('show');
-    render(user);
-  } else {
-    $('loginErr').classList.add('show');
+async function login(){
+  const email = ($('u').value || '').trim().toLowerCase();
+  const pin = ($('p').value || '').trim();
+  hideLoginErr();
+  if(!email || !pin) return;
+  const btn = $('loginBtn'); btn.disabled = true; btn.textContent = 'Entrando…';
+  try{
+    const usuarios = await (await fetch(FB_USUARIOS)).json();
+    let found = null;
+    for(const k in (usuarios||{})){
+      const u = usuarios[k];
+      if(u && u.email && u.email.toLowerCase() === email){ found = u; break; }
+    }
+    if(!found || String(found.pin) !== pin){ showLoginErr(); btn.disabled=false; btn.textContent='Entrar'; return; }
+    const session = { email:found.email, rol:found.rol, herramientas:found.herramientas||[], sucursal:found.sucursal||null, outlet_id:found.outlet_id||null };
+    saveSession(session);
+    render(session);
+  } catch(e){
+    showLoginErr();
   }
+  btn.disabled = false; btn.textContent = 'Entrar';
 }
 
 function logout(){ clearSession(); showLogin(); }
 
-function render(user){
-  const rec = USERS[user];
-  if(!rec){ logout(); return; }
-  $('whoName').textContent = rec.name;
-  $('whoRole').textContent = ROLE_LABEL[rec.role] || rec.role;
-  $('greet').innerHTML = 'Hola, <span>'+rec.name+'</span>';
+function render(session){
+  $('whoName').textContent = session.email;
+  $('whoRole').textContent = ROLE_LABEL[session.rol] || session.rol;
+  $('greet').innerHTML = 'Hola, <span>'+session.email+'</span>';
 
-  const keys = ROLE_ACCESS[rec.role] || [];
+  const keys = session.herramientas || [];
   const grid = $('grid');
   grid.innerHTML = '';
   if(keys.length === 0){
@@ -250,7 +252,7 @@ $('logoutBtn').addEventListener('click', logout);
 // Al cargar: si hay sesión válida, entrar directo
 (function init(){
   const s = readSession();
-  if(s && s.user && USERS[s.user]) render(s.user); else showLogin();
+  if(s && s.email) render(s); else showLogin();
 })();
 </script>
 </body>

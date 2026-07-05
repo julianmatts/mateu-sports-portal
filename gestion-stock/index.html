@@ -1,0 +1,2207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gestión de Stock — Mateu Sports</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+:root{
+  --navy:#0B1527;--navy-mid:#1a2f55;--navy-soft:#13203a;
+  --red:#CC0000;--red-soft:#ff3b3b;
+  --white:#ffffff;--off:#f5f7fc;--muted:#6B7A99;--muted-light:#b0bcd4;
+  --card:#ffffff;--border:#dce3f0;
+  --ok:#2e7d32;--warn:#b36200;--bad:#8b0000;
+  --font-d:'Bebas Neue',sans-serif;--font-c:'Barlow Condensed',sans-serif;--font-b:'Barlow',sans-serif;
+  --radius:10px;--shadow:0 1px 4px rgba(11,21,39,.08);--shadow-md:0 8px 30px rgba(11,21,39,.18);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-b);background:var(--off);color:var(--navy);min-height:100vh}
+a{color:inherit;text-decoration:none}
+button{cursor:pointer;font-family:inherit}
+input,select{font-family:inherit}
+
+/* ===== LOGIN ===== */
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+  background:radial-gradient(120% 120% at 50% 0%,#13203a 0%,#0B1527 60%)}
+.login-card{width:100%;max-width:360px;background:var(--card);border-radius:14px;
+  box-shadow:0 20px 60px rgba(0,0,0,.45);overflow:hidden;animation:rise .5s cubic-bezier(.2,.8,.2,1)}
+@keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.login-head{background:var(--navy);padding:30px 28px 24px;text-align:center;border-bottom:3px solid var(--red)}
+.login-head img{height:38px;filter:brightness(0) invert(1);margin-bottom:12px}
+.login-head .t{font-family:var(--font-d);font-size:24px;letter-spacing:1.5px;color:#fff;line-height:1}
+.login-head .s{font-family:var(--font-c);font-size:11px;font-weight:600;letter-spacing:3px;
+  text-transform:uppercase;color:var(--muted-light);margin-top:4px}
+.login-body{padding:26px 28px 28px}
+.fld{margin-bottom:14px}
+.fld label{display:block;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.fld input{width:100%;padding:11px 13px;border:1.5px solid var(--border);border-radius:8px;
+  font-size:15px;color:var(--navy);transition:border .15s}
+.fld input:focus{outline:none;border-color:var(--navy-mid)}
+.login-btn{width:100%;margin-top:6px;padding:12px;border:none;border-radius:8px;background:var(--red);
+  color:#fff;font-family:var(--font-c);font-size:15px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+  transition:all .15s}
+.login-btn:hover{background:#a00000}
+.login-btn:disabled{opacity:.6;cursor:default}
+.login-err{display:none;margin-top:12px;background:#fff0f0;color:#991b1b;border:1px solid #fecaca;
+  border-radius:7px;padding:9px 12px;font-size:13px;text-align:center}
+.login-err.show{display:block;animation:rise .25s}
+
+/* ===== SHELL ===== */
+.top{background:var(--navy);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:3px solid var(--red);flex-wrap:wrap;gap:10px}
+.top-left{display:flex;align-items:center;gap:14px}
+.top-left img{height:32px;filter:brightness(0) invert(1)}
+.top-title{line-height:1.05}
+.top-title .n{font-family:var(--font-d);font-size:20px;letter-spacing:1px;color:#fff}
+.top-title .s{font-family:var(--font-c);font-size:10px;font-weight:600;letter-spacing:2px;
+  text-transform:uppercase;color:var(--muted-light)}
+.top-right{display:flex;align-items:center;gap:14px}
+.who{text-align:right;line-height:1.1}
+.who .n{font-family:var(--font-c);font-size:14px;font-weight:600;color:#fff}
+.who .r{font-family:var(--font-c);font-size:10px;font-weight:600;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--red-soft)}
+.logout{background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:6px;color:rgba(255,255,255,.7);
+  font-family:var(--font-c);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;
+  padding:7px 14px;transition:all .15s}
+.logout:hover{color:#fff;border-color:#fff}
+
+.main-tabs{background:var(--navy-soft);padding:0 28px;display:flex;gap:2px}
+.main-tab{font-family:var(--font-c);font-size:13.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
+  padding:13px 20px;border:none;background:transparent;color:rgba(255,255,255,.55);border-bottom:3px solid transparent;
+  transition:all .15s}
+.main-tab:hover{color:#fff}
+.main-tab.active{color:#fff;border-bottom-color:var(--red)}
+.main-tab-panel{display:none}
+.main-tab-panel.active{display:block}
+
+nav{background:#fff;border-bottom:1px solid var(--border);padding:0 28px;display:flex;gap:2px;
+  overflow-x:auto;position:sticky;top:0;z-index:50}
+.nav-tab{font-family:var(--font-c);font-size:12.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;
+  padding:12px 16px;border:none;background:transparent;color:var(--muted);border-bottom:3px solid transparent;
+  transition:all .15s;white-space:nowrap}
+.nav-tab:hover{color:var(--navy)}
+.nav-tab.active{color:var(--red);border-bottom-color:var(--red)}
+
+main{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
+.view{display:none}
+.view.active{display:block}
+
+.bc{display:flex;align-items:center;gap:6px;margin-bottom:16px;font-size:13px;color:var(--muted)}
+.bc .lnk{color:var(--red);font-weight:600;cursor:pointer}
+.bc .lnk:hover{text-decoration:underline}
+
+/* ===== TITULOS / KPIS ===== */
+.pg-title{font-family:var(--font-d);font-size:30px;letter-spacing:1px;color:var(--navy);line-height:1}
+.pg-sub{font-family:var(--font-c);font-size:13px;font-weight:500;color:var(--muted);margin-top:4px}
+.head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+
+.badge-outlet{display:inline-flex;align-items:center;gap:8px;background:var(--navy);color:#fff;
+  font-family:var(--font-c);font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
+  padding:8px 16px;border-radius:8px;margin-top:8px}
+.badge-outlet .v{color:#ffd54a}
+
+.nota-regla{background:#fff8e1;border:1px solid #f4d35e;border-left:4px solid #f4a025;border-radius:8px;
+  padding:12px 16px;font-size:13.5px;color:#7a5b00;margin:14px 0;font-weight:600}
+
+.kpi-bar{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:22px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 20px;display:flex;flex-direction:column;gap:2px;min-width:150px;flex:1}
+.kpi-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.kpi-val{font-family:var(--font-d);font-size:28px;color:var(--navy);letter-spacing:1px}
+.kpi-sub{font-size:12px;color:var(--muted)}
+.kpi-sub.better{color:var(--ok)}
+.kpi-sub.worse{color:var(--bad)}
+.kpi-sub.equal{color:var(--muted)}
+
+/* ===== BOTONES ===== */
+.btn{border:none;border-radius:8px;padding:10px 18px;font-family:var(--font-c);font-size:13px;font-weight:700;
+  letter-spacing:1px;text-transform:uppercase;transition:all .15s;display:inline-flex;align-items:center;gap:8px}
+.btn-primary{background:var(--red);color:#fff}
+.btn-primary:hover{background:#a00000}
+.btn-outline{background:#fff;border:1.5px solid var(--border);color:var(--navy)}
+.btn-outline:hover{border-color:var(--navy-mid)}
+.btn-block{width:100%;justify-content:center;padding:16px;font-size:15px}
+.btn:disabled{opacity:.5;cursor:default}
+.btn-sm{padding:6px 12px;font-size:11px}
+
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.search-box{flex:1;min-width:180px;padding:9px 13px;border:1px solid var(--border);border-radius:6px;font-size:14px}
+.search-box:focus{outline:none;border-color:#7090cc}
+.sel{padding:9px 12px;border:1px solid var(--border);border-radius:6px;font-size:13.5px;color:var(--navy);background:#fff}
+.ftabs{display:flex;gap:6px;flex-wrap:wrap}
+.ftab{background:#edf0f7;border:none;border-radius:5px;padding:6px 13px;font-size:12px;
+  font-family:var(--font-c);font-weight:600;color:var(--muted);transition:all .15s}
+.ftab.active{background:var(--navy);color:#fff}
+.a-count{font-size:13px;color:var(--muted);white-space:nowrap}
+
+/* ===== CARDS / TABLAS ===== */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:18px}
+.card-title{font-family:var(--font-d);font-size:20px;letter-spacing:.5px;color:var(--navy);margin-bottom:12px}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:var(--navy);color:#fff;font-family:var(--font-c);font-weight:600;letter-spacing:.5px;
+  padding:9px 10px;text-align:left;white-space:nowrap}
+th.r{text-align:right}
+td{padding:8px 10px;border-bottom:1px solid #eef0f7}
+tr.tot td{font-weight:700;background:#f6f8fd;border-top:2px solid var(--navy)}
+tr:hover td{background:#f8f9fe}
+tr.gs-mia td{background:#fff3cd!important;font-weight:700;border-left:3px solid var(--red)}
+tr.gs-mia:hover td{background:#ffe9a8!important}
+.gs-badge-mia{display:inline-block;background:var(--red);color:#fff;font-size:10px;font-weight:700;
+  letter-spacing:.5px;text-transform:uppercase;padding:1px 6px;border-radius:4px;margin-left:6px}
+.gs-nota-worse{color:var(--bad)!important;font-weight:700}
+.gs-nota-better{color:var(--ok)!important;font-weight:700}
+.gs-center{text-align:center!important}
+.gs-ratio-low{color:var(--warn);font-weight:700}
+.gs-ratio-mid{color:var(--ok);font-weight:700}
+.gs-ratio-high{color:var(--bad);font-weight:700}
+.gs-insight{background:#eef3ff;border:1px solid #b8c9f0;border-left:4px solid var(--navy-mid);border-radius:8px;
+  padding:12px 16px;font-size:13.5px;color:var(--navy-mid);margin:12px 0}
+.gs-bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.gs-bar-label{width:180px;flex-shrink:0;font-size:12.5px;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gs-bar-track{flex:1;background:#eef1f8;border-radius:4px;height:22px;overflow:hidden}
+.gs-bar-fill{height:100%;border-radius:4px;width:0;transition:width 1.1s cubic-bezier(.2,.8,.2,1)}
+.gs-bar-fill.gs-ok{background:var(--ok)}
+.gs-bar-fill.gs-warn{background:#e0921f}
+.gs-bar-fill.gs-bad{background:var(--bad)}
+.gs-bar-val{width:56px;text-align:right;font-weight:700;font-size:13px;color:var(--navy);flex-shrink:0}
+.td-num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.td-code{font-family:monospace;font-weight:700;color:var(--navy);white-space:nowrap}
+.no-results{padding:34px;text-align:center;color:var(--muted);font-style:italic}
+.sub-section-title{font-family:var(--font-c);font-size:13px;font-weight:700;letter-spacing:1px;
+  text-transform:uppercase;color:var(--navy-mid);margin:16px 0 8px;padding-bottom:4px;border-bottom:2px solid var(--border)}
+
+.collapsible-head{display:flex;align-items:center;justify-content:space-between;cursor:pointer;
+  padding:12px 16px;background:#edf0f7;border-radius:8px;font-family:var(--font-c);font-weight:700;
+  letter-spacing:.5px;color:var(--navy);font-size:13.5px}
+.collapsible-body{display:none;padding-top:12px}
+.collapsible-body.open{display:block}
+.collapsible-arrow{transition:transform .15s}
+.collapsible-arrow.open{transform:rotate(180deg)}
+
+.badge{display:inline-block;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;letter-spacing:.3px}
+.badge-ok{background:#e8f5e9;color:var(--ok)}
+.badge-bad{background:#fce4e4;color:var(--bad)}
+.badge-warn{background:#fff3e0;color:var(--warn)}
+
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.dot-ok{background:var(--ok)}
+.dot-warn{background:#f4a025}
+.dot-bad{background:var(--bad)}
+
+/* ===== CARGA ===== */
+.upload-zone{border:2px dashed #c5cde0;border-radius:10px;padding:40px 20px;text-align:center;
+  color:var(--muted);transition:all .15s;cursor:pointer;background:#fafbff}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--red);background:#fff5f5}
+.upload-zone input{display:none}
+.val-ok{color:var(--ok);font-weight:700}
+.val-bad{color:var(--bad);font-weight:700}
+
+/* ===== GRAFICO ===== */
+.chart{display:flex;align-items:flex-end;gap:6px;height:160px;padding:10px 4px}
+.chart-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+.chart-bar{width:100%;background:var(--navy-mid);border-radius:4px 4px 0 0;transition:height .4s}
+.chart-bar.hi{background:var(--red)}
+.chart-lbl{font-size:10px;color:var(--muted);font-family:var(--font-c);white-space:nowrap}
+.chart-val{font-size:10.5px;color:var(--navy);font-weight:700}
+
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.rank-row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid #eef0f7;cursor:pointer}
+.rank-row:hover{background:#f8f9fe}
+.rank-n{font-family:var(--font-d);font-size:16px;color:var(--muted-light);width:22px}
+.rank-name{flex:1;font-size:14px;font-weight:600}
+.rank-val{font-family:var(--font-d);font-size:17px;color:var(--navy)}
+
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-grid .fld input,.form-grid .fld select{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px}
+.fld-full{grid-column:1/-1}
+textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;resize:vertical}
+
+.empty{background:var(--card);border:1px dashed var(--border);border-radius:12px;padding:34px;
+  text-align:center;color:var(--muted);font-size:14px}
+.hint{font-size:12.5px;color:var(--muted);margin-top:4px}
+
+@media(max-width:720px){
+  main{padding:20px 14px 48px}
+  .grid-2{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr}
+  .pg-title{font-size:24px}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ APP ============ -->
+<div id="app">
+  <div class="top">
+    <div class="top-left">
+      <img src="data:image/webp;base64,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" alt="Mateu Sports">
+      <div class="top-title">
+        <div class="n" id="hdrTitle">Gestión de Stock</div>
+        <div class="s" id="hdrSub">Mateu Sports</div>
+      </div>
+    </div>
+    <div class="top-right">
+      <select class="sel" id="mesSelector" style="display:none"></select>
+      <div class="who"><div class="n" id="whoName">—</div><div class="r" id="whoRole">—</div></div>
+      <button class="logout" id="logoutBtn">Salir</button>
+    </div>
+  </div>
+  <div class="main-tabs" id="mainTabs">
+    <button class="main-tab" data-maintab="gestion-stock">Gestión de Stock</button>
+    <button class="main-tab" data-maintab="discontinuos">Discontinuos</button>
+  </div>
+
+  <div class="main-tab-panel" id="mainTab-gestion-stock">
+    <main><div id="view-gestion-stock"></div></main>
+  </div>
+
+  <div class="main-tab-panel" id="mainTab-discontinuos">
+    <nav id="navTabs"></nav>
+    <main>
+      <div class="view" id="view-sucursal"></div>
+      <div class="view" id="view-historico"></div>
+      <div class="view" id="view-outlet"></div>
+      <div class="view" id="view-admin-dashboard"></div>
+      <div class="view" id="view-carga"></div>
+      <div class="view" id="view-control"></div>
+      <div class="view" id="view-config"></div>
+      <div class="view" id="view-usuarios"></div>
+    </main>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIGURACIÓN
+   ============================================================ */
+const FB = 'https://discontinuos-mateu-default-rtdb.firebaseio.com';
+const SESSION_KEY = 'mateu_portal_session';
+
+const SUCURSALES = [
+  {slug:'calle-12',   nombre:'Calle 12'},
+  {slug:'city-bell',  nombre:'City Bell'},
+  {slug:'diagonal',   nombre:'Diagonal'},
+  {slug:'calle-47',   nombre:'Calle 47'},
+  {slug:'calle-49',   nombre:'Calle 49'},
+  {slug:'los-hornos', nombre:'Los Hornos'},
+  {slug:'plaza',      nombre:'Plaza'},
+  {slug:'berisso',    nombre:'Berisso'},
+  {slug:'ensenada',   nombre:'Ensenada'},
+  {slug:'kids',       nombre:'Kids'},
+  {slug:'aurelius-12',nombre:'Aurelius 12'},
+  {slug:'aurelius-5', nombre:'Aurelius 5'},
+  {slug:'aurelius-cb',nombre:'Aurelius CB'},
+  {slug:'adidas-12',  nombre:'Adidas 12'},
+  {slug:'adidas',     nombre:'Adidas'},
+  {slug:'originals',  nombre:'Originals'},
+  {slug:'ecommerce',  nombre:'Ecommerce'},
+  {slug:'deposito',   nombre:'Deposito'},
+];
+const SUCURSAL_BY_SLUG = {}; SUCURSALES.forEach(s=>SUCURSAL_BY_SLUG[s.slug]=s);
+
+const OUTLETS_LIST = [
+  {id:'gonnet',      nombre:'Gonnet'},
+  {id:'av-44',       nombre:'Outlet Av. 44'},
+  {id:'calle-55',    nombre:'Outlet Calle 55'},
+  {id:'aurelius-10', nombre:'Aurelius 10'},
+];
+const OUTLET_BY_ID = {}; OUTLETS_LIST.forEach(o=>OUTLET_BY_ID[o.id]=o);
+
+// Alias de nombres de sucursal tal como aparecen en el Excel (normalizados: minúsculas, sin tildes)
+const SUCURSAL_ALIASES = {
+  'calle 12':'calle-12', 'city bell':'city-bell', 'diagonal':'diagonal',
+  'calle 47':'calle-47', 'calle 49':'calle-49', 'los hornos':'los-hornos',
+  'plaza':'plaza', 'berisso':'berisso', 'ensenada':'ensenada',
+  'kids':'kids', 'mateu kids':'kids',
+  'aurelius 12':'aurelius-12', 'aurelius 5':'aurelius-5', 'aurelius cb':'aurelius-cb',
+  'adidas 12':'adidas-12', 'adidas':'adidas', 'originals':'originals',
+  'ecommerce':'ecommerce', 'deposito':'deposito',
+};
+
+const MESES_NOMBRE = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const CICLO_MESES = ['MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE','ENERO','FEBRERO','MARZO','ABRIL'];
+
+const NO_ENVIO_LABEL = 'Sin envío a outlet';
+
+// Alias del reporte de Gestión de Stock (nombres simples, sin código)
+const GS_ALIAS_SIMPLE = {
+  'plaza':'plaza', 'mateu kids':'kids', 'kids':'kids', 'outlet':'calle-55',
+  'aurelius 12':'aurelius-12', 'deposito':'deposito', 'city bell':'city-bell',
+  'aurelius 10':'aurelius-10', 'calle 47':'calle-47', 'adidas':'adidas',
+  'diagonal':'diagonal', 'ensenada':'ensenada', 'calle 12':'calle-12',
+  'los hornos':'los-hornos', 'gonnet':'gonnet', 'originals':'originals',
+  'berisso':'berisso', 'aurelius cb':'aurelius-cb', 'aurelius 5':'aurelius-5',
+  'calle 49':'calle-49', 'avenida 44':'av-44', 'adidas 12':'adidas-12',
+  'ecommerce':'ecommerce',
+};
+// Alias por código numérico (columnas "NN-Nombre", ej. "12-MS Calle 12")
+const GS_ALIAS_CODIGO = {
+  '01':'plaza', '02':'kids', '03':'calle-55', '04':'aurelius-12', '05':'deposito',
+  '06':'city-bell', '07':'aurelius-10', '08':'calle-47', '09':'adidas', '10':'diagonal',
+  '11':'ensenada', '12':'calle-12', '13':'los-hornos', '14':'gonnet', '15':'originals',
+  '16':'berisso', '17':'aurelius-cb', '18':'aurelius-5', '19':'calle-49', '20':'av-44',
+  '21':'adidas-12', '99':'ecommerce',
+};
+function gsResolveSimple(nombreRaw){ return GS_ALIAS_SIMPLE[normLower(nombreRaw).trim()] || null; }
+function gsResolveCodigo(codigoNombre){
+  const m = String(codigoNombre||'').match(/^\s*(\d{1,2})\s*-/);
+  return m ? (GS_ALIAS_CODIGO[m[1].padStart(2,'0')] || null) : null;
+}
+function nombreDeSlug(slug){
+  return (SUCURSAL_BY_SLUG[slug]&&SUCURSAL_BY_SLUG[slug].nombre) || (OUTLET_BY_ID[slug]&&OUTLET_BY_ID[slug].nombre) || slug;
+}
+
+/* ============================================================
+   UTILIDADES
+   ============================================================ */
+const $ = id => document.getElementById(id);
+
+function normStr(s){
+  return (s===null||s===undefined) ? '' :
+    String(s).normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[-_]/g,' ').replace(/\s+/g,' ').trim().toUpperCase();
+}
+function normLower(s){ return normStr(s).toLowerCase(); }
+
+function resolveSucursalSlug(nombreRaw){
+  const key = normLower(nombreRaw).replace(/\s+/g,' ').trim();
+  if(SUCURSAL_ALIASES[key]) return SUCURSAL_ALIASES[key];
+  const slugified = key.replace(/\s+/g,'-');
+  if(SUCURSAL_BY_SLUG[slugified]) return slugified;
+  return null;
+}
+
+function toNumber(v){
+  if(v===null||v===undefined||v==='') return null;
+  if(typeof v==='number') return isFinite(v) ? v : null;
+  const cleaned = String(v).replace(/[^\d.,-]/g,'').replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.');
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? null : n;
+}
+
+function firebaseKeyFromEmail(email){ return (email||'').toLowerCase().trim().replace(/\./g,','); }
+
+function fmtNum(n){ return (n||0).toLocaleString('es-AR'); }
+function fmtPct(n){ const s=(n>=0?'+':'')+n.toFixed(1)+'%'; return s; }
+function fmtDate(ts){ if(!ts) return '—'; const d=new Date(ts); return d.toLocaleDateString('es-AR')+' '+d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}); }
+
+function currentYYYYMM(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function ymToLabel(ym){ if(!ym) return '—'; const [y,m]=ym.split('-'); return MESES_NOMBRE[parseInt(m,10)]+' '+y; }
+function cicloFromYearMonth(year, month1a12){ return String(month1a12>=5 ? year : year-1); }
+
+async function fetchJSON(url){
+  const r = await fetch(url);
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return r.json();
+}
+function postFireAndForget(url, data){
+  try{ fetch(url,{method:'POST',body:JSON.stringify(data),headers:{'Content-Type':'application/json'}}).catch(()=>{}); }catch(e){}
+}
+function putJSON(url, data){
+  return fetch(url,{method:'PUT',body:JSON.stringify(data),headers:{'Content-Type':'application/json'}});
+}
+function patchJSON(url, data){
+  return fetch(url,{method:'PATCH',body:JSON.stringify(data),headers:{'Content-Type':'application/json'}});
+}
+
+/* ============================================================
+   SESIÓN (localStorage envuelto en try/catch)
+   ============================================================ */
+function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){ window.__sess=s; } }
+function readSession(){ try{ const s=localStorage.getItem(SESSION_KEY); return s? JSON.parse(s):null; }catch(e){ return window.__sess||null; } }
+function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){ window.__sess=null; } }
+
+let SESSION = null;
+let CONFIG_OUTLETS = null;   // /config/outlets
+let OUTLET_BY_SUCURSAL = {}; // reverse lookup slug -> outlet_id
+let USUARIOS_CACHE = null;   // {key: {...}} completo
+const MONTH_CACHE = {};      // ym -> /discontinuos/{ym} completo
+
+function buildOutletReverseMap(){
+  OUTLET_BY_SUCURSAL = {};
+  Object.keys(CONFIG_OUTLETS||{}).forEach(oid=>{
+    const o = CONFIG_OUTLETS[oid];
+    (o.sucursalesOrigen||[]).forEach(slug=>{ OUTLET_BY_SUCURSAL[slug] = oid; });
+  });
+}
+
+/* ============================================================
+   LÓGICA DE DESTINO
+   ============================================================ */
+function resolverDestino(grupo2Raw, sucursalSlug){
+  const g = normStr(grupo2Raw);
+  if(/OUTLET\s*44/.test(g)) return {destino:'av-44', tipo:'outlet-explicito'};
+  if(/OUTLET\s*55/.test(g)) return {destino:'calle-55', tipo:'outlet-explicito'};
+  if(/OUTLET\s*GONNET/.test(g)) return {destino:'gonnet', tipo:'outlet-explicito'};
+  if(/OUTLET\s*AURELIUS/.test(g)) return {destino:'aurelius-10', tipo:'outlet-explicito'};
+  if(/OUTLET\s*F8/.test(g)){
+    if(sucursalSlug==='calle-12') return {destino:'calle-55', tipo:'f8-calle12'};
+    const asignado = OUTLET_BY_SUCURSAL[sucursalSlug] || null;
+    return {destino:asignado, tipo:'f8-asignado'};
+  }
+  return {destino:null, tipo:'sin-envio'};
+}
+
+function reglaCalle12Texto(){
+  return (CONFIG_OUTLETS && CONFIG_OUTLETS['calle-55'] && CONFIG_OUTLETS['calle-55'].regla) ||
+    'Regla Calle 12: hasta $150K PVP → Outlet 55 / +$150K → Gonnet. Verificar PVP antes de enviar.';
+}
+
+/* ============================================================
+   SESIÓN — la maneja el Portal (mateu_portal_session). Esta
+   herramienta ya no tiene login propio: si no hay sesión válida
+   o el usuario no tiene acceso, vuelve al Portal.
+   ============================================================ */
+function logout(){ clearSession(); location.href='../'; }
+
+/* ============================================================
+   BOOT / NAV
+   ============================================================ */
+const ROLE_LABEL = {admin:'Administrador', sucursal:'Sucursal', outlet:'Outlet'};
+
+async function boot(session){
+  SESSION = session;
+  $('whoName').textContent = session.email;
+  $('whoRole').textContent = ROLE_LABEL[session.rol]||session.rol;
+
+  try{
+    CONFIG_OUTLETS = await fetchJSON(FB+'/config/outlets.json') || {};
+  }catch(e){ CONFIG_OUTLETS = {}; }
+  buildOutletReverseMap();
+
+  buildNav(session);
+
+  if(session.rol==='sucursal'){
+    $('hdrTitle').textContent = SUCURSAL_BY_SLUG[session.sucursal] ? SUCURSAL_BY_SLUG[session.sucursal].nombre : session.sucursal;
+    $('hdrSub').textContent = 'Gestión de Stock';
+    goToView('sucursal');
+    await renderSucursalView(session.sucursal, $('view-sucursal'), {});
+  } else if(session.rol==='outlet'){
+    $('hdrTitle').textContent = OUTLET_BY_ID[session.outlet_id] ? OUTLET_BY_ID[session.outlet_id].nombre : session.outlet_id;
+    $('hdrSub').textContent = 'Gestión de Stock';
+    goToView('outlet');
+    await renderOutletView(session.outlet_id, $('view-outlet'), {});
+  } else {
+    $('hdrTitle').textContent = 'Gestión de Stock';
+    $('hdrSub').textContent = 'Panel Admin';
+    goToView('admin-dashboard');
+    await renderAdminDashboard($('view-admin-dashboard'));
+  }
+
+  setupMainTabs(session);
+}
+
+/* ============================================================
+   SUB-PESTAÑAS "Gestión de Stock" / "Discontinuos"
+   El ingreso para Control solo se registra al entrar EFECTIVAMENTE
+   a la solapa Discontinuos (no por loguearse en el Portal).
+   ============================================================ */
+const ingresoRegistradoPorSeccion = {};
+let gestionStockRenderizado = false;
+
+function activateMainTab(id){
+  document.querySelectorAll('.main-tab').forEach(b=> b.classList.toggle('active', b.dataset.maintab===id));
+  document.querySelectorAll('.main-tab-panel').forEach(p=> p.classList.remove('active'));
+  $('mainTab-'+id).classList.add('active');
+  if(!ingresoRegistradoPorSeccion[id]){
+    ingresoRegistradoPorSeccion[id] = true;
+    postFireAndForget(FB+'/actividad/'+currentYYYYMM()+'/logins.json', {
+      email: SESSION.email, rol: SESSION.rol,
+      sucursal_o_outlet: SESSION.sucursal || SESSION.outlet_id || '-',
+      seccion: id, timestamp: Date.now()
+    });
+  }
+  if(id==='gestion-stock' && !gestionStockRenderizado){
+    gestionStockRenderizado = true;
+    renderGestionStockPanel($('view-gestion-stock'));
+  }
+}
+
+function setupMainTabs(session){
+  document.querySelectorAll('.main-tab').forEach(b=>{
+    b.addEventListener('click', ()=> activateMainTab(b.dataset.maintab));
+  });
+  activateMainTab('discontinuos');
+}
+
+function buildNav(session){
+  const nav = $('navTabs'); nav.innerHTML='';
+  const tabs = [];
+  if(session.rol==='sucursal'){
+    tabs.push({id:'sucursal', label:'Mi Sucursal'});
+    tabs.push({id:'historico', label:'Histórico'});
+  }
+  if(session.rol==='outlet') tabs.push({id:'outlet', label:'Mi Outlet'});
+  if(session.rol==='admin'){
+    tabs.push({id:'admin-dashboard', label:'Dashboard'});
+    tabs.push({id:'carga', label:'Carga Mensual'});
+    tabs.push({id:'control', label:'Control'});
+    tabs.push({id:'config', label:'Configuración'});
+    tabs.push({id:'usuarios', label:'Usuarios'});
+  }
+  tabs.forEach(t=>{
+    const b = document.createElement('button');
+    b.className = 'nav-tab'; b.textContent = t.label; b.dataset.view = t.id;
+    b.addEventListener('click', ()=>{
+      goToView(t.id);
+      if(t.id==='historico') renderHistoricoView(session.sucursal, $('view-historico'));
+      if(t.id==='admin-dashboard') renderAdminDashboard($('view-admin-dashboard'));
+      if(t.id==='carga') renderCargaView($('view-carga'));
+      if(t.id==='control') renderControlView($('view-control'));
+      if(t.id==='config') renderConfigView($('view-config'));
+      if(t.id==='usuarios') renderUsuariosView($('view-usuarios'));
+    });
+    nav.appendChild(b);
+  });
+}
+
+function goToView(id){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(b=>b.classList.toggle('active', b.dataset.view===id));
+  const el = $('view-'+id); if(el) el.classList.add('active');
+}
+
+/* ============================================================
+   CARGA DE DATOS
+   ============================================================ */
+async function getMonthsList(){
+  try{
+    const data = await fetchJSON(FB+'/discontinuos.json?shallow=true');
+    return Object.keys(data||{}).sort().reverse();
+  }catch(e){ return []; }
+}
+async function getMonthData(ym){
+  if(MONTH_CACHE[ym]) return MONTH_CACHE[ym];
+  const data = await fetchJSON(FB+'/discontinuos/'+ym+'.json');
+  MONTH_CACHE[ym] = data || {};
+  return MONTH_CACHE[ym];
+}
+async function monthsForSucursal(slug){
+  const all = await getMonthsList();
+  const out = [];
+  for(const ym of all){
+    const d = await getMonthData(ym);
+    if(d && d[slug]) out.push(ym);
+  }
+  return out;
+}
+
+/* ============================================================
+   REGISTRO DE ACTIVIDAD
+   ============================================================ */
+function logDescarga(tipoExport, mesExportado){
+  postFireAndForget(FB+'/actividad/'+currentYYYYMM()+'/descargas.json', {
+    email: SESSION.email,
+    sucursal_o_outlet: SESSION.sucursal || SESSION.outlet_id || '-',
+    tipoExport, mesExportado, seccion: 'discontinuos', timestamp: Date.now()
+  });
+}
+
+/* ============================================================
+   VISTA SUCURSAL
+   ============================================================ */
+async function renderSucursalView(slug, container, opts){
+  const info = SUCURSAL_BY_SLUG[slug];
+  const meses = await monthsForSucursal(slug);
+  const ym = opts.mes || meses[0];
+  if(!ym){
+    container.innerHTML = '<div class="pg-title">'+(info?info.nombre:slug)+'</div><div class="empty">Todavía no hay datos cargados para esta sucursal.</div>';
+    return;
+  }
+  const monthData = await getMonthData(ym);
+  const suc = monthData[slug] || {items:[], total:0};
+  const items = suc.items || [];
+
+  const outletAsignado = OUTLET_BY_SUCURSAL[slug];
+  const esCalle12 = slug==='calle-12';
+
+  const calzado = items.filter(i=>normStr(i.rubro)==='CALZADO').reduce((a,i)=>a+i.cantidad,0);
+  const indumentaria = items.filter(i=>normStr(i.rubro)==='INDUMENTARIA').reduce((a,i)=>a+i.cantidad,0);
+  const accesorios = items.filter(i=>normStr(i.rubro)==='ACCESORIOS').reduce((a,i)=>a+i.cantidad,0);
+
+  // variación vs mes anterior (Total y por rubro)
+  const idxActual = meses.indexOf(ym);
+  let vTotal=null, vCalzado=null, vIndumentaria=null, vAccesorios=null;
+  if(idxActual < meses.length-1){
+    const prevYm = meses[idxActual+1];
+    const prevData = await getMonthData(prevYm);
+    const prevSuc = prevData[slug] || {items:[], total:0};
+    const prevItems = prevSuc.items || [];
+    const prevCalzado = prevItems.filter(i=>normStr(i.rubro)==='CALZADO').reduce((a,i)=>a+i.cantidad,0);
+    const prevIndumentaria = prevItems.filter(i=>normStr(i.rubro)==='INDUMENTARIA').reduce((a,i)=>a+i.cantidad,0);
+    const prevAccesorios = prevItems.filter(i=>normStr(i.rubro)==='ACCESORIOS').reduce((a,i)=>a+i.cantidad,0);
+    vTotal = diffInfo(suc.total, prevSuc.total||0);
+    vCalzado = diffInfo(calzado, prevCalzado);
+    vIndumentaria = diffInfo(indumentaria, prevIndumentaria);
+    vAccesorios = diffInfo(accesorios, prevAccesorios);
+  }
+
+  let badgeHtml = '';
+  if(esCalle12){
+    badgeHtml = '<div class="badge-outlet">OUTLET ASIGNADO: <span class="v">Outlet 55 / Gonnet</span></div>'+
+      '<div class="nota-regla">⚠ '+reglaCalle12Texto()+'</div>';
+  } else if(outletAsignado){
+    badgeHtml = '<div class="badge-outlet">OUTLET ASIGNADO: <span class="v">'+(OUTLET_BY_ID[outletAsignado]?OUTLET_BY_ID[outletAsignado].nombre:outletAsignado)+'</span></div>';
+  } else {
+    badgeHtml = '<div class="badge-outlet">SIN OUTLET ASIGNADO</div>';
+  }
+
+  const mesesOptions = meses.map(m=>'<option value="'+m+'"'+(m===ym?' selected':'')+'>'+ymToLabel(m)+'</option>').join('');
+
+  container.innerHTML =
+    '<div class="head-row"><div>'+
+      '<div class="pg-title">'+(info?info.nombre:slug)+'</div>'+
+      '<div class="pg-sub">'+ymToLabel(ym)+'</div>'+
+      badgeHtml+
+    '</div>'+
+    '<div><select class="sel" id="sucMesSel">'+mesesOptions+'</select></div>'+
+    '</div>'+
+    '<div class="kpi-bar">'+
+      kpiHtml('Total', suc.total, vTotal)+
+      kpiHtml('Calzado', calzado, vCalzado)+
+      kpiHtml('Indumentaria', indumentaria, vIndumentaria)+
+      kpiHtml('Accesorios', accesorios, vAccesorios)+
+    '</div>'+
+    '<button class="btn btn-primary btn-block" id="btnExportSuc">📤 Exportar detalle para envío</button>'+
+    '<div class="card" style="margin-top:18px">'+
+      '<div class="card-title">Detalle de artículos</div>'+
+      '<div class="toolbar">'+
+        '<input class="search-box" id="sucSearch" placeholder="Buscar código, artículo, descripción, marca…">'+
+        '<select class="sel" id="sucFiltroRubro"><option value="">Rubro (todos)</option></select>'+
+        '<select class="sel" id="sucFiltroMarca"><option value="">Marca (todas)</option></select>'+
+        '<select class="sel" id="sucFiltroGrupo2"><option value="">Grupo 2 (todos)</option></select>'+
+        '<span class="a-count" id="sucCount"></span>'+
+      '</div>'+
+      '<div class="table-wrap"><table id="sucTable"><thead><tr>'+
+        '<th>Rubro</th><th>Grupo 2</th><th>Marca</th><th>Código</th><th>Artículo</th><th>Descripción</th><th class="r">Cant.</th><th>Destino</th>'+
+      '</tr></thead><tbody></tbody></table></div>'+
+      '<div id="sucNoResults" class="no-results" style="display:none">No se encontraron artículos.</div>'+
+    '</div>'+
+    '<div id="sucSinEnvioWrap"></div>';
+
+  $('sucMesSel').addEventListener('change', e=> renderSucursalView(slug, container, {mes:e.target.value}));
+  $('btnExportSuc').addEventListener('click', ()=> exportSucursalXlsx(slug, ym, items));
+
+  const conEnvio = items.filter(i=>i.destino);
+  const sinEnvio = items.filter(i=>!i.destino);
+
+  fillSelectOptions('sucFiltroRubro', uniqueVals(items,'rubro'));
+  fillSelectOptions('sucFiltroMarca', uniqueVals(items,'marca'));
+  fillSelectOptions('sucFiltroGrupo2', uniqueVals(items,'grupo2'));
+
+  function draw(){
+    const q = normLower($('sucSearch').value);
+    const fr = $('sucFiltroRubro').value, fm = $('sucFiltroMarca').value, fg = $('sucFiltroGrupo2').value;
+    const filtered = conEnvio.filter(i=>{
+      if(fr && i.rubro!==fr) return false;
+      if(fm && i.marca!==fm) return false;
+      if(fg && i.grupo2!==fg) return false;
+      if(q){
+        const hay = normLower(i.codigo+' '+i.articulo+' '+i.descripcion+' '+i.marca).includes(q);
+        if(!hay) return false;
+      }
+      return true;
+    });
+    const tbody = document.querySelector('#sucTable tbody'); tbody.innerHTML='';
+    filtered.forEach(i=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td>'+
+        '<td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td>'+esc(i.descripcion)+'</td>'+
+        '<td class="td-num">'+fmtNum(i.cantidad)+'</td><td>'+(i.destino?(OUTLET_BY_ID[i.destino]?OUTLET_BY_ID[i.destino].nombre:i.destino):'—')+'</td>';
+      tbody.appendChild(tr);
+    });
+    $('sucCount').textContent = filtered.length+' resultado(s)';
+    $('sucNoResults').style.display = filtered.length? 'none':'block';
+  }
+  ['sucSearch','sucFiltroRubro','sucFiltroMarca','sucFiltroGrupo2'].forEach(id=>{
+    $(id).addEventListener('input', draw); $(id).addEventListener('change', draw);
+  });
+  draw();
+
+  if(sinEnvio.length){
+    const wrap = $('sucSinEnvioWrap');
+    wrap.innerHTML = '<div class="card">'+
+      '<div class="collapsible-head" id="sinEnvioHead"><span>Sin envío a outlet ('+sinEnvio.length+' artículos)</span><span class="collapsible-arrow">▾</span></div>'+
+      '<div class="collapsible-body" id="sinEnvioBody"><div class="table-wrap"><table><thead><tr>'+
+        '<th>Rubro</th><th>Grupo 2</th><th>Marca</th><th>Código</th><th>Artículo</th><th>Descripción</th><th class="r">Cant.</th>'+
+      '</tr></thead><tbody>'+
+      sinEnvio.map(i=>'<tr><td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td><td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td>'+esc(i.descripcion)+'</td><td class="td-num">'+fmtNum(i.cantidad)+'</td></tr>').join('')+
+      '</tbody></table></div></div></div>';
+    $('sinEnvioHead').addEventListener('click', ()=>{
+      $('sinEnvioBody').classList.toggle('open');
+      $('sinEnvioHead').querySelector('.collapsible-arrow').classList.toggle('open');
+    });
+  }
+}
+
+// Aumento de discontinuos = alerta (rojo, "worse"); baja = buena gestión (verde, "better").
+function diffInfo(curr, prev){
+  const diff = curr - prev;
+  const pct = prev>0 ? (diff/prev)*100 : null;
+  const dir = diff>0 ? 'up' : (diff<0 ? 'down' : 'eq');
+  return {diff, pct, dir, isNew: prev===0 && curr>0};
+}
+function varBadgeText(v){
+  if(!v) return '';
+  if(v.dir==='eq') return '= sin cambios vs mes anterior';
+  const arrow = v.dir==='up' ? '▲' : '▼';
+  const sign = v.diff>0 ? '+' : '';
+  const pctTxt = v.isNew ? 'nuevo' : fmtPct(v.pct);
+  return arrow+' '+sign+v.diff+' ('+pctTxt+') vs mes anterior';
+}
+function kpiHtml(label, val, v){
+  let sub = '';
+  if(v){
+    const cls = v.dir==='eq' ? 'equal' : (v.dir==='up' ? 'worse' : 'better');
+    sub = '<div class="kpi-sub '+cls+'">'+varBadgeText(v)+'</div>';
+  }
+  return '<div class="kpi"><div class="kpi-label">'+label+'</div><div class="kpi-val">'+fmtNum(val)+'</div>'+sub+'</div>';
+}
+function uniqueVals(items, field){
+  return Array.from(new Set(items.map(i=>i[field]).filter(Boolean))).sort();
+}
+function fillSelectOptions(id, vals){
+  const sel = $(id); const first = sel.options[0];
+  sel.innerHTML=''; sel.appendChild(first);
+  vals.forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o); });
+}
+function esc(s){ return (s===null||s===undefined)?'':String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ===== EXPORT SUCURSAL (ExcelJS — con estilo, para impresión/envío) ===== */
+const BRAND = {
+  navy:'FF0B1527', red:'FFCC0000', white:'FFFFFFFF',
+  band:'FFF5F7FC', border:'FFDCE3F0', totalBg:'FFF6F8FD',
+  notaBg:'FFFFF8E1', notaBorder:'FFF4A025', notaText:'FF7A5B00',
+};
+const COLS_ENVIO = ['RUBRO','GRUPO 2','MARCA','CÓDIGO','ARTÍCULO','DESCRIPCIÓN','CANT.','ENVIADO','OBSERVACIONES'];
+const WIDTHS_ENVIO = [13,24,13,12,15,36,8,11,22];
+
+async function downloadWorkbook(wb, filename){
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=> URL.revokeObjectURL(url), 1000);
+}
+
+function thinBorder(color){
+  return {top:{style:'thin',color:{argb:color}}, bottom:{style:'thin',color:{argb:color}}, left:{style:'thin',color:{argb:color}}, right:{style:'thin',color:{argb:color}}};
+}
+
+async function exportSucursalXlsx(slug, ym, items){
+  const info = SUCURSAL_BY_SLUG[slug];
+  const conEnvio = items.filter(i=>i.destino);
+  const porDestino = {};
+  conEnvio.forEach(i=>{ (porDestino[i.destino] = porDestino[i.destino]||[]).push(i); });
+  const destinos = Object.keys(porDestino);
+  const nCols = COLS_ENVIO.length;
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Envío', {views:[{showGridLines:false}]});
+  ws.columns = WIDTHS_ENVIO.map(w=>({width:w}));
+
+  let r = 1;
+  ws.mergeCells(r,1,r,nCols);
+  const titleCell = ws.getCell(r,1);
+  titleCell.value = 'MATEU SPORTS — DISCONTINUOS '+(info?info.nombre.toUpperCase():slug)+' — '+ymToLabel(ym).toUpperCase();
+  titleCell.font = {bold:true, color:{argb:BRAND.white}, size:14, name:'Calibri'};
+  titleCell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.navy}};
+  titleCell.alignment = {horizontal:'center', vertical:'middle'};
+  ws.getRow(r).height = 26; r++;
+
+  ws.mergeCells(r,1,r,nCols);
+  const subCell = ws.getCell(r,1);
+  subCell.value = 'ENVIAR A: '+destinos.map(d=>(OUTLET_BY_ID[d]?OUTLET_BY_ID[d].nombre:d)).join(' / ');
+  subCell.font = {bold:true, color:{argb:BRAND.navy}, size:11, name:'Calibri'};
+  subCell.alignment = {horizontal:'center'};
+  ws.getRow(r).height = 18; r++;
+  r++;
+
+  if(slug==='calle-12'){
+    ws.mergeCells(r,1,r,nCols);
+    const notaCell = ws.getCell(r,1);
+    notaCell.value = '⚠ '+reglaCalle12Texto();
+    notaCell.font = {bold:true, color:{argb:BRAND.notaText}, size:10.5, name:'Calibri'};
+    notaCell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.notaBg}};
+    notaCell.alignment = {horizontal:'center', vertical:'middle', wrapText:true};
+    notaCell.border = {top:{style:'thin',color:{argb:BRAND.notaBorder}}, bottom:{style:'thin',color:{argb:BRAND.notaBorder}}, left:{style:'thin',color:{argb:BRAND.notaBorder}}, right:{style:'thin',color:{argb:BRAND.notaBorder}}};
+    ws.getRow(r).height = 30; r++;
+    r++;
+  }
+
+  destinos.forEach(destId=>{
+    const destName = OUTLET_BY_ID[destId] ? OUTLET_BY_ID[destId].nombre : destId;
+
+    ws.mergeCells(r,1,r,nCols);
+    const destCell = ws.getCell(r,1);
+    destCell.value = 'DESTINO: '+destName.toUpperCase();
+    destCell.font = {bold:true, color:{argb:BRAND.white}, size:11.5, name:'Calibri'};
+    destCell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.red}};
+    destCell.alignment = {horizontal:'left', vertical:'middle', indent:1};
+    ws.getRow(r).height = 20; r++;
+
+    const headerRowIdx = r;
+    COLS_ENVIO.forEach((h,idx)=>{
+      const c = ws.getCell(r, idx+1);
+      c.value = h;
+      c.font = {bold:true, color:{argb:BRAND.white}, size:10.5, name:'Calibri'};
+      c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.navy}};
+      c.alignment = {horizontal: idx===6?'right':'left', vertical:'middle'};
+      c.border = thinBorder(BRAND.navy);
+    });
+    ws.getRow(r).height = 18;
+    ws.views = [{state:'frozen', ySplit: headerRowIdx, showGridLines:false}];
+    r++;
+
+    const ordenados = porDestino[destId].slice().sort((a,b)=> a.rubro.localeCompare(b.rubro) || a.marca.localeCompare(b.marca));
+    let tot = 0;
+    ordenados.forEach((it, i)=>{
+      const vals = [it.rubro, it.grupo2, it.marca, it.codigo, it.articulo, it.descripcion, it.cantidad, '', ''];
+      vals.forEach((v, idx)=>{
+        const c = ws.getCell(r, idx+1);
+        c.value = v;
+        c.font = {size:10.5, name:'Calibri', color:{argb:BRAND.navy}};
+        c.alignment = {horizontal: idx===6?'right':'left', vertical:'middle', wrapText: idx===5};
+        c.fill = {type:'pattern', pattern:'solid', fgColor:{argb: i%2===0 ? BRAND.white : BRAND.band}};
+        c.border = thinBorder(BRAND.border);
+      });
+      tot += it.cantidad;
+      r++;
+    });
+
+    ws.mergeCells(r,1,r,5);
+    const totLabel = ws.getCell(r,1);
+    totLabel.value = 'TOTAL '+destName.toUpperCase();
+    totLabel.font = {bold:true, color:{argb:BRAND.navy}, size:10.5, name:'Calibri'};
+    totLabel.alignment = {horizontal:'right'};
+    const totVal = ws.getCell(r,7);
+    totVal.value = tot;
+    totVal.font = {bold:true, color:{argb:BRAND.navy}, size:10.5, name:'Calibri'};
+    totVal.alignment = {horizontal:'right'};
+    for(let c=1;c<=nCols;c++){ ws.getCell(r,c).fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.totalBg}}; ws.getCell(r,c).border = {top:{style:'medium',color:{argb:BRAND.navy}}}; }
+    ws.getRow(r).height = 18;
+    r += 2;
+  });
+
+  ws.pageSetup = {orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, paperSize:9, margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}};
+
+  await downloadWorkbook(wb, 'Discontinuos_'+(info?info.nombre.replace(/\s+/g,'_'):slug)+'_'+ym+'.xlsx');
+  logDescarga('envio', ym);
+}
+
+/* ============================================================
+   VISTA SUCURSAL — HISTÓRICO
+   ============================================================ */
+async function renderHistoricoView(slug, container){
+  const info = SUCURSAL_BY_SLUG[slug];
+  const mesesDesc = await monthsForSucursal(slug); // más nuevo primero
+  if(!mesesDesc.length){
+    container.innerHTML = '<div class="pg-title">Histórico</div><div class="empty">Todavía no hay meses cargados para esta sucursal.</div>';
+    return;
+  }
+  const cronologico = mesesDesc.slice().reverse(); // más viejo primero (para leer la evolución)
+  const filas = [];
+  for(const ym of cronologico){
+    const d = await getMonthData(ym);
+    const suc = d[slug] || {items:[], total:0};
+    const items = suc.items || [];
+    filas.push({
+      ym,
+      total: suc.total||0,
+      calzado: items.filter(i=>normStr(i.rubro)==='CALZADO').reduce((a,i)=>a+i.cantidad,0),
+      indumentaria: items.filter(i=>normStr(i.rubro)==='INDUMENTARIA').reduce((a,i)=>a+i.cantidad,0),
+      accesorios: items.filter(i=>normStr(i.rubro)==='ACCESORIOS').reduce((a,i)=>a+i.cantidad,0),
+    });
+  }
+  filas.forEach((f,idx)=>{
+    const prev = filas[idx-1];
+    f.vTotal = prev ? diffInfo(f.total, prev.total) : null;
+    f.vCalzado = prev ? diffInfo(f.calzado, prev.calzado) : null;
+    f.vIndumentaria = prev ? diffInfo(f.indumentaria, prev.indumentaria) : null;
+    f.vAccesorios = prev ? diffInfo(f.accesorios, prev.accesorios) : null;
+  });
+
+  const max = Math.max(1, ...filas.map(f=>f.total));
+  const chartHtml = '<div class="chart">'+
+    filas.map(f=>{
+      const h = Math.round((f.total/max)*130)+4;
+      const hi = f.vTotal && f.vTotal.dir==='up';
+      return '<div class="chart-col"><div class="chart-val">'+fmtNum(f.total)+'</div><div class="chart-bar'+(hi?' hi':'')+'" style="height:'+h+'px"></div><div class="chart-lbl">'+ymToLabel(f.ym).replace(' 20',' \'')+'</div></div>';
+    }).join('')+
+  '</div>';
+
+  function celda(val, v){
+    if(!v) return fmtNum(val);
+    const cls = v.dir==='eq' ? 'equal' : (v.dir==='up' ? 'worse' : 'better');
+    return fmtNum(val)+' <span class="kpi-sub '+cls+'" style="display:inline">'+(v.dir==='eq'?'(=)':(v.dir==='up'?'▲':'▼')+' '+(v.diff>0?'+':'')+v.diff)+'</span>';
+  }
+
+  container.innerHTML =
+    '<div class="pg-title">Histórico</div>'+
+    '<div class="pg-sub">'+(info?info.nombre:slug)+' · evolución mes a mes de artículos con poco stock</div>'+
+    '<div class="card" style="margin-top:16px"><div class="card-title">Total por mes</div>'+chartHtml+
+      '<div class="hint">En rojo: meses donde el total subió respecto al anterior (acumulando discontinuos). En verde: bajó.</div>'+
+    '</div>'+
+    '<div class="card"><div class="card-title">Detalle por rubro</div><div class="table-wrap"><table><thead><tr>'+
+      '<th>Mes</th><th class="r">Total</th><th class="r">Calzado</th><th class="r">Indumentaria</th><th class="r">Accesorios</th>'+
+    '</tr></thead><tbody>'+
+    filas.slice().reverse().map(f=>
+      '<tr><td>'+ymToLabel(f.ym)+'</td>'+
+      '<td class="td-num">'+celda(f.total, f.vTotal)+'</td>'+
+      '<td class="td-num">'+celda(f.calzado, f.vCalzado)+'</td>'+
+      '<td class="td-num">'+celda(f.indumentaria, f.vIndumentaria)+'</td>'+
+      '<td class="td-num">'+celda(f.accesorios, f.vAccesorios)+'</td></tr>'
+    ).join('')+
+    '</tbody></table></div></div>';
+}
+
+/* ============================================================
+   VISTA OUTLET
+   ============================================================ */
+async function renderOutletView(outletId, container, opts){
+  const info = OUTLET_BY_ID[outletId];
+  const meses = await getMonthsList();
+  const ym = opts.mes || meses[0];
+  if(!ym){
+    container.innerHTML = '<div class="pg-title">'+(info?info.nombre:outletId)+'</div><div class="empty">Todavía no hay datos cargados.</div>';
+    return;
+  }
+  const monthData = await getMonthData(ym);
+  const porSucursal = {};
+  let totalGeneral = 0, calzado=0, indumentaria=0, accesorios=0;
+  Object.keys(monthData).forEach(slug=>{
+    if(slug==='meta') return;
+    const items = (monthData[slug].items||[]).filter(i=>i.destino===outletId);
+    if(!items.length) return;
+    porSucursal[slug] = items;
+    items.forEach(i=>{
+      totalGeneral += i.cantidad;
+      if(normStr(i.rubro)==='CALZADO') calzado += i.cantidad;
+      else if(normStr(i.rubro)==='INDUMENTARIA') indumentaria += i.cantidad;
+      else if(normStr(i.rubro)==='ACCESORIOS') accesorios += i.cantidad;
+    });
+  });
+  const sucursalesOrigen = Object.keys(porSucursal);
+
+  const showRegla = (outletId==='gonnet' || outletId==='calle-55');
+  const mesesOptions = meses.map(m=>'<option value="'+m+'"'+(m===ym?' selected':'')+'>'+ymToLabel(m)+'</option>').join('');
+
+  container.innerHTML =
+    '<div class="head-row"><div>'+
+      '<div class="pg-title">'+(info?info.nombre:outletId)+'</div>'+
+      '<div class="pg-sub">'+ymToLabel(ym)+'</div>'+
+      (showRegla ? '<div class="nota-regla">⚠ '+reglaCalle12Texto()+'</div>' : '')+
+    '</div>'+
+    '<div><select class="sel" id="outMesSel">'+mesesOptions+'</select></div>'+
+    '</div>'+
+    '<div class="kpi-bar">'+
+      kpiHtml('Total a recibir', totalGeneral)+
+      kpiHtml('Calzado', calzado)+
+      kpiHtml('Indumentaria', indumentaria)+
+      kpiHtml('Accesorios', accesorios)+
+      '<div class="kpi"><div class="kpi-label">Sucursales origen</div><div class="kpi-val">'+sucursalesOrigen.length+'</div></div>'+
+    '</div>'+
+    '<button class="btn btn-primary btn-block" id="btnExportOut">📥 Exportar checklist de recepción</button>'+
+    '<div class="toolbar" style="margin-top:18px">'+
+      '<select class="sel" id="outFiltroSuc"><option value="">Sucursal de origen (todas)</option>'+
+        sucursalesOrigen.map(s=>'<option value="'+s+'">'+(SUCURSAL_BY_SLUG[s]?SUCURSAL_BY_SLUG[s].nombre:s)+'</option>').join('')+
+      '</select>'+
+      '<select class="sel" id="outFiltroRubro"><option value="">Rubro (todos)</option></select>'+
+      '<select class="sel" id="outFiltroMarca"><option value="">Marca (todas)</option></select>'+
+    '</div>'+
+    '<div id="outSections"></div>';
+
+  $('outMesSel').addEventListener('change', e=> renderOutletView(outletId, container, {mes:e.target.value}));
+  $('btnExportOut').addEventListener('click', ()=> exportOutletXlsx(outletId, ym, porSucursal));
+
+  const allItems = [].concat(...Object.values(porSucursal));
+  fillSelectOptions('outFiltroRubro', uniqueVals(allItems,'rubro'));
+  fillSelectOptions('outFiltroMarca', uniqueVals(allItems,'marca'));
+
+  function draw(){
+    const fs = $('outFiltroSuc').value, fr = $('outFiltroRubro').value, fm = $('outFiltroMarca').value;
+    const box = $('outSections'); box.innerHTML='';
+    let any = false;
+    Object.keys(porSucursal).forEach(slug=>{
+      if(fs && fs!==slug) return;
+      let items = porSucursal[slug];
+      items = items.filter(i=> (!fr||i.rubro===fr) && (!fm||i.marca===fm));
+      if(!items.length) return;
+      any = true;
+      const sub = items.reduce((a,i)=>a+i.cantidad,0);
+      const card = document.createElement('div'); card.className='card';
+      card.innerHTML = '<div class="card-title">'+(SUCURSAL_BY_SLUG[slug]?SUCURSAL_BY_SLUG[slug].nombre:slug)+' <span style="color:var(--muted);font-family:var(--font-c);font-size:14px">('+fmtNum(sub)+' u.)</span></div>'+
+        '<div class="table-wrap"><table><thead><tr><th>Rubro</th><th>Grupo 2</th><th>Marca</th><th>Código</th><th>Artículo</th><th>Descripción</th><th class="r">Cant.</th></tr></thead><tbody>'+
+        items.map(i=>'<tr><td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td><td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td>'+esc(i.descripcion)+'</td><td class="td-num">'+fmtNum(i.cantidad)+'</td></tr>').join('')+
+        '</tbody></table></div>';
+      box.appendChild(card);
+    });
+    if(!any) box.innerHTML = '<div class="no-results">No se encontraron artículos.</div>';
+  }
+  ['outFiltroSuc','outFiltroRubro','outFiltroMarca'].forEach(id=> $(id).addEventListener('change', draw));
+  draw();
+}
+
+function exportOutletXlsx(outletId, ym, porSucursal){
+  const info = OUTLET_BY_ID[outletId];
+  const rows = [];
+  rows.push(['MATEU SPORTS — CHECKLIST DE RECEPCIÓN '+(info?info.nombre.toUpperCase():outletId)+' — '+ymToLabel(ym).toUpperCase()]);
+  rows.push([]);
+  if(outletId==='gonnet' || outletId==='calle-55'){ rows.push([reglaCalle12Texto()]); rows.push([]); }
+  Object.keys(porSucursal).forEach(slug=>{
+    const items = porSucursal[slug];
+    const sucNombre = SUCURSAL_BY_SLUG[slug]? SUCURSAL_BY_SLUG[slug].nombre : slug;
+    rows.push(['ORIGEN: '+sucNombre.toUpperCase()]);
+    rows.push(['RUBRO','MARCA','CÓDIGO','ARTÍCULO','DESCRIPCIÓN','CANT.','RECIBIDO','OBSERVACIONES']);
+    let tot=0;
+    items.forEach(i=>{ rows.push([i.rubro,i.marca,i.codigo,i.articulo,i.descripcion,i.cantidad,'','']); tot+=i.cantidad; });
+    rows.push(['','','','','TOTAL',tot,'','']);
+    rows.push([]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:14},{wch:14},{wch:12},{wch:16},{wch:38},{wch:8},{wch:10},{wch:22}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Recepción');
+  XLSX.writeFile(wb, 'Recepcion_'+(info?info.nombre.replace(/\s+/g,'_'):outletId)+'_'+ym+'.xlsx');
+  logDescarga('recepcion', ym);
+}
+
+/* ============================================================
+   VISTA ADMIN — DASHBOARD
+   ============================================================ */
+async function renderAdminDashboard(container){
+  const meses = await getMonthsList();
+  if(!meses.length){
+    container.innerHTML = '<div class="pg-title">Dashboard</div><div class="empty">Todavía no se cargó ningún mes. Andá a "Carga Mensual".</div>';
+    return;
+  }
+  const ym = meses[0];
+  const monthData = await getMonthData(ym);
+  const prevYm = meses[1];
+  const prevData = prevYm ? await getMonthData(prevYm) : null;
+
+  let totalGlobal=0;
+  const porSucursalTotal = {};
+  SUCURSALES.forEach(s=>{
+    const t = (monthData[s.slug]||{}).total || 0;
+    porSucursalTotal[s.slug] = t;
+    totalGlobal += t;
+  });
+
+  container.innerHTML =
+    '<div class="pg-title">Dashboard</div>'+
+    '<div class="pg-sub">'+ymToLabel(ym)+' · último mes cargado</div>'+
+    '<div class="kpi-bar" style="margin-top:16px">'+
+      kpiHtml('Total empresa', totalGlobal)+
+      '<div class="kpi"><div class="kpi-label">Sucursales con datos</div><div class="kpi-val">'+Object.keys(monthData).filter(k=>k!=='meta').length+'</div></div>'+
+      '<div class="kpi"><div class="kpi-label">Meses cargados</div><div class="kpi-val">'+meses.length+'</div></div>'+
+    '</div>'+
+    '<div class="grid-2">'+
+      '<div class="card"><div class="card-title">Ranking de sucursales</div><div id="dashRanking"></div></div>'+
+      '<div class="card"><div class="card-title">Evolución mensual</div><div id="dashChart"></div></div>'+
+    '</div>'+
+    '<div class="card">'+
+      '<div class="card-title">Buscador global</div>'+
+      '<div class="toolbar">'+
+        '<select class="sel" id="dashFiltroSuc"><option value="">Sucursal (todas)</option>'+SUCURSALES.map(s=>'<option value="'+s.slug+'">'+s.nombre+'</option>').join('')+'</select>'+
+        '<select class="sel" id="dashFiltroOutlet"><option value="">Outlet destino (todos)</option>'+OUTLETS_LIST.map(o=>'<option value="'+o.id+'">'+o.nombre+'</option>').join('')+'</select>'+
+        '<select class="sel" id="dashFiltroRubro"><option value="">Rubro (todos)</option></select>'+
+        '<select class="sel" id="dashFiltroMarca"><option value="">Marca (todas)</option></select>'+
+        '<input class="search-box" id="dashSearch" placeholder="Buscar…">'+
+        '<span class="a-count" id="dashCount"></span>'+
+      '</div>'+
+      '<div class="table-wrap"><table id="dashTable"><thead><tr><th>Sucursal</th><th>Rubro</th><th>Grupo 2</th><th>Marca</th><th>Código</th><th>Artículo</th><th class="r">Cant.</th><th>Destino</th></tr></thead><tbody></tbody></table></div>'+
+      '<div id="dashNoResults" class="no-results" style="display:none">No se encontraron artículos.</div>'+
+    '</div>'+
+    '<button class="btn btn-outline" id="btnExportTodo">📦 Exportar TODO (una hoja por sucursal)</button>';
+
+  // Ranking
+  const ranking = SUCURSALES.map(s=>({slug:s.slug, nombre:s.nombre, total:porSucursalTotal[s.slug]||0}))
+    .sort((a,b)=>b.total-a.total);
+  const rankBox = $('dashRanking');
+  ranking.forEach((r,idx)=>{
+    const prevTotal = prevData ? ((prevData[r.slug]||{}).total||0) : null;
+    let sub = '';
+    if(prevTotal){ const v=((r.total-prevTotal)/prevTotal)*100; sub = ' <span style="font-size:11px;color:'+(v<=0?'var(--ok)':'var(--bad)')+'">'+fmtPct(v)+'</span>'; }
+    const row = document.createElement('div'); row.className='rank-row';
+    row.innerHTML = '<div class="rank-n">'+(idx+1)+'</div><div class="rank-name">'+r.nombre+sub+'</div><div class="rank-val">'+fmtNum(r.total)+'</div>';
+    row.addEventListener('click', ()=> drillInto('sucursal', r.slug));
+    rankBox.appendChild(row);
+  });
+
+  // Chart evolución (usa periodoAnual del ciclo más reciente si existe)
+  renderEvolutionChart($('dashChart'));
+
+  const allItems = [];
+  SUCURSALES.forEach(s=>{
+    ((monthData[s.slug]||{}).items||[]).forEach(i=> allItems.push(Object.assign({sucursal:s.slug, sucursalNombre:s.nombre}, i)));
+  });
+  fillSelectOptions('dashFiltroRubro', uniqueVals(allItems,'rubro'));
+  fillSelectOptions('dashFiltroMarca', uniqueVals(allItems,'marca'));
+
+  function draw(){
+    const fs=$('dashFiltroSuc').value, fo=$('dashFiltroOutlet').value, fr=$('dashFiltroRubro').value, fm=$('dashFiltroMarca').value;
+    const q = normLower($('dashSearch').value);
+    const filtered = allItems.filter(i=>{
+      if(fs && i.sucursal!==fs) return false;
+      if(fo && i.destino!==fo) return false;
+      if(fr && i.rubro!==fr) return false;
+      if(fm && i.marca!==fm) return false;
+      if(q && !normLower(i.codigo+' '+i.articulo+' '+i.descripcion+' '+i.marca).includes(q)) return false;
+      return true;
+    }).slice(0,500);
+    const tbody = document.querySelector('#dashTable tbody'); tbody.innerHTML='';
+    filtered.forEach(i=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>'+i.sucursalNombre+'</td><td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td><td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td class="td-num">'+fmtNum(i.cantidad)+'</td><td>'+(i.destino?(OUTLET_BY_ID[i.destino]?OUTLET_BY_ID[i.destino].nombre:i.destino):'—')+'</td>';
+      tbody.appendChild(tr);
+    });
+    $('dashCount').textContent = filtered.length+' resultado(s) (máx. 500 mostrados)';
+    $('dashNoResults').style.display = filtered.length? 'none':'block';
+  }
+  ['dashFiltroSuc','dashFiltroOutlet','dashFiltroRubro','dashFiltroMarca','dashSearch'].forEach(id=>{
+    $(id).addEventListener('input', draw); $(id).addEventListener('change', draw);
+  });
+  draw();
+
+  $('btnExportTodo').addEventListener('click', ()=> exportTodoXlsx(ym, monthData));
+}
+
+async function renderEvolutionChart(box){
+  try{
+    const ciclos = await fetchJSON(FB+'/periodoAnual.json?shallow=true');
+    const cicloKeys = Object.keys(ciclos||{}).sort().reverse();
+    if(!cicloKeys.length){ box.innerHTML = '<div class="hint">Sin datos de Periodo Anual todavía.</div>'; return; }
+    const ciclo = cicloKeys[0];
+    const data = await fetchJSON(FB+'/periodoAnual/'+ciclo+'.json');
+    const totalesPorMes = CICLO_MESES.map(m=>{
+      let t=0;
+      Object.keys(data||{}).forEach(slug=>{ t += (data[slug][m]||0); });
+      return t;
+    });
+    const max = Math.max(1,...totalesPorMes);
+    box.innerHTML = '<div class="chart">'+
+      totalesPorMes.map((v,idx)=>{
+        const h = Math.round((v/max)*130)+4;
+        return '<div class="chart-col"><div class="chart-val">'+fmtNum(v)+'</div><div class="chart-bar'+(v===max?' hi':'')+'" style="height:'+h+'px"></div><div class="chart-lbl">'+CICLO_MESES[idx].slice(0,3)+'</div></div>';
+      }).join('')+
+    '</div>';
+  }catch(e){
+    box.innerHTML = '<div class="hint">Sin datos de Periodo Anual todavía.</div>';
+  }
+}
+
+function drillInto(tipo, id){
+  goToView(tipo==='sucursal'?'sucursal':'outlet');
+  const container = tipo==='sucursal' ? $('view-sucursal') : $('view-outlet');
+  container.innerHTML = '<div class="bc"><span class="lnk drill-back">← Volver al dashboard</span></div><div class="drill-body"></div>';
+  container.querySelector('.drill-back').addEventListener('click', ()=>{ goToView('admin-dashboard'); renderAdminDashboard($('view-admin-dashboard')); });
+  const body = container.querySelector('.drill-body');
+  if(tipo==='sucursal') renderSucursalView(id, body, {});
+  else renderOutletView(id, body, {});
+}
+
+function exportTodoXlsx(ym, monthData){
+  const wb = XLSX.utils.book_new();
+  SUCURSALES.forEach(s=>{
+    const suc = monthData[s.slug] || {items:[], total:0};
+    const items = suc.items || [];
+    const rows = [['MATEU SPORTS — DISCONTINUOS '+s.nombre.toUpperCase()+' — '+ymToLabel(ym).toUpperCase()], []];
+    rows.push(['RUBRO','GRUPO 2','MARCA','CÓDIGO','ARTÍCULO','DESCRIPCIÓN','CANT.','DESTINO']);
+    items.forEach(i=> rows.push([i.rubro,i.grupo2,i.marca,i.codigo,i.articulo,i.descripcion,i.cantidad, i.destino?(OUTLET_BY_ID[i.destino]?OUTLET_BY_ID[i.destino].nombre:i.destino):'Sin envío']));
+    rows.push(['','','','','','TOTAL', suc.total||0,'']);
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:14},{wch:26},{wch:14},{wch:12},{wch:16},{wch:38},{wch:8},{wch:16}];
+    let sheetName = s.nombre.substring(0,31);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+  XLSX.writeFile(wb, 'Discontinuos_TODO_'+ym+'.xlsx');
+  logDescarga('todo', ym);
+}
+
+/* ============================================================
+   VISTA ADMIN — CARGA MENSUAL
+   ============================================================ */
+function renderCargaView(container){
+  const now = new Date();
+  const yearOptions = [now.getFullYear()-1, now.getFullYear(), now.getFullYear()+1].map(y=>'<option value="'+y+'"'+(y===now.getFullYear()?' selected':'')+'>'+y+'</option>').join('');
+  const monthOptions = MESES_NOMBRE.slice(1).map((m,idx)=>'<option value="'+(idx+1)+'"'+((idx+1)===(now.getMonth()+1)?' selected':'')+'>'+m+'</option>').join('');
+
+  container.innerHTML =
+    '<div class="pg-title">Carga Mensual</div>'+
+    '<div class="pg-sub">Subí el Excel "Discontinuos" del mes para procesarlo.</div>'+
+    '<div class="card">'+
+      '<div class="toolbar">'+
+        '<select class="sel" id="cargaMes">'+monthOptions+'</select>'+
+        '<select class="sel" id="cargaAnio">'+yearOptions+'</select>'+
+      '</div>'+
+      '<div class="upload-zone" id="uploadZone">'+
+        '<div style="font-size:32px">📁</div>'+
+        '<div style="margin-top:8px;font-weight:600">Arrastrá el Excel acá o hacé clic para elegirlo</div>'+
+        '<div class="hint">.xlsx · .xls</div>'+
+        '<input type="file" id="fileInput" accept=".xlsx,.xls">'+
+      '</div>'+
+    '</div>'+
+    '<div id="cargaResultado"></div>';
+
+  const zone = $('uploadZone'), input = $('fileInput');
+  zone.addEventListener('click', ()=> input.click());
+  zone.addEventListener('dragover', e=>{ e.preventDefault(); zone.classList.add('drag'); });
+  zone.addEventListener('dragleave', ()=> zone.classList.remove('drag'));
+  zone.addEventListener('drop', e=>{
+    e.preventDefault(); zone.classList.remove('drag');
+    if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+  input.addEventListener('change', e=>{ if(e.target.files.length) handleFile(e.target.files[0]); });
+}
+
+function findSheetName(workbook, displayName){
+  const target = normLower(displayName);
+  let found = workbook.SheetNames.find(n=> normLower(n)===target);
+  if(found) return found;
+  found = workbook.SheetNames.find(n=> normLower(n).includes(target) || target.includes(normLower(n)));
+  return found || null;
+}
+
+function mapHeaderCols(headerRow){
+  const map = {};
+  headerRow.forEach((cell, idx)=>{
+    const n = normStr(cell);
+    if(n==='RUBRO') map.rubro = idx;
+    else if(n==='GRUPO 2' || n==='GRUPO2') map.grupo2 = idx;
+    else if(n==='MARCA') map.marca = idx;
+    else if(n==='CODIGO') map.codigo = idx;
+    else if(n==='ARTICULO') map.articulo = idx;
+    else if(n==='DESCRIPCION') map.descripcion = idx;
+  });
+  return map;
+}
+
+function handleFile(file){
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      const wb = XLSX.read(e.target.result, {type:'array'});
+      const parsed = parseWorkbook(wb);
+      window.__parsedCarga = parsed;
+      renderValidacion(parsed);
+    }catch(err){
+      $('cargaResultado').innerHTML = '<div class="card"><div class="val-bad">Error al leer el archivo: '+esc(err.message)+'</div></div>';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseWorkbook(wb){
+  const result = {sucursales:{}, errores:[], periodoAnual:null};
+
+  SUCURSALES.forEach(s=>{
+    const wsName = findSheetName(wb, s.nombre);
+    if(!wsName){ result.errores.push('Falta la hoja "'+s.nombre+'".'); return; }
+    const ws = wb.Sheets[wsName];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+    const headerRowIdx = rows.findIndex(r=> Array.isArray(r) && r.some(c=> normStr(c)==='RUBRO'));
+    if(headerRowIdx===-1){ result.errores.push('Hoja "'+s.nombre+'": no se encontró la fila de encabezados (RUBRO).'); return; }
+    const headerRow = rows[headerRowIdx];
+    const cols = mapHeaderCols(headerRow);
+    if(cols.rubro===undefined){ result.errores.push('Hoja "'+s.nombre+'": no se pudo mapear la columna RUBRO.'); return; }
+
+    let totalEsperado = null;
+    for(let i=headerRow.length-1;i>=0;i--){
+      if(headerRow[i]!==null && headerRow[i]!==undefined && String(headerRow[i]).trim()!==''){
+        totalEsperado = toNumber(headerRow[i]); break;
+      }
+    }
+
+    const items = [];
+    for(let r=headerRowIdx+1; r<rows.length; r++){
+      const row = rows[r];
+      if(!row) continue;
+      const rubro = row[cols.rubro];
+      if(rubro===null || rubro===undefined || String(rubro).trim()==='') continue;
+      const cantidad = toNumber(row[headerRow.length-1]);
+      if(cantidad===null) continue;
+      const grupo2raw = cols.grupo2!==undefined ? row[cols.grupo2] : '';
+      const dest = resolverDestino(grupo2raw, s.slug);
+      items.push({
+        rubro: String(rubro).trim(),
+        grupo2: grupo2raw ? String(grupo2raw).trim() : '',
+        marca: cols.marca!==undefined ? String(row[cols.marca]||'').trim() : '',
+        codigo: cols.codigo!==undefined ? String(row[cols.codigo]||'').trim() : '',
+        articulo: cols.articulo!==undefined ? String(row[cols.articulo]||'').trim() : '',
+        descripcion: cols.descripcion!==undefined ? String(row[cols.descripcion]||'').trim() : '',
+        cantidad: cantidad,
+        destino: dest.destino
+      });
+    }
+    const totalParseado = items.reduce((a,i)=>a+i.cantidad,0);
+    result.sucursales[s.slug] = {
+      items, total: totalParseado, totalEsperado,
+      ok: (totalEsperado===null || totalEsperado===totalParseado),
+      vacia: items.length===0
+    };
+  });
+
+  const paName = findSheetName(wb, 'Periodo Anual');
+  if(paName){
+    const ws = wb.Sheets[paName];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+    const headerRow = rows[2] || [];
+    const meses = headerRow.slice(1,13).map(m=>normStr(m));
+    const data = {};
+    for(let r=3;r<rows.length;r++){
+      const row = rows[r]; if(!row) continue;
+      const nombreRaw = row[0]; if(!nombreRaw) continue;
+      const slug = resolveSucursalSlug(nombreRaw);
+      if(!slug) continue;
+      const vals = {};
+      for(let c=1;c<=12;c++){ vals[meses[c-1]] = toNumber(row[c]) || 0; }
+      data[slug] = vals;
+    }
+    result.periodoAnual = {meses, data};
+  } else {
+    result.errores.push('No se encontró la hoja "Periodo Anual" (se omite la serie histórica).');
+  }
+
+  return result;
+}
+
+/* ============================================================
+   PARSER — GESTIÓN DE STOCK (una sola hoja, 3 bloques apilados)
+   ============================================================ */
+function parseGestionStockWorkbook(wb){
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:false});
+  const errores = [];
+
+  // Bloque 1: Almacenes — filas 1 a 22, fila 23 = Total
+  const almacenes = {};
+  for(let r=1; r<=22; r++){
+    const row = rows[r]; if(!row) continue;
+    const nombre = row[0];
+    if(!nombre || normLower(nombre)==='total') continue;
+    const slug = gsResolveSimple(nombre);
+    if(!slug){ errores.push('Almacenes, fila '+(r+1)+': no reconozco "'+nombre+'".'); continue; }
+    almacenes[slug] = {
+      faltaUno: toNumber(row[1]), faltaUnoNota: row[2],
+      garantias: toNumber(row[3]), garantiasNota: row[4],
+      mojados: toNumber(row[5]), mojadosNota: row[6],
+      diferencias: toNumber(row[7]), diferenciasNota: row[8],
+      auditoria: toNumber(row[9]), auditoriaNota: row[10],
+    };
+  }
+  const totRow = rows[23];
+  const almacenesTotal = totRow ? {
+    faltaUno: toNumber(totRow[1]), garantias: toNumber(totRow[3]),
+    mojados: toNumber(totRow[5]), diferencias: toNumber(totRow[7]), auditoria: toNumber(totRow[9]),
+  } : null;
+
+  // Bloque 2: Discontinuos/Stock1-3/Negativos (filas 26-47, cols 0-6) + Horas (cols 7-8, mismas filas)
+  const resumen = {};
+  const horas = [];
+  for(let r=26; r<=47; r++){
+    const row = rows[r]; if(!row) continue;
+    const nombre = row[0];
+    if(nombre && normLower(nombre).trim()!==''){
+      const slug = gsResolveSimple(nombre);
+      if(slug){
+        resumen[slug] = {
+          discontinuos: toNumber(row[1]), discontinuosNota: row[2],
+          stock1a3Calzado: toNumber(row[3]), stock1a3Ind: toNumber(row[4]),
+          negativos: toNumber(row[5]), negativosNota: row[6],
+        };
+      } else {
+        errores.push('Resumen, fila '+(r+1)+': no reconozco "'+nombre+'".');
+      }
+    }
+    const codNombre = row[7], hs = row[8];
+    if(codNombre && hs!==null && hs!==undefined && hs!==''){
+      const slug = gsResolveCodigo(codNombre);
+      if(slug){
+        const hsNum = toNumber(hs);
+        // 0 horas es un valor centinela de "sin dato" en el origen (no una medición real).
+        horas.push({codigo:codNombre, slug, horas: hsNum===0 ? null : hsNum});
+      } else errores.push('Horas de descarga, fila '+(r+1)+': no reconozco "'+codNombre+'".');
+    }
+  }
+
+  // Bloque 3: Meses de Stock (filas 51-72), 3 tablas lado a lado: cols 0-4, 6-10, 12-16
+  function parseMesesTabla(colOffset){
+    const out = [];
+    for(let r=51; r<=72; r++){
+      const row = rows[r]; if(!row) continue;
+      const codNombre = row[colOffset];
+      if(!codNombre) continue;
+      const slug = gsResolveCodigo(codNombre);
+      if(!slug){ errores.push('Meses de Stock, fila '+(r+1)+', col '+colOffset+': no reconozco "'+codNombre+'".'); continue; }
+      out.push({ codigo: codNombre, slug, stock: toNumber(row[colOffset+2]), ventas: toNumber(row[colOffset+3]), ratio: toNumber(row[colOffset+4]) });
+    }
+    return out;
+  }
+  const mesesStock = {
+    calzado: parseMesesTabla(0),
+    indumentaria: parseMesesTabla(6),
+    accesorios: parseMesesTabla(12),
+  };
+
+  const resTotRow = rows[48];
+  const resumenTotal = resTotRow ? {
+    discontinuos: toNumber(resTotRow[1]), discontinuosNota: resTotRow[2],
+    negativos: toNumber(resTotRow[5]), negativosNota: resTotRow[6],
+  } : null;
+
+  return { almacenes, almacenesTotal, resumen, resumenTotal, horas, mesesStock, errores };
+}
+
+/* ============================================================
+   VISTA — GESTIÓN DE STOCK
+   ============================================================ */
+const GS_MONTH_CACHE = {};
+async function gsGetMonthsList(){
+  try{ const d = await fetchJSON(FB+'/gestionStock.json?shallow=true'); return Object.keys(d||{}).sort().reverse(); }catch(e){ return []; }
+}
+async function gsGetMonthData(ym){
+  if(GS_MONTH_CACHE[ym]) return GS_MONTH_CACHE[ym];
+  const d = await fetchJSON(FB+'/gestionStock/'+ym+'.json');
+  GS_MONTH_CACHE[ym] = d || {};
+  return GS_MONTH_CACHE[ym];
+}
+function gsNum(v){ return (v===null||v===undefined) ? '—' : fmtNum(v); }
+function gsSlugsOrdenados(){ return SUCURSALES.map(s=>s.slug).concat(OUTLETS_LIST.map(o=>o.id)); }
+
+// "3 más que el informe ant." -> +3 · "6 menos que informe ant." -> -6 · "Igual..." -> 0
+function gsNotaDelta(nota){
+  if(!nota) return null;
+  const s = String(nota);
+  if(/igual/i.test(s)) return 0;
+  const m = s.match(/(\d+)\s*(más|menos)/i);
+  if(!m) return null;
+  const n = parseInt(m[1],10);
+  return /menos/i.test(m[2]) ? -n : n;
+}
+function gsNotaHtml(nota){
+  if(!nota) return '';
+  const d = gsNotaDelta(nota);
+  const cls = d>0 ? 'gs-nota-worse' : (d<0 ? 'gs-nota-better' : '');
+  return '<span class="hint '+cls+'">'+esc(nota)+'</span>';
+}
+function gsSumDeltas(obj, notaField){
+  let sum = 0, any = false;
+  Object.values(obj||{}).forEach(d=>{ const v = gsNotaDelta(d[notaField]); if(v!==null){ sum += v; any = true; } });
+  return any ? sum : null;
+}
+function gsRatioClass(ratio){
+  if(ratio===null||ratio===undefined) return '';
+  if(ratio<3) return 'gs-ratio-low';
+  if(ratio<6) return 'gs-ratio-mid';
+  return 'gs-ratio-high';
+}
+function gsStockLookup(lista){ const m={}; (lista||[]).forEach(x=>{ m[x.slug]=x.stock; }); return m; }
+function gsPct(parte, total){
+  if(!total || parte===null || parte===undefined) return '';
+  return ' <span class="hint">('+(parte/total*100).toFixed(1)+'%)</span>';
+}
+// Las sugerencias de movimiento van SOLO dentro de cada grupo (Aurelius entre sí,
+// Adidas entre sí, Mateu Sports + outlets propios entre sí) — no cruzan entre grupos.
+const GS_GRUPO_AURELIUS = ['aurelius-12','aurelius-5','aurelius-cb','aurelius-10'];
+const GS_GRUPO_ADIDAS = ['adidas','adidas-12','originals'];
+const GS_GRUPO_LABEL = {aurelius:'Aurelius', adidas:'Adidas', mateu:'Mateu Sports y outlets'};
+function gsGrupoDe(slug){
+  if(GS_GRUPO_AURELIUS.includes(slug)) return 'aurelius';
+  if(GS_GRUPO_ADIDAS.includes(slug)) return 'adidas';
+  return 'mateu';
+}
+function gsInsightGrupo(lista, grupoKey){
+  const conDatos = (lista||[]).filter(x=> x.ratio!==null && x.ratio!==undefined && gsGrupoDe(x.slug)===grupoKey);
+  if(conDatos.length<2) return '';
+  const max = conDatos.reduce((a,b)=> b.ratio>a.ratio?b:a);
+  const min = conDatos.reduce((a,b)=> b.ratio<a.ratio?b:a);
+  if(max.slug===min.slug) return '';
+  return '<div>💡 <b>'+esc(GS_GRUPO_LABEL[grupoKey])+':</b> <b>'+esc(nombreDeSlug(max.slug))+'</b> tiene '+fmtNum(max.ratio)+
+    ' meses de cobertura — candidata a achicar stock. <b>'+esc(nombreDeSlug(min.slug))+'</b> tiene solo '+fmtNum(min.ratio)+
+    ' meses — conviene descomprimirla reforzando su stock desde la anterior.</div>';
+}
+function gsInsightMeses(lista, tituloRubro){
+  const bloques = ['aurelius','adidas','mateu'].map(g=>gsInsightGrupo(lista,g)).filter(Boolean);
+  if(!bloques.length) return '';
+  return '<div class="gs-insight">'+bloques.join('<hr style="border:none;border-top:1px solid #b8c9f0;margin:8px 0">')+'</div>';
+}
+function gsAnimateBars(container){
+  const apply = ()=> container.querySelectorAll('.gs-bar-fill[data-w]').forEach(el=>{ el.style.width = el.dataset.w+'%'; });
+  requestAnimationFrame(apply);
+  setTimeout(apply, 60); // respaldo por si la pestaña está en background y rAF no corre
+}
+
+function gsKpisClaveHtml(data){
+  const almacenes = data.almacenes||{}, resumen = data.resumen||{};
+  const at = data.almacenesTotal||{}, rt = data.resumenTotal||{};
+  function card(label, val, delta){
+    const cls = delta>0?'worse':(delta<0?'better':'equal');
+    const sub = delta===null ? '<div class="kpi-sub equal">—</div>' : '<div class="kpi-sub '+cls+'">'+(delta>0?'+':'')+delta+' vs informe anterior</div>';
+    return '<div class="kpi"><div class="kpi-label">'+label+'</div><div class="kpi-val">'+gsNum(val)+'</div>'+sub+'</div>';
+  }
+  return '<div class="card"><div class="card-title">KPIs clave</div><div class="kpi-bar">'+
+    card('Falta Uno', at.faltaUno, gsSumDeltas(almacenes,'faltaUnoNota'))+
+    card('Garantías', at.garantias, gsSumDeltas(almacenes,'garantiasNota'))+
+    card('Diferencias', at.diferencias, gsSumDeltas(almacenes,'diferenciasNota'))+
+    card('Auditoría', at.auditoria, gsSumDeltas(almacenes,'auditoriaNota'))+
+    card('Negativos', rt.negativos, gsSumDeltas(resumen,'negativosNota'))+
+  '</div></div>';
+}
+
+function gsTablaAlmacenes(data, miSlug){
+  const almacenes = data.almacenes||{}, total = data.almacenesTotal;
+  const filas = gsSlugsOrdenados().filter(s=>almacenes[s]).map(slug=>{
+    const d = almacenes[slug]; const mia = slug===miSlug;
+    return '<tr'+(mia?' class="gs-mia"':'')+'><td>'+esc(nombreDeSlug(slug))+(mia?'<span class="gs-badge-mia">MI SUCURSAL</span>':'')+'</td>'+
+      '<td class="td-num gs-center">'+gsNum(d.faltaUno)+'</td><td>'+gsNotaHtml(d.faltaUnoNota)+'</td>'+
+      '<td class="td-num gs-center">'+gsNum(d.garantias)+'</td><td>'+gsNotaHtml(d.garantiasNota)+'</td>'+
+      '<td class="td-num gs-center">'+gsNum(d.mojados)+'</td>'+
+      '<td class="td-num gs-center">'+gsNum(d.diferencias)+'</td><td>'+gsNotaHtml(d.diferenciasNota)+'</td>'+
+      '<td class="td-num gs-center">'+gsNum(d.auditoria)+'</td><td>'+gsNotaHtml(d.auditoriaNota)+'</td></tr>';
+  }).join('');
+  const totRow = total ? '<tr class="tot"><td>Total</td><td class="td-num gs-center">'+gsNum(total.faltaUno)+'</td><td></td>'+
+    '<td class="td-num gs-center">'+gsNum(total.garantias)+'</td><td></td><td class="td-num gs-center">'+gsNum(total.mojados)+'</td>'+
+    '<td class="td-num gs-center">'+gsNum(total.diferencias)+'</td><td></td><td class="td-num gs-center">'+gsNum(total.auditoria)+'</td><td></td></tr>' : '';
+  return '<div class="card"><div class="card-title">Almacenes</div><div class="table-wrap"><table><thead><tr>'+
+    '<th>Sucursal</th><th class="r gs-center">Falta Uno</th><th>Nota</th><th class="r gs-center">Garantías</th><th>Nota</th>'+
+    '<th class="r gs-center">Mojados</th><th class="r gs-center">Diferencias</th><th>Nota</th><th class="r gs-center">Auditoría</th><th>Nota</th>'+
+    '</tr></thead><tbody>'+filas+totRow+'</tbody></table></div></div>';
+}
+
+function gsTablaResumen(data, miSlug){
+  const resumen = data.resumen||{};
+  const stockCalzadoMap = gsStockLookup(data.mesesStock && data.mesesStock.calzado);
+  const stockIndMap = gsStockLookup(data.mesesStock && data.mesesStock.indumentaria);
+  const filas = gsSlugsOrdenados().filter(s=>resumen[s]).map(slug=>{
+    const d = resumen[slug]; const mia = slug===miSlug;
+    return '<tr'+(mia?' class="gs-mia"':'')+'><td>'+esc(nombreDeSlug(slug))+(mia?'<span class="gs-badge-mia">MI SUCURSAL</span>':'')+'</td>'+
+      '<td class="td-num gs-center">'+gsNum(d.discontinuos)+'</td><td>'+gsNotaHtml(d.discontinuosNota)+'</td>'+
+      '<td class="td-num gs-center">'+gsNum(d.stock1a3Calzado)+gsPct(d.stock1a3Calzado, stockCalzadoMap[slug])+'</td>'+
+      '<td class="td-num gs-center">'+gsNum(d.stock1a3Ind)+gsPct(d.stock1a3Ind, stockIndMap[slug])+'</td>'+
+      '<td class="td-num gs-center">'+gsNum(d.negativos)+'</td><td>'+gsNotaHtml(d.negativosNota)+'</td></tr>';
+  }).join('');
+  const rt = data.resumenTotal;
+  const totRow = rt ? '<tr class="tot"><td>Total</td><td class="td-num gs-center">'+gsNum(rt.discontinuos)+'</td><td></td>'+
+    '<td class="td-num gs-center">—</td><td class="td-num gs-center">—</td>'+
+    '<td class="td-num gs-center">'+gsNum(rt.negativos)+'</td><td></td></tr>' : '';
+  return '<div class="card"><div class="card-title">Discontinuos, stock 1 a 3 y negativos</div>'+
+    '<div class="hint" style="margin-bottom:8px">El % junto a Stock 1-3 es la proporción de ese stock respecto al stock total del rubro — indica qué tan "pinchado" está.</div>'+
+    '<div class="table-wrap"><table><thead><tr>'+
+    '<th>Sucursal</th><th class="r gs-center">Discontinuos</th><th>Nota</th><th class="r gs-center">Stock 1-3 Calzado</th><th class="r gs-center">Stock 1-3 Ind.</th>'+
+    '<th class="r gs-center">Negativos</th><th>Nota</th></tr></thead><tbody>'+filas+totRow+'</tbody></table></div></div>';
+}
+
+function gsTablaHoras(data, miSlug){
+  const horas = (data.horas||[]).slice().sort((a,b)=>{
+    const an = a.horas===null||a.horas===undefined, bn = b.horas===null||b.horas===undefined;
+    if(an) return 1; if(bn) return -1;
+    return a.horas-b.horas;
+  });
+  const max = Math.max(1, ...horas.map(h=>h.horas||0));
+  const filas = horas.map(h=>{
+    const mia = h.slug===miSlug;
+    const sinDato = h.horas===null || h.horas===undefined;
+    const cls = sinDato ? '' : (h.horas<55?'gs-ok':(h.horas<80?'gs-warn':'gs-bad'));
+    const w = sinDato ? 0 : Math.round((h.horas/max)*100);
+    return '<div class="gs-bar-row'+(mia?' gs-mia':'')+'" style="'+(mia?'background:#fff3cd;border-radius:6px;padding:4px 6px':'')+'">'+
+      '<div class="gs-bar-label">'+esc(nombreDeSlug(h.slug))+(mia?' <span class="gs-badge-mia">MI SUCURSAL</span>':'')+'</div>'+
+      '<div class="gs-bar-track"><div class="gs-bar-fill '+cls+'" data-w="'+w+'" style="'+(sinDato?'background:#dce3f0':'')+'"></div></div>'+
+      '<div class="gs-bar-val">'+(sinDato?'S/D':gsNum(h.horas)+' hs')+'</div></div>';
+  }).join('');
+  return '<div class="card"><div class="card-title">Horas promedio de descarga</div>'+
+    '<div class="hint" style="margin-bottom:12px">Ordenado de menor a mayor · verde &lt;55hs (óptimo) · naranja 55-79hs (moderado) · rojo ≥80hs (crítico)</div>'+
+    filas+'</div>';
+}
+
+function gsTablaMesesRubro(lista, titulo, miSlug){
+  const ordenada = (lista||[]).slice().sort((a,b)=>a.ratio-b.ratio);
+  const filas = ordenada.map(x=>{
+    const mia = x.slug===miSlug;
+    return '<tr'+(mia?' class="gs-mia"':'')+'><td>'+esc(nombreDeSlug(x.slug))+(mia?'<span class="gs-badge-mia">MI SUCURSAL</span>':'')+'</td>'+
+      '<td class="td-num gs-center">'+gsNum(x.stock)+'</td><td class="td-num gs-center">'+gsNum(x.ventas)+'</td>'+
+      '<td class="td-num gs-center '+gsRatioClass(x.ratio)+'">'+gsNum(x.ratio)+'</td></tr>';
+  }).join('');
+  const totStock = ordenada.reduce((a,x)=>a+(x.stock||0),0);
+  const totVentas = ordenada.reduce((a,x)=>a+(x.ventas||0),0);
+  const totRatio = totVentas>0 ? totStock/totVentas : null;
+  const totRow = ordenada.length ? '<tr class="tot"><td>Total</td><td class="td-num gs-center">'+gsNum(totStock)+
+    '</td><td class="td-num gs-center">'+gsNum(totVentas)+'</td><td class="td-num gs-center">'+gsNum(totRatio)+'</td></tr>' : '';
+  return '<div class="card"><div class="card-title">'+titulo+'</div>'+
+    '<div class="hint" style="margin-bottom:8px">Meses de cobertura: <span class="gs-ratio-low">&lt;3 riesgo de faltante</span> · '+
+    '<span class="gs-ratio-mid">3 a 5 saludable</span> · <span class="gs-ratio-high">≥6 exceso</span></div>'+
+    '<div class="table-wrap"><table><thead><tr>'+
+    '<th>Sucursal</th><th class="r gs-center">Stock</th><th class="r gs-center">Ventas</th><th class="r gs-center">Meses de cobertura</th>'+
+    '</tr></thead><tbody>'+filas+totRow+'</tbody></table></div>'+
+    gsInsightMeses(ordenada, titulo.replace('Meses de stock — ',''))+
+    '</div>';
+}
+
+function gsCargaHtml(){
+  const now = new Date();
+  const yearOptions = [now.getFullYear()-1, now.getFullYear(), now.getFullYear()+1].map(y=>'<option value="'+y+'"'+(y===now.getFullYear()?' selected':'')+'>'+y+'</option>').join('');
+  const monthOptions = MESES_NOMBRE.slice(1).map((m,idx)=>'<option value="'+(idx+1)+'"'+((idx+1)===(now.getMonth()+1)?' selected':'')+'>'+m+'</option>').join('');
+  return '<div class="card"><div class="card-title">Carga mensual</div>'+
+    '<div class="toolbar"><select class="sel" id="gsCargaMes">'+monthOptions+'</select><select class="sel" id="gsCargaAnio">'+yearOptions+'</select></div>'+
+    '<div class="upload-zone" id="gsUploadZone"><div style="font-size:28px">📁</div>'+
+    '<div style="margin-top:6px;font-weight:600">Arrastrá el Excel de Gestión de Stock o hacé clic</div>'+
+    '<input type="file" id="gsFileInput" accept=".xlsx,.xls"></div>'+
+    '<div id="gsCargaResultado"></div></div>';
+}
+
+function wireGsCarga(container){
+  const zone = container.querySelector('#gsUploadZone'); if(!zone) return;
+  const input = container.querySelector('#gsFileInput');
+  zone.addEventListener('click', ()=> input.click());
+  zone.addEventListener('dragover', e=>{ e.preventDefault(); zone.classList.add('drag'); });
+  zone.addEventListener('dragleave', ()=> zone.classList.remove('drag'));
+  zone.addEventListener('drop', e=>{ e.preventDefault(); zone.classList.remove('drag'); if(e.dataTransfer.files.length) gsHandleFile(e.dataTransfer.files[0], container); });
+  input.addEventListener('change', e=>{ if(e.target.files.length) gsHandleFile(e.target.files[0], container); });
+}
+
+function gsHandleFile(file, container){
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      const wb = XLSX.read(e.target.result, {type:'array'});
+      const parsed = parseGestionStockWorkbook(wb);
+      window.__gsParsed = parsed;
+      const resB = container.querySelector('#gsCargaResultado');
+      resB.innerHTML = '<div class="hint">Almacenes: '+Object.keys(parsed.almacenes).length+' · Resumen: '+Object.keys(parsed.resumen).length+
+        ' · Horas: '+parsed.horas.length+' · Meses de Stock (Calzado/Ind/Acc): '+parsed.mesesStock.calzado.length+'/'+parsed.mesesStock.indumentaria.length+'/'+parsed.mesesStock.accesorios.length+'</div>'+
+        (parsed.errores.length ? '<div class="nota-regla">'+parsed.errores.map(esc).join('<br>')+'</div>' : '<div class="val-ok">✓ Todo reconocido correctamente.</div>')+
+        '<button class="btn btn-primary" id="gsBtnConfirmar" style="margin-top:10px">Confirmar y subir</button>';
+      resB.querySelector('#gsBtnConfirmar').addEventListener('click', ()=> gsConfirmarCarga(container));
+    }catch(err){
+      container.querySelector('#gsCargaResultado').innerHTML = '<div class="val-bad">Error al leer el archivo: '+esc(err.message)+'</div>';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function gsConfirmarCarga(container){
+  const mes = parseInt(container.querySelector('#gsCargaMes').value,10);
+  const anio = parseInt(container.querySelector('#gsCargaAnio').value,10);
+  const ym = anio+'-'+String(mes).padStart(2,'0');
+  const existentes = await gsGetMonthsList();
+  if(existentes.includes(ym) && !confirm('Ya existe una carga para '+ymToLabel(ym)+'. ¿Sobreescribir?')) return;
+  const btn = container.querySelector('#gsBtnConfirmar'); btn.disabled=true; btn.textContent='Subiendo…';
+  const parsed = window.__gsParsed;
+  await putJSON(FB+'/gestionStock/'+ym+'.json', {
+    almacenes: parsed.almacenes, almacenesTotal: parsed.almacenesTotal, resumen: parsed.resumen, resumenTotal: parsed.resumenTotal,
+    horas: parsed.horas, mesesStock: parsed.mesesStock, meta: {mes, cargadoPor:SESSION.email, fecha:Date.now()}
+  });
+  delete GS_MONTH_CACHE[ym];
+  container.dataset.mes = ym;
+  container.querySelector('#gsCargaResultado').innerHTML = '<div class="val-ok">✓ Carga de '+ymToLabel(ym)+' subida correctamente.</div>';
+  await renderGestionStockPanel(container);
+}
+
+async function renderGestionStockPanel(container){
+  const meses = await gsGetMonthsList();
+  if(!meses.length){
+    container.innerHTML = '<div class="pg-title">Gestión de Stock</div>'+
+      (SESSION.rol==='admin' ? gsCargaHtml() : '<div class="empty">Todavía no hay datos cargados.</div>');
+    if(SESSION.rol==='admin') wireGsCarga(container);
+    return;
+  }
+  const ym = container.dataset.mes || meses[0];
+  container.dataset.mes = ym;
+  const data = await gsGetMonthData(ym);
+  const miSlug = SESSION.sucursal || SESSION.outlet_id || null;
+  const mesesOptions = meses.map(m=>'<option value="'+m+'"'+(m===ym?' selected':'')+'>'+ymToLabel(m)+'</option>').join('');
+
+  let html = '<div class="head-row"><div><div class="pg-title">Gestión de Stock</div><div class="pg-sub">'+ymToLabel(ym)+'</div></div>'+
+    '<div><select class="sel" id="gsMesSel">'+mesesOptions+'</select></div></div>'+
+    '<button class="btn btn-primary btn-block" id="gsBtnExportar">📤 Exportar reporte</button>';
+  if(SESSION.rol==='admin') html += gsCargaHtml();
+  html += gsKpisClaveHtml(data);
+  html += gsTablaAlmacenes(data, miSlug);
+  html += gsTablaResumen(data, miSlug);
+  html += gsTablaHoras(data, miSlug);
+  html += gsTablaMesesRubro(data.mesesStock&&data.mesesStock.calzado, 'Meses de stock — Calzado', miSlug);
+  html += gsTablaMesesRubro(data.mesesStock&&data.mesesStock.indumentaria, 'Meses de stock — Indumentaria', miSlug);
+  html += gsTablaMesesRubro(data.mesesStock&&data.mesesStock.accesorios, 'Meses de stock — Accesorios', miSlug);
+
+  container.innerHTML = html;
+  container.querySelector('#gsMesSel').addEventListener('change', e=>{ container.dataset.mes = e.target.value; renderGestionStockPanel(container); });
+  container.querySelector('#gsBtnExportar').addEventListener('click', ()=> gsExportarXlsx(ym, data));
+  if(SESSION.rol==='admin') wireGsCarga(container);
+  gsAnimateBars(container);
+}
+
+function gsSheetHeaderRow(ws, r, nCols, titulo){
+  ws.mergeCells(r,1,r,nCols);
+  const c = ws.getCell(r,1);
+  c.value = titulo;
+  c.font = {bold:true, color:{argb:BRAND.white}, size:13, name:'Calibri'};
+  c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.navy}};
+  c.alignment = {horizontal:'center', vertical:'middle'};
+  ws.getRow(r).height = 22;
+}
+function gsSheetTableHeader(ws, r, headers){
+  headers.forEach((h,idx)=>{
+    const c = ws.getCell(r, idx+1);
+    c.value = h;
+    c.font = {bold:true, color:{argb:BRAND.white}, size:10.5, name:'Calibri'};
+    c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.navy}};
+    c.alignment = {horizontal:'center', vertical:'middle'};
+    c.border = thinBorder(BRAND.navy);
+  });
+  ws.getRow(r).height = 18;
+}
+function gsSheetDataRow(ws, r, vals, band, colorMap){
+  vals.forEach((v, idx)=>{
+    const c = ws.getCell(r, idx+1);
+    c.value = v;
+    c.font = {size:10.5, name:'Calibri', color:{argb:(colorMap&&colorMap[idx])||BRAND.navy}};
+    c.alignment = {horizontal:'center', vertical:'middle'};
+    c.fill = {type:'pattern', pattern:'solid', fgColor:{argb: band ? BRAND.band : BRAND.white}};
+    c.border = thinBorder(BRAND.border);
+  });
+}
+const GS_RATIO_COLOR = {low:'FFB36200', mid:'FF2E7D32', high:'FF8B0000'};
+function gsRatioArgb(ratio){
+  if(ratio===null||ratio===undefined) return null;
+  if(ratio<3) return GS_RATIO_COLOR.low;
+  if(ratio<6) return GS_RATIO_COLOR.mid;
+  return GS_RATIO_COLOR.high;
+}
+const GS_NOTA_COLOR = {up:'FF8B0000', down:'FF2E7D32'};
+function gsNotaArgb(nota){
+  const d = gsNotaDelta(nota);
+  if(d>0) return GS_NOTA_COLOR.up;
+  if(d<0) return GS_NOTA_COLOR.down;
+  return null;
+}
+
+async function gsExportarXlsx(ym, data){
+  const wb = new ExcelJS.Workbook();
+  const slugs = gsSlugsOrdenados().filter(s=>(data.almacenes||{})[s] || (data.resumen||{})[s]);
+
+  // Hoja Almacenes
+  const wsA = wb.addWorksheet('Almacenes', {views:[{showGridLines:false, state:'frozen', ySplit:2}]});
+  wsA.columns = [{width:20},{width:11},{width:26},{width:11},{width:26},{width:10},{width:12},{width:26},{width:11},{width:26}];
+  gsSheetHeaderRow(wsA, 1, 10, 'MATEU SPORTS — ALMACENES — '+ymToLabel(ym).toUpperCase());
+  gsSheetTableHeader(wsA, 2, ['SUCURSAL','FALTA UNO','NOTA','GARANTÍAS','NOTA','MOJADOS','DIFERENCIAS','NOTA','AUDITORÍA','NOTA']);
+  let r = 3;
+  slugs.filter(s=>(data.almacenes||{})[s]).forEach((s,i)=>{
+    const d = data.almacenes[s];
+    gsSheetDataRow(wsA, r, [nombreDeSlug(s), d.faltaUno, d.faltaUnoNota, d.garantias, d.garantiasNota, d.mojados, d.diferencias, d.diferenciasNota, d.auditoria, d.auditoriaNota], i%2===1,
+      {2:gsNotaArgb(d.faltaUnoNota), 4:gsNotaArgb(d.garantiasNota), 7:gsNotaArgb(d.diferenciasNota), 9:gsNotaArgb(d.auditoriaNota)});
+    r++;
+  });
+  if(data.almacenesTotal){
+    const t = data.almacenesTotal;
+    gsSheetDataRow(wsA, r, ['TOTAL', t.faltaUno, '', t.garantias, '', t.mojados, t.diferencias, '', t.auditoria, ''], false);
+    for(let c=1;c<=10;c++){ wsA.getCell(r,c).font.bold = true; wsA.getCell(r,c).fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.totalBg}}; wsA.getCell(r,c).border = {top:{style:'medium',color:{argb:BRAND.navy}}}; }
+  }
+
+  // Hoja Discontinuos/Stock 1-3/Negativos
+  const wsR = wb.addWorksheet('Discontinuos', {views:[{showGridLines:false, state:'frozen', ySplit:2}]});
+  wsR.columns = [{width:20},{width:13},{width:26},{width:16},{width:16},{width:11},{width:26}];
+  gsSheetHeaderRow(wsR, 1, 7, 'MATEU SPORTS — DISCONTINUOS / STOCK 1-3 / NEGATIVOS — '+ymToLabel(ym).toUpperCase());
+  gsSheetTableHeader(wsR, 2, ['SUCURSAL','DISCONTINUOS','NOTA','STOCK 1-3 CALZADO','STOCK 1-3 IND.','NEGATIVOS','NOTA']);
+  r = 3;
+  const stockCalzadoMap = gsStockLookup(data.mesesStock && data.mesesStock.calzado);
+  const stockIndMap = gsStockLookup(data.mesesStock && data.mesesStock.indumentaria);
+  slugs.filter(s=>(data.resumen||{})[s]).forEach((s,i)=>{
+    const d = data.resumen[s];
+    const pc = stockCalzadoMap[s] ? (d.stock1a3Calzado/stockCalzadoMap[s]*100).toFixed(1)+'%' : '';
+    const pi = stockIndMap[s] ? (d.stock1a3Ind/stockIndMap[s]*100).toFixed(1)+'%' : '';
+    gsSheetDataRow(wsR, r, [nombreDeSlug(s), d.discontinuos, d.discontinuosNota, (d.stock1a3Calzado||0)+' ('+pc+')', (d.stock1a3Ind||0)+' ('+pi+')', d.negativos, d.negativosNota], i%2===1,
+      {2:gsNotaArgb(d.discontinuosNota), 6:gsNotaArgb(d.negativosNota)});
+    r++;
+  });
+  if(data.resumenTotal){
+    const t = data.resumenTotal;
+    gsSheetDataRow(wsR, r, ['TOTAL', t.discontinuos, '', '', '', t.negativos, ''], false);
+    for(let c=1;c<=7;c++){ wsR.getCell(r,c).font.bold = true; wsR.getCell(r,c).fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.totalBg}}; wsR.getCell(r,c).border = {top:{style:'medium',color:{argb:BRAND.navy}}}; }
+  }
+
+  // Hoja Horas de descarga
+  const wsH = wb.addWorksheet('Horas descarga', {views:[{showGridLines:false}]});
+  wsH.columns = [{width:20},{width:10},{width:14}];
+  gsSheetHeaderRow(wsH, 1, 3, 'MATEU SPORTS — HORAS DE DESCARGA — '+ymToLabel(ym).toUpperCase());
+  gsSheetTableHeader(wsH, 2, ['SUCURSAL','HORAS','NIVEL']);
+  r = 3;
+  (data.horas||[]).slice().sort((a,b)=>{
+    const an = a.horas===null||a.horas===undefined, bn = b.horas===null||b.horas===undefined;
+    if(an) return 1; if(bn) return -1; return a.horas-b.horas;
+  }).forEach((h,i)=>{
+    const sinDato = h.horas===null || h.horas===undefined;
+    const nivel = sinDato ? 'S/D' : (h.horas<55?'Óptimo':(h.horas<80?'Moderado':'Crítico'));
+    const color = sinDato ? null : (h.horas<55?GS_NOTA_COLOR.down:(h.horas<80?'FFB36200':GS_NOTA_COLOR.up));
+    gsSheetDataRow(wsH, r, [nombreDeSlug(h.slug), sinDato?'S/D':h.horas, nivel], i%2===1, {1:color, 2:color});
+    r++;
+  });
+
+  // Hojas Meses de Stock
+  for(const [rubro, titulo] of [['calzado','CALZADO'],['indumentaria','INDUMENTARIA'],['accesorios','ACCESORIOS']]){
+    const ws = wb.addWorksheet('Meses stock '+titulo.substring(0,20), {views:[{showGridLines:false, state:'frozen', ySplit:2}]});
+    ws.columns = [{width:20},{width:11},{width:11},{width:16}];
+    gsSheetHeaderRow(ws, 1, 4, 'MESES DE STOCK — '+titulo+' — '+ymToLabel(ym).toUpperCase());
+    gsSheetTableHeader(ws, 2, ['SUCURSAL','STOCK','VENTAS','MESES DE COBERTURA']);
+    const lista = ((data.mesesStock||{})[rubro]||[]).slice().sort((a,b)=>a.ratio-b.ratio);
+    r = 3;
+    lista.forEach((x,i)=>{
+      gsSheetDataRow(ws, r, [nombreDeSlug(x.slug), x.stock, x.ventas, x.ratio], i%2===1, {3:gsRatioArgb(x.ratio)});
+      r++;
+    });
+    const totStock = lista.reduce((a,x)=>a+(x.stock||0),0);
+    const totVentas = lista.reduce((a,x)=>a+(x.ventas||0),0);
+    gsSheetDataRow(ws, r, ['TOTAL', totStock, totVentas, totVentas>0?(totStock/totVentas):''], false);
+    for(let c=1;c<=4;c++){ ws.getCell(r,c).font.bold = true; ws.getCell(r,c).fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.totalBg}}; ws.getCell(r,c).border = {top:{style:'medium',color:{argb:BRAND.navy}}}; }
+  }
+
+  await downloadWorkbook(wb, 'GestionStock_'+ym+'.xlsx');
+  postFireAndForget(FB+'/actividad/'+currentYYYYMM()+'/descargas.json', {
+    email: SESSION.email, sucursal_o_outlet: SESSION.sucursal || SESSION.outlet_id || '-',
+    tipoExport: 'reporte', mesExportado: ym, seccion: 'gestion-stock', timestamp: Date.now()
+  });
+}
+
+function renderValidacion(parsed){
+  const filas = SUCURSALES.map(s=>{
+    const d = parsed.sucursales[s.slug];
+    if(!d) return {slug:s.slug, nombre:s.nombre, esperado:'—', parseado:'—', ok:false, falta:true};
+    return {slug:s.slug, nombre:s.nombre, esperado: d.totalEsperado===null?'—':d.totalEsperado, parseado:d.total, ok:d.ok, vacia:d.vacia};
+  });
+  const hayErrores = filas.some(f=>!f.ok);
+
+  const html =
+    '<div class="card">'+
+      '<div class="card-title">Validación</div>'+
+      (parsed.errores.length ? '<div class="nota-regla">'+parsed.errores.map(esc).join('<br>')+'</div>' : '')+
+      '<div class="table-wrap"><table><thead><tr><th>Sucursal</th><th class="r">Total esperado</th><th class="r">Total parseado</th><th>Estado</th></tr></thead><tbody>'+
+      filas.map(f=> '<tr><td>'+f.nombre+(f.vacia?' <span class="hint">(hoja vacía)</span>':'')+'</td><td class="td-num">'+f.esperado+'</td><td class="td-num">'+f.parseado+'</td><td>'+(f.ok? '<span class="val-ok">✓</span>':'<span class="val-bad">✗</span>')+'</td></tr>').join('')+
+      '</tbody></table></div>'+
+      (hayErrores ? '<div class="fld" style="margin-top:14px"><label><input type="checkbox" id="forzarSubida"> Subir de todos modos, a pesar de las inconsistencias</label></div>' : '')+
+      '<button class="btn btn-primary" id="btnConfirmarCarga" style="margin-top:12px">Confirmar y subir</button>'+
+    '</div>';
+  $('cargaResultado').innerHTML = html;
+  $('btnConfirmarCarga').addEventListener('click', async ()=>{
+    if(hayErrores && !$('forzarSubida').checked){ alert('Hay inconsistencias. Marcá la casilla para subir de todos modos.'); return; }
+    await confirmarCarga(parsed);
+  });
+}
+
+async function confirmarCarga(parsed){
+  const mes = parseInt($('cargaMes').value,10);
+  const anio = parseInt($('cargaAnio').value,10);
+  const ym = anio+'-'+String(mes).padStart(2,'0');
+
+  const existentes = await getMonthsList();
+  if(existentes.includes(ym)){
+    if(!confirm('Ya existe una carga para '+ymToLabel(ym)+'. ¿Querés sobreescribirla?')) return;
+  }
+
+  const btn = $('btnConfirmarCarga'); btn.disabled=true; btn.textContent='Subiendo…';
+  try{
+    for(const slug in parsed.sucursales){
+      const d = parsed.sucursales[slug];
+      await putJSON(FB+'/discontinuos/'+ym+'/'+slug+'.json', {items:d.items, total:d.total});
+    }
+    await putJSON(FB+'/discontinuos/'+ym+'/meta.json', {mes, cargadoPor:SESSION.email, fecha:Date.now()});
+
+    if(parsed.periodoAnual){
+      const ciclo = cicloFromYearMonth(anio, mes);
+      let existente = {};
+      try{ existente = await fetchJSON(FB+'/periodoAnual/'+ciclo+'.json') || {}; }catch(e){}
+      const merged = Object.assign({}, existente, parsed.periodoAnual.data);
+      await putJSON(FB+'/periodoAnual/'+ciclo+'.json', merged);
+    }
+
+    delete MONTH_CACHE[ym];
+    $('cargaResultado').innerHTML = '<div class="card"><div class="val-ok">✓ Carga de '+ymToLabel(ym)+' subida correctamente.</div></div>';
+  }catch(err){
+    $('cargaResultado').innerHTML += '<div class="card"><div class="val-bad">Error al subir: '+esc(err.message)+'</div></div>';
+  }
+  btn.disabled=false; btn.textContent='Confirmar y subir';
+}
+
+/* ============================================================
+   VISTA ADMIN — CONTROL
+   ============================================================ */
+const CONTROL_IDS = SUCURSALES.filter(s=>true).map(s=>s.slug); // se filtra luego por usuarios reales
+function esIdentidadControl(id){
+  // Las 13 sucursales con usuario propio + 4 outlets (17 en total)
+  const sinUsuario = ['diagonal','adidas-12','adidas','originals','deposito'];
+  if(sinUsuario.includes(id)) return false;
+  return SUCURSAL_BY_SLUG[id] || OUTLET_BY_ID[id];
+}
+
+function gsControlSeccionTabsHtml(seccion){
+  return '<div class="ftabs" style="margin:14px 0">'+
+    '<button class="ftab'+(seccion==='discontinuos'?' active':'')+'" data-seccion="discontinuos">Discontinuos</button>'+
+    '<button class="ftab'+(seccion==='gestion-stock'?' active':'')+'" data-seccion="gestion-stock">Gestión de Stock</button>'+
+  '</div>';
+}
+function gsWireControlSeccionTabs(container){
+  container.querySelectorAll('button[data-seccion]').forEach(b=> b.addEventListener('click', ()=>{
+    container.dataset.seccion = b.dataset.seccion;
+    delete container.dataset.mes;
+    renderControlView(container);
+  }));
+}
+
+async function renderControlView(container){
+  const seccion = container.dataset.seccion || 'discontinuos';
+  const meses = seccion==='gestion-stock' ? await gsGetMonthsList() : await getMonthsList();
+  if(!meses.length){
+    container.innerHTML = '<div class="pg-title">Control</div>'+gsControlSeccionTabsHtml(seccion)+'<div class="empty">Todavía no hay meses cargados para esta sección.</div>';
+    gsWireControlSeccionTabs(container);
+    return;
+  }
+  const selMes = container.dataset.mes || meses[0];
+  container.dataset.mes = selMes;
+
+  const mesesOptions = meses.map(m=>'<option value="'+m+'"'+(m===selMes?' selected':'')+'>'+ymToLabel(m)+'</option>').join('');
+  container.innerHTML =
+    '<div class="head-row"><div><div class="pg-title">Control</div><div class="pg-sub">Cumplimiento de carga y descarga</div></div>'+
+    '<select class="sel" id="ctrlMesSel">'+mesesOptions+'</select></div>'+
+    gsControlSeccionTabsHtml(seccion)+
+    '<div id="ctrlBody"><div class="hint">Cargando…</div></div>';
+  $('ctrlMesSel').addEventListener('change', e=>{ container.dataset.mes = e.target.value; renderControlView(container); });
+  gsWireControlSeccionTabs(container);
+
+  let logins = {}, descargas = {};
+  try{ logins = await fetchJSON(FB+'/actividad/'+selMes+'/logins.json') || {}; }catch(e){}
+  try{ descargas = await fetchJSON(FB+'/actividad/'+selMes+'/descargas.json') || {}; }catch(e){}
+
+  const identidades = SUCURSALES.filter(s=>esIdentidadControl(s.slug)).map(s=>({id:s.slug, nombre:s.nombre}))
+    .concat(OUTLETS_LIST.map(o=>({id:o.id, nombre:o.nombre})));
+
+  const filas = identidades.map(ident=>{
+    // seccion puede faltar en registros viejos (previos a Gestión de Stock): se toman como Discontinuos.
+    const loginsPropios = Object.values(logins).filter(l=>l.sucursal_o_outlet===ident.id && (l.seccion||'discontinuos')===seccion);
+    const descargasDelMes = Object.values(descargas).filter(d=>d.sucursal_o_outlet===ident.id && d.mesExportado===selMes && (d.seccion||'discontinuos')===seccion);
+    const ultimoLogin = loginsPropios.reduce((max,l)=> Math.max(max, l.timestamp||0), 0);
+    const ultimaDescarga = descargasDelMes.reduce((max,d)=> Math.max(max, d.timestamp||0), 0);
+    const ingreso = loginsPropios.length>0;
+    const descargo = descargasDelMes.length>0;
+    let estado = 'bad';
+    if(ingreso && descargo) estado='ok'; else if(ingreso) estado='warn';
+    return {id:ident.id, nombre:ident.nombre, ultimoLogin, cantidad:loginsPropios.length, descargo, ultimaDescarga, estado};
+  });
+
+  const ordenEstado = {bad:0, warn:1, ok:2};
+  filas.sort((a,b)=> ordenEstado[a.estado]-ordenEstado[b.estado]);
+
+  const ingresaron = filas.filter(f=>f.ultimoLogin>0).length;
+  const descargaron = filas.filter(f=>f.descargo).length;
+  const pendientes = filas.length - descargaron;
+
+  const body = $('ctrlBody');
+  body.innerHTML =
+    '<div class="kpi-bar">'+
+      '<div class="kpi"><div class="kpi-label">Ingresaron</div><div class="kpi-val">'+ingresaron+'/'+filas.length+'</div></div>'+
+      '<div class="kpi"><div class="kpi-label">Descargaron</div><div class="kpi-val">'+descargaron+'/'+filas.length+'</div></div>'+
+      '<div class="kpi"><div class="kpi-label">Pendientes</div><div class="kpi-val">'+pendientes+'</div></div>'+
+    '</div>'+
+    '<div class="ftabs" style="margin-bottom:14px">'+
+      '<button class="ftab active" data-f="todos">Todos</button>'+
+      '<button class="ftab" data-f="pendientes">Pendientes</button>'+
+      '<button class="ftab" data-f="completos">Completos</button>'+
+    '</div>'+
+    '<div class="card"><div class="table-wrap"><table id="ctrlTable"><thead><tr><th>Sucursal/Outlet</th><th>Último ingreso</th><th class="r">Ingresos</th><th>Descargó Excel</th><th>Estado</th></tr></thead><tbody></tbody></table></div></div>'+
+    '<div class="card">'+
+      '<div class="collapsible-head" id="logHead"><span>Log cronológico</span><span class="collapsible-arrow">▾</span></div>'+
+      '<div class="collapsible-body" id="logBody">'+
+        '<div class="toolbar"><input class="search-box" id="logSearch" placeholder="Buscar por email o acción…"></div>'+
+        '<div class="table-wrap"><table id="logTable"><thead><tr><th>Fecha/hora</th><th>Email</th><th>Acción</th><th>Detalle</th></tr></thead><tbody></tbody></table></div>'+
+      '</div>'+
+    '</div>'+
+    '<button class="btn btn-outline" id="btnExportControl">📊 Exportar control (Excel)</button>';
+
+  function drawTable(filtro){
+    const rows = filas.filter(f=> filtro==='todos' || (filtro==='pendientes' && f.estado!=='ok') || (filtro==='completos' && f.estado==='ok'));
+    const tbody = document.querySelector('#ctrlTable tbody'); tbody.innerHTML='';
+    rows.forEach(f=>{
+      const dotCls = f.estado==='ok'?'dot-ok':(f.estado==='warn'?'dot-warn':'dot-bad');
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>'+f.nombre+'</td><td>'+(f.ultimoLogin?fmtDate(f.ultimoLogin):'—')+'</td><td class="td-num">'+f.cantidad+'</td>'+
+        '<td>'+(f.descargo? '<span class="val-ok">✓ '+fmtDate(f.ultimaDescarga)+'</span>' : '<span class="val-bad">✗</span>')+'</td>'+
+        '<td><span class="dot '+dotCls+'"></span>'+(f.estado==='ok'?'Completo':(f.estado==='warn'?'Pendiente descarga':'No ingresó'))+'</td>';
+      tbody.appendChild(tr);
+    });
+  }
+  drawTable('todos');
+  document.querySelectorAll('.ftab').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      document.querySelectorAll('.ftab').forEach(x=>x.classList.remove('active')); b.classList.add('active');
+      drawTable(b.dataset.f);
+    });
+  });
+
+  const logEntries = [];
+  Object.values(logins).forEach(l=> logEntries.push({ts:l.timestamp, email:l.email, accion:'Login', detalle:(l.rol||'')+' · '+(l.sucursal_o_outlet||'-')}));
+  Object.values(descargas).forEach(d=> logEntries.push({ts:d.timestamp, email:d.email, accion:'Descarga Excel', detalle:(d.tipoExport||'')+' · mes '+(d.mesExportado||'-')}));
+  logEntries.sort((a,b)=> (b.ts||0)-(a.ts||0));
+
+  function drawLog(){
+    const q = normLower($('logSearch').value);
+    const tbody = document.querySelector('#logTable tbody'); tbody.innerHTML='';
+    logEntries.filter(e=> !q || normLower(e.email+' '+e.accion+' '+e.detalle).includes(q)).forEach(e=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>'+fmtDate(e.ts)+'</td><td>'+esc(e.email)+'</td><td>'+esc(e.accion)+'</td><td>'+esc(e.detalle)+'</td>';
+      tbody.appendChild(tr);
+    });
+  }
+  drawLog();
+  $('logSearch').addEventListener('input', drawLog);
+  $('logHead').addEventListener('click', ()=>{
+    $('logBody').classList.toggle('open');
+    $('logHead').querySelector('.collapsible-arrow').classList.toggle('open');
+  });
+
+  $('btnExportControl').addEventListener('click', ()=>{
+    const wb = XLSX.utils.book_new();
+    const cumpRows = [['Sucursal/Outlet','Último ingreso','Ingresos','Descargó Excel','Estado']];
+    filas.forEach(f=> cumpRows.push([f.nombre, f.ultimoLogin?fmtDate(f.ultimoLogin):'—', f.cantidad, f.descargo?('Sí - '+fmtDate(f.ultimaDescarga)):'No', f.estado==='ok'?'Completo':(f.estado==='warn'?'Pendiente descarga':'No ingresó')]));
+    const ws1 = XLSX.utils.aoa_to_sheet(cumpRows);
+    XLSX.utils.book_append_sheet(wb, ws1, 'Cumplimiento');
+    const logRows = [['Fecha/hora','Email','Acción','Detalle']];
+    logEntries.forEach(e=> logRows.push([fmtDate(e.ts), e.email, e.accion, e.detalle]));
+    const ws2 = XLSX.utils.aoa_to_sheet(logRows);
+    XLSX.utils.book_append_sheet(wb, ws2, 'Log');
+    XLSX.writeFile(wb, 'Control_Discontinuos_'+selMes+'.xlsx');
+  });
+}
+
+/* ============================================================
+   VISTA ADMIN — CONFIGURACIÓN (mapeo outlets + regla)
+   ============================================================ */
+async function renderConfigView(container){
+  container.innerHTML = '<div class="pg-title">Configuración</div><div class="pg-sub">Mapeo de outlets asignados y regla de Calle 12</div><div id="cfgBody"><div class="hint">Cargando…</div></div>';
+  const cfg = CONFIG_OUTLETS || {};
+  const body = $('cfgBody');
+  body.innerHTML = OUTLETS_LIST.concat([{id:'deposito', nombre:'Deposito'}]).map(o=>{
+    const data = cfg[o.id] || {nombre:o.nombre, sucursalesOrigen:[], regla:''};
+    const opciones = SUCURSALES.map(s=>'<option value="'+s.slug+'"'+((data.sucursalesOrigen||[]).includes(s.slug)?' selected':'')+'>'+s.nombre+'</option>').join('');
+    return '<div class="card">'+
+      '<div class="card-title">'+o.nombre+'</div>'+
+      '<div class="form-grid">'+
+        '<div class="fld fld-full"><label>Sucursales de origen</label><select class="sel" multiple size="8" id="cfg-suc-'+o.id+'" style="width:100%">'+opciones+'</select><div class="hint">Ctrl/Cmd + clic para elegir varias.</div></div>'+
+        '<div class="fld fld-full"><label>Nota / regla especial (opcional)</label><textarea id="cfg-regla-'+o.id+'" rows="2">'+esc(data.regla||'')+'</textarea></div>'+
+      '</div>'+
+      '<button class="btn btn-primary btn-sm" data-outlet="'+o.id+'">Guardar</button>'+
+    '</div>';
+  }).join('');
+
+  body.querySelectorAll('button[data-outlet]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const oid = btn.dataset.outlet;
+      const sel = $('cfg-suc-'+oid);
+      const sucursalesOrigen = Array.from(sel.selectedOptions).map(o=>o.value);
+      const regla = $('cfg-regla-'+oid).value;
+      const nombre = (OUTLETS_LIST.find(o=>o.id===oid)||{nombre:oid}).nombre;
+      btn.disabled=true; btn.textContent='Guardando…';
+      await putJSON(FB+'/config/outlets/'+oid+'.json', {nombre, sucursalesOrigen, regla});
+      CONFIG_OUTLETS = await fetchJSON(FB+'/config/outlets.json') || {};
+      buildOutletReverseMap();
+      btn.disabled=false; btn.textContent='Guardado ✓';
+      setTimeout(()=> btn.textContent='Guardar', 1500);
+    });
+  });
+}
+
+/* ============================================================
+   VISTA ADMIN — USUARIOS
+   ============================================================ */
+const HERRAMIENTAS_LIST = [
+  {id:'turnero', nombre:'Turnero'}, {id:'marcas', nombre:'Marcas'}, {id:'equipo', nombre:'Equipo'},
+  {id:'condiciones', nombre:'Condiciones'}, {id:'recepcion', nombre:'Recepción'}, {id:'gestion-stock', nombre:'Gestión de Stock'},
+];
+
+async function renderUsuariosView(container){
+  container.innerHTML = '<div class="pg-title">Usuarios</div><div class="pg-sub">Alta, baja, rol, herramientas y reseteo de PIN</div><div id="usrBody"><div class="hint">Cargando…</div></div>';
+  const usuarios = await fetchJSON(FB+'/usuarios.json') || {};
+  USUARIOS_CACHE = usuarios;
+  const body = $('usrBody');
+
+  function herramientasSelectHtml(k, u){
+    const actuales = u.herramientas||[];
+    return '<select class="sel" multiple size="4" data-herr="'+k+'" style="min-width:150px">'+
+      HERRAMIENTAS_LIST.map(h=>'<option value="'+h.id+'"'+(actuales.includes(h.id)?' selected':'')+'>'+h.nombre+'</option>').join('')+
+      '</select>';
+  }
+
+  function draw(){
+    const keys = Object.keys(usuarios).sort((a,b)=> (usuarios[a].email||'').localeCompare(usuarios[b].email||''));
+    body.innerHTML =
+      '<div class="card"><div class="table-wrap"><table><thead><tr><th>Email</th><th>Rol</th><th>Sucursal/Outlet</th><th>Herramientas</th><th></th></tr></thead><tbody>'+
+      keys.map(k=>{
+        const u = usuarios[k];
+        return '<tr><td>'+esc(u.email)+'</td><td>'+esc(u.rol)+'</td><td>'+esc(u.sucursal||u.outlet_id||'—')+'</td>'+
+          '<td>'+herramientasSelectHtml(k,u)+'</td>'+
+          '<td><button class="btn btn-outline btn-sm" data-guardar-herr="'+k+'">Guardar</button> <button class="btn btn-outline btn-sm" data-reset="'+k+'">Resetear PIN</button> <button class="btn btn-outline btn-sm" data-del="'+k+'">Eliminar</button></td></tr>';
+      }).join('')+
+      '</tbody></table></div></div>'+
+      '<div class="card"><div class="card-title">Nuevo usuario</div><div class="form-grid">'+
+        '<div class="fld"><label>Email</label><input id="nuEmail" type="email"></div>'+
+        '<div class="fld"><label>Rol</label><select class="sel" id="nuRol" style="width:100%">'+
+          '<option value="admin">admin</option><option value="sucursal">sucursal</option><option value="outlet">outlet</option>'+
+        '</select></div>'+
+        '<div class="fld"><label>Sucursal (si rol=sucursal)</label><select class="sel" id="nuSucursal" style="width:100%"><option value="">—</option>'+SUCURSALES.map(s=>'<option value="'+s.slug+'">'+s.nombre+'</option>').join('')+'</select></div>'+
+        '<div class="fld"><label>Outlet (si rol=outlet)</label><select class="sel" id="nuOutlet" style="width:100%"><option value="">—</option>'+OUTLETS_LIST.map(o=>'<option value="'+o.id+'">'+o.nombre+'</option>').join('')+'</select></div>'+
+        '<div class="fld fld-full"><label>Herramientas</label><select class="sel" multiple size="6" id="nuHerramientas" style="width:100%">'+HERRAMIENTAS_LIST.map(h=>'<option value="'+h.id+'">'+h.nombre+'</option>').join('')+'</select></div>'+
+      '</div><button class="btn btn-primary" id="btnNuevoUsuario">Crear usuario (PIN inicial 1111)</button></div>';
+
+    body.querySelectorAll('button[data-guardar-herr]').forEach(b=> b.addEventListener('click', async ()=>{
+      const k = b.dataset.guardarHerr;
+      const sel = body.querySelector('select[data-herr="'+k+'"]');
+      const herramientas = Array.from(sel.selectedOptions).map(o=>o.value);
+      b.disabled=true; b.textContent='Guardando…';
+      await patchJSON(FB+'/usuarios/'+k+'.json', {herramientas});
+      usuarios[k].herramientas = herramientas;
+      b.disabled=false; b.textContent='Guardado ✓';
+      setTimeout(()=> b.textContent='Guardar', 1500);
+    }));
+    body.querySelectorAll('button[data-reset]').forEach(b=> b.addEventListener('click', async ()=>{
+      const k = b.dataset.reset;
+      await patchJSON(FB+'/usuarios/'+k+'.json', {pin:'1111'});
+      alert('PIN reseteado a 1111.');
+    }));
+    body.querySelectorAll('button[data-del]').forEach(b=> b.addEventListener('click', async ()=>{
+      const k = b.dataset.del;
+      if(!confirm('¿Eliminar a '+usuarios[k].email+'?')) return;
+      await fetch(FB+'/usuarios/'+k+'.json', {method:'DELETE'});
+      delete usuarios[k]; draw();
+    }));
+    $('btnNuevoUsuario').addEventListener('click', async ()=>{
+      const email = ($('nuEmail').value||'').trim().toLowerCase();
+      const rol = $('nuRol').value;
+      if(!email){ alert('Falta el email.'); return; }
+      const herramientas = Array.from($('nuHerramientas').selectedOptions).map(o=>o.value);
+      const rec = {email, pin:'1111', rol, herramientas};
+      if(rol==='sucursal') rec.sucursal = $('nuSucursal').value;
+      if(rol==='outlet') rec.outlet_id = $('nuOutlet').value;
+      const key = firebaseKeyFromEmail(email);
+      await putJSON(FB+'/usuarios/'+key+'.json', rec);
+      usuarios[key] = rec; draw();
+    });
+  }
+  draw();
+}
+
+/* ============================================================
+   INIT — la sesión la crea el Portal. Si no hay sesión válida
+   con acceso a esta herramienta, se vuelve al Portal.
+   ============================================================ */
+$('logoutBtn').addEventListener('click', logout);
+
+(function init(){
+  const s = readSession();
+  if(!s || !(s.herramientas||[]).includes('gestion-stock')){ location.href='../'; return; }
+  boot(s);
+})();
+</script>
+</body>
+</html>
