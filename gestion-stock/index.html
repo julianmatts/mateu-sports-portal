@@ -274,7 +274,6 @@ textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radiu
       <div class="view" id="view-carga"></div>
       <div class="view" id="view-control"></div>
       <div class="view" id="view-config"></div>
-      <div class="view" id="view-usuarios"></div>
     </main>
   </div>
 </div>
@@ -422,7 +421,6 @@ function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){ w
 let SESSION = null;
 let CONFIG_OUTLETS = null;   // /config/outlets
 let OUTLET_BY_SUCURSAL = {}; // reverse lookup slug -> outlet_id
-let USUARIOS_CACHE = null;   // {key: {...}} completo
 const MONTH_CACHE = {};      // ym -> /discontinuos/{ym} completo
 
 function buildOutletReverseMap(){
@@ -545,7 +543,6 @@ function buildNav(session){
     tabs.push({id:'carga', label:'Carga Mensual'});
     tabs.push({id:'control', label:'Control'});
     tabs.push({id:'config', label:'Configuración'});
-    tabs.push({id:'usuarios', label:'Usuarios'});
   }
   tabs.forEach(t=>{
     const b = document.createElement('button');
@@ -557,7 +554,6 @@ function buildNav(session){
       if(t.id==='carga') renderCargaView($('view-carga'));
       if(t.id==='control') renderControlView($('view-control'));
       if(t.id==='config') renderConfigView($('view-config'));
-      if(t.id==='usuarios') renderUsuariosView($('view-usuarios'));
     });
     nav.appendChild(b);
   });
@@ -2113,85 +2109,6 @@ async function renderConfigView(container){
       setTimeout(()=> btn.textContent='Guardar', 1500);
     });
   });
-}
-
-/* ============================================================
-   VISTA ADMIN — USUARIOS
-   ============================================================ */
-const HERRAMIENTAS_LIST = [
-  {id:'turnero', nombre:'Turnero'}, {id:'marcas', nombre:'Marcas'}, {id:'equipo', nombre:'Equipo'},
-  {id:'condiciones', nombre:'Condiciones'}, {id:'recepcion', nombre:'Recepción'}, {id:'gestion-stock', nombre:'Gestión de Stock'},
-];
-
-async function renderUsuariosView(container){
-  container.innerHTML = '<div class="pg-title">Usuarios</div><div class="pg-sub">Alta, baja, rol, herramientas y reseteo de PIN</div><div id="usrBody"><div class="hint">Cargando…</div></div>';
-  const usuarios = await fetchJSON(FB+'/usuarios.json') || {};
-  USUARIOS_CACHE = usuarios;
-  const body = $('usrBody');
-
-  function herramientasSelectHtml(k, u){
-    const actuales = u.herramientas||[];
-    return '<select class="sel" multiple size="4" data-herr="'+k+'" style="min-width:150px">'+
-      HERRAMIENTAS_LIST.map(h=>'<option value="'+h.id+'"'+(actuales.includes(h.id)?' selected':'')+'>'+h.nombre+'</option>').join('')+
-      '</select>';
-  }
-
-  function draw(){
-    const keys = Object.keys(usuarios).sort((a,b)=> (usuarios[a].email||'').localeCompare(usuarios[b].email||''));
-    body.innerHTML =
-      '<div class="card"><div class="table-wrap"><table><thead><tr><th>Email</th><th>Rol</th><th>Sucursal/Outlet</th><th>Herramientas</th><th></th></tr></thead><tbody>'+
-      keys.map(k=>{
-        const u = usuarios[k];
-        return '<tr><td>'+esc(u.email)+'</td><td>'+esc(u.rol)+'</td><td>'+esc(u.sucursal||u.outlet_id||'—')+'</td>'+
-          '<td>'+herramientasSelectHtml(k,u)+'</td>'+
-          '<td><button class="btn btn-outline btn-sm" data-guardar-herr="'+k+'">Guardar</button> <button class="btn btn-outline btn-sm" data-reset="'+k+'">Resetear PIN</button> <button class="btn btn-outline btn-sm" data-del="'+k+'">Eliminar</button></td></tr>';
-      }).join('')+
-      '</tbody></table></div></div>'+
-      '<div class="card"><div class="card-title">Nuevo usuario</div><div class="form-grid">'+
-        '<div class="fld"><label>Email</label><input id="nuEmail" type="email"></div>'+
-        '<div class="fld"><label>Rol</label><select class="sel" id="nuRol" style="width:100%">'+
-          '<option value="admin">admin</option><option value="sucursal">sucursal</option><option value="outlet">outlet</option>'+
-        '</select></div>'+
-        '<div class="fld"><label>Sucursal (si rol=sucursal)</label><select class="sel" id="nuSucursal" style="width:100%"><option value="">—</option>'+SUCURSALES.map(s=>'<option value="'+s.slug+'">'+s.nombre+'</option>').join('')+'</select></div>'+
-        '<div class="fld"><label>Outlet (si rol=outlet)</label><select class="sel" id="nuOutlet" style="width:100%"><option value="">—</option>'+OUTLETS_LIST.map(o=>'<option value="'+o.id+'">'+o.nombre+'</option>').join('')+'</select></div>'+
-        '<div class="fld fld-full"><label>Herramientas</label><select class="sel" multiple size="6" id="nuHerramientas" style="width:100%">'+HERRAMIENTAS_LIST.map(h=>'<option value="'+h.id+'">'+h.nombre+'</option>').join('')+'</select></div>'+
-      '</div><button class="btn btn-primary" id="btnNuevoUsuario">Crear usuario (PIN inicial 1111)</button></div>';
-
-    body.querySelectorAll('button[data-guardar-herr]').forEach(b=> b.addEventListener('click', async ()=>{
-      const k = b.dataset.guardarHerr;
-      const sel = body.querySelector('select[data-herr="'+k+'"]');
-      const herramientas = Array.from(sel.selectedOptions).map(o=>o.value);
-      b.disabled=true; b.textContent='Guardando…';
-      await patchJSON(FB+'/usuarios/'+k+'.json', {herramientas});
-      usuarios[k].herramientas = herramientas;
-      b.disabled=false; b.textContent='Guardado ✓';
-      setTimeout(()=> b.textContent='Guardar', 1500);
-    }));
-    body.querySelectorAll('button[data-reset]').forEach(b=> b.addEventListener('click', async ()=>{
-      const k = b.dataset.reset;
-      await patchJSON(FB+'/usuarios/'+k+'.json', {pin:'1111'});
-      alert('PIN reseteado a 1111.');
-    }));
-    body.querySelectorAll('button[data-del]').forEach(b=> b.addEventListener('click', async ()=>{
-      const k = b.dataset.del;
-      if(!confirm('¿Eliminar a '+usuarios[k].email+'?')) return;
-      await fetch(FB+'/usuarios/'+k+'.json', {method:'DELETE'});
-      delete usuarios[k]; draw();
-    }));
-    $('btnNuevoUsuario').addEventListener('click', async ()=>{
-      const email = ($('nuEmail').value||'').trim().toLowerCase();
-      const rol = $('nuRol').value;
-      if(!email){ alert('Falta el email.'); return; }
-      const herramientas = Array.from($('nuHerramientas').selectedOptions).map(o=>o.value);
-      const rec = {email, pin:'1111', rol, herramientas};
-      if(rol==='sucursal') rec.sucursal = $('nuSucursal').value;
-      if(rol==='outlet') rec.outlet_id = $('nuOutlet').value;
-      const key = firebaseKeyFromEmail(email);
-      await putJSON(FB+'/usuarios/'+key+'.json', rec);
-      usuarios[key] = rec; draw();
-    });
-  }
-  draw();
 }
 
 /* ============================================================
