@@ -1230,10 +1230,13 @@ async function renderAdminDashboard(container){
     container.innerHTML = '<div class="pg-title">Dashboard</div><div class="empty">Todavia no se cargo ningun mes. Usa el boton de carga mensual para subir el primer informe.</div>';
     return;
   }
-  const ym = meses[0];
+  const ym = container.dataset.mes || meses[0];
+  container.dataset.mes = ym;
   const monthData = await getMonthData(ym);
-  const prevYm = meses[1];
+  const idxActual = meses.indexOf(ym);
+  const prevYm = idxActual >= 0 ? meses[idxActual+1] : null;
   const prevData = prevYm ? await getMonthData(prevYm) : null;
+  const mesesOptions = meses.map(m=>'<option value="'+m+'"'+(m===ym?' selected':'')+'>'+ymToLabel(m)+'</option>').join('');
 
   let totalGlobal=0;
   const porSucursalTotal = {};
@@ -1255,8 +1258,9 @@ async function renderAdminDashboard(container){
   }
 
   container.innerHTML =
-    '<div class="pg-title">Dashboard</div>'+
-    '<div class="pg-sub">'+ymToLabel(ym)+' · último mes cargado</div>'+
+    '<div class="head-row"><div><div class="pg-title">Dashboard</div>'+
+    '<div class="pg-sub">'+ymToLabel(ym)+(ym===meses[0]?' - ultimo mes cargado':'')+'</div></div>'+
+    '<div><select class="sel" id="dashMesSel">'+mesesOptions+'</select></div></div>'+
     '<div class="kpi-bar" style="margin-top:16px">'+
       kpiHtml('Total empresa', totalGlobal)+
       '<div class="kpi"><div class="kpi-label">Sucursales con datos</div><div class="kpi-val">'+Object.keys(monthData).filter(k=>k!=='meta').length+'</div></div>'+
@@ -1281,6 +1285,12 @@ async function renderAdminDashboard(container){
       '<div id="dashNoResults" class="no-results" style="display:none">No se encontraron artículos.</div>'+
     '</div>'+
     '<button class="btn btn-outline" id="btnExportTodo">📦 Exportar TODO (una hoja por sucursal)</button>';
+
+
+  $('dashMesSel').addEventListener('change', e=>{
+    container.dataset.mes = e.target.value;
+    renderAdminDashboard(container);
+  });
 
   // Ranking
   const ranking = SUCURSALES.map(s=>({slug:s.slug, nombre:s.nombre, total:porSucursalTotal[s.slug]||0}))
