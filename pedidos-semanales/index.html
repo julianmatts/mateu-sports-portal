@@ -133,6 +133,11 @@ main{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
 .chip-contador{background:var(--off);border:1px solid var(--border);border-radius:20px;padding:5px 12px;
   font-size:11.5px;font-family:var(--font-c);font-weight:600;color:var(--muted)}
 .chip-contador b{color:var(--navy)}
+.chip-duplicado{background:#fff8e1;border-color:#f0c24b;color:#745000}
+.fila-duplicada td{background:#fffdf4}
+.dup-cell{background:#fff4bf!important;border-left:2px solid #d6a500;font-weight:600;color:var(--navy)}
+.dup-badge{display:inline-flex;margin-left:6px;padding:2px 6px;border-radius:14px;background:#f0c24b;color:#4d3500;
+  font-family:var(--font-c);font-size:10px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;white-space:nowrap}
 
 .estado-toggle{display:flex;gap:4px}
 .btn-toggle{width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:#fff;color:var(--muted);
@@ -583,15 +588,44 @@ function campoVariableTexto(linea, tipoCfg){
   return linea.origen ? ((SUCURSAL_BY_ID[linea.origen]&&SUCURSAL_BY_ID[linea.origen].nombre)||linea.origen) : '—';
 }
 
+function normalizarCodigo(v){
+  return String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+}
+function normalizarArticulo(v){
+  return String(v||'').toUpperCase().replace(/\s+/g,' ').trim();
+}
+function detectarDuplicados(lineas){
+  const porCodigo = {}, porArticulo = {};
+  lineas.forEach(l=>{
+    const codigo = normalizarCodigo(l.codigo);
+    const articulo = normalizarArticulo(l.articulo);
+    if(codigo){ (porCodigo[codigo] = porCodigo[codigo] || new Set()).add(l.sucursalId); }
+    if(articulo){ (porArticulo[articulo] = porArticulo[articulo] || new Set()).add(l.sucursalId); }
+  });
+  let codigos = 0, articulos = 0;
+  lineas.forEach(l=>{
+    const codigo = normalizarCodigo(l.codigo);
+    const articulo = normalizarArticulo(l.articulo);
+    l._dupCodigoSucursales = codigo && porCodigo[codigo] && porCodigo[codigo].size > 1 ? porCodigo[codigo].size : 0;
+    l._dupArticuloSucursales = articulo && porArticulo[articulo] && porArticulo[articulo].size > 1 ? porArticulo[articulo].size : 0;
+    if(l._dupCodigoSucursales) codigos++;
+    if(l._dupArticuloSucursales) articulos++;
+  });
+  return {codigos, articulos};
+}
+
 function construirFilaProductoHtml(linea, tipoCfg, semanaCerrada){
   const sucNombre = (SUCURSAL_BY_ID[linea.sucursalId]&&SUCURSAL_BY_ID[linea.sucursalId].nombre) || linea.sucursalId;
-  return '<tr data-id="'+linea.id+'" data-suc="'+linea.sucursalId+'">'+
+  const dupFila = linea._dupCodigoSucursales || linea._dupArticuloSucursales;
+  const badgeCodigo = linea._dupCodigoSucursales ? '<span class="dup-badge">'+linea._dupCodigoSucursales+' suc.</span>' : '';
+  const badgeArticulo = linea._dupArticuloSucursales ? '<span class="dup-badge">'+linea._dupArticuloSucursales+' suc.</span>' : '';
+  return '<tr class="'+(dupFila?'fila-duplicada':'')+'" data-id="'+linea.id+'" data-suc="'+linea.sucursalId+'">'+
     '<td class="txt-fixed">'+esc(sucNombre)+'</td>'+
     '<td class="txt-fixed">'+esc(linea.rubro||'—')+'</td>'+
     '<td class="txt-fixed">'+esc(campoVariableTexto(linea, tipoCfg))+'</td>'+
     '<td class="txt-fixed">'+esc(linea.marca||'')+'</td>'+
-    '<td class="txt-fixed">'+esc(linea.codigo||'')+'</td>'+
-    '<td class="txt-fixed">'+esc(linea.articulo||'')+'</td>'+
+    '<td class="txt-fixed '+(linea._dupCodigoSucursales?'dup-cell':'')+'">'+esc(linea.codigo||'')+badgeCodigo+'</td>'+
+    '<td class="txt-fixed '+(linea._dupArticuloSucursales?'dup-cell':'')+'">'+esc(linea.articulo||'')+badgeArticulo+'</td>'+
     '<td class="txt-fixed">'+esc(linea.descripcion||'')+'</td>'+
     '<td class="txt-fixed">'+esc(linea.comentarioSucursal||'—')+'</td>'+
     '<td><input class="lf-prod" data-id="'+linea.id+'" data-suc="'+linea.sucursalId+'" value="'+esc(linea.comentarioProducto||'')+'" placeholder="Comentario"></td>'+
@@ -624,6 +658,7 @@ async function renderVistaProducto(){
     const lns = (porSucursal[sucId]&&porSucursal[sucId].lineas) || {};
     Object.keys(lns).forEach(lid=> lineas.push(Object.assign({id:lid, sucursalId:sucId}, lns[lid])));
   });
+  const duplicados = detectarDuplicados(lineas);
 
   // contadores de avance por sucursal (sobre el total, no sobre lo filtrado)
   const contadores = {};
@@ -638,6 +673,9 @@ async function renderVistaProducto(){
     const c = contadores[sucId], nombre = (SUCURSAL_BY_ID[sucId]&&SUCURSAL_BY_ID[sucId].nombre)||sucId;
     return '<span class="chip-contador">'+esc(nombre)+' · <b>'+c.pendiente+'</b>P · <b>'+c.aprobado+'</b>A · <b>'+c.rechazado+'</b>R</span>';
   }).join('');
+  const chipDuplicados = (duplicados.codigos || duplicados.articulos)
+    ? '<span class="chip-contador chip-duplicado"><b>'+duplicados.codigos+'</b> líneas con código repetido · <b>'+duplicados.articulos+'</b> líneas con artículo repetido</span>'
+    : '<span class="chip-contador">Sin códigos/artículos repetidos entre sucursales</span>';
 
   // marcas disponibles para el filtro
   const marcas = Array.from(new Set(lineas.map(l=>l.marca).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
@@ -671,6 +709,7 @@ async function renderVistaProducto(){
     '</select>'+
     '<input type="text" id="inpBusqueda" placeholder="Buscar código o artículo…" value="'+esc(VISTA_PRODUCTO_STATE.busqueda)+'">'+
     '<button class="btn-masivo" id="btnAprobarVisible" '+(semanaCerrada?'disabled':'')+'>Aprobar todo lo visible</button>'+
+    '<button class="btn-masivo" id="btnExportConsolidado">Exportar Excel</button>'+
   '</div>';
 
   const cuerpo = gruposOrdenados.length
@@ -678,7 +717,7 @@ async function renderVistaProducto(){
     : '<div class="hint">Sin líneas que coincidan con los filtros.</div>';
 
   $('view-tab').innerHTML = headerHtml(tipoCfg.label, 'Semana del '+fmtFechaCorta(SEMANA_SEL)+(semanaCerrada?' · <span class="badge-estado badge-bad">Semana cerrada</span>':''))+
-    ('<div class="chips-contadores">'+(chips||'<span class="hint">Sin líneas cargadas todavía.</span>')+'</div>')+
+    ('<div class="chips-contadores">'+chipDuplicados+(chips||'<span class="hint">Sin líneas cargadas todavía.</span>')+'</div>')+
     filtros + cuerpo;
 
   bindVistaProductoEvents(tipoCfg, visibles, semanaCerrada);
@@ -699,6 +738,8 @@ function bindVistaProductoEvents(tipoCfg, visibles, semanaCerrada){
   if(inpBusqueda) inpBusqueda.addEventListener('input', (e)=>{ VISTA_PRODUCTO_STATE.busqueda = e.target.value; renderVistaProducto(); });
   const btnMasivo = $('btnAprobarVisible');
   if(btnMasivo) btnMasivo.addEventListener('click', ()=> aprobarTodoVisible(tipoCfg, visibles));
+  const btnExport = $('btnExportConsolidado');
+  if(btnExport) btnExport.addEventListener('click', exportarConsolidadoSemana);
 
   $('view-tab').querySelectorAll('.lf-prod').forEach(el=>{
     el.addEventListener('input', ()=>{
@@ -726,6 +767,57 @@ async function aprobarTodoVisible(tipoCfg, visibles){
     patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+l.sucursalId+'/lineas/'+l.id+'.json', {estado:'aprobado', resueltaAt:Date.now()})
   ));
   renderVistaProducto();
+}
+
+async function obtenerLineasTipo(tipoKey){
+  const tipoCfg = TIPOS[tipoKey];
+  let porSucursal = null;
+  try{ porSucursal = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'.json'); }catch(e){}
+  porSucursal = porSucursal || {};
+  const lineas = [];
+  Object.keys(porSucursal).forEach(sucId=>{
+    const lns = (porSucursal[sucId]&&porSucursal[sucId].lineas) || {};
+    Object.keys(lns).forEach(lid=> lineas.push(Object.assign({id:lid, sucursalId:sucId}, lns[lid])));
+  });
+  return lineas;
+}
+
+function nombreSucursal(id){
+  if(id === 'deposito') return 'Depósito';
+  return (SUCURSAL_BY_ID[id]&&SUCURSAL_BY_ID[id].nombre) || id || '';
+}
+
+function filasExcelConsolidado(lineas, tipoKey){
+  return lineas.map(l=>{
+    const esMV = tipoKey === 'menos-vendidos';
+    const origen = esMV ? nombreSucursal(l.sucursalId) : nombreSucursal(l.origen);
+    const destino = esMV ? (l.destino ? nombreSucursal(l.destino) : 'A definir') : nombreSucursal(l.sucursalId);
+    return {
+      ORIGEN: origen,
+      Rubros: l.rubro || '',
+      Marca: l.marca || '',
+      'CÓDIGO': l.codigo || '',
+      'ARTÍCULO': l.articulo || '',
+      DESCRIPCION: l.descripcion || '',
+      DESTINO: destino,
+      Aprobados: l.estado === 'aprobado' ? 'SI' : '',
+      Rechazados: l.estado === 'rechazado' ? 'SI' : '',
+      'Comentarios de Sucursales': l.comentarioSucursal || '',
+      'Comentarios Area Producto': l.comentarioProducto || ''
+    };
+  });
+}
+
+async function exportarConsolidadoSemana(){
+  if(typeof XLSX === 'undefined'){ alert('No se pudo cargar la librería de Excel. Revisá la conexión.'); return; }
+  const [pedidos, menosVendidos] = await Promise.all([
+    obtenerLineasTipo('pedidos'),
+    obtenerLineasTipo('menos-vendidos')
+  ]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filasExcelConsolidado(pedidos, 'pedidos')), 'Pedidos');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filasExcelConsolidado(menosVendidos, 'menos-vendidos')), 'Menos Vendidos');
+  XLSX.writeFile(wb, 'pedidos-semanales-'+SEMANA_SEL+'.xlsx');
 }
 
 /* ============================================================
@@ -767,7 +859,7 @@ async function renderInformeSemanal(){
   let pedidosData=null, mvData=null, loginsData=null;
   try{ pedidosData = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/pedidos.json'); }catch(e){}
   try{ mvData = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/menosVendidos.json'); }catch(e){}
-  try{ loginsData = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/logins.json'); }catch(e){}
+  try{ loginsData = await fetchJSON(FB+'/logins/'+SEMANA_SEL+'.json'); }catch(e){}
   pedidosData = pedidosData||{}; mvData = mvData||{}; loginsData = loginsData||{};
 
   let enviaronPedidos=0, enviaronMV=0;
@@ -987,7 +1079,7 @@ async function boot(session){
   await cargarConfig();
 
   if(session.rol !== 'admin' && destinoId){
-    patchJSON(FB+'/semanas/'+LUNES_ACTIVO+'/logins/'+destinoId+'.json', {ultimoLogin: Date.now(), email: session.email}).catch(()=>{});
+    patchJSON(FB+'/logins/'+LUNES_ACTIVO+'/'+destinoId+'.json', {ultimoLogin: Date.now(), email: session.email}).catch(()=>{});
   }
 
   let semanas = await listaSemanas();
