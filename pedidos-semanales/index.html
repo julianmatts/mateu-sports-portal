@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pedidos Semanales — Mateu Sports</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --navy:#0B1527;--navy-mid:#1a2f55;--navy-soft:#13203a;
+  --red:#CC0000;--red-soft:#ff3b3b;
+  --white:#ffffff;--off:#f5f7fc;--muted:#6B7A99;--muted-light:#b0bcd4;
+  --card:#ffffff;--border:#dce3f0;
+  --ok:#2e7d32;--warn:#b36200;--bad:#8b0000;--neutral:#9aa5bb;
+  --font-d:'Bebas Neue',sans-serif;--font-c:'Barlow Condensed',sans-serif;--font-b:'Barlow',sans-serif;
+  --radius:10px;--shadow:0 1px 4px rgba(11,21,39,.08);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-b);background:var(--off);color:var(--navy);min-height:100vh}
+a{color:inherit;text-decoration:none}
+button{cursor:pointer;font-family:inherit}
+select{font-family:inherit}
+
+.top{background:var(--navy);padding:14px 28px;display:flex;align-items:center;
+  border-bottom:3px solid var(--red);flex-wrap:wrap;gap:10px}
+.top-left{flex:1;display:flex;align-items:center;min-width:0}
+.top-title{line-height:1.05}
+.top-title .n{font-family:var(--font-d);font-size:20px;letter-spacing:1px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top-title .s{font-family:var(--font-c);font-size:10px;font-weight:600;letter-spacing:2px;
+  text-transform:uppercase;color:var(--muted-light)}
+.top-center{flex:0 0 auto;display:flex;align-items:center}
+.top-center img{height:32px;filter:brightness(0) invert(1)}
+.top-right{flex:1;display:flex;align-items:center;justify-content:flex-end;gap:14px}
+.sel-semana{padding:7px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.25);
+  background:var(--navy-soft);color:#fff;font-family:var(--font-c);font-size:12.5px}
+.who{text-align:right;line-height:1.1}
+.who .n{font-family:var(--font-c);font-size:14px;font-weight:600;color:#fff}
+.who .r{font-family:var(--font-c);font-size:10px;font-weight:600;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--red-soft)}
+.logout{background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:6px;color:rgba(255,255,255,.7);
+  font-family:var(--font-c);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;
+  padding:7px 14px;transition:all .15s}
+.logout:hover{color:#fff;border-color:#fff}
+
+nav{background:#fff;border-bottom:1px solid var(--border);padding:0 28px;display:flex;gap:2px;
+  overflow-x:auto;position:sticky;top:0;z-index:50}
+.nav-tab{font-family:var(--font-c);font-size:12.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;
+  padding:12px 16px;border:none;background:transparent;color:var(--muted);border-bottom:3px solid transparent;
+  transition:all .15s;white-space:nowrap}
+.nav-tab:hover{color:var(--navy)}
+.nav-tab.active{color:var(--red);border-bottom-color:var(--red)}
+
+main{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
+.view{display:none}
+.view.active{display:block}
+
+.pg-title{font-family:var(--font-d);font-size:30px;letter-spacing:1px;color:var(--navy);line-height:1}
+.pg-sub{font-family:var(--font-c);font-size:13px;font-weight:500;color:var(--muted);margin-top:4px}
+.head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+
+.ph-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:22px 24px}
+.ph-card ul{list-style:none;margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.ph-card li{font-size:14px}
+.ph-card b{color:var(--navy)}
+
+.badge-estado{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-c);font-size:11px;
+  font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:4px 10px;border-radius:20px;white-space:nowrap}
+.badge-ok{background:#e8f5e9;color:var(--ok)}
+.badge-bad{background:#fce4e4;color:var(--bad)}
+.badge-warn{background:#fff3e0;color:var(--warn)}
+.badge-neutral{background:#eef1f8;color:var(--muted)}
+
+.warn-box{background:#fff3e0;color:#b36200;border:1px solid #ffe0b3;border-radius:8px;padding:14px 16px;
+  font-size:13.5px;margin-bottom:20px}
+.error-box{background:#fce4e4;color:var(--bad);border:1px solid #f6c6c6;border-radius:8px;padding:14px 16px;font-size:13.5px}
+.hint{font-size:12.5px;color:var(--muted);padding:10px 2px}
+
+/* ===== SEMÁFORO ===== */
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}
+.dot-ok{background:var(--ok)}
+.dot-warn{background:var(--warn)}
+.dot-bad{background:var(--bad)}
+.dot-neutral{background:var(--neutral)}
+.dot-label{font-family:var(--font-c);font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+
+/* ===== RUBROS / LÍNEAS ===== */
+.rubro-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow);margin-bottom:18px;overflow:hidden}
+.rubro-head{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;
+  background:var(--off);border-bottom:1px solid var(--border)}
+.rubro-head .t{font-family:var(--font-d);font-size:18px;letter-spacing:.5px}
+.rubro-head .cnt{font-family:var(--font-c);font-size:12.5px;font-weight:700;color:var(--muted);letter-spacing:1px}
+.rubro-body{padding:6px 18px 16px}
+
+.linea-table{width:100%;border-collapse:collapse}
+.linea-table th{font-family:var(--font-c);font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--muted);text-align:left;padding:8px 6px;border-bottom:1px solid var(--border);white-space:nowrap}
+.linea-table td{padding:6px;border-bottom:1px solid #eef0f7;vertical-align:middle}
+.linea-table input, .linea-table select{width:100%;min-width:70px;padding:6px 8px;border:1px solid var(--border);
+  border-radius:6px;font-size:12.5px;font-family:inherit;color:var(--navy)}
+.linea-table input:disabled, .linea-table select:disabled{background:#f4f6fb;color:var(--muted)}
+.txt-fixed{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.col-estado{min-width:100px}
+.linea-coment-prod{font-size:11px;color:var(--muted);font-style:italic;margin-top:2px;max-width:160px}
+.col-del{width:26px;text-align:center}
+.btn-eliminar{background:transparent;border:none;color:var(--bad);font-size:16px;line-height:1;padding:4px 6px}
+.btn-eliminar:hover{color:#5a0000}
+
+.btn-add-rubro{margin-top:10px;background:transparent;border:1px dashed var(--border);border-radius:8px;padding:8px 14px;
+  font-family:var(--font-c);font-size:12.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.btn-add-rubro:hover{border-color:var(--red);color:var(--red)}
+
+.btn-enviar{background:var(--red);color:#fff;border:none;border-radius:8px;padding:10px 22px;font-family:var(--font-c);
+  font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap}
+.btn-enviar:hover{background:#a00000}
+
+/* ===== VISTA PRODUCTO ===== */
+.filtros-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:16px}
+.filtros-bar select, .filtros-bar input[type=text]{padding:8px 10px;border:1px solid var(--border);border-radius:6px;
+  font-size:13px;font-family:inherit;color:var(--navy)}
+.grp-toggle{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.grp-toggle button{padding:8px 14px;border:none;background:#fff;font-family:var(--font-c);font-size:12px;font-weight:700;
+  letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+.grp-toggle button.active{background:var(--navy);color:#fff}
+.btn-masivo{background:var(--navy);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-family:var(--font-c);
+  font-size:12.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;white-space:nowrap}
+.btn-masivo:hover{background:var(--navy-mid)}
+
+.chips-contadores{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.chip-contador{background:var(--off);border:1px solid var(--border);border-radius:20px;padding:5px 12px;
+  font-size:11.5px;font-family:var(--font-c);font-weight:600;color:var(--muted)}
+.chip-contador b{color:var(--navy)}
+
+.estado-toggle{display:flex;gap:4px}
+.btn-toggle{width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:#fff;color:var(--muted);
+  font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center}
+.btn-toggle:hover{border-color:var(--navy-mid)}
+.btn-aprobar.active{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn-rechazar.active{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn-toggle:disabled, .btn-masivo:disabled{opacity:.4;cursor:default}
+
+/* ===== CONTROL / CONFIG ===== */
+.btn-reabrir{margin-left:8px;background:transparent;border:1px solid var(--border);border-radius:6px;padding:3px 9px;
+  font-family:var(--font-c);font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+.btn-reabrir:hover{border-color:var(--red);color:var(--red)}
+.form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.fld label{display:block;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
+  color:var(--muted);margin-bottom:5px}
+.fld input{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;color:var(--navy)}
+
+@media(max-width:720px){
+  main{padding:20px 14px 48px}
+  .pg-title{font-size:24px}
+  .linea-table{font-size:11px}
+  .rubro-body{overflow-x:auto}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="top">
+    <div class="top-left">
+      <div class="top-title">
+        <div class="n" id="hdrTitle">Pedidos Semanales</div>
+        <div class="s" id="hdrSub">Mateu Sports</div>
+      </div>
+    </div>
+    <div class="top-center">
+      <a href="../" style="display:inline-block;line-height:0;"><img src="data:image/webp;base64,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" alt="Mateu Sports"></a>
+    </div>
+    <div class="top-right">
+      <select class="sel-semana" id="semanaSelector"></select>
+      <div class="who"><div class="n" id="whoName">—</div><div class="r" id="whoRole">—</div></div>
+      <button class="logout" id="logoutBtn">Salir</button>
+    </div>
+  </div>
+
+  <nav id="navTabs"></nav>
+
+  <main>
+    <div class="view active" id="view-tab"></div>
+  </main>
+</div>
+
+<script>
+/* ============================================================
+   CONFIGURACIÓN
+   ============================================================ */
+const FB = '{{FIREBASE_URL}}'; // reemplazar cuando Juli cree el proyecto Firebase "pedidos-semanales-mateu"
+const SESSION_KEY = 'mateu_portal_session';
+
+const CONTROL_EMAILS = ['julian@mateu.com.ar','cristian.campion@mateu.com.ar','federico@mateu.com.ar','producto@mateu.com.ar'];
+const CONFIG_EMAIL = 'julian@mateu.com.ar';
+
+// Los 21 destinos operativos que cargan Pedidos Semanales. Depósito no participa de este módulo
+// (ni como destino que carga pedido, ni del lado Producto que aprueba/rechaza): el grupo admin de
+// Pedidos Semanales es Julian, Cristian Campion, Federico y Producto — ver CONTROL_EMAILS/CONFIG_EMAIL.
+// El id de cada destino reusa el mismo slug/outlet_id que ya usa el Portal (session.sucursal /
+// session.outlet_id), así no hace falta mapear emails a mano.
+const SUCURSALES = [
+  {id:'plaza',      nombre:'Plaza Italia'},
+  {id:'kids',       nombre:'Kids'},
+  {id:'aurelius-5', nombre:'Aurelius 5'},
+  {id:'aurelius-10',nombre:'Aurelius 10'},
+  {id:'aurelius-12',nombre:'Aurelius 12'},
+  {id:'aurelius-cb',nombre:'Aurelius CB'},
+  {id:'adidas',     nombre:'Adidas'},
+  {id:'adidas-12',  nombre:'Adidas 12'},
+  {id:'originals',  nombre:'Originals'},
+  {id:'calle-12',   nombre:'Calle 12'},
+  {id:'calle-47',   nombre:'Calle 47'},
+  {id:'calle-49',   nombre:'Calle 49'},
+  {id:'city-bell',  nombre:'City Bell'},
+  {id:'diagonal',   nombre:'Diagonal 80'},
+  {id:'ensenada',   nombre:'Ensenada'},
+  {id:'berisso',    nombre:'Berisso'},
+  {id:'los-hornos', nombre:'Los Hornos'},
+  {id:'ecommerce',  nombre:'Ecommerce'},
+  {id:'calle-55',   nombre:'Outlet 55'},
+  {id:'av-44',      nombre:'Outlet Av.44'},
+  {id:'gonnet',     nombre:'Outlet Gonnet'},
+];
+const SUCURSAL_BY_ID = {}; SUCURSALES.forEach(s=>SUCURSAL_BY_ID[s.id]=s);
+
+const ROLE_LABEL = { admin:'Administrador', sucursal:'Sucursal', outlet:'Outlet' };
+
+const RUBROS = ['Calzado','Indumentaria','Accesorios'];
+const rubroKey = r => r.toLowerCase();
+
+// tab id -> nodo Firebase + comportamiento del campo Origen/Destino
+const TIPOS = {
+  'pedidos':       { node:'pedidos',      label:'Pedidos',        origenEditable:true,  campoDestino:false },
+  'menos-vendidos':{ node:'menosVendidos',label:'Menos Vendidos', origenEditable:false, campoDestino:true  },
+};
+
+const ESTADO_INFO = {
+  pendiente: {tono:'neutral', label:'Pendiente'},
+  aprobado:  {tono:'ok',      label:'Aprobado'},
+  rechazado: {tono:'bad',     label:'Rechazado'},
+};
+
+const POLL_MS = 20000;
+
+/* ============================================================
+   UTILIDADES
+   ============================================================ */
+const $ = id => document.getElementById(id);
+function esc(s){ return String(s===null||s===undefined?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fbConfigurado(){ return !!FB && FB.indexOf('{{')!==0; }
+function fmtDateTime(ts){ if(!ts) return ''; const d=new Date(ts); return d.toLocaleDateString('es-AR')+' '+d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}); }
+
+async function fetchJSON(url){
+  const r = await fetch(url);
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return r.json();
+}
+function putJSON(url, data){
+  return fetch(url,{method:'PUT',body:JSON.stringify(data),headers:{'Content-Type':'application/json'}});
+}
+function patchJSON(url, data){
+  return fetch(url,{method:'PATCH',body:JSON.stringify(data),headers:{'Content-Type':'application/json'}});
+}
+async function postJSON(url, data){
+  const r = await fetch(url,{method:'POST',body:JSON.stringify(data),headers:{'Content-Type':'application/json'}});
+  return r.json(); // {name: pushKey}
+}
+function deleteJSON(url){
+  return fetch(url,{method:'DELETE'});
+}
+
+/* ============================================================
+   SESIÓN — la maneja el Portal (mateu_portal_session). Este
+   módulo no tiene login propio: si no hay sesión válida con
+   acceso a esta herramienta, vuelve al Portal.
+   ============================================================ */
+function readSession(){ try{ const s=localStorage.getItem(SESSION_KEY); return s? JSON.parse(s):null; }catch(e){ return null; } }
+function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
+function logout(){ clearSession(); location.href='../'; }
+
+function miDestinoId(session){ return session.sucursal || session.outlet_id || null; }
+function esControl(email){ return CONTROL_EMAILS.includes((email||'').toLowerCase()); }
+function esConfig(email){ return (email||'').toLowerCase() === CONFIG_EMAIL; }
+
+/* ============================================================
+   SEMANA ACTIVA (lunes en huso horario Argentina, UTC-3 sin DST)
+   ============================================================ */
+function fechaHoyAR(){
+  return new Intl.DateTimeFormat('en-CA', {timeZone:'America/Argentina/Buenos_Aires', year:'numeric', month:'2-digit', day:'2-digit'}).format(new Date());
+}
+function lunesDeSemanaActiva(){
+  const [y,m,d] = fechaHoyAR().split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m-1, d));
+  const dow = dt.getUTCDay(); // 0=domingo
+  dt.setUTCDate(dt.getUTCDate() + (dow===0 ? -6 : 1-dow));
+  return dt.toISOString().slice(0,10);
+}
+function fmtFechaCorta(iso){ const [y,m,d] = iso.split('-'); return d+'.'+m+'.'+y.slice(2); }
+
+async function asegurarSemana(lunes){
+  let meta = null;
+  try{ meta = await fetchJSON(FB+'/semanas/'+lunes+'/meta.json'); }catch(e){}
+  if(!meta){
+    meta = { creada: Date.now(), estado:'activa' };
+    try{ await putJSON(FB+'/semanas/'+lunes+'/meta.json', meta); }catch(e){}
+  }
+  return meta;
+}
+async function listaSemanas(){
+  try{
+    const data = await fetchJSON(FB+'/semanas.json?shallow=true');
+    return Object.keys(data||{}).sort().reverse();
+  }catch(e){ return []; }
+}
+
+/* ============================================================
+   CONFIG (límites por rubro)
+   ============================================================ */
+let CONFIG_LIMITES = {calzado:20, indumentaria:20, accesorios:10};
+let CONFIG_LIMITES_MV = {calzado:20, indumentaria:20, accesorios:10};
+async function cargarConfig(){
+  try{ const l = await fetchJSON(FB+'/config/limites.json'); if(l) CONFIG_LIMITES = l; }catch(e){}
+  try{ const l = await fetchJSON(FB+'/config/limitesMenosVendidos.json'); if(l) CONFIG_LIMITES_MV = l; }catch(e){}
+}
+
+/* ============================================================
+   NAVEGACIÓN POR ROL
+   ============================================================ */
+function tabsParaSesion(session){
+  const tabs = [
+    {id:'pedidos', label:'Pedidos'},
+    {id:'menos-vendidos', label:'Menos Vendidos'},
+  ];
+  if(session.rol === 'admin'){
+    if(esControl(session.email)) tabs.push({id:'control', label:'Control'});
+    if(esConfig(session.email)) tabs.push({id:'config', label:'Config'});
+  }
+  return tabs;
+}
+
+let ACTIVE_TAB = 'pedidos';
+function renderNav(session){
+  const tabs = tabsParaSesion(session);
+  $('navTabs').innerHTML = tabs.map(t=>
+    '<button class="nav-tab'+(t.id===ACTIVE_TAB?' active':'')+'" data-tab="'+t.id+'">'+esc(t.label)+'</button>'
+  ).join('');
+  document.querySelectorAll('.nav-tab').forEach(b=>{
+    b.addEventListener('click', ()=>{ ACTIVE_TAB = b.dataset.tab; renderNav(session); renderTabContent(); });
+  });
+}
+
+/* ============================================================
+   CONTENIDO POR PESTAÑA
+   ============================================================ */
+let SESSION = null;
+let LUNES_ACTIVO = null;
+let SEMANA_SEL = null;
+let SEMANA_META = {estado:'activa'};
+let POLL_TIMER = null;
+const debounceTimers = {};
+
+async function refrescarSemanaMeta(){
+  try{ SEMANA_META = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/meta.json') || {estado:'activa'}; }
+  catch(e){ SEMANA_META = SEMANA_META || {estado:'activa'}; }
+}
+
+function headerHtml(titulo, subHtml, accionHtml){
+  return '<div class="head-row"><div><div class="pg-title">'+esc(titulo)+'</div><div class="pg-sub">'+subHtml+'</div></div>'+
+    (accionHtml? '<div>'+accionHtml+'</div>':'')+'</div>';
+}
+
+async function renderTabContent(){
+  if(!SESSION) return;
+  if(!fbConfigurado()){
+    $('view-tab').innerHTML = headerHtml('Pedidos Semanales', 'Sesión: '+esc(SESSION.email))+
+      '<div class="warn-box">Falta configurar <b>FIREBASE_URL</b> en el código (constante <code>FB</code>). '+
+      'Hasta que se reemplace el placeholder, esta vista no puede leer ni guardar datos de semanas/pedidos.</div>';
+    return;
+  }
+  if(ACTIVE_TAB === 'control'){ await renderControl(); return; }
+  if(ACTIVE_TAB === 'config'){ await renderConfig(); return; }
+  if(SESSION.rol === 'admin'){
+    await renderVistaProducto();
+    return;
+  }
+  await renderVistaSucursal();
+}
+
+/* ============================================================
+   VISTA SUCURSAL
+   ============================================================ */
+function construirFilaHtml(linea, tipoCfg, destinoId, soloLectura){
+  const dis = soloLectura ? 'disabled' : '';
+  let origenCell;
+  if(tipoCfg.origenEditable){
+    origenCell = '<select class="lf" data-f="origen" '+dis+'><option value="">—</option>'+
+      SUCURSALES.map(s=>'<option value="'+s.id+'"'+(linea.origen===s.id?' selected':'')+'>'+esc(s.nombre)+'</option>').join('')+
+      '<option value="deposito"'+(linea.origen==='deposito'?' selected':'')+'>Depósito</option></select>';
+  } else {
+    const nombreProp = (SUCURSAL_BY_ID[destinoId]&&SUCURSAL_BY_ID[destinoId].nombre) || destinoId;
+    origenCell = '<span class="txt-fixed">'+esc(nombreProp)+'</span>';
+  }
+  let destinoCell = '';
+  if(tipoCfg.campoDestino){
+    destinoCell = '<td><select class="lf" data-f="destino" '+dis+'><option value="">A definir</option>'+
+      SUCURSALES.map(s=>'<option value="'+s.id+'"'+(linea.destino===s.id?' selected':'')+'>'+esc(s.nombre)+'</option>').join('')+
+      '</select></td>';
+  }
+  const info = ESTADO_INFO[linea.estado] || ESTADO_INFO.pendiente;
+  return '<tr data-id="'+linea.id+'">'+
+    '<td>'+origenCell+'</td>'+
+    '<td><input class="lf" data-f="marca" value="'+esc(linea.marca||'')+'" '+dis+'></td>'+
+    '<td><input class="lf" data-f="codigo" value="'+esc(linea.codigo||'')+'" '+dis+'></td>'+
+    '<td><input class="lf" data-f="articulo" value="'+esc(linea.articulo||'')+'" '+dis+'></td>'+
+    '<td><input class="lf" data-f="descripcion" value="'+esc(linea.descripcion||'')+'" '+dis+'></td>'+
+    destinoCell+
+    '<td><input class="lf" data-f="comentarioSucursal" value="'+esc(linea.comentarioSucursal||'')+'" '+dis+' placeholder="Comentario"></td>'+
+    '<td class="col-estado"><span class="dot dot-'+info.tono+'"></span><span class="dot-label">'+info.label+'</span>'+
+      (linea.comentarioProducto? '<div class="linea-coment-prod">"'+esc(linea.comentarioProducto)+'"</div>':'')+
+    '</td>'+
+    '<td class="col-del">'+(soloLectura?'':'<button class="btn-eliminar" data-del="'+linea.id+'" title="Eliminar">×</button>')+'</td>'+
+  '</tr>';
+}
+
+function construirRubroCard(rubro, lineas, limite, tipoCfg, destinoId, soloLectura){
+  const count = lineas.length;
+  const puedeAgregar = !soloLectura && count < limite;
+  const headCols = '<th>Origen</th><th>Marca</th><th>Código</th><th>Artículo</th><th>Descripción</th>'+
+    (tipoCfg.campoDestino?'<th>Destino sugerido</th>':'')+'<th>Comentario</th><th>Estado</th><th></th>';
+  return '<div class="rubro-card">'+
+    '<div class="rubro-head"><div class="t">'+esc(rubro)+'</div><div class="cnt">'+count+'/'+limite+'</div></div>'+
+    '<div class="rubro-body">'+
+      (lineas.length?
+        '<table class="linea-table"><thead><tr>'+headCols+'</tr></thead><tbody>'+
+          lineas.map(l=>construirFilaHtml(l,tipoCfg,destinoId,soloLectura)).join('')+
+        '</tbody></table>'
+        : '<div class="hint">Sin líneas cargadas.</div>')+
+      (puedeAgregar? '<button class="btn-add-rubro" data-add-rubro="'+esc(rubro)+'">+ Agregar línea</button>':'')+
+    '</div></div>';
+}
+
+async function renderVistaSucursal(){
+  const tipoCfg = TIPOS[ACTIVE_TAB];
+  const destinoId = miDestinoId(SESSION);
+  const suc = SUCURSAL_BY_ID[destinoId];
+  if(!suc){
+    $('view-tab').innerHTML = headerHtml(tipoCfg.label, '')+
+      '<div class="error-box">Tu usuario ('+esc(SESSION.email)+') no está mapeado a una sucursal de Pedidos Semanales. Avisá a Juli.</div>';
+    return;
+  }
+
+  await refrescarSemanaMeta();
+  let pedido = null;
+  try{ pedido = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'.json'); }catch(e){}
+  pedido = pedido || {};
+  pedido.lineas = pedido.lineas || {};
+  pedido.estado = pedido.estado || 'borrador';
+
+  const soloLectura = (SEMANA_SEL !== LUNES_ACTIVO) || pedido.estado === 'enviado' || SEMANA_META.estado === 'cerrada';
+  const limites = ACTIVE_TAB === 'pedidos' ? CONFIG_LIMITES : CONFIG_LIMITES_MV;
+
+  const porRubro = {}; RUBROS.forEach(r=>porRubro[r]=[]);
+  Object.keys(pedido.lineas).forEach(id=>{
+    const linea = Object.assign({id}, pedido.lineas[id]);
+    const r = RUBROS.includes(linea.rubro) ? linea.rubro : RUBROS[0];
+    porRubro[r].push(linea);
+  });
+  RUBROS.forEach(r=> porRubro[r].sort((a,b)=>(a.creadaAt||0)-(b.creadaAt||0)));
+
+  let accion = '';
+  if(SEMANA_SEL !== LUNES_ACTIVO){
+    accion = '<span class="badge-estado badge-neutral">Semana anterior — solo lectura</span>';
+  } else if(SEMANA_META.estado === 'cerrada'){
+    accion = '<span class="badge-estado badge-bad">Semana cerrada</span>';
+  } else if(pedido.estado === 'enviado'){
+    accion = '<span class="badge-estado badge-ok">Enviado '+esc(fmtDateTime(pedido.enviadoAt))+'</span>';
+  } else {
+    accion = '<button class="btn-enviar" id="btnEnviarPedido">Enviar pedido</button>';
+  }
+
+  const sub = 'Semana del '+fmtFechaCorta(SEMANA_SEL)+' · '+esc(suc.nombre);
+  $('view-tab').innerHTML = headerHtml(tipoCfg.label, sub, accion)+
+    RUBROS.map(r=> construirRubroCard(r, porRubro[r], limites[rubroKey(r)] ?? 20, tipoCfg, destinoId, soloLectura)).join('');
+
+  bindVistaSucursalEvents(tipoCfg, destinoId);
+}
+
+function bindVistaSucursalEvents(tipoCfg, destinoId){
+  $('view-tab').querySelectorAll('.lf').forEach(el=>{
+    const handler = ()=>{
+      const tr = el.closest('tr');
+      programarGuardado(tr.dataset.id, tipoCfg, destinoId, tr);
+    };
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
+  });
+  $('view-tab').querySelectorAll('[data-add-rubro]').forEach(btn=>{
+    btn.addEventListener('click', ()=> agregarLinea(btn.dataset.addRubro, tipoCfg, destinoId));
+  });
+  $('view-tab').querySelectorAll('[data-del]').forEach(btn=>{
+    btn.addEventListener('click', ()=> eliminarLinea(tipoCfg, destinoId, btn.dataset.del));
+  });
+  const btnEnviar = $('btnEnviarPedido');
+  if(btnEnviar) btnEnviar.addEventListener('click', ()=> enviarPedido(tipoCfg, destinoId));
+}
+
+function leerFilaValores(rowEl, tipoCfg){
+  const data = {
+    marca: rowEl.querySelector('[data-f="marca"]').value,
+    codigo: rowEl.querySelector('[data-f="codigo"]').value,
+    articulo: rowEl.querySelector('[data-f="articulo"]').value,
+    descripcion: rowEl.querySelector('[data-f="descripcion"]').value,
+    comentarioSucursal: rowEl.querySelector('[data-f="comentarioSucursal"]').value,
+  };
+  if(tipoCfg.origenEditable){ data.origen = rowEl.querySelector('[data-f="origen"]').value; }
+  if(tipoCfg.campoDestino){ data.destino = rowEl.querySelector('[data-f="destino"]').value; }
+  return data;
+}
+
+function programarGuardado(lineaId, tipoCfg, destinoId, rowEl){
+  clearTimeout(debounceTimers[lineaId]);
+  debounceTimers[lineaId] = setTimeout(()=>{
+    const data = leerFilaValores(rowEl, tipoCfg);
+    patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'/lineas/'+lineaId+'.json', data).catch(()=>{});
+  }, 1000);
+}
+
+async function agregarLinea(rubro, tipoCfg, destinoId){
+  const nueva = {
+    rubro, estado:'pendiente', creadaAt: Date.now(),
+    marca:'', codigo:'', articulo:'', descripcion:'', comentarioSucursal:'',
+  };
+  if(tipoCfg.campoDestino){ nueva.origen = destinoId; nueva.destino = ''; }
+  else { nueva.origen = ''; }
+
+  await patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'.json', {estado:'borrador'});
+  await postJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'/lineas.json', nueva);
+  renderVistaSucursal();
+}
+
+async function eliminarLinea(tipoCfg, destinoId, lineaId){
+  await deleteJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'/lineas/'+lineaId+'.json');
+  renderVistaSucursal();
+}
+
+async function enviarPedido(tipoCfg, destinoId){
+  await patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'.json', {estado:'enviado', enviadoAt: Date.now()});
+  renderVistaSucursal();
+}
+
+/* ============================================================
+   VISTA PRODUCTO — Julian, Cristian Campion, Federico y Producto
+   (Depósito no participa de este módulo). Ve las líneas de las
+   22 sucursales para la semana seleccionada, agrupa, filtra,
+   aprueba/rechaza y comenta. No tiene restricción de solo-lectura
+   por semana: puede seguir resolviendo semanas pasadas.
+   ============================================================ */
+const VISTA_PRODUCTO_STATE = { agrupar:'sucursal', marca:'', busqueda:'' };
+const debounceTimersProd = {};
+
+function estadoBotonesHtml(linea, disabled){
+  const d = disabled ? 'disabled' : '';
+  return '<div class="estado-toggle">'+
+    '<button class="btn-toggle btn-aprobar'+(linea.estado==='aprobado'?' active':'')+'" '+d+' data-accion="aprobado" data-id="'+linea.id+'" data-suc="'+linea.sucursalId+'" title="Aprobar">✓</button>'+
+    '<button class="btn-toggle btn-rechazar'+(linea.estado==='rechazado'?' active':'')+'" '+d+' data-accion="rechazado" data-id="'+linea.id+'" data-suc="'+linea.sucursalId+'" title="Rechazar">✕</button>'+
+    '</div>';
+}
+
+function headColsProducto(tipoCfg){
+  return '<th>Sucursal</th><th>Rubro</th><th>'+(tipoCfg.campoDestino?'Destino sugerido':'Origen')+'</th>'+
+    '<th>Marca</th><th>Código</th><th>Artículo</th><th>Descripción</th>'+
+    '<th>Comentario Sucursal</th><th>Comentario Producto</th><th>Estado</th>';
+}
+
+function campoVariableTexto(linea, tipoCfg){
+  if(tipoCfg.campoDestino){
+    return linea.destino ? ((SUCURSAL_BY_ID[linea.destino]&&SUCURSAL_BY_ID[linea.destino].nombre)||linea.destino) : 'A definir';
+  }
+  if(linea.origen === 'deposito') return 'Depósito';
+  return linea.origen ? ((SUCURSAL_BY_ID[linea.origen]&&SUCURSAL_BY_ID[linea.origen].nombre)||linea.origen) : '—';
+}
+
+function construirFilaProductoHtml(linea, tipoCfg, semanaCerrada){
+  const sucNombre = (SUCURSAL_BY_ID[linea.sucursalId]&&SUCURSAL_BY_ID[linea.sucursalId].nombre) || linea.sucursalId;
+  return '<tr data-id="'+linea.id+'" data-suc="'+linea.sucursalId+'">'+
+    '<td class="txt-fixed">'+esc(sucNombre)+'</td>'+
+    '<td class="txt-fixed">'+esc(linea.rubro||'—')+'</td>'+
+    '<td class="txt-fixed">'+esc(campoVariableTexto(linea, tipoCfg))+'</td>'+
+    '<td class="txt-fixed">'+esc(linea.marca||'')+'</td>'+
+    '<td class="txt-fixed">'+esc(linea.codigo||'')+'</td>'+
+    '<td class="txt-fixed">'+esc(linea.articulo||'')+'</td>'+
+    '<td class="txt-fixed">'+esc(linea.descripcion||'')+'</td>'+
+    '<td class="txt-fixed">'+esc(linea.comentarioSucursal||'—')+'</td>'+
+    '<td><input class="lf-prod" data-id="'+linea.id+'" data-suc="'+linea.sucursalId+'" value="'+esc(linea.comentarioProducto||'')+'" placeholder="Comentario"></td>'+
+    '<td>'+estadoBotonesHtml(linea, semanaCerrada)+'</td>'+
+  '</tr>';
+}
+
+function construirGrupoProductoHtml(nombreGrupo, lineas, tipoCfg, semanaCerrada){
+  return '<div class="rubro-card">'+
+    '<div class="rubro-head"><div class="t">'+esc(nombreGrupo)+'</div><div class="cnt">'+lineas.length+' líneas</div></div>'+
+    '<div class="rubro-body"><table class="linea-table"><thead><tr>'+headColsProducto(tipoCfg)+'</tr></thead><tbody>'+
+      lineas.map(l=>construirFilaProductoHtml(l, tipoCfg, semanaCerrada)).join('')+
+    '</tbody></table></div></div>';
+}
+
+async function renderVistaProducto(){
+  const tipoCfg = TIPOS[ACTIVE_TAB];
+  const focoBusqueda = document.activeElement && document.activeElement.id === 'inpBusqueda';
+  const cursorPos = focoBusqueda ? document.activeElement.selectionStart : null;
+
+  await refrescarSemanaMeta();
+  const semanaCerrada = SEMANA_META.estado === 'cerrada';
+
+  let porSucursal = null;
+  try{ porSucursal = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'.json'); }catch(e){}
+  porSucursal = porSucursal || {};
+
+  const lineas = [];
+  Object.keys(porSucursal).forEach(sucId=>{
+    const lns = (porSucursal[sucId]&&porSucursal[sucId].lineas) || {};
+    Object.keys(lns).forEach(lid=> lineas.push(Object.assign({id:lid, sucursalId:sucId}, lns[lid])));
+  });
+
+  // contadores de avance por sucursal (sobre el total, no sobre lo filtrado)
+  const contadores = {};
+  lineas.forEach(l=>{
+    const c = contadores[l.sucursalId] = contadores[l.sucursalId] || {pendiente:0, aprobado:0, rechazado:0};
+    c[l.estado||'pendiente'] = (c[l.estado||'pendiente']||0) + 1;
+  });
+  const chips = Object.keys(contadores).sort((a,b)=>{
+    const na=(SUCURSAL_BY_ID[a]&&SUCURSAL_BY_ID[a].nombre)||a, nb=(SUCURSAL_BY_ID[b]&&SUCURSAL_BY_ID[b].nombre)||b;
+    return na.localeCompare(nb);
+  }).map(sucId=>{
+    const c = contadores[sucId], nombre = (SUCURSAL_BY_ID[sucId]&&SUCURSAL_BY_ID[sucId].nombre)||sucId;
+    return '<span class="chip-contador">'+esc(nombre)+' · <b>'+c.pendiente+'</b>P · <b>'+c.aprobado+'</b>A · <b>'+c.rechazado+'</b>R</span>';
+  }).join('');
+
+  // marcas disponibles para el filtro
+  const marcas = Array.from(new Set(lineas.map(l=>l.marca).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+
+  // filtros
+  const marcaF = VISTA_PRODUCTO_STATE.marca.toLowerCase();
+  const busq = VISTA_PRODUCTO_STATE.busqueda.toLowerCase();
+  const visibles = lineas.filter(l=>{
+    if(marcaF && (l.marca||'').toLowerCase() !== marcaF) return false;
+    if(busq && (l.codigo||'').toLowerCase().indexOf(busq)===-1 && (l.articulo||'').toLowerCase().indexOf(busq)===-1) return false;
+    return true;
+  });
+
+  // agrupación
+  const agrupado = {};
+  visibles.forEach(l=>{
+    const key = VISTA_PRODUCTO_STATE.agrupar === 'rubro'
+      ? (RUBROS.includes(l.rubro) ? l.rubro : RUBROS[0])
+      : ((SUCURSAL_BY_ID[l.sucursalId]&&SUCURSAL_BY_ID[l.sucursalId].nombre) || l.sucursalId);
+    (agrupado[key] = agrupado[key] || []).push(l);
+  });
+  const gruposOrdenados = Object.keys(agrupado).sort((a,b)=>a.localeCompare(b));
+
+  const filtros = '<div class="filtros-bar">'+
+    '<div class="grp-toggle">'+
+      '<button data-agrupar="sucursal" class="'+(VISTA_PRODUCTO_STATE.agrupar==='sucursal'?'active':'')+'">Por Sucursal</button>'+
+      '<button data-agrupar="rubro" class="'+(VISTA_PRODUCTO_STATE.agrupar==='rubro'?'active':'')+'">Por Rubro</button>'+
+    '</div>'+
+    '<select id="selMarca"><option value="">Todas las marcas</option>'+
+      marcas.map(m=>'<option value="'+esc(m)+'"'+(VISTA_PRODUCTO_STATE.marca===m?' selected':'')+'>'+esc(m)+'</option>').join('')+
+    '</select>'+
+    '<input type="text" id="inpBusqueda" placeholder="Buscar código o artículo…" value="'+esc(VISTA_PRODUCTO_STATE.busqueda)+'">'+
+    '<button class="btn-masivo" id="btnAprobarVisible" '+(semanaCerrada?'disabled':'')+'>Aprobar todo lo visible</button>'+
+  '</div>';
+
+  const cuerpo = gruposOrdenados.length
+    ? gruposOrdenados.map(g=> construirGrupoProductoHtml(g, agrupado[g], tipoCfg, semanaCerrada)).join('')
+    : '<div class="hint">Sin líneas que coincidan con los filtros.</div>';
+
+  $('view-tab').innerHTML = headerHtml(tipoCfg.label, 'Semana del '+fmtFechaCorta(SEMANA_SEL)+(semanaCerrada?' · <span class="badge-estado badge-bad">Semana cerrada</span>':''))+
+    ('<div class="chips-contadores">'+(chips||'<span class="hint">Sin líneas cargadas todavía.</span>')+'</div>')+
+    filtros + cuerpo;
+
+  bindVistaProductoEvents(tipoCfg, visibles, semanaCerrada);
+
+  if(focoBusqueda){
+    const el = $('inpBusqueda');
+    if(el){ el.focus(); try{ el.setSelectionRange(cursorPos, cursorPos); }catch(e){} }
+  }
+}
+
+function bindVistaProductoEvents(tipoCfg, visibles, semanaCerrada){
+  $('view-tab').querySelectorAll('[data-agrupar]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ VISTA_PRODUCTO_STATE.agrupar = btn.dataset.agrupar; renderVistaProducto(); });
+  });
+  const selMarca = $('selMarca');
+  if(selMarca) selMarca.addEventListener('change', (e)=>{ VISTA_PRODUCTO_STATE.marca = e.target.value; renderVistaProducto(); });
+  const inpBusqueda = $('inpBusqueda');
+  if(inpBusqueda) inpBusqueda.addEventListener('input', (e)=>{ VISTA_PRODUCTO_STATE.busqueda = e.target.value; renderVistaProducto(); });
+  const btnMasivo = $('btnAprobarVisible');
+  if(btnMasivo) btnMasivo.addEventListener('click', ()=> aprobarTodoVisible(tipoCfg, visibles));
+
+  $('view-tab').querySelectorAll('.lf-prod').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const lineaId = el.dataset.id, sucId = el.dataset.suc, valor = el.value;
+      clearTimeout(debounceTimersProd[lineaId]);
+      debounceTimersProd[lineaId] = setTimeout(()=>{
+        patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+sucId+'/lineas/'+lineaId+'.json', {comentarioProducto:valor}).catch(()=>{});
+      }, 1000);
+    });
+  });
+
+  $('view-tab').querySelectorAll('.btn-toggle').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const accion = btn.dataset.accion, lineaId = btn.dataset.id, sucId = btn.dataset.suc;
+      const yaActivo = btn.classList.contains('active');
+      const nuevo = yaActivo ? 'pendiente' : accion;
+      patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+sucId+'/lineas/'+lineaId+'.json',
+        {estado:nuevo, resueltaAt: nuevo==='pendiente'? null : Date.now()}).then(()=> renderVistaProducto());
+    });
+  });
+}
+
+async function aprobarTodoVisible(tipoCfg, visibles){
+  await Promise.all(visibles.map(l=>
+    patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+l.sucursalId+'/lineas/'+l.id+'.json', {estado:'aprobado', resueltaAt:Date.now()})
+  ));
+  renderVistaProducto();
+}
+
+/* ============================================================
+   CONTROL — Julian, Cristian Campion, Federico y Producto.
+   Informe semanal (semáforo de envío + logins) e informe
+   mensual (matriz sucursales × semanas con % cumplimiento).
+   ============================================================ */
+const CONTROL_STATE = { vista:'semanal', mes:null, mensualTipo:'pedidos' };
+
+function estadoSemaforo(nodo, login){
+  if(nodo && nodo.estado === 'enviado') return 'enviado';
+  if(nodo || login) return 'borrador';
+  return 'no-ingreso';
+}
+function semaforoCeldaHtml(estado){
+  const map = { enviado:['ok','Enviado'], borrador:['warn','Borrador'], 'no-ingreso':['neutral','No ingresó'] };
+  const [tono, label] = map[estado];
+  return '<span class="dot dot-'+tono+'"></span><span class="dot-label">'+label+'</span>';
+}
+
+async function renderControl(){
+  if(!esControl(SESSION.email)){
+    $('view-tab').innerHTML = headerHtml('Control', 'No autorizado.');
+    return;
+  }
+  const sub = '<div class="grp-toggle">'+
+    '<button data-controlvista="semanal" class="'+(CONTROL_STATE.vista==='semanal'?'active':'')+'">Informe Semanal</button>'+
+    '<button data-controlvista="mensual" class="'+(CONTROL_STATE.vista==='mensual'?'active':'')+'">Informe Mensual</button>'+
+  '</div>';
+  $('view-tab').innerHTML = headerHtml('Control', 'Julian, Cristian Campion, Federico y Producto') + sub + '<div id="controlBody" style="margin-top:16px"></div>';
+  document.querySelectorAll('[data-controlvista]').forEach(b=>{
+    b.addEventListener('click', ()=>{ CONTROL_STATE.vista = b.dataset.controlvista; renderControl(); });
+  });
+  if(CONTROL_STATE.vista === 'semanal') await renderInformeSemanal();
+  else await renderInformeMensual();
+}
+
+async function renderInformeSemanal(){
+  let pedidosData=null, mvData=null, loginsData=null;
+  try{ pedidosData = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/pedidos.json'); }catch(e){}
+  try{ mvData = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/menosVendidos.json'); }catch(e){}
+  try{ loginsData = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/logins.json'); }catch(e){}
+  pedidosData = pedidosData||{}; mvData = mvData||{}; loginsData = loginsData||{};
+
+  let enviaronPedidos=0, enviaronMV=0;
+  const filas = SUCURSALES.map(s=>{
+    const p = pedidosData[s.id], mv = mvData[s.id], login = loginsData[s.id];
+    if(p && p.estado==='enviado') enviaronPedidos++;
+    if(mv && mv.estado==='enviado') enviaronMV++;
+    return {s, p, mv, login, pEstado: estadoSemaforo(p, login), mvEstado: estadoSemaforo(mv, login)};
+  });
+
+  const html = '<div class="chips-contadores">'+
+      '<span class="chip-contador"><b>'+enviaronPedidos+'</b> de '+SUCURSALES.length+' enviaron Pedidos</span>'+
+      '<span class="chip-contador"><b>'+enviaronMV+'</b> de '+SUCURSALES.length+' enviaron Menos Vendidos</span>'+
+    '</div>'+
+    '<div style="overflow-x:auto"><table class="linea-table"><thead><tr><th>Sucursal</th><th>Último login</th><th>Pedidos</th><th>Menos Vendidos</th></tr></thead><tbody>'+
+      filas.map(f=>'<tr>'+
+        '<td class="txt-fixed">'+esc(f.s.nombre)+'</td>'+
+        '<td class="txt-fixed">'+esc(f.login? fmtDateTime(f.login.ultimoLogin) : '—')+'</td>'+
+        '<td>'+semaforoCeldaHtml(f.pEstado)+(f.p&&f.p.estado==='enviado'? ' <button class="btn-reabrir" data-reabrir-tipo="pedidos" data-suc="'+f.s.id+'">Reabrir</button>':'')+'</td>'+
+        '<td>'+semaforoCeldaHtml(f.mvEstado)+(f.mv&&f.mv.estado==='enviado'? ' <button class="btn-reabrir" data-reabrir-tipo="menos-vendidos" data-suc="'+f.s.id+'">Reabrir</button>':'')+'</td>'+
+      '</tr>').join('')+
+    '</tbody></table></div>';
+
+  $('controlBody').innerHTML = html;
+  $('controlBody').querySelectorAll('.btn-reabrir').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const tipoCfg = TIPOS[btn.dataset.reabrirTipo];
+      await patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+btn.dataset.suc+'.json', {estado:'borrador'});
+      renderInformeSemanal();
+    });
+  });
+}
+
+function lunesDelMes(ym){
+  const [y,m] = ym.split('-').map(Number);
+  const ultimoDia = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const lunes = [];
+  for(let d=1; d<=ultimoDia; d++){
+    if(new Date(Date.UTC(y, m-1, d)).getUTCDay() === 1) lunes.push(new Date(Date.UTC(y,m-1,d)).toISOString().slice(0,10));
+  }
+  return lunes;
+}
+function listaMesesDisponibles(){
+  const [y,m] = fechaHoyAR().split('-').map(Number);
+  const arr = [];
+  for(let i=0;i<12;i++){
+    let yy=y, mm=m-i;
+    while(mm<=0){ mm+=12; yy--; }
+    arr.push(yy+'-'+String(mm).padStart(2,'0'));
+  }
+  return arr;
+}
+function etiquetaMes(ym){
+  const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const [y,m] = ym.split('-').map(Number);
+  return MESES[m-1]+' '+y;
+}
+
+async function renderInformeMensual(){
+  if(!CONTROL_STATE.mes) CONTROL_STATE.mes = fechaHoyAR().slice(0,7);
+  const meses = listaMesesDisponibles();
+  const lunes = lunesDelMes(CONTROL_STATE.mes);
+  const hoy = fechaHoyAR();
+  const lunesHabilitados = lunes.filter(l=> l<=hoy);
+  const tipoCfg = TIPOS[CONTROL_STATE.mensualTipo];
+
+  const datosPorSemana = {};
+  for(const l of lunes){
+    try{ datosPorSemana[l] = await fetchJSON(FB+'/semanas/'+l+'/'+tipoCfg.node+'.json'); }catch(e){ datosPorSemana[l] = null; }
+  }
+
+  const filas = SUCURSALES.map(s=>{
+    let enviadas = 0;
+    const celdas = lunes.map(l=>{
+      const nodo = datosPorSemana[l] && datosPorSemana[l][s.id];
+      const estado = nodo && nodo.estado==='enviado' ? 'enviado' : (nodo ? 'borrador' : 'no-ingreso');
+      if(estado==='enviado' && l<=hoy) enviadas++;
+      return {l, estado};
+    });
+    const pct = lunesHabilitados.length ? Math.round(enviadas/lunesHabilitados.length*100) : 0;
+    return {s, celdas, pct};
+  }).sort((a,b)=> a.pct-b.pct);
+
+  const resumen = lunes.map(l=>{
+    const enviaron = SUCURSALES.filter(s=>{
+      const nodo = datosPorSemana[l] && datosPorSemana[l][s.id];
+      return nodo && nodo.estado==='enviado';
+    }).length;
+    return Math.round(enviaron/SUCURSALES.length*100);
+  });
+
+  const selectorMes = '<select id="selMes">'+meses.map(m=>'<option value="'+m+'"'+(m===CONTROL_STATE.mes?' selected':'')+'>'+etiquetaMes(m)+'</option>').join('')+'</select>';
+  const toggleTipo = '<div class="grp-toggle">'+
+    '<button data-mensualtipo="pedidos" class="'+(CONTROL_STATE.mensualTipo==='pedidos'?'active':'')+'">Pedidos</button>'+
+    '<button data-mensualtipo="menos-vendidos" class="'+(CONTROL_STATE.mensualTipo==='menos-vendidos'?'active':'')+'">Menos Vendidos</button>'+
+  '</div>';
+
+  const headCols = '<th>Sucursal</th>'+lunes.map(l=>'<th>'+fmtFechaCorta(l)+'</th>').join('')+'<th>% Cumplimiento</th>';
+  const filasHtml = filas.map(f=>{
+    const tono = f.pct>=75?'ok':(f.pct>=50?'warn':'bad');
+    return '<tr><td class="txt-fixed">'+esc(f.s.nombre)+'</td>'+
+      f.celdas.map(c=>'<td>'+semaforoCeldaHtml(c.estado)+'</td>').join('')+
+      '<td><span class="badge-estado badge-'+tono+'">'+f.pct+'%</span></td></tr>';
+  }).join('');
+  const filaResumen = '<tr><td class="txt-fixed"><b>% sucursales que enviaron</b></td>'+
+    resumen.map(p=>'<td class="txt-fixed">'+p+'%</td>').join('')+'<td></td></tr>';
+
+  $('controlBody').innerHTML =
+    '<div class="filtros-bar">'+selectorMes+toggleTipo+'<button class="btn-masivo" id="btnExportMensual">Exportar Excel</button></div>'+
+    '<div style="overflow-x:auto"><table class="linea-table"><thead><tr>'+headCols+'</tr></thead><tbody>'+filasHtml+filaResumen+'</tbody></table></div>';
+
+  $('selMes').addEventListener('change', (e)=>{ CONTROL_STATE.mes = e.target.value; renderInformeMensual(); });
+  document.querySelectorAll('[data-mensualtipo]').forEach(b=> b.addEventListener('click', ()=>{ CONTROL_STATE.mensualTipo = b.dataset.mensualtipo; renderInformeMensual(); }));
+  $('btnExportMensual').addEventListener('click', ()=> exportarInformeMensual(lunes, filas, tipoCfg));
+}
+
+function exportarInformeMensual(lunes, filas, tipoCfg){
+  if(typeof XLSX === 'undefined'){ alert('No se pudo cargar la librería de Excel. Revisá la conexión.'); return; }
+  const header = ['Sucursal', ...lunes.map(l=>'Semana '+fmtFechaCorta(l)), '% Cumplimiento'];
+  const rows = filas.map(f=> [f.s.nombre, ...f.celdas.map(c=> c.estado==='enviado'?'Enviado':(c.estado==='borrador'?'Borrador':'No ingresó')), f.pct+'%']);
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Informe mensual');
+  XLSX.writeFile(wb, 'informe-mensual-'+CONTROL_STATE.mes+'-'+tipoCfg.node+'.xlsx');
+}
+
+/* ============================================================
+   CONFIG — solo julian@mateu.com.ar. Límites por rubro y
+   cierre/reapertura manual de la semana seleccionada.
+   ============================================================ */
+async function renderConfig(){
+  if(!esConfig(SESSION.email)){
+    $('view-tab').innerHTML = headerHtml('Config', 'No autorizado.');
+    return;
+  }
+  await cargarConfig();
+  await refrescarSemanaMeta();
+
+  const camposLimite = (obj, prefix) => RUBROS.map(r=>{
+    const k = rubroKey(r);
+    return '<div class="fld"><label>'+esc(r)+'</label><input type="number" min="0" id="'+prefix+'-'+k+'" value="'+(obj[k]??0)+'"></div>';
+  }).join('');
+
+  $('view-tab').innerHTML = headerHtml('Config', 'Solo Julian') +
+    '<div class="rubro-card"><div class="rubro-head"><div class="t">Límites — Pedidos</div></div>'+
+      '<div class="rubro-body form-grid">'+camposLimite(CONFIG_LIMITES,'lim')+'</div>'+
+      '<div class="rubro-body"><button class="btn-masivo" id="btnGuardarLimites">Guardar límites</button></div>'+
+    '</div>'+
+    '<div class="rubro-card"><div class="rubro-head"><div class="t">Límites — Menos Vendidos</div></div>'+
+      '<div class="rubro-body form-grid">'+camposLimite(CONFIG_LIMITES_MV,'limmv')+'</div>'+
+      '<div class="rubro-body"><button class="btn-masivo" id="btnGuardarLimitesMV">Guardar límites</button></div>'+
+    '</div>'+
+    '<div class="rubro-card"><div class="rubro-head"><div class="t">Semana del '+fmtFechaCorta(SEMANA_SEL)+'</div></div>'+
+      '<div class="rubro-body"><p class="hint">Estado actual: '+esc(SEMANA_META.estado||'activa')+'. Cerrar bloquea la carga de sucursales y las acciones de Producto (los comentarios de Producto siguen editables).</p>'+
+      '<button class="btn-masivo" id="btnToggleCierre">'+(SEMANA_META.estado==='cerrada'?'Reabrir semana':'Cerrar semana')+'</button></div>'+
+    '</div>';
+
+  $('btnGuardarLimites').addEventListener('click', async ()=>{
+    const data = {}; RUBROS.forEach(r=>{ const k=rubroKey(r); data[k]=Number($('lim-'+k).value)||0; });
+    await patchJSON(FB+'/config/limites.json', data);
+    CONFIG_LIMITES = data;
+    const btn=$('btnGuardarLimites'); btn.textContent='Guardado ✓'; setTimeout(()=>{ if(btn) btn.textContent='Guardar límites'; },1500);
+  });
+  $('btnGuardarLimitesMV').addEventListener('click', async ()=>{
+    const data = {}; RUBROS.forEach(r=>{ const k=rubroKey(r); data[k]=Number($('limmv-'+k).value)||0; });
+    await patchJSON(FB+'/config/limitesMenosVendidos.json', data);
+    CONFIG_LIMITES_MV = data;
+    const btn=$('btnGuardarLimitesMV'); btn.textContent='Guardado ✓'; setTimeout(()=>{ if(btn) btn.textContent='Guardar límites'; },1500);
+  });
+  $('btnToggleCierre').addEventListener('click', async ()=>{
+    const nuevoEstado = SEMANA_META.estado==='cerrada' ? 'activa' : 'cerrada';
+    await patchJSON(FB+'/semanas/'+SEMANA_SEL+'/meta.json', {estado:nuevoEstado});
+    renderConfig();
+  });
+}
+
+/* ============================================================
+   POLLING — refresca semáforos/comentarios sin pisar lo que
+   se esté escribiendo en ese momento (sucursal o Producto).
+   ============================================================ */
+function iniciarPolling(){
+  if(POLL_TIMER) clearInterval(POLL_TIMER);
+  POLL_TIMER = setInterval(()=>{
+    if(!fbConfigurado() || !SESSION) return;
+    if(ACTIVE_TAB !== 'pedidos' && ACTIVE_TAB !== 'menos-vendidos') return;
+    const af = document.activeElement;
+    if(af && $('view-tab').contains(af)) return;
+    renderTabContent();
+  }, POLL_MS);
+}
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+async function boot(session){
+  SESSION = session;
+  $('whoName').textContent = session.email;
+  $('whoRole').textContent = ROLE_LABEL[session.rol] || session.rol;
+
+  const destinoId = miDestinoId(session);
+  if(session.rol !== 'admin'){
+    const suc = SUCURSAL_BY_ID[destinoId];
+    $('hdrTitle').textContent = suc ? suc.nombre : 'Pedidos Semanales';
+  } else {
+    $('hdrTitle').textContent = 'Pedidos Semanales';
+  }
+
+  renderNav(session);
+
+  if(!fbConfigurado()){
+    await renderTabContent();
+    return;
+  }
+
+  LUNES_ACTIVO = lunesDeSemanaActiva();
+  await asegurarSemana(LUNES_ACTIVO);
+  await cargarConfig();
+
+  if(session.rol !== 'admin' && destinoId){
+    patchJSON(FB+'/semanas/'+LUNES_ACTIVO+'/logins/'+destinoId+'.json', {ultimoLogin: Date.now(), email: session.email}).catch(()=>{});
+  }
+
+  let semanas = await listaSemanas();
+  if(!semanas.includes(LUNES_ACTIVO)) semanas = [LUNES_ACTIVO, ...semanas];
+  SEMANA_SEL = LUNES_ACTIVO;
+
+  $('semanaSelector').innerHTML = semanas.map(s=>
+    '<option value="'+s+'"'+(s===LUNES_ACTIVO?' selected':'')+'>Semana del '+fmtFechaCorta(s)+(s===LUNES_ACTIVO?' (activa)':'')+'</option>'
+  ).join('');
+  $('semanaSelector').addEventListener('change', async (e)=>{
+    SEMANA_SEL = e.target.value;
+    await asegurarSemana(SEMANA_SEL);
+    await renderTabContent();
+  });
+
+  await renderTabContent();
+  iniciarPolling();
+}
+
+$('logoutBtn').addEventListener('click', logout);
+
+(function init(){
+  const s = readSession();
+  if(!s || !(s.herramientas||[]).includes('pedidos-semanales')){ location.href='../'; return; }
+  boot(s);
+})();
+</script>
+</body>
+</html>
