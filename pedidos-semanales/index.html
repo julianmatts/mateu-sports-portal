@@ -78,6 +78,11 @@ main{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
   font-size:13.5px;margin-bottom:20px}
 .error-box{background:#fce4e4;color:var(--bad);border:1px solid #f6c6c6;border-radius:8px;padding:14px 16px;font-size:13.5px}
 .hint{font-size:12.5px;color:var(--muted);padding:10px 2px}
+.info-box{background:#eef4ff;color:#233a60;border:1px solid #c9d7f2;border-radius:8px;padding:12px 14px;
+  font-size:13px;line-height:1.45;margin-bottom:14px}
+.info-box b{color:var(--navy)}
+.rubro-alert{font-size:11.5px;color:#745000;background:#fff8e1;border:1px solid #f0c24b;border-radius:7px;
+  padding:7px 9px;margin:8px 0}
 
 /* ===== SEMÁFORO ===== */
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}
@@ -135,6 +140,13 @@ main{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
   font-size:11.5px;font-family:var(--font-c);font-weight:600;color:var(--muted)}
 .chip-contador b{color:var(--navy)}
 .chip-duplicado{background:#fff8e1;border-color:#f0c24b;color:#745000}
+.uso-rubros{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.uso-chip{display:inline-flex;align-items:center;gap:4px;border-radius:16px;padding:3px 8px;
+  font-family:var(--font-c);font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap}
+.uso-ok{background:#e8f5e9;color:var(--ok);border:1px solid #bfe2c2}
+.uso-warn{background:#fff3e0;color:var(--warn);border:1px solid #ffd59a}
+.uso-bad{background:#fce4e4;color:var(--bad);border:1px solid #f2b8b8}
+.uso-neutral{background:#eef1f8;color:var(--muted);border:1px solid var(--border)}
 .fila-duplicada td{background:#fffdf4}
 .dup-cell{background:#fff4bf!important;border-left:2px solid #d6a500;font-weight:600;color:var(--navy)}
 .dup-badge{display:inline-flex;margin-left:6px;padding:2px 6px;border-radius:14px;background:#f0c24b;color:#4d3500;
@@ -197,6 +209,7 @@ main{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
    CONFIGURACIÓN
    ============================================================ */
 const FB = 'https://pedidos-semanales-mateu-default-rtdb.firebaseio.com';
+const FB_MARCAS = 'https://asignacion-marcas-mateu-default-rtdb.firebaseio.com/asignacion_marcas.json';
 const SESSION_KEY = 'mateu_portal_session';
 
 const CONTROL_EMAILS = ['julian@mateu.com.ar','cristian.campion@mateu.com.ar','federico@mateu.com.ar','producto@mateu.com.ar'];
@@ -231,6 +244,13 @@ const SUCURSALES = [
   {id:'gonnet',     nombre:'Outlet Gonnet'},
 ];
 const SUCURSAL_BY_ID = {}; SUCURSALES.forEach(s=>SUCURSAL_BY_ID[s.id]=s);
+const SUCURSAL_PORTAL_TO_MARCAS = {
+  'calle-12':'ms-c12','city-bell':'ms-cb','diagonal':'ms-d80','calle-47':'ms-c47','calle-49':'ms-c49',
+  'los-hornos':'ms-lh','plaza':'ms-pi','berisso':'ms-ber','ensenada':'ms-ens','kids':'ms-kids','ecommerce':'ms-ecom',
+  'aurelius-12':'aur-c12','aurelius-5':'aur-c5','aurelius-10':'aur-c10','aurelius-cb':'aur-cb',
+  'adidas-12':'adi-c12','adidas':'adi-7','originals':'adi-ori',
+  'gonnet':'out-gon','av-44':'out-44','calle-55':'out-55'
+};
 
 const ROLE_LABEL = { admin:'Administrador', sucursal:'Sucursal', outlet:'Outlet' };
 
@@ -327,9 +347,69 @@ async function listaSemanas(){
    ============================================================ */
 let CONFIG_LIMITES = {calzado:20, indumentaria:20, accesorios:10};
 let CONFIG_LIMITES_MV = {calzado:20, indumentaria:20, accesorios:10};
+let CONFIG_LIMITES_CAT = {
+  cat1:{calzado:20, indumentaria:20, accesorios:10},
+  cat2:{calzado:15, indumentaria:15, accesorios:8}
+};
+let ASIGNACION_MARCAS = null;
+let ASIGNACION_MARCAS_OK = false;
 async function cargarConfig(){
   try{ const l = await fetchJSON(FB+'/config/limites.json'); if(l) CONFIG_LIMITES = l; }catch(e){}
   try{ const l = await fetchJSON(FB+'/config/limitesMenosVendidos.json'); if(l) CONFIG_LIMITES_MV = l; }catch(e){}
+  try{ const l = await fetchJSON(FB+'/config/limitesPorCategoria.json'); if(l) CONFIG_LIMITES_CAT = l; }catch(e){}
+}
+
+async function cargarAsignacionMarcas(){
+  try{
+    const val = await fetchJSON(FB_MARCAS);
+    ASIGNACION_MARCAS = val && (val.data || val);
+    ASIGNACION_MARCAS_OK = !!ASIGNACION_MARCAS;
+  }catch(e){
+    ASIGNACION_MARCAS_OK = false;
+  }
+}
+
+function marcasIdParaSucursal(destinoId){
+  return SUCURSAL_PORTAL_TO_MARCAS[destinoId] || null;
+}
+
+function buscarSucursalMarcas(destinoId){
+  if(!ASIGNACION_MARCAS) return null;
+  const idMarcas = marcasIdParaSucursal(destinoId);
+  if(!idMarcas) return null;
+  for(const canal of Object.values(ASIGNACION_MARCAS)){
+    const lista = canal && Array.isArray(canal.sucursales) ? canal.sucursales : [];
+    const suc = lista.find(s=>s.id === idMarcas);
+    if(suc) return suc;
+  }
+  return null;
+}
+
+function categoriaSucursal(destinoId){
+  const sucMarcas = buscarSucursalMarcas(destinoId);
+  return sucMarcas && sucMarcas.cat ? sucMarcas.cat : null;
+}
+
+function marcasCalzadoParaSucursal(destinoId){
+  const sucMarcas = buscarSucursalMarcas(destinoId);
+  if(!sucMarcas || !Array.isArray(sucMarcas.brands)) return null;
+  return Array.from(new Set(sucMarcas.brands.map(b=>b && b.n).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+}
+
+function limitesParaSucursal(base, destinoId){
+  const cat = categoriaSucursal(destinoId);
+  const catLimites = cat && CONFIG_LIMITES_CAT[cat] ? CONFIG_LIMITES_CAT[cat] : null;
+  const out = {};
+  RUBROS.forEach(r=>{
+    const k = rubroKey(r);
+    out[k] = Number(catLimites && catLimites[k] !== undefined ? catLimites[k] : base[k] !== undefined ? base[k] : 0);
+  });
+  return out;
+}
+
+function esSucursalMateuOuOutlet(destinoId){
+  const cat = categoriaSucursal(destinoId);
+  return cat === 'cat1' || cat === 'cat2' || cat === 'outlet';
 }
 
 /* ============================================================
@@ -420,6 +500,18 @@ async function renderTabContent(){
 /* ============================================================
    VISTA SUCURSAL
    ============================================================ */
+function marcaFieldHtml(linea, destinoId, soloLectura){
+  const dis = soloLectura ? 'disabled' : '';
+  if((linea.rubro || '') !== 'Calzado') return '<input class="lf" data-f="marca" value="'+esc(linea.marca||'')+'" '+dis+'>';
+  const marcas = marcasCalzadoParaSucursal(destinoId);
+  if(!ASIGNACION_MARCAS_OK || !marcas) return '<input class="lf" data-f="marca" value="'+esc(linea.marca||'')+'" '+dis+'>';
+  const actual = (linea.marca || '').trim();
+  const extra = actual && !marcas.includes(actual) ? '<option value="'+esc(actual)+'" selected>'+esc(actual)+' (revisar)</option>' : '';
+  return '<select class="lf" data-f="marca" '+dis+'><option value="">Marca</option>'+extra+
+    marcas.map(m=>'<option value="'+esc(m)+'"'+(actual===m?' selected':'')+'>'+esc(m)+'</option>').join('')+
+    '</select>';
+}
+
 function construirFilaHtml(linea, tipoCfg, destinoId, soloLectura){
   const dis = soloLectura ? 'disabled' : '';
   let origenCell;
@@ -440,7 +532,7 @@ function construirFilaHtml(linea, tipoCfg, destinoId, soloLectura){
   const info = ESTADO_INFO[linea.estado] || ESTADO_INFO.pendiente;
   return '<tr data-id="'+linea.id+'">'+
     '<td>'+origenCell+'</td>'+
-    '<td><input class="lf" data-f="marca" value="'+esc(linea.marca||'')+'" '+dis+'></td>'+
+    '<td>'+marcaFieldHtml(linea,destinoId,soloLectura)+'</td>'+
     '<td><input class="lf" data-f="codigo" value="'+esc(linea.codigo||'')+'" '+dis+'></td>'+
     '<td><input class="lf" data-f="articulo" value="'+esc(linea.articulo||'')+'" '+dis+'></td>'+
     '<td><input class="lf" data-f="descripcion" value="'+esc(linea.descripcion||'')+'" '+dis+'></td>'+
@@ -456,11 +548,16 @@ function construirFilaHtml(linea, tipoCfg, destinoId, soloLectura){
 function construirRubroCard(rubro, lineas, limite, tipoCfg, destinoId, soloLectura){
   const count = lineas.length;
   const puedeAgregar = !soloLectura && count < limite;
+  const marcasCalzado = marcasCalzadoParaSucursal(destinoId);
+  const avisoMarca = rubro === 'Calzado' && ASIGNACION_MARCAS_OK && (!marcasCalzado || !marcasCalzado.length)
+    ? '<div class="rubro-alert">No hay asignacion de marcas de calzado vinculada para esta sucursal. Avisar a Juli si falta cargarla en el modulo Marcas.</div>'
+    : '';
   const headCols = '<th>Origen</th><th>Marca</th><th>Código</th><th>Artículo</th><th>Descripción</th>'+
     (tipoCfg.campoDestino?'<th>Destino sugerido</th>':'')+'<th>Comentario</th><th>Estado</th><th></th>';
   return '<div class="rubro-card">'+
     '<div class="rubro-head"><div class="t">'+esc(rubro)+'</div><div class="cnt">'+count+'/'+limite+'</div></div>'+
     '<div class="rubro-body">'+
+      avisoMarca+
       (lineas.length?
         '<table class="linea-table"><thead><tr>'+headCols+'</tr></thead><tbody>'+
           lineas.map(l=>construirFilaHtml(l,tipoCfg,destinoId,soloLectura)).join('')+
@@ -494,7 +591,8 @@ async function renderVistaSucursal(){
   pedido.estado = pedido.estado || 'borrador';
 
   const soloLectura = (SEMANA_SEL !== LUNES_ACTIVO) || pedido.estado === 'enviado' || SEMANA_META.estado === 'cerrada';
-  const limites = ACTIVE_TAB === 'pedidos' ? CONFIG_LIMITES : CONFIG_LIMITES_MV;
+  const limitesBase = ACTIVE_TAB === 'pedidos' ? CONFIG_LIMITES : CONFIG_LIMITES_MV;
+  const limites = ACTIVE_TAB === 'pedidos' ? limitesParaSucursal(limitesBase, destinoId) : limitesBase;
 
   const porRubro = {}; RUBROS.forEach(r=>porRubro[r]=[]);
   Object.keys(pedido.lineas).forEach(id=>{
@@ -516,7 +614,11 @@ async function renderVistaSucursal(){
   }
 
   const sub = 'Semana del '+fmtFechaCorta(SEMANA_SEL)+' · '+esc(suc.nombre);
-  $('view-tab').innerHTML = headerHtml(tipoCfg.label, sub, accion)+
+  const aclaraciones = '<div class="info-box"><b>Objetivo:</b> usar esta planilla para reponer los mejores vendidos de la ultima semana a 15 dias.</div>'+
+    (ACTIVE_TAB === 'pedidos' && esSucursalMateuOuOutlet(destinoId)
+      ? '<div class="info-box"><b>Ruge:</b> para Mateu Sports y Outlet, el pedido de la marca Ruge corresponde hacerlo directo a deposito por mail o telefono, porque generalmente hay reserva en deposito.</div>'
+      : '');
+  $('view-tab').innerHTML = headerHtml(tipoCfg.label, sub, accion)+aclaraciones+
     RUBROS.map(r=> construirRubroCard(r, porRubro[r], limites[rubroKey(r)] ?? 20, tipoCfg, destinoId, soloLectura)).join('');
 
   bindVistaSucursalEvents(tipoCfg, destinoId);
@@ -1168,6 +1270,35 @@ function semaforoCeldaHtml(estado){
   return '<span class="dot dot-'+tono+'"></span><span class="dot-label">'+label+'</span>';
 }
 
+function contarLineasPorRubro(nodo){
+  const out = {}; RUBROS.forEach(r=>out[rubroKey(r)] = 0);
+  const lineas = (nodo && nodo.lineas) || {};
+  Object.keys(lineas).forEach(id=>{
+    const r = RUBROS.includes(lineas[id].rubro) ? lineas[id].rubro : RUBROS[0];
+    out[rubroKey(r)]++;
+  });
+  return out;
+}
+
+function tonoUsoLineas(usadas, limite, enviado){
+  if(!enviado) return 'neutral';
+  if(!limite) return usadas ? 'ok' : 'neutral';
+  if(usadas >= limite) return 'ok';
+  if(usadas > limite/2) return 'warn';
+  return 'bad';
+}
+
+function usoRubrosHtml(nodo, tipoKey, sucId){
+  if(!nodo || nodo.estado !== 'enviado') return '';
+  const base = tipoKey === 'pedidos' ? CONFIG_LIMITES : CONFIG_LIMITES_MV;
+  const limites = tipoKey === 'pedidos' ? limitesParaSucursal(base, sucId) : base;
+  const conteo = contarLineasPorRubro(nodo);
+  return '<div class="uso-rubros">'+RUBROS.map(r=>{
+    const k = rubroKey(r), usadas = conteo[k] || 0, limite = limites[k] ?? 0;
+    return '<span class="uso-chip uso-'+tonoUsoLineas(usadas, limite, true)+'">'+esc(r)+' '+usadas+'/'+limite+'</span>';
+  }).join('')+'</div>';
+}
+
 async function renderControl(){
   if(!esControl(SESSION.email)){
     $('view-tab').innerHTML = headerHtml('Control', 'No autorizado.');
@@ -1208,8 +1339,8 @@ async function renderInformeSemanal(){
       filas.map(f=>'<tr>'+
         '<td class="txt-fixed">'+esc(f.s.nombre)+'</td>'+
         '<td class="txt-fixed">'+esc(f.login? fmtDateTime(f.login.ultimoLogin) : '—')+'</td>'+
-        '<td>'+semaforoCeldaHtml(f.pEstado)+(f.p&&f.p.estado==='enviado'? ' <button class="btn-reabrir" data-reabrir-tipo="pedidos" data-suc="'+f.s.id+'">Reabrir</button>':'')+'</td>'+
-        '<td>'+semaforoCeldaHtml(f.mvEstado)+(f.mv&&f.mv.estado==='enviado'? ' <button class="btn-reabrir" data-reabrir-tipo="menos-vendidos" data-suc="'+f.s.id+'">Reabrir</button>':'')+'</td>'+
+        '<td>'+semaforoCeldaHtml(f.pEstado)+(f.p&&f.p.estado==='enviado'? ' <button class="btn-reabrir" data-reabrir-tipo="pedidos" data-suc="'+f.s.id+'">Reabrir</button>'+usoRubrosHtml(f.p,'pedidos',f.s.id):'')+'</td>'+
+        '<td>'+semaforoCeldaHtml(f.mvEstado)+(f.mv&&f.mv.estado==='enviado'? ' <button class="btn-reabrir" data-reabrir-tipo="menos-vendidos" data-suc="'+f.s.id+'">Reabrir</button>'+usoRubrosHtml(f.mv,'menos-vendidos',f.s.id):'')+'</td>'+
       '</tr>').join('')+
     '</tbody></table></div>';
 
@@ -1332,11 +1463,22 @@ async function renderConfig(){
     const k = rubroKey(r);
     return '<div class="fld"><label>'+esc(r)+'</label><input type="number" min="0" id="'+prefix+'-'+k+'" value="'+(obj[k]??0)+'"></div>';
   }).join('');
+  const camposLimiteCat = (cat) => RUBROS.map(r=>{
+    const k = rubroKey(r);
+    const obj = CONFIG_LIMITES_CAT[cat] || {};
+    return '<div class="fld"><label>'+esc(r)+'</label><input type="number" min="0" id="limcat-'+cat+'-'+k+'" value="'+(obj[k]??CONFIG_LIMITES[k]??0)+'"></div>';
+  }).join('');
 
   $('view-tab').innerHTML = headerHtml('Config', 'Solo Julian') +
     '<div class="rubro-card"><div class="rubro-head"><div class="t">Límites — Pedidos</div></div>'+
       '<div class="rubro-body form-grid">'+camposLimite(CONFIG_LIMITES,'lim')+'</div>'+
       '<div class="rubro-body"><button class="btn-masivo" id="btnGuardarLimites">Guardar límites</button></div>'+
+    '</div>'+
+    '<div class="rubro-card"><div class="rubro-head"><div class="t">Límites por categoría — Pedidos</div></div>'+
+      '<div class="rubro-body"><p class="hint">La categoria viene del modulo Asignacion de Marcas. Si una sucursal no tiene categoria vinculada, usa los limites generales.</p></div>'+
+      '<div class="rubro-body"><div class="pg-sub" style="margin-bottom:8px">Cat 1</div><div class="form-grid">'+camposLimiteCat('cat1')+'</div></div>'+
+      '<div class="rubro-body"><div class="pg-sub" style="margin-bottom:8px">Cat 2</div><div class="form-grid">'+camposLimiteCat('cat2')+'</div></div>'+
+      '<div class="rubro-body"><button class="btn-masivo" id="btnGuardarLimitesCat">Guardar limites por categoria</button></div>'+
     '</div>'+
     '<div class="rubro-card"><div class="rubro-head"><div class="t">Límites — Menos Vendidos</div></div>'+
       '<div class="rubro-body form-grid">'+camposLimite(CONFIG_LIMITES_MV,'limmv')+'</div>'+
@@ -1358,6 +1500,16 @@ async function renderConfig(){
     await patchJSON(FB+'/config/limitesMenosVendidos.json', data);
     CONFIG_LIMITES_MV = data;
     const btn=$('btnGuardarLimitesMV'); btn.textContent='Guardado ✓'; setTimeout(()=>{ if(btn) btn.textContent='Guardar límites'; },1500);
+  });
+  $('btnGuardarLimitesCat').addEventListener('click', async ()=>{
+    const data = {};
+    ['cat1','cat2'].forEach(cat=>{
+      data[cat] = {};
+      RUBROS.forEach(r=>{ const k=rubroKey(r); data[cat][k]=Number($('limcat-'+cat+'-'+k).value)||0; });
+    });
+    await patchJSON(FB+'/config/limitesPorCategoria.json', data);
+    CONFIG_LIMITES_CAT = data;
+    const btn=$('btnGuardarLimitesCat'); btn.textContent='Guardado ✓'; setTimeout(()=>{ if(btn) btn.textContent='Guardar limites por categoria'; },1500);
   });
   $('btnToggleCierre').addEventListener('click', async ()=>{
     const nuevoEstado = SEMANA_META.estado==='cerrada' ? 'activa' : 'cerrada';
@@ -1415,6 +1567,7 @@ async function boot(session){
   LUNES_ACTIVO = lunesDeSemanaActiva();
   await asegurarSemana(LUNES_ACTIVO);
   await cargarConfig();
+  await cargarAsignacionMarcas();
 
   if(session.rol !== 'admin' && destinoId){
     patchJSON(FB+'/logins/'+LUNES_ACTIVO+'/'+destinoId+'.json', {ultimoLogin: Date.now(), email: session.email}).catch(()=>{});
