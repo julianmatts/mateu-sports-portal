@@ -366,10 +366,32 @@ let SEMANA_SEL = null;
 let SEMANA_META = {estado:'activa'};
 let POLL_TIMER = null;
 const debounceTimers = {};
+const CACHE_SUCURSAL = {};
+const CACHE_PRODUCTO = {};
+const META_CACHE = {};
+
+function cacheKey(){
+  return Array.from(arguments).join('|');
+}
+
+function clonar(obj){
+  return JSON.parse(JSON.stringify(obj || {}));
+}
+
+function generarPushKey(){
+  return 'ln_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,10);
+}
 
 async function refrescarSemanaMeta(){
+  const ahora = Date.now();
+  const cache = META_CACHE[SEMANA_SEL];
+  if(cache && ahora - cache.ts < 30000){
+    SEMANA_META = cache.data;
+    return;
+  }
   try{ SEMANA_META = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/meta.json') || {estado:'activa'}; }
   catch(e){ SEMANA_META = SEMANA_META || {estado:'activa'}; }
+  META_CACHE[SEMANA_SEL] = {ts: ahora, data: SEMANA_META};
 }
 
 function headerHtml(titulo, subHtml, accionHtml){
@@ -459,7 +481,13 @@ async function renderVistaSucursal(){
 
   await refrescarSemanaMeta();
   let pedido = null;
-  try{ pedido = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'.json'); }catch(e){}
+  const cKey = cacheKey(SEMANA_SEL, tipoCfg.node, destinoId);
+  if(CACHE_SUCURSAL[cKey]){
+    pedido = clonar(CACHE_SUCURSAL[cKey]);
+  } else {
+    try{ pedido = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'.json'); }catch(e){}
+    CACHE_SUCURSAL[cKey] = clonar(pedido || {});
+  }
   pedido = pedido || {};
   pedido.lineas = pedido.lineas || {};
   pedido.estado = pedido.estado || 'borrador';
@@ -529,11 +557,18 @@ function programarGuardado(lineaId, tipoCfg, destinoId, rowEl){
   clearTimeout(debounceTimers[lineaId]);
   debounceTimers[lineaId] = setTimeout(()=>{
     const data = leerFilaValores(rowEl, tipoCfg);
+    const cKey = cacheKey(SEMANA_SEL, tipoCfg.node, destinoId);
+    const pedido = CACHE_SUCURSAL[cKey];
+    if(pedido && pedido.lineas && pedido.lineas[lineaId]){
+      Object.assign(pedido.lineas[lineaId], data);
+    }
     patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'/lineas/'+lineaId+'.json', data).catch(()=>{});
   }, 1000);
 }
 
 async function agregarLinea(rubro, tipoCfg, destinoId){
+  const cKey = cacheKey(SEMANA_SEL, tipoCfg.node, destinoId);
+  const lineaId = generarPushKey();
   const nueva = {
     rubro, estado:'pendiente', creadaAt: Date.now(),
     marca:'', codigo:'', articulo:'', descripcion:'', comentarioSucursal:'',
@@ -541,19 +576,49 @@ async function agregarLinea(rubro, tipoCfg, destinoId){
   if(tipoCfg.campoDestino){ nueva.origen = destinoId; nueva.destino = ''; }
   else { nueva.origen = ''; }
 
-  await patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'.json', {estado:'borrador'});
-  await postJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'/lineas.json', nueva);
+  const pedido = CACHE_SUCURSAL[cKey] = CACHE_SUCURSAL[cKey] || {estado:'borrador', lineas:{}};
+  pedido.estado = 'borrador';
+  pedido.lineas = pedido.lineas || {};
+  pedido.lineas[lineaId] = nueva;
   renderVistaSucursal();
+
+  Promise.all([
+    patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'.json', {estado:'borrador'}),
+    putJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'/lineas/'+lineaId+'.json', nueva)
+  ]).catch(()=>{
+    delete pedido.lineas[lineaId];
+    alert('No se pudo guardar la línea. Revisá la conexión e intentá de nuevo.');
+    renderVistaSucursal();
+  });
 }
 
 async function eliminarLinea(tipoCfg, destinoId, lineaId){
-  await deleteJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'/lineas/'+lineaId+'.json');
+  const cKey = cacheKey(SEMANA_SEL, tipoCfg.node, destinoId);
+  const pedido = CACHE_SUCURSAL[cKey];
+  const backup = pedido && pedido.lineas ? pedido.lineas[lineaId] : null;
+  if(pedido && pedido.lineas) delete pedido.lineas[lineaId];
   renderVistaSucursal();
+  deleteJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'/lineas/'+lineaId+'.json').catch(()=>{
+    if(backup && pedido && pedido.lineas) pedido.lineas[lineaId] = backup;
+    alert('No se pudo eliminar la línea. Revisá la conexión e intentá de nuevo.');
+    renderVistaSucursal();
+  });
 }
 
 async function enviarPedido(tipoCfg, destinoId){
-  await patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'.json', {estado:'enviado', enviadoAt: Date.now()});
+  const cKey = cacheKey(SEMANA_SEL, tipoCfg.node, destinoId);
+  const pedido = CACHE_SUCURSAL[cKey] = CACHE_SUCURSAL[cKey] || {lineas:{}};
+  const anterior = {estado:pedido.estado, enviadoAt:pedido.enviadoAt};
+  const enviadoAt = Date.now();
+  pedido.estado = 'enviado';
+  pedido.enviadoAt = enviadoAt;
   renderVistaSucursal();
+  patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'.json', {estado:'enviado', enviadoAt}).catch(()=>{
+    pedido.estado = anterior.estado || 'borrador';
+    pedido.enviadoAt = anterior.enviadoAt || null;
+    alert('No se pudo enviar. Revisá la conexión e intentá de nuevo.');
+    renderVistaSucursal();
+  });
 }
 
 /* ============================================================
@@ -650,7 +715,13 @@ async function renderVistaProducto(){
   const semanaCerrada = SEMANA_META.estado === 'cerrada';
 
   let porSucursal = null;
-  try{ porSucursal = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'.json'); }catch(e){}
+  const pKey = cacheKey(SEMANA_SEL, tipoCfg.node);
+  if(CACHE_PRODUCTO[pKey]){
+    porSucursal = clonar(CACHE_PRODUCTO[pKey]);
+  } else {
+    try{ porSucursal = await fetchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'.json'); }catch(e){}
+    CACHE_PRODUCTO[pKey] = clonar(porSucursal || {});
+  }
   porSucursal = porSucursal || {};
 
   const lineas = [];
@@ -746,6 +817,11 @@ function bindVistaProductoEvents(tipoCfg, visibles, semanaCerrada){
       const lineaId = el.dataset.id, sucId = el.dataset.suc, valor = el.value;
       clearTimeout(debounceTimersProd[lineaId]);
       debounceTimersProd[lineaId] = setTimeout(()=>{
+        const pKey = cacheKey(SEMANA_SEL, tipoCfg.node);
+        const data = CACHE_PRODUCTO[pKey];
+        if(data && data[sucId] && data[sucId].lineas && data[sucId].lineas[lineaId]){
+          data[sucId].lineas[lineaId].comentarioProducto = valor;
+        }
         patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+sucId+'/lineas/'+lineaId+'.json', {comentarioProducto:valor}).catch(()=>{});
       }, 1000);
     });
@@ -756,17 +832,45 @@ function bindVistaProductoEvents(tipoCfg, visibles, semanaCerrada){
       const accion = btn.dataset.accion, lineaId = btn.dataset.id, sucId = btn.dataset.suc;
       const yaActivo = btn.classList.contains('active');
       const nuevo = yaActivo ? 'pendiente' : accion;
+      actualizarEstadoProductoLocal(tipoCfg, sucId, lineaId, nuevo);
       patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+sucId+'/lineas/'+lineaId+'.json',
-        {estado:nuevo, resueltaAt: nuevo==='pendiente'? null : Date.now()}).then(()=> renderVistaProducto());
+        {estado:nuevo, resueltaAt: nuevo==='pendiente'? null : Date.now()}).catch(()=>{
+          delete CACHE_PRODUCTO[cacheKey(SEMANA_SEL, tipoCfg.node)];
+          alert('No se pudo actualizar el estado. Revisá la conexión e intentá de nuevo.');
+          renderVistaProducto();
+        });
     });
   });
 }
 
-async function aprobarTodoVisible(tipoCfg, visibles){
-  await Promise.all(visibles.map(l=>
-    patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+l.sucursalId+'/lineas/'+l.id+'.json', {estado:'aprobado', resueltaAt:Date.now()})
-  ));
+function actualizarEstadoProductoLocal(tipoCfg, sucId, lineaId, nuevoEstado){
+  const pKey = cacheKey(SEMANA_SEL, tipoCfg.node);
+  const data = CACHE_PRODUCTO[pKey];
+  if(data && data[sucId] && data[sucId].lineas && data[sucId].lineas[lineaId]){
+    data[sucId].lineas[lineaId].estado = nuevoEstado;
+    data[sucId].lineas[lineaId].resueltaAt = nuevoEstado==='pendiente' ? null : Date.now();
+  }
   renderVistaProducto();
+}
+
+async function aprobarTodoVisible(tipoCfg, visibles){
+  const pKey = cacheKey(SEMANA_SEL, tipoCfg.node);
+  const data = CACHE_PRODUCTO[pKey];
+  const ahora = Date.now();
+  visibles.forEach(l=>{
+    if(data && data[l.sucursalId] && data[l.sucursalId].lineas && data[l.sucursalId].lineas[l.id]){
+      data[l.sucursalId].lineas[l.id].estado = 'aprobado';
+      data[l.sucursalId].lineas[l.id].resueltaAt = ahora;
+    }
+  });
+  renderVistaProducto();
+  Promise.all(visibles.map(l=>
+    patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+l.sucursalId+'/lineas/'+l.id+'.json', {estado:'aprobado', resueltaAt:ahora})
+  )).catch(()=>{
+    delete CACHE_PRODUCTO[pKey];
+    alert('No se pudieron aprobar todas las líneas. Revisá la conexión e intentá de nuevo.');
+    renderVistaProducto();
+  });
 }
 
 async function obtenerLineasTipo(tipoKey){
@@ -1077,6 +1181,14 @@ function iniciarPolling(){
     if(ACTIVE_TAB !== 'pedidos' && ACTIVE_TAB !== 'menos-vendidos') return;
     const af = document.activeElement;
     if(af && $('view-tab').contains(af)) return;
+    const tipoCfg = TIPOS[ACTIVE_TAB];
+    if(SESSION.rol === 'admin'){
+      delete CACHE_PRODUCTO[cacheKey(SEMANA_SEL, tipoCfg.node)];
+    } else {
+      const destinoId = miDestinoId(SESSION);
+      delete CACHE_SUCURSAL[cacheKey(SEMANA_SEL, tipoCfg.node, destinoId)];
+    }
+    delete META_CACHE[SEMANA_SEL];
     renderTabContent();
   }, POLL_MS);
 }
