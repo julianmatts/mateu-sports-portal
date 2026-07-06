@@ -147,6 +147,11 @@ main{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
 .uso-warn{background:#fff3e0;color:var(--warn);border:1px solid #ffd59a}
 .uso-bad{background:#fce4e4;color:var(--bad);border:1px solid #f2b8b8}
 .uso-neutral{background:#eef1f8;color:var(--muted);border:1px solid var(--border)}
+.rank-badge{display:inline-flex;align-items:center;justify-content:center;min-width:25px;height:20px;margin-right:7px;
+  border-radius:12px;font-family:var(--font-c);font-size:10.5px;font-weight:800;letter-spacing:.4px}
+.rank-ok{background:#e8f5e9;color:var(--ok);border:1px solid #bfe2c2}
+.rank-warn{background:#fff3e0;color:var(--warn);border:1px solid #ffd59a}
+.rank-bad{background:#fce4e4;color:var(--bad);border:1px solid #f2b8b8}
 .fila-duplicada td{background:#fffdf4}
 .dup-cell{background:#fff4bf!important;border-left:2px solid #d6a500;font-weight:600;color:var(--navy)}
 .dup-badge{display:inline-flex;margin-left:6px;padding:2px 6px;border-radius:14px;background:#f0c24b;color:#4d3500;
@@ -1280,6 +1285,22 @@ function contarLineasPorRubro(nodo){
   return out;
 }
 
+function totalLineasNodo(nodo){
+  return Object.keys((nodo && nodo.lineas) || {}).length;
+}
+
+function tonoRanking(pos, total){
+  if(total <= 1) return 'ok';
+  const tercio = Math.ceil(total/3);
+  if(pos < tercio) return 'ok';
+  if(pos < tercio*2) return 'warn';
+  return 'bad';
+}
+
+function rankBadgeHtml(pos, total){
+  return '<span class="rank-badge rank-'+tonoRanking(pos,total)+'">#'+(pos+1)+'</span>';
+}
+
 function tonoUsoLineas(usadas, limite, enviado){
   if(!enviado) return 'neutral';
   if(!limite) return usadas ? 'ok' : 'neutral';
@@ -1328,16 +1349,17 @@ async function renderInformeSemanal(){
     const p = pedidosData[s.id], mv = mvData[s.id], login = loginsData[s.id];
     if(p && p.estado==='enviado') enviaronPedidos++;
     if(mv && mv.estado==='enviado') enviaronMV++;
-    return {s, p, mv, login, pEstado: estadoSemaforo(p, login), mvEstado: estadoSemaforo(mv, login)};
-  });
+    const totalLineas = (p && p.estado==='enviado' ? totalLineasNodo(p) : 0) + (mv && mv.estado==='enviado' ? totalLineasNodo(mv) : 0);
+    return {s, p, mv, login, totalLineas, pEstado: estadoSemaforo(p, login), mvEstado: estadoSemaforo(mv, login)};
+  }).sort((a,b)=> b.totalLineas-a.totalLineas || a.s.nombre.localeCompare(b.s.nombre));
 
   const html = '<div class="chips-contadores">'+
       '<span class="chip-contador"><b>'+enviaronPedidos+'</b> de '+SUCURSALES.length+' enviaron Pedidos</span>'+
       '<span class="chip-contador"><b>'+enviaronMV+'</b> de '+SUCURSALES.length+' enviaron Menos Vendidos</span>'+
     '</div>'+
     '<div style="overflow-x:auto"><table class="linea-table"><thead><tr><th>Sucursal</th><th>Último login</th><th>Pedidos</th><th>Menos Vendidos</th></tr></thead><tbody>'+
-      filas.map(f=>'<tr>'+
-        '<td class="txt-fixed">'+esc(f.s.nombre)+'</td>'+
+      filas.map((f,idx)=>'<tr>'+
+        '<td class="txt-fixed">'+rankBadgeHtml(idx, filas.length)+esc(f.s.nombre)+' <span class="chip-contador"><b>'+f.totalLineas+'</b> líneas</span></td>'+
         '<td class="txt-fixed">'+esc(f.login? fmtDateTime(f.login.ultimoLogin) : '—')+'</td>'+
         '<td>'+semaforoCeldaHtml(f.pEstado)+(f.p&&f.p.estado==='enviado'? ' <button class="btn-reabrir" data-reabrir-tipo="pedidos" data-suc="'+f.s.id+'">Reabrir</button>'+usoRubrosHtml(f.p,'pedidos',f.s.id):'')+'</td>'+
         '<td>'+semaforoCeldaHtml(f.mvEstado)+(f.mv&&f.mv.estado==='enviado'? ' <button class="btn-reabrir" data-reabrir-tipo="menos-vendidos" data-suc="'+f.s.id+'">Reabrir</button>'+usoRubrosHtml(f.mv,'menos-vendidos',f.s.id):'')+'</td>'+
@@ -1393,16 +1415,20 @@ async function renderInformeMensual(){
   }
 
   const filas = SUCURSALES.map(s=>{
-    let enviadas = 0;
+    let enviadas = 0, totalLineas = 0;
     const celdas = lunes.map(l=>{
       const nodo = datosPorSemana[l] && datosPorSemana[l][s.id];
       const estado = nodo && nodo.estado==='enviado' ? 'enviado' : (nodo ? 'borrador' : 'no-ingreso');
-      if(estado==='enviado' && l<=hoy) enviadas++;
-      return {l, estado};
+      const lineas = estado==='enviado' ? totalLineasNodo(nodo) : 0;
+      if(estado==='enviado' && l<=hoy){
+        enviadas++;
+        totalLineas += lineas;
+      }
+      return {l, estado, nodo, lineas};
     });
     const pct = lunesHabilitados.length ? Math.round(enviadas/lunesHabilitados.length*100) : 0;
-    return {s, celdas, pct};
-  }).sort((a,b)=> a.pct-b.pct);
+    return {s, celdas, pct, totalLineas};
+  }).sort((a,b)=> b.totalLineas-a.totalLineas || b.pct-a.pct || a.s.nombre.localeCompare(b.s.nombre));
 
   const resumen = lunes.map(l=>{
     const enviaron = SUCURSALES.filter(s=>{
@@ -1418,15 +1444,16 @@ async function renderInformeMensual(){
     '<button data-mensualtipo="menos-vendidos" class="'+(CONTROL_STATE.mensualTipo==='menos-vendidos'?'active':'')+'">Menos Vendidos</button>'+
   '</div>';
 
-  const headCols = '<th>Sucursal</th>'+lunes.map(l=>'<th>'+fmtFechaCorta(l)+'</th>').join('')+'<th>% Cumplimiento</th>';
-  const filasHtml = filas.map(f=>{
+  const headCols = '<th>Sucursal</th>'+lunes.map(l=>'<th>'+fmtFechaCorta(l)+'</th>').join('')+'<th>Total líneas</th><th>% Cumplimiento</th>';
+  const filasHtml = filas.map((f,idx)=>{
     const tono = f.pct>=75?'ok':(f.pct>=50?'warn':'bad');
-    return '<tr><td class="txt-fixed">'+esc(f.s.nombre)+'</td>'+
-      f.celdas.map(c=>'<td>'+semaforoCeldaHtml(c.estado)+'</td>').join('')+
+    return '<tr><td class="txt-fixed">'+rankBadgeHtml(idx, filas.length)+esc(f.s.nombre)+'</td>'+
+      f.celdas.map(c=>'<td>'+semaforoCeldaHtml(c.estado)+(c.estado==='enviado'? usoRubrosHtml(c.nodo, CONTROL_STATE.mensualTipo, f.s.id):'')+'</td>').join('')+
+      '<td><span class="badge-estado badge-'+tonoRanking(idx, filas.length)+'">'+f.totalLineas+' líneas</span></td>'+
       '<td><span class="badge-estado badge-'+tono+'">'+f.pct+'%</span></td></tr>';
   }).join('');
   const filaResumen = '<tr><td class="txt-fixed"><b>% sucursales que enviaron</b></td>'+
-    resumen.map(p=>'<td class="txt-fixed">'+p+'%</td>').join('')+'<td></td></tr>';
+    resumen.map(p=>'<td class="txt-fixed">'+p+'%</td>').join('')+'<td></td><td></td></tr>';
 
   $('controlBody').innerHTML =
     '<div class="filtros-bar">'+selectorMes+toggleTipo+'<button class="btn-masivo" id="btnExportMensual">Exportar Excel</button></div>'+
@@ -1439,8 +1466,8 @@ async function renderInformeMensual(){
 
 function exportarInformeMensual(lunes, filas, tipoCfg){
   if(typeof XLSX === 'undefined'){ alert('No se pudo cargar la librería de Excel. Revisá la conexión.'); return; }
-  const header = ['Sucursal', ...lunes.map(l=>'Semana '+fmtFechaCorta(l)), '% Cumplimiento'];
-  const rows = filas.map(f=> [f.s.nombre, ...f.celdas.map(c=> c.estado==='enviado'?'Enviado':(c.estado==='borrador'?'Borrador':'No ingresó')), f.pct+'%']);
+  const header = ['Ranking', 'Sucursal', ...lunes.map(l=>'Semana '+fmtFechaCorta(l)), 'Total líneas', '% Cumplimiento'];
+  const rows = filas.map((f,idx)=> ['#'+(idx+1), f.s.nombre, ...f.celdas.map(c=> c.estado==='enviado' ? ('Enviado - '+c.lineas+' líneas') : (c.estado==='borrador'?'Borrador':'No ingresó')), f.totalLineas, f.pct+'%']);
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Informe mensual');
