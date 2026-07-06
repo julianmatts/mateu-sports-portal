@@ -709,7 +709,7 @@ async function renderVistaProducto(){
     '</select>'+
     '<input type="text" id="inpBusqueda" placeholder="Buscar código o artículo…" value="'+esc(VISTA_PRODUCTO_STATE.busqueda)+'">'+
     '<button class="btn-masivo" id="btnAprobarVisible" '+(semanaCerrada?'disabled':'')+'>Aprobar todo lo visible</button>'+
-    '<button class="btn-masivo" id="btnExportConsolidado">Exportar Excel</button>'+
+    '<button class="btn-masivo" id="btnExportConsolidado">Exportar F8</button>'+
   '</div>';
 
   const cuerpo = gruposOrdenados.length
@@ -787,25 +787,50 @@ function nombreSucursal(id){
   return (SUCURSAL_BY_ID[id]&&SUCURSAL_BY_ID[id].nombre) || id || '';
 }
 
-function filasExcelConsolidado(lineas, tipoKey){
-  return lineas.map(l=>{
-    const esMV = tipoKey === 'menos-vendidos';
-    const origen = esMV ? nombreSucursal(l.sucursalId) : nombreSucursal(l.origen);
-    const destino = esMV ? (l.destino ? nombreSucursal(l.destino) : 'A definir') : nombreSucursal(l.sucursalId);
-    return {
-      ORIGEN: origen,
-      Rubros: l.rubro || '',
-      Marca: l.marca || '',
-      'CÓDIGO': l.codigo || '',
-      'ARTÍCULO': l.articulo || '',
-      DESCRIPCION: l.descripcion || '',
-      DESTINO: destino,
-      Aprobados: l.estado === 'aprobado' ? 'SI' : '',
-      Rechazados: l.estado === 'rechazado' ? 'SI' : '',
-      'Comentarios de Sucursales': l.comentarioSucursal || '',
-      'Comentarios Area Producto': l.comentarioProducto || ''
-    };
-  });
+function filaF8(linea, tipoKey, filaExcel){
+  const esMV = tipoKey === 'menos-vendidos';
+  const origen = esMV ? nombreSucursal(linea.sucursalId) : nombreSucursal(linea.origen);
+  const destino = esMV ? (linea.destino ? nombreSucursal(linea.destino) : 'A definir') : nombreSucursal(linea.sucursalId);
+  const row = new Array(32).fill('');
+  row[1] = origen;
+  row[2] = linea.codigo || '';
+  row[3] = linea.articulo || '';
+  row[4] = linea.descripcion || '';
+  row[5] = destino;
+  row[31] = {f:'SUM(H'+filaExcel+':AE'+filaExcel+')'};
+  return row;
+}
+
+function crearHojaF8(lineas){
+  const rows = [
+    new Array(32).fill(''),
+    new Array(32).fill(''),
+    ['', '', '', 'F8  PEDIDOS', {f:'TODAY()'}, '', 1, 10, '10-', 11, '11-', 12, '12-', 13, '13-', 1, '1-', 2, '2-', 3, '3-', 4, '4-', 5, '5-', 6, '6-', 7, '', '', '', ''],
+    ['', '', '', 'F8  ', '', '', 2, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12, 12.5, 13, 14, 15, 16, ''],
+    ['', '', '', '', '', '', 3, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, '', '', ''],
+    ['', '', '', '', '', '', 4, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, '', '', '', '', '', '', ''],
+    ['', '', '', '', '', '', 5, 8, 10, 12, 14, 16, 18, 20, 22, 24, 0, 1, 2, 3, 4, 5, 6, 7, '', '', '', '', '', '', '', 'Total'],
+    ['', '', '', '', '', '', 6, 'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', 'XSS', 'SM', 'ML', 'LXL', 'CHI', 'MED', 'GDE', 'JR', 'SR', '', '', '', '', '', '', '', ''],
+    ['', 'ORIGEN', 'CÓDIGO', 'ARTÍCULO', 'DESCRIPCIÓN', 'DESTINO', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
+  ];
+  lineas.forEach((item, idx)=> rows.push(filaF8(item.linea, item.tipoKey, idx+10)));
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!merges'] = [
+    {s:{r:2,c:1}, e:{r:7,c:2}},
+    {s:{r:3,c:3}, e:{r:7,c:5}},
+    {s:{r:6,c:31}, e:{r:8,c:31}}
+  ];
+  ws['!cols'] = [
+    {wch:2},{wch:22},{wch:13},{wch:18},{wch:66},{wch:22},
+    {wch:6},{wch:5.3},{wch:5.8},{wch:5.3},{wch:5.3},{wch:5.2},{wch:5.3},{wch:5},{wch:5.3},{wch:5.5},
+    {wch:5.3},{wch:5.2},{wch:5.3},{wch:5.5},{wch:7},{wch:6},{wch:6.3},{wch:6.3},{wch:5.8},{wch:5.8},
+    {wch:6.5},{wch:5},{wch:5.3},{wch:4.8},{wch:5.5},{wch:12}
+  ];
+  ws['!rows'] = [
+    {hpt:6.75},{hpt:9.75},{hpt:17.25},{hpt:15.75},{hpt:16.5},{hpt:15.75},{hpt:15},{hpt:16.5},{hpt:17.25}
+  ];
+  ws['!autofilter'] = {ref:'B9:F9'};
+  return ws;
 }
 
 async function exportarConsolidadoSemana(){
@@ -814,10 +839,15 @@ async function exportarConsolidadoSemana(){
     obtenerLineasTipo('pedidos'),
     obtenerLineasTipo('menos-vendidos')
   ]);
+  const lineas = pedidos.filter(l=>l.estado==='aprobado').map(linea=>({tipoKey:'pedidos', linea}))
+    .concat(menosVendidos.filter(l=>l.estado==='aprobado').map(linea=>({tipoKey:'menos-vendidos', linea})));
+  if(!lineas.length){
+    alert('No hay líneas aprobadas para exportar al formato F8.');
+    return;
+  }
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filasExcelConsolidado(pedidos, 'pedidos')), 'Pedidos');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filasExcelConsolidado(menosVendidos, 'menos-vendidos')), 'Menos Vendidos');
-  XLSX.writeFile(wb, 'pedidos-semanales-'+SEMANA_SEL+'.xlsx');
+  XLSX.utils.book_append_sheet(wb, crearHojaF8(lineas), 'F8');
+  XLSX.writeFile(wb, 'F8 Pedidos Semanales '+fmtFechaCorta(SEMANA_SEL).replace(/\./g,'-')+'.xlsx');
 }
 
 /* ============================================================
