@@ -6,7 +6,7 @@
 <title>Pedidos Semanales — Mateu Sports</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <style>
 :root{
   --navy:#0B1527;--navy-mid:#1a2f55;--navy-soft:#13203a;
@@ -891,50 +891,120 @@ function nombreSucursal(id){
   return (SUCURSAL_BY_ID[id]&&SUCURSAL_BY_ID[id].nombre) || id || '';
 }
 
+const F8_COLS = 33; // A:AG. AF es Total, AG queda como aviso de repetidos.
+const F8_STYLE = {
+  navy:'0B1527',
+  red:'CC0000',
+  white:'FFFFFF',
+  off:'F5F7FC',
+  border:'DCE3F0',
+  repeat:'FFF4BF',
+  repeatStrong:'F0C24B',
+  text:'0B1527',
+  muted:'6B7A99'
+};
+
+function cellAddr(r,c){ return XLSX.utils.encode_cell({r,c}); }
+function setCell(ws, r, c, v, s){
+  const a = cellAddr(r,c);
+  ws[a] = ws[a] || {};
+  if(v !== undefined) ws[a].v = v;
+  if(s) ws[a].s = s;
+}
+function styleCell(ws, r, c, s){
+  const a = cellAddr(r,c);
+  ws[a] = ws[a] || {v:''};
+  ws[a].s = s;
+}
+function eachCell(r1,c1,r2,c2, fn){
+  for(let r=r1;r<=r2;r++) for(let c=c1;c<=c2;c++) fn(r,c);
+}
+function thinBorder(color){
+  const c = {rgb: color || F8_STYLE.border};
+  return {top:{style:'thin',color:c},bottom:{style:'thin',color:c},left:{style:'thin',color:c},right:{style:'thin',color:c}};
+}
+
 function filaF8(linea, tipoKey, filaExcel){
   const esMV = tipoKey === 'menos-vendidos';
   const origen = esMV ? nombreSucursal(linea.sucursalId) : nombreSucursal(linea.origen);
   const destino = esMV ? (linea.destino ? nombreSucursal(linea.destino) : 'A definir') : nombreSucursal(linea.sucursalId);
-  const row = new Array(32).fill('');
+  const row = new Array(F8_COLS).fill('');
   row[1] = origen;
   row[2] = linea.codigo || '';
   row[3] = linea.articulo || '';
   row[4] = linea.descripcion || '';
   row[5] = destino;
   row[31] = {f:'SUM(H'+filaExcel+':AE'+filaExcel+')'};
+  row[32] = (linea._dupCodigoSucursales || linea._dupArticuloSucursales) ? 'REPETIDO' : '';
   return row;
 }
 
 function crearHojaF8(lineas){
+  detectarDuplicados(lineas.map(item=>item.linea));
   const rows = [
-    new Array(32).fill(''),
-    new Array(32).fill(''),
-    ['', '', '', 'F8  PEDIDOS', {f:'TODAY()'}, '', 1, 10, '10-', 11, '11-', 12, '12-', 13, '13-', 1, '1-', 2, '2-', 3, '3-', 4, '4-', 5, '5-', 6, '6-', 7, '', '', '', ''],
-    ['', '', '', 'F8  ', '', '', 2, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12, 12.5, 13, 14, 15, 16, ''],
-    ['', '', '', '', '', '', 3, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, '', '', ''],
-    ['', '', '', '', '', '', 4, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, '', '', '', '', '', '', ''],
-    ['', '', '', '', '', '', 5, 8, 10, 12, 14, 16, 18, 20, 22, 24, 0, 1, 2, 3, 4, 5, 6, 7, '', '', '', '', '', '', '', 'Total'],
-    ['', '', '', '', '', '', 6, 'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', 'XSS', 'SM', 'ML', 'LXL', 'CHI', 'MED', 'GDE', 'JR', 'SR', '', '', '', '', '', '', '', ''],
-    ['', 'ORIGEN', 'CÓDIGO', 'ARTÍCULO', 'DESCRIPCIÓN', 'DESTINO', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
+    new Array(F8_COLS).fill(''),
+    new Array(F8_COLS).fill(''),
+    ['', 'MATEU SPORTS', '', 'PEDIDOS SEMANALES', 'Semana '+fmtFechaCorta(SEMANA_SEL), '', 1, 10, '10-', 11, '11-', 12, '12-', 13, '13-', 1, '1-', 2, '2-', 3, '3-', 4, '4-', 5, '5-', 6, '6-', 7, '', '', '', '', ''],
+    ['', '', '', 'F8  PEDIDOS', '', '', 2, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12, 12.5, 13, 14, 15, 16, '', ''],
+    ['', '', '', '', '', '', 3, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, '', '', '', ''],
+    ['', '', '', '', '', '', 4, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, '', '', '', '', '', '', '', ''],
+    ['', '', '', '', '', '', 5, 8, 10, 12, 14, 16, 18, 20, 22, 24, 0, 1, 2, 3, 4, 5, 6, 7, '', '', '', '', '', '', '', 'Total', 'Alerta'],
+    ['', '', '', '', '', '', 6, 'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', 'XSS', 'SM', 'ML', 'LXL', 'CHI', 'MED', 'GDE', 'JR', 'SR', '', '', '', '', '', '', '', '', ''],
+    ['', 'ORIGEN', 'CÓDIGO', 'ARTÍCULO', 'DESCRIPCIÓN', 'DESTINO', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
   ];
   lineas.forEach((item, idx)=> rows.push(filaF8(item.linea, item.tipoKey, idx+10)));
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!merges'] = [
     {s:{r:2,c:1}, e:{r:7,c:2}},
-    {s:{r:3,c:3}, e:{r:7,c:5}},
-    {s:{r:6,c:31}, e:{r:8,c:31}}
+    {s:{r:2,c:3}, e:{r:7,c:5}},
+    {s:{r:6,c:31}, e:{r:8,c:31}},
+    {s:{r:6,c:32}, e:{r:8,c:32}}
   ];
   ws['!cols'] = [
     {wch:2},{wch:22},{wch:13},{wch:18},{wch:66},{wch:22},
     {wch:6},{wch:5.3},{wch:5.8},{wch:5.3},{wch:5.3},{wch:5.2},{wch:5.3},{wch:5},{wch:5.3},{wch:5.5},
     {wch:5.3},{wch:5.2},{wch:5.3},{wch:5.5},{wch:7},{wch:6},{wch:6.3},{wch:6.3},{wch:5.8},{wch:5.8},
-    {wch:6.5},{wch:5},{wch:5.3},{wch:4.8},{wch:5.5},{wch:12}
+    {wch:6.5},{wch:5},{wch:5.3},{wch:4.8},{wch:5.5},{wch:12},{wch:13}
   ];
   ws['!rows'] = [
-    {hpt:6.75},{hpt:9.75},{hpt:17.25},{hpt:15.75},{hpt:16.5},{hpt:15.75},{hpt:15},{hpt:16.5},{hpt:17.25}
+    {hpt:6.75},{hpt:9.75},{hpt:20},{hpt:18},{hpt:18},{hpt:18},{hpt:18},{hpt:18},{hpt:20}
   ];
   ws['!autofilter'] = {ref:'B9:F9'};
+  aplicarEstilosF8(ws, lineas);
   return ws;
+}
+
+function aplicarEstilosF8(ws, lineas){
+  const s = F8_STYLE;
+  const base = {font:{name:'Barlow', sz:10, color:{rgb:s.text}}, alignment:{vertical:'center'}, border:thinBorder()};
+  const center = Object.assign({}, base, {alignment:{horizontal:'center', vertical:'center'}});
+  const brand = {font:{name:'Bebas Neue', sz:20, bold:true, color:{rgb:s.white}}, fill:{patternType:'solid', fgColor:{rgb:s.navy}}, alignment:{horizontal:'center', vertical:'center'}, border:thinBorder(s.navy)};
+  const title = {font:{name:'Bebas Neue', sz:22, bold:true, color:{rgb:s.navy}}, fill:{patternType:'solid', fgColor:{rgb:s.white}}, alignment:{horizontal:'center', vertical:'center', wrapText:true}, border:{top:{style:'thick',color:{rgb:s.red}},bottom:{style:'thick',color:{rgb:s.navy}},left:{style:'thin',color:{rgb:s.border}},right:{style:'thin',color:{rgb:s.border}}}};
+  const header = {font:{name:'Barlow Condensed', sz:11, bold:true, color:{rgb:s.white}}, fill:{patternType:'solid', fgColor:{rgb:s.navy}}, alignment:{horizontal:'center', vertical:'center'}, border:{bottom:{style:'medium',color:{rgb:s.red}},top:{style:'thin',color:{rgb:s.navy}},left:{style:'thin',color:{rgb:s.navy}},right:{style:'thin',color:{rgb:s.navy}}}};
+  const sizeHeader = {font:{name:'Barlow Condensed', sz:10, bold:true, color:{rgb:s.navy}}, fill:{patternType:'solid', fgColor:{rgb:s.off}}, alignment:{horizontal:'center', vertical:'center'}, border:thinBorder(s.border)};
+  const totalHeader = {font:{name:'Barlow Condensed', sz:11, bold:true, color:{rgb:s.white}}, fill:{patternType:'solid', fgColor:{rgb:s.red}}, alignment:{horizontal:'center', vertical:'center'}, border:thinBorder(s.red)};
+  const alertHeader = {font:{name:'Barlow Condensed', sz:11, bold:true, color:{rgb:'4D3500'}}, fill:{patternType:'solid', fgColor:{rgb:s.repeatStrong}}, alignment:{horizontal:'center', vertical:'center'}, border:thinBorder(s.repeatStrong)};
+  const repeatStyle = {font:{name:'Barlow', sz:10, bold:true, color:{rgb:s.text}}, fill:{patternType:'solid', fgColor:{rgb:s.repeat}}, alignment:{vertical:'center'}, border:thinBorder(s.repeatStrong)};
+  const repeatCenter = Object.assign({}, repeatStyle, {alignment:{horizontal:'center', vertical:'center'}});
+
+  eachCell(0,0,Math.max(8+lineas.length,30),F8_COLS-1,(r,c)=> styleCell(ws,r,c,base));
+  eachCell(2,1,7,2,(r,c)=> styleCell(ws,r,c,brand));
+  eachCell(2,3,7,5,(r,c)=> styleCell(ws,r,c,title));
+  eachCell(2,6,8,30,(r,c)=> styleCell(ws,r,c,sizeHeader));
+  eachCell(8,1,8,5,(r,c)=> styleCell(ws,r,c,header));
+  eachCell(6,31,8,31,(r,c)=> styleCell(ws,r,c,totalHeader));
+  eachCell(6,32,8,32,(r,c)=> styleCell(ws,r,c,alertHeader));
+  setCell(ws,2,1,'MATEU\nSPORTS',brand);
+  setCell(ws,2,3,'PEDIDOS\nSemana '+fmtFechaCorta(SEMANA_SEL),title);
+
+  lineas.forEach((item, idx)=>{
+    const r = idx + 9;
+    const l = item.linea;
+    const repetido = l._dupCodigoSucursales || l._dupArticuloSucursales;
+    eachCell(r,1,r,F8_COLS-1,(rr,c)=> styleCell(ws,rr,c,repetido ? repeatStyle : base));
+    [2,3,32].forEach(c=>{ if(repetido) styleCell(ws,r,c,c===32 ? repeatCenter : repeatStyle); });
+    eachCell(r,6,r,31,(rr,c)=> styleCell(ws,rr,c,center));
+  });
 }
 
 async function exportarConsolidadoSemana(){
