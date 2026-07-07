@@ -330,6 +330,15 @@ function lunesDeSemanaActiva(){
   return dt.toISOString().slice(0,10);
 }
 function fmtFechaCorta(iso){ const [y,m,d] = iso.split('-'); return d+'.'+m+'.'+y.slice(2); }
+function sumarDiasIso(iso, dias){
+  const [y,m,d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m-1, d));
+  dt.setUTCDate(dt.getUTCDate() + dias);
+  return dt.toISOString().slice(0,10);
+}
+function semanaVigenteEditable(){
+  return SEMANA_SEL === LUNES_ACTIVO && fechaHoyAR() <= sumarDiasIso(LUNES_ACTIVO, 2);
+}
 
 async function asegurarSemana(lunes){
   let meta = null;
@@ -608,7 +617,8 @@ async function renderVistaSucursal(){
   pedido.lineas = pedido.lineas || {};
   pedido.estado = pedido.estado || 'borrador';
 
-  const soloLectura = (SEMANA_SEL !== LUNES_ACTIVO) || pedido.estado === 'enviado' || SEMANA_META.estado === 'cerrada';
+  const editablePorFecha = semanaVigenteEditable();
+  const soloLectura = (SEMANA_SEL !== LUNES_ACTIVO) || !editablePorFecha || SEMANA_META.estado === 'cerrada';
   const limitesBase = ACTIVE_TAB === 'pedidos' ? CONFIG_LIMITES : CONFIG_LIMITES_MV;
   const limites = ACTIVE_TAB === 'pedidos' ? limitesParaSucursal(limitesBase, destinoId) : limitesBase;
 
@@ -625,8 +635,10 @@ async function renderVistaSucursal(){
     accion = '<span class="badge-estado badge-neutral">Semana anterior — solo lectura</span>';
   } else if(SEMANA_META.estado === 'cerrada'){
     accion = '<span class="badge-estado badge-bad">Semana cerrada</span>';
+  } else if(!editablePorFecha){
+    accion = '<span class="badge-estado badge-bad">Plazo cerrado</span>';
   } else if(pedido.estado === 'enviado'){
-    accion = '<span class="badge-estado badge-ok">Enviado '+esc(fmtDateTime(pedido.enviadoAt))+'</span>';
+    accion = '<span class="badge-estado badge-ok">Enviado '+esc(fmtDateTime(pedido.enviadoAt))+' - editable hasta miercoles</span>';
   } else {
     accion = '<button class="btn-enviar" id="btnEnviarPedido">Enviar pedido</button>';
   }
@@ -698,13 +710,14 @@ async function agregarLinea(rubro, tipoCfg, destinoId){
   else { nueva.origen = ''; }
 
   const pedido = CACHE_SUCURSAL[cKey] = CACHE_SUCURSAL[cKey] || {estado:'borrador', lineas:{}};
-  pedido.estado = 'borrador';
+  const estadoPedido = pedido.estado === 'enviado' ? 'enviado' : 'borrador';
+  pedido.estado = estadoPedido;
   pedido.lineas = pedido.lineas || {};
   pedido.lineas[lineaId] = nueva;
   renderVistaSucursal();
 
   Promise.all([
-    patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'.json', {estado:'borrador'}),
+    patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'.json', {estado:estadoPedido}),
     putJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'/lineas/'+lineaId+'.json', nueva)
   ]).catch(()=>{
     delete pedido.lineas[lineaId];
@@ -727,6 +740,11 @@ async function eliminarLinea(tipoCfg, destinoId, lineaId){
 }
 
 async function enviarPedido(tipoCfg, destinoId){
+  if(!semanaVigenteEditable() || SEMANA_META.estado === 'cerrada'){
+    alert('El plazo de carga de esta semana ya cerró. La próxima carga corresponde a la semana próxima.');
+    renderVistaSucursal();
+    return;
+  }
   const cKey = cacheKey(SEMANA_SEL, tipoCfg.node, destinoId);
   const pedido = CACHE_SUCURSAL[cKey] = CACHE_SUCURSAL[cKey] || {lineas:{}};
   const anterior = {estado:pedido.estado, enviadoAt:pedido.enviadoAt};
