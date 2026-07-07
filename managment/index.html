@@ -186,12 +186,12 @@ if(!_sess || !(_sess.herramientas||[]).includes('managment')){ location.href = '
 // Mientras quede vacia, todo el modulo funciona 100% con localStorage (modo local).
 const FIREBASE_URL = 'https://managment-mateu-default-rtdb.firebaseio.com';
 
-// El mail de la OC (con Excel y PDF adjuntos) se envia via Resend a traves de la
-// Cloudflare Pages Function que vive en functions/enviar-oc.js. La API key de Resend
-// NO va aca: se configura en Cloudflare Pages > Settings > Environment variables
-// (RESEND_API_KEY, y opcionalmente RESEND_FROM). Solo funciona en el sitio publicado;
-// abriendo el archivo local el endpoint no existe y el boton avisa el error.
-const MAIL_ENDPOINT = '/enviar-oc';
+// Envio de OC: por ahora es MANUAL — el boton "ENVIAR OC" descarga el PDF y el
+// Excel y abre el cliente de mail con destinatarios/asunto/cuerpo prearmados
+// (los adjuntos se arrastran a mano; mailto: no permite adjuntar automatico).
+// Para la etapa automatica quedo lista la Pages Function functions/enviar-oc.js
+// (Resend): falta verificar el dominio en Resend y cargar RESEND_API_KEY como
+// variable de entorno en Cloudflare Pages.
 
 const STORAGE_KEY = 'mateu_managment_local_v1';
 const TALLES = ['S','M','L','XL','XXL','XXXL'];
@@ -211,12 +211,23 @@ const uid = prefix => prefix + '_' + Date.now().toString(36) + '_' + Math.random
 function isFirebaseMode(){ return !!FIREBASE_URL; }
 
 
-function arrayBufferToBase64(buffer){
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  for(let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
+// El logo del header esta embebido como webp, pero jsPDF y ExcelJS solo aceptan
+// PNG/JPEG: se convierte una vez via canvas al cargar la pagina.
+let LOGO_PNG = null;
+(function(){
+  try{
+    const src = document.querySelector('.header-logo img')?.src;
+    if(!src) return;
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      LOGO_PNG = { dataUri: canvas.toDataURL('image/png'), width: img.naturalWidth, height: img.naturalHeight };
+    };
+    img.src = src;
+  }catch(e){}
+})();
 
 async function fbGet(path){
   const res = await fetch(`${FIREBASE_URL}/${path}.json`);
@@ -1608,7 +1619,7 @@ function accionesProveedor(group){
     ${pill('OC enviada','ok')}
     <button class="action" onclick="descargarExcelOC('${key}')">Descargar Excel OC</button>
     <button class="action" onclick="descargarPdfOC('${key}')">Descargar PDF OC</button>
-    <button class="action primary" onclick="enviarMailOC('${key}')">Enviar mail OC</button>
+    <button class="action primary" style="font-weight:700;letter-spacing:.5px;padding:8px 18px" onclick="enviarOC('${key}')">ENVIAR OC</button>
     <button class="action" onclick="currentView='ingresos';setActiveTab();render()">Ver ingresos</button>
     <button class="action" onclick="reabrirProveedor('${key}')">Reabrir OC</button>
   `;
@@ -1653,11 +1664,23 @@ function buildExcelOCWorkbook(group){
   const brandCols = nCols - 3;
   ws.mergeCells(r,1,r,brandCols);
   const brandCell = ws.getCell(r,1);
-  brandCell.value = { richText:[
-    { font:{bold:true, size:16, name:'Calibri', color:{argb:BRAND.white}}, text:'MATEU SPORTS\n' },
-    { font:{size:9, name:'Calibri', color:{argb:BRAND.white}}, text:'Orden de compra' }
-  ]};
-  brandCell.alignment = {horizontal:'left', vertical:'middle', wrapText:true, indent:1};
+  // Membrete blanco: logo Mateu Sports flotando sobre la celda (con fallback al
+  // nombre escrito si el PNG del logo todavia no esta listo).
+  if(LOGO_PNG){
+    const logoH = 42, logoW = Math.round(logoH * LOGO_PNG.width / LOGO_PNG.height);
+    const imgId = wb.addImage({ base64: LOGO_PNG.dataUri, extension:'png' });
+    ws.addImage(imgId, { tl:{col:0.15, row:0.12}, ext:{width:logoW, height:logoH}, editAs:'oneCell' });
+    brandCell.value = { richText:[
+      { font:{size:9, name:'Calibri', color:{argb:BRAND.muted}}, text:'Orden de compra' }
+    ]};
+    brandCell.alignment = {horizontal:'center', vertical:'middle'};
+  }else{
+    brandCell.value = { richText:[
+      { font:{bold:true, size:16, name:'Calibri', color:{argb:BRAND.navy}}, text:'MATEU SPORTS\n' },
+      { font:{size:9, name:'Calibri', color:{argb:BRAND.muted}}, text:'Orden de compra' }
+    ]};
+    brandCell.alignment = {horizontal:'left', vertical:'middle', wrapText:true, indent:1};
+  }
   ws.mergeCells(r,brandCols+1,r,nCols);
   const ocBoxCell = ws.getCell(r,brandCols+1);
   ocBoxCell.value = { richText:[
@@ -1665,9 +1688,10 @@ function buildExcelOCWorkbook(group){
     { font:{size:9, name:'Calibri', color:{argb:BRAND.muted}}, text:fecha }
   ]};
   ocBoxCell.alignment = {horizontal:'right', vertical:'middle', wrapText:true, indent:1};
-  ocBoxCell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.white}};
-  for(let c=1;c<=brandCols;c++) ws.getCell(r,c).fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.navy}};
-  for(let c=1;c<=nCols;c++) ws.getCell(r,c).border = {bottom:{style:'medium', color:{argb:BRAND.red}}};
+  for(let c=1;c<=nCols;c++){
+    ws.getCell(r,c).fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.white}};
+    ws.getCell(r,c).border = {bottom:{style:'medium', color:{argb:BRAND.red}}};
+  }
   ws.getRow(r).height = 38;
   r++;
 
@@ -1756,29 +1780,38 @@ function buildPdfOC(group){
   const doc = new jspdf.jsPDF({ orientation:'landscape', unit:'pt', format:'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
 
-  doc.setFillColor(...navy);
+  // Membrete blanco con el logo Mateu Sports y linea roja abajo. Si el logo
+  // todavia no termino de convertirse a PNG, cae al nombre escrito.
+  doc.setFillColor(...white);
   doc.rect(0, 0, pageWidth, 58, 'F');
   doc.setDrawColor(...red);
   doc.setLineWidth(3);
   doc.line(0, 58, pageWidth, 58);
-  doc.setTextColor(...white);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(18);
-  doc.text('MATEU SPORTS', 24, 28);
+  let brandRight = 24;
+  if(LOGO_PNG){
+    const logoH = 34, logoW = logoH * LOGO_PNG.width / LOGO_PNG.height;
+    doc.addImage(LOGO_PNG.dataUri, 'PNG', 24, 12, logoW, logoH);
+    brandRight = 24 + logoW;
+  }else{
+    doc.setTextColor(...navy);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text('MATEU SPORTS', 24, 34);
+    brandRight = 24 + 150;
+  }
+  doc.setTextColor(...muted);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text('Orden de compra', 24, 42);
+  doc.text('Orden de compra', brandRight + 14, 34);
 
-  doc.setFillColor(...white);
-  doc.rect(pageWidth - 190, 10, 170, 38, 'F');
   doc.setTextColor(...navy);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text(ocNumero, pageWidth - 180, 28);
+  doc.text(ocNumero, pageWidth - 24, 26, { align:'right' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(...muted);
-  doc.text(String(fecha), pageWidth - 180, 42);
+  doc.text(String(fecha), pageWidth - 24, 42, { align:'right' });
 
   const provAncho = pageWidth * 0.62 - 24;
   doc.setFillColor(...band);
@@ -1827,7 +1860,11 @@ function descargarPdfOC(key){
   doc.save('OC_' + ocNumero.replace(/[^A-Za-z0-9-]+/g,'_') + '_' + providerKey(group.proveedor).replace(/\s+/g,'_') + '.pdf');
 }
 
-async function enviarMailOC(key){
+// Envio manual de la OC: descarga el PDF y el Excel y abre el cliente de mail
+// con destinatarios, asunto y cuerpo ya armados. Los links mailto: NO permiten
+// adjuntar archivos (limitacion de los navegadores), por eso el usuario tiene
+// que arrastrar los 2 archivos recien descargados al mail antes de enviarlo.
+async function enviarOC(key){
   key = decodeURIComponent(key);
   const group = groupedByProvider(state.ordenes).find(g => g.key === key);
   if(!group) return;
@@ -1836,52 +1873,35 @@ async function enviarMailOC(key){
     showToast('El proveedor ' + group.proveedor + ' no tiene email cargado. Completalo en Configuracion antes de enviar la OC.');
     return;
   }
-  const ocNumero = group.items.find(o => o.ocNumero)?.ocNumero || 'BORRADOR';
-  const ok = await askConfirm('Enviar la OC ' + ocNumero + ' por mail a ' + group.proveedor + ' con copia a deposito, logistica y disenadores?');
-  if(!ok) return;
 
-  try{
-    const { wb, totalUnidades, totalValorizado } = buildExcelOCWorkbook(group);
-    const excelBuf = await wb.xlsx.writeBuffer();
-    const excelBase64 = arrayBufferToBase64(excelBuf);
-    const { doc } = buildPdfOC(group);
-    const pdfBase64 = doc.output('datauristring').split(',').pop();
+  const { wb, ocNumero, totalUnidades, totalValorizado } = buildExcelOCWorkbook(group);
+  const archivo = 'OC_' + ocNumero.replace(/[^A-Za-z0-9-]+/g,'_') + '_' + providerKey(group.proveedor).replace(/\s+/g,'_');
+  await downloadWorkbook(wb, archivo + '.xlsx');
+  const { doc } = buildPdfOC(group);
+  doc.save(archivo + '.pdf');
 
-    const detalle = group.items.map(o => `${o.codigo} - ${o.articulo} ${o.color} - ${totalTalles(o.talles)} unidades - Valorizado ${money(valorizadoLinea(o))}`).join('\n');
-    const destinatarios = [
-      proveedorData.email,
-      'logistica@mateu.com.ar',
-      'deposito@mateu.com.ar',
-      'francisco.pin@mateu.com.ar',
-      'pauwelsivanagustin@gmail.com',
-      'julian@mateu.com.ar'
-    ];
-    const archivo = 'OC_' + ocNumero.replace(/[^A-Za-z0-9-]+/g,'_');
+  const cc = [
+    'logistica@mateu.com.ar',
+    'deposito@mateu.com.ar',
+    'francisco.pin@mateu.com.ar',
+    'pauwelsivanagustin@gmail.com',
+    'julian@mateu.com.ar'
+  ].join(',');
+  const asunto = 'Orden de Compra ' + ocNumero + ' - Mateu Sports';
+  const cuerpo = 'Hola ' + group.proveedor + ',\n\n' +
+    'Les enviamos la orden de compra ' + ocNumero + '.\n' +
+    'Total: ' + totalUnidades + ' unidades - ' + money(totalValorizado) + '.\n\n' +
+    'Se adjuntan el PDF y el Excel con el detalle de articulos y curvas.\n\n' +
+    'Saludos,\nMateu Sports';
+  window.location.href = 'mailto:' + encodeURIComponent(proveedorData.email) +
+    '?cc=' + encodeURIComponent(cc) +
+    '&subject=' + encodeURIComponent(asunto) +
+    '&body=' + encodeURIComponent(cuerpo);
 
-    const res = await fetch(MAIL_ENDPOINT, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({
-        asunto: 'Orden de Compra ' + ocNumero + ' - Mateu Sports - ' + group.proveedor,
-        texto: 'Orden de compra ' + ocNumero + '\nProveedor: ' + group.proveedor +
-          '\nTotal unidades: ' + totalUnidades + '\nTotal valorizado: ' + money(totalValorizado) +
-          '\n\nDetalle:\n' + detalle + '\n\nSe adjuntan Excel y PDF de la orden.',
-        destinatarios,
-        adjuntos:[
-          { filename: archivo + '.pdf', content: pdfBase64 },
-          { filename: archivo + '.xlsx', content: excelBase64 }
-        ]
-      })
-    });
-    const data = await res.json().catch(()=>({}));
-    if(!res.ok || !data.ok) throw new Error(data.error || 'HTTP ' + res.status);
-
-    group.items.forEach(o => { o.mailEnviado = today(); });
-    saveState();
-    showToast('Mail de ' + ocNumero + ' enviado correctamente.');
-  }catch(e){
-    showToast('No se pudo enviar el mail de la OC. ' + (e && e.message ? e.message : 'Solo funciona desde el sitio publicado y con RESEND_API_KEY configurada en Cloudflare.'));
-  }
+  group.items.forEach(o => { o.mailEnviado = today(); });
+  saveState();
+  render();
+  showToast('Se descargaron el PDF y el Excel de ' + ocNumero + '. Arrastralos como adjuntos al mail que se abrio.');
 }
 
 async function reabrirProveedor(key){
