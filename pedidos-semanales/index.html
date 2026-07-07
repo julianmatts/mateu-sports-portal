@@ -352,16 +352,26 @@ async function listaSemanas(){
    ============================================================ */
 let CONFIG_LIMITES = {calzado:20, indumentaria:20, accesorios:10};
 let CONFIG_LIMITES_MV = {calzado:20, indumentaria:20, accesorios:10};
-let CONFIG_LIMITES_CAT = {
+const DEFAULT_LIMITES_CAT = {
   cat1:{calzado:20, indumentaria:20, accesorios:10},
   cat2:{calzado:15, indumentaria:15, accesorios:8}
+};
+let CONFIG_LIMITES_CAT = {
+  cat1:Object.assign({}, DEFAULT_LIMITES_CAT.cat1),
+  cat2:Object.assign({}, DEFAULT_LIMITES_CAT.cat2)
 };
 let ASIGNACION_MARCAS = null;
 let ASIGNACION_MARCAS_OK = false;
 async function cargarConfig(){
   try{ const l = await fetchJSON(FB+'/config/limites.json'); if(l) CONFIG_LIMITES = l; }catch(e){}
   try{ const l = await fetchJSON(FB+'/config/limitesMenosVendidos.json'); if(l) CONFIG_LIMITES_MV = l; }catch(e){}
-  try{ const l = await fetchJSON(FB+'/config/limitesPorCategoria.json'); if(l) CONFIG_LIMITES_CAT = l; }catch(e){}
+  try{
+    const l = await fetchJSON(FB+'/config/limitesPorCategoria.json');
+    if(l) CONFIG_LIMITES_CAT = {
+      cat1:Object.assign({}, DEFAULT_LIMITES_CAT.cat1, l.cat1 || {}),
+      cat2:Object.assign({}, DEFAULT_LIMITES_CAT.cat2, l.cat2 || {})
+    };
+  }catch(e){}
 }
 
 async function cargarAsignacionMarcas(){
@@ -407,7 +417,10 @@ function limitesParaSucursal(base, destinoId){
   const out = {};
   RUBROS.forEach(r=>{
     const k = rubroKey(r);
-    out[k] = Number(catLimites && catLimites[k] !== undefined ? catLimites[k] : base[k] !== undefined ? base[k] : 0);
+    const desdeCat = Number(catLimites && catLimites[k]);
+    const desdeBase = Number(base && base[k]);
+    const desdeDefault = Number(DEFAULT_LIMITES_CAT.cat1[k]);
+    out[k] = desdeCat || desdeBase || desdeDefault || 1;
   });
   return out;
 }
