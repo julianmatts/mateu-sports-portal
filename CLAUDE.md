@@ -6,14 +6,14 @@ Contexto del proyecto para Claude Code. Mantener corto y concreto.
 
 Monorepo con las herramientas internas de **Mateu Sports** (cadena de retail
 deportivo, zona La Plata) y un **portal** con login que las enlaza. Todo se
-deploya a Netlify desde GitHub. El idioma del proyecto es **español (Argentina)**.
+deploya a Cloudflare Pages desde GitHub. El idioma del proyecto es **español (Argentina)**.
 
 ## Estructura
 
 ```
 mateu-sports-portal/
 ├── index.html          # EL PORTAL: login por rol + tiles a cada herramienta
-├── netlify.toml        # config de Netlify (publish = ".", sin build)
+├── netlify.toml        # leftover de cuando se usaba Netlify; ya no aplica, no usar de referencia
 ├── condiciones/index.html   # Condiciones Comerciales (localStorage)
 ├── equipo/index.html        # Área de Producto / transferencias (localStorage)
 ├── turnero/index.html       # Turnero de proveedores (Firebase + EmailJS)
@@ -35,20 +35,20 @@ en múltiples archivos salvo que se decida explícitamente centralizar algo en
 ## Stack — quién hace qué
 
 - **GitHub** → guarda el código y el historial.
-- **Netlify** → publica el sitio; **deploya solo con cada push** a `main`.
+- **Cloudflare Pages** → publica el sitio; **deploya solo con cada push** a `main`.
 - **Firebase** → base de datos en vivo. **Solo** la usan `turnero/` y `marcas/`.
   `condiciones/` y `equipo/` usan **localStorage** (no tienen backend).
   No migrar Firebase a otra cosa sin que Juli lo pida: es la opción correcta
   para los datos multi-usuario en tiempo real.
 
-Regla mental: **GitHub + Netlify = el código. Firebase = los datos.**
+Regla mental: **GitHub + Cloudflare Pages = el código. Firebase = los datos.**
 
 ## Cómo deployar
 
-No hay build. El flujo es: editar → commit → push a `main`. Netlify republica
-solo en ~30s. Para probar local, abrir el `index.html` en el navegador.
+No hay build. El flujo es: editar → commit → push a `main`. Cloudflare Pages
+republica solo en ~30s. Para probar local, abrir el `index.html` en el navegador.
 
-`publish directory` en Netlify es `.` (la raíz del repo).
+Config en Cloudflare Pages: build command vacío, output directory = raíz (`/`).
 
 ## El portal (`index.html` raíz)
 
