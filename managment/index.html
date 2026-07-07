@@ -620,26 +620,38 @@ function renderDesarrollo(){
 function collectionsTable(){
   const colecciones = filteredColecciones();
   if(!colecciones.length) return '<div class="empty">Todavia no hay colecciones para la marca seleccionada.</div>';
+  return colecciones.map(c => coleccionPanel(c)).join('');
+}
+
+function coleccionPanel(c){
+  const prendas = brandFilter === 'all' ? c.prendas : c.prendas.filter(p => p.marca === brandFilter);
+  const grupos = groupedByLinea(prendas);
   return `
-    <div class="table-wrap"><table>
-      <thead><tr><th>Tipo</th><th>Coleccion</th><th>Status</th><th>Acciones</th></tr></thead>
-      <tbody>${colecciones.map(c => `
-        <tr>
-          <td>${escapeHtml(c.tipo || '-')}</td>
-          <td>
-            <b>${escapeHtml(c.nombre)}</b><div class="muted">${c.prendas.length} prenda${c.prendas.length === 1 ? '' : 's'}</div>
-            ${brandFilter === 'all' ? collectionBrandBadges(c) : ''}
-          </td>
-          <td>${collectionStatus(c)}${collectionBlockerDetalle(c) ? `<div class="muted" style="margin-top:4px;font-size:12px">${collectionBlockerDetalle(c)}</div>` : ''}</td>
-          <td>
-            <div class="actions">
-              <button class="action primary" onclick="openItemsModal('${c.id}')">Abrir coleccion</button>
-              <button class="action danger" onclick="borrarColeccion('${c.id}')">Borrar</button>
-            </div>
-          </td>
-        </tr>`).join('')}
-      </tbody>
-    </table></div>`;
+    <section class="po-group">
+      <div class="po-head">
+        <div>
+          <h3>${escapeHtml(c.nombre)}</h3>
+          <div class="po-meta">${escapeHtml(c.tipo || '-')} · ${prendas.length} prenda${prendas.length === 1 ? '' : 's'} · ${grupos.length} linea${grupos.length === 1 ? '' : 's'}</div>
+        </div>
+        <div class="actions">
+          <button class="action primary" onclick="openItemsModal('${c.id}')">Abrir coleccion</button>
+          <button class="action danger" onclick="borrarColeccion('${c.id}')">Borrar</button>
+        </div>
+      </div>
+      ${prendas.length ? `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Linea</th><th>Marca</th><th>Prendas</th><th>Status</th><th>Bloqueado por</th></tr></thead>
+        <tbody>${grupos.map(g => `
+          <tr>
+            <td><b>${escapeHtml(g.linea)}</b></td>
+            <td>${marcaBadges(g.items)}</td>
+            <td>${g.items.length}</td>
+            <td>${estadoResumen(g.items)}</td>
+            <td>${bloqueadoPorDetalle(g.items) ? `<span class="muted" style="font-size:12px">${bloqueadoPorDetalle(g.items)}</span>` : '<span class="muted">-</span>'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>` : `<div class="empty" style="margin:0 14px 14px">Sin items creados. Abri la coleccion para cargar la primera prenda.</div>`}
+    </section>`;
 }
 
 function createCollection(ev){
@@ -659,25 +671,25 @@ function createCollection(ev){
   render();
 }
 
-function collectionStatus(c){
-  if(!c.prendas.length) return pill('Sin items creados','warn');
-  const aprobadas = c.prendas.filter(p=>p.paso === '4. Aprobado Comercial').length;
-  const desaprobadas = c.prendas.filter(p=>p.paso === '5. Desaprobado').length;
-  if(aprobadas === c.prendas.length) return pill('Listos para Produccion','ok');
+function estadoResumen(prendas){
+  if(!prendas.length) return pill('Sin items creados','warn');
+  const aprobadas = prendas.filter(p=>p.paso === '4. Aprobado Comercial').length;
+  const desaprobadas = prendas.filter(p=>p.paso === '5. Desaprobado').length;
+  if(aprobadas === prendas.length) return pill('Listos para Produccion','ok');
   if(desaprobadas) return pill(desaprobadas + ' desaprobada(s)','bad');
   return pill('En desarrollo','warn');
 }
 
-function collectionBlockerDetalle(c){
-  if(!c.prendas.length) return '';
-  const pendiente = c.prendas.find(p=>p.paso !== '4. Aprobado Comercial');
+function bloqueadoPorDetalle(prendas){
+  if(!prendas.length) return '';
+  const pendiente = prendas.find(p=>p.paso !== '4. Aprobado Comercial');
   return pendiente ? 'Bloqueado por: ' + escapeHtml(pendiente.nombre || pendiente.tipo || 'Prenda pendiente') : '';
 }
 
-function collectionBrandBadges(c){
-  const marcas = [...new Set(c.prendas.map(p=>p.marca))].filter(Boolean);
-  if(!marcas.length) return '';
-  return `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${marcas.map(m=>`<span class="pill violet" style="font-size:9px">${escapeHtml(MARCAS[m] || m)}</span>`).join('')}</div>`;
+function marcaBadges(prendas){
+  const marcas = [...new Set(prendas.map(p=>p.marca))].filter(Boolean);
+  if(!marcas.length) return '-';
+  return `<div style="display:flex;gap:4px;flex-wrap:wrap">${marcas.map(m=>`<span class="pill violet" style="font-size:9px">${escapeHtml(MARCAS[m] || m)}</span>`).join('')}</div>`;
 }
 
 function openCollectionModal(){
