@@ -261,9 +261,9 @@ function loadState(){
   return seedState();
 }
 
-function seedPrenda(marca, nombre, proveedor, genero, estadoReal, paso, refLabel){
+function seedPrenda(marca, nombre, proveedor, genero, estadoReal, paso, refLabel, linea){
   return {
-    id:uid('pr'), marca, tipo:'', nombre, color:'', genero:genero||'',
+    id:uid('pr'), marca, tipo:linea||'', nombre, color:'', genero:genero||'',
     proveedor:proveedor||'', costo:0, pvpObjetivo:0, referenciaLink:'',
     paso, version:'1',
     notas:'Estado real (planilla Francisco): ' + estadoReal + (refLabel ? ' | Ejemplo: ' + refLabel : ''),
@@ -294,28 +294,28 @@ function seedState(){
     config:{...CONFIG_INICIAL},
     colecciones:[
       { id:uid('col'), tipo:'Coleccion 2026', nombre:'Coleccion 2026', creado:today(), prendas:[
-        seedPrenda('aurelius','Medias fantasia media caña','Mutz','Adulto','Diseño',D,'Disciplinas'),
-        seedPrenda('mateu','AW/EW 26','RA Int','','Pendiente',D,'OC AW/EW 26'),
-        seedPrenda('ruge','Ruge Classic Training','Willder','','Pendiente',D,'Forecast Ruge Willder')
+        seedPrenda('aurelius','Medias fantasia media caña','Mutz','Adulto','Diseño',D,'Disciplinas','Medias'),
+        seedPrenda('mateu','AW/EW 26','RA Int','','Pendiente',D,'OC AW/EW 26','AW/EW'),
+        seedPrenda('ruge','Ruge Classic Training','Willder','','Pendiente',D,'Forecast Ruge Willder','Classic Training')
       ]},
       { id:uid('col'), tipo:'Carry Over', nombre:'Carry Over', creado:today(), prendas:[
-        seedPrenda('mateu','Mateu Disciplinas','','','Desarrollo',D,'Disciplinas'),
-        seedPrenda('ruge','Recovery Socks','Khansin','Adulto','Cotizacion',D,'Medias Largas de Compresion Graduada Tifox'),
-        seedPrenda('ruge','Conjunto Lycra','Willder','Mujer','Desarrollo',D,'Calzas top mateu'),
-        seedPrenda('mateu','Mateu Lycra','Willder','','Prototipo',T,'Forecast Lycra Mateu')
+        seedPrenda('mateu','Mateu Disciplinas','','','Desarrollo',D,'Disciplinas','Disciplinas'),
+        seedPrenda('ruge','Recovery Socks','Khansin','Adulto','Cotizacion',D,'Medias Largas de Compresion Graduada Tifox','Socks'),
+        seedPrenda('ruge','Conjunto Lycra','Willder','Mujer','Desarrollo',D,'Calzas top mateu','Lycra'),
+        seedPrenda('mateu','Mateu Lycra','Willder','','Prototipo',T,'Forecast Lycra Mateu','Lycra')
       ]},
       { id:uid('col'), tipo:'Temporada 2027', nombre:'Temporada 2027', creado:today(), prendas:[
-        seedPrenda('aurelius','Aurelius Verano 27','Willder','','Diseño',D,'Forecast Aurelius'),
-        seedPrenda('mateu','Mateu Axis 27','RA Int','Adulto','Cotizacion',D,'Mateu Axis Forecast'),
-        seedPrenda('mateu','Mateu Artikwear 27','DG2','','Diseño',D,'ArtikTek 2027'),
-        seedPrenda('mateu','Mateu Activewear 27','','','Diseño',D,'Active Wear 27'),
-        seedPrenda('mateu','Mateu Everywear 27','Willder','','Diseño',D,'Forecast Polo Everyday'),
-        seedPrenda('mateu','Mateu Court 27','','','Diseño',D,'Mateu Court 27'),
-        seedPrenda('mateu','Mateu Axis 27 vol. 1','RA Int','','Cotizacion',D,'OC Axis 2027 vol.1'),
-        seedPrenda('ruge','Coleccion Ruge 27','','','Diseño',D,'Coleccion ruge linea 27')
+        seedPrenda('aurelius','Aurelius Verano 27','Willder','','Diseño',D,'Forecast Aurelius','Verano 27'),
+        seedPrenda('mateu','Mateu Axis 27','RA Int','Adulto','Cotizacion',D,'Mateu Axis Forecast','Axis'),
+        seedPrenda('mateu','Mateu Artikwear 27','DG2','','Diseño',D,'ArtikTek 2027','Artikwear'),
+        seedPrenda('mateu','Mateu Activewear 27','','','Diseño',D,'Active Wear 27','Activewear'),
+        seedPrenda('mateu','Mateu Everywear 27','Willder','','Diseño',D,'Forecast Polo Everyday','Everywear'),
+        seedPrenda('mateu','Mateu Court 27','','','Diseño',D,'Mateu Court 27','Court'),
+        seedPrenda('mateu','Mateu Axis 27 vol. 1','RA Int','','Cotizacion',D,'OC Axis 2027 vol.1','Axis'),
+        seedPrenda('ruge','Coleccion Ruge 27','','','Diseño',D,'Coleccion ruge linea 27','Ruge 27')
       ]},
       { id:uid('col'), tipo:'Coleccion Pertenencia', nombre:'Coleccion Pertenencia 27-30', creado:today(), prendas:[
-        seedPrenda('ruge','Coleccion Pertenencia 27-30','','','Diseño',D,'Pertenencia 2027')
+        seedPrenda('ruge','Coleccion Pertenencia 27-30','','','Diseño',D,'Pertenencia 2027','Pertenencia')
       ]}
     ],
     curvas:[
@@ -699,7 +699,7 @@ function renderItemsModal(){
     <form class="form" id="itemForm">
       <div class="row">
         <div class="field"><label>Marca</label><select name="marca">${brandOptions()}</select></div>
-        <div class="field"><label>Tipo</label><input name="tipo" required placeholder="Ej: Remera, Buzo"></div>
+        <div class="field"><label>Linea</label><input name="tipo" required placeholder="Ej: ActiveWear, EveryWear, Court"></div>
       </div>
       <div class="row">
         <div class="field"><label>Nombre prenda</label><input name="nombre" required placeholder="Ej: Motion"></div>
@@ -731,15 +731,32 @@ function renderItemsModal(){
   $('itemForm').addEventListener('submit', createItem);
 }
 
+function groupedByLinea(prendas){
+  const map = new Map();
+  prendas.forEach(p => {
+    const linea = String(p.tipo || '').trim() || 'Sin linea';
+    if(!map.has(linea)) map.set(linea, []);
+    map.get(linea).push(p);
+  });
+  return [...map.entries()]
+    .sort((a,b) => a[0] === 'Sin linea' ? 1 : b[0] === 'Sin linea' ? -1 : a[0].localeCompare(b[0]))
+    .map(([linea, items]) => ({ linea, items }));
+}
+
 function itemsTable(c){
   const prendas = brandFilter === 'all' ? c.prendas : c.prendas.filter(p => p.marca === brandFilter);
   if(!prendas.length) return '<div class="empty">No hay prendas cargadas para la marca seleccionada en esta coleccion.</div>';
+  return groupedByLinea(prendas).map(g => lineaPanel(c, g)).join('');
+}
+
+function lineaPanel(c, group){
   return `
-    <div class="table-wrap"><table>
-      <thead><tr><th>Tipo</th><th>Nombre</th><th>Proveedor</th><th>PVP Obj.</th><th>Referencia</th><th>Paso actual</th><th>Version</th><th>Fotos</th><th>OC</th><th>Acciones</th></tr></thead>
-      <tbody>${prendas.map(p=>`
+    <div style="margin-bottom:16px">
+      <div class="section-title" style="margin-bottom:6px">Linea: ${escapeHtml(group.linea)} <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px">(${group.items.length} prenda${group.items.length === 1 ? '' : 's'})</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Nombre</th><th>Proveedor</th><th>PVP Obj.</th><th>Referencia</th><th>Paso actual</th><th>Version</th><th>Fotos</th><th>OC</th><th>Acciones</th></tr></thead>
+        <tbody>${group.items.map(p=>`
         <tr>
-          <td>${escapeHtml(p.tipo || '-')}</td>
           <td><b>${escapeHtml(p.nombre)}</b><div class="muted">${MARCAS[p.marca] || ''} / ${escapeHtml(p.color || '-')}</div></td>
           <td>${escapeHtml(p.proveedor || '-')}</td>
           <td>${money(p.pvpObjetivo)}</td>
@@ -770,7 +787,8 @@ function itemsTable(c){
           <td><button class="action danger" onclick="borrarPrenda('${c.id}','${p.id}')">Borrar</button></td>
         </tr>
       `).join('')}</tbody>
-    </table></div>`;
+      </table></div>
+    </div>`;
 }
 
 function createItem(ev){
