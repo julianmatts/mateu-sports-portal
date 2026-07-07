@@ -8,7 +8,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
 :root{
   --navy:#0B1527;--red:#CC0000;--off:#f5f7fc;--card:#fff;--line:#dce3f0;
@@ -187,18 +186,12 @@ if(!_sess || !(_sess.herramientas||[]).includes('managment')){ location.href = '
 // Mientras quede vacia, todo el modulo funciona 100% con localStorage (modo local).
 const FIREBASE_URL = 'https://managment-mateu-default-rtdb.firebaseio.com';
 
-// Completar con las credenciales de EmailJS (podes usar el mismo servicio que ya usa el
-// Turnero, o crear uno nuevo) para activar el envio automatico del mail de la OC con el
-// Excel y el PDF adjuntos. Mientras alguna quede vacia, el boton "Enviar mail OC" avisa
-// que falta configurar esto y no hace nada.
-// En el dashboard de EmailJS, la plantilla (template) tiene que tener 2 "Variable Attachment":
-//   - parametro "pdf_attachment"   (Content type: PDF)
-//   - parametro "excel_attachment" (Content type: XLSX / Excel)
-// Los adjuntos requieren plan Personal de EmailJS o superior (el plan gratis no los soporta,
-// y el plan Personal permite hasta 500KB por mail, de sobra para una OC).
-const EMAILJS_PUBLIC_KEY = '';
-const EMAILJS_SERVICE_ID = '';
-const EMAILJS_TEMPLATE_ID = '';
+// El mail de la OC (con Excel y PDF adjuntos) se envia via Resend a traves de la
+// Cloudflare Pages Function que vive en functions/enviar-oc.js. La API key de Resend
+// NO va aca: se configura en Cloudflare Pages > Settings > Environment variables
+// (RESEND_API_KEY, y opcionalmente RESEND_FROM). Solo funciona en el sitio publicado;
+// abriendo el archivo local el endpoint no existe y el boton avisa el error.
+const MAIL_ENDPOINT = '/enviar-oc';
 
 const STORAGE_KEY = 'mateu_managment_local_v1';
 const TALLES = ['S','M','L','XL','XXL','XXXL'];
@@ -217,8 +210,6 @@ const uid = prefix => prefix + '_' + Date.now().toString(36) + '_' + Math.random
 
 function isFirebaseMode(){ return !!FIREBASE_URL; }
 
-function isEmailJsMode(){ return !!(EMAILJS_PUBLIC_KEY && EMAILJS_SERVICE_ID && EMAILJS_TEMPLATE_ID); }
-if(isEmailJsMode() && window.emailjs) emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
 
 function arrayBufferToBase64(buffer){
   let binary = '';
@@ -1578,7 +1569,7 @@ function confirmarOC(id){
   o.estado = 'Enviada';
   o.fechaEnvio = today();
   saveState();
-  showToast('OC ' + o.codigo + ' confirmada. En la version con Firebase/EmailJS esto envia el mail al proveedor con copia a los responsables.');
+  showToast('OC ' + o.codigo + ' confirmada. Usa "Enviar mail OC" para mandarla al proveedor con copia a los responsables.');
   render();
 }
 
@@ -1840,10 +1831,6 @@ async function enviarMailOC(key){
   key = decodeURIComponent(key);
   const group = groupedByProvider(state.ordenes).find(g => g.key === key);
   if(!group) return;
-  if(!isEmailJsMode()){
-    showToast('Todavia no estan cargadas las credenciales de EmailJS en el codigo (EMAILJS_PUBLIC_KEY / SERVICE_ID / TEMPLATE_ID).');
-    return;
-  }
   const proveedorData = state.proveedores.find(p => providerKey(p.nombre) === providerKey(group.proveedor));
   if(!proveedorData?.email){
     showToast('El proveedor ' + group.proveedor + ' no tiene email cargado. Completalo en Configuracion antes de enviar la OC.');
@@ -1856,9 +1843,9 @@ async function enviarMailOC(key){
   try{
     const { wb, totalUnidades, totalValorizado } = buildExcelOCWorkbook(group);
     const excelBuf = await wb.xlsx.writeBuffer();
-    const excelBase64 = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,' + arrayBufferToBase64(excelBuf);
+    const excelBase64 = arrayBufferToBase64(excelBuf);
     const { doc } = buildPdfOC(group);
-    const pdfBase64 = 'data:application/pdf;base64,' + doc.output('datauristring').split(',').pop();
+    const pdfBase64 = doc.output('datauristring').split(',').pop();
 
     const detalle = group.items.map(o => `${o.codigo} - ${o.articulo} ${o.color} - ${totalTalles(o.talles)} unidades - Valorizado ${money(valorizadoLinea(o))}`).join('\n');
     const destinatarios = [
@@ -1868,24 +1855,32 @@ async function enviarMailOC(key){
       'francisco.pin@mateu.com.ar',
       'pauwelsivanagustin@gmail.com',
       'julian@mateu.com.ar'
-    ].join(',');
+    ];
+    const archivo = 'OC_' + ocNumero.replace(/[^A-Za-z0-9-]+/g,'_');
 
-    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-      to_email: destinatarios,
-      oc_numero: ocNumero,
-      proveedor: group.proveedor,
-      total_unidades: totalUnidades,
-      total_valorizado: money(totalValorizado),
-      detalle,
-      pdf_attachment: pdfBase64,
-      excel_attachment: excelBase64
+    const res = await fetch(MAIL_ENDPOINT, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        asunto: 'Orden de Compra ' + ocNumero + ' - Mateu Sports - ' + group.proveedor,
+        texto: 'Orden de compra ' + ocNumero + '\nProveedor: ' + group.proveedor +
+          '\nTotal unidades: ' + totalUnidades + '\nTotal valorizado: ' + money(totalValorizado) +
+          '\n\nDetalle:\n' + detalle + '\n\nSe adjuntan Excel y PDF de la orden.',
+        destinatarios,
+        adjuntos:[
+          { filename: archivo + '.pdf', content: pdfBase64 },
+          { filename: archivo + '.xlsx', content: excelBase64 }
+        ]
+      })
     });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok || !data.ok) throw new Error(data.error || 'HTTP ' + res.status);
 
     group.items.forEach(o => { o.mailEnviado = today(); });
     saveState();
     showToast('Mail de ' + ocNumero + ' enviado correctamente.');
   }catch(e){
-    showToast('No se pudo enviar el mail de la OC. Revisa las credenciales de EmailJS y los adjuntos configurados en el template.');
+    showToast('No se pudo enviar el mail de la OC. ' + (e && e.message ? e.message : 'Solo funciona desde el sitio publicado y con RESEND_API_KEY configurada en Cloudflare.'));
   }
 }
 
