@@ -168,6 +168,16 @@ table input:disabled,table select:disabled{opacity:.5;background:#f1f3f8;cursor:
   </div>
 </div>
 
+<div class="modal" id="ingresoDetalleModal">
+  <div class="modal-card maximized">
+    <div class="modal-head">
+      <h3 id="ingresoDetalleTitle">Detalle de ingreso</h3>
+      <button class="xbtn" type="button" onclick="closeIngresoDetalle()">×</button>
+    </div>
+    <div class="modal-body" id="ingresoDetalleBody"></div>
+  </div>
+</div>
+
 <script>
 const _sess = (()=>{ try{ return JSON.parse(localStorage.getItem('mateu_portal_session')||'null'); }catch(e){ return null; } })();
 if(!_sess || !(_sess.herramientas||[]).includes('managment')){ location.href = '../'; }
@@ -747,6 +757,7 @@ function render(){
   else if(currentView === 'config') renderConfig();
   else renderDesarrollo();
   if(document.getElementById('ocDetalleModal')?.classList.contains('show')) renderOCDetalleModal();
+  if(document.getElementById('ingresoDetalleModal')?.classList.contains('show')) renderIngresoDetalleModal();
 }
 
 function renderCounters(){
@@ -1931,8 +1942,86 @@ function renderIngresos(){
       <div class="section-title" style="margin-bottom:0">Ingreso a deposito</div>
       <button class="btn secondary" type="button" onclick="descargarExcelIngresos()" ${visibles.length ? '' : 'disabled'}>Descargar Excel Ingresos</button>
     </div>
+    <div class="notice">Ordenado por proveedor y dentro de cada proveedor por OC (linea y coleccion). Hace click en <b>Ver detalle</b> para cargar unidades recibidas y costo real de ingreso en ARS.</div>
+    ${ingresosGroups(visibles)}
+  `;
+}
+
+function ingresosGroups(rows){
+  if(!rows.length) return '<div class="empty">No hay OC enviadas todavia. Cambia una OC de Borrador a Enviada para verla aca.</div>';
+  return groupedByProvider(rows).map(group => {
+    const pedido = group.items.reduce((sum,o)=>sum + totalTalles(o.talles), 0);
+    const recibido = group.items.reduce((sum,o)=>sum + totalTalles(o.recibido), 0);
+    const codigos = group.items.length;
+    return `
+      <section class="po-group">
+        <div class="po-head">
+          <div>
+            <h3>${escapeHtml(group.proveedor)}</h3>
+            <div class="po-meta">${codigos} codigo${codigos === 1 ? '' : 's'} · ${pedido} unidades pedidas · ${recibido} recibidas</div>
+          </div>
+        </div>
+        ${resumenIngresos(group)}
+      </section>`;
+  }).join('');
+}
+
+function resumenIngresos(group){
+  const subgrupos = groupedByLineaColeccion(group.items);
+  return `
+    <div class="table-wrap"><table>
+      <thead><tr><th>Linea</th><th>Coleccion</th><th>Codigos</th><th>Pedido</th><th>Recibido</th><th>Diferencia</th><th>Ingreso</th><th>Acciones</th></tr></thead>
+      <tbody>${subgrupos.map(sg => {
+        const pedido = sg.items.reduce((sum,o)=>sum + totalTalles(o.talles), 0);
+        const recibido = sg.items.reduce((sum,o)=>sum + totalTalles(o.recibido), 0);
+        return `
+        <tr>
+          <td><b>${escapeHtml(sg.linea)}</b></td>
+          <td>${escapeHtml(sg.coleccion)}</td>
+          <td>${sg.items.length}</td>
+          <td><b>${pedido}</b></td>
+          <td><b>${recibido}</b></td>
+          <td>${difLabel(recibido - pedido)}</td>
+          <td>${ingresoResumenPill(pedido, recibido)}</td>
+          <td><button class="action primary" onclick="openIngresoDetalle('${encodeURIComponent(group.key)}','${encodeURIComponent(sg.linea)}','${encodeURIComponent(sg.coleccion)}')">Ver detalle</button></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
+}
+
+function ingresoResumenPill(pedido, recibido){
+  if(pedido === 0) return pill('Sin pedido', 'warn');
+  if(recibido === 0) return pill('Sin ingreso', 'bad');
+  if(recibido === pedido) return pill('Completo', 'ok');
+  if(recibido > pedido) return pill('Sobrante', 'violet');
+  return pill('Parcial', 'warn');
+}
+
+let ingresoDetalleActual = null;
+
+function openIngresoDetalle(proveedorKeyEnc, lineaEnc, coleccionEnc){
+  ingresoDetalleActual = { proveedorKey: decodeURIComponent(proveedorKeyEnc), linea: decodeURIComponent(lineaEnc), coleccion: decodeURIComponent(coleccionEnc) };
+  renderIngresoDetalleModal();
+  openModal('ingresoDetalleModal');
+}
+
+function closeIngresoDetalle(){
+  closeModal('ingresoDetalleModal');
+  ingresoDetalleActual = null;
+  render();
+}
+
+function renderIngresoDetalleModal(){
+  if(!ingresoDetalleActual) return;
+  const rows = filteredOrdenes().filter(o=>o.estado !== 'Borrador');
+  const group = groupedByProvider(rows).find(g => g.key === ingresoDetalleActual.proveedorKey);
+  if(!group){ closeIngresoDetalle(); return; }
+  const items = group.items.filter(o => (String(o.linea||'').trim()||'Sin linea') === ingresoDetalleActual.linea && (String(o.coleccion||'').trim()||'Sin coleccion') === ingresoDetalleActual.coleccion);
+  if(!items.length){ closeIngresoDetalle(); return; }
+  $('ingresoDetalleTitle').textContent = group.proveedor + ' - ' + ingresoDetalleActual.linea + ' / ' + ingresoDetalleActual.coleccion;
+  $('ingresoDetalleBody').innerHTML = `
     <div class="notice">Deposito carga unidades recibidas y costo real de ingreso en ARS. El sistema compara contra la OC y marca si el costo entro igual, mas bajo o mas alto.</div>
-    ${ingresosTable(visibles)}
+    ${ingresosTable(items)}
   `;
 }
 
