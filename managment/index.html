@@ -158,6 +158,16 @@ table input:disabled,table select:disabled{opacity:.5;background:#f1f3f8;cursor:
   </div>
 </div>
 
+<div class="modal" id="ocDetalleModal">
+  <div class="modal-card" style="width:min(1400px,100%)">
+    <div class="modal-head">
+      <h3 id="ocDetalleTitle">Detalle de OC</h3>
+      <button class="xbtn" type="button" onclick="closeOCDetalle()">×</button>
+    </div>
+    <div class="modal-body" id="ocDetalleBody"></div>
+  </div>
+</div>
+
 <script>
 const _sess = (()=>{ try{ return JSON.parse(localStorage.getItem('mateu_portal_session')||'null'); }catch(e){ return null; } })();
 if(!_sess || !(_sess.herramientas||[]).includes('managment')){ location.href = '../'; }
@@ -275,7 +285,7 @@ function seedOrden(marca, codigo, descripcion, ficha, proveedor, notas, fechaPed
   const fecha = fechaPedido || today();
   return {
     id:uid('oc'), desarrolloId:null, coleccionId:null, prendaId:null,
-    codigo, marca, articulo:descripcion, color:'', genero:'',
+    codigo, marca, articulo:descripcion, linea:'', coleccion:'', color:'', genero:'',
     proveedor:proveedor||'', costo:0, costoIngreso:0,
     aviosResponsable:AVIOS_RESP[0], aviosNotas:'',
     estado:'Enviada', fechaEnvio:fecha,
@@ -287,10 +297,15 @@ function seedOrden(marca, codigo, descripcion, ficha, proveedor, notas, fechaPed
   };
 }
 
+function taguear(ordenes, linea, coleccion){
+  ordenes.forEach(o => { o.linea = linea; o.coleccion = coleccion; });
+  return ordenes;
+}
+
 function seedOrdenBorrador(marca, codigo, descripcion, proveedor, costo, talles, notas){
   return {
     id:uid('oc'), desarrolloId:null, coleccionId:null, prendaId:null,
-    codigo, marca, articulo:descripcion, color:'', genero:'',
+    codigo, marca, articulo:descripcion, linea:'', coleccion:'', color:'', genero:'',
     proveedor:proveedor||'', costo:Number(costo||0), costoIngreso:Number(costo||0),
     aviosResponsable:AVIOS_RESP[0], aviosNotas:'',
     estado:'Borrador',
@@ -308,7 +323,7 @@ function seedOrdenDetalle(marca, codigo, descripcion, proveedor, costo, talles, 
   const enviada = estado !== 'Borrador';
   return {
     id:uid('oc'), desarrolloId:null, coleccionId:null, prendaId:null,
-    codigo, marca, articulo:descripcion, color:'', genero:'',
+    codigo, marca, articulo:descripcion, linea:opts.linea||'', coleccion:opts.coleccion||'', color:'', genero:'',
     proveedor:proveedor||'', costo:Number(costo||0), costoIngreso:Number(costo||0),
     aviosResponsable:AVIOS_RESP[0], aviosNotas:'',
     estado,
@@ -394,79 +409,97 @@ function seedState(){
       { id:uid('prov'), nombre:'30 Colores', cuit:'', direccion:'', contacto:'', email:'', telefono:'' }
     ],
     ordenes:[
-      seedOrdenDetalle('mateu','MAT351','Campera Micropolar Hombre Negro','DG2',29500,{M:200},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 3 | PVP $89.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT352','Campera Micropolar Hombre Verde','DG2',29500,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 3 | PVP $89.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT353','Campera Micropolar Hombre Azul','DG2',29500,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 3 | PVP $89.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT354','Campera Micropolar Hombre Gris','DG2',29500,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 3 | PVP $89.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT355','Campera Micropolar Mujer Negro','DG2',32000,{M:200},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,8 | PVP $89.999 | FALTAN 200 CAMP MUJER | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT356','Campera Micropolar Mujer Malbec','DG2',32000,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,8 | PVP $89.999 | FALTAN 200 CAMP MUJER | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT357','Campera Micropolar Mujer Chocolate','DG2',32000,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,8 | PVP $89.999 | FALTAN 200 CAMP MUJER | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT358','Campera Micropolar Mujer Lila','DG2',32000,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,8 | PVP $89.999 | FALTAN 200 CAMP MUJER | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT359','Mediocierre Micropolar Hombre Negro','DG2',27300,{M:200},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,9 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT360','Mediocierre Micropolar Hombre Verde','DG2',27300,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,9 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT361','Mediocierre Micropolar Hombre Azul','DG2',27300,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,9 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT362','Mediocierre Micropolar Hombre Gris','DG2',27300,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,9 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT363','Mediocierre Micropolar Dama Negro','DG2',32330,{M:200},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,5 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT364','Mediocierre Micropolar Dama Chocolate','DG2',32330,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,5 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT365','Mediocierre Micropolar Dama Malbec','DG2',32330,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,5 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT366','Mediocierre Micropolar Dama Lila','DG2',32330,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,5 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT367','Chaleco Micropolar Hombre Negro','DG2',28340,{M:200},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,6 | PVP $74.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT368','Chaleco Micropolar Hombre Verde','DG2',28340,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,6 | PVP $74.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT369','Chaleco Micropolar Hombre Azul','DG2',28340,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,6 | PVP $74.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT370','Chaleco Micropolar Hombre Gris','DG2',28340,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,6 | PVP $74.999 | OJO: este codigo MAT370 se repite con Campera Essential Ngr (OC Adragna) - confirmar con Francisco cual es el correcto | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT371','Chaleco Micropolar Dama Negro','DG2',27400,{M:200},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,7 | PVP $74.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT372','Chaleco Micropolar Dama Chocolate','DG2',27400,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,7 | PVP $74.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT373','Chaleco Micropolar Dama Malbec','DG2',27400,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,7 | PVP $74.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('mateu','MAT374','Chaleco Micropolar Dama Lila','DG2',27400,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,7 | PVP $74.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
-      seedOrdenDetalle('aurelius','AUR202','Bipack Boxer Aurelius Gris Mel','MYS Underwear',12980,{S:21,M:47,L:64,XL:47,XXL:21},{estado:'Enviada',fecha:'2026-03-30',entregaEstimada:'2026-07-15',notas:'ETIQUETAS EAN? | Avios $2.225,34 | Sistema $15.205,34 | Adelanto 40% del total: $3.115.200'}),
-      seedOrdenDetalle('aurelius','AUR203','Bipack Boxer Aurelius Azul','MYS Underwear',12980,{S:21,M:47,L:64,XL:47,XXL:21},{estado:'Enviada',fecha:'2026-03-30',entregaEstimada:'2026-07-15',notas:'ETIQUETAS EAN? | Avios $2.225,34 | Sistema $15.205,34 | Adelanto 40% del total: $3.115.200'}),
-      seedOrdenDetalle('aurelius','AUR204','Bipack Boxer Aurelius Negro','MYS Underwear',12980,{S:21,M:47,L:64,XL:47,XXL:21},{estado:'Enviada',fecha:'2026-03-30',entregaEstimada:'2026-07-15',notas:'ETIQUETAS EAN? | Avios $2.225,34 | Sistema $15.205,34 | Adelanto 40% del total: $3.115.200'}),
-      seedOrden('mateu','MAT428','Conjunto deportivo','','Adragna','ENTREGA ATRASADA','2026-04-17','',''),
-      seedOrdenDetalle('ruge','RUG264','M/C EDLP 3rd Amateur 22 Gris','30 Colores',13900,{S:30,M:50,L:100,XL:40,XXL:20},{estado:'Enviada',fecha:'2026-05-15',entregaEstimada:'2026-06-05',notas:'ENVIAR 250 HANGTAGS'}),
-      seedOrdenDetalle('ruge','RUG261','M/C EDLP Away Bco/Rjo','30 Colores',13900,{S:20,M:60,L:120,XL:40},{estado:'Enviada',fecha:'2026-05-15',entregaEstimada:'2026-06-05',notas:'ENVIAR 250 HANGTAGS'}),
-      seedOrdenDetalle('ruge','RUG259','M/C EDLP Home Amateur Bco/Rjo','30 Colores',13900,{S:40,M:80,L:120},{estado:'Enviada',fecha:'2026-05-15',entregaEstimada:'2026-06-05',notas:'ENVIAR 250 HANGTAGS'}),
-      seedOrdenDetalle('ruge','RUG977','Canguro Casual Ruge Negro','Willder',24753.15,{S:60,M:120,L:120,XL:80,XXL:20},{estado:'Enviada',fecha:'2026-05-15',notas:'ENTREGANDO | Linea: Sin Escudo | Coleccion 2026'}),
-      seedOrdenDetalle('ruge','RUG978','Canguro Casual Ruge Verde Africa','Willder',24753.15,{S:30,M:60,L:60,XL:30,XXL:10},{estado:'Enviada',fecha:'2026-05-15',notas:'ENTREGANDO | Linea: Sin Escudo | Coleccion 2026'}),
-      seedOrdenDetalle('ruge','RUG979','Canguro Casual Ruge Granate','Willder',24753.15,{S:30,M:80,L:80,XL:45,XXL:10},{estado:'Enviada',fecha:'2026-05-15',notas:'ENTREGANDO | Linea: Sin Escudo | Coleccion 2026'}),
-      seedOrdenDetalle('ruge','RUG980','Pantalon Casual Ruge Negro','Willder',23938.01,{S:50,M:150,L:150,XL:100,XXL:50},{estado:'Enviada',fecha:'2026-05-15',notas:'ENTREGANDO | Linea: Sin Escudo | Coleccion 2026'}),
-      seedOrden('mateu','MAT396/407','Medias futbol Mateu','ficha_medias...','Willder','ESPERANDO FECHA DE ENTREGA','2026-06-08','','Fran'),
-      seedOrden('ruge','RUG975','Remera Maraton EDLP 26','','Khansin','ESPERANDO FECHA DE ENTREGA','2026-06-08','','Fran'),
-      seedOrden('ruge','RUG969/972','Capsula remeras Ruge','rug969_972...','Willder','ENTREGANDO','2026-06-12','','Fran'),
-      seedOrdenDetalle('ruge','RUG860','M/C EDLP Away 26 Blanco','RA Int',25197.42,{M:200,L:300,XL:200},{estado:'Enviada',seguimiento:'Ivan',notas:'Lo antes posible, comprometer fecha a RA'}),
-      seedOrdenDetalle('ruge','RUG981','M/C EDLP Away 26 Blanco Manga Larga','RA Int',0,{S:50,M:100,L:100,XL:50},{estado:'Enviada',seguimiento:'Ivan',notas:'Lo antes posible, comprometer fecha a RA | Costo pendiente de definir (no venia en la planilla)'}),
-      seedOrdenDetalle('ruge','RUG858','M/C EDLP Home 26 Bco/Rjo','RA Int',29025.49,{L:200,XL:300},{estado:'Enviada',seguimiento:'Ivan',notas:'Agosto-Septiembre'}),
-      seedOrdenDetalle('ruge','RUG982','M/C EDLP Home 26 Bco/Rjo Manga Larga','RA Int',0,{S:75,M:150,L:150,XL:100,XXL:25},{estado:'Enviada',seguimiento:'Ivan',notas:'Lo antes posible, comprometer fecha a RA | Costo pendiente de definir (no venia en la planilla)'}),
-      seedOrdenDetalle('ruge','RUG983','M/C EDLP Home 26 Bco/Rjo Crop Mujer','RA Int',0,{S:150,M:100,L:50},{estado:'Enviada',seguimiento:'Ivan',notas:'Agosto-Septiembre | Costo pendiente de definir (no venia en la planilla) | Incluye 50 unidades de talle XS sumadas al talle S (el sistema no maneja XS)'}),
-      seedOrdenDetalle('mateu','MAT411','Remera Axis Motion Grey','RA Int',12331.20,{S:20,M:40,L:70,XL:45,XXL:25},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
-      seedOrdenDetalle('mateu','MAT412','Remera Axis Motion Brum Red','RA Int',12331.20,{S:20,M:40,L:70,XL:45,XXL:25},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
-      seedOrdenDetalle('mateu','MAT413','Remera Axis Motion Blue','RA Int',12331.20,{S:10,M:15,L:40,XL:20,XXL:15},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
-      seedOrdenDetalle('mateu','MAT414','Remera Axis Motion Black','RA Int',12331.20,{S:30,M:60,L:100,XL:70,XXL:40},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
-      seedOrdenDetalle('mateu','MAT415','Remera Axis Spines Blue','RA Int',12410.90,{S:20,M:40,L:70,XL:45,XXL:25},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
-      seedOrdenDetalle('mateu','MAT416','Remera Axis Spines Carbon','RA Int',12410.90,{S:20,M:40,L:70,XL:45,XXL:25},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
-      seedOrdenDetalle('mateu','MAT417','Remera Axis Spines Black','RA Int',12410.90,{S:25,M:55,L:80,XL:60,XXL:30},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
-      seedOrdenDetalle('mateu','MAT418','Remera Axis Mana Black','RA Int',11448.60,{S:20,M:40,L:70,XL:45,XXL:25},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
-      seedOrdenDetalle('mateu','MAT419','Remera Axis Mana Grey','RA Int',11448.60,{S:10,M:15,L:40,XL:20,XXL:15},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
-      seedOrdenDetalle('mateu','MAT420','Remera Axis Mana Bourdeaux','RA Int',11448.60,{S:25,M:55,L:80,XL:60,XXL:30},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
-      seedOrdenDetalle('mateu','MAT421','Remera Axis Mana Ngr/Vio','RA Int',11448.60,{S:20,M:40,L:70,XL:45,XXL:25},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
-      seedOrdenDetalle('mateu','MAT422','Axis Motion Black Short 5" 4W','RA Int',12725.50,{S:20,M:60,L:60,XL:40},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
-      seedOrdenDetalle('mateu','MAT423','Axis Motion Blue Short 5" 4W','RA Int',12725.50,{S:20,M:60,L:60,XL:40},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf | OJO: la planilla marca Pedido 200 pero la curva de talles suma 180, revisar con Francisco'}),
-      seedOrdenDetalle('mateu','MAT424','Axis Spines Black Short 5" 4W','RA Int',13650.00,{S:20,M:60,L:60,XL:40},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf | OJO: la planilla marca Pedido 200 pero la curva de talles suma 180, revisar con Francisco'}),
-      seedOrdenDetalle('mateu','MAT425','Axis Spines Black Red Short 5" 4W','RA Int',13650.00,{S:20,M:60,L:60,XL:40},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf | OJO: la planilla marca Pedido 200 pero la curva de talles suma 180, revisar con Francisco'}),
-      seedOrdenDetalle('mateu','MAT426','Axis Spines Blue Short 5" 4W','RA Int',13650.00,{S:20,M:60,L:60,XL:40},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'Linea Axis | Coleccion 2026 | COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf | OJO: la planilla marca Pedido 200 pero la curva de talles suma 180, revisar con Francisco'}),
-      seedOrdenBorrador('mateu','MAT429','Pantalon Essential Ngr','Adragna',16900,{S:20,M:60,L:80,XL:60,XXL:20},'Coleccion Carry Over'),
-      seedOrdenBorrador('mateu','MAT430','Pantalon Essential Azl','Adragna',16900,{S:15,M:30,L:40,XL:30,XXL:15},'Coleccion Carry Over'),
-      seedOrdenBorrador('mateu','MAT431','Pantalon Essential Grs','Adragna',16900,{S:15,M:30,L:40,XL:30,XXL:15},'Coleccion Carry Over'),
-      seedOrdenBorrador('mateu','MAT370','Campera Essential Ngr','Adragna',17000,{S:20,M:60,L:80,XL:60,XXL:20},'Coleccion Carry Over'),
-      seedOrdenBorrador('mateu','MAT432','Campera Essential Azl','Adragna',17000,{S:20,M:40,L:60,XL:40,XXL:20},'Coleccion Carry Over'),
-      seedOrdenBorrador('mateu','MAT433','Campera Essential Grs','Adragna',17000,{S:20,M:40,L:60,XL:40,XXL:20},'Coleccion Carry Over'),
-      seedOrdenBorrador('mateu','MAT434','Campera Active Ngr','Adragna',17000,{S:20,M:60,L:80,XL:60,XXL:20},'Coleccion Carry Over'),
-      seedOrdenBorrador('mateu','MAT435','Campera Active Azl','Adragna',17000,{S:20,M:40,L:60,XL:40,XXL:20},'Coleccion Carry Over'),
-      seedOrdenBorrador('mateu','MAT436','Campera Active Grs','Adragna',17000,{S:20,M:40,L:60,XL:40,XXL:20},'Coleccion Carry Over'),
-      seedOrdenBorrador('mateu','MAT437','Pantalon Runner Ngr','Adragna',16900,{S:15,M:35,L:40,XL:35,XXL:15},'Coleccion Carry Over'),
-      seedOrdenBorrador('mateu','MAT438','Pantalon Runner Grs','Adragna',16900,{S:10,M:20,L:40,XL:20,XXL:10},'Coleccion Carry Over'),
-      seedOrdenBorrador('mateu','MAT439','Campera Runner Ngr','Adragna',17000,{S:20,M:60,L:80,XL:60,XXL:20},'Coleccion Carry Over'),
-      seedOrdenBorrador('mateu','MAT440','Campera Runner Azl','Adragna',17000,{S:20,M:40,L:60,XL:40,XXL:20},'Coleccion Carry Over'),
-      seedOrdenBorrador('mateu','MAT441','Campera Runner Grs','Adragna',17000,{S:20,M:40,L:60,XL:40,XXL:20},'Coleccion Carry Over')
+      ...taguear([
+        seedOrdenDetalle('mateu','MAT351','Campera Micropolar Hombre Negro','DG2',29500,{M:200},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 3 | PVP $89.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT352','Campera Micropolar Hombre Verde','DG2',29500,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 3 | PVP $89.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT353','Campera Micropolar Hombre Azul','DG2',29500,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 3 | PVP $89.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT354','Campera Micropolar Hombre Gris','DG2',29500,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 3 | PVP $89.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT355','Campera Micropolar Mujer Negro','DG2',32000,{M:200},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,8 | PVP $89.999 | FALTAN 200 CAMP MUJER | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT356','Campera Micropolar Mujer Malbec','DG2',32000,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,8 | PVP $89.999 | FALTAN 200 CAMP MUJER | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT357','Campera Micropolar Mujer Chocolate','DG2',32000,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,8 | PVP $89.999 | FALTAN 200 CAMP MUJER | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT358','Campera Micropolar Mujer Lila','DG2',32000,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,8 | PVP $89.999 | FALTAN 200 CAMP MUJER | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT359','Mediocierre Micropolar Hombre Negro','DG2',27300,{M:200},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,9 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT360','Mediocierre Micropolar Hombre Verde','DG2',27300,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,9 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT361','Mediocierre Micropolar Hombre Azul','DG2',27300,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,9 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT362','Mediocierre Micropolar Hombre Gris','DG2',27300,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,9 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT363','Mediocierre Micropolar Dama Negro','DG2',32330,{M:200},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,5 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT364','Mediocierre Micropolar Dama Chocolate','DG2',32330,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,5 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT365','Mediocierre Micropolar Dama Malbec','DG2',32330,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,5 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT366','Mediocierre Micropolar Dama Lila','DG2',32330,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,5 | PVP $79.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT367','Chaleco Micropolar Hombre Negro','DG2',28340,{M:200},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,6 | PVP $74.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT368','Chaleco Micropolar Hombre Verde','DG2',28340,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,6 | PVP $74.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT369','Chaleco Micropolar Hombre Azul','DG2',28340,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,6 | PVP $74.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT370','Chaleco Micropolar Hombre Gris','DG2',28340,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,6 | PVP $74.999 | OJO: este codigo MAT370 se repite con Campera Essential Ngr (OC Adragna) - confirmar con Francisco cual es el correcto | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT371','Chaleco Micropolar Dama Negro','DG2',27400,{M:200},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,7 | PVP $74.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT372','Chaleco Micropolar Dama Chocolate','DG2',27400,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,7 | PVP $74.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT373','Chaleco Micropolar Dama Malbec','DG2',27400,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,7 | PVP $74.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'}),
+        seedOrdenDetalle('mateu','MAT374','Chaleco Micropolar Dama Lila','DG2',27400,{M:100},{estado:'Enviada',fecha:'2026-03-16',notas:'MKP 2,7 | PVP $74.999 | Sin desglose de talles en la planilla, pedido total cargado en talle M'})
+      ], 'Micropolar', 'Coleccion 2026'),
+      ...taguear([
+        seedOrdenDetalle('aurelius','AUR202','Bipack Boxer Aurelius Gris Mel','MYS Underwear',12980,{S:21,M:47,L:64,XL:47,XXL:21},{estado:'Enviada',fecha:'2026-03-30',entregaEstimada:'2026-07-15',notas:'ETIQUETAS EAN? | Avios $2.225,34 | Sistema $15.205,34 | Adelanto 40% del total: $3.115.200'}),
+        seedOrdenDetalle('aurelius','AUR203','Bipack Boxer Aurelius Azul','MYS Underwear',12980,{S:21,M:47,L:64,XL:47,XXL:21},{estado:'Enviada',fecha:'2026-03-30',entregaEstimada:'2026-07-15',notas:'ETIQUETAS EAN? | Avios $2.225,34 | Sistema $15.205,34 | Adelanto 40% del total: $3.115.200'}),
+        seedOrdenDetalle('aurelius','AUR204','Bipack Boxer Aurelius Negro','MYS Underwear',12980,{S:21,M:47,L:64,XL:47,XXL:21},{estado:'Enviada',fecha:'2026-03-30',entregaEstimada:'2026-07-15',notas:'ETIQUETAS EAN? | Avios $2.225,34 | Sistema $15.205,34 | Adelanto 40% del total: $3.115.200'})
+      ], 'Boxers', 'Carry Over'),
+      ...taguear([seedOrden('mateu','MAT428','Conjunto deportivo','','Adragna','ENTREGA ATRASADA','2026-04-17','','')], 'Conjunto Deportivo', 'Carry Over'),
+      ...taguear([
+        seedOrdenDetalle('ruge','RUG264','M/C EDLP 3rd Amateur 22 Gris','30 Colores',13900,{S:30,M:50,L:100,XL:40,XXL:20},{estado:'Enviada',fecha:'2026-05-15',entregaEstimada:'2026-06-05',notas:'ENVIAR 250 HANGTAGS'}),
+        seedOrdenDetalle('ruge','RUG261','M/C EDLP Away Bco/Rjo','30 Colores',13900,{S:20,M:60,L:120,XL:40},{estado:'Enviada',fecha:'2026-05-15',entregaEstimada:'2026-06-05',notas:'ENVIAR 250 HANGTAGS'}),
+        seedOrdenDetalle('ruge','RUG259','M/C EDLP Home Amateur Bco/Rjo','30 Colores',13900,{S:40,M:80,L:120},{estado:'Enviada',fecha:'2026-05-15',entregaEstimada:'2026-06-05',notas:'ENVIAR 250 HANGTAGS'})
+      ], 'Pertenencia', 'Coleccion Pertenencia'),
+      ...taguear([
+        seedOrdenDetalle('ruge','RUG977','Canguro Casual Ruge Negro','Willder',24753.15,{S:60,M:120,L:120,XL:80,XXL:20},{estado:'Enviada',fecha:'2026-05-15',notas:'ENTREGANDO'}),
+        seedOrdenDetalle('ruge','RUG978','Canguro Casual Ruge Verde Africa','Willder',24753.15,{S:30,M:60,L:60,XL:30,XXL:10},{estado:'Enviada',fecha:'2026-05-15',notas:'ENTREGANDO'}),
+        seedOrdenDetalle('ruge','RUG979','Canguro Casual Ruge Granate','Willder',24753.15,{S:30,M:80,L:80,XL:45,XXL:10},{estado:'Enviada',fecha:'2026-05-15',notas:'ENTREGANDO'}),
+        seedOrdenDetalle('ruge','RUG980','Pantalon Casual Ruge Negro','Willder',23938.01,{S:50,M:150,L:150,XL:100,XXL:50},{estado:'Enviada',fecha:'2026-05-15',notas:'ENTREGANDO'})
+      ], 'Sin Escudo', 'Coleccion 2026'),
+      ...taguear([seedOrden('mateu','MAT396/407','Medias futbol Mateu','ficha_medias...','Willder','ESPERANDO FECHA DE ENTREGA','2026-06-08','','Fran')], 'Medias Futbol', 'Carry Over'),
+      ...taguear([seedOrden('ruge','RUG975','Remera Maraton EDLP 26','','Khansin','ESPERANDO FECHA DE ENTREGA','2026-06-08','','Fran')], 'Maraton EDLP', 'Carry Over'),
+      ...taguear([seedOrden('ruge','RUG969/972','Capsula remeras Ruge','rug969_972...','Willder','ENTREGANDO','2026-06-12','','Fran')], 'Capsula Remeras', 'Coleccion 2026'),
+      ...taguear([
+        seedOrdenDetalle('ruge','RUG860','M/C EDLP Away 26 Blanco','RA Int',25197.42,{M:200,L:300,XL:200},{estado:'Enviada',seguimiento:'Ivan',notas:'Lo antes posible, comprometer fecha a RA'}),
+        seedOrdenDetalle('ruge','RUG981','M/C EDLP Away 26 Blanco Manga Larga','RA Int',0,{S:50,M:100,L:100,XL:50},{estado:'Enviada',seguimiento:'Ivan',notas:'Lo antes posible, comprometer fecha a RA | Costo pendiente de definir (no venia en la planilla)'}),
+        seedOrdenDetalle('ruge','RUG858','M/C EDLP Home 26 Bco/Rjo','RA Int',29025.49,{L:200,XL:300},{estado:'Enviada',seguimiento:'Ivan',notas:'Agosto-Septiembre'}),
+        seedOrdenDetalle('ruge','RUG982','M/C EDLP Home 26 Bco/Rjo Manga Larga','RA Int',0,{S:75,M:150,L:150,XL:100,XXL:25},{estado:'Enviada',seguimiento:'Ivan',notas:'Lo antes posible, comprometer fecha a RA | Costo pendiente de definir (no venia en la planilla)'}),
+        seedOrdenDetalle('ruge','RUG983','M/C EDLP Home 26 Bco/Rjo Crop Mujer','RA Int',0,{S:150,M:100,L:50},{estado:'Enviada',seguimiento:'Ivan',notas:'Agosto-Septiembre | Costo pendiente de definir (no venia en la planilla) | Incluye 50 unidades de talle XS sumadas al talle S (el sistema no maneja XS)'})
+      ], 'EDLP', 'Coleccion 2026'),
+      ...taguear([
+        seedOrdenDetalle('mateu','MAT411','Remera Axis Motion Grey','RA Int',12331.20,{S:20,M:40,L:70,XL:45,XXL:25},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
+        seedOrdenDetalle('mateu','MAT412','Remera Axis Motion Brum Red','RA Int',12331.20,{S:20,M:40,L:70,XL:45,XXL:25},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
+        seedOrdenDetalle('mateu','MAT413','Remera Axis Motion Blue','RA Int',12331.20,{S:10,M:15,L:40,XL:20,XXL:15},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
+        seedOrdenDetalle('mateu','MAT414','Remera Axis Motion Black','RA Int',12331.20,{S:30,M:60,L:100,XL:70,XXL:40},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
+        seedOrdenDetalle('mateu','MAT415','Remera Axis Spines Blue','RA Int',12410.90,{S:20,M:40,L:70,XL:45,XXL:25},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
+        seedOrdenDetalle('mateu','MAT416','Remera Axis Spines Carbon','RA Int',12410.90,{S:20,M:40,L:70,XL:45,XXL:25},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
+        seedOrdenDetalle('mateu','MAT417','Remera Axis Spines Black','RA Int',12410.90,{S:25,M:55,L:80,XL:60,XXL:30},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
+        seedOrdenDetalle('mateu','MAT418','Remera Axis Mana Black','RA Int',11448.60,{S:20,M:40,L:70,XL:45,XXL:25},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
+        seedOrdenDetalle('mateu','MAT419','Remera Axis Mana Grey','RA Int',11448.60,{S:10,M:15,L:40,XL:20,XXL:15},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
+        seedOrdenDetalle('mateu','MAT420','Remera Axis Mana Bourdeaux','RA Int',11448.60,{S:25,M:55,L:80,XL:60,XXL:30},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
+        seedOrdenDetalle('mateu','MAT421','Remera Axis Mana Ngr/Vio','RA Int',11448.60,{S:20,M:40,L:70,XL:45,XXL:25},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
+        seedOrdenDetalle('mateu','MAT422','Axis Motion Black Short 5" 4W','RA Int',12725.50,{S:20,M:60,L:60,XL:40},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf'}),
+        seedOrdenDetalle('mateu','MAT423','Axis Motion Blue Short 5" 4W','RA Int',12725.50,{S:20,M:60,L:60,XL:40},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf | OJO: la planilla marca Pedido 200 pero la curva de talles suma 180, revisar con Francisco'}),
+        seedOrdenDetalle('mateu','MAT424','Axis Spines Black Short 5" 4W','RA Int',13650.00,{S:20,M:60,L:60,XL:40},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf | OJO: la planilla marca Pedido 200 pero la curva de talles suma 180, revisar con Francisco'}),
+        seedOrdenDetalle('mateu','MAT425','Axis Spines Black Red Short 5" 4W','RA Int',13650.00,{S:20,M:60,L:60,XL:40},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf | OJO: la planilla marca Pedido 200 pero la curva de talles suma 180, revisar con Francisco'}),
+        seedOrdenDetalle('mateu','MAT426','Axis Spines Blue Short 5" 4W','RA Int',13650.00,{S:20,M:60,L:60,XL:40},{estado:'Enviada',fecha:'2026-07-02',seguimiento:'Fran',notas:'COTIZAR HANGTAG Y BOLSA | Ficha: axis 01.pdf | OJO: la planilla marca Pedido 200 pero la curva de talles suma 180, revisar con Francisco'})
+      ], 'Axis', 'Coleccion 2026'),
+      ...taguear([
+        seedOrdenBorrador('mateu','MAT429','Pantalon Essential Ngr','Adragna',16900,{S:20,M:60,L:80,XL:60,XXL:20},'Coleccion Carry Over'),
+        seedOrdenBorrador('mateu','MAT430','Pantalon Essential Azl','Adragna',16900,{S:15,M:30,L:40,XL:30,XXL:15},'Coleccion Carry Over'),
+        seedOrdenBorrador('mateu','MAT431','Pantalon Essential Grs','Adragna',16900,{S:15,M:30,L:40,XL:30,XXL:15},'Coleccion Carry Over'),
+        seedOrdenBorrador('mateu','MAT370','Campera Essential Ngr','Adragna',17000,{S:20,M:60,L:80,XL:60,XXL:20},'Coleccion Carry Over'),
+        seedOrdenBorrador('mateu','MAT432','Campera Essential Azl','Adragna',17000,{S:20,M:40,L:60,XL:40,XXL:20},'Coleccion Carry Over'),
+        seedOrdenBorrador('mateu','MAT433','Campera Essential Grs','Adragna',17000,{S:20,M:40,L:60,XL:40,XXL:20},'Coleccion Carry Over')
+      ], 'Essential', 'Carry Over'),
+      ...taguear([
+        seedOrdenBorrador('mateu','MAT434','Campera Active Ngr','Adragna',17000,{S:20,M:60,L:80,XL:60,XXL:20},'Coleccion Carry Over'),
+        seedOrdenBorrador('mateu','MAT435','Campera Active Azl','Adragna',17000,{S:20,M:40,L:60,XL:40,XXL:20},'Coleccion Carry Over'),
+        seedOrdenBorrador('mateu','MAT436','Campera Active Grs','Adragna',17000,{S:20,M:40,L:60,XL:40,XXL:20},'Coleccion Carry Over')
+      ], 'Active', 'Carry Over'),
+      ...taguear([
+        seedOrdenBorrador('mateu','MAT437','Pantalon Runner Ngr','Adragna',16900,{S:15,M:35,L:40,XL:35,XXL:15},'Coleccion Carry Over'),
+        seedOrdenBorrador('mateu','MAT438','Pantalon Runner Grs','Adragna',16900,{S:10,M:20,L:40,XL:20,XXL:10},'Coleccion Carry Over'),
+        seedOrdenBorrador('mateu','MAT439','Campera Runner Ngr','Adragna',17000,{S:20,M:60,L:80,XL:60,XXL:20},'Coleccion Carry Over'),
+        seedOrdenBorrador('mateu','MAT440','Campera Runner Azl','Adragna',17000,{S:20,M:40,L:60,XL:40,XXL:20},'Coleccion Carry Over'),
+        seedOrdenBorrador('mateu','MAT441','Campera Runner Grs','Adragna',17000,{S:20,M:40,L:60,XL:40,XXL:20},'Coleccion Carry Over')
+      ], 'Runner', 'Carry Over')
     ]
   };
 }
@@ -530,6 +563,8 @@ function normalizeState(next){
     o.fichaLink = o.fichaLink || '';
     o.entregaEstimada = o.entregaEstimada || '';
     o.seguimiento = o.seguimiento || '';
+    o.linea = o.linea || '';
+    o.coleccion = o.coleccion || '';
   });
   delete next.desarrollos;
   return next;
@@ -596,6 +631,24 @@ function groupedByProvider(items){
     map.get(key).items.push(item);
   });
   return [...map.values()].sort((a,b)=>a.proveedor.localeCompare(b.proveedor));
+}
+
+function groupedByLineaColeccion(items){
+  const map = new Map();
+  items.forEach(o => {
+    const linea = String(o.linea || '').trim() || 'Sin linea';
+    const coleccion = String(o.coleccion || '').trim() || 'Sin coleccion';
+    const key = linea + '||' + coleccion;
+    if(!map.has(key)) map.set(key, { key, linea, coleccion, items:[] });
+    map.get(key).items.push(o);
+  });
+  return [...map.values()].sort((a,b) => a.linea.localeCompare(b.linea) || a.coleccion.localeCompare(b.coleccion));
+}
+
+function estadoResumenOC(items){
+  const estados = [...new Set(items.map(o => o.estado))];
+  if(estados.length === 1) return estadoPill(estados[0]);
+  return pill('Mixto (' + estados.length + ' estados)', 'warn');
 }
 
 function filteredColecciones(){
@@ -693,6 +746,7 @@ function render(){
   else if(currentView === 'ingresos') renderIngresos();
   else if(currentView === 'config') renderConfig();
   else renderDesarrollo();
+  if(document.getElementById('ocDetalleModal')?.classList.contains('show')) renderOCDetalleModal();
 }
 
 function renderCounters(){
@@ -1132,6 +1186,8 @@ async function crearOCDesdePrenda(colId, prendaId, silent){
     codigo,
     marca:d.marca,
     articulo:[d.tipo,d.nombre].filter(Boolean).join(' ') || d.nombre,
+    linea:d.tipo || '',
+    coleccion:c ? c.nombre : '',
     color:d.color,
     genero:d.genero,
     proveedor:d.proveedor,
@@ -1166,7 +1222,7 @@ function closeModal(id){ $(id).classList.remove('show'); }
 function renderOC(){
   $('view').innerHTML = `
     <div class="section-title">Ordenes de compra</div>
-    <div class="notice">Una OC se envia por proveedor y puede incluir varios codigos. Completa los talles de todas las lineas del proveedor y usa <b>Confirmar y enviar OC</b> una sola vez.</div>
+    <div class="notice">Una OC se envia por proveedor. Dentro de cada proveedor esta agrupada por linea y coleccion - hace click en <b>Ver detalle</b> para cargar talles, costos, etc. Usa <b>Confirmar y enviar OC</b> una sola vez.</div>
     ${ocTable()}
   `;
 }
@@ -1175,7 +1231,6 @@ function ocTable(){
   const ordenes = filteredOrdenes();
   if(!ordenes.length) return '<div class="empty">Todavia no hay ordenes de compra para la marca seleccionada. Primero aprobá comercialmente una prenda en Paso 1 y procesala desde la colección.</div>';
   return groupedByProvider(ordenes).map(group => {
-    const borradores = group.items.filter(o => o.estado === 'Borrador');
     const unidades = group.items.reduce((sum,o)=>sum + totalTalles(o.talles), 0);
     const valorizado = group.items.reduce((sum,o)=>sum + valorizadoLinea(o), 0);
     const codigos = group.items.length;
@@ -1193,17 +1248,80 @@ function ocTable(){
           <button class="tab ${mode === 'curva' ? 'active' : ''}" type="button" onclick="setOCMode('${encodeURIComponent(group.key)}','curva')">Planilla de Corte / Curva</button>
           <button class="tab ${mode === 'avios' ? 'active' : ''}" type="button" onclick="setOCMode('${encodeURIComponent(group.key)}','avios')">Gestion de Avios</button>
         </div>
-        ${mode === 'avios' ? aviosPanel(group) : curvaPanel(group)}
+        ${mode === 'avios' ? aviosPanel(group) : resumenLineaColeccion(group)}
       </section>`;
   }).join('');
 }
 
-function curvaPanel(group){
+function resumenLineaColeccion(group){
+  const subgrupos = groupedByLineaColeccion(group.items);
+  return `
+    <div class="table-wrap"><table>
+      <thead><tr><th>Linea</th><th>Coleccion</th><th>Codigos</th><th>Unidades</th><th>Valorizado</th><th>Estado</th><th>Acciones</th></tr></thead>
+      <tbody>${subgrupos.map(sg => {
+        const unidades = sg.items.reduce((sum,o)=>sum + totalTalles(o.talles), 0);
+        const valorizado = sg.items.reduce((sum,o)=>sum + valorizadoLinea(o), 0);
+        return `
+        <tr>
+          <td><b>${escapeHtml(sg.linea)}</b></td>
+          <td>${escapeHtml(sg.coleccion)}</td>
+          <td>${sg.items.length}</td>
+          <td>${unidades}</td>
+          <td>${money(valorizado)}</td>
+          <td>${estadoResumenOC(sg.items)}</td>
+          <td><button class="action primary" onclick="openOCDetalle('${encodeURIComponent(group.key)}','${encodeURIComponent(sg.linea)}','${encodeURIComponent(sg.coleccion)}')">Ver detalle</button></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
+}
+
+let editModeOC = false;
+let ocDetalleActual = null;
+
+function openOCDetalle(proveedorKeyEnc, lineaEnc, coleccionEnc){
+  ocDetalleActual = { proveedorKey: decodeURIComponent(proveedorKeyEnc), linea: decodeURIComponent(lineaEnc), coleccion: decodeURIComponent(coleccionEnc) };
+  editModeOC = false;
+  renderOCDetalleModal();
+  openModal('ocDetalleModal');
+}
+
+function closeOCDetalle(){
+  closeModal('ocDetalleModal');
+  ocDetalleActual = null;
+  editModeOC = false;
+}
+
+function toggleEditModeOC(){
+  editModeOC = !editModeOC;
+  renderOCDetalleModal();
+}
+
+function renderOCDetalleModal(){
+  if(!ocDetalleActual) return;
+  const group = groupedByProvider(filteredOrdenes()).find(g => g.key === ocDetalleActual.proveedorKey);
+  if(!group){ closeOCDetalle(); return; }
+  const items = group.items.filter(o => (String(o.linea||'').trim()||'Sin linea') === ocDetalleActual.linea && (String(o.coleccion||'').trim()||'Sin coleccion') === ocDetalleActual.coleccion);
+  if(!items.length){ closeOCDetalle(); return; }
+  $('ocDetalleTitle').textContent = group.proveedor + ' - ' + ocDetalleActual.linea + ' / ' + ocDetalleActual.coleccion;
+  $('ocDetalleBody').innerHTML = `
+    <div class="notice" style="${editModeOC ? '' : 'display:none'}">Modo edicion: podes reasignar Linea, Coleccion y Proveedor de cada codigo. Las lineas ya Enviadas necesitan "Reabrir OC" primero.</div>
+    <div class="btn-row" style="margin-bottom:12px;justify-content:flex-end">
+      <button class="btn ${editModeOC ? 'red' : 'secondary'}" type="button" onclick="toggleEditModeOC()">${editModeOC ? 'Salir del modo edicion' : 'Modo edicion (mover articulos)'}</button>
+    </div>
+    ${curvaPanel({ key: group.key, proveedor: group.proveedor, items }, editModeOC)}
+  `;
+}
+
+function curvaPanel(group, editMode){
   return `
         <div class="table-wrap"><table>
-          <thead><tr><th>Codigo</th><th>Articulo</th><th>Proveedor</th><th>Color</th><th>Genero</th><th>Curva</th><th>Talles pedidos</th><th>Total</th><th>Costo unit. ARS</th><th>Valorizado</th><th>Ficha</th><th>Entrega estimada</th><th>Seguimiento</th><th>Notas</th><th>Estado</th><th>Acciones linea</th></tr></thead>
+          <thead><tr>${editMode ? '<th>Linea</th><th>Coleccion</th>' : ''}<th>Codigo</th><th>Articulo</th><th>Proveedor</th><th>Color</th><th>Genero</th><th>Curva</th><th>Talles pedidos</th><th>Total</th><th>Costo unit. ARS</th><th>Valorizado</th><th>Ficha</th><th>Entrega estimada</th><th>Seguimiento</th><th>Notas</th><th>Estado</th><th>Acciones linea</th></tr></thead>
           <tbody>${group.items.map(o => { const locked = o.estado === 'Enviada'; return `
         <tr${locked ? ' style="background:#fbfbfd"' : ''}>
+          ${editMode ? `
+          <td><input class="small-input" style="width:110px" ${locked ? 'disabled title="Reabrí la OC para editar"' : ''} value="${escapeAttr(o.linea || '')}" onchange="setOCField('${o.id}','linea',this.value)"></td>
+          <td><input class="small-input" style="width:110px" ${locked ? 'disabled title="Reabrí la OC para editar"' : ''} value="${escapeAttr(o.coleccion || '')}" onchange="setOCField('${o.id}','coleccion',this.value)"></td>
+          ` : ''}
           <td><b>${o.codigo}</b><div class="muted">${MARCAS[o.marca]}</div></td>
           <td>${escapeHtml(o.articulo)}</td>
           <td><select ${locked ? 'disabled title="Reabrí la OC para editar"' : ''} onchange="setOCField('${o.id}','proveedor',this.value)">${providerOptions(o.proveedor)}</select></td>
@@ -1397,7 +1515,7 @@ function setCostoIngreso(id, value){
   render();
 }
 
-const LOCKED_FIELDS_ENVIADA = ['color','genero','proveedor','costo'];
+const LOCKED_FIELDS_ENVIADA = ['color','genero','proveedor','costo','linea','coleccion'];
 function setOCField(id, field, value){
   const o = state.ordenes.find(x=>x.id===id);
   if(!o) return;
