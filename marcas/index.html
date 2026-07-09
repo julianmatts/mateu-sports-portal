@@ -73,6 +73,24 @@ body { font-family: 'Barlow', sans-serif; background: var(--gray-100); color: va
 .brand-tag.match { box-shadow: 0 0 0 2px #D0021B; border-color: #D0021B !important; }
 .chip.active { background: var(--red); color: #fff; border-color: var(--red); }
 
+/* Encabezado de RUBRO (hoy solo Calzado; Indumentaria y Accesorios en breve) */
+.rubro-bar {
+  background: var(--white); border-bottom: 1px solid var(--gray-200);
+  padding: 10px 1.5rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.rubro-label {
+  font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--gray-400);
+}
+.rubro-chip {
+  font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase; padding: 5px 16px; border-radius: 3px;
+  border: 1px solid var(--gray-200); color: var(--gray-400); background: var(--gray-100);
+}
+.rubro-chip.active { background: var(--navy); color: #fff; border-color: var(--navy); }
+.rubro-chip.soon { border-style: dashed; font-weight: 600; }
+.rubro-chip.soon small { font-size: 10px; letter-spacing: 0.06em; opacity: .8; text-transform: none; }
+
 .legend-bar {
   background: var(--white); border-bottom: 1px solid var(--gray-200);
   padding: 7px 1.5rem; display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center;
@@ -239,6 +257,16 @@ body { font-family: 'Barlow', sans-serif; background: var(--gray-100); color: va
   </div>
   <div class="header-sub">ASIGNACIÓN DE MARCAS</div>
 </div>
+
+<!-- Encabezado de RUBRO: la asignación cargada corresponde a CALZADO.
+     Cuando existan las de Indumentaria y Accesorios, pasan a ser selectores. -->
+<div class="rubro-bar">
+  <span class="rubro-label">Rubro</span>
+  <span class="rubro-chip active">Calzado</span>
+  <span class="rubro-chip soon">Indumentaria <small>· próximamente</small></span>
+  <span class="rubro-chip soon">Accesorios <small>· próximamente</small></span>
+</div>
+
 <div class="toolbar">
   <div style="display:flex;align-items:center;gap:6px;">
     <span class="tlabel">Canal</span>
@@ -483,7 +511,10 @@ let SESSION = null;
 (function(){
   try{
     SESSION = JSON.parse(localStorage.getItem('mateu_portal_session')||'null');
-    if(!SESSION || !(SESSION.herramientas||[]).includes('marcas')) location.href='../';
+    // Sucursales y outlets siempre pueden entrar (ven solo SU asignación);
+    // el resto necesita tener 'marcas' entre sus herramientas.
+    const esSucursalOOutlet = SESSION && (SESSION.rol==='sucursal' || SESSION.rol==='outlet');
+    if(!SESSION || (!esSucursalOOutlet && !(SESSION.herramientas||[]).includes('marcas'))) location.href='../';
   }catch(e){ location.href='../'; }
 })();
 const FB_URL = 'https://asignacion-marcas-mateu-default-rtdb.firebaseio.com/asignacion_marcas.json';

@@ -269,6 +269,14 @@ function esSettingsAdmin(session){
   return !!session && session.rol==='admin' && (session.email||'').toLowerCase()===ADMIN_SETTINGS_EMAIL;
 }
 
+// Sucursales y outlets siempre ven Asignación de Marcas (dentro del módulo
+// cada una ve solo SU asignación), sin depender de cargarlo usuario por usuario.
+function herramientasEfectivas(rol, herramientas){
+  const h = (herramientas||[]).slice();
+  if((rol==='sucursal' || rol==='outlet') && !h.includes('marcas')) h.push('marcas');
+  return h;
+}
+
 function showLogin(){ $('login').style.display='flex'; $('app').style.display='none'; $('p').value=''; }
 function showApp(){ $('login').style.display='none'; $('app').style.display='block'; }
 function showLoginErr(){ $('loginErr').classList.add('show'); }
@@ -288,7 +296,7 @@ async function login(){
       if(u && u.email && u.email.toLowerCase() === email){ found = u; break; }
     }
     if(!found || String(found.pin) !== pin){ showLoginErr(); btn.disabled=false; btn.textContent='Entrar'; return; }
-    const session = { email:found.email, rol:found.rol, herramientas:found.herramientas||[], sucursal:found.sucursal||null, outlet_id:found.outlet_id||null };
+    const session = { email:found.email, rol:found.rol, herramientas:herramientasEfectivas(found.rol, found.herramientas), sucursal:found.sucursal||null, outlet_id:found.outlet_id||null };
     saveSession(session);
     render(session);
   } catch(e){
@@ -437,7 +445,12 @@ $('backToDashboard').addEventListener('click', closeSettings);
 // Al cargar: si hay sesión válida, entrar directo
 (function init(){
   const s = readSession();
-  if(s && s.email) render(s); else showLogin();
+  if(s && s.email){
+    // Normaliza sesiones ya guardadas (usuarios que quedaron logueados antes de este cambio)
+    s.herramientas = herramientasEfectivas(s.rol, s.herramientas);
+    saveSession(s);
+    render(s);
+  } else showLogin();
 })();
 </script>
 </body>
