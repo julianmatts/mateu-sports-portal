@@ -590,8 +590,6 @@ function construirRubroCard(rubro, lineas, limite, tipoCfg, destinoId, soloLectu
         '</tbody></table>'
         : '<div class="hint">Sin líneas cargadas.</div>')+
       (puedeAgregar? '<button class="btn-add-rubro" data-add-rubro="'+esc(rubro)+'">+ Agregar línea</button>':'')+
-      (puedeAgregar && tipoCfg.importaExcel? '<button class="btn-add-rubro" data-import-rubro="'+esc(rubro)+'" style="margin-left:8px">⬆ Importar Excel</button>'+
-        '<button class="btn-add-rubro" data-plantilla style="margin-left:8px">⬇ Descargar planilla</button>':'')+
     '</div></div>';
 }
 
@@ -653,11 +651,15 @@ async function renderVistaSucursal(){
       ? '<div class="info-box"><b>Ruge:</b> para Mateu Sports y Outlet, el pedido de la marca Ruge corresponde hacerlo directo a deposito por mail o telefono, porque generalmente hay reserva en deposito.</div>'
       : '')+
     (tipoCfg.importaExcel && !soloLectura
-      ? '<div class="info-box"><b>Importar Excel:</b> con Descargar planilla bajás el F8 vacío, lo completás y lo subís con Importar Excel en el rubro que corresponda. También sirve cualquier archivo con el formato F8 que exporta Producto. Se importan hasta completar el límite de líneas del rubro.</div>'
+      ? '<div class="info-box"><b>Importar Excel:</b> con Descargar planilla bajás la planilla vacía (ORIGEN, CÓDIGO, ARTÍCULO, DESCRIPCIÓN y RUBRO), la completás y la subís con Importar Excel. También sirve el F8 que exporta Producto (como no tiene columna RUBRO, esas líneas entran a Calzado). Se importa hasta completar el límite de líneas de cada rubro.</div>'
       : '');
-  $('view-tab').innerHTML = headerHtml(tipoCfg.label, sub, accion)+aclaraciones+
-    RUBROS.map(r=> construirRubroCard(r, porRubro[r], limites[rubroKey(r)] ?? 20, tipoCfg, destinoId, soloLectura)).join('')+
-    (tipoCfg.importaExcel && !soloLectura ? '<input type="file" id="inpImportF8" accept=".xlsx,.xls,.xlsm" style="display:none">' : '');
+  const barraImportar = tipoCfg.importaExcel && !soloLectura
+    ? '<div class="filtros-bar"><button class="btn-masivo" id="btnImportarExcel">⬆ Importar Excel</button>'+
+      '<button class="btn-masivo" id="btnDescargarPlantilla">⬇ Descargar planilla</button>'+
+      '<input type="file" id="inpImportF8" accept=".xlsx,.xls,.xlsm" style="display:none"></div>'
+    : '';
+  $('view-tab').innerHTML = headerHtml(tipoCfg.label, sub, accion)+aclaraciones+barraImportar+
+    RUBROS.map(r=> construirRubroCard(r, porRubro[r], limites[rubroKey(r)] ?? 20, tipoCfg, destinoId, soloLectura)).join('');
 
   bindVistaSucursalEvents(tipoCfg, destinoId);
 }
@@ -682,20 +684,12 @@ function bindVistaSucursalEvents(tipoCfg, destinoId){
 
   const inpImport = $('inpImportF8');
   if(inpImport){
-    $('view-tab').querySelectorAll('[data-import-rubro]').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        inpImport.dataset.rubro = btn.dataset.importRubro;
-        inpImport.value = '';
-        inpImport.click();
-      });
-    });
+    $('btnImportarExcel').addEventListener('click', ()=>{ inpImport.value = ''; inpImport.click(); });
     inpImport.addEventListener('change', ()=>{
       const file = inpImport.files && inpImport.files[0];
-      if(file) importarExcelF8(file, inpImport.dataset.rubro, tipoCfg, destinoId);
+      if(file) importarExcelF8(file, tipoCfg, destinoId);
     });
-    $('view-tab').querySelectorAll('[data-plantilla]').forEach(btn=>{
-      btn.addEventListener('click', ()=> descargarPlantillaF8(destinoId));
-    });
+    $('btnDescargarPlantilla').addEventListener('click', ()=> descargarPlantillaF8(destinoId));
   }
 }
 
@@ -787,10 +781,11 @@ async function enviarPedido(tipoCfg, destinoId){
 }
 
 /* ============================================================
-   IMPORTAR EXCEL (formato F8) — la sucursal carga su pedido
-   desde un archivo con el mismo formato que exporta Producto
-   (encabezados ORIGEN / CÓDIGO / ARTÍCULO / DESCRIPCIÓN en B:E).
-   Las filas van al rubro elegido, hasta completar su límite.
+   IMPORTAR EXCEL — la sucursal carga todo su pedido desde un
+   archivo con encabezados ORIGEN / CÓDIGO / ARTÍCULO /
+   DESCRIPCIÓN en B:E. Si el archivo tiene columna RUBRO (la
+   planilla descargable la trae), cada fila va a su rubro; si no
+   (F8 de Producto), van a Calzado. Respeta el límite por rubro.
    ============================================================ */
 function normalizarNombre(v){
   return String(v||'').normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]','g'),'').trim().toLowerCase();
@@ -803,10 +798,14 @@ function origenIdDesdeNombre(nombre){
   return suc ? suc.id : '';
 }
 function extraerFilasF8(sheetRows){
-  let headerIdx = -1;
+  let headerIdx = -1, rubroCol = -1;
   for(let i=0; i<sheetRows.length; i++){
     const r = sheetRows[i] || [];
-    if(normalizarNombre(r[1])==='origen' && normalizarNombre(r[2])==='codigo'){ headerIdx = i; break; }
+    if(normalizarNombre(r[1])==='origen' && normalizarNombre(r[2])==='codigo'){
+      headerIdx = i;
+      rubroCol = r.findIndex(c=> normalizarNombre(c)==='rubro');
+      break;
+    }
   }
   if(headerIdx === -1) return null;
   const filas = [];
@@ -816,11 +815,13 @@ function extraerFilasF8(sheetRows){
     const articulo = String(r[3] ?? '').trim();
     const descripcion = String(r[4] ?? '').trim();
     if(!codigo && !articulo && !descripcion) continue;
-    filas.push({origen: origenIdDesdeNombre(r[1]), codigo, articulo, descripcion});
+    const rubroTxt = rubroCol >= 0 ? normalizarNombre(r[rubroCol]) : '';
+    const rubro = RUBROS.find(x=> normalizarNombre(x) === rubroTxt) || RUBROS[0];
+    filas.push({origen: origenIdDesdeNombre(r[1]), codigo, articulo, descripcion, rubro});
   }
   return filas;
 }
-async function importarExcelF8(file, rubro, tipoCfg, destinoId){
+async function importarExcelF8(file, tipoCfg, destinoId){
   if(typeof XLSX === 'undefined'){ alert('No se pudo cargar la librería de Excel. Revisá la conexión.'); return; }
   if(!semanaVigenteEditable() || SEMANA_META.estado === 'cerrada'){
     alert('El plazo de carga de esta semana ya cerró.');
@@ -838,7 +839,7 @@ async function importarExcelF8(file, rubro, tipoCfg, destinoId){
     return;
   }
   if(filas === null){
-    alert('El archivo no tiene el formato F8: no se encontró la fila de encabezados ORIGEN / CÓDIGO / ARTÍCULO / DESCRIPCIÓN.');
+    alert('El archivo no tiene el formato esperado: no se encontró la fila de encabezados ORIGEN / CÓDIGO / ARTÍCULO / DESCRIPCIÓN.');
     return;
   }
   if(!filas.length){ alert('El archivo no tiene líneas para importar.'); return; }
@@ -847,25 +848,33 @@ async function importarExcelF8(file, rubro, tipoCfg, destinoId){
   const pedido = CACHE_SUCURSAL[cKey] = CACHE_SUCURSAL[cKey] || {estado:'borrador', lineas:{}};
   pedido.lineas = pedido.lineas || {};
   const limites = limitesParaSucursal(CONFIG_LIMITES, destinoId);
-  const limite = limites[rubroKey(rubro)] ?? 20;
-  const actuales = Object.keys(pedido.lineas).filter(id=>{
+  // cupo disponible por rubro = límite - líneas ya cargadas
+  const usadas = {}; RUBROS.forEach(r=> usadas[r] = 0);
+  Object.keys(pedido.lineas).forEach(id=>{
     const r = pedido.lineas[id].rubro;
-    return (RUBROS.includes(r) ? r : RUBROS[0]) === rubro;
-  }).length;
-  const cupo = Math.max(0, limite - actuales);
-  if(!cupo){ alert('Ya está usado el límite de '+limite+' líneas de '+rubro+'.'); return; }
-  const omitidas = Math.max(0, filas.length - cupo);
-  const aImportar = filas.slice(0, cupo);
+    usadas[RUBROS.includes(r) ? r : RUBROS[0]]++;
+  });
 
   const ahora = Date.now();
   const nuevas = {};
-  aImportar.forEach((f, i)=>{
+  const importadas = {}; RUBROS.forEach(r=> importadas[r] = 0);
+  let omitidas = 0, orden = 0;
+  filas.forEach(f=>{
+    const limite = limites[rubroKey(f.rubro)] ?? 20;
+    if(usadas[f.rubro] + importadas[f.rubro] >= limite){ omitidas++; return; }
+    importadas[f.rubro]++;
     nuevas[generarPushKey()] = {
-      rubro, estado:'pendiente', creadaAt: ahora + i,
+      rubro: f.rubro, estado:'pendiente', creadaAt: ahora + (orden++),
       marca:'', codigo:f.codigo, articulo:f.articulo, descripcion:f.descripcion,
       comentarioSucursal:'', origen:f.origen,
     };
   });
+  const total = orden;
+  if(!total){
+    alert('No se importó ninguna línea: los rubros del archivo ya están en su límite.');
+    return;
+  }
+
   const estadoPedido = pedido.estado === 'enviado' ? 'enviado' : 'borrador';
   pedido.estado = estadoPedido;
   Object.assign(pedido.lineas, nuevas);
@@ -873,8 +882,9 @@ async function importarExcelF8(file, rubro, tipoCfg, destinoId){
   try{
     await patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'.json', {estado:estadoPedido});
     await patchJSON(FB+'/semanas/'+SEMANA_SEL+'/'+tipoCfg.node+'/'+destinoId+'/lineas.json', nuevas);
-    alert('Se importaron '+aImportar.length+' líneas a '+rubro+'.'+
-      (omitidas ? ' Se omitieron '+omitidas+' filas por superar el límite de '+limite+' líneas.' : ''));
+    const detalle = RUBROS.filter(r=>importadas[r]).map(r=> importadas[r]+' a '+r).join(', ');
+    alert('Se importaron '+total+' líneas ('+detalle+').'+
+      (omitidas ? (omitidas===1? ' Se omitió 1 fila' : ' Se omitieron '+omitidas+' filas')+' por superar el límite del rubro.' : ''));
   }catch(e){
     Object.keys(nuevas).forEach(id=> delete pedido.lineas[id]);
     alert('No se pudo guardar la importación. Revisá la conexión e intentá de nuevo.');
@@ -882,20 +892,69 @@ async function importarExcelF8(file, rubro, tipoCfg, destinoId){
   }
 }
 
-// Planilla F8 vacía para que la sucursal la complete y después la importe.
+// Planilla vacía para que la sucursal la complete y después la importe.
+// Mismo bloque izquierdo del F8 más la columna RUBRO con desplegable.
+const PLANTILLA_HEADERS = ['ORIGEN','CÓDIGO','ARTÍCULO','DESCRIPCIÓN','RUBRO'];
 function nombreArchivoPlantilla(destinoId){
   const suc = SUCURSAL_BY_ID[destinoId];
   return 'Planilla Pedidos '+((suc&&suc.nombre)||destinoId)+' '+fmtFechaCorta(SEMANA_SEL).replace(/\./g,'-')+'.xlsx';
 }
 async function descargarPlantillaF8(destinoId){
-  if(typeof ExcelJS !== 'undefined'){
-    await exportarF8ExcelJS([], nombreArchivoPlantilla(destinoId));
+  const nombre = nombreArchivoPlantilla(destinoId);
+  const sucNombre = (SUCURSAL_BY_ID[destinoId]&&SUCURSAL_BY_ID[destinoId].nombre) || '';
+  if(typeof ExcelJS === 'undefined'){
+    if(typeof XLSX === 'undefined'){ alert('No se pudo cargar la librería de Excel. Revisá la conexión.'); return; }
+    const rows = [[],[],[],[],[],[],[],[],['', ...PLANTILLA_HEADERS]];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:2},{wch:22},{wch:13},{wch:18},{wch:66},{wch:16}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Pedido');
+    XLSX.writeFile(wb, nombre);
     return;
   }
-  if(typeof XLSX === 'undefined'){ alert('No se pudo cargar la librería de Excel. Revisá la conexión.'); return; }
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, crearHojaF8([]), 'F8');
-  XLSX.writeFile(wb, nombreArchivoPlantilla(destinoId));
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Mateu Sports';
+  wb.created = new Date();
+  const ws = wb.addWorksheet('Pedido', {views:[{state:'frozen', ySplit:9}]});
+  ws.columns = [2,22,13,18,66,16].map(w=>({width:w}));
+  [6.75,9.75,20,18,18,18,18,18,20].forEach((h,idx)=>{ ws.getRow(idx+1).height = h; });
+  ws.mergeCells('B3:C8');
+  ws.mergeCells('D3:F8');
+
+  const base = {font:excelFont(F8_STYLE.text,false,10), alignment:{vertical:'middle'}, border:excelBorder()};
+  const title = {
+    font:excelFont(F8_STYLE.navy,true,22,'Bebas Neue'),
+    fill:excelFill(F8_STYLE.white),
+    alignment:{horizontal:'center', vertical:'middle', wrapText:true},
+    border:{top:{style:'thick',color:{argb:'FF'+F8_STYLE.red}},bottom:{style:'thick',color:{argb:'FF'+F8_STYLE.navy}},left:{style:'thin',color:{argb:'FF'+F8_STYLE.border}},right:{style:'thin',color:{argb:'FF'+F8_STYLE.border}}}
+  };
+  const header = {
+    font:excelFont(F8_STYLE.white,true,11,'Barlow Condensed'),
+    fill:excelFill(F8_STYLE.navy),
+    alignment:{horizontal:'center', vertical:'middle'},
+    border:{top:{style:'thin',color:{argb:'FF'+F8_STYLE.navy}},bottom:{style:'medium',color:{argb:'FF'+F8_STYLE.red}},left:{style:'thin',color:{argb:'FF'+F8_STYLE.navy}},right:{style:'thin',color:{argb:'FF'+F8_STYLE.navy}}}
+  };
+  styleExcelRange(ws, 1, 1, 60, 6, base);
+  styleExcelRange(ws, 3, 2, 8, 3, {fill:excelFill(F8_STYLE.white), border:excelBorder(F8_STYLE.navy), alignment:{horizontal:'center', vertical:'middle'}});
+  styleExcelRange(ws, 3, 4, 8, 6, title);
+  styleExcelRange(ws, 9, 2, 9, 6, header);
+
+  if(F8_LOGO_PNG){
+    const logoId = wb.addImage({base64:F8_LOGO_PNG, extension:'png'});
+    ws.addImage(logoId, {tl:{col:1.2,row:2.35}, ext:{width:170,height:54}});
+  } else {
+    ws.getCell('B3').value = 'MATEU SPORTS';
+    ws.getCell('B3').font = excelFont(F8_STYLE.navy, true, 20, 'Bebas Neue');
+  }
+  ws.getCell('D3').value = 'PEDIDO\n'+(sucNombre? sucNombre+' — ':'')+'Semana '+fmtFechaCorta(SEMANA_SEL);
+  ws.getCell('D3').style = title;
+  PLANTILLA_HEADERS.forEach((v,i)=> ws.getCell(9, i+2).value = v);
+  for(let r=10; r<=60; r++){
+    ws.getCell(r,6).dataValidation = {type:'list', allowBlank:true, formulae:['"'+RUBROS.join(',')+'"']};
+  }
+
+  const buffer = await wb.xlsx.writeBuffer();
+  descargarBufferXlsx(buffer, nombre);
 }
 
 /* ============================================================
@@ -1336,7 +1395,7 @@ function descargarBufferXlsx(buffer, filename){
   URL.revokeObjectURL(url);
 }
 
-async function exportarF8ExcelJS(lineas, nombreArchivo){
+async function exportarF8ExcelJS(lineas){
   detectarDuplicados(lineas.map(item=>item.linea));
 
   const wb = new ExcelJS.Workbook();
@@ -1424,7 +1483,7 @@ async function exportarF8ExcelJS(lineas, nombreArchivo){
   });
 
   const buffer = await wb.xlsx.writeBuffer();
-  descargarBufferXlsx(buffer, nombreArchivo || 'F8 Pedidos Semanales '+fmtFechaCorta(SEMANA_SEL).replace(/\./g,'-')+'.xlsx');
+  descargarBufferXlsx(buffer, 'F8 Pedidos Semanales '+fmtFechaCorta(SEMANA_SEL).replace(/\./g,'-')+'.xlsx');
 }
 
 async function exportarConsolidadoSemana(){
