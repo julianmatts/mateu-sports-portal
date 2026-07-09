@@ -615,6 +615,11 @@ function tagCls(t) {
   return '';
 }
 
+// En Aurelius la disciplina es siempre Casual, así que el detalle por marca son "Modelos"
+function labelDetalle(suc) {
+  return suc.cat === 'aurelius' ? 'Modelos' : 'Disciplinas';
+}
+
 function renderCard(suc) {
   const catMap = {cat1:'cat1',cat2:'cat2',aurelius:'aurelius-card',adidas:'adidas-card',outlet:''};
   let cardCls = catMap[suc.cat] || '';
@@ -665,7 +670,7 @@ function renderCard(suc) {
       <div class="suc-header-left">
         ${logoObj ? `<div class="canal-logo-wrap">${logoObj}</div>` : ''}
         <span class="suc-name">${suc.nombre}</span>
-        <button class="detail-btn" onclick="openSucDetail('${suc.id}')">Disciplinas ▸</button>
+        <button class="detail-btn" onclick="openSucDetail('${suc.id}')">${labelDetalle(suc)} ▸</button>
       </div>
       ${badge}
     </div>
@@ -852,7 +857,7 @@ function openSucDetail(sucId) {
   currentDetailSucId = sucId;
   const suc = findSuc(sucId);
   if (!suc) return;
-  document.getElementById('modalDetalleTitle').textContent = `Disciplinas — ${suc.nombre}`;
+  document.getElementById('modalDetalleTitle').textContent = `${labelDetalle(suc)} — ${suc.nombre}`;
   renderSucDetalleBody();
   document.getElementById('modalDetalle').classList.add('show');
 }
@@ -865,12 +870,13 @@ function renderSucDetalleBody() {
     body.innerHTML = '<p class="disc-empty">Esta sucursal no tiene marcas asignadas todavía.</p>';
     return;
   }
+  const esAurelius = suc.cat === 'aurelius';
   let html = '';
   suc.brands.forEach((b, i) => {
     html += `<div class="modal-sec">${escapeHtml(b.n)}</div><div class="modal-brands">`;
     const disciplinas = b.d || [];
     if (!disciplinas.length && !editMode) {
-      html += `<span style="font-size:12px;color:var(--gray-400);">Sin disciplinas asignadas</span>`;
+      html += `<span style="font-size:12px;color:var(--gray-400);">${esAurelius ? 'Sin modelos asignados' : 'Sin disciplinas asignadas'}</span>`;
     }
     disciplinas.forEach((d, di) => {
       html += editMode
@@ -880,7 +886,7 @@ function renderSucDetalleBody() {
     html += '</div>';
     if (editMode) {
       html += `<div class="add-row show" style="margin-top:4px;margin-bottom:10px;">
-        <input type="text" class="disc-input" data-idx="${i}" placeholder="+ disciplina" onkeydown="if(event.key==='Enter'){addDisciplina(${i}, this)}">
+        <input type="text" class="disc-input" data-idx="${i}" placeholder="${esAurelius ? '+ modelo' : '+ disciplina'}" onkeydown="if(event.key==='Enter'){addDisciplina(${i}, this)}">
       </div>`;
     }
   });
