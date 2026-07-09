@@ -590,7 +590,8 @@ function construirRubroCard(rubro, lineas, limite, tipoCfg, destinoId, soloLectu
         '</tbody></table>'
         : '<div class="hint">Sin líneas cargadas.</div>')+
       (puedeAgregar? '<button class="btn-add-rubro" data-add-rubro="'+esc(rubro)+'">+ Agregar línea</button>':'')+
-      (puedeAgregar && tipoCfg.importaExcel? '<button class="btn-add-rubro" data-import-rubro="'+esc(rubro)+'" style="margin-left:8px">⬆ Importar Excel</button>':'')+
+      (puedeAgregar && tipoCfg.importaExcel? '<button class="btn-add-rubro" data-import-rubro="'+esc(rubro)+'" style="margin-left:8px">⬆ Importar Excel</button>'+
+        '<button class="btn-add-rubro" data-plantilla style="margin-left:8px">⬇ Descargar planilla</button>':'')+
     '</div></div>';
 }
 
@@ -652,7 +653,7 @@ async function renderVistaSucursal(){
       ? '<div class="info-box"><b>Ruge:</b> para Mateu Sports y Outlet, el pedido de la marca Ruge corresponde hacerlo directo a deposito por mail o telefono, porque generalmente hay reserva en deposito.</div>'
       : '')+
     (tipoCfg.importaExcel && !soloLectura
-      ? '<div class="info-box"><b>Importar Excel:</b> con el botón Importar Excel de cada rubro podés cargar las líneas desde un archivo con el formato F8 (el mismo que exporta Producto). Se importan hasta completar el límite de líneas del rubro.</div>'
+      ? '<div class="info-box"><b>Importar Excel:</b> con Descargar planilla bajás el F8 vacío, lo completás y lo subís con Importar Excel en el rubro que corresponda. También sirve cualquier archivo con el formato F8 que exporta Producto. Se importan hasta completar el límite de líneas del rubro.</div>'
       : '');
   $('view-tab').innerHTML = headerHtml(tipoCfg.label, sub, accion)+aclaraciones+
     RUBROS.map(r=> construirRubroCard(r, porRubro[r], limites[rubroKey(r)] ?? 20, tipoCfg, destinoId, soloLectura)).join('')+
@@ -691,6 +692,9 @@ function bindVistaSucursalEvents(tipoCfg, destinoId){
     inpImport.addEventListener('change', ()=>{
       const file = inpImport.files && inpImport.files[0];
       if(file) importarExcelF8(file, inpImport.dataset.rubro, tipoCfg, destinoId);
+    });
+    $('view-tab').querySelectorAll('[data-plantilla]').forEach(btn=>{
+      btn.addEventListener('click', ()=> descargarPlantillaF8(destinoId));
     });
   }
 }
@@ -876,6 +880,22 @@ async function importarExcelF8(file, rubro, tipoCfg, destinoId){
     alert('No se pudo guardar la importación. Revisá la conexión e intentá de nuevo.');
     renderVistaSucursal();
   }
+}
+
+// Planilla F8 vacía para que la sucursal la complete y después la importe.
+function nombreArchivoPlantilla(destinoId){
+  const suc = SUCURSAL_BY_ID[destinoId];
+  return 'Planilla Pedidos '+((suc&&suc.nombre)||destinoId)+' '+fmtFechaCorta(SEMANA_SEL).replace(/\./g,'-')+'.xlsx';
+}
+async function descargarPlantillaF8(destinoId){
+  if(typeof ExcelJS !== 'undefined'){
+    await exportarF8ExcelJS([], nombreArchivoPlantilla(destinoId));
+    return;
+  }
+  if(typeof XLSX === 'undefined'){ alert('No se pudo cargar la librería de Excel. Revisá la conexión.'); return; }
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, crearHojaF8([]), 'F8');
+  XLSX.writeFile(wb, nombreArchivoPlantilla(destinoId));
 }
 
 /* ============================================================
@@ -1316,7 +1336,7 @@ function descargarBufferXlsx(buffer, filename){
   URL.revokeObjectURL(url);
 }
 
-async function exportarF8ExcelJS(lineas){
+async function exportarF8ExcelJS(lineas, nombreArchivo){
   detectarDuplicados(lineas.map(item=>item.linea));
 
   const wb = new ExcelJS.Workbook();
@@ -1404,7 +1424,7 @@ async function exportarF8ExcelJS(lineas){
   });
 
   const buffer = await wb.xlsx.writeBuffer();
-  descargarBufferXlsx(buffer, 'F8 Pedidos Semanales '+fmtFechaCorta(SEMANA_SEL).replace(/\./g,'-')+'.xlsx');
+  descargarBufferXlsx(buffer, nombreArchivo || 'F8 Pedidos Semanales '+fmtFechaCorta(SEMANA_SEL).replace(/\./g,'-')+'.xlsx');
 }
 
 async function exportarConsolidadoSemana(){
