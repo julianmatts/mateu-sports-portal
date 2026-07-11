@@ -151,6 +151,50 @@ table.grid tr.total td.num{ color:#fff; }
 
 <div class="wrap">
 
+  <!-- INSTRUCTIVO -->
+  <details class="step" id="ayuda" open>
+    <summary class="step-hd" style="cursor:pointer; list-style:none;">
+      <div class="step-num">i</div>
+      <h2>Cómo se usa <span class="sub">— qué Excel subir y el paso a paso del mes</span></h2>
+      <span class="badge-ok" style="margin-left:auto; background:#eef4ff; color:#204a8a;">ABRIR / CERRAR</span>
+    </summary>
+    <div class="step-bd">
+      <div class="banner info"><span class="ic">📄</span><span>El módulo lee el <b>export de ventas del mes</b> (crudo, una fila por artículo), <b>no</b> la liquidación ya armada. Detecta las columnas por el nombre del encabezado (en cualquier orden); si no reconoce alguna, te la pide a mano. Acepta <b>.xlsx / .xls</b> y toma la <b>primera hoja</b>. Todos los importes van <b>sin IVA</b>, tal cual vienen.</span></div>
+
+      <div class="acc-grid" style="margin-top:12px">
+        <div class="acc-card">
+          <h3>② Ventas Mateu (retail)</h3>
+          <div class="acc-sub" style="margin:6px 0 8px">Export mensual de ventas de las sucursales Mateu.</div>
+          <div style="font-size:12.5px; line-height:1.6">
+            <b>Obligatorias:</b> RUBRO · GRUPO 2 · GRUPO 3 · LISTA PRECIOS · ARTÍCULO · CANTIDAD · IMPORTE<br>
+            <span class="muted">Ayudan (opcionales): GRUPO 1 · COD BARRAS</span>
+          </div>
+        </div>
+        <div class="acc-card">
+          <h3>③ Ventas Mayorista <span class="muted" style="font-weight:400">(opcional)</span></h3>
+          <div class="acc-sub" style="margin:6px 0 8px">Ventas del depósito a Superfútbol / Club Estudiantes. Si el mes no tuvo, saltealo.</div>
+          <div style="font-size:12.5px; line-height:1.6">
+            <b>Obligatorias:</b> RUBRO · ARTÍCULO · CANTIDAD · IMPORTE<br>
+            <span class="muted">Ayudan: CLIENTE · DÍA · NRO COMPROBANTE · COD BARRAS</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px; font-size:13px; line-height:1.7">
+        <b style="font-family:var(--font-c); letter-spacing:.5px">PASO A PASO DEL MES</b>
+        <ol style="margin:6px 0 0 18px">
+          <li>Elegí <b>Mes</b> y <b>Año</b> (paso ①).</li>
+          <li>Subí <b>Ventas Mateu</b> (② ) y, si hubo, <b>Ventas Mayorista</b> (③). Al cargar, revisá abajo del recuadro que las <b>columnas detectadas y los totales</b> (líneas, unidades, importe) den bien; si algo tomó mal, tocá <i>“Reasignar columnas”</i>.</li>
+          <li>Resolvé la <b>cola de revisión</b> (④): outlet/2da con toggle EDLP, SIN CLASIFICAR y el cartel de mayorista RUGE SE.</li>
+          <li><b>Solo la primera vez:</b> en el acumulador, sembrá el <b>carry-in</b> (unidades EDLP y RUGE SE ya acumuladas antes de este mes).</li>
+          <li>Tocá <b>Liquidar mes</b> (⑤) y mirá el consolidado + los semáforos del acumulador.</li>
+          <li>Descargá el <b>Excel</b> (⑥) y tocá <b>Guardar mes en el ledger</b> (así el acumulador avanza y la evolución mensual queda registrada).</li>
+          <li>Generá la <b>presentación .html</b> (⑦).</li>
+        </ol>
+      </div>
+    </div>
+  </details>
+
   <!-- ① MES / AÑO -->
   <section class="step">
     <div class="step-hd"><div class="step-num">1</div><h2>Período <span class="sub">— qué mes liquidás</span></h2></div>
@@ -173,7 +217,7 @@ table.grid tr.total td.num{ color:#fff; }
     <div class="step-bd">
       <div class="dz" id="dzMateu">
         <div class="big">Soltá acá el Excel de Ventas Mateu</div>
-        <div class="sm2">o hacé clic para elegirlo · RUBRO · GRUPO 1/2/3 · LISTA PRECIOS · ARTÍCULO · COD BARRAS · CANTIDAD · IMPORTE</div>
+        <div class="sm2">o hacé clic para elegirlo · Obligatorias: RUBRO · GRUPO 2 · GRUPO 3 · LISTA PRECIOS · ARTÍCULO · CANTIDAD · IMPORTE</div>
         <div class="file-info" id="infoMateu"></div>
       </div>
       <div id="mapMateu" class="hidden" style="margin-top:12px"></div>
@@ -186,7 +230,7 @@ table.grid tr.total td.num{ color:#fff; }
     <div class="step-bd">
       <div class="dz" id="dzMay">
         <div class="big">Soltá acá el Excel de Ventas Mayorista</div>
-        <div class="sm2">opcional · CLIENTE · DÍA · NRO COMPROBANTE · RUBRO · ARTÍCULO · COD BARRAS · CANTIDAD · IMPORTE</div>
+        <div class="sm2">opcional · Obligatorias: RUBRO · ARTÍCULO · CANTIDAD · IMPORTE</div>
         <div class="file-info" id="infoMay"></div>
       </div>
       <div id="mapMay" class="hidden" style="margin-top:12px"></div>
@@ -997,6 +1041,10 @@ function wireDropzone(dz, tipo){
   ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{ e.preventDefault(); dz.classList.remove('drag'); }));
   dz.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) procesarArchivo(f,tipo); });
 }
+// Contexto del último archivo cargado por tipo (para reabrir el mapeo a mano)
+const LAST = { mateu:null, may:null };
+const infoId = tipo => tipo==='mateu' ? 'infoMateu' : 'infoMay';
+
 async function procesarArchivo(file, tipo){
   try{
     const aoa=await leerLibro(file);
@@ -1005,39 +1053,62 @@ async function procesarArchivo(file, tipo){
     const campos = tipo==='mateu'?CAMPOS_MATEU:CAMPOS_MAY;
     const req = tipo==='mateu'?REQUERIDOS_MATEU:REQUERIDOS_MAY;
     const mapa=autoMapa(headers, campos);
+    LAST[tipo]={ aoa, hRow, headers, campos, req, nombre:file.name };
     const faltan=req.filter(c=>mapa[c]<0);
-    if(faltan.length){ renderMapeoManual(tipo, headers, campos, req, mapa, aoa, hRow, file.name); return; }
-    finalizarCarga(tipo, aoa, hRow, mapa, headers, file.name);
+    if(faltan.length){ renderMapeoManual(tipo, mapa, faltan); return; }
+    finalizarCarga(tipo, mapa);
   }catch(err){ toast('No pude leer el Excel: '+err.message); }
 }
-function finalizarCarga(tipo, aoa, hRow, mapa, headers, nombre){
+function finalizarCarga(tipo, mapa){
+  const ctx=LAST[tipo];
   if(tipo==='mateu'){
-    MATEU={ lines:construirLineasMateu(aoa,hRow,mapa), headers, mapa };
+    MATEU={ lines:construirLineasMateu(ctx.aoa,ctx.hRow,mapa), headers:ctx.headers, mapa };
     $('dzMateu').classList.add('loaded'); $('okMateu').classList.remove('hidden'); $('mapMateu').classList.add('hidden');
-    $('infoMateu').textContent=`✔ ${nombre} · ${MATEU.lines.length} líneas`;
   } else {
-    MAY={ lines:construirLineasMay(aoa,hRow,mapa), headers, mapa };
+    MAY={ lines:construirLineasMay(ctx.aoa,ctx.hRow,mapa), headers:ctx.headers, mapa };
     $('dzMay').classList.add('loaded'); $('okMay').classList.remove('hidden'); $('mapMay').classList.add('hidden');
-    $('infoMay').textContent=`✔ ${nombre} · ${MAY.lines.length} líneas`;
   }
+  $(infoId(tipo)).innerHTML=resumenCarga(tipo);
+  const btn=$(infoId(tipo)).querySelector('[data-remap]');
+  if(btn) btn.addEventListener('click', e=>{ e.stopPropagation(); abrirMapeo(tipo); });
   RESULT=null; renderRevision(); renderAcumulador();
   $('consolidado').innerHTML='<div class="empty">Tocá <b>Liquidar mes</b> para ver el consolidado.</div>';
 }
-function renderMapeoManual(tipo, headers, campos, req, mapa, aoa, hRow, nombre){
+// Resumen post-carga: totales + qué columna tomó cada campo (para confirmar que leyó bien)
+function resumenCarga(tipo){
+  const D=tipo==='mateu'?MATEU:MAY, ctx=LAST[tipo];
+  const totU=D.lines.reduce((s,l)=>s+Math.round(l.cant),0);
+  const totImp=D.lines.reduce((s,l)=>s+l.importe,0);
+  const cols=Object.keys(ctx.campos).filter(c=>D.mapa[c]>=0)
+    .map(c=>`${c}=<b>${esc(ctx.headers[D.mapa[c]]||'?')}</b>`).join(' · ');
+  return `<div>✔ ${esc(ctx.nombre)} · <b>${D.lines.length}</b> líneas · <b>${units(totU)}</b> u · <b>$${money(totImp)}</b></div>`+
+         `<div class="meta" style="margin-top:4px; white-space:normal; text-transform:none; letter-spacing:0">Columnas detectadas: ${cols}</div>`+
+         `<button class="btn ghost sm" data-remap="${tipo}" style="margin-top:8px">¿Tomó algo mal? Reasignar columnas</button>`;
+}
+// Abre el mapeo a mano (aunque la autodetección haya funcionado)
+function abrirMapeo(tipo){
+  const ctx=LAST[tipo]; if(!ctx) return;
+  const cur=(tipo==='mateu'?MATEU:MAY) ? (tipo==='mateu'?MATEU:MAY).mapa : autoMapa(ctx.headers,ctx.campos);
+  renderMapeoManual(tipo, cur, []);
+}
+function renderMapeoManual(tipo, mapa, faltan){
+  const ctx=LAST[tipo];
   const box=tipo==='mateu'?$('mapMateu'):$('mapMay');
-  const opts=idx=>headers.map((h,i)=>`<option value="${i}"${i===idx?' selected':''}>${esc(h||('col '+(i+1)))}</option>`).join('');
-  let h=`<div class="banner warn"><span class="ic">🔧</span><span>No reconocí todas las columnas de <b>${esc(nombre)}</b>. Asigná las que faltan y confirmá.</span></div>`;
-  h+='<div class="row">';
-  Object.keys(campos).forEach(c=>{
-    h+=`<div><label class="fld">${c}${req.includes(c)?' *':''}</label><select class="ctl" data-map="${c}"><option value="-1">— ninguna —</option>${opts(mapa[c])}</select></div>`;
+  const opts=idx=>ctx.headers.map((h,i)=>`<option value="${i}"${i===idx?' selected':''}>${esc(h||('col '+(i+1)))}</option>`).join('');
+  const msg = faltan.length
+    ? `No reconocí estas columnas de <b>${esc(ctx.nombre)}</b>: <b>${esc(faltan.join(', '))}</b>. Asignálas y confirmá.`
+    : `Revisá o cambiá la asignación de columnas de <b>${esc(ctx.nombre)}</b>. Elegí qué columna del Excel corresponde a cada campo.`;
+  let h=`<div class="banner warn"><span class="ic">🔧</span><span>${msg}</span></div><div class="row">`;
+  Object.keys(ctx.campos).forEach(c=>{
+    h+=`<div><label class="fld">${c}${ctx.req.includes(c)?' *':''}</label><select class="ctl" data-map="${c}"><option value="-1">— ninguna —</option>${opts(mapa[c])}</select></div>`;
   });
-  h+='</div><div style="margin-top:12px"><button class="btn sm" id="mapConfirm">Confirmar columnas</button></div>';
+  h+='</div><div style="margin-top:12px"><button class="btn sm" id="mapConfirm">Confirmar columnas</button> <span class="muted">* = obligatoria</span></div>';
   box.innerHTML=h; box.classList.remove('hidden');
   $('mapConfirm').addEventListener('click',()=>{
     const nm={}; box.querySelectorAll('[data-map]').forEach(s=>nm[s.dataset.map]=+s.value);
-    const faltan=req.filter(c=>nm[c]<0);
-    if(faltan.length){ toast('Faltan columnas obligatorias: '+faltan.join(', ')); return; }
-    finalizarCarga(tipo, aoa, hRow, nm, headers, nombre);
+    const falta=ctx.req.filter(c=>nm[c]<0);
+    if(falta.length){ toast('Faltan columnas obligatorias: '+falta.join(', ')); return; }
+    finalizarCarga(tipo, nm);
   });
 }
 
