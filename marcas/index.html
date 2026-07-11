@@ -161,6 +161,12 @@ body { font-family: 'Barlow', sans-serif; background: var(--gray-100); color: va
 .brand-tag.removable::after { content: '×'; position: absolute; right: 5px; top: 50%; transform: translateY(-50%); font-size: 13px; opacity: 0.5; }
 .brand-tag.removable:hover { opacity: 0.6; }
 
+/* Cobertura por marca (cruce con Meses de Stock) */
+.cob { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 8px; font-size: 10px; font-weight: 700;
+  background: rgba(255,255,255,.94); border: 1px solid currentColor; line-height: 15px; vertical-align: 1px; }
+.cob-legend { padding: 6px 36px; font-size: 11.5px; color: #7a786f; background: #faf9f6; border-bottom: 1px solid #e8e6df; }
+.cob-legend b { font-weight: 700; }
+
 .add-row { margin-top: 8px; display: none; gap: 5px; flex-wrap: wrap; }
 .add-row.show { display: flex; }
 .add-btn {
@@ -268,6 +274,8 @@ body { font-family: 'Barlow', sans-serif; background: var(--gray-100); color: va
   <span class="rubro-chip selectable" data-rubro="indumentaria" onclick="setRubro('indumentaria')">Indumentaria</span>
   <span class="rubro-chip soon">Accesorios <small>· próximamente</small></span>
 </div>
+<!-- Leyenda de cobertura (se muestra cuando cargan los datos de Meses de Stock) -->
+<div class="cob-legend" id="cobLegend" style="display:none"></div>
 
 <div class="toolbar">
   <div style="display:flex;align-items:center;gap:6px;">
@@ -744,7 +752,8 @@ function renderCard(suc) {
         onclick="removeBrand('${suc.id}','${b.n}')">${b.n}</span>`;
     } else {
       const matchCls = (brandFilter && b.n === brandFilter) ? ' match' : '';
-      brands += `<span class="brand-tag ${cls}${matchCls}">${b.n}</span>`;
+      const cob = cobBadge(suc.id, b.n);
+      brands += `<span class="brand-tag ${cls}${matchCls}"${cob.title ? ` title="${cob.title}"` : ''}>${b.n}${cob.badge}</span>`;
     }
   });
   brands += '</div>';
@@ -1132,6 +1141,101 @@ function dragDrop(e) {
 }
 
 
+/* ============================================================
+   COBERTURA — cruce con Meses de Stock (módulo Gestión de Stock).
+   Carga en diferido el dataset RATIO y muestra junto a cada marca
+   asignada su cobertura del último mes en esa sucursal, con el
+   mismo semáforo del panel Meses de Stock. Si el dataset no carga,
+   el módulo sigue funcionando igual, sin chips.
+   ============================================================ */
+// Tonos oscuros del semáforo (los chips van sobre fondo claro)
+const COB_SEMAFORO = {
+  faltante:{color:'#B45309', label:'Faltante'},
+  sano:{color:'#15803D', label:'Sano'},
+  exceso:{color:'#E11D2A', label:'Exceso'},
+  muerto:{color:'#7C3AED', label:'Stock muerto'}
+};
+// id de sucursal en este módulo -> código numérico con el que arranca
+// el nombre de la sucursal en el dataset RATIO (ej. "12-MS Calle 12")
+const COB_SUC_CODIGO = {
+  'ms-pi':'01','ms-kids':'02','out-55':'03','aur-c12':'04','ms-cb':'06','aur-c10':'07',
+  'ms-c47':'08','adi-7':'09','ms-d80':'10','ms-ens':'11','ms-c12':'12','ms-lh':'13',
+  'out-gon':'14','adi-ori':'15','ms-ber':'16','aur-cb':'17','aur-c5':'18','ms-c49':'19',
+  'out-44':'20','adi-c12':'21','ms-ecom':'99'
+};
+const COB_RUBRO_DATASET = { calzado:'CALZADO', indumentaria:'INDUMENTARIA' };
+let COB_DATA = null;      // window.STOCK_DATA una vez cargado
+let COB_SUC_KEY = null;   // código numérico -> clave de sucursal en el dataset
+const COB_INDEX = {};     // "claveDataset|RUBRO" -> { marcaNormalizada: nodo }
+
+function cobNorm(s){ return String(s).normalize('NFD').replace(/[̀-ͯ]/g,'').trim().toLowerCase(); }
+
+function cobCargar(){
+  const s = document.createElement('script');
+  s.src = '../gestion-stock/datos-meses-stock.js';
+  s.onload = () => {
+    if (!window.STOCK_DATA || !window.STOCK_DATA.sucursales) return;
+    COB_DATA = window.STOCK_DATA;
+    COB_SUC_KEY = {};
+    Object.keys(COB_DATA.sucursales).forEach(k => {
+      const m = k.match(/^(\d+)-/);
+      if (m) COB_SUC_KEY[m[1].padStart(2,'0')] = k;
+    });
+    const leg = document.getElementById('cobLegend');
+    if (leg) {
+      const mesLbl = COB_DATA.meses[COB_DATA.meses.length-1].toLowerCase();
+      leg.innerHTML = 'Cobertura de <b>'+mesLbl+'</b> junto a cada marca (Meses de Stock, rubro activo): '+
+        '<b style="color:#B45309">n.n faltante</b> · <b style="color:#15803D">n.n sano</b> · '+
+        '<b style="color:#E11D2A">n.n exceso</b> · <b style="color:#7C3AED">S/V sin venta</b>';
+      leg.style.display = '';
+    }
+    render();
+  };
+  s.onerror = () => {}; // sin datos de cobertura: no se muestran chips
+  document.head.appendChild(s);
+}
+
+// Cobertura del último mes para una marca en una sucursal (o null si no hay dato)
+function cobDe(sucId, marcaN){
+  if (!COB_DATA) return null;
+  const rubro = COB_RUBRO_DATASET[rubroActivo];
+  const code = COB_SUC_CODIGO[sucId];
+  const key = rubro && code && COB_SUC_KEY[code];
+  if (!key) return null;
+  const ik = key+'|'+rubro;
+  if (!COB_INDEX[ik]) {
+    const idx = {};
+    const rn = COB_DATA.sucursales[key].rubros && COB_DATA.sucursales[key].rubros[rubro];
+    if (rn && rn.marcas) Object.keys(rn.marcas).forEach(m => { if (m !== 'Total') idx[cobNorm(m)] = rn.marcas[m]; });
+    COB_INDEX[ik] = idx;
+  }
+  const node = COB_INDEX[ik][cobNorm(marcaN)];
+  if (!node || !node.serie) return null;
+  const mes = COB_DATA.meses[COB_DATA.meses.length-1];
+  const n = node.serie[mes];
+  if (!n) return null;
+  const th = (COB_DATA.thresholds||{})[rubro] || [1,3];
+  let st = null;
+  if (n.ventas == null || n.ventas <= 0) st = n.stock > 0 ? 'muerto' : null;
+  else if (n.ratio == null || n.ratio < 0) st = null;
+  else st = n.ratio < th[0] ? 'faltante' : (n.ratio <= th[1] ? 'sano' : 'exceso');
+  if (!st) return null;
+  return { st, ratio:n.ratio, stock:n.stock, ventas:n.ventas, mes, th };
+}
+
+// Chip + tooltip para el tag de una marca (vacíos si no hay dato)
+function cobBadge(sucId, marcaN){
+  const c = cobDe(sucId, marcaN);
+  if (!c) return { badge:'', title:'' };
+  const S = COB_SEMAFORO[c.st];
+  const mesLbl = c.mes.toLowerCase();
+  const txt = c.st === 'muerto' ? 'S/V' : c.ratio.toFixed(1);
+  const title = c.st === 'muerto'
+    ? 'Meses de Stock — '+mesLbl+': sin ventas con stock '+Math.round(c.stock)+' un. (stock muerto)'
+    : 'Meses de Stock — '+mesLbl+': '+c.ratio.toFixed(1)+' meses de cobertura · '+S.label+' (rango sano: '+c.th[0]+'–'+c.th[1]+') · Stock '+Math.round(c.stock)+' · Ventas '+Math.round(c.ventas)+' un.';
+  return { badge:'<span class="cob" style="color:'+S.color+'">'+txt+'</span>', title };
+}
+
 // Load from Firebase on start, then poll
 document.getElementById('content').innerHTML = '<div style="padding:3rem;text-align:center;color:#9a9890;font-family:Barlow Condensed,sans-serif;font-size:14px;letter-spacing:0.1em;text-transform:uppercase;">Cargando datos...</div>';
 applySessionUI();
@@ -1148,6 +1252,7 @@ fbGet().then(val => {
   render();
   setTimeout(pollFirebase, 5000);
 });
+cobCargar();
 
 </script>
 </body>
