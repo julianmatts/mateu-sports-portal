@@ -54,6 +54,20 @@ nav{background:#fff;border-bottom:1px solid var(--border);padding:0 28px;display
 .nav-tab.active{color:var(--red);border-bottom-color:var(--red)}
 
 main{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
+
+/* Comentarios del equipo (feedback desde Ubicaciones de Depósito) */
+.fbp-box{display:block}
+.fbp-tipo{font-family:var(--font-c);font-weight:700;letter-spacing:1px;text-transform:uppercase;
+  font-size:12px;margin:12px 0 6px;color:var(--navy)}
+.fbp-tipo span{color:var(--muted);font-weight:600;text-transform:none;letter-spacing:.3px}
+.fbp-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);
+  border-radius:6px;margin-bottom:5px;background:#fff;font-size:12.5px;flex-wrap:wrap}
+.fbp-n{font-family:var(--font-c);font-weight:700;color:var(--red);min-width:26px}
+.fbp-desc{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px}
+.fbp-quienes{margin-left:auto;font-size:11px;color:var(--muted-light)}
+.fbp-ok{border:1px solid var(--border);background:#fff;border-radius:5px;width:26px;height:26px;
+  color:var(--ok);font-size:13px;line-height:1}
+.fbp-ok:hover{border-color:var(--ok)}
 .view{display:none}
 .view.active{display:block}
 
@@ -216,6 +230,18 @@ main{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
    ============================================================ */
 const FB = 'https://pedidos-semanales-mateu-default-rtdb.firebaseio.com';
 const FB_MARCAS = 'https://asignacion-marcas-mateu-default-rtdb.firebaseio.com/asignacion_marcas.json';
+
+// Feedback del equipo cargado desde el Buscador de Artículos (/ubicaciones, base propia de ese módulo).
+// Copia de la lista de tipos de ubicaciones/index.html; mantenerlas iguales.
+const FB_UBICACIONES = 'https://ubicaciones-mateu-default-rtdb.firebaseio.com';
+const FEEDBACK_TIPOS = [
+  {id:'se-pide',       emoji:'🔥', label:'Se pide mucho',    grupo:'mas'},
+  {id:'faltan-talles', emoji:'📏', label:'Faltan talles',    grupo:'mas'},
+  {id:'piden-color',   emoji:'🎨', label:'Piden otro color', grupo:'mas'},
+  {id:'no-sale',       emoji:'🧊', label:'No se vende',      grupo:'menos'},
+  {id:'ven-caro',      emoji:'💲', label:'Lo ven caro',      grupo:'menos'},
+  {id:'con-fallas',    emoji:'⚠️', label:'Tiene fallas',     grupo:'menos'},
+];
 const SESSION_KEY = 'mateu_portal_session';
 
 const CONTROL_EMAILS = ['julian@mateu.com.ar','cristian.campion@mateu.com.ar','federico@mateu.com.ar','producto@mateu.com.ar'];
@@ -597,6 +623,68 @@ function construirRubroCard(rubro, lineas, limite, tipoCfg, destinoId, soloLectu
     '</div></div>';
 }
 
+/* ============================================================
+   COMENTARIOS DEL EQUIPO (feedback desde Ubicaciones de Depósito)
+   Pestaña Pedidos → grupo 'mas' · Menos Vendidos → grupo 'menos'.
+   Artículos ordenados por cantidad de comentarios, por tipo.
+   ============================================================ */
+const FEEDBACK_CACHE = {}; // destinoId -> {ts, data}
+async function feedbackUbicaciones(destinoId){
+  const c = FEEDBACK_CACHE[destinoId];
+  if(c && Date.now()-c.ts < 60000) return c.data;
+  let data = null;
+  try{ data = await fetchJSON(FB_UBICACIONES+'/sucursales/'+destinoId+'/feedback.json'); }catch(e){}
+  FEEDBACK_CACHE[destinoId] = {ts:Date.now(), data};
+  return data;
+}
+
+function feedbackPanelHtml(feedback, grupo){
+  if(!feedback) return '';
+  const secciones = FEEDBACK_TIPOS.filter(t=>t.grupo===grupo).map(t=>{
+    const arts = [];
+    Object.keys(feedback).forEach(k=>{
+      const fb = feedback[k]||{};
+      const items = Object.values(fb.items||{}).filter(i=>i.tipo===t.id);
+      if(items.length) arts.push({
+        key:k, codigo:fb.codigo||k, descripcion:fb.descripcion||'', n:items.length,
+        quienes:[...new Set(items.map(i=>i.por))].join(', '),
+      });
+    });
+    if(!arts.length) return '';
+    arts.sort((a,b)=>b.n-a.n);
+    return '<div class="fbp-tipo">'+t.emoji+' '+esc(t.label)+' <span>· '+arts.length+' artículo'+(arts.length===1?'':'s')+'</span></div>'+
+      arts.map(a=>
+        '<div class="fbp-row"><span class="fbp-n">'+a.n+'×</span><b>'+esc(a.codigo)+'</b>'+
+        '<span class="fbp-desc">'+esc(a.descripcion)+'</span>'+
+        '<span class="fbp-quienes">'+esc(a.quienes)+'</span>'+
+        '<button class="fbp-ok" data-fbart="'+esc(a.key)+'" data-fbtipo="'+t.id+'" title="Marcar como procesado (borra estos comentarios)">✓</button></div>'
+      ).join('');
+  }).join('');
+  if(!secciones.trim()) return '';
+  return '<div class="info-box fbp-box"><span class="obj">Comentarios del equipo</span> '+
+    'Feedback cargado por el equipo desde el <b>Buscador de Artículos</b>, ordenado por cantidad de comentarios. '+
+    'El ✓ marca el artículo como procesado y borra esos comentarios.'+secciones+'</div>';
+}
+
+async function fbProcesar(destinoId, artKey, tipoId){
+  const cache = FEEDBACK_CACHE[destinoId];
+  const node = cache && cache.data && cache.data[artKey];
+  if(!node || !node.items) return;
+  const ids = Object.keys(node.items).filter(id=>node.items[id].tipo===tipoId);
+  if(!ids.length) return;
+  const restantes = Object.keys(node.items).length - ids.length;
+  try{
+    if(restantes <= 0){
+      await deleteJSON(FB_UBICACIONES+'/sucursales/'+destinoId+'/feedback/'+encodeURIComponent(artKey)+'.json');
+      delete cache.data[artKey];
+    } else {
+      const patch = {}; ids.forEach(id=>{ patch[id]=null; delete node.items[id]; });
+      await patchJSON(FB_UBICACIONES+'/sucursales/'+destinoId+'/feedback/'+encodeURIComponent(artKey)+'/items.json', patch);
+    }
+  }catch(e){}
+  renderVistaSucursal();
+}
+
 async function renderVistaSucursal(){
   const tipoCfg = TIPOS[ACTIVE_TAB];
   const destinoId = miDestinoId(SESSION);
@@ -668,8 +756,20 @@ async function renderVistaSucursal(){
       '<button class="btn-masivo" id="btnDescargarPlantilla">⬇ Descargar planilla</button>'+
       '<input type="file" id="inpImportF8" accept=".xlsx,.xls,.xlsm" style="display:none"></div>'
     : '';
-  $('view-tab').innerHTML = headerHtml(tipoCfg.label, sub, accion)+aclaraciones+barraImportar+
+  // comentarios del equipo desde Ubicaciones de Depósito (según pestaña)
+  let fbPanel = '';
+  try{
+    const grupoFb = ACTIVE_TAB === 'menos-vendidos' ? 'menos' : 'mas';
+    fbPanel = feedbackPanelHtml(await feedbackUbicaciones(destinoId), grupoFb);
+  }catch(e){}
+
+  $('view-tab').innerHTML = headerHtml(tipoCfg.label, sub, accion)+aclaraciones+fbPanel+barraImportar+
     RUBROS.map(r=> construirRubroCard(r, porRubro[r], limites[rubroKey(r)] ?? 20, tipoCfg, destinoId, soloLectura)).join('');
+
+  $('view-tab').querySelectorAll('.fbp-ok').forEach(b=> b.addEventListener('click', ()=>{
+    if(!confirm('¿Marcar como procesado? Se borran esos comentarios del equipo.')) return;
+    fbProcesar(destinoId, b.dataset.fbart, b.dataset.fbtipo);
+  }));
 
   bindVistaSucursalEvents(tipoCfg, destinoId);
 }
