@@ -167,6 +167,31 @@ body { font-family: 'Barlow', sans-serif; background: var(--gray-100); color: va
 .cob-legend { padding: 6px 36px; font-size: 11.5px; color: #7a786f; background: #faf9f6; border-bottom: 1px solid #e8e6df; }
 .cob-legend b { font-weight: 700; }
 
+/* Sello "asignación actualizada" en la tarjeta */
+.suc-updated { margin-top: 7px; font-size: 11px; color: #8a6d00; background: #fff8e1; border: 1px solid #f0d060;
+  border-radius: 5px; padding: 3px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Modal ancho (historial / matriz) */
+.modal.wide { max-width: min(1150px, 94vw); }
+
+/* Historial de cambios */
+.hist-entry { border-bottom: 1px solid #f0efeb; padding: 8px 2px; }
+.hist-head { font-size: 11px; color: #7a786f; margin-bottom: 3px; text-transform: uppercase; letter-spacing: .04em; }
+.hist-row { font-size: 13px; padding: 2px 0; }
+.hist-dim { color: #9a9890; font-size: 11.5px; }
+
+/* Matriz marca × sucursal */
+.mtz-wrap { overflow: auto; max-height: 68vh; border: 1px solid #e0ded8; border-radius: 6px; }
+.mtz-table { border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.mtz-table th { position: sticky; top: 0; background: #faf9f6; z-index: 2; padding: 6px 7px; border-bottom: 1px solid #e0ded8;
+  font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: #5a5955; vertical-align: bottom; min-width: 46px; max-width: 82px; }
+.mtz-table td { padding: 4px 7px; border-bottom: 1px solid #f0efeb; text-align: center; background: #fff; }
+.mtz-table .mtz-marca { position: sticky; left: 0; text-align: left; font-weight: 600; border-right: 1px solid #e0ded8;
+  min-width: 130px; max-width: none; white-space: nowrap; z-index: 1; }
+.mtz-table th.mtz-marca { z-index: 3; background: #faf9f6; }
+.mtz-table td.mtz-marca { background: #fff; }
+.mtz-dot { display: inline-block; width: 13px; height: 13px; border-radius: 4px; cursor: default; }
+
 .add-row { margin-top: 8px; display: none; gap: 5px; flex-wrap: wrap; }
 .add-row.show { display: flex; }
 .add-btn {
@@ -295,6 +320,8 @@ body { font-family: 'Barlow', sans-serif; background: var(--gray-100); color: va
   </div>
   <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
     <span class="edit-badge" id="editBadge">Modo edición</span>
+    <button class="btn-hdr" id="btnMatriz" onclick="openMatriz()">Matriz</button>
+    <button class="btn-hdr" id="btnHistorial" onclick="openHistorial()">Historial</button>
     <button class="btn-hdr" id="btnNuevaMarca" onclick="openNuevaMarcaModal()" style="display:none;">+ Nueva marca</button>
     <button class="btn-hdr" id="btnEdit" onclick="toggleEdit()">Editar asignación</button>
     <button class="btn-hdr primary" id="btnSave" onclick="saveChanges()" style="display:none">Guardar</button>
@@ -312,6 +339,30 @@ body { font-family: 'Barlow', sans-serif; background: var(--gray-100); color: va
 </div>
 
 <div class="content" id="content"></div>
+
+<!-- Modal historial de cambios (solo admins) -->
+<div class="modal-overlay" id="modalHistorial" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal wide" onclick="event.stopPropagation()">
+    <div class="modal-title">Historial de cambios</div>
+    <input class="disc-input" id="histSearch" placeholder="Filtrar por sucursal, marca o email…" oninput="renderHistorialBody()" style="width:100%;margin-bottom:8px;">
+    <div id="modalHistorialBody" style="max-height:60vh;overflow:auto;"></div>
+    <div class="modal-footer">
+      <button class="btn-hdr" style="border-color:#ccc;color:#666;" onclick="document.getElementById('modalHistorial').classList.remove('show')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal matriz marca × sucursal -->
+<div class="modal-overlay" id="modalMatriz" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal wide" onclick="event.stopPropagation()">
+    <div class="modal-title" id="modalMatrizTitle">Matriz marca × sucursal</div>
+    <div id="modalMatrizBody"></div>
+    <div class="modal-footer">
+      <button class="btn-hdr primary" id="btnMatrizExport" onclick="exportMatriz()">Exportar Excel</button>
+      <button class="btn-hdr" style="border-color:#ccc;color:#666;" onclick="document.getElementById('modalMatriz').classList.remove('show')">Cerrar</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal agregar marca a sucursal -->
 <div class="modal-overlay" id="modalAsignar" onclick="if(event.target===this)this.classList.remove('show')">
@@ -572,6 +623,8 @@ function applyRemote(val) {
   if (Array.isArray(val.marcas_extra)) MARCAS_EXTRA.calzado = normalizeExtras(val.marcas_extra);
   if (val.data_indumentaria) DATOS_RUBRO.indumentaria = normalizeData(val.data_indumentaria);
   if (Array.isArray(val.marcas_extra_indumentaria)) MARCAS_EXTRA.indumentaria = normalizeExtras(val.marcas_extra_indumentaria);
+  REMOTE_REV = val.rev || 0;
+  ULTIMOS_CAMBIOS = val.ultimos_cambios || {};
   DATA = DATOS_RUBRO[rubroActivo];
   refreshMarcasDisponibles();
 }
@@ -766,6 +819,14 @@ function renderCard(suc) {
     ? `<div class="outlet-src">Recibe de: ${suc.fuentes.map(f=>`<span class="outlet-tag">${f}</span>`).join('')}</div>`
     : '';
 
+  // Sello "asignación actualizada" (si Producto cambió algo en los últimos 14 días)
+  let stamp = '';
+  const uc = ULTIMOS_CAMBIOS[rubroActivo + '|' + suc.id];
+  if (!editMode && uc && uc.fecha && (Date.now() - uc.fecha) < 14*24*60*60*1000) {
+    const f = new Date(uc.fecha).toLocaleDateString('es-AR');
+    stamp = `<div class="suc-updated" title="${escapeHtml(uc.resumen || '')}">⟳ Asignación actualizada el ${f}${uc.resumen ? ' · ' + escapeHtml(uc.resumen) : ''}</div>`;
+  }
+
   return `<div class="suc-card ${cardCls}">
     <div class="suc-header">
       <div class="suc-header-left">
@@ -775,7 +836,7 @@ function renderCard(suc) {
       </div>
       ${badge}
     </div>
-    ${brands}${addRow}${fuentes}
+    ${brands}${addRow}${fuentes}${stamp}
   </div>`;
 }
 
@@ -865,6 +926,8 @@ function applySessionUI() {
   document.getElementById('btnSave').style.display = 'none';
   document.getElementById('btnReset').style.display = 'none';
   document.getElementById('btnNuevaMarca').style.display = 'none';
+  document.getElementById('btnMatriz').style.display = 'none';
+  document.getElementById('btnHistorial').style.display = 'none';
   document.getElementById('editBadge').classList.remove('show');
   document.querySelectorAll('.toolbar .chip').forEach(btn => { btn.style.display = 'none'; });
   const tlabel = document.querySelector('.toolbar .tlabel');
@@ -874,6 +937,8 @@ function applySessionUI() {
 function toggleEdit() {
   if(!isAdminSession()) return;
   editMode = true;
+  // Foto del estado al entrar a editar: base del diff para el historial
+  SNAPSHOT_EDICION = JSON.parse(JSON.stringify(DATOS_RUBRO));
   document.getElementById('editBadge').classList.add('show');
   document.getElementById('btnEdit').style.display = 'none';
   document.getElementById('btnSave').style.display = 'block';
@@ -883,23 +948,57 @@ function toggleEdit() {
   if (document.getElementById('modalDetalle').classList.contains('show')) renderSucDetalleBody();
 }
 
-function saveChanges() {
+async function saveChanges() {
   if(!isAdminSession()) return;
+  const cambios = SNAPSHOT_EDICION ? diffAsignacion(SNAPSHOT_EDICION, DATOS_RUBRO) : [];
+
+  // Anti-pisadas: si otro admin guardó mientras editábamos, avisar antes de pisar.
+  let remoto = null;
+  try { remoto = await fbGet(); } catch(e) {}
+  if (remoto && (remoto.rev || 0) !== REMOTE_REV) {
+    const quien = remoto.updated_by || 'Otro administrador';
+    const cuando = remoto.updated_at ? new Date(remoto.updated_at).toLocaleString('es-AR') : '';
+    if (!confirm('⚠ '+quien+' guardó cambios mientras estabas editando'+(cuando ? ' ('+cuando+')' : '')+'.\n\n'+
+      'Si guardás ahora, esos cambios se PISAN con tu versión.\n\n'+
+      'Aceptar = guardar igual · Cancelar = seguir editando (podés recargar la página para ver la versión de la otra persona).')) return;
+  }
+
+  const ahora = Date.now();
+  const rev = Math.max(REMOTE_REV, (remoto && remoto.rev) || 0) + 1;
+  // Sello "asignación actualizada" por sucursal (lo ven los encargados)
+  const uc = (remoto && remoto.ultimos_cambios) || ULTIMOS_CAMBIOS || {};
+  resumenPorSucursal(cambios).forEach(([clave, resumen]) => { uc[clave] = {fecha: ahora, resumen}; });
+
   // Se guardan ambos rubros: calzado en las claves históricas (data /
   // marcas_extra) e indumentaria en las suyas.
   const payload = {
     data: DATOS_RUBRO.calzado,
     marcas_extra: MARCAS_EXTRA.calzado,
     data_indumentaria: DATOS_RUBRO.indumentaria,
-    marcas_extra_indumentaria: MARCAS_EXTRA.indumentaria
+    marcas_extra_indumentaria: MARCAS_EXTRA.indumentaria,
+    rev,
+    updated_by: SESSION.email,
+    updated_at: ahora,
+    ultimos_cambios: uc
   };
   localStorage.setItem('mateu_brands_v2', JSON.stringify(DATOS_RUBRO.calzado));
   localStorage.setItem('mateu_marcas_extra', JSON.stringify(MARCAS_EXTRA.calzado));
   localStorage.setItem('mateu_brands_indumentaria_v1', JSON.stringify(DATOS_RUBRO.indumentaria));
   localStorage.setItem('mateu_marcas_extra_indumentaria', JSON.stringify(MARCAS_EXTRA.indumentaria));
   fbSet(payload)
-    .then(() => showToast('✓ Guardado en la nube'))
+    .then(() => {
+      REMOTE_REV = rev;
+      ULTIMOS_CAMBIOS = uc;
+      showToast('✓ Guardado en la nube');
+      // Historial: una entrada por guardado con el detalle de cambios
+      if (cambios.length) {
+        fetch(FB_LOG_URL, {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({fecha: ahora, email: SESSION.email, cambios})}).catch(()=>{});
+      }
+      render();
+    })
     .catch(() => showToast('✓ Guardado localmente'));
+  SNAPSHOT_EDICION = null;
   editMode = false;
   document.getElementById('editBadge').classList.remove('show');
   document.getElementById('btnEdit').style.display = 'block';
@@ -919,6 +1018,7 @@ function resetAll() {
   MARCAS_EXTRA[rubroActivo] = [];
   DATA = DATOS_RUBRO[rubroActivo];
   refreshMarcasDisponibles();
+  SNAPSHOT_EDICION = null;
   editMode = false;
   document.getElementById('editBadge').classList.remove('show');
   document.getElementById('btnEdit').style.display = 'block';
@@ -1140,6 +1240,220 @@ function dragDrop(e) {
   render();
 }
 
+
+/* ============================================================
+   AUDITORÍA Y CONTROL DE VERSIONES
+   - rev/updated_by/updated_at en el árbol guardado: si otro admin
+     guardó mientras editabas, se avisa antes de pisar sus cambios.
+   - Cada guardado deja una entrada en asignacion_marcas_log con el
+     detalle de cambios (alta/baja/tipo/disciplinas) por sucursal.
+   - ultimos_cambios alimenta el sello "asignación actualizada" que
+     ven los encargados en su tarjeta.
+   ============================================================ */
+const FB_LOG_URL = 'https://asignacion-marcas-mateu-default-rtdb.firebaseio.com/asignacion_marcas_log.json';
+let REMOTE_REV = 0;          // rev del último estado remoto aplicado
+let ULTIMOS_CAMBIOS = {};    // {"rubro|sucId": {fecha, resumen}}
+let SNAPSHOT_EDICION = null; // copia de DATOS_RUBRO al entrar a edición
+
+const TIPO_LABEL = {prio:'Prioritaria', sec:'Secundaria', nino:'Niño', especial:'Especial'};
+function tipoLabel(t){ return TIPO_LABEL[t] || 'Secundaria'; }
+
+// Compara el estado pre-edición contra el actual y devuelve la lista de
+// cambios por sucursal. El reordenamiento de marcas no se registra.
+function diffAsignacion(antes, despues){
+  const cambios = [];
+  ['calzado','indumentaria'].forEach(rubro => {
+    const a = antes[rubro] || {}, d = despues[rubro] || {};
+    Object.keys(d).forEach(canalKey => {
+      const sucsA = (a[canalKey] && a[canalKey].sucursales) || [];
+      ((d[canalKey] && d[canalKey].sucursales) || []).forEach(sucD => {
+        const sucA = sucsA.find(s => s.id === sucD.id) || {brands:[]};
+        const mapA = {}, mapD = {};
+        (sucA.brands || []).forEach(b => mapA[b.n] = b);
+        (sucD.brands || []).forEach(b => mapD[b.n] = b);
+        Object.keys(mapD).forEach(n => {
+          if (!mapA[n]) {
+            cambios.push({rubro, suc:sucD.id, sucNombre:sucD.nombre, tipo:'alta', marca:n, detalle:tipoLabel(mapD[n].t)});
+          } else {
+            if ((mapA[n].t || 'sec') !== (mapD[n].t || 'sec'))
+              cambios.push({rubro, suc:sucD.id, sucNombre:sucD.nombre, tipo:'cambio', marca:n, detalle:tipoLabel(mapA[n].t)+' → '+tipoLabel(mapD[n].t)});
+            if (JSON.stringify(mapA[n].d || []) !== JSON.stringify(mapD[n].d || []))
+              cambios.push({rubro, suc:sucD.id, sucNombre:sucD.nombre, tipo:'disciplinas', marca:n, detalle:(mapD[n].d || []).join(', ') || 'sin disciplinas'});
+          }
+        });
+        Object.keys(mapA).forEach(n => {
+          if (!mapD[n]) cambios.push({rubro, suc:sucD.id, sucNombre:sucD.nombre, tipo:'baja', marca:n, detalle:''});
+        });
+      });
+    });
+  });
+  return cambios;
+}
+
+// Resumen corto por sucursal para el sello de la tarjeta: "+Nike · –Fila · +2 más"
+function resumenPorSucursal(cambios){
+  const porSuc = {};
+  cambios.forEach(c => {
+    const clave = c.rubro + '|' + c.suc;
+    (porSuc[clave] = porSuc[clave] || []).push(
+      c.tipo === 'alta' ? '+' + c.marca :
+      c.tipo === 'baja' ? '–' + c.marca :
+      c.tipo === 'cambio' ? c.marca + ' → ' + c.detalle.split(' → ')[1] :
+      c.marca + ' (disciplinas)');
+  });
+  return Object.entries(porSuc).map(([clave, partes]) => {
+    const resumen = partes.slice(0,3).join(' · ') + (partes.length > 3 ? ' · +' + (partes.length - 3) + ' más' : '');
+    return [clave, resumen];
+  });
+}
+
+/* ---------- Historial (modal, solo admins) ---------- */
+let HIST_ENTRIES = null;
+async function openHistorial(){
+  if(!isAdminSession()) return;
+  document.getElementById('modalHistorial').classList.add('show');
+  document.getElementById('modalHistorialBody').innerHTML = '<p class="disc-empty">Cargando historial…</p>';
+  try{
+    const val = await (await fetch(FB_LOG_URL + '?orderBy="$key"&limitToLast=300')).json();
+    HIST_ENTRIES = Object.values(val || {}).filter(v => v && v.fecha).sort((a,b) => b.fecha - a.fecha);
+  }catch(e){ HIST_ENTRIES = null; }
+  renderHistorialBody();
+}
+function renderHistorialBody(){
+  const body = document.getElementById('modalHistorialBody');
+  if (!HIST_ENTRIES) { body.innerHTML = '<p class="disc-empty">No se pudo cargar el historial. Probá de nuevo.</p>'; return; }
+  if (!HIST_ENTRIES.length) { body.innerHTML = '<p class="disc-empty">Todavía no hay cambios registrados: el historial anota cada guardado a partir de ahora.</p>'; return; }
+  const q = (document.getElementById('histSearch').value || '').trim().toLowerCase();
+  let html = '';
+  HIST_ENTRIES.forEach(e => {
+    const cambios = (e.cambios || []).filter(c =>
+      !q || (c.sucNombre + ' ' + c.marca + ' ' + (e.email||'') + ' ' + c.rubro).toLowerCase().includes(q));
+    if (!cambios.length) return;
+    const f = new Date(e.fecha);
+    html += `<div class="hist-entry"><div class="hist-head">${f.toLocaleDateString('es-AR')} ${f.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})} · ${escapeHtml(e.email || '—')}</div>`;
+    cambios.forEach(c => {
+      const verbo = c.tipo === 'alta' ? '<b style="color:#15803D">+ agregó</b>'
+                  : c.tipo === 'baja' ? '<b style="color:#D0021B">– sacó</b>'
+                  : c.tipo === 'cambio' ? '<b style="color:#1a5fa8">cambió tipo de</b>'
+                  : '<b style="color:#6a3a8a">editó disciplinas de</b>';
+      html += `<div class="hist-row">${verbo} <b>${escapeHtml(c.marca)}</b> en ${escapeHtml(c.sucNombre)} <span class="hist-dim">· ${c.rubro}${c.detalle ? ' · ' + escapeHtml(c.detalle) : ''}</span></div>`;
+    });
+    html += '</div>';
+  });
+  body.innerHTML = html || '<p class="disc-empty">Sin resultados para ese filtro.</p>';
+}
+
+/* ---------- Matriz marca × sucursal (con export a Excel) ---------- */
+function matrizDatos(){
+  const cols = [];
+  ['aurelius','linea','outlet','adidas'].forEach(k => {
+    const c = DATA[k];
+    if (c) c.sucursales.filter(s => canSeeSuc(s.id)).forEach(s => cols.push(s));
+  });
+  const filasMap = {};
+  cols.forEach(s => (s.brands || []).forEach(b => { (filasMap[b.n] = filasMap[b.n] || {})[s.id] = b.t || 'sec'; }));
+  const filas = Object.keys(filasMap)
+    .map(n => ({n, celdas: filasMap[n], count: Object.keys(filasMap[n]).length}))
+    .sort((a,b) => b.count - a.count || a.n.localeCompare(b.n));
+  return {cols, filas};
+}
+const MTZ_COLOR = {
+  prio:{bg:'#0B1527', border:'#0B1527'}, sec:{bg:'#f5f4f0', border:'#c0bfbb'},
+  nino:{bg:'#fff8e1', border:'#f0d060'}, especial:{bg:'#f0e8f5', border:'#d4a8e8'}
+};
+function openMatriz(){
+  const {cols, filas} = matrizDatos();
+  document.getElementById('modalMatrizTitle').textContent =
+    'Matriz marca × sucursal — ' + (rubroActivo === 'calzado' ? 'Calzado' : 'Indumentaria');
+  let h = '<div class="mtz-wrap"><table class="mtz-table"><thead><tr><th class="mtz-marca">Marca</th>';
+  cols.forEach(s => { h += '<th>' + escapeHtml(s.nombre) + '</th>'; });
+  h += '<th title="Cantidad de sucursales">Σ</th></tr></thead><tbody>';
+  filas.forEach(f => {
+    h += '<tr><td class="mtz-marca">' + escapeHtml(f.n) + '</td>';
+    cols.forEach(s => {
+      const t = f.celdas[s.id];
+      if (!t) { h += '<td></td>'; return; }
+      const col = MTZ_COLOR[t] || MTZ_COLOR.sec;
+      const cob = cobDe(s.id, f.n);
+      const tt = tipoLabel(t) + (cob ? (cob.st === 'muerto' ? ' · stock sin venta' : ' · cobertura ' + cob.ratio.toFixed(1) + ' meses') : '');
+      h += '<td><span class="mtz-dot" style="background:' + col.bg + ';border:1px solid ' + col.border + '" title="' + escapeHtml(s.nombre + ' — ' + tt) + '"></span></td>';
+    });
+    h += '<td style="font-weight:700">' + f.count + '</td></tr>';
+  });
+  h += '</tbody></table></div>';
+  h += '<div style="padding:8px 2px 0;font-size:11.5px;color:#7a786f;">Navy prioritaria · gris secundaria · amarillo niño · violeta especial · pasá el mouse por un punto para ver la cobertura</div>';
+  document.getElementById('modalMatrizBody').innerHTML = h;
+  document.getElementById('modalMatriz').classList.add('show');
+}
+
+// ExcelJS se carga solo cuando se exporta (mismo CDN que usa Gestión de Stock)
+function cargarExcelJS(){
+  return new Promise((res, rej) => {
+    if (window.ExcelJS) { res(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+    s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+async function exportMatriz(){
+  const btn = document.getElementById('btnMatrizExport');
+  btn.disabled = true; btn.textContent = 'Generando…';
+  try{
+    await cargarExcelJS();
+    const {cols, filas} = matrizDatos();
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Matriz', {views:[{state:'frozen', xSplit:1, ySplit:2, showGridLines:false}]});
+    const nCols = cols.length + 2;
+    ws.mergeCells(1, 1, 1, nCols);
+    const t = ws.getCell(1, 1);
+    t.value = 'MATEU SPORTS — ASIGNACIÓN DE MARCAS (' + (rubroActivo === 'calzado' ? 'CALZADO' : 'INDUMENTARIA') + ') — ' + new Date().toLocaleDateString('es-AR');
+    t.font = {bold:true, color:{argb:'FFFFFFFF'}, size:13};
+    t.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FF0B1527'}};
+    t.alignment = {horizontal:'center', vertical:'middle'};
+    ws.getRow(1).height = 22;
+    ['Marca', ...cols.map(s => s.nombre), 'Sucursales'].forEach((v, i) => {
+      const c = ws.getCell(2, i + 1);
+      c.value = v;
+      c.font = {bold:true, color:{argb:'FFFFFFFF'}, size:9};
+      c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FF0B1527'}};
+      c.alignment = {horizontal:'center', vertical:'bottom', textRotation: (i === 0 || i === nCols - 1) ? 0 : 90};
+    });
+    ws.getRow(2).height = 80;
+    ws.columns = [{width:20}, ...cols.map(() => ({width:4.5})), {width:11}];
+    const FILL = {prio:'FF0B1527', sec:'FFE7E5DF', nino:'FFF6E7A9', especial:'FFE3CBF0'};
+    const LETRA = {prio:'P', sec:'S', nino:'N', especial:'E'};
+    filas.forEach((f, ri) => {
+      const r = ri + 3;
+      ws.getCell(r, 1).value = f.n;
+      ws.getCell(r, 1).font = {size:10};
+      cols.forEach((s, ci) => {
+        const tno = f.celdas[s.id];
+        if (!tno) return;
+        const c = ws.getCell(r, ci + 2);
+        c.value = LETRA[tno] || 'S';
+        c.fill = {type:'pattern', pattern:'solid', fgColor:{argb: FILL[tno] || FILL.sec}};
+        c.font = {size:9, bold:true, color:{argb: tno === 'prio' ? 'FFFFFFFF' : 'FF3A3935'}};
+        c.alignment = {horizontal:'center'};
+      });
+      const cc = ws.getCell(r, nCols);
+      cc.value = f.count;
+      cc.alignment = {horizontal:'center'};
+      cc.font = {bold:true, size:10};
+    });
+    const lr = filas.length + 4;
+    ws.getCell(lr, 1).value = 'P = Prioritaria · S = Secundaria · N = Niño · E = Especial';
+    ws.getCell(lr, 1).font = {size:9, italic:true, color:{argb:'FF7A786F'}};
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'Marcas_' + rubroActivo + '_' + new Date().toISOString().slice(0,10) + '.xlsx';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }catch(e){ showToast('No se pudo generar el Excel'); }
+  btn.disabled = false; btn.textContent = 'Exportar Excel';
+}
 
 /* ============================================================
    COBERTURA — cruce con Meses de Stock (módulo Gestión de Stock).
