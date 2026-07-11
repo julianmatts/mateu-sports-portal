@@ -297,8 +297,8 @@ textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radiu
 .ms-perbtn{background:transparent;color:#5A6072;border:none;padding:5px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;font-family:'Inter',system-ui,sans-serif;white-space:nowrap}
 .ms-perbtn.active{background:#1B1E6B;color:#FFFFFF}
 .ms-mtable{overflow-x:auto;border:1px solid #E6E8F0;border-radius:14px;background:#FFFFFF;box-shadow:0 1px 3px rgba(22,24,31,.05)}
-.ms-mmin{min-width:840px}
-.ms-mhead,.ms-mrow{display:grid;grid-template-columns:minmax(150px,1.6fr) 120px 100px 90px 80px minmax(160px,1.2fr) 70px;gap:0 12px;align-items:center;padding:8px 16px}
+.ms-mmin{min-width:960px}
+.ms-mhead,.ms-mrow{display:grid;grid-template-columns:minmax(150px,1.5fr) 108px 110px 78px 78px 92px minmax(140px,1fr) 70px;gap:0 12px;align-items:center;padding:8px 16px}
 .ms-mhead{padding:10px 16px;background:#F7F8FC;border-bottom:1px solid #E6E8F0;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#5A6072;font-weight:600}
 .ms-mrow{border-bottom:1px solid #EDEFF5;cursor:pointer;font-size:13px}
 .ms-mrow:hover{background:#F5F6FA}
@@ -315,6 +315,13 @@ textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radiu
 .ms-reply-input::placeholder{color:#8A8FA3}
 .ms-send{background:#E2231A;border:none;color:#fff;border-radius:8px;padding:0 14px;cursor:pointer;font-size:12px;font-weight:600;font-family:'Inter',system-ui,sans-serif}
 .ms-send:hover{background:#C41E16}
+.ms-search{background:#FFFFFF;border:1px solid #E6E8F0;border-radius:8px;padding:6px 12px;font-size:12.5px;font-family:'Inter',system-ui,sans-serif;color:#16181F;outline:none;min-width:180px}
+.ms-search:focus{border-color:#1B1E6B}
+.ms-sorth{cursor:pointer;user-select:none;white-space:nowrap}
+.ms-sorth:hover{color:#1B1E6B}
+.ms-upzone{border:2px dashed #C9CCE8;border-radius:12px;padding:34px 18px;text-align:center;color:#5A6072;cursor:pointer;background:#FBFBFE;transition:all .15s;font-size:13px}
+.ms-upzone:hover,.ms-upzone.drag{border-color:#1B1E6B;background:#F3F4FB}
+.ms-upzone input{display:none}
 </style>
 </head>
 <body>
@@ -648,7 +655,8 @@ function setupMainTabs(session){
       renderConfigView($('view-config'));
     });
   }
-  activateMainTab('discontinuos');
+  // Un link directo #ms/… o #msmarca/… abre la pestaña Meses de Stock
+  activateMainTab(/^#ms/.test(location.hash||'') ? 'meses-stock' : 'discontinuos');
 }
 function updateAdminCargaAction(id){
   const bar = $('adminActions'), btn = $('btnAdminCarga');
@@ -2404,9 +2412,12 @@ async function renderConfigView(container){
    Respuestas del Área de Producto: Firebase /mesesStock/respuestas
    (multi-usuario; responde solo rol admin).
    ============================================================ */
-const MS_ANIO = 2026;            // año del dataset RATIO (actualizar junto con datos-meses-stock.js)
+const MS_ANIO_FALLBACK = 2026;   // año si el dataset no trae "anio" propio
 const MS_FILAS_BANDEJA = 100;    // paginado de la bandeja
 const MS_MOSTRAR_SINDATO = true; // incluir marcas "sin dato" en la tabla de marcas
+const MS_PREFS_KEY = 'mateu_ms_prefs';
+
+function msAnio(){ return (window.STOCK_DATA && window.STOCK_DATA.anio) || MS_ANIO_FALLBACK; }
 
 // Semáforo (exceso es lo más grave → rojo; faltante → ámbar)
 const MS_ST = {
@@ -2446,12 +2457,31 @@ const MS_KPI_ICONS = {
 const MS = {
   ready:false, cargando:false, error:false,
   tab:'panel', suc:null, rubro:null,
+  marca:null,                      // vista transversal por marca (buscador)
   drawerOpen:false, drawerShown:false, drawerData:null,
   periodo:1, tipoFiltro:'todas', rubroFiltro:null, segFiltro:null,
+  estadoFiltro:null, sortCol:null, sortDir:1,
   inboxFilter:'pendiente', extraRows:0,
-  drafts:{}, replies:{}, isFs:false,
-  _ctx:null, _kpiCache:{}, _sucs:[], _rubs:[], _marcas:[], _inbox:[]
+  drafts:{}, replies:{}, liveComments:{}, isFs:false,
+  _ctx:null, _kpiCache:{}, _sucs:[], _rubs:[], _marcas:[], _inbox:[],
+  _marcaIndex:null, _marcaRows:[], _topInmov:[], _carga:null
 };
+
+// Preferencias de vista (período y filtros) persistidas por navegador
+function msSavePrefs(){
+  try{ localStorage.setItem(MS_PREFS_KEY, JSON.stringify({
+    periodo:MS.periodo, tipoFiltro:MS.tipoFiltro, rubroFiltro:MS.rubroFiltro, segFiltro:MS.segFiltro
+  })); }catch(e){}
+}
+function msLoadPrefs(){
+  try{
+    const p = JSON.parse(localStorage.getItem(MS_PREFS_KEY)||'{}');
+    if([1,3,6].indexOf(p.periodo)>=0) MS.periodo = p.periodo;
+    if(['todas','aurelius','mateu','outlet','adidas'].indexOf(p.tipoFiltro)>=0) MS.tipoFiltro = p.tipoFiltro;
+    if(['CALZADO','INDUMENTARIA','ACCESORIOS'].indexOf(p.rubroFiltro)>=0) MS.rubroFiltro = p.rubroFiltro;
+    if(MS_SEG_ORDER.indexOf(p.segFiltro)>=0) MS.segFiltro = p.segFiltro;
+  }catch(e){}
+}
 
 function msEsProducto(){ return SESSION && SESSION.rol==='admin'; }
 function msTh(rubro){ return (window.STOCK_DATA.thresholds||{})[rubro] || [1,3]; }
@@ -2485,33 +2515,105 @@ function msRangoLbl(){
   return W===1 ? hi : MS_MLAB[M[M.length-W]].toLowerCase()+'–'+hi;
 }
 
-// Ratio de una ventana: Σ stock / Σ ventas de los últimos N meses
-function msWinCalc(rubro, serie){
+// Meses de la ventana de cálculo: los últimos W, corridos "off" meses
+// hacia atrás (off=W → la ventana anterior, para comparar). Devuelve null
+// si el dataset no alcanza para la ventana pedida.
+function msWinMonths(off){
   const D = window.STOCK_DATA, W = MS.periodo||1;
+  if(!off) return D.meses.slice(-W);
+  const months = D.meses.slice(-(W+off), -off);
+  return months.length===W ? months : null;
+}
+
+// Ratio de una ventana: Σ stock / Σ ventas de los últimos N meses
+function msWinCalc(rubro, serie, off){
+  const W = MS.periodo||1, months = msWinMonths(off);
+  if(!months) return null;
   let st=0, vt=0;
-  for(const m of D.meses.slice(-W)){ const n = serie && serie[m]; if(!n) continue; st += (n.stock||0); vt += (n.ventas||0); }
+  for(const m of months){ const n = serie && serie[m]; if(!n) continue; st += (n.stock||0); vt += (n.ventas||0); }
   if(vt<=0) return {ratio:null, status: st>0?'muerto':'sindato', avgStock:st/W, avgVentas:0};
   const ratio = Math.round(st/vt*100)/100;
   return {ratio, status: msStatusOfRatio(rubro, ratio), avgStock:st/W, avgVentas:vt/W};
 }
 
 // Punto marca (respeta filtro de segmento)
-function msPointCalc(rubro, node){
+function msPointCalc(rubro, node, off){
   const seg = MS.segFiltro;
   if(!seg){
-    const wc = msWinCalc(rubro, node.serie);
-    return {ratio:wc.ratio, status:wc.status, stock:wc.avgStock, ventas:wc.avgVentas};
+    const wc = msWinCalc(rubro, node.serie, off);
+    return wc && {ratio:wc.ratio, status:wc.status, stock:wc.avgStock, ventas:wc.avgVentas};
   }
   const sd = (node.segmentos||{})[seg];
   if(!sd) return null;
-  const D = window.STOCK_DATA, W = MS.periodo||1;
+  const W = MS.periodo||1, months = msWinMonths(off);
+  if(!months) return null;
   let st=0, vt=0;
   if(sd.serie){
-    for(const mo of D.meses.slice(-W)){ const n = sd.serie[mo]; if(!n) continue; st += (n.stock||0); vt += (n.ventas>0?n.ventas:0); }
-  } else { st = sd.stock||0; vt = sd.ventas>0 ? sd.ventas : 0; }
+    for(const mo of months){ const n = sd.serie[mo]; if(!n) continue; st += (n.stock||0); vt += (n.ventas>0?n.ventas:0); }
+  } else if(off){ return null; }
+  else { st = sd.stock||0; vt = sd.ventas>0 ? sd.ventas : 0; }
   if(vt<=0) return {ratio:null, status: st>0?'muerto':'sindato', stock:st/W, ventas:0};
   const ratio = Math.round(st/vt*100)/100;
   return {ratio, status: msStatusOfRatio(rubro, ratio), stock:st/W, ventas:vt/W};
+}
+
+/* ---------- Delta vs período anterior ----------
+   Verde si el ratio se acercó al rango sano, rojo si se alejó
+   (subir no siempre es malo: depende de dónde venías). */
+function msPrevRangoLbl(){
+  const months = msWinMonths(MS.periodo||1);
+  if(!months) return null;
+  return months.length===1 ? MS_MLAB[months[0]].toLowerCase()
+    : MS_MLAB[months[0]].toLowerCase()+'–'+MS_MLAB[months[months.length-1]].toLowerCase();
+}
+function msDeltaInfo(cur, prev, thLo, thHi){
+  if(cur===null||cur===undefined||prev===null||prev===undefined) return null;
+  const d = Math.round((cur-prev)*10)/10;
+  const dist = v=> v<thLo ? thLo-v : (v>thHi ? v-thHi : 0);
+  const dc = dist(cur), dp = dist(prev);
+  const col = Math.abs(d)<0.05 ? '#8A8FA3' : (dc<dp ? '#16A34A' : (dc>dp ? '#E11D2A' : '#8A8FA3'));
+  const arrow = d>0.04 ? '▲' : (d<-0.04 ? '▼' : '=');
+  return {d, col, arrow, txt:(d>0?'+':'')+d.toFixed(1)};
+}
+function msDeltaHtml(di, size){
+  if(!di) return '';
+  const lbl = msPrevRangoLbl();
+  return ' <span title="vs período anterior'+(lbl?' ('+lbl+')':'')+'" style="font-size:'+(size||11)+'px;font-weight:700;font-style:normal;font-family:\'Inter\',sans-serif;color:'+di.col+';white-space:nowrap">'+di.arrow+' '+di.txt+'</span>';
+}
+
+/* ---------- Excedente en unidades ----------
+   Cuánto stock hay por encima del rango sano (prom/mes de la ventana):
+   stock − ventas × umbral alto. Con venta 0, todo el stock está inmovilizado. */
+function msExcedente(rubro, pc){
+  if(!pc) return null;
+  if(pc.status==='muerto') return Math.round(pc.stock||0);
+  if(pc.status!=='exceso') return null;
+  const th = msTh(rubro);
+  return Math.max(0, Math.round((pc.stock||0) - (pc.ventas||0)*th[1]));
+}
+
+/* ---------- Índice global de marcas (vista transversal) ---------- */
+function msMarcaIndex(){
+  if(MS._marcaIndex) return MS._marcaIndex;
+  const D = window.STOCK_DATA, idx = {};
+  for(const s in D.sucursales){
+    const rs = D.sucursales[s].rubros||{};
+    for(const r in rs) for(const m in (rs[r].marcas||{})){
+      const e = idx[m]||(idx[m]={rubros:{}});
+      (e.rubros[r]||(e.rubros[r]=[])).push(s);
+    }
+  }
+  MS._marcaIndex = idx;
+  return idx;
+}
+function msNormName(s){ return String(s).normalize('NFD').replace(/[̀-ͯ]/g,'').trim().toLowerCase(); }
+function msFindMarca(q){
+  const qq = msNormName(q||'');
+  if(!qq) return null;
+  const keys = Object.keys(msMarcaIndex());
+  let hit = keys.find(k=> msNormName(k)===qq);
+  if(!hit){ const pref = keys.filter(k=> msNormName(k).startsWith(qq)); if(pref.length===1) hit = pref[0]; }
+  return hit||null;
 }
 
 // Agregado por segmento con umbral ponderado por mix de ventas
@@ -2554,8 +2656,9 @@ function msSegCalc(sucList, rubros){
 }
 
 // Agregado multi-rubro con rango sano ponderado por mix de ventas
-function msMixCalc(sucList, rubros){
-  const D = window.STOCK_DATA, W = MS.periodo||1, months = D.meses.slice(-W);
+function msMixCalc(sucList, rubros, off){
+  const D = window.STOCK_DATA, W = MS.periodo||1, months = msWinMonths(off);
+  if(!months) return null;
   const RUB = rubros || msEffRubros();
   const seg = MS.segFiltro;
   let st=0, vt=0, wLo=0, wHi=0;
@@ -2569,7 +2672,7 @@ function msMixCalc(sucList, rubros){
           const sd = (rn.marcas[m].segmentos||{})[seg];
           if(!sd) continue;
           if(sd.serie){ for(const mo of months){ const n = sd.serie[mo]; if(!n) continue; str += (n.stock||0); if(n.ventas>0) vtr += n.ventas; } }
-          else { str += sd.stock||0; if(sd.ventas>0) vtr += sd.ventas; }
+          else if(!off){ str += sd.stock||0; if(sd.ventas>0) vtr += sd.ventas; }
         }
       } else {
         for(const mo of months){ const n = rn.serie[mo]; if(!n) continue; str += (n.stock||0); vtr += (n.ventas||0); }
@@ -2583,6 +2686,14 @@ function msMixCalc(sucList, rubros){
   const thLo = wLo/vt, thHi = wHi/vt;
   const status = ratio<0 ? 'sindato' : (ratio<thLo ? 'faltante' : (ratio<=thHi ? 'sano' : 'exceso'));
   return {ratio, status, thLo, thHi, avgStock:st/W, avgVentas:vt/W};
+}
+
+// Delta del agregado mix: compara la ventana actual contra la anterior
+function msMixDelta(sucList, rubros){
+  const cur = msMixCalc(sucList, rubros);
+  const prev = msMixCalc(sucList, rubros, MS.periodo||1);
+  if(!cur || !prev || cur.thLo===null) return null;
+  return msDeltaInfo(cur.ratio, prev===null?null:prev.ratio, cur.thLo, cur.thHi);
 }
 
 // Serie mensual agregada de un segmento (para sparklines con filtro de segmento)
@@ -2697,6 +2808,43 @@ function msCorregirDatos(){
 /* ---------- Comentarios: merge con respuestas de Firebase ---------- */
 function msMerged(c){ const r = MS.replies[c.id]; return r ? Object.assign({}, c, r) : c; }
 
+// Comentarios "en vivo" hechos desde el portal (Firebase /mesesStock/comentarios),
+// que conviven con los que vienen embebidos en el dataset RATIO.
+function msAllComments(){
+  const live = Object.keys(MS.liveComments||{}).map(k=> Object.assign({id:k}, MS.liveComments[k]));
+  return window.STOCK_COMMENTS.concat(live);
+}
+
+async function msNewComment(){
+  const dd = MS.drawerData;
+  if(!dd) return;
+  const key = 'nc|'+dd.suc+'|'+dd.rubro+'|'+dd.marca;
+  const text = (MS.drafts[key]||'').trim();
+  if(!text) return;
+  const D = window.STOCK_DATA, mes = D.meses[D.meses.length-1];
+  const sn = D.sucursales[dd.suc];
+  const node = sn && sn.rubros[dd.rubro] && sn.rubros[dd.rubro].marcas[dd.marca];
+  const nMes = node && node.serie && node.serie[mes];
+  const rec = {
+    mes, suc:dd.suc, rubro:dd.rubro, marca:dd.marca, seg:'Total',
+    ratio: nMes ? nMes.ratio : null, texto:text, estado:'pendiente', respuesta:null,
+    autor:SESSION.email, fecha:new Date().toLocaleDateString('es-AR'), origen:'portal'
+  };
+  const id = 'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  MS.liveComments[id] = rec;
+  delete MS.drafts[key];
+  msRender();
+  try{
+    const r = await putJSON(FB+'/mesesStock/comentarios/'+id+'.json', rec);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+  }catch(e){
+    delete MS.liveComments[id];
+    MS.drafts[key] = text;
+    msRender();
+    alert('No se pudo guardar el comentario. Revisá la conexión y probá de nuevo.');
+  }
+}
+
 async function msSend(id){
   const text = (MS.drafts[id]||'').trim();
   if(!text) return;
@@ -2720,10 +2868,10 @@ function msCtx(){
   const D = window.STOCK_DATA;
   const winMonths = new Set(D.meses.slice(-(MS.periodo||1)));
   const tipo = MS.tipoFiltro||'todas';
-  const MCW = window.STOCK_COMMENTS.map(msMerged).filter(c=>
+  const MCW = msAllComments().map(msMerged).filter(c=>
     winMonths.has(c.mes)
     && (!MS.rubroFiltro || c.rubro===MS.rubroFiltro)
-    && (!MS.segFiltro || c.seg===MS.segFiltro)
+    && (!MS.segFiltro || c.seg===MS.segFiltro || c.seg==='Total')
     && (tipo==='todas' || msTipoDe(c.suc)===tipo));
   const bySuc={}, bySR={}, bySRM={};
   let pend=0;
@@ -2770,8 +2918,8 @@ function msFsSvg(){
 function msHeaderHtml(){
   const D = MS.ready ? window.STOCK_DATA : null;
   const chip = D
-    ? 'RATIO '+MS_ANIO+' · '+MS_MLAB[D.meses[0]].toLowerCase()+'–'+MS_MLAB[D.meses[D.meses.length-1]].toLowerCase()
-    : 'RATIO '+MS_ANIO;
+    ? 'RATIO '+msAnio()+' · '+MS_MLAB[D.meses[0]].toLowerCase()+'–'+MS_MLAB[D.meses[D.meses.length-1]].toLowerCase()
+    : 'RATIO '+msAnio();
   const pend = MS._ctx ? MS._ctx.pend : 0;
   return '<div class="ms-head">'+
     '<svg class="ms-head-svg" viewBox="0 0 1200 66" preserveAspectRatio="none" aria-hidden="true">'+
@@ -2785,6 +2933,9 @@ function msHeaderHtml(){
       '<button class="ms-tab'+(MS.tab==='panel'?' active':'')+'" data-ms-tab="panel">Panel General</button>'+
       '<button class="ms-tab'+(MS.tab==='inbox'?' active':'')+'" data-ms-tab="inbox">Bandeja producto'+
         (MS.ready?' <span class="ms-count">'+pend+'</span>':'')+'</button>'+
+      (msEsProducto()?'<button class="ms-tab'+(MS.tab==='carga'?' active':'')+'" data-ms-tab="carga">Actualizar datos</button>':'')+
+      (MS.ready?'<button class="ms-fsbtn" id="msExportBtn" title="Exportar a Excel (con los filtros aplicados)">'+
+        '<svg viewBox="0 0 24 24" style="width:16px;height:16px" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/></svg></button>':'')+
       '<button class="ms-fsbtn" id="msFsBtn" title="Pantalla completa">'+msFsSvg()+'</button>'+
     '</div>'+
   '</div>';
@@ -2802,12 +2953,14 @@ function msPanelHtml(){
   // --- KPIs grandes de cobertura (clickeables como filtro de rubro) ---
   const mixAll = msMixCalc(kpiScope, null);
   const kpiRubros = [{key:'GENERAL', name:'Meses de Stock General', icon:MS_RUBRO_ICONS.GENERAL, mc:mixAll,
+    di: msMixDelta(kpiScope, null),
     rango: mixAll.thLo!==null ? 'Sano: '+mixAll.thLo.toFixed(1)+'–'+mixAll.thHi.toFixed(1)+' meses · según mix de ventas' : '',
     bg:'#FFFFFF', borde: MS.rubroFiltro ? '#E6E8F0' : '#C9CCE8'}];
   ['CALZADO','INDUMENTARIA','ACCESORIOS'].filter(r=>D.thresholds[r]).forEach(r=>{
     const mc = msMixCalc(kpiScope, [r]);
     const th = msTh(r), act = MS.rubroFiltro===r;
     kpiRubros.push({key:r, name:r, icon:MS_RUBRO_ICONS[r]||'', mc,
+      di: msMixDelta(kpiScope, [r]),
       rango:'Sano: '+th[0]+'–'+th[1]+' meses',
       bg: act?'#F3F4FB':'#FFFFFF', borde: act?'#1B1E6B':'#E6E8F0'});
   });
@@ -2819,7 +2972,7 @@ function msPanelHtml(){
           msIconSvg(k.icon, 18, '#1B1E6B')+
           '<div class="ms-lbl">'+esc(k.name)+'</div>'+
         '</div>'+
-        '<div class="ms-num" style="font-size:36px;line-height:1.1;margin-top:4px;color:'+ST[k.mc.status].color+'">'+msFmtR(k.mc.ratio)+'<span class="ms-unit"> meses</span></div>'+
+        '<div class="ms-num" style="font-size:36px;line-height:1.1;margin-top:4px;color:'+ST[k.mc.status].color+'">'+msFmtR(k.mc.ratio)+'<span class="ms-unit"> meses</span>'+msDeltaHtml(k.di, 13)+'</div>'+
         '<div class="ms-dim" style="margin-top:4px">'+esc(k.rango)+'</div>'+
         '<div class="ms-dim" style="margin-top:2px">Stock: '+msFmtN(k.mc.avgStock)+' · Ventas: '+msFmtN(k.mc.avgVentas)+unitSuffix+'</div>'+
       '</div>').join('')+'</div>';
@@ -2844,14 +2997,19 @@ function msPanelHtml(){
         '<div class="ms-lbl" style="margin-top:2px;letter-spacing:.5px;font-weight:400">'+k.label+'</div>'+
       '</div>').join('')+'</div>';
 
-  // --- Breadcrumb + switch de período ---
-  let crumbs = '<a data-ms-crumb="home" style="color:'+(MS.suc?'#1B1E6B':'#16181F')+';cursor:'+(MS.suc?'pointer':'default')+';font-weight:'+(MS.suc?400:600)+'">Sucursales</a>';
+  // --- Breadcrumb + buscador de marca + switch de período ---
+  const enRaiz = !MS.suc && !MS.marca;
+  let crumbs = '<a data-ms-crumb="home" style="color:'+(enRaiz?'#16181F':'#1B1E6B')+';cursor:'+(enRaiz?'default':'pointer')+';font-weight:'+(enRaiz?600:400)+'">Sucursales</a>';
+  if(MS.marca) crumbs += '<span style="color:#B4B8C7">›</span><span style="color:#16181F;font-weight:600">Marca: '+esc(MS.marca)+'</span>';
   if(MS.suc) crumbs += '<span style="color:#B4B8C7">›</span><a data-ms-crumb="suc" style="color:'+(MS.rubro?'#1B1E6B':'#16181F')+';cursor:'+(MS.rubro?'pointer':'default')+';font-weight:'+(MS.rubro?400:600)+'">'+esc(MS.suc)+'</a>';
   if(MS.rubro) crumbs += '<span style="color:#B4B8C7">›</span><span style="color:#16181F;font-weight:600">'+esc(MS.rubro)+'</span>';
+  const marcasAll = Object.keys(msMarcaIndex()).sort((a,b)=>a.localeCompare(b));
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:13px;color:#5A6072;flex-wrap:wrap">'+
-    (MS.suc?'<button class="ms-back" id="msBack" title="Volver">←</button>':'')+
+    (!enRaiz?'<button class="ms-back" id="msBack" title="Volver">←</button>':'')+
     crumbs+
-    '<div class="ms-perbox">'+[[1,'Último mes'],[3,'3 meses'],[6,'6 meses']].map(p=>
+    '<input class="ms-search" id="msMarcaSearch" list="msMarcasList" style="margin-left:auto" placeholder="Buscar marca en toda la cadena…" value="'+esc(MS.marca||'')+'">'+
+    '<datalist id="msMarcasList">'+marcasAll.map(m=>'<option value="'+esc(m)+'">').join('')+'</datalist>'+
+    '<div class="ms-perbox" style="margin-left:0">'+[[1,'Último mes'],[3,'3 meses'],[6,'6 meses']].map(p=>
       '<button class="ms-perbtn'+(Wp===p[0]?' active':'')+'" data-ms-periodo="'+p[0]+'">'+p[1]+'</button>').join('')+'</div>'+
   '</div>';
 
@@ -2885,7 +3043,103 @@ function msPanelHtml(){
       }).join('')+'</div>';
   }
 
-  if(!MS.suc){
+  const ordenSt = {faltante:0, exceso:1, muerto:2, sano:3, sindato:4};
+  const comPill = n=> n>0?'<span style="background:#E8E9F5;color:#1B1E6B;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">'+n+' com.</span>':'';
+  const excCell = exc=> exc===null?'<span style="color:#B4B8C7">–</span>':'<b style="color:#E11D2A">'+msFmtN(exc)+'</b>';
+
+  if(MS.marca){
+    // --- Vista transversal: una marca en todas las sucursales, por rubro ---
+    const entry = msMarcaIndex()[MS.marca];
+    MS._marcaRows = [];
+    if(!entry){ html += '<div class="empty">No hay datos para esta marca.</div>'; }
+    else{
+      const rubros = Object.keys(entry.rubros).filter(r=> !MS.rubroFiltro || r===MS.rubroFiltro).sort();
+      let algo = false;
+      for(const r of rubros){
+        const sucs = entry.rubros[r].filter(s=> sucKeys.indexOf(s)>=0);
+        if(!sucs.length) continue;
+        algo = true;
+        const th = msTh(r);
+        // Serie total cadena de la marca en este rubro (para el resumen y su delta)
+        const serieTot = {};
+        for(const mo of D.meses) serieTot[mo] = {stock:0, ventas:0, ratio:null};
+        for(const s of sucs){
+          const node = D.sucursales[s].rubros[r].marcas[MS.marca];
+          if(!node || !node.serie) continue;
+          for(const mo of D.meses){ const n = node.serie[mo]; if(!n) continue; serieTot[mo].stock += (n.stock||0); serieTot[mo].ventas += (n.ventas||0); }
+        }
+        for(const mo of D.meses){ const o = serieTot[mo]; o.ratio = o.ventas>0 ? Math.round(o.stock/o.ventas*100)/100 : null; }
+        const wc = msWinCalc(r, serieTot);
+        const wcPrev = msWinCalc(r, serieTot, Wp);
+        const diTot = wcPrev ? msDeltaInfo(wc.ratio, wcPrev.ratio, th[0], th[1]) : null;
+        const rows = sucs.map(s=>{
+          const node = D.sucursales[s].rubros[r].marcas[MS.marca];
+          const pc = msPointCalc(r, node);
+          if(!pc) return null;
+          const pp = msPointCalc(r, node, Wp);
+          return {s, node, pc, exc: msExcedente(r, pc),
+            di: pp ? msDeltaInfo(pc.ratio, pp.ratio, th[0], th[1]) : null,
+            com: ctx.bySRM[s+'|'+r+'|'+MS.marca]||0,
+            _o: ordenSt[pc.status], _r: pc.ratio===null?999:pc.ratio};
+        }).filter(Boolean).sort((a,b)=> a._o-b._o || a._r-b._r);
+        const base = MS._marcaRows.length;
+        rows.forEach(x=> MS._marcaRows.push({suc:x.s, rubro:r}));
+        html += '<div style="display:flex;align-items:baseline;gap:10px;margin:18px 0 8px;flex-wrap:wrap">'+
+          '<span class="ms-lbl" style="font-size:12px">'+esc(r)+'</span>'+
+          '<span class="ms-num" style="font-size:19px;color:'+ST[wc.status].color+'">'+msFmtR(wc.ratio)+'<span class="ms-unit" style="font-size:11px"> meses total cadena</span></span>'+msDeltaHtml(diTot)+
+          '<span class="ms-dim">Stock: '+msFmtN(wc.avgStock)+' · Ventas: '+msFmtN(wc.avgVentas)+unitSuffix+' · Sano: '+th[0]+'–'+th[1]+' meses</span>'+
+        '</div>';
+        html += '<div class="ms-mtable"><div class="ms-mmin">'+
+          '<div class="ms-mhead"><div>Sucursal</div><div>Estado</div><div>Meses ('+rangoLbl+')</div><div>'+(Wp===1?'Stock':'Stock prom.')+'</div><div>'+(Wp===1?'Ventas':'Ventas prom.')+'</div><div>Exceso (un.)</div><div>Evolución</div><div></div></div>'+
+          rows.map((x,i)=>{
+            const sparkSerie = MS.segFiltro ? (((x.node.segmentos||{})[MS.segFiltro]||{}).serie||{}) : x.node.serie;
+            return '<div class="ms-mrow" data-ms-mrow="'+(base+i)+'">'+
+              '<div style="font-weight:600">'+esc(x.s)+'</div>'+
+              '<div>'+msBadgeHtml(x.pc.status)+'</div>'+
+              '<div class="ms-num" style="font-weight:700;font-size:14px;color:'+ST[x.pc.status].color+'">'+msFmtR(x.pc.ratio)+msDeltaHtml(x.di)+'</div>'+
+              '<div style="color:#5A6072">'+msFmtN(x.pc.stock)+'</div>'+
+              '<div style="color:#5A6072">'+msFmtN(x.pc.ventas)+'</div>'+
+              '<div>'+excCell(x.exc)+'</div>'+
+              '<div>'+msSparkSvg(sparkSerie, 30, false)+'</div>'+
+              '<div>'+comPill(x.com)+'</div>'+
+            '</div>';
+          }).join('')+'</div></div>';
+      }
+      if(!algo) html += '<div class="empty">Esta marca no tiene datos con los filtros actuales (tipo de sucursal / rubro).</div>';
+    }
+
+  } else if(!MS.suc){
+    // --- Top de stock inmovilizado (exceso + sin venta) del alcance actual ---
+    const inmov = [];
+    for(const s of sucKeys) for(const r of msEffRubros()){
+      const rn = D.sucursales[s].rubros[r];
+      if(!rn) continue;
+      for(const m in rn.marcas){
+        const pc = msPointCalc(r, rn.marcas[m]);
+        const exc = msExcedente(r, pc);
+        if(exc && exc>0) inmov.push({s, r, m, exc, pc});
+      }
+    }
+    inmov.sort((a,b)=> b.exc-a.exc);
+    MS._topInmov = inmov.slice(0,10);
+    if(MS._topInmov.length){
+      const totInmov = inmov.reduce((a,x)=>a+x.exc,0);
+      html += '<div class="ms-card" style="padding:14px 16px;margin-bottom:18px">'+
+        '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">'+
+          '<span class="ms-lbl">Top 10 — stock inmovilizado (exceso + sin venta)</span>'+
+          '<span class="ms-dim">Total del alcance actual: <b style="color:#E11D2A">'+msFmtN(totInmov)+'</b> un. por encima del rango sano · prom/mes '+esc(rangoLbl)+'</span>'+
+        '</div>'+
+        MS._topInmov.map((x,i)=>
+          '<div class="ms-mrow" data-ms-top="'+i+'" style="display:flex;gap:10px;align-items:center;padding:7px 4px;font-size:12.5px">'+
+            '<span style="width:18px;color:#8A8FA3;font-weight:600;flex:none">'+(i+1)+'</span>'+
+            '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>'+esc(x.m)+'</b> <span style="color:#5A6072">· '+esc(x.s)+' · '+esc(x.r)+'</span></span>'+
+            msBadgeHtml(x.pc.status)+
+            '<span class="ms-num" style="color:'+ST[x.pc.status].color+';font-size:13px;width:42px;text-align:right;flex:none">'+msFmtR(x.pc.ratio)+'</span>'+
+            '<b style="color:#E11D2A;width:88px;text-align:right;white-space:nowrap;flex:none">'+msFmtN(x.exc)+' un.</b>'+
+          '</div>').join('')+
+      '</div>';
+    }
+
     // --- Filtro por tipo de sucursal ---
     const allSucs = Object.keys(D.sucursales);
     html += '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">'+
@@ -2909,6 +3163,7 @@ function msPanelHtml(){
       }
       const mix = msMixCalc([s], null);
       return {key:s, mix, falt, exc, com: ctx.bySuc[s]||0,
+        di: msMixDelta([s], null),
         spark: msSparkSvg(MS.segFiltro ? msSegSerieFor([s], msEffRubros()) : sn.serie, 34, true),
         _crit: mix.ratio===null ? 999 : mix.ratio};
     }).sort((a,b)=> a._crit-b._crit);
@@ -2917,7 +3172,7 @@ function msPanelHtml(){
       cards.map((c,i)=>
         '<div class="ms-card ms-clickcard" data-ms-suc="'+i+'" style="padding:14px 16px">'+
           '<div style="font-weight:600;font-size:14px;margin-bottom:10px">'+esc(c.key)+'</div>'+
-          '<div class="ms-num" style="font-size:30px;line-height:1;color:'+ST[c.mix.status].color+'">'+msFmtR(c.mix.ratio)+'<span class="ms-unit" style="font-size:12px"> meses prom. s/Producto</span></div>'+
+          '<div class="ms-num" style="font-size:30px;line-height:1;color:'+ST[c.mix.status].color+'">'+msFmtR(c.mix.ratio)+'<span class="ms-unit" style="font-size:12px"> meses prom. s/Producto</span>'+msDeltaHtml(c.di)+'</div>'+
           '<div class="ms-dim" style="margin-top:3px">Stock: '+msFmtN(c.mix.avgStock)+' · Ventas: '+msFmtN(c.mix.avgVentas)+unitSuffix+'</div>'+
           '<div style="font-size:11px;color:#5A6072;margin-top:7px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+
             '<span><b style="color:#F59E0B;font-weight:600">'+c.falt+'</b> faltantes</span>'+
@@ -2932,15 +3187,15 @@ function msPanelHtml(){
     const sn = D.sucursales[MS.suc];
     if(!sn){ html += '<div class="empty">Sin datos para esta sucursal.</div>'; }
     else{
-      const orden = {faltante:0, exceso:1, muerto:2, sano:3, sindato:4};
       const cards = Object.keys(sn.rubros)
         .filter(r=> !MS.rubroFiltro || r===MS.rubroFiltro)
         .map(r=>{
           const rn = sn.rubros[r];
           const wc = msMixCalc([MS.suc], [r]);
           return {key:r, wc, th:msTh(r), com: ctx.bySR[MS.suc+'|'+r]||0,
+            di: msMixDelta([MS.suc], [r]),
             spark: msSparkSvg(MS.segFiltro ? msSegSerieFor([MS.suc], [r]) : rn.serie, 34, true),
-            _o: orden[wc.status]};
+            _o: ordenSt[wc.status]};
         }).sort((a,b)=> a._o-b._o || a.key.localeCompare(b.key));
       MS._rubs = cards.map(c=>c.key);
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px">'+
@@ -2948,7 +3203,7 @@ function msPanelHtml(){
           '<div class="ms-card ms-clickcard" data-ms-rubro="'+i+'" style="padding:14px 16px;position:relative">'+
             '<div style="position:absolute;top:12px;right:12px">'+msBadgeHtml(c.wc.status)+'</div>'+
             '<div style="font-weight:600;font-size:14px;margin-bottom:10px;padding-right:70px">'+esc(c.key)+'</div>'+
-            '<div class="ms-num" style="font-size:30px;line-height:1;color:'+ST[c.wc.status].color+'">'+msFmtR(c.wc.ratio)+'<span class="ms-unit" style="font-size:12px"> meses</span></div>'+
+            '<div class="ms-num" style="font-size:30px;line-height:1;color:'+ST[c.wc.status].color+'">'+msFmtR(c.wc.ratio)+'<span class="ms-unit" style="font-size:12px"> meses</span>'+msDeltaHtml(c.di)+'</div>'+
             '<div style="font-size:11px;color:#5A6072;margin-top:9px;display:flex;gap:10px;align-items:center">'+
               '<span>Sano: '+c.th[0]+'–'+c.th[1]+' meses</span>'+
               (c.com>0?'<span style="background:#E8E9F5;color:#1B1E6B;font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600">'+c.com+' coment.</span>':'')+
@@ -2958,30 +3213,50 @@ function msPanelHtml(){
     }
 
   } else {
-    // --- Nivel marcas: tabla densa (faltantes primero, ratio asc) ---
+    // --- Nivel marcas: tabla densa con filtro de estado y orden clickeable ---
     const rn = D.sucursales[MS.suc] && D.sucursales[MS.suc].rubros[MS.rubro];
     if(!rn){ html += '<div class="empty">Sin datos para este rubro.</div>'; }
     else{
-      const orden = {faltante:0, exceso:1, muerto:2, sano:3, sindato:4};
-      const rows = Object.keys(rn.marcas)
+      const th = msTh(MS.rubro);
+      const all = Object.keys(rn.marcas)
         .map(m=>({m, node:rn.marcas[m], pc: msPointCalc(MS.rubro, rn.marcas[m])}))
         .filter(x=> x.pc && (MS_MOSTRAR_SINDATO || x.pc.status!=='sindato'))
-        .map(x=> Object.assign(x, {_o: orden[x.pc.status], _r: x.pc.ratio===null?999:x.pc.ratio,
-          com: ctx.bySRM[MS.suc+'|'+MS.rubro+'|'+x.m]||0}))
-        .sort((a,b)=> a._o-b._o || a._r-b._r);
+        .map(x=>{
+          const pp = msPointCalc(MS.rubro, x.node, Wp);
+          return Object.assign(x, {_o: ordenSt[x.pc.status], _r: x.pc.ratio===null?999:x.pc.ratio,
+            exc: msExcedente(MS.rubro, x.pc),
+            di: pp ? msDeltaInfo(x.pc.ratio, pp.ratio, th[0], th[1]) : null,
+            com: ctx.bySRM[MS.suc+'|'+MS.rubro+'|'+x.m]||0});
+        });
+      const cnt = {};
+      all.forEach(x=> cnt[x.pc.status] = (cnt[x.pc.status]||0)+1);
+      html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">'+
+        [['','Todas ('+all.length+')'],['faltante','Faltante ('+(cnt.faltante||0)+')'],['exceso','Exceso ('+(cnt.exceso||0)+')'],['muerto','Sin venta ('+(cnt.muerto||0)+')'],['sano','Sano ('+(cnt.sano||0)+')']].map(e=>
+          '<button class="ms-pill'+((MS.estadoFiltro||'')===e[0]?' active':'')+'" data-ms-est="'+e[0]+'">'+e[1]+'</button>').join('')+'</div>';
+      let rows = MS.estadoFiltro ? all.filter(x=> x.pc.status===MS.estadoFiltro) : all;
+      const sv = {ratio:x=>x._r, stock:x=>x.pc.stock||0, ventas:x=>x.pc.ventas||0, exc:x=>x.exc===null?-1:x.exc};
+      if(MS.sortCol && sv[MS.sortCol]) rows = rows.slice().sort((a,b)=> MS.sortDir*(sv[MS.sortCol](a)-sv[MS.sortCol](b)));
+      else rows = rows.slice().sort((a,b)=> a._o-b._o || a._r-b._r);
       MS._marcas = rows.map(x=>x.m);
+      const sArr = c=> MS.sortCol===c ? (MS.sortDir>0?' ↑':' ↓') : '';
       html += '<div class="ms-mtable"><div class="ms-mmin">'+
-        '<div class="ms-mhead"><div>Marca</div><div>Estado</div><div>Meses ('+rangoLbl+')</div><div>'+(Wp===1?'Stock':'Stock prom.')+'</div><div>'+(Wp===1?'Ventas':'Ventas prom.')+'</div><div>Evolución</div><div></div></div>'+
+        '<div class="ms-mhead"><div>Marca</div><div>Estado</div>'+
+        '<div class="ms-sorth" data-ms-sort="ratio" title="Ordenar">Meses ('+rangoLbl+')'+sArr('ratio')+'</div>'+
+        '<div class="ms-sorth" data-ms-sort="stock" title="Ordenar">'+(Wp===1?'Stock':'Stock prom.')+sArr('stock')+'</div>'+
+        '<div class="ms-sorth" data-ms-sort="ventas" title="Ordenar">'+(Wp===1?'Ventas':'Ventas prom.')+sArr('ventas')+'</div>'+
+        '<div class="ms-sorth" data-ms-sort="exc" title="Ordenar">Exceso (un.)'+sArr('exc')+'</div>'+
+        '<div>Evolución</div><div></div></div>'+
         rows.map((x,i)=>{
           const sparkSerie = MS.segFiltro ? (((x.node.segmentos||{})[MS.segFiltro]||{}).serie||{}) : x.node.serie;
           return '<div class="ms-mrow" data-ms-marca="'+i+'">'+
             '<div style="font-weight:600">'+esc(x.m)+'</div>'+
             '<div>'+msBadgeHtml(x.pc.status)+'</div>'+
-            '<div class="ms-num" style="font-weight:700;font-size:14px;color:'+ST[x.pc.status].color+'">'+msFmtR(x.pc.ratio)+'</div>'+
+            '<div class="ms-num" style="font-weight:700;font-size:14px;color:'+ST[x.pc.status].color+'">'+msFmtR(x.pc.ratio)+msDeltaHtml(x.di)+'</div>'+
             '<div style="color:#5A6072">'+msFmtN(x.pc.stock)+'</div>'+
             '<div style="color:#5A6072">'+msFmtN(x.pc.ventas)+'</div>'+
+            '<div>'+excCell(x.exc)+'</div>'+
             '<div>'+msSparkSvg(sparkSerie, 30, false)+'</div>'+
-            '<div>'+(x.com>0?'<span style="background:#E8E9F5;color:#1B1E6B;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">'+x.com+' com.</span>':'')+'</div>'+
+            '<div>'+comPill(x.com)+'</div>'+
           '</div>';
         }).join('')+'</div></div>';
     }
@@ -3012,7 +3287,7 @@ function msInboxHtml(){
       return '<div class="ms-card" style="border-radius:12px;padding:12px 14px;display:flex;gap:14px;align-items:center">'+
         '<div class="ms-num" style="min-width:54px;text-align:center;font-weight:700;font-size:16px;color:'+ST[st].color+'">'+((c.ratio===null||c.ratio===undefined||c.ratio<0)?'–':msFmtR(c.ratio))+'</div>'+
         '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:12px;color:#5A6072">'+esc(c.suc)+' · '+esc(c.rubro)+' · '+esc(c.marca)+' · '+MS_MLAB[c.mes]+' '+MS_ANIO+'</div>'+
+          '<div style="font-size:12px;color:#5A6072">'+esc(c.suc)+' · '+esc(c.rubro)+' · '+esc(c.marca)+' · '+MS_MLAB[c.mes]+' '+msAnio()+(c.autor?' · '+esc(c.autor):'')+'</div>'+
           '<div style="font-size:13px;margin-top:3px">'+esc(c.texto)+'</div>'+
           (c.respuesta?'<div style="margin-top:6px;font-size:12px;color:#1B1E6B">↳ '+esc(c.respuesta)+'</div>':'')+
         '</div>'+
@@ -3071,7 +3346,7 @@ function msDrawerHtml(){
     const isPend = c.estado==='pendiente';
     let b = '<div style="background:#F7F8FC;border:1px solid #E6E8F0;border-radius:12px;padding:12px;margin-bottom:10px;border-left:3px solid '+(isPend?'#FFCC00':'#16A34A')+'">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#5A6072;margin-bottom:6px;gap:8px">'+
-        '<span>'+MS_MLAB[c.mes]+' '+MS_ANIO+' · '+esc(c.seg)+' · Encargado</span>'+
+        '<span>'+MS_MLAB[c.mes]+' '+msAnio()+' · '+esc(c.seg)+' · '+(c.autor?esc(c.autor):'Encargado')+'</span>'+
         '<span class="ms-badge" style="background:'+(isPend?'#FFF4C2':'#E2F5E9')+';color:'+(isPend?'#8A6D00':'#16A34A')+'">'+(isPend?'Pendiente':'Resuelto')+'</span>'+
       '</div>'+
       '<div style="font-size:13px;line-height:1.45">'+esc(c.texto)+'</div>';
@@ -3082,6 +3357,12 @@ function msDrawerHtml(){
     if(isPend && !esProd) b += '<div style="margin-top:8px;font-size:11px;color:#8A8FA3;font-style:italic">Pendiente de respuesta del Área de Producto.</div>';
     return b+'</div>';
   }).join('');
+  // Alta de comentario desde el portal (cualquier usuario logueado)
+  const ncKey = 'nc|'+dd.suc+'|'+dd.rubro+'|'+dd.marca;
+  html += '<div style="display:flex;gap:8px;margin-top:12px">'+
+    '<input class="ms-reply-input" id="msNewCommentInput" data-ms-nc="'+esc(ncKey)+'" value="'+esc(MS.drafts[ncKey]||'')+'" placeholder="Agregar comentario sobre esta marca…">'+
+    '<button class="ms-send" id="msNewCommentBtn">Comentar</button></div>'+
+    '<div style="margin-top:6px;font-size:11px;color:#8A8FA3">Se guarda al instante y queda pendiente en la Bandeja producto.</div>';
   html += '</div></div>';
   return html;
 }
@@ -3089,17 +3370,58 @@ function msDrawerHtml(){
 function msRender(){
   const container = $('view-meses-stock');
   if(!container) return;
+  if(MS.tab==='carga' && !msEsProducto()) MS.tab = 'panel';
   MS._ctx = MS.ready ? msCtx() : null;
   let html = msHeaderHtml();
   if(MS.cargando){
-    html += '<div class="ms-wrap"><div style="color:#5A6072;font-size:13px;padding:40px;text-align:center">Cargando datos de RATIO '+MS_ANIO+'…</div></div>';
+    html += '<div class="ms-wrap"><div style="color:#5A6072;font-size:13px;padding:40px;text-align:center">Cargando datos de RATIO '+msAnio()+'…</div></div>';
   } else if(MS.error){
     html += '<div class="ms-wrap"><div class="empty">No se pudieron cargar los datos (datos-meses-stock.js). Recargá la página o avisá a sistemas.</div></div>';
   } else if(MS.ready){
-    html += '<div class="ms-wrap">'+(MS.tab==='panel' ? msPanelHtml() : msInboxHtml())+'</div>'+msDrawerHtml();
+    msSavePrefs();
+    const body = MS.tab==='panel' ? msPanelHtml() : (MS.tab==='inbox' ? msInboxHtml() : msCargaHtml());
+    html += '<div class="ms-wrap">'+body+'</div>'+msDrawerHtml();
   }
   container.innerHTML = html;
   msWire(container);
+  if(MS.ready) msUpdateHash();
+}
+
+/* ---------- Links directos (#ms/… en el hash, para compartir) ---------- */
+function msUpdateHash(){
+  let h = '';
+  if(MS.tab==='panel'){
+    if(MS.marca) h = '#msmarca/'+encodeURIComponent(MS.marca);
+    else if(MS.suc){
+      h = '#ms/'+encodeURIComponent(MS.suc);
+      if(MS.rubro) h += '/'+encodeURIComponent(MS.rubro);
+      if(MS.drawerOpen && MS.drawerData && MS.rubro) h += '/'+encodeURIComponent(MS.drawerData.marca);
+    }
+  }
+  try{ history.replaceState(null, '', h || location.pathname+location.search); }catch(e){}
+}
+function msApplyHash(){
+  const raw = (location.hash||'').slice(1);
+  if(!raw) return;
+  let parts;
+  try{ parts = raw.split('/').map(decodeURIComponent); }catch(e){ return; }
+  const D = window.STOCK_DATA;
+  if(parts[0]==='msmarca' && parts[1]){
+    const m = msFindMarca(parts[1]);
+    if(m){ MS.tab='panel'; MS.marca = m; MS.suc = null; MS.rubro = null; }
+    return;
+  }
+  if(parts[0]!=='ms' || !parts[1]) return;
+  const findKey = (obj, q)=>{ const qq = msNormName(q); return Object.keys(obj||{}).find(k=> msNormName(k)===qq) || null; };
+  const suc = findKey(D.sucursales, parts[1]);
+  if(!suc) return;
+  MS.tab = 'panel'; MS.marca = null; MS.suc = suc;
+  const rubro = parts[2] ? findKey(D.sucursales[suc].rubros, parts[2]) : null;
+  if(rubro){
+    MS.rubro = rubro;
+    const marca = parts[3] ? findKey(D.sucursales[suc].rubros[rubro].marcas, parts[3]) : null;
+    if(marca){ MS.drawerData = {suc, rubro, marca}; MS.drawerOpen = true; MS.drawerShown = false; }
+  }
 }
 
 function msOpenDrawer(data){
@@ -3130,6 +3452,43 @@ function msWire(root){
   root.querySelectorAll('[data-ms-tab]').forEach(b=> b.addEventListener('click', ()=>{ MS.tab = b.dataset.msTab; MS.extraRows = 0; msRender(); }));
   const fs = root.querySelector('#msFsBtn');
   if(fs) fs.addEventListener('click', msToggleFs);
+  const exp = root.querySelector('#msExportBtn');
+  if(exp) exp.addEventListener('click', ()=> msExportXlsx().catch(e=> alert('No se pudo generar el Excel: '+e.message)));
+  const search = root.querySelector('#msMarcaSearch');
+  if(search){
+    const aplicar = ()=>{
+      const v = search.value.trim();
+      if(!v){ if(MS.marca){ MS.marca = null; msRender(); } return; }
+      const m = msFindMarca(v);
+      if(m){ MS.marca = m; MS.suc = null; MS.rubro = null; msRender(); }
+    };
+    search.addEventListener('change', aplicar);
+    search.addEventListener('keydown', e=>{ if(e.key==='Enter') aplicar(); });
+  }
+  root.querySelectorAll('[data-ms-sort]').forEach(el=> el.addEventListener('click', ()=>{
+    const c = el.dataset.msSort;
+    if(MS.sortCol===c){ if(MS.sortDir<0){ MS.sortCol = null; MS.sortDir = 1; } else MS.sortDir = -1; }
+    else { MS.sortCol = c; MS.sortDir = c==='ratio' ? 1 : -1; }
+    msRender();
+  }));
+  root.querySelectorAll('[data-ms-est]').forEach(b=> b.addEventListener('click', ()=>{ MS.estadoFiltro = b.dataset.msEst || null; msRender(); }));
+  root.querySelectorAll('[data-ms-top]').forEach(el=> el.addEventListener('click', ()=>{
+    const x = MS._topInmov[+el.dataset.msTop];
+    if(x) msOpenDrawer({suc:x.s, rubro:x.r, marca:x.m});
+  }));
+  root.querySelectorAll('[data-ms-mrow]').forEach(el=> el.addEventListener('click', ()=>{
+    const x = MS._marcaRows[+el.dataset.msMrow];
+    if(x) msOpenDrawer({suc:x.suc, rubro:x.rubro, marca:MS.marca});
+  }));
+  const ncInp = root.querySelector('#msNewCommentInput');
+  if(ncInp){
+    const key = ncInp.dataset.msNc;
+    ncInp.addEventListener('input', ()=>{ MS.drafts[key] = ncInp.value; });
+    ncInp.addEventListener('keydown', e=>{ if(e.key==='Enter') msNewComment(); });
+  }
+  const ncBtn = root.querySelector('#msNewCommentBtn');
+  if(ncBtn) ncBtn.addEventListener('click', msNewComment);
+  if(MS.tab==='carga') msWireCarga(root);
   root.querySelectorAll('[data-ms-rubrokpi]').forEach(b=> b.addEventListener('click', ()=>{
     const r = b.dataset.msRubrokpi;
     if(r==='GENERAL') MS.rubroFiltro = null;
@@ -3147,19 +3506,21 @@ function msWire(root){
   }));
   root.querySelectorAll('[data-ms-tipo]').forEach(b=> b.addEventListener('click', ()=>{ MS.tipoFiltro = b.dataset.msTipo; msRender(); }));
   root.querySelectorAll('[data-ms-periodo]').forEach(b=> b.addEventListener('click', ()=>{ MS.periodo = parseInt(b.dataset.msPeriodo,10); msRender(); }));
-  root.querySelectorAll('[data-ms-suc]').forEach(el=> el.addEventListener('click', ()=>{ MS.suc = MS._sucs[+el.dataset.msSuc]; MS.rubro = null; msRender(); }));
-  root.querySelectorAll('[data-ms-rubro]').forEach(el=> el.addEventListener('click', ()=>{ MS.rubro = MS._rubs[+el.dataset.msRubro]; msRender(); }));
+  root.querySelectorAll('[data-ms-suc]').forEach(el=> el.addEventListener('click', ()=>{ MS.suc = MS._sucs[+el.dataset.msSuc]; MS.rubro = null; MS.marca = null; MS.estadoFiltro = null; MS.sortCol = null; msRender(); }));
+  root.querySelectorAll('[data-ms-rubro]').forEach(el=> el.addEventListener('click', ()=>{ MS.rubro = MS._rubs[+el.dataset.msRubro]; MS.estadoFiltro = null; MS.sortCol = null; msRender(); }));
   root.querySelectorAll('[data-ms-marca]').forEach(el=> el.addEventListener('click', ()=>{
     msOpenDrawer({suc:MS.suc, rubro:MS.rubro, marca:MS._marcas[+el.dataset.msMarca]});
   }));
   const back = root.querySelector('#msBack');
   if(back) back.addEventListener('click', ()=>{
     if(MS.drawerOpen){ msCloseDrawer(); return; }
-    if(MS.rubro) MS.rubro = null; else MS.suc = null;
+    if(MS.marca) MS.marca = null;
+    else if(MS.rubro) MS.rubro = null;
+    else MS.suc = null;
     msRender();
   });
   root.querySelectorAll('[data-ms-crumb]').forEach(a=> a.addEventListener('click', ()=>{
-    if(a.dataset.msCrumb==='home'){ if(!MS.suc) return; MS.suc = null; MS.rubro = null; }
+    if(a.dataset.msCrumb==='home'){ if(!MS.suc && !MS.marca) return; MS.suc = null; MS.rubro = null; MS.marca = null; }
     else{ if(!MS.rubro) return; MS.rubro = null; }
     msRender();
   }));
@@ -3179,32 +3540,303 @@ function msWire(root){
     inp.addEventListener('keydown', e=>{ if(e.key==='Enter') msSend(id); });
   });
   root.querySelectorAll('[data-ms-send]').forEach(b=> b.addEventListener('click', ()=> msSend(b.dataset.msSend)));
-  // Animación de apertura del drawer (transform 105% → 0)
+  // Animación de apertura del drawer (transform 105% → 0). El setTimeout
+  // es respaldo: en pestañas no visibles requestAnimationFrame no corre.
   if(MS.drawerOpen && !MS.drawerShown){
     const dr = root.querySelector('.ms-drawer');
     if(dr){
       MS.drawerShown = true;
-      requestAnimationFrame(()=> requestAnimationFrame(()=> dr.classList.add('open')));
+      const abrir = ()=> dr.classList.add('open');
+      requestAnimationFrame(()=> requestAnimationFrame(abrir));
+      setTimeout(abrir, 120);
     }
   }
 }
 
-/* ---------- Carga diferida del dataset + respuestas ---------- */
+/* ---------- Export a Excel (respeta filtros: tipo, rubro, segmento, período) ---------- */
+async function msExportXlsx(){
+  const D = window.STOCK_DATA, ctx = MS._ctx || msCtx();
+  const rango = msRangoLbl(), anio = msAnio();
+  const wb = new ExcelJS.Workbook();
+
+  // Hoja Sucursales
+  const ws = wb.addWorksheet('Sucursales', {views:[{showGridLines:false, state:'frozen', ySplit:2}]});
+  ws.columns = [{width:26},{width:10},{width:14},{width:13},{width:13},{width:11},{width:10}];
+  gsSheetHeaderRow(ws, 1, 7, 'MESES DE STOCK — RATIO '+anio+' — '+rango.toUpperCase()+' — SUCURSALES');
+  gsSheetTableHeader(ws, 2, ['SUCURSAL','MESES','ESTADO','STOCK PROM','VENTAS PROM','FALTANTES','EXCESOS']);
+  let r = 3;
+  ctx.sucKeys.map(s=>{
+    let falt=0, exc=0;
+    for(const rb of msEffRubros()){
+      const rn = D.sucursales[s].rubros[rb];
+      if(!rn) continue;
+      for(const m in rn.marcas){
+        const pc = msPointCalc(rb, rn.marcas[m]);
+        if(!pc) continue;
+        if(pc.status==='faltante') falt++; else if(pc.status==='exceso') exc++;
+      }
+    }
+    const mix = msMixCalc([s], null);
+    return {s, mix, falt, exc, _r: mix.ratio===null?999:mix.ratio};
+  }).sort((a,b)=>a._r-b._r).forEach((x,i)=>{
+    gsSheetDataRow(ws, r, [x.s, x.mix.ratio===null?'S/D':x.mix.ratio, MS_ST[x.mix.status].label,
+      Math.round(x.mix.avgStock), Math.round(x.mix.avgVentas), x.falt, x.exc], i%2===1);
+    r++;
+  });
+
+  // Hoja Marcas (detalle suc × rubro × marca con los filtros aplicados)
+  const wsM = wb.addWorksheet('Marcas', {views:[{showGridLines:false, state:'frozen', ySplit:2}]});
+  wsM.columns = [{width:26},{width:16},{width:24},{width:14},{width:9},{width:12},{width:12},{width:13}];
+  gsSheetHeaderRow(wsM, 1, 8, 'MESES DE STOCK — RATIO '+anio+' — '+rango.toUpperCase()+' — DETALLE POR MARCA');
+  gsSheetTableHeader(wsM, 2, ['SUCURSAL','RUBRO','MARCA','ESTADO','MESES','STOCK PROM','VENTAS PROM','EXCESO (UN.)']);
+  r = 3;
+  let i2 = 0;
+  for(const s of ctx.sucKeys) for(const rb of msEffRubros()){
+    const rn = D.sucursales[s].rubros[rb];
+    if(!rn) continue;
+    const marcas = Object.keys(rn.marcas)
+      .map(m=>({m, pc: msPointCalc(rb, rn.marcas[m])}))
+      .filter(x=> x.pc && x.pc.status!=='sindato')
+      .sort((a,b)=> (a.pc.ratio===null?999:a.pc.ratio)-(b.pc.ratio===null?999:b.pc.ratio));
+    for(const x of marcas){
+      const exc = msExcedente(rb, x.pc);
+      gsSheetDataRow(wsM, r, [s, rb, x.m, MS_ST[x.pc.status].label, x.pc.ratio===null?'S/V':x.pc.ratio,
+        Math.round(x.pc.stock), Math.round(x.pc.ventas), exc===null?'':exc], i2%2===1);
+      r++; i2++;
+    }
+  }
+
+  // Hoja Comentarios (los visibles con los filtros actuales)
+  const wsC = wb.addWorksheet('Comentarios', {views:[{showGridLines:false, state:'frozen', ySplit:2}]});
+  wsC.columns = [{width:8},{width:26},{width:16},{width:22},{width:9},{width:52},{width:11},{width:42}];
+  gsSheetHeaderRow(wsC, 1, 8, 'MESES DE STOCK — RATIO '+anio+' — COMENTARIOS ('+rango.toUpperCase()+')');
+  gsSheetTableHeader(wsC, 2, ['MES','SUCURSAL','RUBRO','MARCA','RATIO','COMENTARIO','ESTADO','RESPUESTA']);
+  r = 3;
+  ctx.MCW.forEach((c,i)=>{
+    gsSheetDataRow(wsC, r, [MS_MLAB[c.mes]||c.mes, c.suc, c.rubro, c.marca,
+      (c.ratio===null||c.ratio===undefined)?'':c.ratio, c.texto, c.estado, c.respuesta||''], i%2===1);
+    r++;
+  });
+
+  await downloadWorkbook(wb, 'MesesStock_RATIO_'+anio+'.xlsx');
+  postFireAndForget(FB+'/actividad/'+currentYYYYMM()+'/descargas.json', {
+    email: SESSION.email, sucursal_o_outlet: SESSION.sucursal || SESSION.outlet_id || '-',
+    tipoExport: 'meses-stock', mesExportado: rango, seccion: 'meses-stock', timestamp: Date.now()
+  });
+}
+
+/* ---------- Actualización del dataset (solo admin) ----------
+   Lee un Excel PLANO (una fila por mes × sucursal × rubro × marca ×
+   segmento) y genera datos-meses-stock.js listo para reemplazar en
+   gestion-stock/ del repo. El deploy sigue siendo commit + push. */
+const MS_MES_NUM = {1:'ENERO',2:'FEBRERO',3:'MARZO',4:'ABRIL',5:'MAYO',6:'JUNIO',7:'JULIO',8:'AGOSTO',9:'SEPTIEMBRE',10:'OCTUBRE',11:'NOVIEMBRE',12:'DICIEMBRE'};
+const MS_MES_ORDEN = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
+
+function msCargaHtml(){
+  const c = MS._carga;
+  let html = '<div class="ms-card" style="padding:18px 20px;max-width:920px;margin:0 auto">'+
+    '<div style="font-weight:600;font-size:15px;margin-bottom:8px">Actualizar datos de RATIO</div>'+
+    '<div style="font-size:13px;color:#5A6072;line-height:1.6;margin-bottom:14px">'+
+      '1. Subí un Excel <b>plano</b> con estas columnas en la primera hoja: <b>MES · SUCURSAL · RUBRO · MARCA · SEGMENTO · STOCK · VENTAS</b> (opcional: <b>COMENTARIO</b>). El mes puede ser nombre (ENERO…) o número (1–12); una fila por mes × sucursal × rubro × marca × segmento.<br>'+
+      '2. Revisá el resumen de validación.<br>'+
+      '3. Descargá <b>datos-meses-stock.js</b>, reemplazalo en <b>gestion-stock/</b> del repo y pusheá (Cloudflare republica solo). Con «Probar en esta sesión» lo ves acá sin publicar nada.<br>'+
+      '<span style="color:#8A8FA3">Opcional: una hoja llamada «UMBRALES» con columnas RUBRO · MIN · MAX para cambiar los rangos sanos.</span>'+
+    '</div>'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px">Año del dataset:'+
+      '<input class="ms-search" id="msCargaAnio" type="number" style="min-width:90px;width:90px" value="'+((c&&c.anio)||msAnio())+'"></div>'+
+    '<label class="ms-upzone" id="msUpZone">Hacé clic o arrastrá el Excel acá (.xlsx / .xlsm / .csv)'+
+      '<input type="file" id="msCargaFile" accept=".xlsx,.xlsm,.xls,.csv"></label>';
+  if(c && c.errorFatal) html += '<div class="nota-regla" style="margin-top:14px">'+esc(c.errorFatal)+'</div>';
+  if(c && c.data){
+    const D2 = c.data;
+    html += '<div style="margin-top:16px;font-size:13px;line-height:1.6">'+
+      '<b>Archivo:</b> '+esc(c.fileName)+'<br>'+
+      '<b>Meses:</b> '+D2.meses.map(m=>MS_MLAB[m]).join(', ')+' · <b>Sucursales:</b> '+Object.keys(D2.sucursales).length+
+      ' · <b>Puntos suc×rubro×marca:</b> '+fmtNum(c.nMarcas)+' · <b>Filas leídas:</b> '+fmtNum(c.nFilas)+
+      ' · <b>Comentarios:</b> '+c.comments.length+'</div>';
+    if(c.errores.length) html += '<div class="nota-regla" style="margin-top:10px">'+
+      c.errores.slice(0,25).map(esc).join('<br>')+(c.errores.length>25?'<br>… y '+(c.errores.length-25)+' más':'')+'</div>';
+    html += '<div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">'+
+      '<button class="ms-send" id="msCargaDescargar" style="padding:10px 18px">Descargar datos-meses-stock.js</button>'+
+      '<button class="ms-open" id="msCargaProbar" style="padding:10px 18px">Probar en esta sesión</button>'+
+    '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function msParseRatioFlat(wb, anio){
+  const errores = [];
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:true});
+  const ALIAS = {mes:['MES'], suc:['SUCURSAL','SUC','TIENDA','LOCAL'], rubro:['RUBRO'], marca:['MARCA'],
+    seg:['SEGMENTO','SEG'], stock:['STOCK'], ventas:['VENTAS','VENTA'],
+    com:['COMENTARIO','COMENTARIOS','OBSERVACION','OBSERVACIONES']};
+  let hIdx = -1, map = null;
+  for(let i=0;i<Math.min(rows.length,10);i++){
+    const cells = (rows[i]||[]).map(v=>normStr(v));
+    const m = {};
+    for(const k in ALIAS){ const j = cells.findIndex(cv=> ALIAS[k].indexOf(cv)>=0); if(j>=0) m[k]=j; }
+    if(m.mes!==undefined && m.suc!==undefined && m.rubro!==undefined && m.marca!==undefined && m.stock!==undefined && m.ventas!==undefined){ hIdx=i; map=m; break; }
+  }
+  if(!map) return {errorFatal:'No encontré la fila de encabezados. La primera hoja necesita las columnas MES, SUCURSAL, RUBRO, MARCA, STOCK y VENTAS.', errores, comments:[], nFilas:0, nMarcas:0};
+  const mesesSet = new Set(), sucursales = {}, comments = [];
+  let nFilas = 0;
+  for(let i=hIdx+1;i<rows.length;i++){
+    const row = rows[i]||[];
+    if(row.every(v=> v===null||v===undefined||v==='')) continue;
+    let mes = null;
+    const mesN = normStr(row[map.mes]);
+    if(MS_MES_ORDEN.indexOf(mesN)>=0) mes = mesN;
+    else{ const num = toNumber(row[map.mes]); if(num>=1 && num<=12) mes = MS_MES_NUM[num]; }
+    const suc = String(row[map.suc]===undefined||row[map.suc]===null?'':row[map.suc]).trim();
+    const rubro = normStr(row[map.rubro]);
+    const marca = String(row[map.marca]===undefined||row[map.marca]===null?'':row[map.marca]).trim();
+    const seg = (map.seg!==undefined && row[map.seg]) ? normStr(row[map.seg]) : 'VARIOS';
+    if(!mes || !suc || !rubro || !marca){ errores.push('Fila '+(i+1)+': faltan datos (mes/sucursal/rubro/marca) — salteada.'); continue; }
+    const stock = toNumber(row[map.stock])||0;
+    const ventas = toNumber(row[map.ventas])||0;
+    nFilas++;
+    mesesSet.add(mes);
+    const sn = sucursales[suc]||(sucursales[suc]={rubros:{}});
+    const rn = sn.rubros[rubro]||(sn.rubros[rubro]={marcas:{}});
+    const mn = rn.marcas[marca]||(rn.marcas[marca]={serie:{}, segmentos:{}});
+    const acc = mn.serie[mes]||(mn.serie[mes]={stock:0, ventas:0, ratio:null});
+    acc.stock += stock; acc.ventas += ventas;
+    const sg = mn.segmentos[seg]||(mn.segmentos[seg]={stock:0, ventas:0, ratio:null, serie:{}});
+    const sacc = sg.serie[mes]||(sg.serie[mes]={stock:0, ventas:0, ratio:null});
+    sacc.stock += stock; sacc.ventas += ventas;
+    const comTxt = map.com!==undefined ? String(row[map.com]===undefined||row[map.com]===null?'':row[map.com]).trim() : '';
+    if(comTxt) comments.push({mes, suc, rubro, marca, seg, ratio:null, texto:comTxt, id:comments.length, estado:'pendiente', respuesta:null});
+  }
+  if(!nFilas) return {errorFatal:'No pude leer ninguna fila de datos válida.', errores, comments:[], nFilas:0, nMarcas:0};
+  const meses = MS_MES_ORDEN.filter(m=> mesesSet.has(m));
+  const thresholds = Object.assign({CALZADO:[4,6], INDUMENTARIA:[3,5], ACCESORIOS:[3,5], PRODUCTO:[4,6]},
+    (window.STOCK_DATA && window.STOCK_DATA.thresholds)||{});
+  const thName = wb.SheetNames.find(n=> normStr(n)==='UMBRALES');
+  if(thName){
+    const thr = XLSX.utils.sheet_to_json(wb.Sheets[thName], {header:1, raw:true});
+    for(let i=1;i<thr.length;i++){
+      const rr = thr[i]||[];
+      const rb = normStr(rr[0]), lo = toNumber(rr[1]), hi = toNumber(rr[2]);
+      if(rb && lo!==null && hi!==null) thresholds[rb] = [lo, hi];
+    }
+  }
+  // Ratios, valores de "último mes" por segmento y status de cada marca
+  const last = meses[meses.length-1];
+  let nMarcas = 0;
+  for(const s in sucursales) for(const r in sucursales[s].rubros){
+    const rn = sucursales[s].rubros[r];
+    for(const m in rn.marcas){
+      nMarcas++;
+      const mn = rn.marcas[m];
+      for(const mo of meses){ const n = mn.serie[mo]; if(n) n.ratio = n.ventas>0 ? Math.round(n.stock/n.ventas*100)/100 : null; }
+      for(const sgk in mn.segmentos){
+        const g = mn.segmentos[sgk];
+        for(const mo of meses){ const n = g.serie[mo]; if(n) n.ratio = n.ventas>0 ? Math.round(n.stock/n.ventas*100)/100 : null; }
+        const ln = g.serie[last]||{stock:0, ventas:0, ratio:null};
+        g.stock = ln.stock; g.ventas = ln.ventas; g.ratio = ln.ratio;
+      }
+      const lm = mn.serie[last]||{stock:0, ventas:0, ratio:null};
+      const th = thresholds[r]||[1,3];
+      mn.status = lm.ventas<=0 ? (lm.stock>0?'muerto':'sindato')
+        : (lm.ratio===null||lm.ratio<0 ? 'sindato' : (lm.ratio<th[0]?'faltante':(lm.ratio<=th[1]?'sano':'exceso')));
+    }
+  }
+  for(const cm of comments){
+    const node = sucursales[cm.suc].rubros[cm.rubro].marcas[cm.marca];
+    const n = node && node.serie[cm.mes];
+    cm.ratio = n ? n.ratio : null;
+  }
+  return {data:{anio, meses, thresholds, sucursales}, comments, errores, nFilas, nMarcas};
+}
+
+function msCargaLeer(f){
+  const anioInp = $('msCargaAnio');
+  const anio = (anioInp && parseInt(anioInp.value,10)) || msAnio();
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      const wb = XLSX.read(e.target.result, {type:'array'});
+      MS._carga = Object.assign({fileName:f.name, anio}, msParseRatioFlat(wb, anio));
+    }catch(err){
+      MS._carga = {fileName:f.name, anio, errorFatal:'No pude leer el archivo: '+err.message};
+    }
+    msRender();
+  };
+  reader.readAsArrayBuffer(f);
+}
+
+function msCargaDescargar(){
+  const c = MS._carga;
+  if(!c || !c.data) return;
+  c.data.anio = c.anio;
+  const txt = 'window.STOCK_DATA = '+JSON.stringify(c.data)+';\nwindow.STOCK_COMMENTS = '+JSON.stringify(c.comments)+';\n';
+  const blob = new Blob([txt], {type:'text/javascript'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'datos-meses-stock.js';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=> URL.revokeObjectURL(url), 1000);
+}
+
+function msCargaProbar(){
+  const c = MS._carga;
+  if(!c || !c.data) return;
+  c.data.anio = c.anio;
+  window.STOCK_DATA = JSON.parse(JSON.stringify(c.data));
+  window.STOCK_COMMENTS = c.comments.slice();
+  msCorregirDatos();
+  MS._marcaIndex = null; MS._kpiCache = {};
+  MS.suc = null; MS.rubro = null; MS.marca = null; MS.tab = 'panel';
+  msRender();
+  alert('Dataset de prueba aplicado a esta sesión (no publicado). Para publicarlo: descargá el .js, reemplazá gestion-stock/datos-meses-stock.js en el repo y pusheá.');
+}
+
+function msWireCarga(root){
+  const file = root.querySelector('#msCargaFile');
+  if(file) file.addEventListener('change', ()=>{ if(file.files && file.files[0]) msCargaLeer(file.files[0]); });
+  const zone = root.querySelector('#msUpZone');
+  if(zone){
+    zone.addEventListener('dragover', e=>{ e.preventDefault(); zone.classList.add('drag'); });
+    zone.addEventListener('dragleave', ()=> zone.classList.remove('drag'));
+    zone.addEventListener('drop', e=>{
+      e.preventDefault(); zone.classList.remove('drag');
+      if(e.dataTransfer.files && e.dataTransfer.files[0]) msCargaLeer(e.dataTransfer.files[0]);
+    });
+  }
+  const anioInp = root.querySelector('#msCargaAnio');
+  if(anioInp) anioInp.addEventListener('change', ()=>{
+    if(MS._carga){ MS._carga.anio = parseInt(anioInp.value,10)||msAnio(); if(MS._carga.data) MS._carga.data.anio = MS._carga.anio; }
+  });
+  const dl = root.querySelector('#msCargaDescargar');
+  if(dl) dl.addEventListener('click', msCargaDescargar);
+  const pr = root.querySelector('#msCargaProbar');
+  if(pr) pr.addEventListener('click', msCargaProbar);
+}
+
+/* ---------- Carga diferida del dataset + respuestas + comentarios ---------- */
 function msInit(){
+  msLoadPrefs();
   document.addEventListener('fullscreenchange', ()=>{
     MS.isFs = !!document.fullscreenElement;
     const b = $('msFsBtn');
     if(b) b.innerHTML = msFsSvg();
   });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape' && MS.drawerOpen) msCloseDrawer(); });
   MS.cargando = true;
   msRender();
   const s = document.createElement('script');
   s.src = 'datos-meses-stock.js';
   s.onload = async ()=>{
     msCorregirDatos();
-    try{ MS.replies = await fetchJSON(FB+'/mesesStock/respuestas.json') || {}; }catch(e){ MS.replies = {}; }
+    const [replies, live] = await Promise.all([
+      fetchJSON(FB+'/mesesStock/respuestas.json').catch(()=>null),
+      fetchJSON(FB+'/mesesStock/comentarios.json').catch(()=>null)
+    ]);
+    MS.replies = replies || {};
+    MS.liveComments = live || {};
     MS.cargando = false;
     MS.ready = true;
+    msApplyHash();
     msRender();
   };
   s.onerror = ()=>{ MS.cargando = false; MS.error = true; msRender(); };
