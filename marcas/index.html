@@ -73,7 +73,7 @@ body { font-family: 'Barlow', sans-serif; background: var(--gray-100); color: va
 .brand-tag.match { box-shadow: 0 0 0 2px #D0021B; border-color: #D0021B !important; }
 .chip.active { background: var(--red); color: #fff; border-color: var(--red); }
 
-/* Encabezado de RUBRO (hoy solo Calzado; Indumentaria y Accesorios en breve) */
+/* Encabezado de RUBRO (Calzado e Indumentaria activos; Accesorios en breve) */
 .rubro-bar {
   background: var(--white); border-bottom: 1px solid var(--gray-200);
   padding: 10px 1.5rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -87,6 +87,8 @@ body { font-family: 'Barlow', sans-serif; background: var(--gray-100); color: va
   letter-spacing: 0.1em; text-transform: uppercase; padding: 5px 16px; border-radius: 3px;
   border: 1px solid var(--gray-200); color: var(--gray-400); background: var(--gray-100);
 }
+.rubro-chip.selectable { cursor: pointer; transition: all .15s; }
+.rubro-chip.selectable:not(.active):hover { border-color: var(--navy); color: var(--navy); }
 .rubro-chip.active { background: var(--navy); color: #fff; border-color: var(--navy); }
 .rubro-chip.soon { border-style: dashed; font-weight: 600; }
 .rubro-chip.soon small { font-size: 10px; letter-spacing: 0.06em; opacity: .8; text-transform: none; }
@@ -258,12 +260,12 @@ body { font-family: 'Barlow', sans-serif; background: var(--gray-100); color: va
   <div class="header-sub">ASIGNACIÓN DE MARCAS</div>
 </div>
 
-<!-- Encabezado de RUBRO: la asignación cargada corresponde a CALZADO.
-     Cuando existan las de Indumentaria y Accesorios, pasan a ser selectores. -->
+<!-- Encabezado de RUBRO: selector entre Calzado e Indumentaria.
+     Cuando exista la asignación de Accesorios, pasa a ser selector. -->
 <div class="rubro-bar">
   <span class="rubro-label">Rubro</span>
-  <span class="rubro-chip active">Calzado</span>
-  <span class="rubro-chip soon">Indumentaria <small>· próximamente</small></span>
+  <span class="rubro-chip selectable active" data-rubro="calzado" onclick="setRubro('calzado')">Calzado</span>
+  <span class="rubro-chip selectable" data-rubro="indumentaria" onclick="setRubro('indumentaria')">Indumentaria</span>
   <span class="rubro-chip soon">Accesorios <small>· próximamente</small></span>
 </div>
 
@@ -366,16 +368,35 @@ function getCanalLogo(canal, nombre) {
   return null;
 }
 
-let MARCAS_DISPONIBLES = [
-  {n:'Adidas',t:'prio'},{n:'Nike',t:'prio'},{n:'Puma',t:'prio'},
-  {n:'ON',t:'especial'},{n:'Skechers',t:'prio'},{n:'Salomon',t:'prio'},
-  {n:'New Balance',t:'sec'},{n:'Asics',t:'sec'},{n:'Fila',t:'sec'},
-  {n:'Atomik',t:'sec'},{n:'Head',t:'sec'},{n:'47 Street',t:'especial'},
-  {n:'Converse',t:'sec'},{n:'Olympikus',t:'sec'},{n:'Montagne',t:'sec'},
-  {n:'Umbro',t:'sec'},{n:'Reebok',t:'sec'},{n:'Kappa',t:'sec'},
-  {n:'Under Armour',t:'sec'},{n:'Addnice',t:'nino'},{n:'Footy',t:'nino'},
-  {n:'Vans',t:'sec'},{n:'Timberland',t:'sec'},{n:'Crocs',t:'sec'},{n:'Havaianas',t:'sec'}
-];
+// Catálogo de marcas por RUBRO. Prioritarias de Indumentaria = las de mayor
+// venta según la estadística por marca (Adidas, Ruge, Puma, etc.).
+const CATALOGO_RUBRO = {
+  calzado: [
+    {n:'Adidas',t:'prio'},{n:'Nike',t:'prio'},{n:'Puma',t:'prio'},
+    {n:'ON',t:'especial'},{n:'Skechers',t:'prio'},{n:'Salomon',t:'prio'},
+    {n:'New Balance',t:'sec'},{n:'Asics',t:'sec'},{n:'Fila',t:'sec'},
+    {n:'Atomik',t:'sec'},{n:'Head',t:'sec'},{n:'47 Street',t:'especial'},
+    {n:'Converse',t:'sec'},{n:'Olympikus',t:'sec'},{n:'Montagne',t:'sec'},
+    {n:'Umbro',t:'sec'},{n:'Reebok',t:'sec'},{n:'Kappa',t:'sec'},
+    {n:'Under Armour',t:'sec'},{n:'Addnice',t:'nino'},{n:'Footy',t:'nino'},
+    {n:'Vans',t:'sec'},{n:'Timberland',t:'sec'},{n:'Crocs',t:'sec'},{n:'Havaianas',t:'sec'}
+  ],
+  indumentaria: [
+    {n:'Adidas',t:'prio'},{n:'Ruge',t:'prio'},{n:'Puma',t:'prio'},
+    {n:'Mateu Sports',t:'prio'},{n:'Team Gear',t:'prio'},{n:'Givova',t:'prio'},
+    {n:'Under Armour',t:'prio'},{n:'Rush Town',t:'prio'},{n:'Nike',t:'prio'},
+    {n:'Le Coq Sportif',t:'sec'},{n:'Champion',t:'sec'},{n:'New Balance',t:'sec'},
+    {n:'Reebok',t:'sec'},{n:'Columbia',t:'sec'},{n:'Head',t:'sec'},
+    {n:'Aurelius',t:'sec'},{n:'Topper',t:'sec'},{n:'Fila',t:'sec'},
+    {n:'Quiksilver',t:'sec'},{n:'Umbro',t:'sec'},{n:'Vans',t:'sec'},
+    {n:'Converse',t:'sec'},{n:'Kappa',t:'sec'},{n:'Mens Sana',t:'sec'},
+    {n:'DC Shoes',t:'sec'},{n:'Salomon',t:'sec'},{n:'Revolver',t:'sec'},
+    {n:'Babolat',t:'sec'},{n:'Saucony',t:'sec'},{n:'Arena',t:'sec'},
+    {n:'Sport Complements',t:'sec'},{n:'Gilbert',t:'sec'},{n:'Roxy',t:'sec'},
+    {n:'Atomik',t:'sec'},{n:'Speed',t:'sec'},{n:'Asics',t:'sec'},{n:'Folau',t:'sec'}
+  ]
+};
+let MARCAS_DISPONIBLES = [];
 
 const DEFAULT_DATA = {
   aurelius: {
@@ -534,23 +555,29 @@ async function fbSet(data) {
 
 // Poll every 5 seconds for changes
 let lastHash = '';
+
+// Aplica lo que vino de Firebase: calzado en data/marcas_extra (claves
+// históricas) e indumentaria en sus propias claves.
+function applyRemote(val) {
+  if (!val) return;
+  if (val.data) DATOS_RUBRO.calzado = normalizeData(val.data);
+  if (Array.isArray(val.marcas_extra)) MARCAS_EXTRA.calzado = val.marcas_extra;
+  if (val.data_indumentaria) DATOS_RUBRO.indumentaria = normalizeData(val.data_indumentaria);
+  if (Array.isArray(val.marcas_extra_indumentaria)) MARCAS_EXTRA.indumentaria = val.marcas_extra_indumentaria;
+  DATA = DATOS_RUBRO[rubroActivo];
+  refreshMarcasDisponibles();
+}
+
 async function pollFirebase() {
   try {
     const val = await fbGet();
     const hash = JSON.stringify(val);
     if (hash !== lastHash) {
       lastHash = hash;
-      if (val && val.data) {
+      if (val && (val.data || val.data_indumentaria)) {
         if (!editMode) {
-          DATA = val.data;
-          if (val.marcas_extra && Array.isArray(val.marcas_extra)) {
-            MARCAS_EXTRA = val.marcas_extra;
-            val.marcas_extra.forEach(m => {
-              if (!MARCAS_DISPONIBLES.find(x => x.n === m.n)) MARCAS_DISPONIBLES.push(m);
-            });
-          }
+          applyRemote(val);
           render();
-          populateBrandFilter();
         }
       }
     }
@@ -558,9 +585,45 @@ async function pollFirebase() {
   setTimeout(pollFirebase, 5000);
 }
 
-let DATA = JSON.parse(localStorage.getItem('mateu_brands_v2') || 'null') || JSON.parse(JSON.stringify(DEFAULT_DATA));
-let MARCAS_EXTRA = JSON.parse(localStorage.getItem('mateu_marcas_extra') || '[]');
-MARCAS_DISPONIBLES = [...MARCAS_DISPONIBLES, ...MARCAS_EXTRA];
+// Indumentaria arranca con la misma estructura de sucursales pero sin marcas
+// asignadas (se cargan en modo edición). Las tiendas Adidas conservan Adidas.
+function defaultDataIndumentaria() {
+  const d = JSON.parse(JSON.stringify(DEFAULT_DATA));
+  Object.entries(d).forEach(([canal, c]) => {
+    if (canal === 'adidas') return;
+    c.sucursales.forEach(s => { s.brands = []; });
+  });
+  return d;
+}
+
+// Firebase borra los arrays vacíos al guardar: al volver, brands puede faltar.
+function normalizeData(d) {
+  if (!d) return d;
+  Object.values(d).forEach(c => (c.sucursales || []).forEach(s => {
+    if (!Array.isArray(s.brands)) s.brands = [];
+  }));
+  return d;
+}
+
+let rubroActivo = 'calzado';
+let DATOS_RUBRO = {
+  calzado: normalizeData(JSON.parse(localStorage.getItem('mateu_brands_v2') || 'null')) || JSON.parse(JSON.stringify(DEFAULT_DATA)),
+  indumentaria: normalizeData(JSON.parse(localStorage.getItem('mateu_brands_indumentaria_v1') || 'null')) || defaultDataIndumentaria()
+};
+let MARCAS_EXTRA = {
+  calzado: JSON.parse(localStorage.getItem('mateu_marcas_extra') || '[]'),
+  indumentaria: JSON.parse(localStorage.getItem('mateu_marcas_extra_indumentaria') || '[]')
+};
+let DATA = DATOS_RUBRO[rubroActivo];
+
+function refreshMarcasDisponibles() {
+  const base = [...CATALOGO_RUBRO[rubroActivo]];
+  (MARCAS_EXTRA[rubroActivo] || []).forEach(m => {
+    if (!base.find(x => x.n === m.n)) base.push(m);
+  });
+  MARCAS_DISPONIBLES = base;
+}
+refreshMarcasDisponibles();
 
 let editMode = false;
 let brandFilter = '';
@@ -699,18 +762,20 @@ function renderCanal(key) {
 
 function populateBrandFilter() {
   const sel = document.getElementById('brandFilter');
-  const existing = new Set(Array.from(sel.options).map(o => o.value).filter(Boolean));
   const all = new Set();
   Object.values(DATA).forEach(canal => {
-    canal.sucursales.filter(s => canSeeSuc(s.id)).forEach(s => s.brands.forEach(b => all.add(b.n)));
+    canal.sucursales.filter(s => canSeeSuc(s.id)).forEach(s => (s.brands || []).forEach(b => all.add(b.n)));
   });
+  // El admin también puede filtrar por las marcas del catálogo del rubro,
+  // estén o no asignadas todavía.
+  if (isAdminSession()) MARCAS_DISPONIBLES.forEach(m => all.add(m.n));
+  sel.innerHTML = '<option value="">— todas —</option>';
   [...all].sort().forEach(name => {
-    if (!existing.has(name)) {
-      const o = document.createElement('option');
-      o.value = name; o.textContent = name;
-      sel.appendChild(o);
-    }
+    const o = document.createElement('option');
+    o.value = name; o.textContent = name;
+    sel.appendChild(o);
   });
+  sel.value = all.has(brandFilter) ? brandFilter : '';
 }
 
 function setBrandFilter(val) {
@@ -729,6 +794,23 @@ function render() {
   const html = (map[canalActivo]||[]).map(renderCanal).join('');
   document.getElementById('content').innerHTML = html || '<div style="padding:2rem;text-align:center;color:#9a9890;font-family:Barlow Condensed,sans-serif;font-size:14px;letter-spacing:0.1em;text-transform:uppercase;">No hay una sucursal asociada para este usuario.</div>';
   populateBrandFilter();
+}
+
+// Cambia el RUBRO activo (calzado / indumentaria): cada uno tiene su propio
+// catálogo de marcas y su propia asignación por sucursal.
+function setRubro(r) {
+  if (!DATOS_RUBRO[r] || r === rubroActivo) return;
+  rubroActivo = r;
+  DATA = DATOS_RUBRO[r];
+  refreshMarcasDisponibles();
+  brandFilter = '';
+  document.getElementById('resetFilterBtn').style.display = 'none';
+  document.querySelectorAll('.rubro-chip[data-rubro]').forEach(el => {
+    el.classList.toggle('active', el.dataset.rubro === r);
+  });
+  document.getElementById('modalAsignar').classList.remove('show');
+  document.getElementById('modalDetalle').classList.remove('show');
+  render();
 }
 
 function setCanal(c) {
@@ -768,9 +850,18 @@ function toggleEdit() {
 
 function saveChanges() {
   if(!isAdminSession()) return;
-  const payload = { data: DATA, marcas_extra: MARCAS_EXTRA };
-  localStorage.setItem('mateu_brands_v2', JSON.stringify(DATA));
-  localStorage.setItem('mateu_marcas_extra', JSON.stringify(MARCAS_EXTRA));
+  // Se guardan ambos rubros: calzado en las claves históricas (data /
+  // marcas_extra) e indumentaria en las suyas.
+  const payload = {
+    data: DATOS_RUBRO.calzado,
+    marcas_extra: MARCAS_EXTRA.calzado,
+    data_indumentaria: DATOS_RUBRO.indumentaria,
+    marcas_extra_indumentaria: MARCAS_EXTRA.indumentaria
+  };
+  localStorage.setItem('mateu_brands_v2', JSON.stringify(DATOS_RUBRO.calzado));
+  localStorage.setItem('mateu_marcas_extra', JSON.stringify(MARCAS_EXTRA.calzado));
+  localStorage.setItem('mateu_brands_indumentaria_v1', JSON.stringify(DATOS_RUBRO.indumentaria));
+  localStorage.setItem('mateu_marcas_extra_indumentaria', JSON.stringify(MARCAS_EXTRA.indumentaria));
   fbSet(payload)
     .then(() => showToast('✓ Guardado en la nube'))
     .catch(() => showToast('✓ Guardado localmente'));
@@ -786,10 +877,13 @@ function saveChanges() {
 
 function resetAll() {
   if(!isAdminSession()) return;
-  if (!confirm('¿Descartar todos los cambios y volver a la asignación original?')) return;
-  DATA = JSON.parse(JSON.stringify(DEFAULT_DATA));
-  MARCAS_EXTRA = [];
-  MARCAS_DISPONIBLES = MARCAS_DISPONIBLES.filter(m => !MARCAS_EXTRA.includes(m));
+  if (!confirm('¿Descartar todos los cambios de este rubro y volver a la asignación original?')) return;
+  DATOS_RUBRO[rubroActivo] = rubroActivo === 'calzado'
+    ? JSON.parse(JSON.stringify(DEFAULT_DATA))
+    : defaultDataIndumentaria();
+  MARCAS_EXTRA[rubroActivo] = [];
+  DATA = DATOS_RUBRO[rubroActivo];
+  refreshMarcasDisponibles();
   editMode = false;
   document.getElementById('editBadge').classList.remove('show');
   document.getElementById('btnEdit').style.display = 'block';
@@ -949,7 +1043,7 @@ function confirmarNuevaMarca() {
 
   const nueva = {n: nombre, t: tipo};
   MARCAS_DISPONIBLES.push(nueva);
-  MARCAS_EXTRA.push(nueva);
+  MARCAS_EXTRA[rubroActivo].push(nueva);
   document.getElementById('modalNuevaMarca').classList.remove('show');
   showToast(`✓ ${nombre} agregada al listado`);
 }
@@ -1013,24 +1107,16 @@ function dragDrop(e) {
 document.getElementById('content').innerHTML = '<div style="padding:3rem;text-align:center;color:#9a9890;font-family:Barlow Condensed,sans-serif;font-size:14px;letter-spacing:0.1em;text-transform:uppercase;">Cargando datos...</div>';
 applySessionUI();
 fbGet().then(val => {
-  if (val && val.data) {
-    DATA = val.data;
+  if (val && (val.data || val.data_indumentaria)) {
     lastHash = JSON.stringify(val);
-    if (val.marcas_extra && Array.isArray(val.marcas_extra)) {
-      MARCAS_EXTRA = val.marcas_extra;
-      val.marcas_extra.forEach(m => {
-        if (!MARCAS_DISPONIBLES.find(x => x.n === m.n)) MARCAS_DISPONIBLES.push(m);
-      });
-    }
+    applyRemote(val);
   }
   applySessionUI();
   render();
-  populateBrandFilter();
   setTimeout(pollFirebase, 5000);
 }).catch(() => {
   applySessionUI();
   render();
-  populateBrandFilter();
   setTimeout(pollFirebase, 5000);
 });
 
