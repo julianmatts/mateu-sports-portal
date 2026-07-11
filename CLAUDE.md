@@ -12,12 +12,18 @@ deploya a Cloudflare Pages desde GitHub. El idioma del proyecto es **español (A
 
 ```
 mateu-sports-portal/
-├── index.html          # EL PORTAL: login por rol + tiles a cada herramienta
+├── index.html          # EL PORTAL: login (email+PIN contra Firebase) + tiles a cada herramienta
 ├── netlify.toml        # leftover de cuando se usaba Netlify; ya no aplica, no usar de referencia
-├── condiciones/index.html   # Condiciones Comerciales (localStorage)
-├── equipo/index.html        # Área de Producto / transferencias (localStorage)
-├── turnero/index.html       # Turnero de proveedores (Firebase + EmailJS)
-├── marcas/index.html        # Asignación de Marcas (Firebase REST)
+├── condiciones/        # Condiciones Comerciales (localStorage)
+├── equipo/             # Área de Producto / transferencias (localStorage)
+├── turnero/            # Turnero de proveedores (Firebase + EmailJS)
+├── marcas/             # Asignación de Marcas (Firebase REST)
+├── gestion-stock/      # Discontinuos por sucursal + Reporte Mensual + Meses de Stock
+├── pedidos-semanales/  # Reposición semanal por sucursal y aprobaciones de Producto
+├── managment/          # Desarrollo, OC y seguimiento de ingresos por proveedor
+├── recepcion/          # Tablero de recepción preventa Adidas SS27
+├── diagonal80/         # Apertura Diagonal 80 (propuesta vs. capacidad)
+├── ubicaciones/        # "Buscador de Artículos": ubicaciones de depósito por sucursal
 └── shared/             # código común (hoy casi vacío, para el futuro)
 ```
 
@@ -36,7 +42,10 @@ en múltiples archivos salvo que se decida explícitamente centralizar algo en
 
 - **GitHub** → guarda el código y el historial.
 - **Cloudflare Pages** → publica el sitio; **deploya solo con cada push** a `main`.
-- **Firebase** → base de datos en vivo. **Solo** la usan `turnero/` y `marcas/`.
+- **Firebase (Realtime Database vía REST, sin SDK)** → los datos en vivo, un
+  proyecto por dominio: `discontinuos-mateu` (usuarios del portal + gestión de
+  stock), `asignacion-marcas-mateu`, `pedidos-semanales-mateu`,
+  `ubicaciones-mateu` (Buscador de Artículos) y el del turnero.
   `condiciones/` y `equipo/` usan **localStorage** (no tienen backend).
   No migrar Firebase a otra cosa sin que Juli lo pida: es la opción correcta
   para los datos multi-usuario en tiempo real.
@@ -50,18 +59,23 @@ republica solo en ~30s. Para probar local, abrir el `index.html` en el navegador
 
 Config en Cloudflare Pages: build command vacío, output directory = raíz (`/`).
 
-## El portal (`index.html` raíz)
+## El portal (`index.html` raíz) y el login
 
-Login **blando** (las contraseñas viajan en el código; sirve para ordenar
-accesos, NO es seguridad real). La config está en el `<script>`, en 3 bloques
-comentados arriba de todo:
+Login centralizado **blando** (sin Firebase Auth; ordena accesos, NO es
+seguridad real): email + PIN de 4 dígitos validado contra
+`discontinuos-mateu-default-rtdb/usuarios`. Cada usuario tiene `rol`
+(`admin` | `sucursal` | `outlet`), su `sucursal`/`outlet_id` y la lista
+`herramientas`, que define qué tiles ve. Ya no hay contraseñas en el código:
+la config del `<script>` es `TOOLS` (nombre, ícono y url de cada herramienta)
+y las listas de sucursales/outlets.
 
-- `USERS` → usuarios y contraseñas.
-- `ROLE_ACCESS` → qué herramientas ve cada rol (`admin`, `producto`, `deposito`).
-- `TOOLS` → nombre, descripción, ícono y `url` (la carpeta) de cada herramienta.
-
-El acceso a localStorage está envuelto en try/catch para no romper en previews
-sin storage. Mantener ese patrón.
+- La sesión queda en localStorage (`mateu_portal_session`). Los módulos **no
+  tienen login propio**: leen esa sesión y redirigen a `../` si falta o si el
+  usuario no tiene la herramienta asignada.
+- Gestión de usuarios (alta, herramientas, reseteo de PIN): ícono ⚙ del portal,
+  visible solo para `julian@mateu.com.ar` (`ADMIN_SETTINGS_EMAIL`).
+- El acceso a localStorage está envuelto en try/catch para no romper en
+  previews sin storage. Mantener ese patrón.
 
 ## Branding / design tokens
 
@@ -77,7 +91,7 @@ rediseña, alinear a los tokens de arriba; si no, dejarlo como está.
 
 - Responder y comentar el código en **español**.
 - No agregar frameworks ni build steps. Mantener todo self-contained.
-- No tocar la config de Firebase de `turnero/`/`marcas/` salvo pedido explícito.
+- No tocar la config de Firebase de los módulos (URLs de las bases) salvo pedido explícito.
 - Antes de un cambio grande en una herramienta, confirmá el alcance con Juli.
 - Juli itera con correcciones puntuales: hacé cambios acotados y dirigidos, no
   reescrituras completas salvo que lo pida.

@@ -814,6 +814,8 @@ let tabActiva = 'buscar';
 let searchQuery = '';
 let suAbierto = false;     // sección SIN UBICAR expandida
 let moduloVista = null;    // {estId, modId} para el filtro inverso
+let AUDIT = null;          // auditoría en curso {estId, marcas} (se declara acá
+                           // porque setTab la resetea ya durante el arranque)
 
 // Quién puede qué (se recalcula al elegir perfil / sucursal)
 function canAssign(){ return MODE==='admin' || (MODE==='sucursal' && !!PERFIL); }
@@ -1026,21 +1028,37 @@ function wireStatic(){
 /* ============================================================
    POLLING (articulos + estanterias + meta; NUNCA perfiles)
    ============================================================ */
+/* Polling en dos niveles para no fundir la cuota de descarga de Firebase:
+   cada 5 s se piden solo `meta` (que trae `rev`, la versión de los datos) y
+   las consultas del día — un par de KB. El catálogo completo (articulos,
+   estanterias, feedback) se baja únicamente cuando `rev` cambió, o cada 10 min
+   como red de seguridad (por si escribe un cliente viejo que no marca rev,
+   o se edita a mano en la consola de Firebase). */
+let lastRev = null, lastFullTs = 0;
 async function refrescarDatos(){
   if(!SUC) return false;
-  const [articulos, estanterias, meta, consultas, feedback] = await Promise.all([
-    fetchJSON(sucPath()+'/articulos.json').catch(()=>null),
-    fetchJSON(sucPath()+'/estanterias.json').catch(()=>null),
-    fetchJSON(sucPath()+'/meta.json').catch(()=>null),
-    fetchJSON(sucPath()+'/consultas/'+hoyKey()+'.json').catch(()=>null),
-    fetchJSON(sucPath()+'/feedback.json').catch(()=>null),
+  const [meta, consultas] = await Promise.all([
+    fetchJSON(sucPath()+'/meta.json').catch(()=>undefined),
+    fetchJSON(sucPath()+'/consultas/'+hoyKey()+'.json').catch(()=>undefined),
   ]);
-  if(articulos===null && estanterias===null && meta===null){
+  if(meta===undefined && consultas===undefined){
     // puede ser base vacía o sin conexión: probamos un fetch que distinga
     try{ await fetchJSON(sucPath()+'/config.json'); hideErr(); }
     catch(e){ showErr('Sin conexión con la base de Ubicaciones. Reintentando…'); return false; }
   } else hideErr();
-  DATA = { articulos:articulos||{}, estanterias:estanterias||{}, meta:meta||{}, consultas:consultas||{}, feedback:feedback||{} };
+  const rev = meta ? (meta.rev||null) : null;
+  if(!DATA.__full || rev !== lastRev || (Date.now()-lastFullTs) > 600000){
+    const [articulos, estanterias, feedback] = await Promise.all([
+      fetchJSON(sucPath()+'/articulos.json').catch(()=>null),
+      fetchJSON(sucPath()+'/estanterias.json').catch(()=>null),
+      fetchJSON(sucPath()+'/feedback.json').catch(()=>null),
+    ]);
+    DATA = { articulos:articulos||{}, estanterias:estanterias||{}, meta:meta||{}, consultas:consultas||{}, feedback:feedback||{}, __full:true };
+    lastRev = rev; lastFullTs = Date.now();
+  } else {
+    DATA.meta = meta||{};
+    DATA.consultas = consultas||{};
+  }
   lastSyncTs = Date.now();
   const hash = JSON.stringify(DATA);
   if(hash!==lastHash){ lastHash=hash; return true; }
@@ -1068,6 +1086,13 @@ function iniciarPolling(){
   if(!window.__syncTicker) window.__syncTicker = setInterval(renderSyncLabel, 1000);
 }
 function detenerPolling(){ if(pollTimer){ clearTimeout(pollTimer); pollTimer=null; } }
+
+// Con la pestaña en segundo plano no se pollea (ahorra cuota de Firebase
+// en los puestos que quedan abiertos todo el día); al volver, se refresca.
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){ detenerPolling(); }
+  else if(SUC && $('app').style.display==='block'){ lastFullTs=0; iniciarPolling(); }
+});
 
 function renderVistaActiva(){
   if(AUDIT) return; // auditoría en curso: no pisar las marcas con el polling
@@ -1141,11 +1166,14 @@ function actualizarBadges(){
 }
 
 // Mantiene el contador denormalizado de meta (para el resumen global)
+// y marca `rev` para que los demás dispositivos sepan que hay cambios.
 function patchMetaContadores(){
   const total = Object.keys(DATA.articulos||{}).length;
   const sinUbi = sinUbicarLista().length;
-  patchJSON(sucPath()+'/meta.json', {totalArticulos:total, sinUbicar:sinUbi}).catch(()=>{});
+  patchJSON(sucPath()+'/meta.json', {totalArticulos:total, sinUbicar:sinUbi, rev:Date.now()}).catch(()=>{});
 }
+// Para escrituras que no tocan contadores (estanterías, feedback, etc.)
+function bumpRev(){ patchJSON(sucPath()+'/meta.json', {rev:Date.now()}).catch(()=>{}); }
 
 /* ============================================================
    VISTA BUSCAR
@@ -1765,7 +1793,7 @@ async function agregarFeedback(artKey, tipo){
     if(!DATA.feedback[artKey].items) DATA.feedback[artKey].items = {};
     DATA.feedback[artKey].items[id] = item;
     lastHash='';
-    cerrarSheet(); renderVistaActiva();
+    cerrarSheet(); renderVistaActiva(); bumpRev();
     toast('Comentario guardado ✓ El encargado lo ve en Pedidos Semanales.');
   }catch(e){ toast('No se pudo guardar. Probá de nuevo.'); }
 }
@@ -1777,7 +1805,7 @@ async function quitarFeedback(artKey, itemId){
     if(fb && fb.items) delete fb.items[itemId];
     lastHash='';
     abrirSheetFeedback(artKey);
-    renderVistaActiva();
+    renderVistaActiva(); bumpRev();
   }catch(e){ toast('No se pudo borrar.'); }
 }
 
@@ -2016,6 +2044,7 @@ async function sincronizarStock(lista){
     cargadoPor: nombreOperador(),
     totalArticulos: Object.keys(out).length,
     sinUbicar: sinUbi,
+    rev: now,
   });
 
   DATA.articulos = out;
@@ -2119,7 +2148,7 @@ async function nuevaEstanteria(){
   const rec = {nombre:nombre.trim(), orden:(ests.length?Math.max(...ests.map(e=>e.orden||0)):0)+1, modulos:{}};
   try{
     await putJSON(sucPath()+'/estanterias/'+id+'.json', rec);
-    DATA.estanterias[id]=rec; lastHash=''; renderEstanterias();
+    DATA.estanterias[id]=rec; lastHash=''; renderEstanterias(); bumpRev();
   }catch(e){ toast('No se pudo crear.'); }
 }
 
@@ -2129,7 +2158,7 @@ async function renombrarEstanteria(id){
   if(!nombre || !nombre.trim() || nombre.trim()===e.nombre) return;
   try{
     await patchJSON(sucPath()+'/estanterias/'+id+'.json', {nombre:nombre.trim()});
-    e.nombre=nombre.trim(); lastHash=''; renderEstanterias();
+    e.nombre=nombre.trim(); lastHash=''; renderEstanterias(); bumpRev();
   }catch(err){ toast('No se pudo renombrar.'); }
 }
 
@@ -2145,7 +2174,7 @@ async function moverEstanteria(id, dir){
   ests.forEach(e=>{ patch[e.id+'/orden'] = e.orden; DATA.estanterias[e.id].orden = e.orden; });
   try{
     await patchJSON(sucPath()+'/estanterias.json', patch);
-    lastHash=''; renderEstanterias();
+    lastHash=''; renderEstanterias(); bumpRev();
   }catch(e){ toast('No se pudo reordenar.'); }
 }
 
@@ -2193,7 +2222,7 @@ async function nuevoModulo(estId){
   try{
     await putJSON(sucPath()+'/estanterias/'+estId+'/modulos/'+id+'.json', rec);
     if(!e.modulos) e.modulos={};
-    e.modulos[id]=rec; lastHash=''; renderEstanterias();
+    e.modulos[id]=rec; lastHash=''; renderEstanterias(); bumpRev();
   }catch(err){ toast('No se pudo crear.'); }
 }
 
@@ -2205,7 +2234,7 @@ async function renombrarModulo(ref){
   if(!nombre || !nombre.trim() || nombre.trim()===m.nombre) return;
   try{
     await patchJSON(sucPath()+'/estanterias/'+estId+'/modulos/'+modId+'.json', {nombre:nombre.trim()});
-    m.nombre=nombre.trim(); lastHash=''; renderEstanterias();
+    m.nombre=nombre.trim(); lastHash=''; renderEstanterias(); bumpRev();
   }catch(err){ toast('No se pudo renombrar.'); }
 }
 
@@ -2269,7 +2298,7 @@ function renderVistaModulo(){
    (la verdad física manda). Se guarda la última auditoría en la
    estantería.
    ============================================================ */
-let AUDIT = null; // {estId, marcas:{artKey:'esta'|'falta'}}
+// (AUDIT se declara arriba, en el bloque de ESTADO)
 
 // Artículos de una estantería agrupados por módulo (en orden)
 function articulosPorModulo(estId){
