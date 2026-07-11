@@ -333,7 +333,7 @@ body { font-family: 'Barlow', sans-serif; background: var(--gray-100); color: va
     <div class="modal-title">Nueva marca global</div>
     <p style="font-size:13px;color:#5a5955;margin-bottom:1rem;line-height:1.5;">Agregar una marca al listado general. Quedará disponible para asignar a cualquier sucursal.</p>
     <label class="form-label">Nombre de la marca</label>
-    <input class="form-input" id="nmNombre" type="text" placeholder="Ej: LACOSTE"
+    <input class="form-input" id="nmNombre" type="text" placeholder="Ej: Lacoste"
       onkeydown="if(event.key==='Enter')confirmarNuevaMarca()">
     <label class="form-label">Tipo por defecto</label>
     <div class="radio-group">
@@ -561,9 +561,9 @@ let lastHash = '';
 function applyRemote(val) {
   if (!val) return;
   if (val.data) DATOS_RUBRO.calzado = normalizeData(val.data);
-  if (Array.isArray(val.marcas_extra)) MARCAS_EXTRA.calzado = val.marcas_extra;
+  if (Array.isArray(val.marcas_extra)) MARCAS_EXTRA.calzado = normalizeExtras(val.marcas_extra);
   if (val.data_indumentaria) DATOS_RUBRO.indumentaria = normalizeData(val.data_indumentaria);
-  if (Array.isArray(val.marcas_extra_indumentaria)) MARCAS_EXTRA.indumentaria = val.marcas_extra_indumentaria;
+  if (Array.isArray(val.marcas_extra_indumentaria)) MARCAS_EXTRA.indumentaria = normalizeExtras(val.marcas_extra_indumentaria);
   DATA = DATOS_RUBRO[rubroActivo];
   refreshMarcasDisponibles();
 }
@@ -596,13 +596,39 @@ function defaultDataIndumentaria() {
   return d;
 }
 
+// Regla de nombres de marca: iniciales en mayúscula y el resto en minúscula
+// (ej. "LE COQ SPORTIF" → "Le Coq Sportif"). Si el nombre ya existe en el
+// catálogo de algún rubro se respeta esa grafía (ON, DC Shoes, 47 Street).
+function titleCase(s) {
+  return String(s).trim().toLowerCase().replace(/(^|[\s\-])\S/g, c => c.toUpperCase());
+}
+function nombreCanonico(n) {
+  const buscado = String(n).trim().toLowerCase();
+  for (const cat of Object.values(CATALOGO_RUBRO)) {
+    const m = cat.find(x => x.n.toLowerCase() === buscado);
+    if (m) return m.n;
+  }
+  return titleCase(n);
+}
+
 // Firebase borra los arrays vacíos al guardar: al volver, brands puede faltar.
+// De paso se normalizan los nombres de marca según la regla de arriba.
 function normalizeData(d) {
   if (!d) return d;
   Object.values(d).forEach(c => (c.sucursales || []).forEach(s => {
     if (!Array.isArray(s.brands)) s.brands = [];
+    s.brands.forEach(b => { b.n = nombreCanonico(b.n); });
   }));
   return d;
+}
+
+function normalizeExtras(arr) {
+  const out = [];
+  (arr || []).forEach(m => {
+    const n = nombreCanonico(m.n);
+    if (!out.find(x => x.n === n)) out.push({...m, n});
+  });
+  return out;
 }
 
 let rubroActivo = 'calzado';
@@ -611,8 +637,8 @@ let DATOS_RUBRO = {
   indumentaria: normalizeData(JSON.parse(localStorage.getItem('mateu_brands_indumentaria_v1') || 'null')) || defaultDataIndumentaria()
 };
 let MARCAS_EXTRA = {
-  calzado: JSON.parse(localStorage.getItem('mateu_marcas_extra') || '[]'),
-  indumentaria: JSON.parse(localStorage.getItem('mateu_marcas_extra_indumentaria') || '[]')
+  calzado: normalizeExtras(JSON.parse(localStorage.getItem('mateu_marcas_extra') || '[]')),
+  indumentaria: normalizeExtras(JSON.parse(localStorage.getItem('mateu_marcas_extra_indumentaria') || '[]'))
 };
 let DATA = DATOS_RUBRO[rubroActivo];
 
@@ -1026,7 +1052,10 @@ function openNuevaMarcaModal() {
 
 function confirmarNuevaMarca() {
   if(!isAdminSession()) return;
-  const nombre = document.getElementById('nmNombre').value.trim().toUpperCase();
+  // Regla automática: el nombre se guarda con iniciales en mayúscula y el
+  // resto en minúscula (o con la grafía del catálogo si ya existe).
+  const crudo = document.getElementById('nmNombre').value.trim();
+  const nombre = crudo ? nombreCanonico(crudo) : '';
   const tipo = document.querySelector('input[name="nmTipo"]:checked').value;
   const errEl = document.getElementById('nmError');
 
@@ -1035,7 +1064,7 @@ function confirmarNuevaMarca() {
     errEl.style.display = 'block';
     return;
   }
-  if (MARCAS_DISPONIBLES.find(m => m.n === nombre)) {
+  if (MARCAS_DISPONIBLES.find(m => m.n.toLowerCase() === nombre.toLowerCase())) {
     errEl.textContent = 'Esa marca ya existe en el listado.';
     errEl.style.display = 'block';
     return;
