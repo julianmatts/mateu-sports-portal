@@ -237,6 +237,7 @@ const TOOLS = {
   'pedidos-semanales': { name:'Pedidos Semanales', desc:'Reposición semanal por sucursal y aprobaciones de Producto.', icon:'📝', url:'./pedidos-semanales/', red:false },
   diagonal80:    { name:'Apertura Diagonal 80',   desc:'Propuesta de producto vs. capacidad de exhibición del local nuevo.', icon:'🏬', url:'./diagonal80/', red:true },
   ubicaciones:   { name:'Buscador de Artículos', desc:'Dónde está guardado cada artículo en el depósito de tu sucursal.', icon:'📍', url:'./ubicaciones/', red:true },
+  regalias:      { name:'Regalías RUGE / EDLP',  desc:'Liquidación mensual de regalías del contrato RUGE/EDLP (Estudiantes).', icon:'⚽', url:'./regalias/', red:true },
 };
 
 const ROLE_LABEL = { admin:'Administrador', sucursal:'Sucursal', outlet:'Outlet' };
@@ -274,6 +275,9 @@ function esSettingsAdmin(session){
 // cada una ve solo SU asignación), sin depender de cargarlo usuario por usuario.
 function herramientasEfectivas(rol, herramientas){
   const h = (herramientas||[]).slice();
+  // El admin (Juli) ve TODAS las herramientas sin cargarlas una por una: los
+  // módulos ya le dan acceso total por rol, así que también le mostramos todos los tiles.
+  if(rol==='admin'){ Object.keys(TOOLS).forEach(k=>{ if(!h.includes(k)) h.push(k); }); return h; }
   if((rol==='sucursal' || rol==='outlet') && !h.includes('marcas')) h.push('marcas');
   return h;
 }

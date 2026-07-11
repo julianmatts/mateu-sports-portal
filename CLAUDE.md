@@ -24,6 +24,7 @@ mateu-sports-portal/
 ├── recepcion/          # Tablero de recepción preventa Adidas SS27
 ├── diagonal80/         # Apertura Diagonal 80 (propuesta vs. capacidad)
 ├── ubicaciones/        # "Buscador de Artículos": ubicaciones de depósito por sucursal
+├── regalias/           # Liquidador de Regalías RUGE/EDLP (Estudiantes): clasifica ventas, aplica escalas, exporta el Excel del mes y genera la presentación comercial (plantilla-presentacion.html, embebida en index.html)
 └── shared/             # código común (hoy casi vacío, para el futuro)
 ```
 
@@ -46,6 +47,9 @@ en múltiples archivos salvo que se decida explícitamente centralizar algo en
   proyecto por dominio: `discontinuos-mateu` (usuarios del portal + gestión de
   stock), `asignacion-marcas-mateu`, `pedidos-semanales-mateu`,
   `ubicaciones-mateu` (Buscador de Artículos) y el del turnero.
+  `regalias/` guarda su ledger de acumuladores por temporada: hoy en
+  **localStorage** con `FIREBASE_DB_URL` como placeholder; cuando Juli cree
+  la base a mano (p.ej. `regalias-mateu`) y pegue la URL, migra solo a Firebase.
   `condiciones/` y `equipo/` usan **localStorage** (no tienen backend).
   No migrar Firebase a otra cosa sin que Juli lo pida: es la opción correcta
   para los datos multi-usuario en tiempo real.
