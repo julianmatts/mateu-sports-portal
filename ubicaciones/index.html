@@ -351,9 +351,24 @@ table.prev th{ background:var(--bg); font-family:var(--font-c); letter-spacing:.
 .search-row .search-wrap{ flex:1; margin-bottom:0; }
 .hist-btn{
   width:52px; flex-shrink:0; border:2px solid var(--gray-200); border-radius:8px;
-  background:#fff; font-size:20px; cursor:pointer; line-height:1;
+  background:#fff; font-size:20px; cursor:pointer; line-height:1; position:relative;
 }
 .hist-btn:hover{ border-color:var(--navy); }
+.pick-badge{
+  position:absolute; top:-7px; right:-7px; background:var(--red); color:#fff;
+  border-radius:9px; font-size:11px; font-weight:700; padding:1px 6px; display:none;
+  font-family:var(--font-b);
+}
+.pick-row{
+  display:flex; gap:8px; align-items:center; border:1px solid var(--gray-200);
+  border-radius:6px; padding:8px 10px; margin-bottom:6px; font-size:13px;
+}
+.toast-btn{
+  background:transparent; border:none; color:var(--red-soft); font-weight:700;
+  cursor:pointer; text-decoration:underline; margin-left:10px;
+  font-family:var(--font-c); font-size:13px; letter-spacing:.5px;
+}
+.sheet-opt.sug{ border-color:#3aa03a; background:var(--green-bg); }
 .hist-overlay{
   display:none; position:fixed; inset:0; background:rgba(11,21,39,.45);
   z-index:860; justify-content:flex-end;
@@ -523,7 +538,8 @@ table.prev th{ background:var(--bg); font-family:var(--font-c); letter-spacing:.
       <div class="su-head" id="suHead">
         <span class="tt">Sin ubicar</span>
         <span class="badge" id="suBadge">0</span>
-        <span class="arrow">▾</span>
+        <button class="icon-btn" id="suPrint" title="Imprimir lista de sin ubicar" style="margin-left:auto">🖨</button>
+        <span class="arrow" style="margin-left:0">▾</span>
       </div>
       <div class="su-body" id="suBody"></div>
       <div class="search-row">
@@ -532,6 +548,7 @@ table.prev th{ background:var(--bg); font-family:var(--font-c); letter-spacing:.
           <button class="search-clear" id="searchClear">✕</button>
         </div>
         <button class="hist-btn" id="btnHistorial" title="Historial de consultas de hoy">🕘</button>
+        <button class="hist-btn" id="btnPicking" title="Lista de retiro (recorrido por el depósito)">📝<span class="pick-badge" id="pickBadge">0</span></button>
       </div>
       <div id="searchResults"></div>
     </div>
@@ -717,8 +734,17 @@ function estadoCarga(ts){
 
 let toastTimer = null;
 function toast(msg){
-  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  const t = $('toast'); t.textContent = msg; t.style.pointerEvents='none'; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('show'), 2600);
+}
+// Toast con botón de acción (ej: "Deshacer")
+function toastAccion(msg, btnLabel, fn){
+  const t = $('toast');
+  t.innerHTML = esc(msg)+'<button class="toast-btn" id="toastAct">'+esc(btnLabel)+'</button>';
+  t.style.pointerEvents='auto'; t.classList.add('show');
+  clearTimeout(toastTimer);
+  $('toastAct').addEventListener('click', ()=>{ t.classList.remove('show'); t.style.pointerEvents='none'; fn(); });
+  toastTimer = setTimeout(()=>{ t.classList.remove('show'); t.style.pointerEvents='none'; }, 6000);
 }
 function showErr(msg){ const b=$('errBanner'); b.textContent=msg; b.classList.add('show'); }
 function hideErr(){ $('errBanner').classList.remove('show'); }
@@ -991,6 +1017,8 @@ function wireStatic(){
   $('sheetOverlay').addEventListener('click', e=>{ if(e.target===$('sheetOverlay')) cerrarSheet(); });
   $('modalOverlay').addEventListener('click', e=>{ if(e.target===$('modalOverlay')) cerrarModal(); });
   $('btnHistorial').addEventListener('click', abrirHistorial);
+  $('btnPicking').addEventListener('click', abrirPicking);
+  $('suPrint').addEventListener('click', e=>{ e.stopPropagation(); imprimirSinUbicar(); });
   $('histCerrar').addEventListener('click', cerrarHistorial);
   $('histOverlay').addEventListener('click', e=>{ if(e.target===$('histOverlay')) cerrarHistorial(); });
 }
@@ -1123,10 +1151,12 @@ function patchMetaContadores(){
    VISTA BUSCAR
    ============================================================ */
 function renderBuscar(){
-  // botón de carga (solo encargado / admin)
-  $('cargaBox').innerHTML = canManage() ?
-    '<button class="btn btn-primary btn-block" id="btnCargarStock" style="margin-bottom:12px">📄 Cargar stock del día</button>' : '';
+  // carga (solo encargado/admin) + exportación a Excel (todos)
+  $('cargaBox').innerHTML = '<div style="display:flex;gap:8px;margin-bottom:12px">'+
+    (canManage()?'<button class="btn btn-primary" id="btnCargarStock" style="flex:1">📄 Cargar stock del día</button>':'')+
+    '<button class="btn btn-outline" id="btnExportar" '+(canManage()?'':'style="flex:1"')+' title="Descargar la planilla completa">⬇ Excel</button></div>';
   if(canManage()) $('btnCargarStock').addEventListener('click', ()=> $('fileStock').click());
+  $('btnExportar').addEventListener('click', exportarExcel);
 
   renderSinUbicar();
   renderResultados();
@@ -1155,6 +1185,37 @@ function renderSinUbicar(){
 
 function matchArticulo(a, q){
   return (a.codigo||'').toLowerCase().includes(q) || (a.descripcion||'').toLowerCase().includes(q);
+}
+
+// Exporta la planilla completa (respaldo / reemplazo de la vieja planilla de Drive)
+function exportarExcel(){
+  const arts = articulosLista().sort((a,b)=>(a.codigo||'').localeCompare(b.codigo||''));
+  if(!arts.length){ toast('No hay artículos para exportar.'); return; }
+  const filas = [['Código','Descripción','Stock','Ubicaciones','Sin ubicar','Última carga']];
+  arts.forEach(a=>{
+    const ubis = Object.values(a.ubicaciones||{}).map(u=>nombreUbicacion(u)).join(' / ');
+    filas.push([a.codigo, a.descripcion||'', a.stock, ubis, ubis?'':'SÍ', fmtFecha(a.ultimaCarga)]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(filas);
+  ws['!cols'] = [{wch:20},{wch:42},{wch:8},{wch:42},{wch:9},{wch:16}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Ubicaciones');
+  const info = SUCURSAL_BY_SLUG[SUC];
+  XLSX.writeFile(wb, 'Ubicaciones_'+((info?info.nombre:SUC).replace(/\s+/g,'_'))+'_'+hoyKey()+'.xlsx');
+}
+
+// Imprime la lista de pendientes para repartir el trabajo de ubicar
+function imprimirSinUbicar(){
+  const lista = sinUbicarLista();
+  if(!lista.length){ toast('No hay artículos sin ubicar 🎉'); return; }
+  const info = SUCURSAL_BY_SLUG[SUC];
+  $('printArea').innerHTML =
+    '<h1>Artículos SIN UBICAR — '+esc(info?info.nombre:SUC)+'</h1>'+
+    '<div class="sub">'+fmtFecha(Date.now())+' · '+lista.length+' artículos · anotar la ubicación elegida y volcarla después en el Buscador</div>'+
+    '<table><tr><th>Código</th><th>Descripción</th><th>Stock</th><th style="width:140px">Ubicación (anotar)</th></tr>'+
+    lista.map(a=>'<tr><td>'+esc(a.codigo)+'</td><td>'+esc(a.descripcion||'')+'</td><td>'+esc(a.stock)+'</td><td></td></tr>').join('')+
+    '</table>';
+  window.print();
 }
 
 function renderResultados(){
@@ -1284,6 +1345,8 @@ document.addEventListener('keydown', e=>{
 });
 
 function procesarEscaneo(codigo){
+  // con la Lista de retiro abierta, los escaneos se suman ahí
+  if(pickingAbierto()){ pickingAgregar(codigo); return; }
   cerrarSheet(); cerrarModal(); cerrarHistorial();
   if(tabActiva!=='buscar') setTab('buscar');
   searchQuery = codigo;
@@ -1309,6 +1372,104 @@ function procesarEscaneo(codigo){
   } else {
     toast('El código escaneado no está en el stock de hoy: '+codigo);
   }
+}
+
+/* ============================================================
+   LISTA DE RETIRO (picking)
+   Se cargan varios códigos (pistolazos o tipeo) y se imprime un
+   recorrido ordenado por estantería para buscar todo en una pasada.
+   ============================================================ */
+let pickingItems = []; // artKeys
+
+function pickingBadge(){
+  const b = $('pickBadge');
+  if(b){ b.textContent = pickingItems.length; b.style.display = pickingItems.length ? 'block' : 'none'; }
+}
+
+function pickingAbierto(){
+  return $('modalOverlay').classList.contains('show') && !!$('pickList');
+}
+
+function abrirPicking(){
+  $('modalBody').innerHTML =
+    '<div class="modal-title">📝 Lista de retiro</div>'+
+    '<div class="hint" style="margin-bottom:8px">Escaneá códigos con la lectora (o tipealos y Enter) para armar el recorrido por el depósito.</div>'+
+    '<div class="fld"><input type="text" id="pickInput" placeholder="Código…" autocomplete="off"></div>'+
+    '<div id="pickList"></div>'+
+    '<div class="modal-footer">'+
+      '<button class="btn btn-outline" id="pickVaciar">Vaciar</button>'+
+      '<button class="btn btn-outline" id="pickCerrar">Cerrar</button>'+
+      '<button class="btn btn-primary" id="pickImprimir">🖨 Imprimir recorrido</button></div>';
+  $('modalOverlay').classList.add('show');
+  renderPickList();
+  $('pickInput').addEventListener('keydown', e=>{
+    if(e.key==='Enter' || e.key==='Tab'){ e.preventDefault(); pickingAgregar($('pickInput').value); $('pickInput').value=''; }
+  });
+  $('pickVaciar').addEventListener('click', ()=>{ pickingItems=[]; renderPickList(); pickingBadge(); });
+  $('pickCerrar').addEventListener('click', cerrarModal);
+  $('pickImprimir').addEventListener('click', pickingImprimir);
+  $('pickInput').focus();
+}
+
+function pickingAgregar(codigo){
+  codigo = String(codigo||'').trim();
+  if(!codigo) return;
+  const key = fbKey(codigo);
+  let art = DATA.articulos[key] ? key : null;
+  if(!art){
+    const matches = articulosLista().filter(a=>matchArticulo(a, codigo.toLowerCase()));
+    if(matches.length===1) art = matches[0].key;
+  }
+  if(!art){ toast('No está en el stock de hoy: '+codigo); return; }
+  if(pickingItems.includes(art)){ toast('Ya está en la lista.'); return; }
+  pickingItems.push(art);
+  renderPickList(); pickingBadge();
+}
+
+function renderPickList(){
+  const cont = $('pickList'); if(!cont) return;
+  cont.innerHTML = pickingItems.length
+    ? pickingItems.map(k=>{
+        const a = DATA.articulos[k]; if(!a) return '';
+        const ubis = Object.values(a.ubicaciones||{}).map(u=>nombreUbicacion(u)).join(' · ');
+        return '<div class="pick-row"><div style="flex:1;min-width:0"><b style="font-family:var(--font-c)">'+esc(a.codigo)+'</b>'+
+          '<div class="hint">'+esc((a.descripcion||'').slice(0,45))+' — '+(ubis?esc(ubis):'<span style="color:var(--red)">SIN UBICAR</span>')+'</div></div>'+
+          '<button class="icon-btn lite" data-pickdel="'+esc(k)+'">✕</button></div>';
+      }).join('')
+    : '<div class="empty">Lista vacía.</div>';
+  cont.querySelectorAll('[data-pickdel]').forEach(b=> b.addEventListener('click', ()=>{
+    pickingItems = pickingItems.filter(k=>k!==b.dataset.pickdel);
+    renderPickList(); pickingBadge();
+  }));
+}
+
+function pickingImprimir(){
+  if(!pickingItems.length){ toast('La lista está vacía.'); return; }
+  const estOrden = {}; estanteriasOrdenadas().forEach((e,i)=>estOrden[e.id]=i);
+  const grupos = {}; // estId ('' = sin ubicar) -> [{a,u}]
+  pickingItems.forEach(k=>{
+    const a = DATA.articulos[k]; if(!a) return;
+    const ubis = Object.values(a.ubicaciones||{})
+      .sort((x,y)=>(estOrden[x.estanteriaId]??98)-(estOrden[y.estanteriaId]??98));
+    const u = ubis[0] || null;
+    const g = u ? u.estanteriaId : '';
+    (grupos[g] = grupos[g]||[]).push({a, u});
+  });
+  const claves = Object.keys(grupos).sort((x,y)=>(x===''?99:(estOrden[x]??98))-(y===''?99:(estOrden[y]??98)));
+  const info = SUCURSAL_BY_SLUG[SUC];
+  $('printArea').innerHTML =
+    '<h1>Recorrido de retiro — '+esc(info?info.nombre:SUC)+'</h1>'+
+    '<div class="sub">'+fmtFecha(Date.now())+' · '+pickingItems.length+' artículos · '+esc(nombreOperador())+'</div>'+
+    claves.map(g=>{
+      const e = DATA.estanterias[g];
+      return '<h2>'+(e?esc(e.nombre):'SIN UBICAR')+'</h2>'+
+        '<table><tr><th class="chk">☐</th><th>Código</th><th>Descripción</th><th>Stock</th><th>Módulo</th></tr>'+
+        grupos[g].map(({a,u})=>{
+          const mod = u && e && e.modulos && e.modulos[u.moduloId] ? e.modulos[u.moduloId].nombre : '—';
+          return '<tr><td class="chk"></td><td>'+esc(a.codigo)+'</td><td>'+esc(a.descripcion||'')+'</td><td>'+esc(a.stock)+'</td><td>'+esc(mod)+'</td></tr>';
+        }).join('')+'</table>';
+    }).join('');
+  window.print();
 }
 
 // limpieza: consultas se conservan 7 días (alimentan el Top de Actividad),
@@ -1429,6 +1590,29 @@ function modulosOrdenados(est){
     .sort((a,b)=>(a.orden||99)-(b.orden||99));
 }
 
+// Sugerencia: dónde están los artículos "hermanos" (mismo prefijo de código,
+// que en la práctica es la marca: GIVCGE…, RUG…, MED…, etc.)
+function sugerirUbicaciones(artKey){
+  const a = DATA.articulos[artKey]; if(!a) return {pref:null, sugs:[]};
+  const m = String(a.codigo||'').toUpperCase().match(/^[A-ZÑ]{2,}/);
+  if(!m) return {pref:null, sugs:[]};
+  const pref = m[0];
+  const counts = {};
+  for(const otro of articulosLista()){
+    if(otro.key===artKey) continue;
+    if(!String(otro.codigo||'').toUpperCase().startsWith(pref)) continue;
+    for(const uid in (otro.ubicaciones||{})){
+      const u = otro.ubicaciones[uid];
+      const k = u.estanteriaId+'::'+(u.moduloId||'');
+      counts[k] = (counts[k]||0)+1;
+    }
+  }
+  const sugs = Object.entries(counts).sort((x,y)=>y[1]-x[1]).slice(0,3)
+    .map(([k,n])=>{ const [estId,modId]=k.split('::'); return {estId, modId:modId||null, n}; })
+    .filter(s=>DATA.estanterias[s.estId]);
+  return {pref, sugs};
+}
+
 function abrirSheetAsignar(artKey){
   const a = DATA.articulos[artKey]; if(!a) return;
   const ests = estanteriasOrdenadas();
@@ -1436,12 +1620,28 @@ function abrirSheetAsignar(artKey){
     toast(canManage() ? 'Primero creá estanterías en la pestaña Estanterías.' : 'No hay estanterías creadas. Pedile al encargado que las cargue.');
     return;
   }
+  const {pref, sugs} = sugerirUbicaciones(artKey);
+  const sugsHtml = sugs.length
+    ? '<div class="fb-grupo mas">💡 Sugerido — otros "'+esc(pref)+'…" están acá</div>'+
+      sugs.map(s=>{
+        const e = DATA.estanterias[s.estId];
+        const mod = s.modId && e.modulos && e.modulos[s.modId];
+        return '<button class="sheet-opt sug" data-sug="'+s.estId+'::'+(s.modId||'')+'">'+
+          esc(e.nombre + (mod ? ' · '+mod.nombre : ''))+'<span class="n">'+s.n+' art.</span></button>';
+      }).join('')+
+      '<div class="fb-grupo">O elegí a mano</div>'
+    : '';
   $('sheetBody').innerHTML =
     '<div class="sheet-title">'+esc(a.codigo)+'</div>'+
     '<div class="sheet-sub">'+esc(a.descripcion||'')+' — elegí la estantería</div>'+
+    sugsHtml+
     ests.map(e=>'<button class="sheet-opt" data-est="'+e.id+'">'+esc(e.nombre)+
       '<span class="n">'+Object.keys(e.modulos||{}).length+' módulos</span></button>').join('');
   $('sheetOverlay').classList.add('show');
+  $('sheetBody').querySelectorAll('[data-sug]').forEach(b=> b.addEventListener('click', ()=>{
+    const [estId, modId] = b.dataset.sug.split('::');
+    asignarUbicacion(artKey, estId, modId||null);
+  }));
   $('sheetBody').querySelectorAll('[data-est]').forEach(b=> b.addEventListener('click', ()=> sheetElegirModulo(artKey, b.dataset.est)));
 }
 
@@ -1486,14 +1686,24 @@ async function asignarUbicacion(artKey, estId, modId){
 
 async function quitarUbicacion(artKey, uid){
   const a = DATA.articulos[artKey]; if(!a || !a.ubicaciones || !a.ubicaciones[uid]) return;
-  const nombreUbi = nombreUbicacion(a.ubicaciones[uid]);
+  const entrada = {...a.ubicaciones[uid]};
+  const nombreUbi = nombreUbicacion(entrada);
   try{
     await delJSON(sucPath()+'/articulos/'+encodeURIComponent(artKey)+'/ubicaciones/'+uid+'.json');
     delete a.ubicaciones[uid];
     registrarMovimiento(artKey, 'quita', nombreUbi);
     lastHash=''; renderVistaActiva(); renderStatusbar();
     patchMetaContadores();
-    toast('Ubicación quitada.');
+    toastAccion('Ubicación quitada.', 'Deshacer', async ()=>{
+      try{
+        const r = await postJSON(sucPath()+'/articulos/'+encodeURIComponent(artKey)+'/ubicaciones.json', entrada);
+        const art = DATA.articulos[artKey];
+        if(art){ if(!art.ubicaciones) art.ubicaciones={}; art.ubicaciones[r.name]=entrada; }
+        registrarMovimiento(artKey, 'asigna', nombreUbi+' (deshacer)');
+        lastHash=''; renderVistaActiva(); renderStatusbar(); patchMetaContadores();
+        toast('Ubicación restaurada ✓');
+      }catch(err){ toast('No se pudo deshacer.'); }
+    });
   }catch(e){ toast('No se pudo quitar. Probá de nuevo.'); }
 }
 
