@@ -30,8 +30,10 @@ a{ color:inherit; }
   position:sticky; top:0; z-index:300;
   display:flex; align-items:center; gap:10px; padding:10px 14px;
 }
-.hdr-logo{ line-height:0; flex-shrink:0; }
-.hdr-logo img{ height:30px; filter:brightness(0) invert(1); display:block; }
+.hdr-logo{ flex-shrink:0; text-decoration:none; display:inline-flex; flex-direction:column; align-items:flex-end; line-height:.82; }
+.hdr-logo .ml-main{ font-family:var(--font-b); font-weight:600; font-style:italic; font-size:27px; letter-spacing:-1.2px; color:#fff; }
+.hdr-logo .ml-sub{ font-family:var(--font-c); font-weight:700; font-size:10px; letter-spacing:4.5px; color:#fff; margin-top:1px; padding-right:1px; }
+.hdr-logo:hover .ml-main{ color:var(--red-soft); }
 .hdr-title{ flex:1; min-width:0; }
 .hdr-title .t{ font-family:var(--font-d); font-size:20px; letter-spacing:1px; color:#fff; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .hdr-title .s{ font-family:var(--font-c); font-size:11px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:rgba(255,255,255,.55); }
@@ -138,7 +140,7 @@ table.grid tr.total td.num{ color:#fff; }
 <body>
 
 <header class="hdr">
-  <a href="../" class="hdr-logo" title="Volver al Portal"><img id="hdrLogo" alt="Mateu Sports"></a>
+  <a href="../" class="hdr-logo" title="Volver al Portal" aria-label="Mateu Sports — volver al Portal"><span class="ml-main">mateu</span><span class="ml-sub">SPORTS</span></a>
   <div class="hdr-title">
     <div class="t">LIQUIDACIÓN DE REGALÍAS RUGE / EDLP</div>
     <div class="s">Mateu Sports · Estudiantes de La Plata</div>
@@ -486,6 +488,32 @@ function temporadaLedger(){
   const t=CONFIG.temporadaVigente;
   if(!LEDGER[t]) LEDGER[t]={ carryIn:{edlp:0,rugeSE:0}, meses:{} };
   return LEDGER[t];
+}
+
+/* ============================================================
+   SIEMBRA DE MESES PREVIOS — ene–may 2026 (sacados del CONSOLIDADO
+   de la liquidación de junio). Deja el acumulador correcto sin cargar
+   los meses a mano: EDLP ene–may = 27.835 u (→20%), RUGE SE = 2.501 u (→15%).
+   edlpUnidades = EDLP vig minorista (MATEU) + EDLP mayorista · rugeUnidades = RUGE SE minorista.
+   Solo siembra una vez por temporada y no pisa meses que cargues/liquides.
+   ============================================================ */
+const SIEMBRA_MESES = {
+  2026: {
+    '2026-01': { edlpUnidades:7954, rugeUnidades:393, retail:6469, mayor:4208, unidades:10677 },
+    '2026-02': { edlpUnidades:4537, rugeUnidades:614, retail:6053, mayor:799,  unidades:6852  },
+    '2026-03': { edlpUnidades:4618, rugeUnidades:557, retail:5142, mayor:1952, unidades:7094  },
+    '2026-04': { edlpUnidades:6351, rugeUnidades:307, retail:5414, mayor:2498, unidades:7912  },
+    '2026-05': { edlpUnidades:4375, rugeUnidades:630, retail:5959, mayor:658,  unidades:6617  },
+  }
+};
+function sembrarMesesPrevios(){
+  const seed=SIEMBRA_MESES[CONFIG.temporadaVigente]; if(!seed) return false;
+  const led=temporadaLedger();
+  if(led.sembradoPrevios) return false;          // ya sembrado (respeta borrados posteriores)
+  led.meses=led.meses||{};
+  Object.keys(seed).forEach(k=>{ if(!led.meses[k]) led.meses[k]={ ...seed[k], seed:true, ts:'(sembrado)' }; });
+  led.sembradoPrevios=true;
+  return true;
 }
 
 /* ============================================================
@@ -962,7 +990,7 @@ function renderLedger(){
   if(!keys.length){ h+='<div class="muted">Todavía no guardaste ningún mes.</div>'; $('ledgerBox').innerHTML=h; return; }
   h+='<div class="tbl-wrap"><table class="grid"><thead><tr><th>Mes</th><th class="num">EDLP u</th><th class="num">RUGE SE u</th><th class="num">Regalía</th><th></th></tr></thead><tbody>';
   keys.forEach(k=>{ const m=meses[k];
-    h+=`<tr><td>${k}</td><td class="num">${units(m.edlpUnidades||0)}</td><td class="num">${units(m.rugeUnidades||0)}</td><td class="num">${money(m.regalia||0)}</td>`+
+    h+=`<tr><td>${k}${m.seed?' <span class="muted" style="font-size:11px">· sembrado</span>':''}</td><td class="num">${units(m.edlpUnidades||0)}</td><td class="num">${units(m.rugeUnidades||0)}</td><td class="num">${m.seed?'—':money(m.regalia||0)}</td>`+
        `<td class="num"><button class="btn sm ghost" data-delmes="${k}">Borrar</button></td></tr>`; });
   h+='</tbody></table></div>';
   $('ledgerBox').innerHTML=h;
@@ -1266,7 +1294,7 @@ function renderMapeoManual(tipo, mapa, faltan){
   // datos persistidos (para acá el script ya asignó LOGO al final del <script>)
   KEYWORDS=await loadKeywords();
   LEDGER=await loadLedger();
-  $('hdrLogo').src=LOGO;
+  if(sembrarMesesPrevios()) await saveLedger();   // deja ene–may cargados para el acumulador
 
   wireDropzone($('dzMateu'),'mateu');
   wireDropzone($('dzMay'),'may');
