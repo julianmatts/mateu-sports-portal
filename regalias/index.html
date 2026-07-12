@@ -160,6 +160,7 @@ table.grid tr.total td.num{ color:#fff; }
     </summary>
     <div class="step-bd">
       <div class="banner info"><span class="ic">📄</span><span>El módulo lee el <b>export de ventas del mes</b> (crudo, una fila por artículo), <b>no</b> la liquidación ya armada. Detecta las columnas por el nombre del encabezado (en cualquier orden); si no reconoce alguna, te la pide a mano. Acepta <b>.xlsx / .xls</b> y toma la <b>primera hoja</b>. Todos los importes van <b>sin IVA</b>, tal cual vienen.</span></div>
+      <div class="banner info" style="margin-top:8px"><span class="ic">🏉</span><span><b>Ruge Deportes Amateur (RDA)</b> es una liquidación aparte al <b>5%</b>. Vienen en el <b>mismo archivo de ventas minorista</b> (se reconocen por el Grupo 2 <i>“Ruge Deportes Amateur”</i>): el módulo los separa solo y te los muestra abajo del consolidado, con su propio Excel anual (⑥).</span></div>
 
       <div class="acc-grid" style="margin-top:12px">
         <div class="acc-card">
@@ -268,6 +269,14 @@ table.grid tr.total td.num{ color:#fff; }
             <div><label class="fld">Carry-in RUGE SE (u)</label><input class="ctl" id="ciRuge" type="number" min="0" step="1"></div>
             <button class="btn sm" id="btnCarry">Guardar carry-in</button>
           </div>
+
+          <div style="margin-top:14px; border-top:1px solid var(--gray-200); padding-top:12px">
+            <label class="fld">Ruge Deportes Amateur — sembrar meses previos</label>
+            <div class="banner info"><span class="ic">🏉</span><span>Si ya tenés el <b>Excel anual de RDA</b> (con la solapa <b>DETALLE MES</b>), importalo para cargar los meses previos (ene–may) al ledger. Así el Excel RDA sale completo con todo el año. Los meses que liquides en la app pisan a los importados.</span></div>
+            <button class="btn sm ghost" id="btnImportRDA">Importar RDA anual…</button>
+            <span class="muted" id="rdaImportInfo" style="margin-left:8px"></span>
+          </div>
+
           <div id="ledgerBox" style="margin-top:12px"></div>
         </div>
       </details>
@@ -288,10 +297,12 @@ table.grid tr.total td.num{ color:#fff; }
     <div class="step-hd"><div class="step-num">6</div><h2>Exportar <span class="sub">— Excel con el formato de siempre</span></h2></div>
     <div class="step-bd">
       <div class="row" style="align-items:center">
-        <button class="btn" id="btnExport" disabled>Descargar Excel</button>
+        <button class="btn" id="btnExport" disabled>Descargar Excel EDLP / RUGE</button>
+        <button class="btn ghost" id="btnExportRDA" disabled>Descargar Excel RDA (anual)</button>
         <button class="btn ghost sm" id="btnGuardarLedger" disabled>Guardar mes en el ledger</button>
         <span class="muted" id="expHint">Primero liquidá el mes.</span>
       </div>
+      <div class="muted" style="margin-top:8px; font-size:12px">El Excel RDA acumula el <b>DETALLE MES</b> de todos los meses guardados en el ledger + el actual, y arma el <b>RESUMEN</b> anual por mes.</div>
     </div>
   </section>
 
@@ -310,6 +321,7 @@ table.grid tr.total td.num{ color:#fff; }
 </div>
 
 <input type="file" id="filePick" accept=".xlsx,.xls" style="display:none">
+<input type="file" id="fileRDA" accept=".xlsx,.xls" style="display:none">
 <div class="toast" id="toast"></div>
 
 <script>
@@ -354,8 +366,14 @@ const CONFIG = {
     accCalz:           0.10,       // calzado y accesorios minorista
     accCalz_mayorista: 0.05,
     rugeSE_mayorista:  0.05,       // RARO -> el tool avisa con cartel y se carga a mano
-    rugeSE_liq2da:     0.05        // liquidación / 2da (NO suma)
+    rugeSE_liq2da:     0.05,       // liquidación / 2da (NO suma)
+    rdaAmateur:        0.05        // Ruge Deportes Amateur (liquidación APARTE, 5% plano)
   },
+
+  // Ruge Deportes Amateur: liquidación separada de EDLP/RUGE. Los artículos se
+  // identifican por el GRUPO 2 y viven en el MISMO archivo de ventas minorista.
+  // Pagan 5% plano y NO suman a ninguna escala.
+  g2RugeAmateur: 'DEPORTES AMATEUR',
 
   // Palabras que marcan un artículo como EDLP aunque NO diga literal "EDLP".
   // Se pueden editar desde la UI (se persisten y pisan a esta lista base).
@@ -572,6 +590,8 @@ const OUTLET_G2 = ['ARTICULOS SIN CAMBIO','DISCONTINUOS OUTLET F8','DISCONTINUOS
 // Devuelve { tab, sub, rate|null (null = escala), sumaEDLP, sumaRugeSE, revisar, motivo }
 function clasificarMateu(l){
   const RUBRO=up(l.rubro), G2=up(l.g2), LP=up(l.lista);
+  // Paso 0 — Ruge Deportes Amateur: liquidación aparte (5%), se reconoce por el Grupo 2.
+  if(G2.includes(up(CONFIG.g2RugeAmateur))) return { tab:'RDA', rate:CONFIG.tasas.rdaAmateur };
   const esVig=esVigenteG3(l.g3), esMin=LP.includes('MINORISTA'), esEDLP=esEDLPtxt(l.articulo);
   const g2_notiene=G2.includes('NO TIENE');
   const g2_linea=G2.includes('LINEA ESTUDIANTES')||G2.includes('LINEA EDLP');
@@ -724,6 +744,7 @@ function liquidar(){
   let sumEdlpU=0, sumRugeU=0;
 
   mLines.forEach(({l,c})=>{
+    if(c.tab==='RDA') return;   // RDA se liquida aparte (ver más abajo), no entra al consolidado EDLP/RUGE
     let tab=c.tab, regalia, rate;
     if(tab==='EDLP_VIG_MIN'||tab==='RUGE_SE'){
       const r=regByIdx.get('m'+l.idx); regalia=r?r.regalia:0; rate=r?r.rate:0;
@@ -750,16 +771,24 @@ function liquidar(){
   const totImp=orden.reduce((s,t)=>s+tabs[t].importe,0);
   const totU=orden.reduce((s,t)=>s+tabs[t].unidades,0);
 
-  const retailU=mLines.reduce((s,x)=>s+Math.round(x.l.cant),0);
+  // RDA — Ruge Deportes Amateur: liquidación aparte, 5% plano (no toca el consolidado EDLP/RUGE)
+  const rdaLines = mLines.filter(x=>x.c.tab==='RDA').map(x=>x.l);
+  const rdaU = rdaLines.reduce((s,l)=>s+Math.round(l.cant),0);
+  const rdaImp = rdaLines.reduce((s,l)=>s+l.importe,0);
+  const rda = { unidades:rdaU, importe:rdaImp, regalia:rdaImp*CONFIG.tasas.rdaAmateur, tasa:CONFIG.tasas.rdaAmateur, lineas:rdaLines };
+
+  const retailU=mLines.filter(x=>x.c.tab!=='RDA').reduce((s,x)=>s+Math.round(x.l.cant),0); // retail EDLP/RUGE (sin RDA)
   const mayorU =yLines.reduce((s,x)=>s+Math.round(x.l.cant),0);
 
   RESULT = { mesKey, mesLabel:MESES[+$('selMes').value]+' '+$('selAnio').value, tabs, orden,
     totReg, totImp, totU, prev,
-    edlpUnidades:sumEdlpU, rugeUnidades:sumRugeU, retailU, mayorU,
+    edlpUnidades:sumEdlpU, rugeUnidades:sumRugeU, retailU, mayorU, rda,
     acumEdlpFin:prev.edlp+sumEdlpU, acumRugeFin:prev.ruge+sumRugeU };
 
   renderConsolidado(); renderAcumulador();
-  $('btnExport').disabled=false; $('btnGuardarLedger').disabled=false; $('btnPreso').disabled=false; $('expHint').textContent='Listo para descargar.';
+  $('btnExport').disabled=false; $('btnGuardarLedger').disabled=false; $('btnPreso').disabled=false;
+  $('btnExportRDA').disabled = !(RESULT.rda && RESULT.rda.lineas.length);
+  $('expHint').textContent='Listo para descargar.';
   const led=temporadaLedger();
   if(led.meses && led.meses[mesKey]) toast('OJO: '+mesKey+' ya está en el ledger. Si guardás, lo pisás.');
 }
@@ -780,7 +809,23 @@ function renderConsolidado(){
   h+=`<tr class="total"><td>TOTAL</td><td class="num">${units(R.totU)}</td><td class="num">${money(R.totImp)}</td>`+
      `<td class="num">${pctStr(R.totImp?R.totReg/R.totImp:0)}</td><td class="num">${money(R.totReg)}</td></tr>`;
   h+='</tbody></table></div>';
-  h+=`<div style="margin-top:16px; text-align:right"><div class="big-total">$ ${money(R.totReg)}<small>Total regalías · ${esc(R.mesLabel)}</small></div></div>`;
+  h+=`<div style="margin-top:16px; text-align:right"><div class="big-total">$ ${money(R.totReg)}<small>Total regalías EDLP / RUGE SE · ${esc(R.mesLabel)}</small></div></div>`;
+
+  // Bloque APARTE — Ruge Deportes Amateur (liquidación separada, 5%)
+  if(R.rda && R.rda.lineas.length){
+    const d=R.rda;
+    h+=`<div style="margin-top:22px; border-top:2px dashed var(--gray-300); padding-top:16px">
+      <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap">
+        <h3 style="font-family:var(--font-c); font-weight:700; letter-spacing:.5px; text-transform:uppercase; font-size:15px">Ruge Deportes Amateur</h3>
+        <span class="muted" style="font-size:12px">liquidación aparte · ${pctStr(d.tasa)} plano · ${d.lineas.length} artículos</span>
+      </div>
+      <div class="tbl-wrap" style="margin-top:8px"><table class="grid" style="min-width:420px"><tbody>
+        <tr><td>Unidades</td><td class="num"><b>${units(d.unidades)}</b></td></tr>
+        <tr><td>Venta $ (sin IVA)</td><td class="num"><b>${money(d.importe)}</b></td></tr>
+        <tr><td>Regalía (${pctStr(d.tasa)})</td><td class="num"><b>$ ${money(d.regalia)}</b></td></tr>
+      </tbody></table></div>
+    </div>`;
+  }
   $('consolidado').innerHTML=h;
 }
 
@@ -889,7 +934,7 @@ function renderRevision(){
 }
 function postCambioRevision(){
   renderRevision(); renderAcumulador();
-  $('btnExport').disabled=true; $('btnGuardarLedger').disabled=true; $('btnPreso').disabled=true;
+  $('btnExport').disabled=true; $('btnGuardarLedger').disabled=true; $('btnPreso').disabled=true; $('btnExportRDA').disabled=true;
   $('consolidado').innerHTML='<div class="empty">Cambió la revisión. Volvé a tocar <b>Liquidar mes</b>.</div>';
   $('expHint').textContent='Volvé a liquidar tras revisar.';
 }
@@ -926,12 +971,101 @@ function renderLedger(){
     delete temporadaLedger().meses[b.dataset.delmes]; await saveLedger(); renderLedger(); renderAcumulador(); toast('Mes borrado del ledger');
   }));
 }
+function rdaMesLedger(){
+  if(!RESULT || !RESULT.rda) return null;
+  const d=RESULT.rda;
+  return { unidades:d.unidades, importe:d.importe, regalia:d.regalia,
+    lineas:d.lineas.map(l=>({ rubro:l.rubro, g1:l.g1, lista:l.lista, articulo:l.articulo, cod:l.cod, cant:Math.round(l.cant), importe:l.importe })) };
+}
 function guardarMesEnLedger(){
   if(!RESULT){ toast('Liquidá primero'); return; }
   const led=temporadaLedger();
   led.meses=led.meses||{};
   led.meses[RESULT.mesKey]={ edlpUnidades:RESULT.edlpUnidades, rugeUnidades:RESULT.rugeUnidades, regalia:RESULT.totReg, importe:RESULT.totImp, unidades:RESULT.totU, retail:RESULT.retailU, mayor:RESULT.mayorU, ts:RESULT.mesLabel };
+  // RDA — liquidación aparte (detalle mensual para el Excel anual)
+  led.rda = led.rda || { meses:{} };
+  const rm=rdaMesLedger();
+  if(rm) led.rda.meses[RESULT.mesKey]=rm;
   saveLedger().then(()=>{ renderLedger(); renderAcumulador(); toast('Guardado '+RESULT.mesKey+' en el ledger'); });
+}
+// Export anual de Ruge Deportes Amateur: DETALLE MES (acumula todos los meses
+// guardados + el actual) + RESUMEN (12 meses + Total), como el archivo de Juli.
+function exportarRDA(){
+  const led=temporadaLedger();
+  const meses=Object.assign({}, (led.rda&&led.rda.meses)||{});
+  if(RESULT && RESULT.rda && RESULT.rda.lineas.length){ const rm=rdaMesLedger(); if(rm) meses[RESULT.mesKey]=rm; }
+  const keys=Object.keys(meses).sort();
+  if(!keys.length){ toast('No hay datos de RDA todavía'); return; }
+  const wb=XLSX.utils.book_new();
+  const det=[['Mes','RUBRO','GRUPO 1','LISTA DE PRECIOS','ARTÍCULO','COD BARRAS','CANTIDAD','IMPORTE']];
+  keys.forEach(k=>{ const nom=MESES[+k.slice(5,7)-1].toUpperCase();
+    (meses[k].lineas||[]).forEach(l=>det.push([nom, l.rubro||'', l.g1||'', l.lista||'', l.articulo||'', l.cod||'', l.cant, r2(l.importe)]));
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(det), 'DETALLE MES');
+  const res=[['MES','UNIDADES','MONTO','Regalias']]; let tU=0,tM=0,tR=0;
+  for(let i=0;i<12;i++){ const key=CONFIG.temporadaVigente+'-'+String(i+1).padStart(2,'0'); const m=meses[key];
+    const u=m?m.unidades:0, mo=m?m.importe:0, rg=m?(m.regalia!=null?m.regalia:mo*CONFIG.tasas.rdaAmateur):0;
+    res.push([MESES[i].toUpperCase(), u, r2(mo), r2(rg)]); tU+=u; tM+=mo; tR+=rg;
+  }
+  res.push(['Total', tU, r2(tM), r2(tR)]);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(res), 'RESUMEN');
+  XLSX.writeFile(wb, `Detalle_Venta_Ruge_Deportes_Amateur_${CONFIG.temporadaVigente}.xlsx`);
+  toast('Excel RDA descargado');
+}
+// Importa el Excel anual de RDA (solapa DETALLE MES) para sembrar el ledger con
+// los meses previos. Agrupa por la columna "Mes" y arma unidades/importe/detalle.
+const MES_NUM={ENERO:1,FEBRERO:2,MARZO:3,ABRIL:4,MAYO:5,JUNIO:6,JULIO:7,AGOSTO:8,SEPTIEMBRE:9,OCTUBRE:10,NOVIEMBRE:11,DICIEMBRE:12};
+async function importarRDAanual(file){
+  try{
+    const wb=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=e=>{ try{res(XLSX.read(e.target.result,{type:'array'}));}catch(err){rej(err);} }; r.onerror=rej; r.readAsArrayBuffer(file); });
+    const shName=wb.SheetNames.find(n=>up(n).includes('DETALLE'))||wb.SheetNames[0];
+    const aoa=XLSX.utils.sheet_to_json(wb.Sheets[shName],{header:1,raw:true,defval:''});
+    // fila de encabezado (tiene MES e IMPORTE)
+    let hRow=0; for(let i=0;i<Math.min(aoa.length,10);i++){ const r=aoa[i].map(x=>up(x)); if(r.some(c=>c==='MES')&&r.some(c=>c.includes('IMPORTE'))){ hRow=i; break; } }
+    const H=aoa[hRow].map(x=>normHdr(x));
+    const col=(...al)=>{ for(const a of al){ const i=H.indexOf(normHdr(a)); if(i>=0) return i; } for(const a of al){ const i=H.findIndex(h=>h.includes(normHdr(a))); if(i>=0) return i; } return -1; };
+    const ci={ mes:col('MES'), rubro:col('RUBRO'), g1:col('GRUPO 1','GRUPO I'), lista:col('LISTA DE PRECIOS','LISTA PRECIOS','LISTA'), art:col('ARTICULO','DESCRIPCION'), cod:col('COD BARRAS','CODIGO'), cant:col('CANTIDAD','CANT'), imp:col('IMPORTE','MONTO','NETO') };
+    if(ci.mes<0 || ci.cant<0 || ci.imp<0){ toast('No reconocí el DETALLE MES (faltan Mes/Cantidad/Importe)'); return; }
+    const rows=aoa.slice(hRow+1).filter(r=>r&&r.some(c=>String(c).trim()!=='')&&!/^total$/i.test(String(r[ci.mes]).trim()));
+    const acc={}; let n=0;
+    rows.forEach(r=>{
+      const mm=MES_NUM[up(r[ci.mes]).trim()]; if(!mm) return;
+      const key=CONFIG.temporadaVigente+'-'+String(mm).padStart(2,'0');
+      const cant=Math.round(parseNumAR(r[ci.cant])), importe=parseNumAR(r[ci.imp]);
+      (acc[key]=acc[key]||{unidades:0,importe:0,lineas:[]});
+      acc[key].unidades+=cant; acc[key].importe+=importe;
+      acc[key].lineas.push({ rubro:String(ci.rubro>=0?r[ci.rubro]:''), g1:String(ci.g1>=0?r[ci.g1]:''), lista:String(ci.lista>=0?r[ci.lista]:''), articulo:String(ci.art>=0?r[ci.art]:''), cod:String(ci.cod>=0?r[ci.cod]:''), cant, importe });
+      n++;
+    });
+    const keys=Object.keys(acc);
+    if(!keys.length){ toast('No encontré filas con meses válidos'); return; }
+    const led=temporadaLedger(); led.rda=led.rda||{meses:{}};
+    keys.forEach(key=>{ acc[key].regalia=acc[key].importe*CONFIG.tasas.rdaAmateur; led.rda.meses[key]=acc[key]; });
+    await saveLedger(); renderLedger();
+
+    // Cruce contra la solapa RESUMEN (si existe): avisa si el DETALLE no cuadra.
+    const avisos=[];
+    const shRes=wb.SheetNames.find(s=>up(s).includes('RESUMEN'));
+    if(shRes){
+      const ra=XLSX.utils.sheet_to_json(wb.Sheets[shRes],{header:1,raw:true,defval:''});
+      ra.forEach(r=>{ const mm=MES_NUM[up(r[0]).trim()]; if(!mm) return;
+        const key=CONFIG.temporadaVigente+'-'+String(mm).padStart(2,'0'); const d=acc[key]; if(!d) return;
+        const uRes=Math.round(parseNumAR(r[1])), impRes=parseNumAR(r[2]);
+        if(uRes && (Math.abs(d.unidades-uRes)>0 || Math.abs(d.importe-impRes)>1))
+          avisos.push(`${MES_ABBR[mm-1]}: DETALLE ${units(d.unidades)}u/$${money(d.importe)} vs RESUMEN ${units(uRes)}u/$${money(impRes)}`);
+      });
+    }
+    const msg=keys.sort().map(k=>MES_ABBR[+k.slice(5,7)-1]).join(', ')+' · '+n+' líneas';
+    if(avisos.length){
+      $('rdaImportInfo').innerHTML='⚠ importado, pero el DETALLE no coincide con el RESUMEN en: '+esc(avisos.join(' · '))+'. Revisá tu archivo origen.';
+      $('rdaImportInfo').style.color='var(--amber)';
+      toast('RDA importado con avisos (ver detalle)');
+    } else {
+      $('rdaImportInfo').textContent='✔ '+msg;
+      $('rdaImportInfo').style.color='';
+      toast('RDA importado: '+keys.length+' meses');
+    }
+  }catch(err){ toast('No pude leer el RDA: '+err.message); }
 }
 
 /* ============================================================
@@ -1138,6 +1272,7 @@ function renderMapeoManual(tipo, mapa, faltan){
 
   $('btnLiquidar').addEventListener('click',liquidar);
   $('btnExport').addEventListener('click',exportarExcel);
+  $('btnExportRDA').addEventListener('click',exportarRDA);
   $('btnGuardarLedger').addEventListener('click',guardarMesEnLedger);
   $('btnPreso').addEventListener('click',generarPresentacion);
   $('kwAdd').addEventListener('click',()=>{ const v=up($('kwInput').value); if(v && !KEYWORDS.map(up).includes(v)){ KEYWORDS.push(v); saveKeywords(); renderKeywords(); renderRevision(); } $('kwInput').value=''; });
@@ -1146,8 +1281,10 @@ function renderMapeoManual(tipo, mapa, faltan){
     const led=temporadaLedger(); led.carryIn.edlp=Math.max(0,Math.round(+$('ciEDLP').value||0)); led.carryIn.rugeSE=Math.max(0,Math.round(+$('ciRuge').value||0));
     await saveLedger(); renderAcumulador(); renderLedger(); RESULT&&postCambioRevision(); toast('Carry-in guardado');
   });
+  $('btnImportRDA').addEventListener('click',()=>$('fileRDA').click());
+  $('fileRDA').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) importarRDAanual(f); e.target.value=''; });
   ['selMes','selAnio'].forEach(id=>$(id).addEventListener('change',()=>{ RESULT=null; renderRevision(); renderAcumulador(); renderLedger();
-    $('consolidado').innerHTML='<div class="empty">Cambió el período. Tocá <b>Liquidar mes</b>.</div>'; $('btnExport').disabled=true; $('btnGuardarLedger').disabled=true; $('btnPreso').disabled=true; }));
+    $('consolidado').innerHTML='<div class="empty">Cambió el período. Tocá <b>Liquidar mes</b>.</div>'; $('btnExport').disabled=true; $('btnGuardarLedger').disabled=true; $('btnPreso').disabled=true; $('btnExportRDA').disabled=true; }));
 
   renderKeywords(); renderRevision(); renderAcumulador(); renderLedger();
 })();
