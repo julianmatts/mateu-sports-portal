@@ -550,7 +550,7 @@ function construirLineasMateu(aoa, hRow, mapa){
     const g=k=> mapa[k]>=0 ? r[mapa[k]] : '';
     const importe=parseNumAR(g('importe')), cant=parseNumAR(g('cant'));
     const art=String(g('articulo')||'').trim();
-    if(!art && !importe && !cant) return;
+    if(!art) return;  // salta filas de Total/subtotal por mes (sin artículo) y filas vacías
     out.push({ src:'mateu', idx:i, rubro:String(g('rubro')||''), g1:String(g('g1')||''), g2:String(g('g2')||''),
       g3:String(g('g3')||''), lista:String(g('lista')||''), articulo:art, cod:String(g('cod')||''),
       cant, importe, ovrTab:null, ovrEDLP:null, preLanz:false });
@@ -563,7 +563,7 @@ function construirLineasMay(aoa, hRow, mapa){
     const g=k=> mapa[k]>=0 ? r[mapa[k]] : '';
     const importe=parseNumAR(g('importe')), cant=parseNumAR(g('cant'));
     const art=String(g('articulo')||'').trim();
-    if(!art && !importe && !cant) return;
+    if(!art) return;  // salta filas de Total/subtotal (sin artículo) y filas vacías
     out.push({ src:'may', idx:i, cliente:String(g('cliente')||''), dia:String(g('dia')||''),
       comp:String(g('comp')||''), rubro:String(g('rubro')||''), articulo:art, cod:String(g('cod')||''),
       cant, importe, ovrTab:null });
@@ -1030,6 +1030,8 @@ async function importarRDAanual(file){
     const acc={}; let n=0;
     rows.forEach(r=>{
       const mm=MES_NUM[up(r[ci.mes]).trim()]; if(!mm) return;
+      const art=String(ci.art>=0?r[ci.art]:'').trim();
+      if(!art) return;   // salta la fila de Total por mes (sin artículo)
       const key=CONFIG.temporadaVigente+'-'+String(mm).padStart(2,'0');
       const cant=Math.round(parseNumAR(r[ci.cant])), importe=parseNumAR(r[ci.imp]);
       (acc[key]=acc[key]||{unidades:0,importe:0,lineas:[]});
