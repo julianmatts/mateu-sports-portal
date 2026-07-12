@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Liquidación de Regalías RUGE / EDLP — Mateu Sports</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <style>
 *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
 :root{
@@ -1025,18 +1025,27 @@ function exportarRDA(){
   const keys=Object.keys(meses).sort();
   if(!keys.length){ toast('No hay datos de RDA todavía'); return; }
   const wb=XLSX.utils.book_new();
-  const det=[['Mes','RUBRO','GRUPO 1','LISTA DE PRECIOS','ARTÍCULO','COD BARRAS','CANTIDAD','IMPORTE']];
+
+  // DETALLE MES
+  const colsDet=[{h:'MES',w:12,t:'text'},{h:'RUBRO',w:16,t:'text'},{h:'GRUPO 1',w:16,t:'text'},{h:'LISTA DE PRECIOS',w:16,t:'text'},{h:'ARTÍCULO',w:38,t:'text'},{h:'COD BARRAS',w:12,t:'text'},{h:'CANTIDAD',w:10,t:'int'},{h:'IMPORTE',w:16,t:'money'}];
+  const filasDet=[]; let dU=0, dImp=0;
   keys.forEach(k=>{ const nom=MESES[+k.slice(5,7)-1].toUpperCase();
-    (meses[k].lineas||[]).forEach(l=>det.push([nom, l.rubro||'', l.g1||'', l.lista||'', l.articulo||'', l.cod||'', l.cant, r2(l.importe)]));
+    (meses[k].lineas||[]).forEach(l=>{ const c=Math.round(l.cant), im=r2(l.importe); dU+=c; dImp+=im;
+      filasDet.push([nom, l.rubro||'', l.g1||'', l.lista||'', l.articulo||'', l.cod||'', c, im]); });
   });
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(det), 'DETALLE MES');
-  const res=[['MES','UNIDADES','MONTO','Regalias']]; let tU=0,tM=0,tR=0;
+  const totDet=['','','','TOTAL','','',dU,r2(dImp)];
+  XLSX.utils.book_append_sheet(wb, hojaEstilizada('RUGE DEPORTES AMATEUR — DETALLE MES', `Temporada ${CONFIG.temporadaVigente} · regalía 5% · importes sin IVA`, colsDet, filasDet, totDet), 'DETALLE MES');
+
+  // RESUMEN anual
+  const colsRes=[{h:'MES',w:14,t:'text'},{h:'UNIDADES',w:12,t:'int'},{h:'MONTO',w:18,t:'money'},{h:'REGALÍAS (5%)',w:18,t:'money'}];
+  const filasRes=[]; let tU=0,tM=0,tR=0;
   for(let i=0;i<12;i++){ const key=CONFIG.temporadaVigente+'-'+String(i+1).padStart(2,'0'); const m=meses[key];
     const u=m?m.unidades:0, mo=m?m.importe:0, rg=m?(m.regalia!=null?m.regalia:mo*CONFIG.tasas.rdaAmateur):0;
-    res.push([MESES[i].toUpperCase(), u, r2(mo), r2(rg)]); tU+=u; tM+=mo; tR+=rg;
+    filasRes.push([MESES[i].toUpperCase(), u, r2(mo), r2(rg)]); tU+=u; tM+=mo; tR+=rg;
   }
-  res.push(['Total', tU, r2(tM), r2(tR)]);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(res), 'RESUMEN');
+  const totRes=['TOTAL', tU, r2(tM), r2(tR)];
+  XLSX.utils.book_append_sheet(wb, hojaEstilizada('RUGE DEPORTES AMATEUR — RESUMEN ANUAL', `Temporada ${CONFIG.temporadaVigente} · Mateu Sports`, colsRes, filasRes, totRes), 'RESUMEN');
+
   XLSX.writeFile(wb, `Detalle_Venta_Ruge_Deportes_Amateur_${CONFIG.temporadaVigente}.xlsx`);
   toast('Excel RDA descargado');
 }
@@ -1102,37 +1111,80 @@ async function importarRDAanual(file){
    EXPORT A EXCEL — replica el formato de entrega
    ============================================================ */
 function safeSheetName(s){ return String(s).replace(/[\\\/\?\*\[\]:]/g,' ').slice(0,31); }
+const r2 = n => Math.round((+n||0)*100)/100;
+const pv = n => Math.round((+n||0)*100000)/100000;   // % como decimal (para numFmt 0.0%)
+
+/* ============================================================
+   ESTILOS DE EXCEL (xlsx-js-style) — encabezado navy, total rojo,
+   formato moneda/%, bordes, zebra y anchos de columna.
+   ============================================================ */
+const XLC={ navy:'0B1527', navy2:'1E3252', red:'CC0000', white:'FFFFFF', ink:'20222A', zebra:'F4F6FB', line:'D7DBE4' };
+const _bd={ style:'thin', color:{rgb:XLC.line} };
+const _box={ top:_bd, bottom:_bd, left:_bd, right:_bd };
+const XLFMT={ money:'"$"#,##0.00', int:'#,##0', pct:'0.0%' };
+const _stTit ={ font:{name:'Arial',sz:14,bold:true,color:{rgb:XLC.white}}, fill:{fgColor:{rgb:XLC.navy}},  alignment:{horizontal:'left',vertical:'center'} };
+const _stSub ={ font:{name:'Arial',sz:9,italic:true,color:{rgb:XLC.white}}, fill:{fgColor:{rgb:XLC.navy}},  alignment:{horizontal:'left',vertical:'center'} };
+const _stHd  ={ font:{name:'Arial',sz:10,bold:true,color:{rgb:XLC.white}}, fill:{fgColor:{rgb:XLC.navy2}}, alignment:{horizontal:'center',vertical:'center',wrapText:true}, border:_box };
+const _stTx  ={ font:{name:'Arial',sz:10,color:{rgb:XLC.ink}}, alignment:{vertical:'center'}, border:_box };
+const _stTxR ={ font:{name:'Arial',sz:10,color:{rgb:XLC.ink}}, alignment:{horizontal:'right',vertical:'center'}, border:_box };
+const _stTxZ ={ ..._stTx,  fill:{fgColor:{rgb:XLC.zebra}} };
+const _stTxRZ={ ..._stTxR, fill:{fgColor:{rgb:XLC.zebra}} };
+const _stTo  ={ font:{name:'Arial',sz:10,bold:true,color:{rgb:XLC.white}}, fill:{fgColor:{rgb:XLC.red}}, alignment:{vertical:'center'}, border:_box };
+const _stToR ={ font:{name:'Arial',sz:10,bold:true,color:{rgb:XLC.white}}, fill:{fgColor:{rgb:XLC.red}}, alignment:{horizontal:'right',vertical:'center'}, border:_box };
+function _cs(ws,r,c,st,z){ const ref=XLSX.utils.encode_cell({r,c}); if(!ws[ref])ws[ref]={t:'s',v:''}; ws[ref].s=st; if(z)ws[ref].z=z; }
+const _fmt=t=> t==='money'?XLFMT.money : t==='pct'?XLFMT.pct : t==='int'?XLFMT.int : undefined;
+// cols:[{h,w,t:'text'|'int'|'money'|'pct'}] · filas: arrays (pct como decimal) · filaTotal o null
+function hojaEstilizada(titulo, subtitulo, cols, filas, filaTotal){
+  const n=cols.length;
+  const aoa=[ [titulo], [subtitulo||''], cols.map(c=>c.h) ];
+  filas.forEach(f=>aoa.push(f.slice()));
+  let rTot=-1; if(filaTotal){ aoa.push(filaTotal.slice()); rTot=aoa.length-1; }
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols']=cols.map(c=>({wch:c.w}));
+  ws['!merges']=[ {s:{r:0,c:0},e:{r:0,c:n-1}}, {s:{r:1,c:0},e:{r:1,c:n-1}} ];
+  ws['!rows']=[{hpt:24},{hpt:15},{hpt:22}];
+  for(let c=0;c<n;c++){ _cs(ws,0,c,_stTit); _cs(ws,1,c,_stSub); _cs(ws,2,c,_stHd); }
+  const first=3, last=3+filas.length-1;
+  for(let r=first;r<=last;r++){ const z=(r-first)%2===1;
+    for(let c=0;c<n;c++){ const t=cols[c].t, num=(t&&t!=='text');
+      _cs(ws,r,c, z?(num?_stTxRZ:_stTxZ):(num?_stTxR:_stTx), _fmt(t)); } }
+  if(rTot>=0) for(let c=0;c<n;c++){ const t=cols[c].t; _cs(ws,rTot,c, (t&&t!=='text')?_stToR:_stTo, _fmt(t)); }
+  return ws;
+}
+
 function exportarExcel(){
   if(!RESULT){ toast('Liquidá primero'); return; }
   const wb=XLSX.utils.book_new();
+  const mesLabel=RESULT.mesLabel;
+
   // CONSOLIDADO
-  const cons=[['CANAL','VENTA $ (SIN IVA)','UNIDADES','% APLICADO','REGALÍA']];
-  RESULT.orden.forEach(t=>{ const x=RESULT.tabs[t]; const eff=x.importe?x.regalia/x.importe:0;
-    cons.push([x.label, r2(x.importe), x.unidades, +(eff*100).toFixed(2)+'%', r2(x.regalia)]); });
-  cons.push(['TOTAL', r2(RESULT.totImp), RESULT.totU, +(RESULT.totImp?RESULT.totReg/RESULT.totImp*100:0).toFixed(2)+'%', r2(RESULT.totReg)]);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cons), 'CONSOLIDADO');
+  const colsCons=[{h:'CANAL / SOLAPA',w:26,t:'text'},{h:'UNIDADES',w:12,t:'int'},{h:'VENTA $ (SIN IVA)',w:20,t:'money'},{h:'% EFECTIVO',w:12,t:'pct'},{h:'REGALÍA',w:20,t:'money'}];
+  const filasCons=RESULT.orden.map(t=>{ const x=RESULT.tabs[t]; const eff=x.importe?x.regalia/x.importe:0;
+    return [x.label, x.unidades, r2(x.importe), pv(eff), r2(x.regalia)]; });
+  const totCons=['TOTAL', RESULT.totU, r2(RESULT.totImp), pv(RESULT.totImp?RESULT.totReg/RESULT.totImp:0), r2(RESULT.totReg)];
+  XLSX.utils.book_append_sheet(wb, hojaEstilizada('CONSOLIDADO — REGALÍAS RUGE / EDLP', `${mesLabel} · Mateu Sports · importes sin IVA`, colsCons, filasCons, totCons), 'CONSOLIDADO');
 
   // una solapa por canal
   RESULT.orden.forEach(t=>{
     const x=RESULT.tabs[t]; if(!x.lineas.length) return;
-    let aoa;
+    const eff=x.importe?x.regalia/x.importe:0;
+    let cols, filas, tot;
     if(t==='MAYORISTA'){
-      aoa=[['CLIENTE','DÍA','NRO COMPROBANTE','RUBRO','ARTÍCULO','COD BARRAS','CANTIDAD','IMPORTE','% APLIC.','REGALÍA']];
-      x.lineas.forEach(l=>aoa.push([l.cliente||'',l.dia||'',l.comp||'',l.rubro||'',l.articulo||'',l.cod||'',l.cant,r2(l.importe),+(l._rate*100).toFixed(2)+'%',r2(l._regalia)]));
+      cols=[{h:'CLIENTE',w:30,t:'text'},{h:'DÍA',w:6,t:'text'},{h:'NRO COMPROBANTE',w:18,t:'text'},{h:'RUBRO',w:16,t:'text'},{h:'ARTÍCULO',w:34,t:'text'},{h:'COD BARRAS',w:12,t:'text'},{h:'CANTIDAD',w:10,t:'int'},{h:'IMPORTE',w:16,t:'money'},{h:'% APLIC.',w:9,t:'pct'},{h:'REGALÍA',w:16,t:'money'}];
+      filas=x.lineas.map(l=>[l.cliente||'',l.dia||'',l.comp||'',l.rubro||'',l.articulo||'',l.cod||'',Math.round(l.cant),r2(l.importe),pv(l._rate),r2(l._regalia)]);
+      tot=['','','','','','TOTAL',x.unidades,r2(x.importe),pv(eff),r2(x.regalia)];
     } else {
-      aoa=[['RUBRO','GRUPO 2','GRUPO 3','GRUPO 1','LISTA PRECIOS','ARTÍCULO','COD BARRAS','CANTIDAD','IMPORTE','% APLIC.','REGALÍA']];
-      x.lineas.forEach(l=>aoa.push([l.rubro||'',l.g2||'',l.g3||'',l.g1||'',l.lista||'',l.articulo||'',l.cod||'',l.cant,r2(l.importe),+(l._rate*100).toFixed(2)+'%',r2(l._regalia)]));
+      cols=[{h:'RUBRO',w:16,t:'text'},{h:'GRUPO 2',w:22,t:'text'},{h:'GRUPO 3',w:16,t:'text'},{h:'GRUPO 1',w:16,t:'text'},{h:'LISTA PRECIOS',w:16,t:'text'},{h:'ARTÍCULO',w:34,t:'text'},{h:'COD BARRAS',w:12,t:'text'},{h:'CANTIDAD',w:10,t:'int'},{h:'IMPORTE',w:16,t:'money'},{h:'% APLIC.',w:9,t:'pct'},{h:'REGALÍA',w:16,t:'money'}];
+      filas=x.lineas.map(l=>[l.rubro||'',l.g2||'',l.g3||'',l.g1||'',l.lista||'',l.articulo||'',l.cod||'',Math.round(l.cant),r2(l.importe),pv(l._rate),r2(l._regalia)]);
+      tot=['','','','','','','TOTAL',x.unidades,r2(x.importe),pv(eff),r2(x.regalia)];
     }
-    const anchoTot = aoa[0].length;
-    aoa.push(Array(anchoTot-4).fill('').concat(['TOTAL', x.unidades, r2(x.importe), r2(x.regalia)]));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), safeSheetName(x.label));
+    XLSX.utils.book_append_sheet(wb, hojaEstilizada(x.label.toUpperCase()+' — '+mesLabel, 'Mateu Sports · Liquidación de Regalías · importes sin IVA', cols, filas, tot), safeSheetName(x.label));
   });
 
   const mes=MESES[+$('selMes').value].toUpperCase(), anio=$('selAnio').value;
   XLSX.writeFile(wb, `Regalias_Ruge_SE_y_EDLP_${mes}_${anio}.xlsx`);
   toast('Excel descargado');
 }
-const r2 = n => Math.round((+n||0)*100)/100;
 
 /* ============================================================
    PRESENTACIÓN DEL MES — inyecta el DATA del mes liquidado en la
