@@ -170,7 +170,8 @@ table.grid tr.total td.num{ color:#fff; }
           <div class="acc-sub" style="margin:6px 0 8px">Export mensual de ventas de las sucursales Mateu.</div>
           <div style="font-size:12.5px; line-height:1.6">
             <b>Obligatorias:</b> RUBRO · GRUPO 2 · GRUPO 3 · LISTA PRECIOS · ARTÍCULO · CANTIDAD · IMPORTE<br>
-            <span class="muted">Ayudan (opcionales): GRUPO 1 · COD BARRAS</span>
+            <span class="muted">Ayudan (opcionales): GRUPO 1 · COD BARRAS · SUCURSAL</span><br>
+            <span class="muted">Sirve tanto el reporte agregado por artículo como el <b>"Ventas por sucursal"</b>: si trae <b>Depósito</b>, <b>Tags y Avíos</b> o la fila Total del pie, el módulo los <b>descuenta solos</b> y te avisa cuánto sacó.</span>
           </div>
         </div>
         <div class="acc-card">
@@ -377,6 +378,16 @@ const CONFIG = {
   // Pagan 5% plano y NO suman a ninguna escala.
   g2RugeAmateur: 'DEPORTES AMATEUR',
 
+  // Filas que NO son base de regalías minorista y se descuentan solas al cargar
+  // (aparecen sobre todo en el reporte "Ventas por sucursal"):
+  //   - avíos/etiquetas (por Grupo 2: TAGS Y AVÍOS)
+  //   - la sucursal Depósito (no es punto de venta minorista)
+  //   - la fila "Total" del pie del reporte
+  excluirMinorista: {
+    grupo2:   ['TAGS','AVIO'],
+    sucursal: ['DEPOSITO'],
+  },
+
   // Palabras que marcan un artículo como EDLP aunque NO diga literal "EDLP".
   // Se pueden editar desde la UI (se persisten y pisan a esta lista base).
   keywordsEDLP: ['EDLP','PREMATCH','AWAY','HOME','TITULAR','SUPLENTE','ALTERNATIVA','ARQUERO','ARQ.','RETRO','ESTUDIANTES'],
@@ -526,6 +537,7 @@ const CAMPOS_MATEU = {
   cod:['COD BARRAS','CODIGO DE BARRAS','CODIGO BARRAS','COD BARRA','EAN','CODIGO'],
   cant:['CANTIDAD','CANT','UNIDADES','U','CANT.'],
   importe:['IMPORTE','IMPORTE NETO','NETO','TOTAL','MONTO','VENTA','SUBTOTAL'],
+  sucursal:['SUCURSAL','LOCAL','PUNTO DE VENTA'],   // solo en el reporte "por sucursal"
 };
 const CAMPOS_MAY = {
   cliente:['CLIENTE','RAZON SOCIAL'], dia:['DIA','FECHA'],
@@ -572,17 +584,30 @@ function autoMapa(headers, campos){
 }
 function filasDesde(aoa, hRow){ return aoa.slice(hRow+1).filter(r=>r && r.some(c=>String(c).trim()!=='')); }
 
+let _exclMateu=null;  // stats de filas descontadas en la última carga Mateu
 function construirLineasMateu(aoa, hRow, mapa){
   const rows=filasDesde(aoa,hRow); const out=[];
+  const ex={ avios:{n:0,u:0}, deposito:{n:0,u:0}, total:{n:0} };
+  const EXG2=((CONFIG.excluirMinorista||{}).grupo2||[]).map(x=>sinAcento(up(x)));
+  const EXSUC=((CONFIG.excluirMinorista||{}).sucursal||[]).map(x=>sinAcento(up(x)));
   rows.forEach((r,i)=>{
     const g=k=> mapa[k]>=0 ? r[mapa[k]] : '';
-    const importe=parseNumAR(g('importe')), cant=parseNumAR(g('cant'));
     const art=String(g('articulo')||'').trim();
-    if(!art) return;  // salta filas de Total/subtotal por mes (sin artículo) y filas vacías
-    out.push({ src:'mateu', idx:i, rubro:String(g('rubro')||''), g1:String(g('g1')||''), g2:String(g('g2')||''),
+    if(!art) return;  // filas vacías / sin artículo
+    const importe=parseNumAR(g('importe')), cant=parseNumAR(g('cant'));
+    const rubro=String(g('rubro')||''), g2=String(g('g2')||''), suc=String(g('sucursal')||'');
+    const G2=sinAcento(up(g2)), SUC=sinAcento(up(suc));
+    // fila "Total" del pie del reporte por sucursal
+    if(up(art)==='TOTAL' || up(rubro)==='TOTAL' || SUC==='TOTAL'){ ex.total.n++; return; }
+    // avíos / etiquetas (por Grupo 2) — no es producto de regalías
+    if(EXG2.length && EXG2.some(x=>G2.includes(x))){ ex.avios.n++; ex.avios.u+=Math.round(cant); return; }
+    // sucursal Depósito — no es punto de venta minorista
+    if(EXSUC.length && SUC && EXSUC.some(x=>SUC.includes(x))){ ex.deposito.n++; ex.deposito.u+=Math.round(cant); return; }
+    out.push({ src:'mateu', idx:i, rubro, g1:String(g('g1')||''), g2,
       g3:String(g('g3')||''), lista:String(g('lista')||''), articulo:art, cod:String(g('cod')||''),
       cant, importe, ovrTab:null, ovrEDLP:null, preLanz:false });
   });
+  _exclMateu = ex;
   return out;
 }
 function construirLineasMay(aoa, hRow, mapa){
@@ -1279,6 +1304,7 @@ function finalizarCarga(tipo, mapa){
   const ctx=LAST[tipo];
   if(tipo==='mateu'){
     MATEU={ lines:construirLineasMateu(ctx.aoa,ctx.hRow,mapa), headers:ctx.headers, mapa };
+    MATEU.excl=_exclMateu;
     $('dzMateu').classList.add('loaded'); $('okMateu').classList.remove('hidden'); $('mapMateu').classList.add('hidden');
   } else {
     MAY={ lines:construirLineasMay(ctx.aoa,ctx.hRow,mapa), headers:ctx.headers, mapa };
@@ -1297,8 +1323,18 @@ function resumenCarga(tipo){
   const totImp=D.lines.reduce((s,l)=>s+l.importe,0);
   const cols=Object.keys(ctx.campos).filter(c=>D.mapa[c]>=0)
     .map(c=>`${c}=<b>${esc(ctx.headers[D.mapa[c]]||'?')}</b>`).join(' · ');
+  // Descuentos automáticos (reporte "por sucursal"): Depósito, avíos y fila Total.
+  let exHtml='';
+  if(tipo==='mateu' && D.excl){
+    const e=D.excl, partes=[];
+    if(e.deposito.n) partes.push(`Depósito ${units(e.deposito.u)} u (${e.deposito.n} líneas)`);
+    if(e.avios.n)    partes.push(`Tags y Avíos ${units(e.avios.u)} u (${e.avios.n} líneas)`);
+    if(e.total.n)    partes.push(`fila Total del pie`);
+    if(partes.length) exHtml=`<div class="meta" style="margin-top:4px; white-space:normal; text-transform:none; letter-spacing:0; color:var(--amber)">Descontado (no es base minorista): ${partes.join(' · ')}</div>`;
+  }
   return `<div>✔ ${esc(ctx.nombre)} · <b>${D.lines.length}</b> líneas · <b>${units(totU)}</b> u · <b>$${money(totImp)}</b></div>`+
          `<div class="meta" style="margin-top:4px; white-space:normal; text-transform:none; letter-spacing:0">Columnas detectadas: ${cols}</div>`+
+         exHtml+
          `<button class="btn ghost sm" data-remap="${tipo}" style="margin-top:8px">¿Tomó algo mal? Reasignar columnas</button>`;
 }
 // Abre el mapeo a mano (aunque la autodetección haya funcionado)
