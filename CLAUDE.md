@@ -91,6 +91,38 @@ de información, limpia. Header navy con borde inferior rojo de 3px.
 Nota: `condiciones/` es más viejo y usa navy `#002366` + fuente Inter. Si se
 rediseña, alinear a los tokens de arriba; si no, dejarlo como está.
 
+## Meses de Stock — cómo regenerar `datos-meses-stock.js` desde el Excel
+
+El dashboard de Meses de Stock (`gestion-stock/`) no lee el Excel: lee
+`gestion-stock/datos-meses-stock.js`, que se genera **a mano pidiéndole a Claude**
+convertir el reporte `RATIO <año> ok.xlsx` (hoja "Ratios", ~115k filas, columnas
+Año/Mes/Sucursal/Rubro/Marca/Segmento/Stock/Ventas/Ratio + Comentarios Encargados
++ Comentarios Área de Producto). Cuando Juli pida "convertí este Excel", seguir
+estas reglas **exactas** (un intento previo dividió las marcas por 2 → stock a la
+mitad; NO repetir):
+
+- **`rubro.serie[mes]`** = fila `Marca="Total", Segmento="Total"` de ese
+  sucursal/rubro/mes. Es el total real del rubro. **Tal cual, sin dividir.**
+- **`marca.serie[mes]`** = fila `Marca=<marca>, Segmento="Total"` (= suma de sus
+  segmentos). **Tal cual, sin dividir por 2.** ⚠️ Acá estuvo el bug.
+- **`segmentos[SEG].serie[mes]`** = fila `Marca=<marca>, Segmento=<SEG>` (SEG ≠
+  "Total"). El agregado top-level `{stock,ventas,ratio}` del segmento = su serie
+  del **último mes**.
+- **`suc.serie[mes]`** = Σ `rubro.serie` de todos los rubros de la sucursal.
+- **NO** crear la pseudo-marca `"Total"` como si fuera una marca. Excluir de col C
+  las filas basura `"Total"` y `"Sucursal"`.
+- **Comentarios** (`STOCK_COMMENTS`): una entrada por fila con col J (Encargados)
+  no vacía → `texto`; si además tiene col K (Área Producto) → `respuesta` +
+  `estado:"resuelto"`; `id` secuencial 0..N.
+- PRODUCTO es un rubro raro (las "marcas" son tipos de producto, sin fila Total,
+  segmentos que sobre-suman) y está excluido de los KPIs; dejarlo como el archivo
+  actual salvo pedido.
+
+`msCorregirDatos()` en el `index.html` es una red de seguridad: si un `.js` viene
+crudo (con la marca "Total"), duplica las marcas al vuelo. Si se genera bien
+siguiendo lo de arriba, no hace falta que actúe. Ver memoria
+`meses-stock-marcas-mitad`.
+
 ## Reglas
 
 - Responder y comentar el código en **español**.
