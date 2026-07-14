@@ -2776,11 +2776,17 @@ function msBigChartSvg(serie, rubro){
 }
 
 /* ---------- Corrección del dataset ----------
-   El export del Excel RATIO trae una fila-marca "Total" por cada
-   sucursal×rubro, y las series agregadas de rubro y sucursal la
-   incluyen (doble conteo: los ratios no cambian pero Stock/Ventas
-   quedan duplicados). Acá se elimina esa pseudo-marca y se
-   reconstruyen los agregados desde las marcas reales, una sola vez. */
+   El export del Excel RATIO trae las filas de MARCA (y la pseudo-marca
+   "Total") a la MITAD de las unidades reales; el total por sucursal/rubro
+   (rubro.serie) y el desglose por segmento vienen en unidades reales.
+   Verificado contra el Excel: Plaza Italia CALZADO junio = 5.136 unidades
+   = rubro.serie = Σ segmentos, pero las marcas suman 2.568 (la mitad); la
+   suma de los "Total" del Excel de todas las sucursales = 125.789 = Σ
+   rubro.serie. Acá se elimina la pseudo-marca "Total" y se DUPLICAN las
+   series de marca para llevarlas a unidades reales; con eso la suma de
+   marcas vuelve a dar el total del rubro y coincide con los segmentos.
+   El ratio no cambia (stock y ventas se duplican juntos). Corre una vez
+   al cargar. */
 function msCorregirDatos(){
   const D = window.STOCK_DATA;
   for(const s in D.sucursales){
@@ -2794,7 +2800,14 @@ function msCorregirDatos(){
       for(const mo of D.meses) serie[mo] = {stock:0, ventas:0, ratio:null};
       for(const m in (rn.marcas||{})){
         const mserie = rn.marcas[m].serie||{};
-        for(const mo of D.meses){ const n = mserie[mo]; if(!n) continue; serie[mo].stock += (n.stock||0); serie[mo].ventas += (n.ventas||0); }
+        for(const mo of D.meses){
+          const n = mserie[mo]; if(!n) continue;
+          // Las marcas vienen a la mitad: se llevan a unidades reales (×2).
+          if(typeof n.stock === 'number') n.stock *= 2;
+          if(typeof n.ventas === 'number') n.ventas *= 2;
+          n.ratio = n.ventas>0 ? Math.round(n.stock/n.ventas*100)/100 : null;
+          serie[mo].stock += (n.stock||0); serie[mo].ventas += (n.ventas||0);
+        }
       }
       for(const mo of D.meses){ const o = serie[mo]; o.ratio = o.ventas>0 ? Math.round(o.stock/o.ventas*100)/100 : null; }
       rn.serie = serie;
