@@ -94,12 +94,21 @@ rediseña, alinear a los tokens de arriba; si no, dejarlo como está.
 ## Meses de Stock — cómo regenerar `datos-meses-stock.js` desde el Excel
 
 El dashboard de Meses de Stock (`gestion-stock/`) no lee el Excel: lee
-`gestion-stock/datos-meses-stock.js`, que se genera **a mano pidiéndole a Claude**
-convertir el reporte `RATIO <año> ok.xlsx` (hoja "Ratios", ~115k filas, columnas
+`gestion-stock/datos-meses-stock.js`, que se genera desde el reporte
+`RATIO <año> ok.xlsx` (hoja "Ratios", ~115k filas, columnas
 Año/Mes/Sucursal/Rubro/Marca/Segmento/Stock/Ventas/Ratio + Comentarios Encargados
-+ Comentarios Área de Producto). Cuando Juli pida "convertí este Excel", seguir
-estas reglas **exactas** (un intento previo dividió las marcas por 2 → stock a la
-mitad; NO repetir):
++ Comentarios Área de Producto).
+
+**Forma correcta de regenerarlo — usar el generador:**
+
+```
+node gestion-stock/generar-datos-meses-stock.js "ruta/RATIO 2026 ok.xlsx" 2026
+```
+
+Es self-contained (solo `fs`+`zlib`, sin npm) y aplica el mapeo correcto. Después:
+commit + push. Solo si hay que hacerlo a mano (o tocar el generador), seguir estas
+reglas **exactas** (un intento previo dividió las marcas por 2 → stock a la mitad;
+NO repetir):
 
 - **`rubro.serie[mes]`** = fila `Marca="Total", Segmento="Total"` de ese
   sucursal/rubro/mes. Es el total real del rubro. **Tal cual, sin dividir.**
