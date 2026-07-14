@@ -2775,46 +2775,40 @@ function msBigChartSvg(serie, rubro){
   return out+'</svg>';
 }
 
-/* ---------- Corrección del dataset ----------
-   El export del Excel RATIO trae las filas de MARCA (y la pseudo-marca
-   "Total") a la MITAD de las unidades reales; el total por sucursal/rubro
-   (rubro.serie) y el desglose por segmento vienen en unidades reales.
-   Verificado contra el Excel: Plaza Italia CALZADO junio = 5.136 unidades
-   = rubro.serie = Σ segmentos, pero las marcas suman 2.568 (la mitad); la
-   suma de los "Total" del Excel de todas las sucursales = 125.789 = Σ
-   rubro.serie. Acá se elimina la pseudo-marca "Total" y se DUPLICAN las
-   series de marca para llevarlas a unidades reales; con eso la suma de
-   marcas vuelve a dar el total del rubro y coincide con los segmentos.
-   El ratio no cambia (stock y ventas se duplican juntos). Corre una vez
-   al cargar. */
+/* ---------- Corrección del dataset (red de seguridad) ----------
+   El generador del Excel RATIO exporta cada fila de MARCA (y la pseudo-marca
+   "Total" de cada rubro) DIVIDIDA POR 2, mientras que rubro.serie, suc.serie
+   y el desglose por segmento salen en unidades reales. Verificado contra
+   'RATIO 2026 ok.xlsx': Plaza Italia CALZADO junio = 5.136 pares (fila
+   Marca=Total del Excel) = rubro.serie = Σ segmentos, y Nike = 380 = Hombre+
+   Dama+Unisex; pero en el .js crudo quedaban 2.568 y 190 (la mitad).
+
+   Desde el fix de raíz, datos-meses-stock.js YA viene corregido (marcas en
+   unidades reales, sin pseudo-marca "Total"), así que esta función NO hace
+   nada. Se deja como red de seguridad: si algún mes se vuelve a pegar un .js
+   CRUDO del generador viejo, la presencia de la marca "Total" (que el export
+   pone en el 100% de los rubros) la delata y se corrige al vuelo: se duplican
+   las series de marca y se borra la pseudo-marca. NO se tocan rubro.serie ni
+   suc.serie (ya son reales). El ratio no cambia (stock y ventas ×2 juntos).
+   Es idempotente: sin marca "Total", no altera nada. */
 function msCorregirDatos(){
   const D = window.STOCK_DATA;
   for(const s in D.sucursales){
     const sn = D.sucursales[s];
-    const sucSerie = {};
-    for(const mo of D.meses) sucSerie[mo] = {stock:0, ventas:0, ratio:null};
     for(const r in (sn.rubros||{})){
       const rn = sn.rubros[r];
-      if(rn.marcas && rn.marcas['Total']) delete rn.marcas['Total'];
-      const serie = {};
-      for(const mo of D.meses) serie[mo] = {stock:0, ventas:0, ratio:null};
-      for(const m in (rn.marcas||{})){
+      if(!(rn.marcas && rn.marcas['Total'])) continue; // dataset ya corregido
+      delete rn.marcas['Total'];
+      for(const m in rn.marcas){
         const mserie = rn.marcas[m].serie||{};
         for(const mo of D.meses){
           const n = mserie[mo]; if(!n) continue;
-          // Las marcas vienen a la mitad: se llevan a unidades reales (×2).
           if(typeof n.stock === 'number') n.stock *= 2;
           if(typeof n.ventas === 'number') n.ventas *= 2;
           n.ratio = n.ventas>0 ? Math.round(n.stock/n.ventas*100)/100 : null;
-          serie[mo].stock += (n.stock||0); serie[mo].ventas += (n.ventas||0);
         }
       }
-      for(const mo of D.meses){ const o = serie[mo]; o.ratio = o.ventas>0 ? Math.round(o.stock/o.ventas*100)/100 : null; }
-      rn.serie = serie;
-      for(const mo of D.meses){ sucSerie[mo].stock += serie[mo].stock; sucSerie[mo].ventas += serie[mo].ventas; }
     }
-    for(const mo of D.meses){ const o = sucSerie[mo]; o.ratio = o.ventas>0 ? Math.round(o.stock/o.ventas*100)/100 : null; }
-    sn.serie = sucSerie;
   }
 }
 
