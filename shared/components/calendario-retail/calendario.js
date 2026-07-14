@@ -66,25 +66,32 @@
     return new Date(anio, mes-1, numDia);
   }
 
-  // ---- calendario retail 4-5-4 (NRF) ----
-  // El anio retail arranca la semana (domingo) que contiene al 1 de feb.
-  var PATRON_454 = [4,5,4, 4,5,4, 4,5,4, 4,5,4];
-  var PERIODO_MES = ['Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic','Ene'];
-  function inicioRetail(y){
-    var feb1 = new Date(y,1,1);
-    return addDias(feb1, -feb1.getDay()); // domingo en/antes del 1 feb
+  // ---- calendario retail: semanas ISO (lun -> dom) ----
+  // Cada semana arranca el LUNES. El n° de semana es ISO 8601 (la semana 1
+  // es la que contiene el primer jueves del anio). Cada mes retail agrupa
+  // sus semanas COMPLETAS: la semana que contiene el dia 1 ya cuenta para
+  // ese mes (los dias del mes anterior que caen en esa semana "pasan" al mes nuevo).
+  var DOW_LUN = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  function lunesDe(fecha){ var x=soloDia(fecha); var dow=(x.getDay()+6)%7; return addDias(x, -dow); }
+  function isoWeek(fecha){
+    var d = new Date(Date.UTC(fecha.getFullYear(), fecha.getMonth(), fecha.getDate()));
+    var dn = (d.getUTCDay()+6)%7;           // lun=0..dom=6
+    d.setUTCDate(d.getUTCDate() - dn + 3);  // jueves de esta semana
+    var ene4 = new Date(Date.UTC(d.getUTCFullYear(),0,4));
+    var dn4 = (ene4.getUTCDay()+6)%7;
+    var jueves1 = new Date(ene4); jueves1.setUTCDate(ene4.getUTCDate() - dn4 + 3);
+    return 1 + Math.round((d - jueves1)/(7*86400000));
   }
-  function infoRetail(fecha){
-    var d = soloDia(fecha);
-    var y = d.getFullYear();
-    var ini = inicioRetail(y);
-    if(d < ini){ y -= 1; ini = inicioRetail(y); }
-    else { var sig = inicioRetail(y+1); if(d >= sig){ y += 1; ini = sig; } }
-    var semana = Math.floor(diffDias(ini, d)/7) + 1;
-    var cum=0, periodo=12;
-    for(var i=0;i<12;i++){ cum += PATRON_454[i]; if(semana<=cum){ periodo=i+1; break; } }
-    var trimestre = Math.ceil(periodo/3);
-    return { ry:y, semana:semana, periodo:periodo, trimestre:trimestre, mes:PERIODO_MES[periodo-1] };
+  // A que mes retail pertenece una fecha: al del domingo de su semana (si la
+  // semana cruza un dia 1, el domingo ya cae en el mes nuevo).
+  function mesRetailDe(fecha){ var dom=addDias(lunesDe(fecha),6); return {y:dom.getFullYear(), m:dom.getMonth()}; }
+  // Lunes (uno por semana) que componen el mes retail (anio, mes 0-11).
+  function semanasRetailMes(anio, mes){
+    var start = lunesDe(new Date(anio, mes, 1));
+    var startSig = lunesDe(new Date(anio, mes+1, 1));
+    var out = [];
+    for(var m=new Date(start); m < startSig; m=addDias(m,7)) out.push(new Date(m));
+    return out;
   }
 
   // Expande un evento del JSON a { inicio, fin } para un anio dado.
@@ -216,42 +223,39 @@
 
   function renderMes(big){
     var retail = esRetail();
-    var primero = new Date(verAnio, verMes, 1);
-    var arranque = primero.getDay();
     var diasMes = new Date(verAnio, verMes+1, 0).getDate();
-    var ocs = ocurrencias([verAnio]).filter(pasaFiltro);
+    var ocs = ocurrencias([verAnio-1, verAnio, verAnio+1]).filter(pasaFiltro);
+    var filasHTML = '', dowRow, subBadge = '';
 
-    // arma la matriz de dias (con vacios de relleno)
-    var celdas = [];
-    for(var i=0;i<arranque;i++) celdas.push(null);
-    for(var d=1; d<=diasMes; d++) celdas.push(d);
-    while(celdas.length % 7 !== 0) celdas.push(null);
-
-    var domInicio = addDias(primero, -arranque); // domingo de la primera fila
-    var filasHTML = '';
-    for(var f=0; f*7 < celdas.length; f++){
-      var filaHTML = '';
-      if(retail){
-        var domFila = addDias(domInicio, f*7);
-        filaHTML += '<span class="cr-wk" aria-hidden="true">S'+infoRetail(domFila).semana+'</span>';
-      }
-      for(var c=0;c<7;c++){
-        var dia = celdas[f*7+c];
-        if(dia==null){ filaHTML += '<div class="cr-day cr-empty"></div>'; continue; }
-        filaHTML += celdaDia(dia, ocs, big);
-      }
-      filasHTML += filaHTML;
-    }
-
-    var dowRow = (retail?'<span class="cr-wk-h" aria-hidden="true"></span>':'') +
-      DOW.map(function(x){ return '<span>'+(big?x:x[0])+'</span>'; }).join('');
-
-    var subBadge = '';
     if(retail){
-      var r1 = infoRetail(new Date(verAnio,verMes,1));
-      var r2 = infoRetail(new Date(verAnio,verMes,diasMes));
-      var rMid = infoRetail(new Date(verAnio,verMes,15)); // periodo representativo del mes
-      subBadge = '<div class="cr-retail-badge">Retail T'+rMid.trimestre+' · P'+rMid.periodo+' '+rMid.mes+' · Sem '+r1.semana+'–'+r2.semana+'</div>';
+      // mes = semanas COMPLETAS (lun->dom); dias fuera del mes van atenuados
+      var primero = new Date(verAnio, verMes, 1);
+      var ultimo = new Date(verAnio, verMes, diasMes);
+      var semanas = semanasRetailMes(verAnio, verMes);
+      semanas.forEach(function(lun){
+        filasHTML += '<span class="cr-wk" aria-hidden="true">S'+isoWeek(lun)+'</span>';
+        for(var i=0;i<7;i++){
+          var fecha = addDias(lun, i);
+          var fuera = (fecha < primero || fecha > ultimo);
+          filasHTML += celdaDia(fecha, ocs, big, fuera);
+        }
+      });
+      dowRow = '<span class="cr-wk-h" aria-hidden="true"></span>' +
+        DOW_LUN.map(function(x){ return '<span>'+(big?x:x[0])+'</span>'; }).join('');
+      var q = Math.floor(verMes/3)+1;
+      subBadge = '<div class="cr-retail-badge">Retail · T'+q+' · Sem '+isoWeek(semanas[0])+'–'+isoWeek(semanas[semanas.length-1])+'</div>';
+    } else {
+      // tradicional: gregoriano, semana dom->sab, solo dias del mes
+      var arr = new Date(verAnio, verMes, 1).getDay();
+      var celdas = [];
+      for(var a=0;a<arr;a++) celdas.push(null);
+      for(var d=1; d<=diasMes; d++) celdas.push(new Date(verAnio, verMes, d));
+      while(celdas.length % 7 !== 0) celdas.push(null);
+      for(var k=0;k<celdas.length;k++){
+        var cel = celdas[k];
+        filasHTML += cel ? celdaDia(cel, ocs, big, false) : '<div class="cr-day cr-empty"></div>';
+      }
+      dowRow = DOW.map(function(x){ return '<span>'+(big?x:x[0])+'</span>'; }).join('');
     }
 
     return '<div class="cr-cal">'+
@@ -265,17 +269,17 @@
     '</div>';
   }
 
-  function celdaDia(dia, ocs, big){
-    var fecha = new Date(verAnio, verMes, dia);
+  function celdaDia(fecha, ocs, big, fuera){
     var delDia = ocs.filter(function(o){ return soloDia(o.inicio)<=fecha && fecha<=soloDia(o.fin); });
     var cls = 'cr-day';
+    if(fuera) cls += ' cr-out';
     if(mismoDia(fecha, hoyD)) cls += ' cr-today';
     if(seleccion && mismoDia(fecha, seleccion)) cls += ' cr-selected';
     var rango = delDia.find(function(o){ return diffDias(o.inicio,o.fin) > 0; });
     if(rango){
       cls += ' cr-range';
-      if(mismoDia(fecha, soloDia(rango.inicio)) || dia===1) cls += ' cr-range-start';
-      if(mismoDia(fecha, soloDia(rango.fin)) || dia===new Date(verAnio,verMes+1,0).getDate()) cls += ' cr-range-end';
+      if(mismoDia(fecha, soloDia(rango.inicio))) cls += ' cr-range-start';
+      if(mismoDia(fecha, soloDia(rango.fin)))    cls += ' cr-range-end';
     }
     var tab = mismoDia(fecha, foco) ? '0' : '-1';
     var extra;
@@ -288,9 +292,10 @@
       var dots = delDia.slice(0,3).map(function(o){ return '<i style="background:'+o.color+'"></i>'; }).join('');
       extra = dots ? '<span class="cr-dots">'+dots+'</span>' : '';
     }
-    return '<button class="'+cls+'" type="button" data-dia="'+dia+'" tabindex="'+tab+'" '+
-      'aria-label="'+dia+' de '+MESES_L[verMes]+(delDia.length?', '+delDia.length+' evento(s)':'')+'">'+
-      '<span class="cr-day-num">'+dia+'</span>'+extra+
+    var fstr = fecha.getFullYear()+'-'+fecha.getMonth()+'-'+fecha.getDate();
+    return '<button class="'+cls+'" type="button" data-fecha="'+fstr+'" tabindex="'+tab+'" '+
+      'aria-label="'+fecha.getDate()+' de '+MESES_L[fecha.getMonth()]+(delDia.length?', '+delDia.length+' evento(s)':'')+'">'+
+      '<span class="cr-day-num">'+fecha.getDate()+'</span>'+extra+
     '</button>';
   }
 
@@ -323,7 +328,7 @@
     } else {
       items = '<ul class="cr-list">'+lista.map(function(o){
         var w = textoCuando(o);
-        var ret = esRetail() ? ' · Sem '+infoRetail(o.inicio).semana : '';
+        var ret = esRetail() ? ' · Sem '+isoWeek(o.inicio) : '';
         return '<li class="cr-item'+(o.impacto==='alto'?' cr-alto':'')+'">'+
           '<span class="cr-bar" style="background:'+o.color+'"></span>'+
           '<div class="cr-item-main">'+
@@ -354,7 +359,7 @@
       '</button>';
     }).join('');
     var nota = esRetail()
-      ? '<div class="cr-retail-note">Calendario retail 4-5-4 (NRF): semanas dom–sáb; el año arranca la semana del 1 feb.</div>'
+      ? '<div class="cr-retail-note">Semanas ISO (lun–dom). Cada mes agrupa sus semanas completas: la semana del día 1 ya cuenta para ese mes.</div>'
       : '';
     return '<div class="cr-foot"><span class="cr-foot-lbl">Filtrar</span>'+btns+'</div>'+nota;
   }
@@ -364,8 +369,8 @@
     cont.querySelectorAll('[data-nav]').forEach(function(b){
       b.addEventListener('click', function(){ navegarMes(+b.dataset.nav); });
     });
-    cont.querySelectorAll('.cr-day:not(.cr-empty)').forEach(function(b){
-      b.addEventListener('click', function(){ elegirDia(+b.dataset.dia); });
+    cont.querySelectorAll('.cr-day[data-fecha]').forEach(function(b){
+      b.addEventListener('click', function(){ elegirFecha(parseFstr(b.dataset.fecha)); });
     });
     var clr = cont.querySelector('[data-clear]');
     if(clr) clr.addEventListener('click', function(){ seleccion=null; render(); });
@@ -388,8 +393,8 @@
     foco = new Date(verAnio, verMes, Math.min(foco.getDate(), diasMes));
     render(); enfocarDiaFoco();
   }
-  function elegirDia(dia){
-    var f = new Date(verAnio, verMes, dia);
+  function parseFstr(s){ var p=s.split('-'); return new Date(+p[0], +p[1], +p[2]); }
+  function elegirFecha(f){
     seleccion = (seleccion && mismoDia(seleccion,f)) ? null : f;
     foco = f; render();
   }
@@ -399,12 +404,13 @@
     else if(e.key==='ArrowRight') delta=1;
     else if(e.key==='ArrowUp') delta=-7;
     else if(e.key==='ArrowDown') delta=7;
-    else if(e.key==='Enter' || e.key===' '){ e.preventDefault(); elegirDia(foco.getDate()); enfocarDiaFoco(); return; }
+    else if(e.key==='Enter' || e.key===' '){ e.preventDefault(); elegirFecha(new Date(foco)); enfocarDiaFoco(); return; }
     else return;
     e.preventDefault();
     var nueva = addDias(foco, delta);
     foco = nueva;
-    if(nueva.getMonth()!==verMes || nueva.getFullYear()!==verAnio){ verMes=nueva.getMonth(); verAnio=nueva.getFullYear(); }
+    var vm = esRetail() ? mesRetailDe(nueva) : {y:nueva.getFullYear(), m:nueva.getMonth()};
+    if(vm.m!==verMes || vm.y!==verAnio){ verMes=vm.m; verAnio=vm.y; }
     render(); enfocarDiaFoco();
   }
   function enfocarDiaFoco(){
