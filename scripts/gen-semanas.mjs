@@ -98,7 +98,7 @@ function procesar(per) {
   let first = true;
   for (const r of filas(cfg.xlsx)) {
     if (first) { first = false; continue; }              // header
-    const suc = r.A, ds = r.B, dia = parseInt(r.C, 10), vendedor = r.D, comp = r.F || '';
+    const suc = r.A, ds = r.B, dia = parseInt(r.C, 10), vendedor = r.D, comp = r.F || '', hora = r.E;
     const cant = +r.G, imp = +r.H;
     if (!suc || suc === 'Total' || suc === '05-Depósito' || r.C === 'Total') continue;
     dowSet.add(ds);
@@ -108,19 +108,20 @@ function procesar(per) {
     const esNC = /^Nc/i.test(comp);
     const key = suc + '|' + vendedor;
     const b = (vend[key] = vend[key] || {});
-    const w = (b[sem] = b[sem] || { comp: new Set(), u: 0, i: 0 });
+    const w = (b[sem] = b[sem] || { comp: new Set(), u: 0, i: 0, hact: new Set() });
     if (esNC) { w.u += (isFinite(cant) ? cant : 0); w.i += (isFinite(imp) ? imp : 0); }         // NC: suma dev (negativo)
-    else if (cant > 0) { w.comp.add(comp); w.u += cant; w.i += (isFinite(imp) ? imp : 0); }     // venta real
+    else if (cant > 0) { w.comp.add(comp); w.u += cant; w.i += (isFinite(imp) ? imp : 0); w.hact.add(dia + '|' + hora); }  // venta real
   }
   return { vend, nSem, desde, hasta, huerfanas, dows: [...dowSet] };
 }
 
+const r2 = x => Math.round(x * 100) / 100;
 function semanasLista(byS, nSem, desde, hasta) {
   const out = [];
   for (let s = 1; s <= nSem; s++) {
     const w = byS[s]; if (!w) continue;
     out.push({ n: s, rango: rangoSem(s, desde, hasta), tickets: w.comp.size,
-      unidades_netas: Math.round(w.u * 100) / 100, importe_neto: Math.round(w.i * 100) / 100 });
+      unidades_netas: r2(w.u), importe_neto: r2(w.i), h_act: w.hact.size });
   }
   return out;
 }
@@ -139,24 +140,32 @@ function main() {
       const fp = path.join(dir, arch);
       const d = JSON.parse(fs.readFileSync(fp, 'utf8'));
       const suc = d.sucursal;
-      // per-vendedor
-      const sucSemAgg = {};   // sem -> {comp:Set, u, i}  solo medibles (horas_contr>0)
-      const todoMedible = suc === '99-Ecommerce';   // Ecommerce no tiene piso: se suma completo (como el ETL)
+      // per-vendedor + agregado de sucursal (solo medibles; Ecommerce se suma completo)
+      const todoMedible = suc === '99-Ecommerce';
+      const sucSem = {};   // n -> {comp:Set (tickets distintos), u, i, hact (sumadas), hc}
       for (const v of (d.vendedores || [])) {
         const byS = vend[suc + '|' + v.vendedor] || {};
         v.semanas = semanasLista(byS, nSem, desde, hasta);
+        // horas_contr por semana: prorratea el contrato mensual según las horas activas de cada semana
+        const hactM = v.h_act || 0;
+        for (const w of v.semanas) w.horas_contr = hactM > 0 ? r2(v.horas_contr * w.h_act / hactM) : 0;
         if (todoMedible || v.horas_contr > 0) {
           for (const s of Object.keys(byS)) {
-            const w = byS[s], a = (sucSemAgg[s] = sucSemAgg[s] || { comp: new Set(), u: 0, i: 0 });
-            for (const c of w.comp) a.comp.add(c); a.u += w.u; a.i += w.i;
+            const wr = byS[s];  // crudo: comp Set, u, i, hact Set
+            const a = (sucSem[s] = sucSem[s] || { n: +s, comp: new Set(), u: 0, i: 0, hact: 0, hc: 0 });
+            for (const c of wr.comp) a.comp.add(c);          // tickets: distintos (multi-vendedor no duplica)
+            a.u += wr.u; a.i += wr.i; a.hact += wr.hact.size; // h_act: sumadas (como el ETL)
+            a.hc += hactM > 0 ? v.horas_contr * wr.hact.size / hactM : 0;
           }
         }
       }
-      d.summary.semanas = semanasLista(sucSemAgg, nSem, desde, hasta);
+      d.summary.semanas = Object.values(sucSem).sort((x, y) => x.n - y.n).map(a => ({
+        n: a.n, rango: rangoSem(a.n, desde, hasta), tickets: a.comp.size,
+        unidades_netas: r2(a.u), importe_neto: r2(a.i), h_act: a.hact, horas_contr: r2(a.hc) }));
       // validación: suma semanal (medible) vs mensual del summary
-      const sumT = d.summary.semanas.reduce((x, w) => x + w.tickets, 0);
-      const difT = sumT - d.summary.tickets;
-      if (Math.abs(difT) > 2) { warnSuc++; console.log(`  ⚠ ${suc}: Σsem tickets=${sumT} vs mensual=${d.summary.tickets} (dif ${difT})`); }
+      const sumT = d.summary.semanas.reduce((x, w) => x + w.tickets, 0), difT = sumT - d.summary.tickets;
+      const sumH = d.summary.semanas.reduce((x, w) => x + w.h_act, 0), difH = sumH - (d.summary.h_act || 0);
+      if (Math.abs(difT) > 2 || Math.abs(difH) > 3) { warnSuc++; console.log(`  ⚠ ${suc}: tickets Σ${sumT}/mes${d.summary.tickets} (${difT}) · h_act Σ${sumH}/mes${d.summary.h_act} (${difH})`); }
       else okSuc++;
       if (WRITE) { fs.writeFileSync(fp, JSON.stringify(d)); totalWrites++; }
     }

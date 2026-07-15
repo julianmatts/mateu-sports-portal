@@ -252,6 +252,19 @@ tr:last-child td{border-bottom:none}
 .canal-part .pbar{position:relative;height:6px;width:64px;background:#e7ebf5;border-radius:3px;overflow:hidden;display:inline-block}
 .canal-part .pbar i{position:absolute;left:0;top:0;height:100%;background:var(--red);border-radius:3px}
 
+/* ===== FILTRO POR SEMANA ===== */
+.filtro-banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#fff4e6;border:1px solid #f0d9ad;
+  color:#7a5310;border-radius:12px;padding:12px 16px;margin-top:16px;font-size:14px;line-height:1.5}
+.filtro-banner b{color:#5c3d08}
+.filtro-banner .fb-reset{margin-left:auto;background:var(--navy);color:#fff;border:none;border-radius:8px;padding:8px 14px;
+  font-family:var(--font-c);font-weight:700;font-size:12px;letter-spacing:.5px;text-transform:uppercase;cursor:pointer}
+.filtro-banner .fb-reset:hover{background:var(--navy-mid)}
+#semAnalisis svg rect[data-sem]{cursor:pointer}
+#semAnalisis tr.sem-tr{cursor:pointer}
+#semAnalisis tr.sem-tr:hover td{background:#f6f8fe}
+#semAnalisis tr.sel-week td{background:#fbeaea}
+#semAnalisis tr.sel-week td.L{color:var(--red);font-weight:600}
+
 /* ===== SEMANA A SEMANA ===== */
 .sem-link{color:var(--red);cursor:pointer;font-weight:600;text-decoration:underline;white-space:nowrap}
 .sem-suc{margin-bottom:14px}
@@ -381,6 +394,7 @@ footer b{color:var(--navy)}
   <div class="loading" id="loading">Cargando indicadores…</div>
   <div id="content" style="display:none">
     <div class="print-ctx" id="printCtx"></div>
+    <div class="filtro-banner" id="filtroBanner" style="display:none"></div>
 
     <section class="sec" id="secKpis">
       <div class="sec-label">Resumen</div>
@@ -606,7 +620,7 @@ const DIAS = ['Lu','Ma','Mi','Ju','Vi','Sá','Do'];
 
 let PERIODOS = [], OBJ = {}, STOCK = null;
 let per = null, sucName = null, hbase = 'horas_contr';
-let sort = {k:'venta', dir:-1}, open = new Set(), openPersons = new Set(), semSucOpen = false, vistaCadena = false;
+let sort = {k:'venta', dir:-1}, open = new Set(), openPersons = new Set(), semSucOpen = false, vistaCadena = false, semSel = null;
 const cacheCadena = {}, cacheDet = {};
 
 /* --- formato / helpers --- */
@@ -664,7 +678,7 @@ async function boot(){
   // selector de período
   $('selPer').innerHTML = PERIODOS.map(p=>`<option value="${p.id}">${esc(p.label)}</option>`).join('');
   $('selPer').value = per;
-  $('selPer').onchange = e => { per = e.target.value; open=new Set(); openPersons=new Set(); render(); };
+  $('selPer').onchange = e => { per = e.target.value; open=new Set(); openPersons=new Set(); semSel=null; render(); };
 
   // controles según rol
   if(esGerencia){
@@ -679,7 +693,7 @@ async function boot(){
   $('selSuc').onchange = e => {
     if(e.target.value==='__cadena'){ vistaCadena=true; sucName=null; }
     else { vistaCadena=false; sucName=e.target.value; }
-    open=new Set(); openPersons=new Set(); render();
+    open=new Set(); openPersons=new Set(); semSel=null; render();
   };
 
   cargarStock(); // en segundo plano
@@ -710,7 +724,33 @@ async function detalleDe(id, name){
 }
 
 /* ============================ RENDER ============================ */
-let CAD=null, CAD_PREV=null, DET=null;
+let CAD=null, CAD_PREV=null, DET=null, DET_FULL=null;
+
+// Clona el detalle de la sucursal quedándose SOLO con la semana n (venta + horas).
+// Cobertura, heatmap y summary.semanas se conservan (mes completo) para las secciones
+// que son a nivel mes y para el gráfico de barras.
+function cloneSemana(full, n){
+  const ws = (full.summary.semanas||[]).find(w=>w.n===n);
+  if(!ws) return full;
+  const summary = {...full.summary, tickets:ws.tickets, tickets_todos:ws.tickets,
+    unidades:ws.unidades_netas, unidades_netas:ws.unidades_netas, importe:ws.importe_neto, importe_neto:ws.importe_neto,
+    horas_contr:ws.horas_contr, h_act:ws.h_act, cobertura:100, dev_i:0, dev_u:0};
+  const vendedores = full.vendedores.map(v=>{
+    const w = (v.semanas||[]).find(x=>x.n===n);
+    if(!w) return null;
+    return {...v, tickets:w.tickets, unidades_netas:w.unidades_netas, importe_neto:w.importe_neto, horas_contr:w.horas_contr, h_act:w.h_act};
+  }).filter(v=> v && (v.tickets>0 || v.h_act>0));
+  return {...full, summary, vendedores};
+}
+function actualizarFiltroBanner(){
+  const b=$('filtroBanner'); if(!b) return;
+  if(!semSel || !DET_FULL){ b.style.display='none'; return; }
+  const w=(DET_FULL.summary.semanas||[]).find(x=>x.n===semSel);
+  b.style.display='';
+  b.innerHTML = `<span>📅 Filtrando por <b>Semana ${semSel}${w&&w.rango?' · '+esc(w.rango):''}</b> — KPIs, equipo, plantilla y diagnóstico muestran solo esa semana. <span class="muted">Cobertura, heatmap y meses de stock quedan a nivel mes.</span></span>`+
+    `<button class="fb-reset" id="fbReset">Ver el mes completo</button>`;
+  $('fbReset').onclick = ()=>{ semSel=null; render(); };
+}
 async function render(){
   const p = PERIODOS.find(x=>x.id===per);
   $('tbDias').textContent = (p&&p.dias)?'días '+p.dias:'';
@@ -748,12 +788,16 @@ async function render(){
     mostrarEmpty('Tu sucursal todavía no tiene datos de indicadores cargados.');
     return;
   }
-  DET = await detalleDe(per, sucName);
-  if(!DET || !CAD){
+  DET_FULL = await detalleDe(per, sucName);
+  if(!DET_FULL || !CAD){
     mostrarEmpty('No hay datos de <b>'+esc(sucName)+'</b> para '+esc(perLabel(per))+'.');
     return;
   }
+  // la semana elegida tiene que existir en esta sucursal/período
+  if(semSel && !(DET_FULL.summary.semanas||[]).some(w=>w.n===semSel)) semSel=null;
+  DET = semSel ? cloneSemana(DET_FULL, semSel) : DET_FULL;
   ocultarEmpty();
+  actualizarFiltroBanner();
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
   $('secCanales').style.display = ecom?'':'none';
@@ -957,28 +1001,35 @@ function renderKPIs(){
       semClass='s-'+sem;
       objHtml = `<span class="dot"></span><span class="cum-${sem}">${Math.round(pct)}% del objetivo</span> <span class="tgt">(${d.key==='tp'?fmtM(d.tgt):fmt2(d.tgt)})</span>`;
     }
-    // delta vs período anterior + delta de la cadena
-    let deltaHtmlStr = '<span class="muted">sin período anterior</span>';
-    if(prevSuc){
-      const dp = deltaHtml(k[d.key], kpis(prevSuc)[d.key]);
-      const dc = cPrev ? deltaHtml(c[d.key], cPrev[d.key]) : null;
-      if(dp) deltaHtmlStr = `${dp} vs. ${mesAnt}` + (dc?` · <span class="muted">cadena ${dc}</span>`:'');
+    // pie: en modo semana, delta vs. la semana anterior y sin ranking mensual
+    let deltaHtmlStr, rankHtml;
+    if(semSel){
+      const wp = (DET_FULL.summary.semanas||[]).find(x=>x.n===semSel-1);
+      const dp = wp ? deltaHtml(k[d.key], kpis(wp)[d.key]) : null;
+      deltaHtmlStr = dp ? `${dp} vs. Sem ${semSel-1}` : '<span class="muted">primera semana del mes</span>';
+      const ws = (DET_FULL.summary.semanas||[]).find(x=>x.n===semSel);
+      rankHtml = `<span class="muted">Semana ${semSel}${ws&&ws.rango?' · '+esc(ws.rango):''}</span>`;
+    } else {
+      deltaHtmlStr = '<span class="muted">sin período anterior</span>';
+      if(prevSuc){
+        const dp = deltaHtml(k[d.key], kpis(prevSuc)[d.key]);
+        const dc = cPrev ? deltaHtml(c[d.key], cPrev[d.key]) : null;
+        if(dp) deltaHtmlStr = `${dp} vs. ${mesAnt}` + (dc?` · <span class="muted">cadena ${dc}</span>`:'');
+      }
+      const r = rankDe(CAD, d.key, sucName), rF = rankFormato(CAD, d.key, sucName, fmt), avgF = avgFormato(CAD, d.key, fmt);
+      const difF = (isFinite(avgF)&&avgF)? (k[d.key]/avgF-1)*100 : NaN, fCls = difF>1.5?'up':difF<-1.5?'down':'flat';
+      rankHtml = `<span>Cadena <b>${r||'—'}</b>${rF?` · Formato <b>${rF.pos}/${rF.total}</b>`:''}</span>${isFinite(difF)?`<span class="${fCls}">${difF>0?'+':''}${fmt2(difF)}% vs. formato</span>`:''}`;
     }
-    const r = rankDe(CAD, d.key, sucName);
-    const rF = rankFormato(CAD, d.key, sucName, fmt);
-    const avgF = avgFormato(CAD, d.key, fmt);
-    const difF = (isFinite(avgF)&&avgF)? (k[d.key]/avgF-1)*100 : NaN;
-    const fCls = difF>1.5?'up':difF<-1.5?'down':'flat';
-    const spark = sparkSVG(serieKPI(d.key), d.tgt||NaN);
+    const spark = semSel ? '' : sparkSVG(serieKPI(d.key), d.tgt||NaN);
     return `<div class="kpi ${semClass}">
       <div class="kpi-name">${d.name}</div>
       <div class="kpi-val">${d.val}</div>
       <div class="kpi-unit">${d.unit}</div>
       <div class="kpi-obj">${objHtml}</div>
-      ${spark?`<div class="kpi-spark">${spark}</div>`:'<div class="kpi-spark-empty">Tendencia: con el 2º período</div>'}
+      ${spark?`<div class="kpi-spark">${spark}</div>`:(semSel?'':'<div class="kpi-spark-empty">Tendencia: con el 2º período</div>')}
       <div class="kpi-foot">
         <div class="kpi-delta">${deltaHtmlStr}</div>
-        <div class="kpi-rank"><span>Cadena <b>${r||'—'}</b>${rF?` · Formato <b>${rF.pos}/${rF.total}</b>`:''}</span>${isFinite(difF)?`<span class="${fCls}">${difF>0?'+':''}${fmt2(difF)}% vs. formato</span>`:''}</div>
+        <div class="kpi-rank">${rankHtml}</div>
       </div></div>`;
   }).join('');
 
@@ -1264,33 +1315,36 @@ function semPersonHtml(v){
 }
 function renderSem(){
   const sec=$('secSem'), box=$('semAnalisis');
-  const sem = DET.summary && DET.summary.semanas;
+  const full = DET_FULL || DET;
+  const sem = full.summary && full.summary.semanas;
   if(!Array.isArray(sem) || sem.length<2){ sec.style.display='none'; return; }
   sec.style.display='';
   const totV=sem.reduce((a,w)=>a+w.importe_neto,0), maxV=Math.max(...sem.map(w=>w.importe_neto))||1;
   const peak=sem.reduce((a,b)=>b.importe_neto>a.importe_neto?b:a);
   const low =sem.reduce((a,b)=>b.importe_neto<a.importe_neto?b:a);
-  // gráfico de barras: venta neta por semana (pico en rojo)
+  // gráfico de barras: venta neta por semana (tocá para filtrar; seleccionada/pico en rojo)
   const W=760,H=200,P={t:24,b:46};
   const n=sem.length, bw=(W)/n, Y=v=>H-P.b-(v/maxV)*(H-P.t-P.b);
-  const bars=sem.map((w,i)=>{ const x=i*bw, isPk=w===peak, col=isPk?'var(--red)':'#c3cfe8', yy=Y(w.importe_neto);
-    return `<g><rect x="${(x+bw*0.16).toFixed(1)}" y="${yy.toFixed(1)}" width="${(bw*0.68).toFixed(1)}" height="${(H-P.b-yy).toFixed(1)}" rx="4" fill="${col}"><title>Sem ${w.n} · ${esc(w.rango)} · ${kM(w.importe_neto)} · ${fmtN(w.tickets)} tickets</title></rect>
+  const bars=sem.map((w,i)=>{ const x=i*bw, yy=Y(w.importe_neto), sel=semSel===w.n, dim=semSel&&!sel;
+    const col=sel?'var(--red)':dim?'#dfe6f2':(w===peak?'var(--red)':'#c3cfe8'), stk=sel?' stroke="var(--navy)" stroke-width="2"':'';
+    return `<g><rect data-sem="${w.n}" x="${(x+bw*0.16).toFixed(1)}" y="${yy.toFixed(1)}" width="${(bw*0.68).toFixed(1)}" height="${(H-P.b-yy).toFixed(1)}" rx="4" fill="${col}"${stk}><title>Sem ${w.n} · ${esc(w.rango)} · ${kM(w.importe_neto)} · ${fmtN(w.tickets)} tickets — tocá para filtrar</title></rect>
       <text x="${(x+bw/2).toFixed(1)}" y="${(yy-7).toFixed(1)}" text-anchor="middle" font-family="Bebas Neue" font-size="16" fill="var(--navy)">${kM(w.importe_neto)}</text>
-      <text x="${(x+bw/2).toFixed(1)}" y="${H-P.b+17}" text-anchor="middle" font-family="Barlow Condensed" font-size="12" font-weight="600" fill="var(--navy)">Sem ${w.n}</text>
+      <text x="${(x+bw/2).toFixed(1)}" y="${H-P.b+17}" text-anchor="middle" font-family="Barlow Condensed" font-size="12" font-weight="600" fill="${sel?'var(--red)':'var(--navy)'}">Sem ${w.n}</text>
       <text x="${(x+bw/2).toFixed(1)}" y="${H-P.b+32}" text-anchor="middle" font-family="Barlow Condensed" font-size="10.5" fill="var(--muted)">${esc(w.rango)}</text></g>`;
   }).join('');
   const svg=`<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:520px;height:auto" role="img" aria-label="Venta neta por semana">${bars}</svg></div>`;
   const tabla=`<div class="tbl-wrap" style="margin-top:14px"><table style="min-width:0">
     <thead><tr><th class="L">Semana</th><th>Tickets</th><th>UPT</th><th>Ticket prom.</th><th>Venta neta</th><th>% del mes</th></tr></thead><tbody>`+
-    sem.map(w=>{ const upt=w.tickets?w.unidades_netas/w.tickets:0, tp=w.tickets?w.importe_neto/w.tickets:0, pc=totV?w.importe_neto/totV*100:0;
-      return `<tr><td class="L">Sem ${w.n} <span class="muted" style="font-size:12px">${esc(w.rango)}</span></td>
+    sem.map(w=>{ const upt=w.tickets?w.unidades_netas/w.tickets:0, tp=w.tickets?w.importe_neto/w.tickets:0, pc=totV?w.importe_neto/totV*100:0, sel=semSel===w.n;
+      return `<tr class="sem-tr${sel?' sel-week':''}" data-sem="${w.n}"><td class="L">Sem ${w.n} <span class="muted" style="font-size:12px">${esc(w.rango)}</span></td>
         <td><span class="num">${fmtN(w.tickets)}</span></td><td><span class="num">${fmt2(upt)}</span></td>
         <td><span class="num">${fmtM(tp)}</span></td><td><span class="num">${kM(w.importe_neto)}</span></td>
         <td class="muted">${fmt2(pc)}%</td></tr>`; }).join('')+`</tbody></table></div>`;
   const pkShare=totV?peak.importe_neto/totV*100:0, vsLow=low.importe_neto?(peak.importe_neto/low.importe_neto-1)*100:0;
   const nota=`<p class="eq-note" style="margin-top:14px">La semana más fuerte fue la <b>Sem ${peak.n} (${esc(peak.rango)})</b> con <b>${kM(peak.importe_neto)}</b>, el <b>${fmt2(pkShare)}%</b> del mes`+
-    (low!==peak?` — <b>${fmt2(vsLow)}%</b> más que la más floja (Sem ${low.n}, ${kM(low.importe_neto)})`:'')+`.</p>`;
+    (low!==peak?` — <b>${fmt2(vsLow)}%</b> más que la más floja (Sem ${low.n}, ${kM(low.importe_neto)})`:'')+`. <span class="muted">Tocá una barra o fila para filtrar todo el reporte por esa semana.</span></p>`;
   box.innerHTML = svg + tabla + nota;
+  box.querySelectorAll('[data-sem]').forEach(el=> el.addEventListener('click', ()=>{ const nn=+el.getAttribute('data-sem'); semSel=(semSel===nn)?null:nn; render(); }));
 }
 
 /* --- heatmap --- */
