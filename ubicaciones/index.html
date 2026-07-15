@@ -48,6 +48,13 @@ input,select{ font-family:inherit; font-size:16px; } /* 16px evita el zoom autom
   letter-spacing:1px; text-transform:uppercase; padding:6px 10px; cursor:pointer;
 }
 .btn-salir:hover{ color:#fff; border-color:#fff; }
+.btn-mostrador{
+  background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.25); border-radius:6px;
+  color:rgba(255,255,255,.85); font-family:var(--font-c); font-size:12px; font-weight:600;
+  letter-spacing:1px; text-transform:uppercase; padding:6px 10px; cursor:pointer;
+  display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+}
+.btn-mostrador:hover{ color:#fff; border-color:#fff; background:rgba(255,255,255,.16); }
 
 /* avatar genérico (imagen o iniciales) */
 .av{ border-radius:50%; object-fit:cover; background:var(--navy-mid); color:#fff;
@@ -510,6 +517,7 @@ table.prev th{ background:var(--bg); font-family:var(--font-c); letter-spacing:.
         <div class="av" id="perfilChipAv"></div>
         <div class="nm" id="perfilChipNm">—</div>
       </div>
+      <button class="btn-mostrador" id="btnMostrador" style="display:none" title="Modo mostrador — vuelve al selector de perfiles (protector de pantalla)">🖥 Mostrador</button>
       <button class="btn-salir" id="btnSalir">Salir</button>
     </div>
   </header>
@@ -653,6 +661,47 @@ const PERFIL_ROLES = [
 ];
 const ROL_LABEL_PERFIL = {}; PERFIL_ROLES.forEach(r=>ROL_LABEL_PERFIL[r.id]=r.label);
 function rolLabel(rol){ return ROL_LABEL_PERFIL[rol] || rol; }
+
+/* Importar dotación desde Indicadores de Sucursal: reusa la misma data
+   (data/indicadores) para sembrar los perfiles con nombre + rol, sin duplicar
+   el dato. slug del Buscador -> nombre de sucursal en Indicadores. */
+const SLUG_SUC_IND = {
+  'calle-12':'12-MS Calle 12','city-bell':'06-MS City Bell','calle-47':'08-MS Calle 47',
+  'calle-49':'19-MS Calle 49','los-hornos':'13-MS Los Hornos','plaza':'01-MS Plaza Italia',
+  'berisso':'16-MS Berisso','ensenada':'11-MS Ensenada','kids':'02-Mateu Kids',
+  'aurelius-12':'04-Aurelius Calle 12','aurelius-5':'18-Aurelius Calle 5','aurelius-cb':'17-Aurelius City Bell',
+  'adidas-12':'21-Adidas Calle 12','adidas':'09-Adidas Av. 7','originals':'15-Adidas Originals',
+};
+const GRUPO_ROL_IND = { Jefatura:'encargado', Ventas:'vendedor', Caja:'cajera', Refuerzos:'deposito' };
+const ROL_ORDEN_IND = { encargado:1, vendedor:2, cajera:3, deposito:4 };
+function archivoInd(nombre){ return nombre.replace(/\./g,'').replace(/\s+/g,'-'); }
+function titleNombre(s){ return (s||'').toLowerCase().replace(/(^|[\s'’-])([a-záéíóúñü])/g,(m,p,c)=>p+c.toUpperCase()); }
+function idFromNombre(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,''); }
+
+// Trae la dotación operativa del último período y REEMPLAZA los perfiles de la sucursal.
+async function importarDotacion(){
+  const dataName = SLUG_SUC_IND[SUC];
+  if(!dataName){ alert('Esta sucursal todavía no tiene datos de dotación en Indicadores.'); return; }
+  if(!confirm('Va a REEMPLAZAR los perfiles de esta sucursal con la dotación de Indicadores (nombre + rol del último período).\n\nSe pierden los avatares y ajustes hechos a mano. ¿Seguir?')) return;
+  try{
+    const periodos = (await fetchJSON('../data/indicadores/periodos.json') || {}).periodos || [];
+    if(!periodos.length){ alert('No hay períodos cargados en Indicadores.'); return; }
+    const per = periodos[0].id; // más nuevo primero
+    const d = await fetchJSON('../data/indicadores/'+per+'/'+archivoInd(dataName)+'.json');
+    const perfiles = {};
+    (d.vendedores||[]).forEach(v=>{
+      if(v.cubre) return;                       // cada persona en su sucursal fija
+      const rol = GRUPO_ROL_IND[v.grupo]; if(!rol) return;   // solo roles operativos
+      perfiles[idFromNombre(v.vendedor)] = { nombre:titleNombre(v.vendedor), rol, orden:ROL_ORDEN_IND[rol], avatar:null };
+    });
+    const n = Object.keys(perfiles).length;
+    if(!n){ alert('No se encontró dotación operativa para esta sucursal en '+per+'.'); return; }
+    await putJSON(sucPath()+'/perfiles.json', perfiles);
+    await cargarPerfiles();
+    renderPanelPerfiles();
+    alert('Listo: '+n+' perfiles importados desde Indicadores ('+per+').');
+  }catch(e){ alert('No se pudo importar la dotación: '+(e&&e.message||e)); }
+}
 
 // Comentarios predeterminados de feedback sobre artículos.
 //   grupo 'mas'   → alimenta la planilla de Pedidos (mejores vendidos) de Pedidos Semanales
@@ -834,6 +883,7 @@ const sucPath = ()=> FB + '/sucursales/' + SUC;
   if(!tieneAcceso(SESSION) || !MODE){ location.href='../'; return; }
   $('hdrLogo').src = LOGO; $('pssLogo').src = LOGO;
   $('btnSalir').addEventListener('click', ()=>{ location.href='../'; });
+  $('btnMostrador').addEventListener('click', entrarModoMostrador);
   $('pssSalir').addEventListener('click', ()=>{ location.href='../'; });
   wireStatic();
 
@@ -936,6 +986,14 @@ function cambiarPerfil(){
   cargarPerfiles().then(mostrarSelectorPerfiles);
 }
 
+/* Modo mostrador manual: cierra lo que esté abierto y vuelve al selector
+   de perfiles estilo Netflix (mismo estado que el protector de pantalla por
+   inactividad). Deja el puesto listo para que el próximo elija su cara. */
+function entrarModoMostrador(){
+  cerrarSheet(); cerrarModal(); cerrarHistorial();
+  cambiarPerfil();
+}
+
 /* Puestos compartidos (salón/depósito): tras 3 minutos sin actividad
    se vuelve solo al selector de perfiles, así el próximo vendedor
    elige su cara antes de consultar. La sesión de la sucursal no se toca. */
@@ -963,8 +1021,10 @@ function montarApp(){
     $('perfilChip').style.display='flex';
     $('perfilChipAv').outerHTML = avatarHtml(PERFIL).replace('<div class="av','<div id="perfilChipAv" class="av');
     $('perfilChipNm').textContent = PERFIL.nombre;
+    $('btnMostrador').style.display='inline-flex';
   } else {
     $('perfilChip').style.display='none';
+    $('btnMostrador').style.display='none';
   }
   $('app').style.display='block';
   renderTabs();
@@ -2524,8 +2584,10 @@ async function renderPanelPerfiles(){
   cont.innerHTML = '<div class="hint">Cargando perfiles…</div>';
   await cargarPerfiles(); // refresco al abrir el panel (no se pollea)
   const lista = perfilesOrdenados();
+  const hayInd = !!SLUG_SUC_IND[SUC];
   cont.innerHTML =
     '<button class="btn btn-navy btn-block" id="btnNuevoPerfil" style="margin-bottom:12px">+ Nuevo perfil</button>'+
+    (hayInd ? '<button class="btn btn-outline btn-block" id="btnImportarDot" style="margin-bottom:12px">⇩ Importar dotación desde Indicadores</button>' : '')+
     (lista.length ? '<div class="perfil-grid">'+lista.map(p=>
       '<div class="perfil-card">'+avatarHtml(p)+
         '<div class="nm">'+esc(p.nombre)+'</div><div class="rl">'+esc(rolLabel(p.rol))+'</div>'+
@@ -2534,6 +2596,7 @@ async function renderPanelPerfiles(){
       '</div>').join('')+'</div>'
     : '<div class="empty">No hay perfiles todavía.</div>');
   $('btnNuevoPerfil').addEventListener('click', ()=> abrirFormPerfil(null, false));
+  if(hayInd) $('btnImportarDot').addEventListener('click', importarDotacion);
   cont.querySelectorAll('[data-edit]').forEach(b=> b.addEventListener('click', ()=> abrirFormPerfil(b.dataset.edit, false)));
   cont.querySelectorAll('[data-del]').forEach(b=> b.addEventListener('click', ()=> eliminarPerfil(b.dataset.del)));
 }

@@ -140,6 +140,22 @@ tr:last-child td{border-bottom:none}
 .heat > div{font-family:var(--font-c);font-size:11px;color:var(--muted);display:flex;align-items:center;justify-content:center;height:28px}
 .heat .cell{border-radius:2px;color:#fff;font-size:11px;font-variant-numeric:tabular-nums}
 
+/* ===== PLANTILLA / DOTACIÓN ===== */
+.pl-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:20px}
+.pl-stat{background:#f8f9fe;border:1px solid var(--border);border-radius:10px;padding:14px}
+.pl-stat .n{font-family:var(--font-d);font-size:30px;line-height:1;color:var(--navy)}
+.pl-stat .l{font-family:var(--font-c);font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-top:4px}
+.pl-stat .s{font-size:11.5px;color:var(--muted);margin-top:3px}
+.pl-group{margin-top:16px}
+.pl-group-h{font-family:var(--font-c);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.pl-group-h .dotc{width:9px;height:9px;border-radius:2px}
+.pl-people{display:flex;flex-wrap:wrap;gap:8px}
+.pl-person{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:9px 12px;min-width:150px}
+.pl-person .nm{font-family:var(--font-c);font-size:14px;font-weight:600;color:var(--navy)}
+.pl-person .rg{font-size:11.5px;color:var(--muted);margin-top:1px}
+.pl-person .tags{margin-top:4px}
+.pl-person .tags:empty{display:none}
+
 /* ===== ESTADOS ===== */
 .empty{background:var(--card);border:1px dashed var(--border);border-radius:12px;padding:34px;text-align:center;color:var(--muted);font-size:14px;line-height:1.5}
 .loading{padding:60px 20px;text-align:center;color:var(--muted);font-family:var(--font-c);letter-spacing:1px;text-transform:uppercase;font-size:13px}
@@ -289,6 +305,13 @@ footer b{color:var(--navy)}
       </div>
     </section>
 
+    <section class="sec" id="secPlantilla">
+      <div class="sec-label">Dotación</div>
+      <h2 class="sec-title">La <em>plantilla</em></h2>
+      <p class="hint">Quién trabaja en la sucursal, por rol y régimen horario. Sale de las ventas del período: aparece quien registró al menos un ticket; refuerzos y coberturas van marcados.</p>
+      <div class="card pad" id="plantilla"></div>
+    </section>
+
     <section class="sec" id="secTbl">
       <div class="sec-label">Equipos</div>
       <h2 class="sec-title">Ventas, caja y <em>jefatura</em></h2>
@@ -399,6 +422,7 @@ const TOOLS = {
   'gestion-stock':    { name:'Gestión de Stock',        icon:'📊', url:'../gestion-stock/' },
   managment:          { name:'Managment',               icon:'🧾', url:'../managment/' },
   'pedidos-semanales':{ name:'Pedidos Semanales',       icon:'📝', url:'../pedidos-semanales/' },
+  evaluaciones:       { name:'Evaluaciones de Supervisor', icon:'📋', url:'../evaluaciones/' },
   diagonal80:         { name:'Apertura Diagonal 80',    icon:'🏬', url:'../diagonal80/' },
   ubicaciones:        { name:'Buscador de Artículos',   icon:'📍', url:'../ubicaciones/' },
   regalias:           { name:'Regalías RUGE / EDLP',    icon:'⚽', url:'../regalias/' },
@@ -585,18 +609,19 @@ async function render(){
   renderEq();
   renderMix();
   renderCov();
+  renderPlantilla();
   renderTbl();
   renderHeat();
   renderNotas();
 }
 
 function mostrarEmpty(msg){
-  ['secEq','secMix','secCov','secTbl','secHeat'].forEach(id=>$(id).style.display='none');
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secHeat'].forEach(id=>$(id).style.display='none');
   $('cobNota').style.display='none';
   $('kpis').innerHTML = '<div class="empty" style="grid-column:1/-1">'+msg+'</div>';
 }
 function ocultarEmpty(){
-  ['secEq','secMix','secCov','secTbl','secHeat'].forEach(id=>$(id).style.display='');
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secHeat'].forEach(id=>$(id).style.display='');
   $('cobNota').style.display='';
 }
 
@@ -774,6 +799,35 @@ function renderCov(){
       <text x="${W-38}" y="${P.t+10}" fill="var(--muted)" font-size="10" font-family="Barlow Condensed">${fmt2(maxD)} p.</text></svg>`;
   const pico=ratio.reduce((a,b)=>b.r>a.r?b:a);
   $('covMax').innerHTML=`<span style="color:var(--navy)">Hora más exigida: ${pico.h}h · ${fmt2(pico.r)} tickets por persona</span>`;
+}
+
+/* --- plantilla / dotación --- */
+function titleCase(s){ return (s||'').toLowerCase().replace(/(^|[\s'’-])([a-záéíóúñü])/g, (m,p,c)=>p+c.toUpperCase()); }
+function renderPlantilla(){
+  const gente = DET.vendedores.slice();
+  const total = gente.length;
+  const cnt = g => gente.filter(v=>v.grupo===g).length;
+  const ft = gente.filter(v=>/Full Time/.test(v.sector)).length;
+  const pt = gente.filter(v=>/Part Time/.test(v.sector)).length;
+  const stats = [
+    {n:total, l:'Personas', s:(ft?ft+' full time':'')+(ft&&pt?' · ':'')+(pt?pt+' part time':'')},
+    {n:cnt('Jefatura'), l:'Jefatura'},
+    {n:cnt('Ventas'), l:'Vendedores'},
+    {n:cnt('Caja'), l:'Cajas'},
+    {n:cnt('Refuerzos'), l:'Refuerzos / depósito'},
+  ];
+  const grupos = [['Ventas','var(--red)'],['Caja','#2E4A8F'],['Jefatura','#7C8BA5'],['Refuerzos','var(--mid)'],['Otros','var(--muted-light)'],['Gerencia / otros','var(--muted-light)']];
+  let groupsHtml='';
+  grupos.forEach(([g,col])=>{
+    const ms = gente.filter(v=>v.grupo===g); if(!ms.length) return;
+    ms.sort((a,b)=>a.vendedor.localeCompare(b.vendedor));
+    groupsHtml += `<div class="pl-group"><div class="pl-group-h"><span class="dotc" style="background:${col}"></span>${esc(g)} · ${ms.length}</div><div class="pl-people">`+
+      ms.map(v=>`<div class="pl-person"><span class="nm">${esc(titleCase(v.vendedor))}</span><span class="rg">${esc(v.sector)}</span><span class="tags">${tagsDe(v)}</span></div>`).join('')+
+      `</div></div>`;
+  });
+  $('plantilla').innerHTML = '<div class="pl-stats">'+
+    stats.map(s=>`<div class="pl-stat"><div class="n">${s.n}</div><div class="l">${s.l}</div>${s.s?'<div class="s">'+s.s+'</div>':''}</div>`).join('')+
+    '</div>'+groupsHtml;
 }
 
 /* --- tabla equipos --- */
