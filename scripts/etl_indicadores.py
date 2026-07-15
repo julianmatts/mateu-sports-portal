@@ -24,6 +24,15 @@ PERIODOS = {
                   desde=dt.date(2026,6,1),  hasta=dt.date(2026,6,28)),
 }
 DOW = ['Lu','Ma','Mi','Ju','Vi','Sá','Do']
+
+def semana_retail(f, desde):
+    """N° de semana retail (lunes a domingo) de la fecha f dentro del período que
+    arranca en 'desde'. Alineada al calendario: la semana que contiene el 1° del mes
+    es la SEMANA 1 de ese mes (arranca el lunes, aunque ese lunes caiga en el mes
+    anterior). Robusto aunque 'desde' no sea exactamente lunes."""
+    lun_f = f - dt.timedelta(days=f.weekday())          # lunes de la semana de f
+    lun_0 = desde - dt.timedelta(days=desde.weekday())  # lunes de la semana del inicio del período
+    return (lun_f - lun_0).days // 7 + 1
 OUT = '/home/claude/out'
 
 # Objetivos por formato (los define Producto). El cumplimiento de cada sucursal se
@@ -123,7 +132,7 @@ def procesar(per, cfg, st):
     nc = v[v.es_nc]
     vt = v[(~v.es_nc) & (v.cantidad > 0)].copy()          # fuera: canjes sin importe y operaciones sin unidades
     vt['dia'] = vt.fecha                                  # fecha real: el período puede cruzar dos meses
-    vt['sem'] = vt['dia'].apply(lambda f: (f - cfg['desde']).days // 7 + 1)   # semana retail (Lu-Do)
+    vt['sem'] = vt['dia'].apply(lambda f: semana_retail(f, cfg['desde']))     # semana retail (Lu-Do)
 
     n_dias  = (cfg['hasta'] - cfg['desde']).days + 1
     habiles = sum(1 for i in range(n_dias) if (cfg['desde'] + dt.timedelta(days=i)).weekday() < 6)  # Lu–Sá
@@ -225,14 +234,16 @@ def procesar(per, cfg, st):
 
     heat = vt.groupby(['sucursal','dia_semana','hora']).comprobante.nunique().rename('tickets').reset_index()
 
-    # ── semana a semana (semanas retail del mes, Lu-Do) ──
-    n_sem = -(-n_dias // 7)                                # ceil(n_dias/7)
+    # ── semana a semana (semanas retail del mes, Lu-Do, alineadas al calendario) ──
+    lun0 = cfg['desde'] - dt.timedelta(days=cfg['desde'].weekday())   # lunes de la 1ª semana
+    n_sem = (cfg['hasta'] - lun0).days // 7 + 1
     def rango_sem(s):
-        ini = cfg['desde'] + dt.timedelta(days=(s - 1) * 7)
+        ini = lun0 + dt.timedelta(days=(s - 1) * 7)
         fin = min(cfg['hasta'], ini + dt.timedelta(days=6))
+        ini = max(ini, cfg['desde'])
         return f"{ini.strftime('%d/%m')}–{fin.strftime('%d/%m')}"
     ncw = nc.copy()
-    ncw['sem'] = ncw['fecha'].apply(lambda f: (f - cfg['desde']).days // 7 + 1)
+    ncw['sem'] = ncw['fecha'].apply(lambda f: semana_retail(f, cfg['desde']))
     def semanas_por(gv, gnc, claves):
         a = gv.groupby(claves + ['sem']).agg(tickets=('comprobante','nunique'),
               unidades=('cantidad','sum'), importe=('importe','sum')).reset_index()
