@@ -2162,7 +2162,7 @@ function ingresosGroups(rows){
             <div style="margin-top:6px">${scorePills(scoreProveedor(group.key))}</div>
           </div>
           <div class="actions">
-            <label class="action primary" style="cursor:pointer">Cargar factura (PDF/Excel/CSV)<input type="file" accept=".pdf,.xlsx,.csv,.txt" style="display:none" onchange="cargarFactura('${encodeURIComponent(group.key)}', this)"></label>
+            <label class="action primary" style="cursor:pointer">Cargar factura (PDF/Excel/Foto)<input type="file" accept=".pdf,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.webp,image/*" style="display:none" onchange="cargarFactura('${encodeURIComponent(group.key)}', this)"></label>
           </div>
         </div>
         ${resumenIngresos(group)}
@@ -2392,6 +2392,63 @@ async function parseFacturaPdf(file){
   return lineas;
 }
 
+// ---- OCR (Tesseract.js) para fotos y PDF escaneados. Se carga on-demand:
+// la primera vez baja el motor + idioma espanol desde CDN (tarda un rato). ----
+async function ensureTesseract(){
+  if(window.Tesseract) return;
+  await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    s.onload = res; s.onerror = () => rej(new Error('No se pudo cargar Tesseract'));
+    document.head.appendChild(s);
+  });
+}
+
+// El OCR confunde letras y numeros parecidos dentro de los codigos (O/0, I-l/1).
+// Se normaliza solo el numero que sigue a MAT/RUG/AUR, no el resto del texto.
+function normalizarOCR(linea){
+  return String(linea).replace(/\b(MAT|RUG|AUR)\s*[-.]?\s*([0-9OoIl]{3,4})\b/gi, (m, pre, num) =>
+    pre.toUpperCase() + num.replace(/[Oo]/g,'0').replace(/[Il]/g,'1'));
+}
+
+async function ocrATexto(fuentes){
+  await ensureTesseract();
+  const worker = await Tesseract.createWorker('spa');
+  const lineas = [];
+  try{
+    for(const f of fuentes){
+      const { data } = await worker.recognize(f);
+      String(data.text || '').split(/\r?\n/).forEach(l => {
+        const limpia = normalizarOCR(l.trim());
+        if(limpia) lineas.push(limpia);
+      });
+    }
+  }finally{
+    await worker.terminate();
+  }
+  return lineas;
+}
+
+// Renderiza las paginas de un PDF escaneado a canvas para poder pasarle OCR.
+async function pdfACanvases(file, maxPaginas = 5){
+  await ensurePdfJs();
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const canvases = [];
+  const paginas = Math.min(pdf.numPages, maxPaginas);
+  for(let i = 1; i <= paginas; i++){
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.floor(viewport.width); canvas.height = Math.floor(viewport.height);
+    // intent print: rasteriza directo, sin las optimizaciones de pantalla que
+    // pueden quedar colgadas en pestanas sin foco.
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport, intent:'print' }).promise;
+    canvases.push(canvas);
+  }
+  return canvases;
+}
+
 let facturaCtx = null;
 
 async function cargarFactura(provKeyEnc, input){
@@ -2403,15 +2460,28 @@ async function cargarFactura(provKeyEnc, input){
   let crudas = [];
   try{
     const nombre = file.name.toLowerCase();
-    if(nombre.endsWith('.pdf')) crudas = detectarFacturaEnTexto(await parseFacturaPdf(file));
-    else if(nombre.endsWith('.csv') || nombre.endsWith('.txt')) crudas = detectarFacturaEnTexto((await file.text()).split(/\r?\n/));
-    else crudas = detectarFacturaEnFilas(await parseFacturaExcel(file));
+    const esImagen = /\.(jpe?g|png|webp|bmp)$/.test(nombre) || (file.type || '').startsWith('image/');
+    if(esImagen){
+      showToast('Leyendo la foto con OCR... la primera vez baja el motor y puede tardar un minuto.');
+      crudas = detectarFacturaEnTexto(await ocrATexto([file]));
+    }else if(nombre.endsWith('.pdf')){
+      crudas = detectarFacturaEnTexto(await parseFacturaPdf(file));
+      if(!crudas.length){
+        // PDF sin texto = escaneado: se renderiza a imagen y se lee con OCR.
+        showToast('El PDF no tiene texto (escaneado). Leyendo con OCR... puede tardar un minuto.');
+        crudas = detectarFacturaEnTexto(await ocrATexto(await pdfACanvases(file)));
+      }
+    }else if(nombre.endsWith('.csv') || nombre.endsWith('.txt')){
+      crudas = detectarFacturaEnTexto((await file.text()).split(/\r?\n/));
+    }else{
+      crudas = detectarFacturaEnFilas(await parseFacturaExcel(file));
+    }
   }catch(e){
-    showToast('No se pudo leer el archivo. Si es un PDF escaneado o una foto no tiene texto legible: usa la carga manual o pedi la factura digital.');
+    showToast('No se pudo leer el archivo. Proba con una foto mas nitida o usa la carga manual.');
     return;
   }
   if(!crudas.length){
-    showToast('No se encontraron codigos MAT/RUG/AUR con cantidades en el archivo. Revisa la factura o usa la carga manual.');
+    showToast('No se encontraron codigos MAT/RUG/AUR con cantidades en el archivo. Si es una foto, proba con mas luz y el texto derecho; si no, usa la carga manual.');
     return;
   }
   // Consolidar codigos repetidos sumando cantidades
