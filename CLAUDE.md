@@ -24,6 +24,8 @@ mateu-sports-portal/
 ├── recepcion/          # Tablero de recepción preventa Adidas SS27
 ├── diagonal80/         # Apertura Diagonal 80 (propuesta vs. capacidad)
 ├── ubicaciones/        # "Buscador de Artículos": ubicaciones de depósito por sucursal
+├── indicadores/        # Indicadores de Sucursal: UPT, tickets/hora, ticket promedio + meses de stock, por sucursal y persona. Es la HOME de los roles sucursal/outlet.
+├── data/indicadores/   # salida particionada (un JSON por sucursal + cadena.json) que consume el módulo
 ├── regalias/           # Liquidador de Regalías RUGE/EDLP (Estudiantes): clasifica ventas, aplica escalas, exporta el Excel del mes y genera la presentación comercial (plantilla-presentacion.html, embebida en index.html)
 └── shared/             # código común (hoy casi vacío, para el futuro)
 ```
@@ -131,6 +133,40 @@ NO repetir):
 crudo (con la marca "Total"), duplica las marcas al vuelo. Si se genera bien
 siguiendo lo de arriba, no hace falta que actúe. Ver memoria
 `meses-stock-marcas-mitad`.
+
+## Indicadores de Sucursal — datos y seguridad
+
+`indicadores/` es un `index.html` self-contained que **lee la sesión del Portal**
+(no tiene login propio) y es la **pantalla de inicio de los roles `sucursal` y
+`outlet`**: el Portal los redirige a `./indicadores/` al entrar (ver
+`herramientasEfectivas` + el redirect en `render()` del `index.html` raíz). El rol
+`admin` ve el selector de sucursal + la vista "Cadena (comparar todas)".
+
+**Seguridad en la capa de datos, no en el render.** El módulo NO trae un JSON con
+las 20 sucursales: pide solo `data/indicadores/<periodo>/<SUCURSAL>.json` (su
+sucursal, con personas) + `cadena.json` (agregados de las 20, SIN personas). Así el
+navegador de una sucursal nunca se baja las personas de otra. Es seguridad "blanda"
+(archivos estáticos en Cloudflare Pages, como el resto del portal): ordena accesos,
+no es auth real — un usuario decidido podría pedir otro archivo por URL.
+
+**Cómo regenerar los datos.** El cálculo (UPT, tickets/hora, etc.) vive en
+`scripts/etl_indicadores.py`, que lee los Excel de ventas + staff y ya emite tanto
+el JSON combinado por período como la **salida particionada** (`out/indicadores/…`):
+`objetivos.json`, `periodos.json`, `<periodo>/cadena.json` y un `<periodo>/<NN-Nombre>.json`
+por sucursal. Se corre en el sandbox de Juli (necesita pandas + los Excel); después se
+copia `out/indicadores/` a `data/indicadores/` del repo. Los objetivos por formato y la
+regla nombre→formato viven fijos en ese script — NO tocar el cálculo salvo pedido.
+
+Alternativa sin Python (cuando solo se tiene el JSON del ETL, no los Excel):
+`node scripts/gen-indicadores.mjs indicadores-2026-05.json indicadores-2026-06.json`
+produce exactamente los mismos archivos particionados. Es lo que se usó para poblar el
+repo la primera vez.
+
+**Meses de stock** reutiliza `gestion-stock/datos-meses-stock.js` (mismo nombre de
+sucursal como clave); no se duplica el dato. Sin dato en el período → empty state.
+
+Pendiente de validar con Juli: el mapa slug de Portal → sucursal de datos (`SLUG_SUC`
+/ `OUTLET_SUC` en el módulo); `diagonal` y `deposito` no tienen datos de venta todavía.
 
 ## Reglas
 

@@ -370,6 +370,7 @@ const OUTLETS_LIST = [
 
 // Las herramientas. La url es la carpeta dentro del monorepo.
 const TOOLS = {
+  indicadores:   { name:'Indicadores de Sucursal',desc:'UPT, tickets/hora, ticket promedio y meses de stock por sucursal y persona.', icon:'📈', url:'./indicadores/', red:true },
   turnero:       { name:'Turnero Depósito',      desc:'Agenda de turnos de proveedores.',                 icon:'📅', url:'./turnero/',       red:false },
   marcas:        { name:'Asignación de Marcas',   desc:'Qué marcas lleva cada canal de venta.',            icon:'🏷️', url:'./marcas/',        red:true  },
   equipo:        { name:'Área de Producto',       desc:'Transferencias entre sucursales y performance.',   icon:'📦', url:'./equipo/',        red:false },
@@ -421,7 +422,11 @@ function herramientasEfectivas(rol, herramientas){
   // El admin (Juli) ve TODAS las herramientas sin cargarlas una por una: los
   // módulos ya le dan acceso total por rol, así que también le mostramos todos los tiles.
   if(rol==='admin'){ Object.keys(TOOLS).forEach(k=>{ if(!h.includes(k)) h.push(k); }); return h; }
-  if((rol==='sucursal' || rol==='outlet') && !h.includes('marcas')) h.push('marcas');
+  if(rol==='sucursal' || rol==='outlet'){
+    if(!h.includes('marcas')) h.push('marcas');
+    // Indicadores de Sucursal es la pantalla de inicio de estos roles: siempre disponible.
+    if(!h.includes('indicadores')) h.push('indicadores');
+  }
   return h;
 }
 
@@ -464,6 +469,14 @@ let CURRENT_SESSION = null;
 
 function render(session){
   CURRENT_SESSION = session;
+  // Los usuarios de sucursal/outlet aterrizan en Indicadores de Sucursal (su home),
+  // no en la grilla de tiles. Excepción: si vienen a ver la bandeja desde la campana
+  // del módulo (?ver=bandeja) no se los redirige, así pueden leer/responder mensajes.
+  const verBandeja = new URLSearchParams(location.search).get('ver')==='bandeja';
+  if(session && (session.rol==='sucursal' || session.rol==='outlet') && !verBandeja){
+    location.replace('./indicadores/');
+    return;
+  }
   $('whoName').textContent = session.email;
   $('whoRole').textContent = ROLE_LABEL[session.rol] || session.rol;
   $('greet').innerHTML = 'Hola, <span>'+session.email+'</span>';
@@ -499,6 +512,13 @@ function render(session){
                                            : 'Tenés '+keys.length+' herramientas disponibles.';
   closeSettings();
   showApp();
+
+  // Si llegaron desde la campana del módulo Indicadores (?ver=bandeja), abrir la bandeja.
+  if(verBandeja && MENSAJES_OK){
+    const con = new URLSearchParams(location.search).get('con');
+    if(con){ MSG_TAB='directos'; MSG_OTRO=con; } else { MSG_TAB='tablero'; }
+    openMensajes();
+  }
 }
 
 /* ============================================================
