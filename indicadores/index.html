@@ -149,6 +149,7 @@ tr:last-child td{border-bottom:none}
 .diag.d-bad{background:var(--bad-bg);border-color:#f3c6c3;color:#7a1a15}
 .diag.d-mid{background:var(--mid-bg);border-color:#f0d9ad;color:#7a5310}
 .diag.d-ok{background:var(--ok-bg);border-color:#bfe6cf;color:#14663a}
+.diag.d-info{background:#eef1f8;border-color:#c3cfe8;color:var(--navy-mid)}
 
 /* ===== SPARKLINE en KPI ===== */
 .kpi-spark{margin:10px 0 2px;height:26px}
@@ -187,6 +188,12 @@ tr:last-child td{border-bottom:none}
 .pl-person .rg{font-size:11.5px;color:var(--muted);margin-top:1px}
 .pl-person .tags{margin-top:4px}
 .pl-person .tags:empty{display:none}
+
+/* ===== CANALES (Ecommerce) ===== */
+.canal-name{font-family:var(--font-c);font-weight:600;font-size:15px;color:var(--navy);display:flex;align-items:center;gap:8px}
+.canal-part{display:inline-flex;align-items:center;gap:8px;justify-content:flex-end}
+.canal-part .pbar{position:relative;height:6px;width:64px;background:#e7ebf5;border-radius:3px;overflow:hidden;display:inline-block}
+.canal-part .pbar i{position:absolute;left:0;top:0;height:100%;background:var(--red);border-radius:3px}
 
 /* ===== ESTADOS ===== */
 .empty{background:var(--card);border:1px dashed var(--border);border-radius:12px;padding:34px;text-align:center;color:var(--muted);font-size:14px;line-height:1.5}
@@ -312,6 +319,13 @@ footer b{color:var(--navy)}
       <div class="diag" id="diagBox" style="display:none"></div>
     </section>
 
+    <section class="sec" id="secCanales" style="display:none">
+      <div class="sec-label">Canales</div>
+      <h2 class="sec-title">Ventas por <em>canal</em></h2>
+      <p class="hint">Ecommerce no tiene piso ni vendedores: vende por tres canales (web Mateu Sports, web Aurelius y MercadoLibre). Cada uno con su volumen, su UPT y su ticket promedio.</p>
+      <div class="card pad" id="canales"></div>
+    </section>
+
     <section class="sec" id="secEq">
       <div class="sec-label">Diagnóstico</div>
       <h2 class="sec-title">De dónde <em>viene</em> la venta</h2>
@@ -327,14 +341,14 @@ footer b{color:var(--navy)}
     </section>
 
     <section class="sec" id="secCov">
-      <div class="sec-label">Dotación</div>
-      <h2 class="sec-title">Cobertura vs. <em>demanda</em></h2>
-      <p class="hint">Barras: tickets promedio por hora en un día abierto. Línea: personal en piso según los horarios contratados. Donde la barra sube y la línea baja, hay demanda sin atender.</p>
+      <div class="sec-label" id="covLabel">Dotación</div>
+      <h2 class="sec-title" id="covTitle">Cobertura vs. <em>demanda</em></h2>
+      <p class="hint" id="covHint">Barras: tickets promedio por hora en un día abierto. Línea: personal en piso según los horarios contratados. Donde la barra sube y la línea baja, hay demanda sin atender.</p>
       <div class="card pad">
         <div id="cov"></div>
         <div class="legend">
           <span style="color:var(--red)">▮ Tickets por hora</span>
-          <span>— Personas en piso</span>
+          <span id="covLegPiso">— Personas en piso</span>
           <span id="covMax"></span>
         </div>
       </div>
@@ -642,16 +656,18 @@ async function render(){
     return;
   }
   ocultarEmpty();
+  const ecom = sucName===ECOM;
+  $('secCanales').style.display = ecom?'':'none';
+  if(ecom) ['secEq','secMix','secPlantilla','secTbl'].forEach(id=>$(id).style.display='none');
+  const seg=document.querySelector('.seg'); if(seg) seg.style.display = ecom?'none':'flex';
   renderKPIs();
   renderDiagnostico();
   renderStockCard();
-  renderEq();
-  renderMix();
   renderCov();
-  renderPlantilla();
-  renderTbl();
   renderHeat();
   renderNotas();
+  if(ecom){ renderCanales(); }
+  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); }
 }
 
 function mostrarEmpty(msg){
@@ -683,13 +699,32 @@ function rankFormato(cad, metric, name, fmt){
 }
 function avgFormato(cad, metric, fmt){ const peers=peersFormato(cad,fmt); return peers.length? kpis(suma(peers))[metric] : NaN; }
 
-/* --- serie de un KPI a lo largo de los períodos (para el sparkline) --- */
-function serieKPI(metric){
+/* --- serie a lo largo de los períodos (para el sparkline) --- */
+function serieDe(getter){
   return PERIODOS.slice().sort((a,b)=>a.id.localeCompare(b.id)).map(p=>{
     const cad = cacheCadena[p.id];
     const s = cad && cad.sucursales.find(x=>x.sucursal===sucName);
-    return {per:p.id, val: s? kpis(s)[metric] : null};
+    return {per:p.id, val: s? getter(s) : null};
   });
+}
+function serieKPI(metric){ return serieDe(s=>kpis(s)[metric]); }
+
+/* --- Ecommerce: canales de venta (no tiene piso ni vendedores) --- */
+const CANALES = {
+  'WEB MATEU':    { label:'Web Mateu Sports', ic:'🛒' },
+  'WEB AURELIUS': { label:'Web Aurelius',      ic:'🛍️' },
+  'MERCADOLIBRE': { label:'MercadoLibre',      ic:'🟡' },
+};
+function canalDe(nombre){ return CANALES[(nombre||'').toUpperCase()] || { label:'Otros / manual', ic:'•' }; }
+// Agrega los vendedores del Ecommerce en canales (los que no son de los 3 → "Otros").
+function canalesEcom(det){
+  const map = {};
+  (det.vendedores||[]).forEach(v=>{
+    const c = canalDe(v.vendedor), key = c.label;
+    const o = map[key] || (map[key] = { label:c.label, ic:c.ic, tickets:0, unidades_netas:0, importe_neto:0 });
+    o.tickets += v.tickets||0; o.unidades_netas += v.unidades_netas||0; o.importe_neto += v.importe_neto||0;
+  });
+  return Object.values(map).sort((a,b)=>b.importe_neto-a.importe_neto);
 }
 function sparkSVG(serie, tgt){
   const vals = serie.map(p=>p.val).filter(v=>isFinite(v));
@@ -718,10 +753,33 @@ function picoHora(){
   const d=(DET.cobertura||[]).filter(x=>x.dot>0); if(!d.length) return null;
   return d.map(x=>({h:x.hora, r:x.dot?x.tickets_dia/x.dot:0})).sort((a,b)=>b.r-a.r)[0].h;
 }
+function diagEcom(box){
+  const chs=canalesEcom(DET); if(!chs.length){ box.style.display='none'; return; }
+  box.style.display='';
+  const totT=chs.reduce((a,c)=>a+c.tickets,0);
+  const byT=chs.slice().sort((a,b)=>b.tickets-a.tickets)[0];
+  const partT = totT? byT.tickets/totT*100 : 0;
+  const web = chs.filter(c=>/Web/i.test(c.label)), ml = chs.find(c=>/MercadoLibre/i.test(c.label));
+  const webT=web.reduce((a,c)=>a+c.tickets,0), webU=web.reduce((a,c)=>a+c.unidades_netas,0), webV=web.reduce((a,c)=>a+c.importe_neto,0);
+  const webUpt=webT?webU/webT:0, webTp=webT?webV/webT:0;
+  let txt;
+  if(ml && webT){
+    const mlUpt=ml.tickets?ml.unidades_netas/ml.tickets:0, mlTp=ml.tickets?ml.importe_neto/ml.tickets:0;
+    txt = `<b>${esc(byT.label)}</b> concentra el <b>${fmt2(partT)}%</b> de los tickets. ` +
+      (mlTp < webTp*0.9
+        ? `MercadoLibre vende a ticket promedio <b>${fmtM(mlTp)}</b> (UPT ${fmt2(mlUpt)}), por debajo de la web propia (${fmtM(webTp)}, UPT ${fmt2(webUpt)}): empujar la web propia sube el valor por venta.`
+        : `El ticket promedio está parejo entre MercadoLibre (${fmtM(mlTp)}) y la web propia (${fmtM(webTp)}).`);
+  } else {
+    txt = `<b>${esc(chs[0].label)}</b> es el canal de mayor venta (${kM(chs[0].importe_neto)}).`;
+  }
+  box.className='diag d-info';
+  box.innerHTML=`<div class="ic">🛒</div><div><div class="tt">Lectura por canal</div><div>${txt}</div></div>`;
+}
 function renderDiagnostico(){
   const box=$('diagBox'); if(!box) return;
+  if(sucName===ECOM) return diagEcom(box);
   const s=DET.summary, k=kpis(s), c=cadenaAgg(CAD), fmt=DET.formato||formatoDe(sucName), obj=OBJ[fmt]||{};
-  if(sucName===ECOM || !s.horas_contr || !obj.tickets_hora){ box.style.display='none'; return; }
+  if(!s.horas_contr || !obj.tickets_hora){ box.style.display='none'; return; }
   box.style.display='';
   const cumpl = { tph:k.tph/obj.tickets_hora*100, upt:obj.upt?k.upt/obj.upt*100:null, tp:obj.ticket_promedio?k.tp/obj.ticket_promedio*100:null };
   const arr = Object.entries(cumpl).filter(([,v])=>v!=null).sort((a,b)=>a[1]-b[1]);
@@ -774,6 +832,7 @@ function copiarResumen(){
 }
 
 function renderKPIs(){
+  if(sucName===ECOM) return renderKPIsEcom();
   const s = DET.summary, k = kpis(s), c = cadenaAgg(CAD), fmt = DET.formato || formatoDe(sucName);
   const obj = OBJ[fmt] || null;
   const esEcom = sucName===ECOM || !s.horas_contr;
@@ -831,6 +890,52 @@ function renderKPIs(){
   $('cobNota').innerHTML = s.cobertura < 100
     ? `Se miden <b>${fmtN(s.tickets)}</b> de los <b>${fmtN(s.tickets_todos)}</b> tickets de la sucursal (${fmt2(s.cobertura)}%). El resto lo cerró gente que no figura en el staff.`
     : `Se miden los <b>${fmtN(s.tickets)}</b> tickets de la sucursal.`;
+}
+
+/* --- KPIs adaptados a Ecommerce (sin piso: tickets/hora no aplica) --- */
+function renderKPIsEcom(){
+  const s=DET.summary, k=kpis(s);
+  const prev = CAD_PREV ? CAD_PREV.sucursales.find(x=>x.sucursal===sucName) : null;
+  const kp = prev? kpis(prev): null;
+  const mesAnt = prevPerId()? mesCorto(prevPerId()) : null;
+  const cards = [
+    {name:'Tickets',         val:fmtN(s.tickets),        unit:'comprobantes del período', cur:s.tickets,       prev:prev&&prev.tickets,       spark:serieDe(x=>x.tickets)},
+    {name:'UPT',             val:fmt2(k.upt),            unit:'unidades por ticket',      cur:k.upt,           prev:kp&&kp.upt,               spark:serieKPI('upt')},
+    {name:'Ticket promedio', val:fmtM(k.tp),             unit:'venta neta por ticket',    cur:k.tp,            prev:kp&&kp.tp,                spark:serieKPI('tp')},
+    {name:'Ventas netas',    val:kM(s.importe_neto),     unit:'importe neto',             cur:s.importe_neto,  prev:prev&&prev.importe_neto,  spark:serieDe(x=>x.importe_neto)},
+  ];
+  $('kpis').innerHTML = cards.map(c=>{
+    const dp = prev? deltaHtml(c.cur, c.prev) : null;
+    const deltaStr = dp? `${dp} vs. ${mesAnt}` : '<span class="muted">sin período anterior</span>';
+    const spark = sparkSVG(c.spark, NaN);
+    return `<div class="kpi">
+      <div class="kpi-name">${c.name}</div><div class="kpi-val">${c.val}</div><div class="kpi-unit">${c.unit}</div>
+      ${spark?`<div class="kpi-spark">${spark}</div>`:'<div class="kpi-spark-empty">Tendencia: con el 2º período</div>'}
+      <div class="kpi-foot"><div class="kpi-delta">${deltaStr}</div></div></div>`;
+  }).join('');
+  $('cobNota').innerHTML = `Ecommerce vende por canales, sin piso ni vendedores. No entra en el ranking ni en el promedio de la cadena porque su tickets/hora no es comparable.`;
+}
+
+/* --- Canales de venta del Ecommerce --- */
+function renderCanales(){
+  const chs = canalesEcom(DET);
+  const totV = chs.reduce((a,c)=>a+c.importe_neto,0);
+  const rows = chs.map(c=>{
+    const upt = c.tickets? c.unidades_netas/c.tickets : 0;
+    const tp  = c.tickets? c.importe_neto/c.tickets : 0;
+    const part = totV? c.importe_neto/totV*100 : 0;
+    return `<tr>
+      <td class="L"><span class="canal-name">${c.ic} ${esc(c.label)}</span></td>
+      <td><span class="num">${fmtN(c.tickets)}</span></td>
+      <td><span class="canal-part"><span class="pbar"><i style="width:${Math.max(2,part).toFixed(1)}%"></i></span> ${fmt2(part)}%</span></td>
+      <td><span class="num">${fmtN(c.unidades_netas)}</span></td>
+      <td><span class="num">${fmt2(upt)}</span></td>
+      <td><span class="num">${fmtM(tp)}</span></td>
+      <td class="muted">${kM(c.importe_neto)}</td></tr>`;
+  }).join('');
+  $('canales').innerHTML = `<div style="overflow-x:auto"><table style="min-width:640px">
+    <thead><tr><th class="L">Canal</th><th>Tickets</th><th>Participación</th><th>Unidades</th><th>UPT</th><th>Ticket prom.</th><th>Venta neta</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
 }
 
 /* --- Meses de stock: reutiliza el dataset de Gestión de Stock --- */
@@ -924,7 +1029,34 @@ function renderMix(){
 }
 
 /* --- cobertura vs demanda --- */
+function renderCovEcom(){
+  const byHora={};
+  (DET.heatmap||[]).forEach(x=>{ byHora[x.hora]=(byHora[x.hora]||0)+x.tickets; });
+  const horas=Object.keys(byHora).map(Number).sort((a,b)=>a-b);
+  if(!horas.length){ $('cov').innerHTML='<p class="muted" style="padding:16px 0">Sin datos de demanda.</p>'; $('covMax').textContent=''; return; }
+  const h0=Math.min(...horas), h1=Math.max(...horas), d=[];
+  for(let h=h0;h<=h1;h++) d.push({hora:h, t:byHora[h]||0});
+  const W=880,H=210,P={t:16,r:14,b:28,l:34}, maxT=Math.max(...d.map(x=>x.t))||1;
+  const bw=(W-P.l-P.r)/d.length, X=i=>P.l+i*bw, Y=v=>H-P.b-(v/maxT)*(H-P.t-P.b);
+  const bars=d.map((p,i)=>`<rect x="${(X(i)+2).toFixed(1)}" y="${Y(p.t).toFixed(1)}" width="${(bw-4).toFixed(1)}" height="${(H-P.b-Y(p.t)).toFixed(1)}" fill="var(--red)" opacity=".8"><title>${p.hora}h · ${fmtN(p.t)} tickets</title></rect>`).join('');
+  const labs=d.map((p,i)=> (p.hora%2===0)?`<text x="${(X(i)+bw/2).toFixed(1)}" y="${H-9}" text-anchor="middle" fill="var(--muted)" font-size="10" font-family="Barlow Condensed">${p.hora}</text>`:'').join('');
+  $('cov').innerHTML=`<svg viewBox="0 0 ${W} ${H+6}" style="width:100%;height:auto" role="img" aria-label="Tickets por hora"><line x1="${P.l}" y1="${H-P.b}" x2="${W-P.r}" y2="${H-P.b}" stroke="var(--border)"/>${bars}${labs}<text x="6" y="${P.t+10}" fill="var(--muted)" font-size="10" font-family="Barlow Condensed">${fmtN(maxT)}</text></svg>`;
+  const pico=d.reduce((a,b)=>b.t>a.t?b:a);
+  $('covMax').innerHTML=`<span style="color:var(--navy)">Pico de compras: ${pico.hora}h</span>`;
+}
 function renderCov(){
+  const ecom = sucName===ECOM;
+  if(ecom){
+    $('covLabel').textContent='Tráfico';
+    $('covTitle').innerHTML='Cuándo <em>compran</em>';
+    $('covHint').textContent='Tickets por hora a lo largo del día. Ecommerce vende las 24 horas, con su propia curva de demanda.';
+    $('covLegPiso').style.display='none';
+    return renderCovEcom();
+  }
+  $('covLabel').textContent='Dotación';
+  $('covTitle').innerHTML='Cobertura vs. <em>demanda</em>';
+  $('covHint').textContent='Barras: tickets promedio por hora en un día abierto. Línea: personal en piso según los horarios contratados. Donde la barra sube y la línea baja, hay demanda sin atender.';
+  $('covLegPiso').style.display='';
   const d=DET.cobertura.slice().sort((a,b)=>a.hora-b.hora);
   if(!d.length || !d.some(x=>x.dot>0)){ $('cov').innerHTML='<p class="muted" style="padding:16px 0">Sin horarios de piso para esta sucursal.</p>'; $('covMax').textContent=''; return; }
   const W=880,H=230,P={t:16,r:44,b:28,l:34};
@@ -1019,14 +1151,18 @@ function renderTbl(){
 
 /* --- heatmap --- */
 function renderHeat(){
-  const h=DET.heatmap.filter(x=>x.hora>=9 && x.hora<=19), map={}; let max=0;
+  const ecom = sucName===ECOM;
+  const h0 = ecom?0:9, h1 = ecom?23:19, n = h1-h0+1;
+  const h=DET.heatmap.filter(x=>x.hora>=h0 && x.hora<=h1), map={}; let max=0;
   h.forEach(x=>{ map[x.dia_semana+'-'+x.hora]=x.tickets; if(x.tickets>max) max=x.tickets; });
-  let html='<div></div>'+Array.from({length:11},(_,i)=>`<div>${i+9}h</div>`).join('');
+  let html='<div></div>'+Array.from({length:n},(_,i)=>`<div>${i+h0}h</div>`).join('');
   DIAS.forEach(d=>{ html+=`<div style="justify-content:flex-start">${d}</div>`;
-    for(let hh=9;hh<=19;hh++){ const v=map[d+'-'+hh]||0, a=max?v/max:0;
+    for(let hh=h0;hh<=h1;hh++){ const v=map[d+'-'+hh]||0, a=max?v/max:0;
       const bg=a===0?'#eef1f8':`rgba(204,0,0,${(0.14+a*0.86).toFixed(2)})`;
       const col=a>0.5?'#fff':'var(--navy)';
       html+=`<div class="cell" style="background:${bg};color:${col}" title="${d} ${hh}h · ${v} tickets">${v||''}</div>`; } });
+  $('heat').style.gridTemplateColumns = `44px repeat(${n},1fr)`;
+  $('heat').style.minWidth = ecom ? (44 + n*26)+'px' : '';
   $('heat').innerHTML=html;
 }
 function renderNotas(){
