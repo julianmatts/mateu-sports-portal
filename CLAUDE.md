@@ -27,7 +27,9 @@ mateu-sports-portal/
 ├── indicadores/        # Indicadores de Sucursal: UPT, tickets/hora, ticket promedio + meses de stock, por sucursal y persona. Es la HOME de los roles sucursal/outlet.
 ├── data/indicadores/   # salida particionada (un JSON por sucursal + cadena.json) que consume el módulo
 ├── regalias/           # Liquidador de Regalías RUGE/EDLP (Estudiantes): clasifica ventas, aplica escalas, exporta el Excel del mes y genera la presentación comercial (plantilla-presentacion.html, embebida en index.html)
-└── shared/             # código común (hoy casi vacío, para el futuro)
+├── evaluaciones/       # Evaluaciones de Supervisor: carga semanal operativa+actitudinal por sucursal, ranking, gráficos y vista de encargado. Escribe a Firebase (base evaluaciones-mateu). Ver "Evaluaciones de Supervisor" abajo.
+├── lib/                # código JS común versionado y testeable (hoy: evaluacion.js = cálculo puro de Evaluaciones + tests con node --test)
+└── shared/             # código común del shell (calendario retail, etc.)
 ```
 
 ## Convención principal — NO romper
@@ -53,6 +55,7 @@ en múltiples archivos salvo que se decida explícitamente centralizar algo en
   **localStorage** con `FIREBASE_DB_URL` como placeholder; cuando Juli cree
   la base a mano (p.ej. `regalias-mateu`) y pegue la URL, migra solo a Firebase.
   `condiciones/` y `equipo/` usan **localStorage** (no tienen backend).
+  `evaluaciones/` escribe a su propia base Firebase `evaluaciones-mateu`.
   No migrar Firebase a otra cosa sin que Juli lo pida: es la opción correcta
   para los datos multi-usuario en tiempo real.
 
@@ -168,6 +171,46 @@ sucursal como clave); no se duplica el dato. Sin dato en el período → empty s
 El mapa slug de Portal → sucursal de datos (`SLUG_SUC` / `OUTLET_SUC` en el módulo)
 lo validó Juli (14/07/2026). `diagonal` y `deposito` no tienen datos de venta todavía
 → empty state.
+
+**Plantilla / Dotación**: sección `secPlantilla` del módulo que lista a la gente de
+la sucursal por rol y régimen (headcount + FT/PT), desde los `vendedores` del período
+(quien registró ventas). **El Buscador de Artículos reutiliza esta misma dotación**:
+en su panel de perfiles (encargado/admin) hay "⇩ Importar dotación desde Indicadores",
+que lee `data/indicadores/<último-periodo>/<SUC>.json`, mapea grupo→rol de perfil
+(Jefatura→encargado, Ventas→vendedor, Caja→cajera, Refuerzos→depósito), excluye
+coberturas (cada persona en su sucursal fija) y **REEMPLAZA** `perfiles` de esa
+sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica el dato.
+
+## Evaluaciones de Supervisor
+
+`evaluaciones/` es un `index.html` self-contained **igual que el resto**: lee/escribe
+a Firebase por REST (base `evaluaciones-mateu`). Carga semanal operativa+actitudinal
+por sucursal, con ranking, gráficos, seguimiento de puntos de mejora y vista de
+encargado. Se evaluó pasarlo por Pages Functions + D1 para tener permisos en el
+server, pero Juli eligió mantenerlo consistente con el resto (seguridad blanda).
+
+- **Cálculo** (`lib/evaluacion.js`): única fuente de verdad del puntaje/nota
+  (Bien 10 · Regular 5 · Mal 0; Operativa/50 + Actitudinal/50; A≥80 B≥60 C≥40 D<40).
+  Es UMD isomórfico (browser + node): lo usan el módulo, el generador y los tests
+  (`node --test lib/evaluacion.test.js`). NO cambiar la escala sin que Juli avise.
+- **Base Firebase**: `evaluaciones-mateu` (ya conectada; la URL está en la constante
+  `EVAL_DB_URL` en `evaluaciones/index.html` y en el Portal para el badge). Reglas
+  abiertas (`.read`/`.write` true), como el resto. Árbol:
+  `evaluaciones/<suc>__<semana>` + `puntos_mejora/<pushid>`. Si `EVAL_DB_URL` queda
+  vacía, cae a modo demo con `evaluaciones/mock-data.js` (no persiste).
+- **Rol nuevo `supervisor`** (además de admin/sucursal/outlet): su alcance (qué
+  sucursales ve/edita) se carga en el ⚙ del Portal (multiselect →
+  `usuarios/<mail>/sucursales` en `discontinuos-mateu`), y el módulo lo lee de
+  `session.sucursales`. Gerencia = `admin`; encargado = cuenta de `sucursal`/`outlet`.
+  Hoy hay un solo supervisor: `cristian.campion@mateu.com.ar` (cubre todo).
+- **Alcance por rol es "blando" (en el cliente)**, como el resto del portal: ordena
+  accesos, no es barrera dura.
+- **Datos de demo** (`node scripts/gen-evaluaciones-mock.mjs`): regenera
+  `evaluaciones/mock-data.js`. Reusa `lib/evaluacion.js` para el puntaje.
+- **Cruce con Meses de Stock** (§ ratio): lee `window.STOCK_DATA` de
+  `gestion-stock/datos-meses-stock.js` con el mismo mapa slug→nombre que Indicadores.
+
+**Puesta en marcha (crear la base y pegar la URL): ver `docs/EVALUACIONES-SETUP.md`.**
 
 ## Reglas
 
