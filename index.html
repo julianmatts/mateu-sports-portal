@@ -379,12 +379,13 @@ const TOOLS = {
   'gestion-stock': { name:'Gestión de Stock',     desc:'Discontinuos por sucursal y reporte de gestión de stock.', icon:'📊', url:'./gestion-stock/', red:true },
   managment:     { name:'Managment',              desc:'Desarrollo, OC y seguimiento de ingresos por proveedor.', icon:'🧾', url:'./managment/', red:false },
   'pedidos-semanales': { name:'Pedidos Semanales', desc:'Reposición semanal por sucursal y aprobaciones de Producto.', icon:'📝', url:'./pedidos-semanales/', red:false },
+  evaluaciones:  { name:'Evaluaciones de Supervisor', desc:'Evaluación semanal operativa y actitudinal de cada sucursal.', icon:'📋', url:'./evaluaciones/', red:false },
   diagonal80:    { name:'Apertura Diagonal 80',   desc:'Propuesta de producto vs. capacidad de exhibición del local nuevo.', icon:'🏬', url:'./diagonal80/', red:true },
   ubicaciones:   { name:'Buscador de Artículos', desc:'Dónde está guardado cada artículo en el depósito de tu sucursal.', icon:'📍', url:'./ubicaciones/', red:true },
   regalias:      { name:'Regalías RUGE / EDLP',  desc:'Liquidación mensual de regalías del contrato RUGE/EDLP (Estudiantes).', icon:'⚽', url:'./regalias/', red:true },
 };
 
-const ROLE_LABEL = { admin:'Administrador', sucursal:'Sucursal', outlet:'Outlet' };
+const ROLE_LABEL = { admin:'Administrador', supervisor:'Supervisor', sucursal:'Sucursal', outlet:'Outlet' };
 const SESSION_KEY = 'mateu_portal_session';
 
 /* ============================================================
@@ -426,6 +427,14 @@ function herramientasEfectivas(rol, herramientas){
     if(!h.includes('marcas')) h.push('marcas');
     // Indicadores de Sucursal es la pantalla de inicio de estos roles: siempre disponible.
     if(!h.includes('indicadores')) h.push('indicadores');
+    // Su propia evaluación de supervisor (vista de encargado).
+    if(!h.includes('evaluaciones')) h.push('evaluaciones');
+  }
+  // El supervisor gestiona las Evaluaciones de sus sucursales; Indicadores le
+  // sirve de contexto para el ítem de ratio de stock.
+  if(rol==='supervisor'){
+    if(!h.includes('evaluaciones')) h.push('evaluaciones');
+    if(!h.includes('indicadores')) h.push('indicadores');
   }
   return h;
 }
@@ -449,7 +458,9 @@ async function login(){
       if(u && u.email && u.email.toLowerCase() === email){ found = u; break; }
     }
     if(!found || String(found.pin) !== pin){ showLoginErr(); btn.disabled=false; btn.textContent='Entrar'; return; }
-    const session = { email:found.email, rol:found.rol, herramientas:herramientasEfectivas(found.rol, found.herramientas), sucursal:found.sucursal||null, outlet_id:found.outlet_id||null };
+    // `sucursales` (para rol supervisor) define qué sucursales ve/edita en
+    // Evaluaciones. Alcance "blando" en el cliente, como el resto del portal.
+    const session = { email:found.email, rol:found.rol, herramientas:herramientasEfectivas(found.rol, found.herramientas), sucursal:found.sucursal||null, outlet_id:found.outlet_id||null, sucursales:found.sucursales||null };
     saveSession(session);
     render(session);
   } catch(e){
@@ -512,6 +523,7 @@ function render(session){
                                            : 'Tenés '+keys.length+' herramientas disponibles.';
   closeSettings();
   showApp();
+  pintarBadgeEvaluaciones(session);
 
   // Si llegaron desde la campana del módulo Indicadores (?ver=bandeja), abrir la bandeja.
   if(verBandeja && MENSAJES_OK){
@@ -519,6 +531,50 @@ function render(session){
     if(con){ MSG_TAB='directos'; MSG_OTRO=con; } else { MSG_TAB='tablero'; }
     openMensajes();
   }
+}
+
+/* ============================================================
+   BADGE de Evaluaciones en el tile (§6.6). Best-effort: lee la base
+   Firebase evaluaciones-mateu. Pegá su URL en EVAL_DB_URL (la misma que en
+   evaluaciones/index.html); vacío = sin badge. Gerencia/supervisor ven el
+   agregado "X de N sin evaluar esta semana".
+   ============================================================ */
+const EVAL_DB_URL = 'https://evaluaciones-mateu-default-rtdb.firebaseio.com';   // misma base que el módulo (vacío = sin badge)
+const EVAL_SUCS_TODAS = SUCURSALES.map(s=>s.slug).concat(OUTLETS_LIST.map(o=>o.id));
+function isoWeekActual(){ const d=new Date(); const u=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())); const day=(u.getUTCDay()+6)%7; u.setUTCDate(u.getUTCDate()-day+3); const f=new Date(Date.UTC(u.getUTCFullYear(),0,4)); const w=1+Math.round(((u-f)/864e5-3+((f.getUTCDay()+6)%7))/7); return u.getUTCFullYear()+'-W'+String(w).padStart(2,'0'); }
+async function pintarBadgeEvaluaciones(session){
+  try{
+    if(!/^https?:\/\//.test(EVAL_DB_URL)) return;   // sin base configurada → sin badge
+    const tile = $('grid') && $('grid').querySelector('a[href="./evaluaciones/"]');
+    if(!tile) return;
+    const semana = isoWeekActual();
+    // Alcance por rol (blando, en cliente).
+    let visibles;
+    if(session.rol==='admin') visibles = EVAL_SUCS_TODAS;
+    else if(session.rol==='supervisor') visibles = session.sucursales||[];
+    else visibles = [session.rol==='outlet'?session.outlet_id:session.sucursal].filter(Boolean);
+    if(!visibles.length) return;
+    const veRanking = session.rol==='admin' || session.rol==='supervisor';
+    const obj = await (await fetch(EVAL_DB_URL.replace(/\/$/,'')+'/evaluaciones.json')).json() || {};
+    const evals = Object.keys(obj).map(k=>obj[k]);
+    // Por cada sucursal visible, última 'enviada' <= semana.
+    let sinEvaluar=0; let propio=null;
+    visibles.forEach(suc=>{
+      const l = evals.filter(e=>e && e.sucursal===suc && e.semana<=semana && e.estado==='enviada').sort((a,b)=>a.semana<b.semana?-1:1);
+      const cur = l.find(r=>r.semana===semana) || l[l.length-1];
+      if(!l.find(r=>r.semana===semana)) sinEvaluar++;
+      if(!veRanking && cur){ const prev=l[l.indexOf(cur)-1]; propio={pts:cur.pts_total,nota:cur.nota,delta:prev?cur.pts_total-prev.pts_total:null,sin:!l.find(r=>r.semana===semana)}; }
+    });
+    let txt, cls;
+    if(veRanking){ txt = sinEvaluar>0 ? (sinEvaluar+' de '+visibles.length+' sin evaluar') : ('Todas evaluadas · '+visibles.length); cls = sinEvaluar>0?'warn':'ok'; }
+    else if(!propio){ txt='Sin evaluar'; cls='na'; }
+    else { txt = propio.pts+' · '+propio.nota + (propio.delta?(propio.delta>0?' ▲+'+propio.delta:' ▼'+propio.delta):''); cls = propio.nota==='A'?'ok':propio.nota==='B'?'warn':'bad'; }
+    const col = cls==='ok'?'#16a34a':cls==='warn'?'#d97706':cls==='bad'?'#CC0000':'#94a3b8';
+    const badge = document.createElement('div');
+    badge.textContent = txt;
+    badge.style.cssText = 'position:absolute;top:16px;right:18px;background:'+col+';color:#fff;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.5px;padding:3px 9px;border-radius:20px;z-index:2';
+    tile.appendChild(badge);
+  }catch(e){ /* sin badge si algo falla */ }
 }
 
 /* ============================================================
@@ -553,13 +609,24 @@ async function renderUsuariosView(container){
       '</select>';
   }
 
+  // Locales asignables a un supervisor (sucursales + outlets).
+  const LOCALES_SUP = SUCURSALES.map(s=>({id:s.slug,nombre:s.nombre}))
+    .concat(OUTLETS_LIST.map(o=>({id:o.id,nombre:o.nombre})));
+  function supervisorSucSelectHtml(k, u){
+    const sel = u.sucursales||[];
+    return '<select class="sel" multiple size="4" data-supsuc="'+k+'" style="min-width:150px">'+
+      LOCALES_SUP.map(l=>'<option value="'+l.id+'"'+(sel.includes(l.id)?' selected':'')+'>'+l.nombre+'</option>').join('')+
+      '</select>';
+  }
+
   function draw(){
     const keys = Object.keys(usuarios).sort((a,b)=> (usuarios[a].email||'').localeCompare(usuarios[b].email||''));
     body.innerHTML =
       '<div class="card"><div class="table-wrap"><table class="settings-table"><thead><tr><th>Email</th><th>Rol</th><th>Sucursal/Outlet</th><th>Herramientas</th><th></th></tr></thead><tbody>'+
       keys.map(k=>{
         const u = usuarios[k];
-        return '<tr><td>'+esc(u.email)+'</td><td>'+esc(u.rol)+'</td><td>'+esc(u.sucursal||u.outlet_id||'—')+'</td>'+
+        const sucCell = u.rol==='supervisor' ? supervisorSucSelectHtml(k,u) : esc(u.sucursal||u.outlet_id||'—');
+        return '<tr><td>'+esc(u.email)+'</td><td>'+esc(u.rol)+'</td><td>'+sucCell+'</td>'+
           '<td>'+herramientasSelectHtml(k,u)+'</td>'+
           '<td><button class="btn btn-outline btn-sm" data-guardar-herr="'+k+'">Guardar</button> <button class="btn btn-outline btn-sm" data-reset="'+k+'">Resetear PIN</button> <button class="btn btn-outline btn-sm" data-del="'+k+'">Eliminar</button></td></tr>';
       }).join('')+
@@ -567,10 +634,11 @@ async function renderUsuariosView(container){
       '<div class="card"><div class="card-title">Nuevo usuario</div><div class="form-grid">'+
         '<div class="fld"><label>Email</label><input id="nuEmail" type="email"></div>'+
         '<div class="fld"><label>Rol</label><select class="sel" id="nuRol" style="width:100%">'+
-          '<option value="admin">admin</option><option value="sucursal">sucursal</option><option value="outlet">outlet</option>'+
+          '<option value="admin">admin</option><option value="supervisor">supervisor</option><option value="sucursal">sucursal</option><option value="outlet">outlet</option>'+
         '</select></div>'+
         '<div class="fld"><label>Sucursal (si rol=sucursal)</label><select class="sel" id="nuSucursal" style="width:100%"><option value="">—</option>'+SUCURSALES.map(s=>'<option value="'+s.slug+'">'+s.nombre+'</option>').join('')+'</select></div>'+
         '<div class="fld"><label>Outlet (si rol=outlet)</label><select class="sel" id="nuOutlet" style="width:100%"><option value="">—</option>'+OUTLETS_LIST.map(o=>'<option value="'+o.id+'">'+o.nombre+'</option>').join('')+'</select></div>'+
+        '<div class="fld fld-full"><label>Sucursales que supervisa (si rol=supervisor)</label><select class="sel" multiple size="5" id="nuSupSuc" style="width:100%">'+LOCALES_SUP.map(l=>'<option value="'+l.id+'">'+l.nombre+'</option>').join('')+'</select></div>'+
         '<div class="fld fld-full"><label>Herramientas</label><select class="sel" multiple size="6" id="nuHerramientas" style="width:100%">'+HERRAMIENTAS_LIST.map(h=>'<option value="'+h.id+'">'+h.nombre+'</option>').join('')+'</select></div>'+
       '</div><br><button class="btn btn-primary" id="btnNuevoUsuario">Crear usuario (PIN inicial 1111)</button></div>';
 
@@ -579,7 +647,11 @@ async function renderUsuariosView(container){
       const sel = body.querySelector('select[data-herr="'+k+'"]');
       const herramientas = Array.from(sel.selectedOptions).map(o=>o.value);
       b.disabled=true; b.textContent='Guardando…';
-      await patchJSON(FB+'/usuarios/'+k+'.json', {herramientas});
+      const patch = {herramientas};
+      // Si es supervisor, guardamos también sus sucursales asignadas.
+      const supSel = body.querySelector('select[data-supsuc="'+k+'"]');
+      if(supSel){ patch.sucursales = Array.from(supSel.selectedOptions).map(o=>o.value); usuarios[k].sucursales = patch.sucursales; }
+      await patchJSON(FB+'/usuarios/'+k+'.json', patch);
       usuarios[k].herramientas = herramientas;
       b.disabled=false; b.textContent='Guardado ✓';
       setTimeout(()=> b.textContent='Guardar', 1500);
@@ -603,6 +675,7 @@ async function renderUsuariosView(container){
       const rec = {email, pin:'1111', rol, herramientas};
       if(rol==='sucursal') rec.sucursal = $('nuSucursal').value;
       if(rol==='outlet') rec.outlet_id = $('nuOutlet').value;
+      if(rol==='supervisor') rec.sucursales = Array.from($('nuSupSuc').selectedOptions).map(o=>o.value);
       const key = firebaseKeyFromEmail(email);
       await putJSON(FB+'/usuarios/'+key+'.json', rec);
       usuarios[key] = rec; draw();

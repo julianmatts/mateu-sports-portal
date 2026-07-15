@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Evaluaciones de Supervisor — Mateu Sports</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0B1527;--navy-mid:#1a2f55;--navy-soft:#13203a;
+  --red:#CC0000;--red-soft:#ff3b3b;
+  --white:#fff;--off:#f5f7fc;--muted:#6B7A99;--muted-light:#b0bcd4;
+  --card:#fff;--border:#dce3f0;
+  --ok:#16a34a;--warn:#d97706;--bad:#dc2626;
+  --font-d:'Bebas Neue',sans-serif;--font-c:'Barlow Condensed',sans-serif;--font-b:'Barlow',sans-serif;
+  --shadow:0 1px 4px rgba(11,21,39,.08);--shadow-md:0 8px 30px rgba(11,21,39,.18);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--off);color:var(--navy);font-family:var(--font-b);min-height:100vh}
+
+/* ===== HEADER ===== */
+.top{background:var(--navy);padding:12px 22px;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:3px solid var(--red);position:sticky;top:0;z-index:40;flex-wrap:wrap;gap:10px}
+.top a.logo{display:flex;align-items:center;gap:11px;text-decoration:none;min-width:0}
+.top img{height:32px;filter:brightness(0) invert(1)}
+.top .tt{font-family:var(--font-d);font-size:19px;letter-spacing:1.5px;color:#fff;line-height:1}
+.top .ts{font-family:var(--font-c);font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted-light)}
+.top-right{display:flex;align-items:center;gap:12px;margin-left:auto}
+.who{text-align:right;line-height:1.1}
+.who .n{font-family:var(--font-c);font-size:13px;font-weight:600;color:#fff;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.who .r{font-family:var(--font-c);font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--red-soft)}
+.salir{background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:6px;color:rgba(255,255,255,.7);
+  font-family:var(--font-c);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;padding:7px 13px;cursor:pointer}
+.salir:hover{color:#fff;border-color:#fff}
+
+/* ===== NAV TABS ===== */
+.tabs{background:#fff;border-bottom:1px solid var(--border);padding:0 22px;display:flex;gap:4px;overflow-x:auto;position:sticky;top:57px;z-index:30}
+.tab{padding:13px 16px;border:0;background:none;cursor:pointer;font-family:var(--font-c);font-size:14px;font-weight:600;
+  letter-spacing:.5px;color:var(--muted);border-bottom:3px solid transparent;white-space:nowrap}
+.tab.on{color:var(--navy);border-bottom-color:var(--red)}
+.tab:hover{color:var(--navy)}
+
+main{max-width:1120px;margin:0 auto;padding:22px 22px 70px}
+
+.demo-banner{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:9px;padding:9px 14px;
+  font-size:13px;margin-bottom:16px;display:none}
+.demo-banner.show{display:block}
+
+/* ===== TIPO / COMUNES ===== */
+h1.page{font-family:var(--font-d);font-size:30px;letter-spacing:1px;line-height:1}
+.page-sub{font-family:var(--font-c);font-size:13px;font-weight:500;color:var(--muted);margin:2px 0 18px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:var(--shadow)}
+.card-h{font-family:var(--font-d);font-size:20px;letter-spacing:.5px;margin-bottom:2px}
+.card-hs{font-family:var(--font-c);font-size:12px;color:var(--muted);margin-bottom:14px}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.spacer{flex:1}
+.muted{color:var(--muted)}
+.btn{border:none;border-radius:8px;padding:10px 16px;font-family:var(--font-c);font-size:13px;font-weight:700;
+  letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:all .15s}
+.btn-primary{background:var(--red);color:#fff}.btn-primary:hover{background:#a00000}
+.btn-outline{background:#fff;border:1.5px solid var(--border);color:var(--navy)}.btn-outline:hover{border-color:var(--navy-mid)}
+.btn-sm{padding:6px 11px;font-size:11px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.sel,.inp{padding:9px 11px;border:1px solid var(--border);border-radius:7px;font-size:14px;color:var(--navy);background:#fff;font-family:var(--font-b)}
+.sel:focus,.inp:focus{outline:none;border-color:var(--navy-mid)}
+label.lbl{display:block;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+textarea.inp{width:100%;resize:vertical;min-height:60px;font-family:var(--font-b)}
+
+/* nota badge */
+.nota{display:inline-flex;align-items:center;justify-content:center;font-family:var(--font-d);letter-spacing:1px;
+  color:#fff;border-radius:8px;line-height:1}
+.nota.big{width:60px;height:60px;font-size:36px}
+.nota.mid{width:38px;height:38px;font-size:22px}
+.nota.sm{width:26px;height:26px;font-size:16px;border-radius:6px}
+.nota.A{background:var(--ok)}.nota.B{background:var(--warn)}.nota.C{background:#e0562b}.nota.D{background:var(--bad)}
+.nota.NA{background:#94a3b8}
+.delta{font-family:var(--font-c);font-weight:700;font-size:13px}
+.delta.up{color:var(--ok)}.delta.down{color:var(--bad)}.delta.flat{color:var(--muted)}
+
+/* ===== KPIs ===== */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:#fff;border:1px solid var(--border);border-radius:11px;padding:14px 16px;box-shadow:var(--shadow)}
+.kpi .k{font-family:var(--font-c);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.kpi .v{font-family:var(--font-d);font-size:30px;letter-spacing:.5px;margin-top:4px;line-height:1}
+.kpi .v small{font-size:14px;color:var(--muted);font-family:var(--font-c)}
+
+/* ===== TABLA RANKING ===== */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:11px;background:#fff}
+table.rk{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
+table.rk th{background:var(--navy);color:#fff;font-family:var(--font-c);font-weight:600;letter-spacing:.5px;padding:9px 11px;text-align:left;white-space:nowrap;position:sticky;top:0}
+table.rk th.num,table.rk td.num{text-align:right}
+table.rk td{padding:8px 11px;border-bottom:1px solid #eef0f7;vertical-align:middle}
+table.rk tr:hover td{background:#f8f9fe}
+.cad-row td{background:#eef2fb!important;font-family:var(--font-c);font-weight:700;letter-spacing:1px;text-transform:uppercase;
+  font-size:11px;color:var(--navy-mid);padding:6px 11px}
+.bar{height:7px;border-radius:4px;background:#e6ebf5;overflow:hidden;min-width:70px}
+.bar>span{display:block;height:100%;border-radius:4px}
+
+/* ===== FORM EVALUACIÓN ===== */
+.form-head{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:8px}
+.item-card{border:1px solid var(--border);border-radius:12px;padding:15px 16px;margin-bottom:12px;background:#fff}
+.item-card .it-h{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.it-num{font-family:var(--font-d);font-size:20px;color:var(--red);line-height:1}
+.it-t{font-family:var(--font-c);font-size:16px;font-weight:700;letter-spacing:.3px}
+.it-d{font-size:12.5px;color:var(--muted);margin:3px 0 11px;line-height:1.35}
+.seg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.seg label{cursor:pointer}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg .opt{display:block;text-align:center;padding:13px 6px;border:2px solid var(--border);border-radius:10px;
+  font-family:var(--font-c);font-weight:700;font-size:15px;letter-spacing:.5px;color:var(--muted);user-select:none;transition:all .12s}
+.seg .opt small{display:block;font-size:11px;font-weight:600;opacity:.75}
+.seg input:checked+.opt.bien{background:var(--ok);border-color:var(--ok);color:#fff}
+.seg input:checked+.opt.regular{background:var(--warn);border-color:var(--warn);color:#fff}
+.seg input:checked+.opt.mal{background:var(--bad);border-color:var(--bad);color:#fff}
+.seg label:hover .opt{border-color:var(--navy-mid)}
+.plan{margin-top:11px;display:none}
+.plan.show{display:block}
+.ctx{margin-top:10px;background:#f1f5fd;border:1px solid #dbe4f5;border-radius:9px;padding:9px 12px;font-size:12.5px;color:var(--navy-mid)}
+.ctx b{color:var(--navy)}
+.ctx .sug{display:inline-block;margin-top:4px;font-family:var(--font-c);font-weight:700;letter-spacing:.5px;text-transform:uppercase;font-size:11px}
+.prevtag{font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:2px 8px;border-radius:20px}
+.prevtag.bien{background:#dcfce7;color:#166534}.prevtag.regular{background:#ffedd5;color:#9a3412}.prevtag.mal{background:#fee2e2;color:#991b1b}.prevtag.na{background:#eef0f7;color:var(--muted)}
+
+/* score panel sticky */
+.score{position:sticky;bottom:0;z-index:20;background:var(--navy);color:#fff;border-radius:12px;padding:13px 18px;
+  display:flex;align-items:center;gap:18px;flex-wrap:wrap;box-shadow:0 -4px 20px rgba(11,21,39,.25);margin-top:8px}
+.score .tot{font-family:var(--font-d);font-size:34px;line-height:1}
+.score .tot small{font-size:15px;color:var(--muted-light)}
+.score .blk{font-family:var(--font-c);font-size:13px;color:var(--muted-light)}
+.score .blk b{color:#fff;font-size:16px}
+.score .autosave{font-family:var(--font-c);font-size:11px;letter-spacing:.5px;color:var(--muted-light)}
+.score .spacer{flex:1}
+
+/* pendientes / puntos mejora */
+.pm{border:1px solid var(--border);border-radius:10px;padding:11px 13px;margin-bottom:9px;background:#fff;display:flex;gap:11px;align-items:flex-start}
+.pm .pm-b{flex:1}
+.pm .pm-k{font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+.pm .pm-t{font-size:13.5px;margin-top:2px}
+.pm .pm-meta{font-size:11.5px;color:var(--muted);margin-top:3px}
+.chip{font-family:var(--font-c);font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:3px 9px;border-radius:20px;white-space:nowrap}
+.chip.pendiente{background:#fef3c7;color:#92400e}.chip.resuelto{background:#dbeafe;color:#1e40af}.chip.confirmado{background:#dcfce7;color:#166534}
+
+/* detalle read */
+.det-item{border-bottom:1px solid #eef0f7;padding:11px 0;display:flex;gap:11px;align-items:flex-start}
+.det-item:last-child{border-bottom:0}
+.det-item .di-b{flex:1}
+.det-item .di-t{font-family:var(--font-c);font-weight:700;font-size:14.5px}
+.det-item .di-plan{font-size:12.5px;color:var(--navy-mid);margin-top:3px;background:#f6f8fd;border-radius:7px;padding:6px 9px}
+
+.empty{background:#fff;border:1px dashed var(--border);border-radius:12px;padding:34px;text-align:center;color:var(--muted);font-size:14px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:12px 20px;border-radius:10px;
+  font-size:14px;box-shadow:var(--shadow-md);z-index:100;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+.toast.err{background:#7f1d1d}
+
+svg text{font-family:var(--font-c)}
+
+@media(max-width:640px){
+  main{padding:16px 13px 70px}
+  .top .tt{font-size:16px}.top .ts{display:none}
+  h1.page{font-size:24px}
+  .seg .opt{padding:15px 4px;font-size:16px}
+}
+@media print{
+  .top,.tabs,.demo-banner,.btn,.score,.no-print{display:none!important}
+  main{max-width:none;padding:0}
+  .card{break-inside:avoid;box-shadow:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <a class="logo" href="../" title="Volver al Portal">
+    <img src="data:image/webp;base64,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" alt="Mateu Sports">
+    <span><span class="tt">Evaluaciones</span><br><span class="ts">Supervisor · Mateu Sports</span></span>
+  </a>
+  <div class="top-right">
+    <div class="who"><div class="n" id="whoName">—</div><div class="r" id="whoRole">—</div></div>
+    <button class="salir" id="salir">Salir</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs"></nav>
+
+<main>
+  <div class="demo-banner" id="demoBanner">🔧 <b>Modo demo</b> — falta pegar la URL de la base <code>evaluaciones-mateu</code> (constante <code>EVAL_DB_URL</code>). Se muestran datos de prueba y lo que cargues no se guarda. Ver <code>docs/EVALUACIONES-SETUP.md</code>.</div>
+  <div id="view"></div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="../lib/evaluacion.js"></script>
+<script src="./mock-data.js"></script>
+<script src="../gestion-stock/datos-meses-stock.js" onerror="window.__stockFail=1"></script>
+<script>
+/* ============================================================
+   Evaluaciones de Supervisor — módulo self-contained.
+   Lee la sesión del Portal (localStorage), no tiene login propio.
+   Lee/escribe a Firebase (base evaluaciones-mateu) por REST, como el resto del
+   portal. Sin URL configurada (EVAL_DB_URL) corre en modo demo con mock-data.js.
+   ============================================================ */
+const E = window.Evaluacion;
+const MOCK = window.EVALUACIONES_MOCK;
+
+/* --- sesión --- */
+const SESSION_KEY='mateu_portal_session';
+function readSession(){ try{ const s=localStorage.getItem(SESSION_KEY); return s?JSON.parse(s):null; }catch(e){ return window.__sess||null; } }
+const SESSION = readSession();
+if(!SESSION || !SESSION.rol){ location.replace('../'); }
+
+const ROL = SESSION.rol;
+const esGerencia  = ROL==='admin';
+const esSupervisor= ROL==='supervisor';
+const esEncargado = ROL==='sucursal' || ROL==='outlet';
+const puedeEditar = esGerencia || esSupervisor;
+function ownSlug(){ return ROL==='outlet' ? SESSION.outlet_id : SESSION.sucursal; }
+
+/* --- catálogo de locales (slug → nombre, cadena) --- */
+const LOCALES=[
+  {slug:'plaza',nombre:'Plaza Italia',cadena:'Mateu'},{slug:'calle-12',nombre:'Calle 12',cadena:'Mateu'},
+  {slug:'city-bell',nombre:'City Bell',cadena:'Mateu'},{slug:'calle-47',nombre:'Calle 47',cadena:'Mateu'},
+  {slug:'calle-49',nombre:'Calle 49',cadena:'Mateu'},{slug:'los-hornos',nombre:'Los Hornos',cadena:'Mateu'},
+  {slug:'berisso',nombre:'Berisso',cadena:'Mateu'},{slug:'ensenada',nombre:'Ensenada',cadena:'Mateu'},
+  {slug:'kids',nombre:'Kids',cadena:'Mateu'},{slug:'diagonal',nombre:'Diagonal',cadena:'Mateu'},
+  {slug:'gonnet',nombre:'Outlet Gonnet',cadena:'Outlet'},{slug:'av-44',nombre:'Outlet Av. 44',cadena:'Outlet'},
+  {slug:'calle-55',nombre:'Outlet Calle 55',cadena:'Outlet'},
+  {slug:'aurelius-12',nombre:'Aurelius 12',cadena:'Aurelius'},{slug:'aurelius-5',nombre:'Aurelius 5',cadena:'Aurelius'},
+  {slug:'aurelius-cb',nombre:'Aurelius City Bell',cadena:'Aurelius'},{slug:'aurelius-10',nombre:'Aurelius 10',cadena:'Aurelius'},
+  {slug:'adidas-12',nombre:'Adidas 12',cadena:'Adidas'},{slug:'adidas',nombre:'Adidas Av. 7',cadena:'Adidas'},
+  {slug:'originals',nombre:'Adidas Originals',cadena:'Adidas'},
+];
+const CADENAS=['Mateu','Outlet','Aurelius','Adidas'];
+const LOC_BY_SLUG=LOCALES.reduce((m,l)=>{m[l.slug]=l;return m;},{});
+function nombreSuc(slug){ return (LOC_BY_SLUG[slug]&&LOC_BY_SLUG[slug].nombre)||slug; }
+function cadenaSuc(slug){ return (LOC_BY_SLUG[slug]&&LOC_BY_SLUG[slug].cadena)||'—'; }
+
+/* --- mapas al dataset de Meses de Stock (mismos que Indicadores) --- */
+const SLUG_SUC={'calle-12':'12-MS Calle 12','city-bell':'06-MS City Bell','calle-47':'08-MS Calle 47','calle-49':'19-MS Calle 49','los-hornos':'13-MS Los Hornos','plaza':'01-MS Plaza Italia','berisso':'16-MS Berisso','ensenada':'11-MS Ensenada','kids':'02-Mateu Kids','aurelius-12':'04-Aurelius Calle 12','aurelius-5':'18-Aurelius Calle 5','aurelius-cb':'17-Aurelius City Bell','adidas-12':'21-Adidas Calle 12','adidas':'09-Adidas Av. 7','originals':'15-Adidas Originals','gonnet':'14-Outlet Gonnet','av-44':'20-Outlet Av. 44','calle-55':'03-Outlet Calle 55','aurelius-10':'07-Aurelius Calle 10'};
+
+/* --- semanas ISO --- */
+function isoWeek(d){ d=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())); const day=(d.getUTCDay()+6)%7; d.setUTCDate(d.getUTCDate()-day+3); const f=new Date(Date.UTC(d.getUTCFullYear(),0,4)); const w=1+Math.round(((d-f)/864e5-3+((f.getUTCDay()+6)%7))/7); return d.getUTCFullYear()+'-W'+String(w).padStart(2,'0'); }
+function recentWeeks(n){ const out=[],d=new Date(); for(let i=0;i<n;i++){ out.push(isoWeek(d)); d.setDate(d.getDate()-7);} return out; }
+function fmtSemana(s){ if(!s)return'—'; const[a,w]=s.split('-W'); return 'Sem '+Number(w)+' · '+a; }
+// Base Firebase (evaluaciones-mateu). Vacío = modo demo con mock-data.js.
+const EVAL_DB_URL = 'https://evaluaciones-mateu-default-rtdb.firebaseio.com';
+const USA_FIREBASE = /^https?:\/\//.test(EVAL_DB_URL);
+// En Firebase la semana "actual" es la real; en demo, la del set de prueba.
+const SEMANA_ACTUAL = USA_FIREBASE ? isoWeek(new Date()) : ((typeof MOCK!=='undefined' && MOCK && MOCK.semana_actual) || isoWeek(new Date()));
+
+/* --- helpers DOM --- */
+const $=id=>document.getElementById(id);
+function esc(s){ return (s==null)?'':String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstElementChild; }
+let TOAST_T=null;
+function toast(msg,err){ const t=$('toast'); t.textContent=msg; t.className='toast show'+(err?' err':''); clearTimeout(TOAST_T); TOAST_T=setTimeout(()=>t.className='toast',2600); }
+
+/* ============================================================
+   CAPA DE DATOS — Firebase RTDB por REST (como marcas/turnero/mensajes).
+   La URL (EVAL_DB_URL) se define arriba. Sin URL → modo demo con mock-data.js.
+   Seguridad "blanda" como el resto del portal: el alcance por rol se aplica en
+   el cliente (scopeVisibles). No hay enforcement de servidor.
+   ============================================================ */
+function showDemo(){ $('demoBanner').classList.add('show'); }
+
+/* --- alcance por rol (blando, en el cliente) --- */
+function scopeVisibles(){
+  if(esGerencia) return LOCALES.map(l=>l.slug);
+  if(esSupervisor){
+    if(Array.isArray(SESSION.sucursales) && SESSION.sucursales.length) return SESSION.sucursales.slice();
+    if(MOCK) return MOCK.sucursal_supervisor.filter(x=>x.supervisor===(SESSION.email||'').toLowerCase()).map(x=>x.sucursal);
+    return [];
+  }
+  const o=ownSlug(); return o?[o]:[];
+}
+// items {key:{...}} (Firebase) → array [{item_key,...}] (lo que espera la UI)
+function itemsObjToArr(itemsObj){
+  return E.ITEMS.map(it=>{ const v=(itemsObj&&itemsObj[it.key])||{};
+    return {item_key:it.key,categoria:it.categoria,valor:v.valor||null,puntos:(v.puntos!=null?v.puntos:E.puntosDe(v.valor)),plan_accion:v.plan_accion||null}; });
+}
+// Resumen/ranking a partir de un array de evaluaciones (§6.6/§7). Puro.
+function computeResumen(evals, semana){
+  const vis=scopeVisibles();
+  const items=vis.map(suc=>{
+    const l=evals.filter(e=>e.sucursal===suc&&e.semana<=semana&&e.estado==='enviada').sort((a,b)=>a.semana<b.semana?-1:1);
+    if(!l.length) return {sucursal:suc,sin_historial:true,sin_evaluar:true,semana_pedida:semana};
+    let idx=l.findIndex(r=>r.semana===semana); const sinEval=idx<0; if(idx<0) idx=l.length-1;
+    const cur=l[idx], prev=idx>0?l[idx-1]:null;
+    return {sucursal:suc,encargado:cur.encargado,evaluacion_id:cur.id,semana:cur.semana,semana_pedida:semana,
+      pts_total:cur.pts_total,pts_operativa:cur.pts_operativa,pts_actitudinal:cur.pts_actitudinal,nota:cur.nota,
+      delta:prev?cur.pts_total-prev.pts_total:null,estado:cur.estado,visto_encargado:cur.visto_encargado,sin_evaluar:sinEval,sin_historial:false};
+  });
+  return {ok:true,semana,ve_ranking:puedeEditar,meta:{total:vis.length,sin_evaluar:items.filter(i=>i.sin_evaluar).length},items};
+}
+
+/* ============================================================
+   FireStore — la base real (Firebase RTDB). Árbol:
+     evaluaciones/<suc>__<semana> = {..., items:{<item_key>:{...}}}
+     puntos_mejora/<pushid>       = {sucursal,item_key,semana_origen,texto,estado,...}
+   ============================================================ */
+const FireStore=(function(){
+  const BASE=EVAL_DB_URL.replace(/\/$/,'');
+  async function req(method,path,data){
+    const r=await fetch(BASE+path+'.json',{method,headers:data!==undefined?{'Content-Type':'application/json'}:undefined,body:data!==undefined?JSON.stringify(data):undefined});
+    if(!r.ok) throw new Error('Firebase HTTP '+r.status);
+    return r.json();
+  }
+  const get=p=>req('GET',p), put=(p,d)=>req('PUT',p,d), patch=(p,d)=>req('PATCH',p,d);
+  const post=(p,d)=>req('POST',p,d).then(x=>x&&x.name), del=p=>req('DELETE',p);
+  const keyOf=(suc,sem)=>suc+'__'+sem;
+  function nowIso(){ return new Date().toISOString().slice(0,19).replace('T',' '); }
+
+  let _evals=null;                      // cache de evaluaciones; se refresca al escribir
+  async function allEvals(force){
+    if(_evals && !force) return _evals;
+    const obj=await get('/evaluaciones')||{};
+    _evals=Object.keys(obj).map(k=>Object.assign({id:k}, obj[k]));
+    return _evals;
+  }
+  async function allPuntos(){
+    const obj=await get('/puntos_mejora')||{};
+    return Object.keys(obj).map(k=>Object.assign({id:k}, obj[k]));
+  }
+  return {
+    async getResumen(semana){ return computeResumen(await allEvals(), semana); },
+    async getEvaluacion(suc,semana){
+      const raw=await get('/evaluaciones/'+keyOf(suc,semana));
+      const ev=raw?Object.assign({id:keyOf(suc,semana)}, raw, {items:itemsObjToArr(raw.items)}):null;
+      const evs=await allEvals();
+      const ant=evs.filter(e=>e.sucursal===suc&&e.semana<semana).sort((a,b)=>a.semana<b.semana?1:-1)[0]||null;
+      const anterior=ant?Object.assign({},ant,{items:itemsObjToArr(ant.items)}):null;
+      const puntos=await allPuntos();
+      // pendientes = de semanas anteriores (para el form del supervisor);
+      // abiertos = incluye los de esta semana (para que el encargado los resuelva).
+      const pend=puntos.filter(p=>p.sucursal===suc&&p.semana_origen<semana&&p.estado!=='confirmado').sort((a,b)=>a.semana_origen<b.semana_origen?-1:1);
+      const abiertos=puntos.filter(p=>p.sucursal===suc&&p.semana_origen<=semana&&p.estado!=='confirmado').sort((a,b)=>a.semana_origen<b.semana_origen?-1:1);
+      return {ok:true,evaluacion:ev,anterior,pendientes:pend,puntos_abiertos:abiertos};
+    },
+    async upsert(payload){
+      const valores={}; E.ITEM_KEYS.forEach(k=>valores[k]=(payload.valores[k]&&payload.valores[k].valor)||null);
+      const calc=E.calcularEvaluacion(valores);
+      const key=keyOf(payload.sucursal,payload.semana);
+      const prev=await get('/evaluaciones/'+key)||{};
+      const items={}; E.ITEMS.forEach(it=>{ const v=payload.valores[it.key]||{}; items[it.key]={categoria:it.categoria,valor:v.valor||null,puntos:E.puntosDe(v.valor),plan_accion:(v.plan_accion||'').trim()||null}; });
+      const rec={sucursal:payload.sucursal,encargado:payload.encargado||null,supervisor:SESSION.email,semana:payload.semana,
+        pts_operativa:calc.pts_operativa,pts_actitudinal:calc.pts_actitudinal,pts_total:calc.pts_total,nota:calc.nota,
+        obs_operativa:payload.obs_operativa||null,obs_actitudinal:payload.obs_actitudinal||null,estado:payload.estado,
+        visto_encargado:prev.visto_encargado||0,visto_en:prev.visto_en||null,visto_comentario:prev.visto_comentario||null,
+        created_at:prev.created_at||nowIso(),updated_at:nowIso(),items};
+      await put('/evaluaciones/'+key, rec);
+      // sync puntos_mejora de esta semana
+      const deSemana=(await allPuntos()).filter(p=>p.sucursal===payload.sucursal&&p.semana_origen===payload.semana);
+      for(const it of E.ITEMS){
+        const v=payload.valores[it.key]||{}; const t=(v.plan_accion||'').trim();
+        const cal=(v.valor==='regular'||v.valor==='mal')&&t; const ex=deSemana.find(p=>p.item_key===it.key);
+        if(cal&&!ex) await post('/puntos_mejora',{sucursal:payload.sucursal,item_key:it.key,semana_origen:payload.semana,texto:t,estado:'pendiente',created_at:nowIso()});
+        else if(cal&&ex) await patch('/puntos_mejora/'+ex.id,{texto:t});
+        else if(!cal&&ex&&ex.estado==='pendiente') await del('/puntos_mejora/'+ex.id);
+      }
+      await allEvals(true);
+      return {ok:true,evaluacion:Object.assign({id:key},rec,{items:itemsObjToArr(items)})};
+    },
+    async acuse(id,comentario){
+      await patch('/evaluaciones/'+id,{visto_encargado:1,visto_en:nowIso(),visto_comentario:comentario||null});
+      await allEvals(true);
+      const raw=await get('/evaluaciones/'+id);
+      return {ok:true,evaluacion:Object.assign({id},raw,{items:itemsObjToArr(raw&&raw.items)})};
+    },
+    async updatePunto(id,estado){
+      const d=estado==='resuelto'?{estado,marcado_por:SESSION.email,marcado_en:nowIso()}:{estado,confirmado_por:SESSION.email,confirmado_en:nowIso()};
+      await patch('/puntos_mejora/'+id, d);
+      return {ok:true};
+    },
+  };
+})();
+
+/* ============================================================
+   MOCK — demo sin backend, sobre mock-data.js. No persiste (memoria).
+   ============================================================ */
+const Mock=(function(){
+  if(!MOCK) return {getResumen:()=>computeResumen([],SEMANA_ACTUAL),getEvaluacion:()=>({ok:true,evaluacion:null,anterior:null,pendientes:[]}),upsert:()=>{throw new Error('sin datos de prueba')},acuse:()=>({ok:true}),updatePunto:()=>({ok:true})};
+  const D=MOCK;
+  function itemsDe(id){ return D.evaluacion_items.filter(i=>i.evaluacion_id===id).map(i=>Object.assign({},i)); }
+  function evalDe(suc,sem){ return D.evaluaciones.find(e=>e.sucursal===suc&&e.semana===sem)||null; }
+  function anteriorDe(suc,sem){ return D.evaluaciones.filter(e=>e.sucursal===suc&&e.semana<sem).sort((a,b)=>a.semana<b.semana?1:-1)[0]||null; }
+  return {
+    getResumen(semana){ return computeResumen(D.evaluaciones, semana); },
+    getEvaluacion(suc,semana){
+      const ev=evalDe(suc,semana); if(ev){ ev.items=itemsDe(ev.id); }
+      const ant=anteriorDe(suc,semana); if(ant){ ant.items=itemsDe(ant.id); }
+      const pend=D.puntos_mejora.filter(p=>p.sucursal===suc&&p.semana_origen<semana&&p.estado!=='confirmado').sort((a,b)=>a.semana_origen<b.semana_origen?-1:1);
+      const abiertos=D.puntos_mejora.filter(p=>p.sucursal===suc&&p.semana_origen<=semana&&p.estado!=='confirmado').sort((a,b)=>a.semana_origen<b.semana_origen?-1:1);
+      return {ok:true,evaluacion:ev?Object.assign({},ev):null,anterior:ant?Object.assign({},ant):null,pendientes:pend.map(p=>Object.assign({},p)),puntos_abiertos:abiertos.map(p=>Object.assign({},p))};
+    },
+    upsert(payload){
+      const valores={}; E.ITEM_KEYS.forEach(k=>{ valores[k]=(payload.valores[k]&&payload.valores[k].valor)||null; });
+      const calc=E.calcularEvaluacion(valores);
+      let ev=evalDe(payload.sucursal,payload.semana);
+      if(!ev){ ev={id:Math.max(0,...D.evaluaciones.map(e=>e.id))+1,sucursal:payload.sucursal,semana:payload.semana,created_at:'now'}; D.evaluaciones.push(ev); }
+      Object.assign(ev,{encargado:payload.encargado,supervisor:SESSION.email,pts_operativa:calc.pts_operativa,pts_actitudinal:calc.pts_actitudinal,pts_total:calc.pts_total,nota:calc.nota,obs_operativa:payload.obs_operativa,obs_actitudinal:payload.obs_actitudinal,estado:payload.estado,visto_encargado:ev.visto_encargado||0,updated_at:'now'});
+      D.evaluacion_items=D.evaluacion_items.filter(i=>i.evaluacion_id!==ev.id);
+      E.ITEMS.forEach(it=>{ const v=payload.valores[it.key]||{}; D.evaluacion_items.push({id:Math.max(0,...D.evaluacion_items.map(x=>x.id))+1,evaluacion_id:ev.id,categoria:it.categoria,item_key:it.key,valor:v.valor||null,puntos:E.puntosDe(v.valor),plan_accion:v.plan_accion||null}); });
+      const existentes=D.puntos_mejora.filter(p=>p.sucursal===payload.sucursal&&p.semana_origen===payload.semana);
+      E.ITEMS.forEach(it=>{ const v=payload.valores[it.key]||{}; const t=(v.plan_accion||'').trim(); const cal=(v.valor==='regular'||v.valor==='mal')&&t; const ex=existentes.find(p=>p.item_key===it.key);
+        if(cal&&!ex) D.puntos_mejora.push({id:Math.max(0,...D.puntos_mejora.map(x=>x.id))+1,sucursal:payload.sucursal,item_key:it.key,semana_origen:payload.semana,texto:t,estado:'pendiente',evaluacion_id:ev.id});
+        else if(cal&&ex) ex.texto=t;
+        else if(!cal&&ex&&ex.estado==='pendiente') D.puntos_mejora=D.puntos_mejora.filter(p=>p!==ex); });
+      const out=Object.assign({},ev); out.items=itemsDe(ev.id);
+      return {ok:true,evaluacion:out};
+    },
+    acuse(id,comentario){ const ev=D.evaluaciones.find(e=>String(e.id)===String(id)); if(ev){ ev.visto_encargado=1; ev.visto_en='now'; ev.visto_comentario=comentario||null; } const out=Object.assign({},ev); out.items=itemsDe(ev.id); return {ok:true,evaluacion:out}; },
+    updatePunto(id,estado){ const p=D.puntos_mejora.find(x=>String(x.id)===String(id)); if(p){ p.estado=estado; if(estado==='resuelto'){p.marcado_por=SESSION.email;p.marcado_en='now';} else {p.confirmado_por=SESSION.email;p.confirmado_en='now';} } return {ok:true,punto:Object.assign({},p)}; },
+  };
+})();
+
+// La base real si hay URL; si no, demo con datos de prueba.
+const Store = USA_FIREBASE ? FireStore : Mock;
+if(!USA_FIREBASE) showDemo();
+
+/* ============================================================
+   CRUCE con Meses de Stock (§6.3) — ratio real por sucursal.
+   ============================================================ */
+function ratioStock(suc){
+  const S=window.STOCK_DATA; if(!S) return null;
+  const nombre=SLUG_SUC[suc]; if(!nombre||!S.sucursales[nombre]) return null;
+  const rubros=S.sucursales[nombre].rubros||{}; const meses=S.meses||[];
+  const ultMes=[...meses].reverse().find(m=>Object.values(rubros).some(r=>r.serie&&r.serie[m]));
+  if(!ultMes) return null;
+  const detalle=[]; let stk=0,vts=0;
+  ['CALZADO','INDUMENTARIA','ACCESORIOS'].forEach(rk=>{ const r=rubros[rk]; const p=r&&r.serie&&r.serie[ultMes];
+    if(p&&p.ventas>0){ stk+=p.stock; vts+=p.ventas; detalle.push({rubro:rk,ratio:p.ratio}); } });
+  if(vts<=0) return null;
+  return {mes:ultMes, ratio:+(stk/vts).toFixed(2), detalle};
+}
+
+/* ============================================================
+   ROUTING / NAV
+   ============================================================ */
+$('whoName').textContent = SESSION.email;
+$('whoRole').textContent = {admin:'Gerencia',supervisor:'Supervisor',sucursal:'Encargado',outlet:'Encargado'}[ROL]||ROL;
+$('salir').onclick=()=>{ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} location.replace('../'); };
+
+let SEMANA_SEL = SEMANA_ACTUAL;
+let TAB = esEncargado ? 'mi' : 'dashboard';
+
+function buildTabs(){
+  const tabs = esEncargado
+    ? [{k:'mi',t:'Mi evaluación'}]
+    : [{k:'dashboard',t:'Ranking'},{k:'form',t:'Nueva evaluación'},{k:'graficos',t:'Gráficos'}];
+  $('tabs').innerHTML = tabs.map(t=>`<button class="tab${t.k===TAB?' on':''}" data-tab="${t.k}">${t.t}</button>`).join('');
+  $('tabs').querySelectorAll('.tab').forEach(b=>b.onclick=()=>{ TAB=b.dataset.tab; buildTabs(); route(); });
+  if(!esEncargado && tabs.length<=1) $('tabs').style.display='none';
+}
+
+function route(){
+  const v=$('view'); v.innerHTML='<div class="empty">Cargando…</div>';
+  if(esEncargado) return renderEncargado();
+  if(TAB==='dashboard') return renderDashboard();
+  if(TAB==='form') return renderForm();
+  if(TAB==='graficos') return renderGraficos();
+}
+
+/* --- deep-link desde el badge del Portal: ?ver=<suc>&semana=<sem> --- */
+const Q=new URLSearchParams(location.search);
+
+/* ============================================================
+   COMUNES DE RENDER
+   ============================================================ */
+function errBox(e){ return '<div class="empty">⚠️ '+esc(e&&e.message||'Error')+'</div>'; }
+function notaBadge(nota,size){ if(!nota) return '<span class="nota '+(size||'mid')+' NA">—</span>'; return '<span class="nota '+(size||'mid')+' '+nota+'">'+nota+'</span>'; }
+function deltaHtml(d){ if(d==null) return '<span class="delta flat">—</span>'; if(d>0) return '<span class="delta up">▲+'+d+'</span>'; if(d<0) return '<span class="delta down">▼'+d+'</span>'; return '<span class="delta flat">=0</span>'; }
+function semanaSelect(id,val){ const ws=recentWeeks(10); if(!ws.includes(val)) ws.unshift(val); if(!ws.includes(SEMANA_ACTUAL)) ws.push(SEMANA_ACTUAL);
+  return '<select class="sel" id="'+id+'">'+[...new Set(ws)].sort().reverse().map(w=>'<option value="'+w+'"'+(w===val?' selected':'')+'>'+fmtSemana(w)+(w===SEMANA_ACTUAL?' (actual)':'')+'</option>').join('')+'</select>'; }
+
+/* ============================================================
+   DASHBOARD / RANKING (§7)  — gerencia y supervisor
+   ============================================================ */
+let DASH_METRIC='total', DASH_CADENA='';
+async function renderDashboard(){
+  const v=$('view'); v.innerHTML='<div class="empty">Cargando ranking…</div>';
+  let data; try{ data=await Store.getResumen(SEMANA_SEL); }catch(e){ v.innerHTML=errBox(e); return; }
+  const items=data.items||[];
+  const evaluadas=items.filter(i=>!i.sin_historial);
+  const metricVal=i=> DASH_METRIC==='operativa'?i.pts_operativa : DASH_METRIC==='actitudinal'?i.pts_actitudinal : i.pts_total;
+  const conNota=evaluadas.filter(i=>i.pts_total!=null);
+  const prom = conNota.length? Math.round(conNota.reduce((a,i)=>a+metricVal(i),0)/conNota.length) : null;
+  const mejor = conNota.slice().sort((a,b)=>metricVal(b)-metricVal(a))[0];
+  const peor  = conNota.slice().sort((a,b)=>metricVal(a)-metricVal(b))[0];
+
+  v.innerHTML=`
+    <h1 class="page">Ranking de sucursales</h1>
+    <div class="page-sub">${fmtSemana(SEMANA_SEL)} · alcance de ${esGerencia?'gerencia (todas)':'tus sucursales'}</div>
+    <div class="row no-print" style="margin-bottom:16px">
+      <div><label class="lbl">Semana</label>${semanaSelect('dSem',SEMANA_SEL)}</div>
+      <div><label class="lbl">Cadena</label><select class="sel" id="dCad"><option value="">Todas</option>${CADENAS.map(c=>'<option value="'+c+'"'+(c===DASH_CADENA?' selected':'')+'>'+c+'</option>').join('')}</select></div>
+      <div><label class="lbl">Puntaje</label><select class="sel" id="dMet">
+        <option value="total"${DASH_METRIC==='total'?' selected':''}>Total /100</option>
+        <option value="operativa"${DASH_METRIC==='operativa'?' selected':''}>Operativa /50</option>
+        <option value="actitudinal"${DASH_METRIC==='actitudinal'?' selected':''}>Actitudinal /50</option>
+      </select></div>
+      <div class="spacer"></div>
+      <div style="align-self:flex-end"><button class="btn btn-outline btn-sm" id="dPrint">🖨️ Exportar PDF</button></div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="k">Promedio</div><div class="v">${prom!=null?prom:'—'}<small>/${DASH_METRIC==='total'?100:50}</small></div></div>
+      <div class="kpi"><div class="k">Mejor sucursal</div><div class="v" style="font-size:20px">${mejor?esc(nombreSuc(mejor.sucursal)):'—'}</div><div class="k">${mejor?metricVal(mejor)+' · '+mejor.nota:''}</div></div>
+      <div class="kpi"><div class="k">Necesita atención</div><div class="v" style="font-size:20px">${peor?esc(nombreSuc(peor.sucursal)):'—'}</div><div class="k">${peor?metricVal(peor)+' · '+peor.nota:''}</div></div>
+      <div class="kpi"><div class="k">Sin evaluar</div><div class="v">${data.meta.sin_evaluar}<small>/${data.meta.total}</small></div></div>
+    </div>
+    <div class="tbl-wrap"><table class="rk"><thead><tr>
+      <th>Sucursal</th><th>Encargado</th><th class="num">Puntaje</th><th>Nota</th><th>Δ</th><th>Semana</th><th></th>
+    </tr></thead><tbody id="rkBody"></tbody></table></div>`;
+
+  $('dSem').onchange=e=>{ SEMANA_SEL=e.target.value; renderDashboard(); };
+  $('dCad').onchange=e=>{ DASH_CADENA=e.target.value; renderDashboard(); };
+  $('dMet').onchange=e=>{ DASH_METRIC=e.target.value; renderDashboard(); };
+  $('dPrint').onclick=()=>window.print();
+
+  const maxV = DASH_METRIC==='total'?100:50;
+  const body=$('rkBody'); let html='';
+  CADENAS.filter(c=>!DASH_CADENA||c===DASH_CADENA).forEach(cad=>{
+    const rows=items.filter(i=>cadenaSuc(i.sucursal)===cad).sort((a,b)=>(metricVal(b)||-1)-(metricVal(a)||-1));
+    if(!rows.length) return;
+    html+='<tr class="cad-row"><td colspan="7">'+cad+'</td></tr>';
+    rows.forEach(i=>{
+      const val=metricVal(i);
+      const barColor=i.nota==='A'?'var(--ok)':i.nota==='B'?'var(--warn)':i.nota==='C'?'#e0562b':'var(--bad)';
+      html+='<tr>'
+        +'<td><b>'+esc(nombreSuc(i.sucursal))+'</b></td>'
+        +'<td class="muted">'+esc(i.encargado||'—')+'</td>'
+        +'<td class="num">'+(i.sin_historial?'—':'<div style="display:flex;align-items:center;gap:8px;justify-content:flex-end"><div class="bar" style="flex:1;max-width:90px"><span style="width:'+Math.round((val/maxV)*100)+'%;background:'+barColor+'"></span></div><b>'+val+'</b></div>')+'</td>'
+        +'<td>'+notaBadge(i.nota,'sm')+'</td>'
+        +'<td>'+(i.sin_historial?'':deltaHtml(i.delta))+'</td>'
+        +'<td class="muted" style="font-size:12px">'+(i.sin_historial?'sin historial':(i.sin_evaluar?'<span style="color:#b45309">sin evaluar · '+fmtSemana(i.semana)+'</span>':fmtSemana(i.semana)))+'</td>'
+        +'<td style="white-space:nowrap">'
+          +(i.sin_historial?'':'<button class="btn btn-outline btn-sm" data-ver="'+i.sucursal+'" data-sem="'+(i.semana)+'">Ver</button> ')
+          +(puedeEditar?'<button class="btn btn-primary btn-sm" data-eval="'+i.sucursal+'">Evaluar</button>':'')
+        +'</td></tr>';
+    });
+  });
+  body.innerHTML=html||'<tr><td colspan="7" class="muted" style="padding:20px;text-align:center">Sin sucursales en tu alcance.</td></tr>';
+  body.querySelectorAll('[data-ver]').forEach(b=>b.onclick=()=>renderDetalle(b.dataset.ver,b.dataset.sem));
+  body.querySelectorAll('[data-eval]').forEach(b=>b.onclick=()=>openForm(b.dataset.eval,SEMANA_SEL));
+}
+function openForm(suc,sem){ TAB='form'; buildTabs(); renderForm(suc,sem); }
+
+/* ============================================================
+   FORMULARIO DE CARGA (§6.1–6.4)
+   ============================================================ */
+let FORM=null, AUTOSAVE_T=null, VISIBLES=null;
+async function renderForm(preSuc,preSem){
+  const v=$('view'); v.innerHTML='<div class="empty">Cargando…</div>';
+  if(!VISIBLES){ try{ const r=await Store.getResumen(SEMANA_SEL); VISIBLES=(r.items||[]).map(i=>i.sucursal); }catch(e){ VISIBLES=LOCALES.map(l=>l.slug); } }
+  if(!VISIBLES.length){ v.innerHTML='<div class="empty">No tenés sucursales asignadas para evaluar.</div>'; return; }
+  const suc = preSuc && VISIBLES.includes(preSuc) ? preSuc : VISIBLES[0];
+  const sem = preSem || SEMANA_SEL;
+  await loadForm(suc,sem);
+}
+async function loadForm(suc,sem){
+  const v=$('view'); v.innerHTML='<div class="empty">Cargando evaluación…</div>';
+  let d; try{ d=await Store.getEvaluacion(suc,sem); }catch(e){ v.innerHTML=errBox(e); return; }
+  const ev=d.evaluacion;
+  FORM={ suc, sem, encargado:(ev&&ev.encargado)|| (d.anterior&&d.anterior.encargado) ||'', valores:{}, obs_op:(ev&&ev.obs_operativa)||'', obs_act:(ev&&ev.obs_actitudinal)||'', estado:(ev&&ev.estado)||'borrador', evalId:ev&&ev.id, anterior:d.anterior, pendientes:d.pendientes||[], dirty:false };
+  E.ITEM_KEYS.forEach(k=>FORM.valores[k]={valor:null,plan_accion:''});
+  if(ev&&ev.items) ev.items.forEach(it=>{ if(FORM.valores[it.item_key]) FORM.valores[it.item_key]={valor:it.valor,plan_accion:it.plan_accion||''}; });
+  drawForm();
+}
+function anteriorValor(key){ if(!FORM.anterior||!FORM.anterior.items) return null; const it=FORM.anterior.items.find(i=>i.item_key===key); return it?it.valor:null; }
+
+function drawForm(){
+  const v=$('view');
+  const sucOpts=VISIBLES.map(s=>'<option value="'+s+'"'+(s===FORM.suc?' selected':'')+'>'+esc(nombreSuc(s))+'</option>').join('');
+  const pend=FORM.pendientes.filter(p=>p.estado!=='confirmado');
+  v.innerHTML=`
+    <div class="row" style="justify-content:space-between;margin-bottom:6px">
+      <h1 class="page">${FORM.evalId?'Editar':'Nueva'} evaluación</h1>
+      <button class="btn btn-outline btn-sm no-print" id="fBack">← Ranking</button>
+    </div>
+    <div class="page-sub">Cargá parado en el local. Se guarda solo como borrador mientras completás.</div>
+    <div class="card form-head">
+      <div><label class="lbl">Sucursal</label><select class="sel" id="fSuc" style="width:100%">${sucOpts}</select></div>
+      <div><label class="lbl">Encargado/a</label><input class="inp" id="fEnc" style="width:100%" value="${esc(FORM.encargado)}" placeholder="Nombre"></div>
+      <div><label class="lbl">Supervisor/a</label><input class="inp" style="width:100%;background:#f3f5fb" value="${esc(SESSION.email)}" disabled></div>
+      <div><label class="lbl">Semana</label>${semanaSelect('fSem',FORM.sem)}</div>
+    </div>
+    ${pend.length?`<div class="card" style="border-color:#fbbf24;background:#fffbeb">
+      <div class="card-h" style="font-size:17px">⏳ Puntos de mejora de semanas anteriores</div>
+      <div class="card-hs">Revisá si se resolvieron y confirmalos.</div>
+      <div id="pendBox">${pend.map(pmHtml).join('')}</div></div>`:''}
+    <div id="blkOp"></div>
+    <div id="blkAct"></div>
+    <div class="score no-print" id="scorePanel"></div>
+    <div class="row no-print" style="margin-top:16px;justify-content:flex-end">
+      <span class="autosave muted" id="saveState"></span>
+      <div class="spacer"></div>
+      <button class="btn btn-outline" id="fBorr">Guardar borrador</button>
+      <button class="btn btn-primary" id="fEnviar">Guardar evaluación</button>
+    </div>`;
+
+  $('fBack').onclick=()=>{ TAB='dashboard'; buildTabs(); renderDashboard(); };
+  $('fSuc').onchange=e=>{ if(FORM.dirty && !confirm('Hay cambios sin guardar. ¿Cambiar de sucursal igual?')){ e.target.value=FORM.suc; return;} loadForm(e.target.value,FORM.sem); };
+  $('fSem').onchange=e=>{ if(FORM.dirty && !confirm('Hay cambios sin guardar. ¿Cambiar de semana igual?')){ e.target.value=FORM.sem; return;} loadForm(FORM.suc,e.target.value); };
+  $('fEnc').oninput=e=>{ FORM.encargado=e.target.value; markDirty(); };
+  drawBlocks();
+  drawScore();
+  $('fBorr').onclick=()=>saveForm('borrador');
+  $('fEnviar').onclick=()=>saveForm('enviada');
+  bindPend();
+}
+function drawBlocks(){
+  const ratio=ratioStock(FORM.suc);
+  const blk=(cat,items)=>items.map((it,idx)=>{
+    const cur=FORM.valores[it.key]||{}; const prev=anteriorValor(it.key);
+    const showPlan=(cur.valor==='regular'||cur.valor==='mal');
+    let ctx='';
+    if(it.key==='ratio_stock' && ratio){
+      const sug=E.sugerirRatioStock(ratio.ratio);
+      ctx=`<div class="ctx"><b>Ratio real (${ratio.mes.toLowerCase()}): ${ratio.ratio}</b> · objetivo 4–6 · ${ratio.detalle.map(d=>d.rubro[0]+d.rubro.slice(1).toLowerCase()+' '+d.ratio).join(' · ')}<br>
+        <span class="sug" style="color:${sug==='bien'?'var(--ok)':sug==='regular'?'var(--warn)':'var(--bad)'}">Sugerencia: ${sug} (confirmá o corregí)</span></div>`;
+    } else if(it.key==='stock_deposito' && ratio){
+      ctx=`<div class="ctx">Meses de stock actuales de la sucursal: <b>${ratio.ratio}</b> (${ratio.mes.toLowerCase()}). Dato de referencia.</div>`;
+    }
+    return `<div class="item-card" data-item="${it.key}">
+      <div class="it-h"><span class="it-num">${idx+1}</span><span class="it-t">${esc(it.titulo)}</span>
+        <span class="spacer"></span>${prev?'<span class="prevtag '+prev+'">Sem. ant: '+prev+'</span>':'<span class="prevtag na">Sem. ant: —</span>'}</div>
+      <div class="it-d">${esc(it.detalle)}</div>
+      <div class="seg">
+        ${['bien','regular','mal'].map(val=>`<label><input type="radio" name="v_${it.key}" value="${val}"${cur.valor===val?' checked':''}>
+          <span class="opt ${val}">${val[0].toUpperCase()+val.slice(1)}<small>${E.VALOR_PUNTOS[val]} pts</small></span></label>`).join('')}
+      </div>
+      ${ctx}
+      <div class="plan${showPlan?' show':''}" data-plan="${it.key}">
+        <label class="lbl" style="margin-top:6px">Plan de acción</label>
+        <textarea class="inp" data-plantxt="${it.key}" placeholder="Qué hay que corregir / acordado con el encargado">${esc(cur.plan_accion||'')}</textarea>
+      </div>
+    </div>`;
+  }).join('');
+
+  $('blkOp').innerHTML='<div class="card"><div class="card-h">Operativa <span class="muted" style="font-size:14px">/50</span></div><div class="card-hs">Bien 10 · Regular 5 · Mal 0</div>'
+    +blk('operativa',E.ITEMS_OPERATIVA)
+    +'<label class="lbl" style="margin-top:6px">Observaciones operativas</label><textarea class="inp" id="obsOp" placeholder="Notas del bloque operativo">'+esc(FORM.obs_op)+'</textarea></div>';
+  $('blkAct').innerHTML='<div class="card"><div class="card-h">Actitudinal <span class="muted" style="font-size:14px">/50</span></div><div class="card-hs">Bien 10 · Regular 5 · Mal 0</div>'
+    +blk('actitudinal',E.ITEMS_ACTITUDINAL)
+    +'<label class="lbl" style="margin-top:6px">Observaciones actitudinales</label><textarea class="inp" id="obsAct" placeholder="Notas del bloque actitudinal">'+esc(FORM.obs_act)+'</textarea></div>';
+
+  $('view').querySelectorAll('input[type=radio]').forEach(r=>r.onchange=()=>{
+    const key=r.name.slice(2); FORM.valores[key].valor=r.value;
+    const plan=$('view').querySelector('[data-plan="'+key+'"]');
+    if(r.value==='regular'||r.value==='mal') plan.classList.add('show'); else plan.classList.remove('show');
+    markDirty(); drawScore();
+  });
+  $('view').querySelectorAll('[data-plantxt]').forEach(t=>t.oninput=()=>{ FORM.valores[t.dataset.plantxt].plan_accion=t.value; markDirty(); });
+  $('obsOp').oninput=e=>{ FORM.obs_op=e.target.value; markDirty(); };
+  $('obsAct').oninput=e=>{ FORM.obs_act=e.target.value; markDirty(); };
+}
+function drawScore(){
+  const valores={}; E.ITEM_KEYS.forEach(k=>valores[k]=FORM.valores[k].valor);
+  const c=E.calcularEvaluacion(valores);
+  $('scorePanel').innerHTML=`<div><div class="tot">${c.pts_total}<small>/100</small></div></div>
+    <div class="blk">Operativa<br><b>${c.pts_operativa}</b>/50</div>
+    <div class="blk">Actitudinal<br><b>${c.pts_actitudinal}</b>/50</div>
+    <div>${notaBadge(c.nota,'mid')}</div>
+    <div class="spacer"></div>
+    <div class="autosave">${FORM.estado==='enviada'?'Enviada':'Borrador'}</div>`;
+}
+function markDirty(){ FORM.dirty=true; $('saveState').textContent='Cambios sin guardar…'; clearTimeout(AUTOSAVE_T); AUTOSAVE_T=setTimeout(()=>autoSave(),1300); }
+async function autoSave(){ if(!FORM||!FORM.dirty) return; try{ await doSave(FORM.estado==='enviada'?'enviada':'borrador',true); $('saveState').textContent='Guardado ✓'; }catch(e){ $('saveState').textContent='No se pudo autoguardar'; } }
+async function saveForm(estado){
+  if(estado==='enviada'){ const faltan=E.ITEM_KEYS.filter(k=>!FORM.valores[k].valor); if(faltan.length && !confirm('Faltan '+faltan.length+' ítems sin marcar (cuentan 0). ¿Guardar como definitiva igual?')) return; }
+  try{ await doSave(estado,false); toast(estado==='enviada'?'Evaluación guardada ✓':'Borrador guardado ✓');
+    if(estado==='enviada'){ TAB='dashboard'; buildTabs(); renderDashboard(); }
+  }catch(e){ toast(e.message||'Error al guardar',true); }
+}
+async function doSave(estado,silent){
+  clearTimeout(AUTOSAVE_T);
+  const payload={ sucursal:FORM.suc, semana:FORM.sem, encargado:FORM.encargado, obs_operativa:FORM.obs_op, obs_actitudinal:FORM.obs_act, estado, valores:FORM.valores };
+  const r=await Store.upsert(payload);
+  FORM.dirty=false; FORM.estado=estado; if(r.evaluacion) FORM.evalId=r.evaluacion.id;
+  if(!silent) drawScore();
+}
+function pmHtml(p){
+  return `<div class="pm" data-pm="${p.id}">
+    <div class="pm-b"><div class="pm-k">${esc((E.ITEM_BY_KEY[p.item_key]||{}).titulo||p.item_key)} · ${fmtSemana(p.semana_origen)}</div>
+      <div class="pm-t">${esc(p.texto||'')}</div>
+      <div class="pm-meta">${p.estado==='resuelto'?'El encargado lo marcó resuelto':(p.estado==='confirmado'?'Confirmado':'Pendiente')}</div></div>
+    <div style="text-align:right"><span class="chip ${p.estado}">${p.estado}</span>
+      ${(puedeEditar && p.estado!=='confirmado')?'<br><button class="btn btn-outline btn-sm" style="margin-top:6px" data-confirm="'+p.id+'">Confirmar</button>':''}</div>
+  </div>`;
+}
+function bindPend(){ const box=$('pendBox'); if(!box) return; box.querySelectorAll('[data-confirm]').forEach(b=>b.onclick=async()=>{
+  b.disabled=true; try{ await Store.updatePunto(b.dataset.confirm,'confirmado'); toast('Punto confirmado ✓'); const p=FORM.pendientes.find(x=>String(x.id)===b.dataset.confirm); if(p)p.estado='confirmado'; b.closest('.pm').querySelector('.chip').className='chip confirmado'; b.closest('.pm').querySelector('.chip').textContent='confirmado'; b.remove(); }catch(e){ toast(e.message,true); b.disabled=false; } }); }
+
+/* ============================================================
+   VISTA ENCARGADO (§6.5) — su propia evaluación + acuse + puntos
+   ============================================================ */
+let ENC_SEM=null;
+async function renderEncargado(){
+  const v=$('view'); v.innerHTML='<div class="empty">Cargando tu evaluación…</div>';
+  const suc=ownSlug();
+  let res; try{ res=await Store.getResumen(ENC_SEM||SEMANA_ACTUAL); }catch(e){ v.innerHTML=errBox(e); return; }
+  const mi=(res.items||[])[0];
+  const sem = ENC_SEM || (mi&&mi.semana) || SEMANA_ACTUAL;
+  let d; try{ d=await Store.getEvaluacion(suc,sem); }catch(e){ v.innerHTML=errBox(e); return; }
+  const hist=await encHistoria(suc);
+  const ev=d.evaluacion;
+  v.innerHTML=`
+    <div class="row" style="justify-content:space-between">
+      <div><h1 class="page">${esc(nombreSuc(suc))}</h1><div class="page-sub">Tu evaluación de supervisor</div></div>
+      <div class="no-print">${semanaSelect('eSem',sem)}</div>
+    </div>
+    ${ev?detalleCard(ev,d,true):'<div class="empty">Todavía no hay evaluación cargada para esta semana.</div>'}
+    ${hist.length>1?'<div class="card"><div class="card-h">Tu evolución</div><div class="card-hs">Puntaje total por semana</div>'+lineChart(hist.map(h=>({x:h.semana,y:h.pts})),320,120)+'</div>':''}
+  `;
+  $('eSem').onchange=e=>{ ENC_SEM=e.target.value; renderEncargado(); };
+  bindDetalle(suc,sem,ev,d);
+}
+async function encHistoria(suc){
+  const out=[]; const ws=recentWeeks(7).reverse();
+  for(const w of ws){ try{ const d=await Store.getEvaluacion(suc,w); if(d.evaluacion&&d.evaluacion.estado==='enviada') out.push({semana:w,pts:d.evaluacion.pts_total}); }catch(e){} }
+  return out;
+}
+
+/* ============================================================
+   DETALLE (lectura) — deep-link del badge + botón "Ver"
+   ============================================================ */
+async function renderDetalle(suc,sem){
+  if($('tabs')) $('tabs').style.display='none';
+  const v=$('view'); v.innerHTML='<div class="empty">Cargando…</div>';
+  let d; try{ d=await Store.getEvaluacion(suc,sem); }catch(e){ v.innerHTML=errBox(e); return; }
+  const ev=d.evaluacion;
+  const puedeAcuse = esEncargado && ownSlug()===suc;
+  v.innerHTML=`<div class="row" style="justify-content:space-between">
+      <div><h1 class="page">${esc(nombreSuc(suc))}</h1><div class="page-sub">${fmtSemana(sem)}</div></div>
+      <button class="btn btn-outline btn-sm no-print" id="detBack">← Volver</button>
+    </div>${ev?detalleCard(ev,d,puedeAcuse):'<div class="empty">No hay evaluación para esta semana.</div>'}`;
+  $('detBack').onclick=()=>{ if($('tabs')) $('tabs').style.display=''; if(esEncargado){ TAB='mi'; buildTabs(); renderEncargado(); } else { TAB='dashboard'; buildTabs(); renderDashboard(); } };
+  bindDetalle(suc,sem,ev,d);
+}
+function detalleCard(ev,d,puedeAcuse){
+  const itemHtml=cat=>E.ITEMS.filter(i=>i.categoria===cat).map(it=>{
+    const row=(ev.items||[]).find(x=>x.item_key===it.key)||{};
+    const val=row.valor;
+    return `<div class="det-item">
+      <span class="prevtag ${val||'na'}" style="min-width:70px;text-align:center">${val||'—'}</span>
+      <div class="di-b"><div class="di-t">${esc(it.titulo)}</div>
+        ${row.plan_accion?'<div class="di-plan">📌 '+esc(row.plan_accion)+'</div>':''}</div>
+      <b style="font-family:var(--font-d);font-size:18px;color:var(--muted)">${row.puntos!=null?row.puntos:'—'}</b>
+    </div>`;
+  }).join('');
+  const pend=(d.puntos_abiertos||d.pendientes||[]).filter(p=>p.sucursal===ev.sucursal);
+  return `<div class="card">
+    <div class="row" style="align-items:center;gap:16px">
+      ${notaBadge(ev.nota,'big')}
+      <div><div style="font-family:var(--font-d);font-size:40px;line-height:.9">${ev.pts_total}<span style="font-size:18px;color:var(--muted)">/100</span></div>
+        <div class="muted" style="font-size:13px">Operativa <b>${ev.pts_operativa}</b>/50 · Actitudinal <b>${ev.pts_actitudinal}</b>/50</div></div>
+      <div class="spacer"></div>
+      <div class="muted" style="font-size:12px;text-align:right">Supervisor: ${esc(ev.supervisor||'—')}<br>${ev.estado==='borrador'?'<b style="color:#b45309">Borrador</b>':'Enviada'}</div>
+    </div>
+    ${ev.visto_encargado?'<div class="ctx" style="margin-top:12px">✓ Vista por el encargado'+(ev.visto_comentario?': “'+esc(ev.visto_comentario)+'”':'')+'</div>':
+      (puedeAcuse&&ev.estado==='enviada'?`<div class="no-print" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <label class="lbl">Acuse de recibo</label>
+        <textarea class="inp" id="acuseTxt" placeholder="Comentario (opcional)"></textarea>
+        <button class="btn btn-primary btn-sm" id="acuseBtn" style="margin-top:8px">Marcar como vista</button></div>`:'')}
+  </div>
+  <div class="card"><div class="card-h">Operativa</div>${itemHtml('operativa')}
+    ${ev.obs_operativa?'<div class="ctx" style="margin-top:10px"><b>Obs:</b> '+esc(ev.obs_operativa)+'</div>':''}</div>
+  <div class="card"><div class="card-h">Actitudinal</div>${itemHtml('actitudinal')}
+    ${ev.obs_actitudinal?'<div class="ctx" style="margin-top:10px"><b>Obs:</b> '+esc(ev.obs_actitudinal)+'</div>':''}</div>
+  ${pend.length?'<div class="card"><div class="card-h">Puntos de mejora</div><div class="card-hs">De semanas anteriores, para seguir.</div><div id="detPend">'+pend.map(p=>encPmHtml(p)).join('')+'</div></div>':''}`;
+}
+function encPmHtml(p){
+  const puedeResolver = esEncargado && p.estado==='pendiente';
+  return `<div class="pm" data-pm="${p.id}"><div class="pm-b">
+      <div class="pm-k">${esc((E.ITEM_BY_KEY[p.item_key]||{}).titulo||p.item_key)} · ${fmtSemana(p.semana_origen)}</div>
+      <div class="pm-t">${esc(p.texto||'')}</div></div>
+    <div style="text-align:right"><span class="chip ${p.estado}">${p.estado}</span>
+      ${puedeResolver?'<br><button class="btn btn-outline btn-sm" style="margin-top:6px" data-resolver="'+p.id+'">Marcar resuelto</button>':''}</div></div>`;
+}
+function bindDetalle(suc,sem,ev,d){
+  const ab=$('acuseBtn'); if(ab) ab.onclick=async()=>{ ab.disabled=true; try{ await Store.acuse(ev.id,$('acuseTxt').value); toast('Marcada como vista ✓'); (esEncargado?renderEncargado:()=>renderDetalle(suc,sem))(); }catch(e){ toast(e.message,true); ab.disabled=false; } };
+  const dp=$('detPend'); if(dp) dp.querySelectorAll('[data-resolver]').forEach(b=>b.onclick=async()=>{ b.disabled=true; try{ await Store.updatePunto(b.dataset.resolver,'resuelto'); toast('Marcado como resuelto ✓'); b.closest('.pm').querySelector('.chip').className='chip resuelto'; b.closest('.pm').querySelector('.chip').textContent='resuelto'; b.remove(); }catch(e){ toast(e.message,true); b.disabled=false; } });
+}
+
+/* ============================================================
+   GRÁFICOS (§7)
+   ============================================================ */
+async function renderGraficos(){
+  const v=$('view'); v.innerHTML='<div class="empty">Cargando gráficos…</div>';
+  const weeks=recentWeeks(6).reverse();
+  const snaps={}; for(const w of weeks){ try{ snaps[w]=await Store.getResumen(w); }catch(e){ snaps[w]={items:[]}; } }
+  // matriz suc → {semana:pts}
+  const sucs=new Set(); weeks.forEach(w=>(snaps[w].items||[]).forEach(i=>{ if(!i.sin_historial) sucs.add(i.sucursal); }));
+  const sucList=[...sucs];
+  const matrix={}; sucList.forEach(s=>{ matrix[s]={}; weeks.forEach(w=>{ const it=(snaps[w].items||[]).find(x=>x.sucursal===s); matrix[s][w]= it&&!it.sin_evaluar? it.pts_total : null; }); });
+
+  // cadena avg para SEMANA_SEL (última con datos)
+  const wLast=weeks[weeks.length-1];
+  const cadAvg=CADENAS.map(c=>{ const vals=sucList.filter(s=>cadenaSuc(s)===c).map(s=>matrix[s][wLast]).filter(x=>x!=null); return {cad:c, avg: vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):null}; });
+
+  v.innerHTML=`
+    <h1 class="page">Gráficos</h1><div class="page-sub">Últimas ${weeks.length} semanas</div>
+    <div class="card"><div class="card-h">Evolución por sucursal</div><div class="card-hs">Elegí una o varias para comparar.</div>
+      <select class="sel" id="gSel" multiple size="6" style="width:100%;max-width:340px;margin-bottom:12px">${sucList.map(s=>'<option value="'+s+'">'+esc(nombreSuc(s))+'</option>').join('')}</select>
+      <div id="gEvo"></div></div>
+    <div class="card"><div class="card-h">Comparativo por cadena</div><div class="card-hs">Promedio ${fmtSemana(wLast)}</div>${barChart(cadAvg.map(c=>({label:c.cad,val:c.avg})),100)}</div>
+    <div class="card"><div class="card-h">Heatmap sucursales × semanas</div><div class="card-hs">Color por nota.</div>${heatmap(sucList,weeks,matrix)}</div>`;
+
+  const sel=$('gSel'); if(sucList.length){ const def=[]; if(!esGerencia){ sucList.forEach((s,i)=>{ sel.options[i].selected=true; }); } else { sel.options[0].selected=true; } }
+  const drawEvo=()=>{ const chosen=[...sel.selectedOptions].map(o=>o.value); const series=chosen.map(s=>({name:nombreSuc(s), points:weeks.map(w=>({x:w,y:matrix[s][w]}))})); $('gEvo').innerHTML=multiLine(series,weeks); };
+  sel.onchange=drawEvo; drawEvo();
+}
+/* --- SVG helpers --- */
+const PALETTE=['#CC0000','#0B1527','#16a34a','#d97706','#2563eb','#7c3aed','#0891b2'];
+function lineChart(points,w,h){ return multiLine([{name:'',points:points.map(p=>({x:p.x,y:p.y}))}], points.map(p=>p.x), w, h); }
+function multiLine(series,weeks,W,H){ W=W||560; H=H||200; const P={l:34,r:12,t:12,b:26};
+  const ys=series.flatMap(s=>s.points.map(p=>p.y)).filter(v=>v!=null); const maxY=Math.max(100,...ys), minY=Math.min(0,...ys);
+  const x=i=>P.l+(weeks.length<2?0:i*(W-P.l-P.r)/(weeks.length-1)); const y=val=>H-P.b-((val-minY)/(maxY-minY||1))*(H-P.t-P.b);
+  let g='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:'+W+'px;height:auto">';
+  [0,25,50,75,100].forEach(gl=>{ if(gl>=minY&&gl<=maxY){ g+='<line x1="'+P.l+'" y1="'+y(gl)+'" x2="'+(W-P.r)+'" y2="'+y(gl)+'" stroke="#eef0f7"/><text x="4" y="'+(y(gl)+3)+'" font-size="9" fill="#6B7A99">'+gl+'</text>'; } });
+  weeks.forEach((w,i)=>{ g+='<text x="'+x(i)+'" y="'+(H-8)+'" font-size="8.5" fill="#6B7A99" text-anchor="middle">'+('W'+w.split('-W')[1])+'</text>'; });
+  series.forEach((s,si)=>{ const col=PALETTE[si%PALETTE.length]; let d='',pts='';
+    s.points.forEach((p,i)=>{ if(p.y==null) return; const cx=x(i),cy=y(p.y); d+=(d?'L':'M')+cx+' '+cy+' '; pts+='<circle cx="'+cx+'" cy="'+cy+'" r="3" fill="'+col+'"/>'; });
+    g+='<path d="'+d+'" fill="none" stroke="'+col+'" stroke-width="2"/>'+pts; });
+  g+='</svg>';
+  if(series.length>1||series[0].name){ g+='<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:12px">'+series.map((s,si)=>'<span><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:'+PALETTE[si%PALETTE.length]+';vertical-align:middle"></span> '+esc(s.name)+'</span>').join('')+'</div>'; }
+  return g;
+}
+function barChart(data,maxV){ const W=560,H=Math.max(80,data.length*42),P={l:90,r:30}; let g='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:'+W+'px;height:auto">';
+  data.forEach((d,i)=>{ const yy=i*42+14, bw=d.val!=null?(d.val/maxV)*(W-P.l-P.r):0; const col=d.val>=80?'#16a34a':d.val>=60?'#d97706':d.val>=40?'#e0562b':'#dc2626';
+    g+='<text x="'+(P.l-8)+'" y="'+(yy+16)+'" font-size="12" fill="#0B1527" text-anchor="end">'+esc(d.label)+'</text>';
+    g+='<rect x="'+P.l+'" y="'+yy+'" width="'+Math.max(bw,1)+'" height="22" rx="4" fill="'+(d.val!=null?col:'#e6ebf5')+'"/>';
+    g+='<text x="'+(P.l+bw+6)+'" y="'+(yy+16)+'" font-size="12" font-weight="700" fill="#0B1527">'+(d.val!=null?d.val:'—')+'</text>'; });
+  return g+'</svg>';
+}
+function heatmap(sucs,weeks,matrix){ if(!sucs.length) return '<div class="muted">Sin datos.</div>';
+  const cell=v=> v==null?'#eef0f7': v>=80?'#16a34a': v>=60?'#d97706': v>=40?'#e0562b':'#dc2626';
+  let h='<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:11px"><tr><td></td>'+weeks.map(w=>'<td style="padding:3px 5px;color:#6B7A99;text-align:center">W'+w.split('-W')[1]+'</td>').join('')+'</tr>';
+  sucs.forEach(s=>{ h+='<tr><td style="padding:3px 8px;white-space:nowrap;color:#0B1527">'+esc(nombreSuc(s))+'</td>'+weeks.map(w=>{ const v=matrix[s][w]; return '<td title="'+(v!=null?v:'sin dato')+'" style="width:30px;height:24px;text-align:center;color:#fff;font-weight:600;background:'+cell(v)+'">'+(v!=null?v:'')+'</td>'; }).join('')+'</tr>'; });
+  return h+'</table></div>';
+}
+
+/* ============================================================
+   ARRANQUE
+   ============================================================ */
+buildTabs();
+if(Q.get('ver')){ renderDetalle(Q.get('ver'), Q.get('semana')||SEMANA_ACTUAL); }
+else route();
+</script>
+</body>
+</html>
