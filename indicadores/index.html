@@ -252,6 +252,20 @@ tr:last-child td{border-bottom:none}
 .canal-part .pbar{position:relative;height:6px;width:64px;background:#e7ebf5;border-radius:3px;overflow:hidden;display:inline-block}
 .canal-part .pbar i{position:absolute;left:0;top:0;height:100%;background:var(--red);border-radius:3px}
 
+/* ===== SEMANA A SEMANA ===== */
+.sem-link{color:var(--red);cursor:pointer;font-weight:600;text-decoration:underline;white-space:nowrap}
+.sem-suc{margin-bottom:14px}
+.sem-suc table{min-width:0}
+.sem-caret{font-family:var(--font-c);font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--red);margin-left:8px;white-space:nowrap}
+tr.person.has-sem{cursor:pointer}
+tr.person.has-sem:hover td{background:#f6f8fe}
+tr.sem-row td{background:#f6f8fe;padding:4px 13px 12px 34px}
+.sem-mini{display:flex;flex-wrap:wrap;gap:8px}
+.sem-cell{background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 11px;min-width:170px}
+.sem-cell .sem-w{font-family:var(--font-c);font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
+.sem-cell .sem-kv{font-size:12.5px;color:var(--navy);margin-top:2px}
+.sem-cell .sem-kv b{font-weight:700}
+
 /* ===== ESTADOS ===== */
 .empty{background:var(--card);border:1px dashed var(--border);border-radius:12px;padding:34px;text-align:center;color:var(--muted);font-size:14px;line-height:1.5}
 .loading{padding:60px 20px;text-align:center;color:var(--muted);font-family:var(--font-c);letter-spacing:1px;text-transform:uppercase;font-size:13px}
@@ -376,6 +390,28 @@ footer b{color:var(--navy)}
       <div class="diag" id="diagBox" style="display:none"></div>
     </section>
 
+    <section class="sec" id="secTbl">
+      <div class="sec-label">Mi equipo</div>
+      <h2 class="sec-title">Mi <em>equipo</em></h2>
+      <p class="hint">Clic en un equipo para abrir a su gente, y en cada persona para ver su <b>semana a semana</b>. Las barras comparan contra el promedio de la sucursal. Caja, encargados y refuerzos también cierran tickets: se miden con la vara de su rol, no compiten contra los vendedores.<span id="semSucWrap" style="display:none"> · <a class="sem-link" id="semSucToggle" role="button" tabindex="0">Ver la sucursal semana a semana</a></span></p>
+      <div class="card pad sem-suc" id="semSuc" style="display:none"></div>
+      <div class="tbl-wrap">
+        <table id="tbl">
+          <thead><tr>
+            <th class="L" data-k="nombre">Equipo / Persona</th>
+            <th data-k="tickets">Tickets</th>
+            <th data-k="horas">Horas</th>
+            <th data-k="upt">UPT</th>
+            <th data-k="tph">Tickets / hora</th>
+            <th data-k="tp">Ticket prom.</th>
+            <th data-k="vh">Venta / hora</th>
+            <th data-k="venta">Venta neta</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="sec" id="secCanales" style="display:none">
       <div class="sec-label">Canales</div>
       <h2 class="sec-title">Ventas por <em>canal</em></h2>
@@ -416,27 +452,6 @@ footer b{color:var(--navy)}
       <h2 class="sec-title">La <em>plantilla</em></h2>
       <p class="hint">Quién trabaja en la sucursal, por rol y régimen horario. Sale de las ventas del período: aparece quien registró al menos un ticket; refuerzos y coberturas van marcados.</p>
       <div class="card pad" id="plantilla"></div>
-    </section>
-
-    <section class="sec" id="secTbl">
-      <div class="sec-label">Equipos</div>
-      <h2 class="sec-title">Ventas, caja y <em>jefatura</em></h2>
-      <p class="hint">Clic en un equipo para abrir a su gente. Las barras comparan contra el promedio de la sucursal. <b>Caja y jefatura también cierran tickets</b>, así que se miden, pero con la vara de su rol: no compiten contra el equipo de ventas.</p>
-      <div class="tbl-wrap">
-        <table id="tbl">
-          <thead><tr>
-            <th class="L" data-k="nombre">Equipo / Persona</th>
-            <th data-k="tickets">Tickets</th>
-            <th data-k="horas">Horas</th>
-            <th data-k="upt">UPT</th>
-            <th data-k="tph">Tickets / hora</th>
-            <th data-k="tp">Ticket prom.</th>
-            <th data-k="vh">Venta / hora</th>
-            <th data-k="venta">Venta neta</th>
-          </tr></thead>
-          <tbody id="tbody"></tbody>
-        </table>
-      </div>
     </section>
 
     <section class="sec" id="secHeat">
@@ -578,11 +593,14 @@ const ECOM = '99-Ecommerce';
 const GRUPOS_PISO = ['Ventas','Caja','Jefatura','Refuerzos'];
 const ORDEN = ['Ventas','Caja','Jefatura','Refuerzos','Otros','Gerencia / otros'];
 const COL = {Ventas:'var(--red)', Caja:'#2E4A8F', Jefatura:'#7C8BA5', Refuerzos:'var(--mid)'};
+// Etiquetas de grupo para mostrar (el dato interno sigue siendo Ventas/Jefatura).
+const GRUPO_LABEL = {Ventas:'Vendedores', Caja:'Caja', Jefatura:'Encargado y subs', Refuerzos:'Refuerzos', Otros:'Otros', 'Gerencia / otros':'Gerencia / otros'};
+function grupoLabel(g){ return GRUPO_LABEL[g] || g; }
 const DIAS = ['Lu','Ma','Mi','Ju','Vi','Sá','Do'];
 
 let PERIODOS = [], OBJ = {}, STOCK = null;
 let per = null, sucName = null, hbase = 'horas_contr';
-let sort = {k:'venta', dir:-1}, open = new Set(), vistaCadena = false;
+let sort = {k:'venta', dir:-1}, open = new Set(), openPersons = new Set(), semSucOpen = false, vistaCadena = false;
 const cacheCadena = {}, cacheDet = {};
 
 /* --- formato / helpers --- */
@@ -640,7 +658,7 @@ async function boot(){
   // selector de período
   $('selPer').innerHTML = PERIODOS.map(p=>`<option value="${p.id}">${esc(p.label)}</option>`).join('');
   $('selPer').value = per;
-  $('selPer').onchange = e => { per = e.target.value; open=new Set(); render(); };
+  $('selPer').onchange = e => { per = e.target.value; open=new Set(); openPersons=new Set(); render(); };
 
   // controles según rol
   if(esGerencia){
@@ -652,10 +670,14 @@ async function boot(){
   $('bAct').onclick = ()=>{ hbase='h_act'; segToggle(); render(); };
   $('btnPrint').onclick = ()=> window.print();
   $('btnCopiar').onclick = copiarResumen;
+  const semTog = ()=>{ semSucOpen=!semSucOpen; $('semSuc').style.display=semSucOpen?'':'none';
+    $('semSucToggle').textContent = semSucOpen?'Ocultar semana a semana':'Ver la sucursal semana a semana'; };
+  $('semSucToggle').onclick = semTog;
+  $('semSucToggle').onkeydown = e => { if(e.key==='Enter'||e.key===' '){ e.preventDefault(); semTog(); } };
   $('selSuc').onchange = e => {
     if(e.target.value==='__cadena'){ vistaCadena=true; sucName=null; }
     else { vistaCadena=false; sucName=e.target.value; }
-    open=new Set(); render();
+    open=new Set(); openPersons=new Set(); render();
   };
 
   cargarStock(); // en segundo plano
@@ -742,7 +764,7 @@ async function render(){
   renderHeat();
   renderNotas();
   if(ecom){ renderCanales(); }
-  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); }
+  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderSemSuc(); }
 }
 
 function mostrarEmpty(msg){
@@ -1162,8 +1184,8 @@ function renderPlantilla(){
   const pt = gente.filter(v=>/Part Time/.test(v.sector)).length;
   const stats = [
     {n:total, l:'Personas', s:(ft?ft+' full time':'')+(ft&&pt?' · ':'')+(pt?pt+' part time':'')},
-    {n:cnt('Jefatura'), l:'Jefatura'},
     {n:cnt('Ventas'), l:'Vendedores'},
+    {n:cnt('Jefatura'), l:'Encargado y subs'},
     {n:cnt('Caja'), l:'Cajas'},
     {n:cnt('Refuerzos'), l:'Refuerzos / depósito'},
   ];
@@ -1172,7 +1194,7 @@ function renderPlantilla(){
   grupos.forEach(([g,col])=>{
     const ms = gente.filter(v=>v.grupo===g); if(!ms.length) return;
     ms.sort((a,b)=>a.vendedor.localeCompare(b.vendedor));
-    groupsHtml += `<div class="pl-group"><div class="pl-group-h"><span class="dotc" style="background:${col}"></span>${esc(g)} · ${ms.length}</div><div class="pl-people">`+
+    groupsHtml += `<div class="pl-group"><div class="pl-group-h"><span class="dotc" style="background:${col}"></span>${esc(grupoLabel(g))} · ${ms.length}</div><div class="pl-people">`+
       ms.map(v=>`<div class="pl-person"><span class="nm">${esc(titleCase(v.vendedor))}</span><span class="rg">${esc(v.sector)}</span><span class="tags">${tagsDe(v)}</span></div>`).join('')+
       `</div></div>`;
   });
@@ -1208,20 +1230,51 @@ function renderTbl(){
   let html='';
   Object.keys(teams).sort((a,b)=>ORDEN.indexOf(a)-ORDEN.indexOf(b)).forEach(g=>{
     const ms=teams[g], acc=suma(ms), m=metrics(acc), abierto=open.has(g);
-    html+=`<tr class="team" data-t="${esc(g)}"><td class="L"><span class="caret">${abierto?'▾':'▸'}</span>${esc(g)} <span class="muted" style="font-size:12px">· ${ms.length}</span></td>${cells(m,ref)}</tr>`;
+    html+=`<tr class="team" data-t="${esc(g)}"><td class="L"><span class="caret">${abierto?'▾':'▸'}</span>${esc(grupoLabel(g))} <span class="muted" style="font-size:12px">· ${ms.length}</span></td>${cells(m,ref)}</tr>`;
     if(abierto){
       const rows=ms.map(v=>({v,m:metrics(v)}));
       rows.sort((a,b)=> sort.k==='nombre'
         ? a.v.vendedor.localeCompare(b.v.vendedor)*sort.dir
         : ((b.m[sort.k]||0)-(a.m[sort.k]||0))*(sort.dir===1?-1:1));
-      rows.forEach(({v,m})=>{ html+=`<tr class="person"><td class="L">${esc(v.vendedor)}<span class="tag">${esc(v.sector)}</span>${tagsDe(v)}</td>${cells(m,ref)}</tr>`; });
+      rows.forEach(({v,m})=>{
+        const hasSem = Array.isArray(v.semanas) && v.semanas.length;
+        const pid = g+'|'+v.vendedor, abiertoP = hasSem && openPersons.has(pid);
+        html+=`<tr class="person${hasSem?' has-sem':''}"${hasSem?` data-p="${esc(pid)}"`:''}><td class="L">${esc(v.vendedor)}<span class="tag">${esc(v.sector)}</span>${tagsDe(v)}${hasSem?` <span class="sem-caret">${abiertoP?'▾':'▸'} semanas</span>`:''}</td>${cells(m,ref)}</tr>`;
+        if(abiertoP) html+=`<tr class="sem-row"><td class="L" colspan="8">${semPersonHtml(v)}</td></tr>`;
+      });
     }
   });
   $('tbody').innerHTML=html;
   document.querySelectorAll('#tbl tr.team').forEach(tr=>tr.onclick=()=>{ const t=tr.dataset.t; open.has(t)?open.delete(t):open.add(t); renderTbl(); });
+  document.querySelectorAll('#tbl tr.person.has-sem').forEach(tr=>tr.onclick=()=>{ const p=tr.dataset.p; openPersons.has(p)?openPersons.delete(p):openPersons.add(p); renderTbl(); });
   document.querySelectorAll('#tbl th').forEach(th=>{ th.removeAttribute('data-sorted');
     if(th.dataset.k===sort.k) th.setAttribute('data-sorted','1');
     th.onclick=()=>{ sort={k:th.dataset.k, dir: sort.k===th.dataset.k?-sort.dir:-1}; renderTbl(); }; });
+}
+
+/* --- semana a semana (semanas retail del mes) --- */
+function semPersonHtml(v){
+  return '<div class="sem-mini">'+(v.semanas||[]).map(w=>{
+    const upt=w.tickets?w.unidades_netas/w.tickets:0, tp=w.tickets?w.importe_neto/w.tickets:0;
+    return `<div class="sem-cell"><div class="sem-w">Sem ${w.n}${w.rango?' · '+esc(w.rango):''}</div>
+      <div class="sem-kv"><b>${fmtN(w.tickets)}</b> tickets · UPT <b>${fmt2(upt)}</b> · tkt <b>${fmtM(tp)}</b> · ${kM(w.importe_neto)}</div></div>`;
+  }).join('')+'</div>';
+}
+function renderSemSuc(){
+  const wrap=$('semSucWrap'), panel=$('semSuc');
+  const sem = DET.summary && DET.summary.semanas;
+  if(!Array.isArray(sem) || !sem.length){ wrap.style.display='none'; panel.style.display='none'; semSucOpen=false; return; }
+  wrap.style.display='';
+  panel.style.display = semSucOpen?'':'none';
+  $('semSucToggle').textContent = semSucOpen?'Ocultar semana a semana':'Ver la sucursal semana a semana';
+  const maxV=Math.max(...sem.map(w=>w.importe_neto))||1;
+  panel.innerHTML = `<table style="min-width:0"><thead><tr><th class="L">Semana</th><th>Tickets</th><th>UPT</th><th>Ticket prom.</th><th>Venta neta</th></tr></thead><tbody>`+
+    sem.map(w=>{ const upt=w.tickets?w.unidades_netas/w.tickets:0, tp=w.tickets?w.importe_neto/w.tickets:0, p=w.importe_neto/maxV*100;
+      return `<tr><td class="L">Sem ${w.n}${w.rango?` <span class="muted" style="font-size:12px">${esc(w.rango)}</span>`:''}</td>
+        <td><span class="num">${fmtN(w.tickets)}</span></td><td><span class="num">${fmt2(upt)}</span></td>
+        <td><span class="num">${fmtM(tp)}</span></td>
+        <td><span class="num">${kM(w.importe_neto)}</span> <span class="bar" style="width:90px"><i style="width:${Math.max(3,p).toFixed(0)}%;background:var(--red)"></i></span></td></tr>`;
+    }).join('')+`</tbody></table>`;
 }
 
 /* --- heatmap --- */

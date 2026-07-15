@@ -123,6 +123,7 @@ def procesar(per, cfg, st):
     nc = v[v.es_nc]
     vt = v[(~v.es_nc) & (v.cantidad > 0)].copy()          # fuera: canjes sin importe y operaciones sin unidades
     vt['dia'] = vt.fecha                                  # fecha real: el período puede cruzar dos meses
+    vt['sem'] = vt['dia'].apply(lambda f: (f - cfg['desde']).days // 7 + 1)   # semana retail (Lu-Do)
 
     n_dias  = (cfg['hasta'] - cfg['desde']).days + 1
     habiles = sum(1 for i in range(n_dias) if (cfg['desde'] + dt.timedelta(days=i)).weekday() < 6)  # Lu–Sá
@@ -224,12 +225,44 @@ def procesar(per, cfg, st):
 
     heat = vt.groupby(['sucursal','dia_semana','hora']).comprobante.nunique().rename('tickets').reset_index()
 
+    # ── semana a semana (semanas retail del mes, Lu-Do) ──
+    n_sem = -(-n_dias // 7)                                # ceil(n_dias/7)
+    def rango_sem(s):
+        ini = cfg['desde'] + dt.timedelta(days=(s - 1) * 7)
+        fin = min(cfg['hasta'], ini + dt.timedelta(days=6))
+        return f"{ini.strftime('%d/%m')}–{fin.strftime('%d/%m')}"
+    ncw = nc.copy()
+    ncw['sem'] = ncw['fecha'].apply(lambda f: (f - cfg['desde']).days // 7 + 1)
+    def semanas_por(gv, gnc, claves):
+        a = gv.groupby(claves + ['sem']).agg(tickets=('comprobante','nunique'),
+              unidades=('cantidad','sum'), importe=('importe','sum')).reset_index()
+        b = gnc.groupby(claves + ['sem']).agg(dev_i=('importe','sum'), dev_u=('cantidad','sum')).reset_index()
+        m = a.merge(b, on=claves + ['sem'], how='left').fillna(0)
+        m['importe_neto'] = m.importe + m.dev_i
+        m['unidades_netas'] = m.unidades + m.dev_u
+        out = {}
+        for r in m.itertuples(index=False):
+            key = tuple(getattr(r, c) for c in claves); s = int(r.sem)
+            out.setdefault(key, {})[s] = {'n': s, 'rango': rango_sem(s), 'tickets': int(r.tickets),
+                'unidades_netas': round(float(r.unidades_netas), 2), 'importe_neto': round(float(r.importe_neto), 2)}
+        return out
+    suc_sem  = semanas_por(vm, ncw, ['sucursal'])
+    vend_sem = semanas_por(vt, ncw, ['sucursal', 'vendedor'])
+    lista_sem = lambda d: [d[s] for s in range(1, n_sem + 1) if s in d]
+
+    suc_recs = suc.round(2).to_dict('records')
+    for rec in suc_recs:
+        rec['semanas'] = lista_sem(suc_sem.get((rec['sucursal'],), {}))
+    vend_recs = vend[['sucursal','vendedor','sector','grupo','tickets','unidades_netas','importe_neto',
+                      'horas_contr','h_act','dias','cubre','propuesto']].round(2).to_dict('records')
+    for rec in vend_recs:
+        rec['semanas'] = lista_sem(vend_sem.get((rec['sucursal'], rec['vendedor']), {}))
+
     return {'periodo': per,
       'meta': {'dias': f"{cfg['desde'].strftime('%d/%m')}–{cfg['hasta'].strftime('%d/%m')}",
                'habiles': habiles, 'semanas': round(semanas,2)},
-      'sucursales': suc.round(2).to_dict('records'),
-      'vendedores': vend[['sucursal','vendedor','sector','grupo','tickets','unidades_netas','importe_neto',
-                          'horas_contr','h_act','dias','cubre','propuesto']].round(2).to_dict('records'),
+      'sucursales': suc_recs,
+      'vendedores': vend_recs,
       'cobertura': cov.round(3).to_dict('records'),
       'heatmap': heat.to_dict('records')}
 
