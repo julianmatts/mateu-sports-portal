@@ -191,6 +191,16 @@ table input:disabled,table select:disabled{opacity:.5;background:#f1f3f8;cursor:
   </div>
 </div>
 
+<div class="modal" id="facturaModal">
+  <div class="modal-card maximized">
+    <div class="modal-head">
+      <h3 id="facturaTitle">Control de factura</h3>
+      <button class="xbtn" type="button" onclick="closeModal('facturaModal')">×</button>
+    </div>
+    <div class="modal-body" id="facturaBody"></div>
+  </div>
+</div>
+
 <script>
 const _sess = (()=>{ try{ return JSON.parse(localStorage.getItem('mateu_portal_session')||'null'); }catch(e){ return null; } })();
 if(!_sess || !(_sess.herramientas||[]).includes('managment')){ location.href = '../'; }
@@ -2151,6 +2161,9 @@ function ingresosGroups(rows){
             <div class="po-meta">${codigos} codigo${codigos === 1 ? '' : 's'} · ${pedido} unidades pedidas · ${recibido} recibidas</div>
             <div style="margin-top:6px">${scorePills(scoreProveedor(group.key))}</div>
           </div>
+          <div class="actions">
+            <label class="action primary" style="cursor:pointer">Cargar factura (PDF/Excel/CSV)<input type="file" accept=".pdf,.xlsx,.csv,.txt" style="display:none" onchange="cargarFactura('${encodeURIComponent(group.key)}', this)"></label>
+          </div>
         </div>
         ${resumenIngresos(group)}
       </section>`;
@@ -2214,6 +2227,314 @@ function renderIngresoDetalleModal(){
     <div class="notice">Deposito carga unidades recibidas y costo real de ingreso en ARS. El sistema compara contra la OC y marca si el costo entro igual, mas bajo o mas alto.</div>
     ${ingresosTable(items)}
   `;
+}
+
+// ---- Ingreso desde factura / remito del proveedor ----
+// El deposito sube el archivo (PDF con texto, Excel o CSV), el sistema detecta
+// los codigos MAT/RUG/AUR con sus cantidades (por talle si estan discriminadas,
+// o el total), muestra el control contra la OC y recien al confirmar SUMA las
+// unidades al recibido. La carga manual sigue disponible como siempre.
+
+const CODIGO_FACTURA_RE = /\b(MAT|RUG|AUR)\s?-?\s?(\d{3,4})\b/i;
+
+// Numeros en formato argentino: "13.900,50" -> 13900.5. Devuelve null si no es numero.
+function numeroAR(v){
+  if(typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const t = String(v ?? '').trim();
+  if(!t || !/^[\d.,]+$/.test(t)) return null;
+  const normalizado = t.includes(',')
+    ? t.replace(/\./g,'').replace(',', '.')
+    : (/^\d{1,3}(\.\d{3})+$/.test(t) ? t.replace(/\./g,'') : t);
+  const n = Number(normalizado);
+  return Number.isFinite(n) ? n : null;
+}
+
+function extraerCodigoFactura(texto){
+  const m = String(texto).match(CODIGO_FACTURA_RE);
+  return m ? (m[1] + m[2]).toUpperCase() : null;
+}
+
+// Interpreta la lista de enteros que acompanan a un codigo en una fila/linea.
+function interpretarCantidades(enteros){
+  if(enteros.length >= TALLES.length + 1){
+    const talles = enteros.slice(0, TALLES.length);
+    const suma = talles.reduce((s,n)=>s+n, 0);
+    if(suma === enteros[TALLES.length]) return { talles, total: suma };
+  }
+  if(enteros.length === TALLES.length){
+    return { talles: enteros.slice(), total: enteros.reduce((s,n)=>s+n,0) };
+  }
+  if(enteros.length) return { talles: null, total: enteros[0] };
+  return { talles: null, total: null };
+}
+
+// Filas tipo planilla (Excel/CSV ya tokenizado): busca encabezados de talles y
+// de cantidad/precio; si no hay, aplica la heuristica de enteros.
+function detectarFacturaEnFilas(filas){
+  let mapTalles = null, colCantidad = null, colPrecio = null;
+  filas.forEach(fila => {
+    const idxs = {};
+    fila.forEach((v,i)=>{
+      const t = String(v ?? '').trim().toUpperCase();
+      if(TALLES.includes(t)) idxs[t] = i;
+    });
+    if(!mapTalles && Object.keys(idxs).length >= 4){
+      mapTalles = idxs;
+      fila.forEach((v,i)=>{
+        const t = String(v ?? '').toLowerCase();
+        if(colCantidad === null && /(cant|unid|total)/.test(t)) colCantidad = i;
+        if(colPrecio === null && /(precio|unitario|costo)/.test(t)) colPrecio = i;
+      });
+    }else if(!mapTalles){
+      fila.forEach((v,i)=>{
+        const t = String(v ?? '').toLowerCase();
+        if(colCantidad === null && /(cant|unid)/.test(t)) colCantidad = i;
+        if(colPrecio === null && /(precio|unitario)/.test(t)) colPrecio = i;
+      });
+    }
+  });
+  const lineas = [];
+  filas.forEach(fila => {
+    const codigo = extraerCodigoFactura(fila.map(v=>String(v ?? '')).join(' '));
+    if(!codigo) return;
+    let talles = null, total = null, precio = null;
+    if(mapTalles){
+      const porTalle = TALLES.map(t => mapTalles[t] !== undefined ? (numeroAR(fila[mapTalles[t]]) || 0) : 0);
+      if(porTalle.some(n=>n>0)){ talles = porTalle.map(n=>Math.round(n)); total = talles.reduce((s,n)=>s+n,0); }
+    }
+    if(colCantidad !== null && total === null){
+      const n = numeroAR(fila[colCantidad]);
+      if(n !== null) total = Math.round(n);
+    }
+    if(colPrecio !== null){
+      const n = numeroAR(fila[colPrecio]);
+      if(n !== null && n > 0) precio = n;
+    }
+    if(total === null && !talles){
+      const enteros = fila.map(numeroAR).filter(n => n !== null && Number.isInteger(n) && n > 0 && n < 100000);
+      const r = interpretarCantidades(enteros);
+      talles = r.talles; total = r.total;
+    }
+    if(total !== null || talles) lineas.push({ codigo, talles, total, precio });
+  });
+  return lineas;
+}
+
+// Lineas de texto plano (PDF o CSV crudo): codigo + numeros que lo siguen.
+function detectarFacturaEnTexto(lineasTexto){
+  const out = [];
+  lineasTexto.forEach(linea => {
+    linea = String(linea);
+    const codigo = extraerCodigoFactura(linea);
+    if(!codigo) return;
+    const m = linea.match(CODIGO_FACTURA_RE);
+    const resto = linea.slice(linea.indexOf(m[0]) + m[0].length);
+    const tokens = resto.match(/\d[\d.,]*/g) || [];
+    const nums = tokens.map(numeroAR).filter(n => n !== null);
+    const enteros = nums.filter(n => Number.isInteger(n) && n > 0 && n < 100000);
+    let { talles, total } = interpretarCantidades(enteros);
+    if(total === null && nums.length) total = Math.round(nums[0]);
+    if(total !== null || talles) out.push({ codigo, talles, total, precio: null });
+  });
+  return out;
+}
+
+async function parseFacturaExcel(file){
+  const buf = await file.arrayBuffer();
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf);
+  const filas = [];
+  wb.worksheets.forEach(ws => {
+    ws.eachRow(row => {
+      const valores = [];
+      row.eachCell({ includeEmpty:true }, cell => {
+        let v = cell.value;
+        if(v && typeof v === 'object') v = v.result ?? v.text ?? '';
+        valores.push(v);
+      });
+      filas.push(valores);
+    });
+  });
+  return filas;
+}
+
+// pdf.js se carga on-demand desde CDN solo si alguna vez se sube un PDF.
+async function ensurePdfJs(){
+  if(window.pdfjsLib) return;
+  await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = res; s.onerror = () => rej(new Error('No se pudo cargar pdf.js'));
+    document.head.appendChild(s);
+  });
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+async function parseFacturaPdf(file){
+  await ensurePdfJs();
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const lineas = [];
+  for(let i = 1; i <= pdf.numPages; i++){
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const porY = new Map();
+    content.items.forEach(it => {
+      const y = Math.round(it.transform[5]);
+      if(!porY.has(y)) porY.set(y, []);
+      porY.get(y).push(it);
+    });
+    [...porY.entries()].sort((a,b) => b[0]-a[0]).forEach(([,items]) => {
+      const texto = items.sort((a,b) => a.transform[4]-b.transform[4]).map(it=>it.str).join(' ').trim();
+      if(texto) lineas.push(texto);
+    });
+  }
+  return lineas;
+}
+
+let facturaCtx = null;
+
+async function cargarFactura(provKeyEnc, input){
+  const file = input.files && input.files[0];
+  input.value = '';
+  if(!file) return;
+  const provKey = decodeURIComponent(provKeyEnc);
+  showToast('Leyendo ' + file.name + '...');
+  let crudas = [];
+  try{
+    const nombre = file.name.toLowerCase();
+    if(nombre.endsWith('.pdf')) crudas = detectarFacturaEnTexto(await parseFacturaPdf(file));
+    else if(nombre.endsWith('.csv') || nombre.endsWith('.txt')) crudas = detectarFacturaEnTexto((await file.text()).split(/\r?\n/));
+    else crudas = detectarFacturaEnFilas(await parseFacturaExcel(file));
+  }catch(e){
+    showToast('No se pudo leer el archivo. Si es un PDF escaneado o una foto no tiene texto legible: usa la carga manual o pedi la factura digital.');
+    return;
+  }
+  if(!crudas.length){
+    showToast('No se encontraron codigos MAT/RUG/AUR con cantidades en el archivo. Revisa la factura o usa la carga manual.');
+    return;
+  }
+  // Consolidar codigos repetidos sumando cantidades
+  const porCodigo = new Map();
+  crudas.forEach(l => {
+    const prev = porCodigo.get(l.codigo);
+    if(!prev){ porCodigo.set(l.codigo, {...l}); return; }
+    if(prev.talles && l.talles) prev.talles = prev.talles.map((v,i)=>v + l.talles[i]);
+    else { prev.total = (prev.total ?? 0) + (l.total ?? 0); prev.talles = null; }
+    if(prev.total !== null && prev.talles) prev.total = prev.talles.reduce((s,n)=>s+n,0);
+  });
+  facturaCtx = {
+    proveedorKey: provKey,
+    archivo: file.name,
+    lineas: [...porCodigo.values()].map(l => {
+      const orden = state.ordenes.find(o => o.codigo === l.codigo) || null;
+      return {
+        ...l,
+        ordenId: orden ? orden.id : null,
+        incluir: !!(orden && orden.estado !== 'Borrador')
+      };
+    })
+  };
+  renderFacturaModal();
+  openModal('facturaModal');
+}
+
+function facturaRecibidoNuevo(linea, o){
+  const facturado = linea.talles
+    ? Object.fromEntries(TALLES.map((t,i)=>[t, linea.talles[i]]))
+    : distribuirTotalEnCurva(linea.total || 0, o.talles);
+  const nuevo = {};
+  TALLES.forEach(t => { nuevo[t] = Number(o.recibido?.[t] || 0) + Number(facturado[t] || 0); });
+  return { facturado, nuevo };
+}
+
+// Cuando la factura trae solo el total, se reparte siguiendo la curva pedida
+// (proporcional, resto a los talles con mas pedido) para poder controlar por talle.
+function distribuirTotalEnCurva(total, curva){
+  const rec = {};
+  TALLES.forEach(t => rec[t] = 0);
+  const pedidoTotal = TALLES.reduce((s,t)=>s + Number(curva?.[t] || 0), 0);
+  if(!pedidoTotal){ rec[TALLES[0]] = total; return rec; }
+  let asignado = 0;
+  TALLES.forEach(t => {
+    const v = Math.floor(total * Number(curva[t] || 0) / pedidoTotal);
+    rec[t] = v; asignado += v;
+  });
+  let resto = total - asignado;
+  const porPedido = TALLES.slice().sort((a,b)=>Number(curva[b]||0)-Number(curva[a]||0));
+  for(let i = 0; resto > 0; i = (i+1) % porPedido.length){ rec[porPedido[i]]++; resto--; }
+  return rec;
+}
+
+function renderFacturaModal(){
+  if(!facturaCtx) return;
+  const grupo = groupedByProvider(state.ordenes).find(g => g.key === facturaCtx.proveedorKey);
+  $('facturaTitle').textContent = 'Control de factura - ' + (grupo ? grupo.proveedor : facturaCtx.proveedorKey) + ' (' + facturaCtx.archivo + ')';
+  const filas = facturaCtx.lineas.map((l, i) => {
+    const o = l.ordenId ? state.ordenes.find(x=>x.id===l.ordenId) : null;
+    if(!o){
+      return `<tr style="background:#fdf5f5">
+        <td><input type="checkbox" disabled></td>
+        <td><b>${escapeHtml(l.codigo)}</b></td>
+        <td colspan="5">${pill('No existe en el sistema','bad')} <span class="muted">Verificar con el proveedor: el codigo no esta en ninguna OC.</span></td>
+        <td>${l.total ?? '-'}</td>
+      </tr>`;
+    }
+    const { nuevo } = facturaRecibidoNuevo(l, o);
+    const pedido = totalTalles(o.talles);
+    const nuevoTotal = TALLES.reduce((s,t)=>s + nuevo[t], 0);
+    const dif = nuevoTotal - pedido;
+    const avisos = [];
+    if(providerKey(o.proveedor) !== facturaCtx.proveedorKey) avisos.push(pill('OC de ' + (o.proveedor || 'otro proveedor'),'warn'));
+    if(o.estado === 'Borrador') avisos.push(pill('OC en borrador','warn'));
+    if(!l.talles) avisos.push(pill('Total repartido segun curva pedida','warn'));
+    return `<tr>
+      <td><input type="checkbox" ${l.incluir ? 'checked' : ''} onchange="facturaCtx.lineas[${i}].incluir = this.checked"></td>
+      <td><b>${escapeHtml(l.codigo)}</b><div class="muted">${escapeHtml(o.articulo)} ${escapeHtml(o.color || '')}</div></td>
+      <td>${l.talles ? l.talles.map((n,j)=>`${TALLES[j]}:${n}`).join(' ') : '<span class="muted">Solo total</span>'}</td>
+      <td><b>${l.total ?? (l.talles ? l.talles.reduce((s,n)=>s+n,0) : '-')}</b>${l.precio ? `<div class="muted">$ ${l.precio.toLocaleString('es-AR')}/u</div>` : ''}</td>
+      <td>${pedido}</td>
+      <td>${totalTalles(o.recibido)} -> <b>${nuevoTotal}</b></td>
+      <td>${difLabel(dif)}</td>
+      <td>${avisos.join(' ') || pill('OK','ok')}</td>
+    </tr>`;
+  }).join('');
+  const sinMatch = facturaCtx.lineas.filter(l=>!l.ordenId).length;
+  $('facturaBody').innerHTML = `
+    <div class="notice">Se leyeron <b>${facturaCtx.lineas.length}</b> codigo${facturaCtx.lineas.length===1?'':'s'} de <b>${escapeHtml(facturaCtx.archivo)}</b>${sinMatch ? ' · ' + sinMatch + ' sin coincidencia en el sistema' : ''}. Al confirmar, las cantidades se <b>suman</b> al recibido actual de cada codigo (si el proveedor manda entregas parciales, carga cada factura a medida que llega). Despues podes ajustar a mano lo que haga falta.</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Codigo</th><th>Facturado por talle</th><th>Facturado total</th><th>Pedido</th><th>Recibido actual -> nuevo</th><th>Dif. vs pedido</th><th>Control</th></tr></thead>
+      <tbody>${filas}</tbody>
+    </table></div>
+    <div class="btn-row" style="margin-top:14px;justify-content:flex-end">
+      <button class="btn secondary" type="button" onclick="closeModal('facturaModal')">Cancelar</button>
+      <button class="btn" type="button" onclick="aplicarFactura()">Aplicar al ingreso</button>
+    </div>
+  `;
+}
+
+function aplicarFactura(){
+  if(!facturaCtx) return;
+  let aplicadas = 0, unidades = 0;
+  facturaCtx.lineas.forEach(l => {
+    if(!l.incluir || !l.ordenId) return;
+    const o = state.ordenes.find(x=>x.id===l.ordenId);
+    if(!o) return;
+    const { facturado, nuevo } = facturaRecibidoNuevo(l, o);
+    o.recibido = nuevo;
+    if(l.precio) o.costoIngreso = l.precio;
+    const suma = TALLES.reduce((s,t)=>s + Number(facturado[t]||0), 0);
+    o.seguimiento = (o.seguimiento ? o.seguimiento + ' | ' : '') + 'FC ' + facturaCtx.archivo + ': +' + suma + 'u (' + today() + ')';
+    syncEstadoRecepcion(o);
+    aplicadas++; unidades += suma;
+  });
+  closeModal('facturaModal');
+  facturaCtx = null;
+  saveState();
+  render();
+  showToast(aplicadas
+    ? 'Ingreso aplicado: ' + unidades + ' unidades en ' + aplicadas + ' codigo' + (aplicadas===1?'':'s') + '. Revisa el detalle y ajusta a mano si hace falta.'
+    : 'No se aplico ningun codigo (ninguno estaba tildado).');
 }
 
 function ingresosTable(rows){
