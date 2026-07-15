@@ -393,8 +393,7 @@ footer b{color:var(--navy)}
     <section class="sec" id="secTbl">
       <div class="sec-label">Mi equipo</div>
       <h2 class="sec-title">Mi <em>equipo</em></h2>
-      <p class="hint">Clic en un equipo para abrir a su gente, y en cada persona para ver su <b>semana a semana</b>. Las barras comparan contra el promedio de la sucursal. Caja, encargados y refuerzos también cierran tickets: se miden con la vara de su rol, no compiten contra los vendedores.<span id="semSucWrap" style="display:none"> · <a class="sem-link" id="semSucToggle" role="button" tabindex="0">Ver la sucursal semana a semana</a></span></p>
-      <div class="card pad sem-suc" id="semSuc" style="display:none"></div>
+      <p class="hint">Clic en un equipo para abrir a su gente, y en cada persona para ver su <b>semana a semana</b>. Las barras comparan contra el promedio de la sucursal. Caja, encargados y refuerzos también cierran tickets: se miden con la vara de su rol, no compiten contra los vendedores.</p>
       <div class="tbl-wrap">
         <table id="tbl">
           <thead><tr>
@@ -410,6 +409,13 @@ footer b{color:var(--navy)}
           <tbody id="tbody"></tbody>
         </table>
       </div>
+    </section>
+
+    <section class="sec" id="secSem" style="display:none">
+      <div class="sec-label">Evolución</div>
+      <h2 class="sec-title">La venta <em>semana a semana</em></h2>
+      <p class="hint">Cómo se movió la venta dentro del mes retail (semanas de lunes a domingo). Sirve para ver los picos —Día del Padre, Hot Sale— que el promedio del mes esconde.</p>
+      <div class="card pad" id="semAnalisis"></div>
     </section>
 
     <section class="sec" id="secCanales" style="display:none">
@@ -670,10 +676,6 @@ async function boot(){
   $('bAct').onclick = ()=>{ hbase='h_act'; segToggle(); render(); };
   $('btnPrint').onclick = ()=> window.print();
   $('btnCopiar').onclick = copiarResumen;
-  const semTog = ()=>{ semSucOpen=!semSucOpen; $('semSuc').style.display=semSucOpen?'':'none';
-    $('semSucToggle').textContent = semSucOpen?'Ocultar semana a semana':'Ver la sucursal semana a semana'; };
-  $('semSucToggle').onclick = semTog;
-  $('semSucToggle').onkeydown = e => { if(e.key==='Enter'||e.key===' '){ e.preventDefault(); semTog(); } };
   $('selSuc').onchange = e => {
     if(e.target.value==='__cadena'){ vistaCadena=true; sucName=null; }
     else { vistaCadena=false; sucName=e.target.value; }
@@ -755,7 +757,7 @@ async function render(){
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
   $('secCanales').style.display = ecom?'':'none';
-  if(ecom) ['secEq','secMix','secPlantilla','secTbl'].forEach(id=>$(id).style.display='none');
+  if(ecom) ['secEq','secMix','secPlantilla','secTbl','secSem'].forEach(id=>$(id).style.display='none');
   const seg=document.querySelector('.seg'); if(seg) seg.style.display = ecom?'none':'flex';
   renderKPIs();
   renderDiagnostico();
@@ -764,17 +766,17 @@ async function render(){
   renderHeat();
   renderNotas();
   if(ecom){ renderCanales(); }
-  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderSemSuc(); }
+  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderSem(); }
 }
 
 function mostrarEmpty(msg){
-  ['secEq','secMix','secCov','secPlantilla','secTbl','secHeat'].forEach(id=>$(id).style.display='none');
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secSem','secHeat'].forEach(id=>$(id).style.display='none');
   $('cobNota').style.display='none';
   $('diagBox').style.display='none';
   $('kpis').innerHTML = '<div class="empty" style="grid-column:1/-1">'+msg+'</div>';
 }
 function ocultarEmpty(){
-  ['secEq','secMix','secCov','secPlantilla','secTbl','secHeat'].forEach(id=>$(id).style.display='');
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secSem','secHeat'].forEach(id=>$(id).style.display='');
   $('cobNota').style.display='';
 }
 
@@ -1260,21 +1262,35 @@ function semPersonHtml(v){
       <div class="sem-kv"><b>${fmtN(w.tickets)}</b> tickets · UPT <b>${fmt2(upt)}</b> · tkt <b>${fmtM(tp)}</b> · ${kM(w.importe_neto)}</div></div>`;
   }).join('')+'</div>';
 }
-function renderSemSuc(){
-  const wrap=$('semSucWrap'), panel=$('semSuc');
+function renderSem(){
+  const sec=$('secSem'), box=$('semAnalisis');
   const sem = DET.summary && DET.summary.semanas;
-  if(!Array.isArray(sem) || !sem.length){ wrap.style.display='none'; panel.style.display='none'; semSucOpen=false; return; }
-  wrap.style.display='';
-  panel.style.display = semSucOpen?'':'none';
-  $('semSucToggle').textContent = semSucOpen?'Ocultar semana a semana':'Ver la sucursal semana a semana';
-  const maxV=Math.max(...sem.map(w=>w.importe_neto))||1;
-  panel.innerHTML = `<table style="min-width:0"><thead><tr><th class="L">Semana</th><th>Tickets</th><th>UPT</th><th>Ticket prom.</th><th>Venta neta</th></tr></thead><tbody>`+
-    sem.map(w=>{ const upt=w.tickets?w.unidades_netas/w.tickets:0, tp=w.tickets?w.importe_neto/w.tickets:0, p=w.importe_neto/maxV*100;
-      return `<tr><td class="L">Sem ${w.n}${w.rango?` <span class="muted" style="font-size:12px">${esc(w.rango)}</span>`:''}</td>
+  if(!Array.isArray(sem) || sem.length<2){ sec.style.display='none'; return; }
+  sec.style.display='';
+  const totV=sem.reduce((a,w)=>a+w.importe_neto,0), maxV=Math.max(...sem.map(w=>w.importe_neto))||1;
+  const peak=sem.reduce((a,b)=>b.importe_neto>a.importe_neto?b:a);
+  const low =sem.reduce((a,b)=>b.importe_neto<a.importe_neto?b:a);
+  // gráfico de barras: venta neta por semana (pico en rojo)
+  const W=760,H=200,P={t:24,b:46};
+  const n=sem.length, bw=(W)/n, Y=v=>H-P.b-(v/maxV)*(H-P.t-P.b);
+  const bars=sem.map((w,i)=>{ const x=i*bw, isPk=w===peak, col=isPk?'var(--red)':'#c3cfe8', yy=Y(w.importe_neto);
+    return `<g><rect x="${(x+bw*0.16).toFixed(1)}" y="${yy.toFixed(1)}" width="${(bw*0.68).toFixed(1)}" height="${(H-P.b-yy).toFixed(1)}" rx="4" fill="${col}"><title>Sem ${w.n} · ${esc(w.rango)} · ${kM(w.importe_neto)} · ${fmtN(w.tickets)} tickets</title></rect>
+      <text x="${(x+bw/2).toFixed(1)}" y="${(yy-7).toFixed(1)}" text-anchor="middle" font-family="Bebas Neue" font-size="16" fill="var(--navy)">${kM(w.importe_neto)}</text>
+      <text x="${(x+bw/2).toFixed(1)}" y="${H-P.b+17}" text-anchor="middle" font-family="Barlow Condensed" font-size="12" font-weight="600" fill="var(--navy)">Sem ${w.n}</text>
+      <text x="${(x+bw/2).toFixed(1)}" y="${H-P.b+32}" text-anchor="middle" font-family="Barlow Condensed" font-size="10.5" fill="var(--muted)">${esc(w.rango)}</text></g>`;
+  }).join('');
+  const svg=`<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:520px;height:auto" role="img" aria-label="Venta neta por semana">${bars}</svg></div>`;
+  const tabla=`<div class="tbl-wrap" style="margin-top:14px"><table style="min-width:0">
+    <thead><tr><th class="L">Semana</th><th>Tickets</th><th>UPT</th><th>Ticket prom.</th><th>Venta neta</th><th>% del mes</th></tr></thead><tbody>`+
+    sem.map(w=>{ const upt=w.tickets?w.unidades_netas/w.tickets:0, tp=w.tickets?w.importe_neto/w.tickets:0, pc=totV?w.importe_neto/totV*100:0;
+      return `<tr><td class="L">Sem ${w.n} <span class="muted" style="font-size:12px">${esc(w.rango)}</span></td>
         <td><span class="num">${fmtN(w.tickets)}</span></td><td><span class="num">${fmt2(upt)}</span></td>
-        <td><span class="num">${fmtM(tp)}</span></td>
-        <td><span class="num">${kM(w.importe_neto)}</span> <span class="bar" style="width:90px"><i style="width:${Math.max(3,p).toFixed(0)}%;background:var(--red)"></i></span></td></tr>`;
-    }).join('')+`</tbody></table>`;
+        <td><span class="num">${fmtM(tp)}</span></td><td><span class="num">${kM(w.importe_neto)}</span></td>
+        <td class="muted">${fmt2(pc)}%</td></tr>`; }).join('')+`</tbody></table></div>`;
+  const pkShare=totV?peak.importe_neto/totV*100:0, vsLow=low.importe_neto?(peak.importe_neto/low.importe_neto-1)*100:0;
+  const nota=`<p class="eq-note" style="margin-top:14px">La semana más fuerte fue la <b>Sem ${peak.n} (${esc(peak.rango)})</b> con <b>${kM(peak.importe_neto)}</b>, el <b>${fmt2(pkShare)}%</b> del mes`+
+    (low!==peak?` — <b>${fmt2(vsLow)}%</b> más que la más floja (Sem ${low.n}, ${kM(low.importe_neto)})`:'')+`.</p>`;
+  box.innerHTML = svg + tabla + nota;
 }
 
 /* --- heatmap --- */
