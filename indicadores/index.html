@@ -140,6 +140,38 @@ tr:last-child td{border-bottom:none}
 .heat > div{font-family:var(--font-c);font-size:11px;color:var(--muted);display:flex;align-items:center;justify-content:center;height:28px}
 .heat .cell{border-radius:2px;color:#fff;font-size:11px;font-variant-numeric:tabular-nums}
 
+/* ===== DIAGNÓSTICO ACCIONABLE ===== */
+.diag{margin-top:18px;border-radius:12px;padding:15px 17px;display:flex;gap:12px;align-items:flex-start;
+  font-size:14px;line-height:1.5;border:1px solid}
+.diag .ic{font-size:20px;flex:0 0 auto;line-height:1.2}
+.diag .tt{font-family:var(--font-c);font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-size:11px;margin-bottom:3px;opacity:.85}
+.diag b{font-weight:700}
+.diag.d-bad{background:var(--bad-bg);border-color:#f3c6c3;color:#7a1a15}
+.diag.d-mid{background:var(--mid-bg);border-color:#f0d9ad;color:#7a5310}
+.diag.d-ok{background:var(--ok-bg);border-color:#bfe6cf;color:#14663a}
+
+/* ===== SPARKLINE en KPI ===== */
+.kpi-spark{margin:10px 0 2px;height:26px}
+.kpi-spark .spark{width:100%;height:26px;display:block}
+.kpi-spark-empty{height:26px;margin:10px 0 2px;font-size:11px;color:var(--muted-light);font-family:var(--font-c);letter-spacing:.5px;display:flex;align-items:center}
+
+/* ===== BOTONES COMPARTIR (header) ===== */
+.share-ok{background:var(--red)!important;color:#fff!important;border-color:var(--red)!important}
+
+/* ===== IMPRESIÓN / PDF ===== */
+@media print{
+  .top .ctrl, #notifWidget, .menu{display:none!important}
+  body{background:#fff}
+  .top{position:static;border-bottom:3px solid var(--red)}
+  .top-in{padding:8px 0}
+  .wrap{padding:0}
+  .sec{padding-top:18px;break-inside:avoid}
+  .card,.kpi,.tbl-wrap,.diag{break-inside:avoid;box-shadow:none}
+  .kpis{grid-template-columns:repeat(4,1fr)}
+  .hint{color:#555}
+  a[href]:after{content:''}
+}
+
 /* ===== PLANTILLA / DOTACIÓN ===== */
 .pl-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:20px}
 .pl-stat{background:#f8f9fe;border:1px solid var(--border);border-radius:10px;padding:14px}
@@ -258,6 +290,8 @@ footer b{color:var(--navy)}
         <button id="bCon" aria-pressed="true">Horas contratadas</button>
         <button id="bAct" aria-pressed="false">Horas con venta</button>
       </div>
+      <button class="menu-btn" id="btnCopiar" title="Copiar resumen para compartir">⧉ Copiar</button>
+      <button class="menu-btn" id="btnPrint" title="Imprimir o guardar en PDF">⎙ PDF</button>
       <div class="menu">
         <button class="menu-btn" id="menuBtn" aria-haspopup="true" aria-expanded="false">☰ Herramientas</button>
         <div class="menu-pop" id="menuPop" role="menu"></div>
@@ -275,6 +309,7 @@ footer b{color:var(--navy)}
       <h2 class="sec-title">Los cuatro <em>indicadores</em></h2>
       <div class="kpis" id="kpis"></div>
       <p class="cob-nota" id="cobNota"></p>
+      <div class="diag" id="diagBox" style="display:none"></div>
     </section>
 
     <section class="sec" id="secEq">
@@ -527,6 +562,8 @@ async function boot(){
   }
   $('bCon').onclick = ()=>{ hbase='horas_contr'; segToggle(); render(); };
   $('bAct').onclick = ()=>{ hbase='h_act'; segToggle(); render(); };
+  $('btnPrint').onclick = ()=> window.print();
+  $('btnCopiar').onclick = copiarResumen;
   $('selSuc').onchange = e => {
     if(e.target.value==='__cadena'){ vistaCadena=true; sucName=null; }
     else { vistaCadena=false; sucName=e.target.value; }
@@ -569,6 +606,7 @@ async function render(){
 
   CAD = await cadenaDe(per);
   CAD_PREV = prevPerId()? await cadenaDe(prevPerId()) : null;
+  await Promise.all(PERIODOS.map(p=>cadenaDe(p.id)));   // todas, para la tendencia (sparkline)
 
   // completar selector de sucursales (gerencia) una vez que hay cadena
   if(esGerencia && CAD){
@@ -605,6 +643,7 @@ async function render(){
   }
   ocultarEmpty();
   renderKPIs();
+  renderDiagnostico();
   renderStockCard();
   renderEq();
   renderMix();
@@ -618,6 +657,7 @@ async function render(){
 function mostrarEmpty(msg){
   ['secEq','secMix','secCov','secPlantilla','secTbl','secHeat'].forEach(id=>$(id).style.display='none');
   $('cobNota').style.display='none';
+  $('diagBox').style.display='none';
   $('kpis').innerHTML = '<div class="empty" style="grid-column:1/-1">'+msg+'</div>';
 }
 function ocultarEmpty(){
@@ -632,6 +672,105 @@ function deltaHtml(cur, prevVal){
   if(!isFinite(cur)||!isFinite(prevVal)||prevVal===0) return null;
   const d=(cur/prevVal-1)*100, c=d>1.5?'up':d<-1.5?'down':'flat';
   return `<b class="${c}">${d>0?'+':''}${fmt2(d)}%</b>`;
+}
+
+/* --- benchmark por formato (comparar contra tus pares, no toda la cadena) --- */
+function peersFormato(cad, fmt){ return cad.sucursales.filter(s=>s.sucursal!==ECOM && (s.formato||formatoDe(s.sucursal))===fmt); }
+function rankFormato(cad, metric, name, fmt){
+  const l = peersFormato(cad,fmt).map(s=>({n:s.sucursal,v:kpis(s)[metric]})).filter(x=>isFinite(x.v)).sort((a,b)=>b.v-a.v);
+  const i = l.findIndex(x=>x.n===name);
+  return i<0?null:{pos:i+1,total:l.length};
+}
+function avgFormato(cad, metric, fmt){ const peers=peersFormato(cad,fmt); return peers.length? kpis(suma(peers))[metric] : NaN; }
+
+/* --- serie de un KPI a lo largo de los períodos (para el sparkline) --- */
+function serieKPI(metric){
+  return PERIODOS.slice().sort((a,b)=>a.id.localeCompare(b.id)).map(p=>{
+    const cad = cacheCadena[p.id];
+    const s = cad && cad.sucursales.find(x=>x.sucursal===sucName);
+    return {per:p.id, val: s? kpis(s)[metric] : null};
+  });
+}
+function sparkSVG(serie, tgt){
+  const vals = serie.map(p=>p.val).filter(v=>isFinite(v));
+  if(vals.length<2) return '';
+  const W=120,H=26,P=3;
+  let lo=Math.min(...vals), hi=Math.max(...vals);
+  if(isFinite(tgt)){ lo=Math.min(lo,tgt); hi=Math.max(hi,tgt); }
+  if(hi===lo){ hi=lo+1; lo=lo-1; }
+  const n=serie.length, X=i=>P+i*(W-2*P)/(n-1), Y=v=>H-P-((v-lo)/(hi-lo))*(H-2*P);
+  const pts=serie.map((p,i)=> isFinite(p.val)?`${X(i).toFixed(1)},${Y(p.val).toFixed(1)}`:null).filter(Boolean).join(' ');
+  let lastI=-1; serie.forEach((p,i)=>{ if(isFinite(p.val)) lastI=i; });
+  const tgtLine = isFinite(tgt)? `<line x1="${P}" y1="${Y(tgt).toFixed(1)}" x2="${W-P}" y2="${Y(tgt).toFixed(1)}" stroke="var(--muted-light)" stroke-width="1" stroke-dasharray="3 3"/>`:'';
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Tendencia">${tgtLine}`+
+    `<polyline points="${pts}" fill="none" stroke="var(--navy-mid)" stroke-width="1.6" stroke-linejoin="round"/>`+
+    (lastI>=0?`<circle cx="${X(lastI).toFixed(1)}" cy="${Y(serie[lastI].val).toFixed(1)}" r="2.6" fill="var(--red)"/>`:'')+`</svg>`;
+}
+
+/* --- diagnóstico accionable: traduce KPIs + mix + cobertura en qué hacer --- */
+function mixCajaShare(){
+  let cajaH=0, tot=0;
+  DET.vendedores.forEach(v=>{ if(v.horas_contr>0 && GRUPOS_PISO.includes(v.grupo)){ tot+=v.horas_contr; if(v.grupo==='Caja') cajaH+=v.horas_contr; } });
+  const chain=CAD.mix||{}, ctot=Object.values(chain).reduce((a,x)=>a+x.h,0), ccaja=chain.Caja?chain.Caja.h:0;
+  return {mine: tot?cajaH/tot*100:0, chain: ctot?ccaja/ctot*100:0};
+}
+function picoHora(){
+  const d=(DET.cobertura||[]).filter(x=>x.dot>0); if(!d.length) return null;
+  return d.map(x=>({h:x.hora, r:x.dot?x.tickets_dia/x.dot:0})).sort((a,b)=>b.r-a.r)[0].h;
+}
+function renderDiagnostico(){
+  const box=$('diagBox'); if(!box) return;
+  const s=DET.summary, k=kpis(s), c=cadenaAgg(CAD), fmt=DET.formato||formatoDe(sucName), obj=OBJ[fmt]||{};
+  if(sucName===ECOM || !s.horas_contr || !obj.tickets_hora){ box.style.display='none'; return; }
+  box.style.display='';
+  const cumpl = { tph:k.tph/obj.tickets_hora*100, upt:obj.upt?k.upt/obj.upt*100:null, tp:obj.ticket_promedio?k.tp/obj.ticket_promedio*100:null };
+  const arr = Object.entries(cumpl).filter(([,v])=>v!=null).sort((a,b)=>a[1]-b[1]);
+  const [peor, peorPct] = arr[0];
+  const mejor = arr[arr.length-1];
+  let tone, ic, tt, txt;
+  if(peorPct>=100){
+    tone='ok'; ic='✅'; tt='Vas bien';
+    const NM={tph:'los tickets por hora',upt:'las unidades por ticket',tp:'el ticket promedio'};
+    txt=`Cumplís los tres objetivos de tu formato. Tu palanca más fuerte es <b>${NM[mejor[0]]}</b> (${Math.round(mejor[1])}% del objetivo). Sostené el ritmo.`;
+  } else {
+    tone = peorPct<85?'bad':'mid'; ic='💡'; tt='Dónde enfocar';
+    if(peor==='tph'){
+      const caja=mixCajaShare(), pico=picoHora();
+      const cajaTxt = caja.mine>caja.chain+4 ? ` La caja se lleva el <b>${fmt2(caja.mine)}%</b> de las horas (cadena ${fmt2(caja.chain)}%), así que falta gente en piso.` : '';
+      const picoTxt = pico!=null ? ` El pico de demanda es a las <b>${pico}h</b>: es donde más rinde sumar un vendedor.` : '';
+      txt=`Tu punto más flojo es <b>tickets por hora</b> (${Math.round(peorPct)}% del objetivo): se atiende a menos gente por hora de la que podrías.${cajaTxt}${picoTxt}`;
+    } else if(peor==='upt'){
+      txt=`Tu punto más flojo es <b>UPT</b> (${Math.round(peorPct)}% del objetivo): se venden pocos artículos por venta. La palanca es el segundo artículo y los accesorios en el mostrador — sumar 0,1 de UPT mueve el ticket promedio sin depender del precio.`;
+    } else { // tp
+      const pupWeak = (k.pup/c.pup-1) < (k.upt/c.upt-1);
+      txt = pupWeak
+        ? `Tu punto más flojo es el <b>ticket promedio</b> (${Math.round(peorPct)}% del objetivo), y viene por el <b>precio unitario</b>: estás vendiendo artículos más baratos que el promedio. Revisá el mix hacia producto de más valor.`
+        : `Tu punto más flojo es el <b>ticket promedio</b> (${Math.round(peorPct)}% del objetivo), y viene por las <b>unidades por ticket</b>: trabajá el segundo artículo y los accesorios para levantarlo.`;
+    }
+  }
+  box.className='diag d-'+tone;
+  box.innerHTML=`<div class="ic">${ic}</div><div><div class="tt">${tt}</div><div>${txt}</div></div>`;
+}
+
+/* --- copiar resumen para compartir (WhatsApp) --- */
+function copiarResumen(){
+  if(!DET){ return; }
+  const s=DET.summary, k=kpis(s), fmt=DET.formato||formatoDe(sucName), obj=OBJ[fmt]||{};
+  const cu=(v,t)=> t? ' ('+Math.round(v/t*100)+'% obj)' : '';
+  const stock=$('stockVal')?$('stockVal').textContent.trim():'';
+  const rTp=rankFormato(CAD,'tp',sucName,fmt);
+  const L=[
+    `📊 ${sucName} · ${perLabel(per)}`,
+    `• UPT: ${fmt2(k.upt)}${cu(k.upt,obj.upt)}`,
+    `• Tickets/hora: ${s.horas_contr?fmt2(k.tph):'—'}${cu(k.tph,obj.tickets_hora)}`,
+    `• Ticket promedio: ${fmtM(k.tp)}${cu(k.tp,obj.ticket_promedio)}`,
+    (stock && stock!=='…' && stock!=='—') ? `• Meses de stock: ${stock}` : null,
+    rTp ? `• Ranking en formato ${fmt}: ${rTp.pos}/${rTp.total} (ticket prom.)` : null,
+  ].filter(Boolean);
+  const txt=L.join('\n');
+  const ok=()=>{ const b=$('btnCopiar'); if(!b) return; const t=b.textContent; b.textContent='✓ Copiado'; b.classList.add('share-ok'); setTimeout(()=>{ b.textContent=t; b.classList.remove('share-ok'); },1600); };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(ok).catch(()=>prompt('Copiá el resumen:', txt)); }
+  else prompt('Copiá el resumen:', txt);
 }
 
 function renderKPIs(){
@@ -668,15 +807,20 @@ function renderKPIs(){
       if(dp) deltaHtmlStr = `${dp} vs. ${mesAnt}` + (dc?` · <span class="muted">cadena ${dc}</span>`:'');
     }
     const r = rankDe(CAD, d.key, sucName);
-    const difCad = (k[d.key]/c[d.key]-1)*100, cadCls=difCad>1.5?'up':difCad<-1.5?'down':'flat';
+    const rF = rankFormato(CAD, d.key, sucName, fmt);
+    const avgF = avgFormato(CAD, d.key, fmt);
+    const difF = (isFinite(avgF)&&avgF)? (k[d.key]/avgF-1)*100 : NaN;
+    const fCls = difF>1.5?'up':difF<-1.5?'down':'flat';
+    const spark = sparkSVG(serieKPI(d.key), d.tgt||NaN);
     return `<div class="kpi ${semClass}">
       <div class="kpi-name">${d.name}</div>
       <div class="kpi-val">${d.val}</div>
       <div class="kpi-unit">${d.unit}</div>
       <div class="kpi-obj">${objHtml}</div>
+      ${spark?`<div class="kpi-spark">${spark}</div>`:'<div class="kpi-spark-empty">Tendencia: con el 2º período</div>'}
       <div class="kpi-foot">
         <div class="kpi-delta">${deltaHtmlStr}</div>
-        <div class="kpi-rank"><span>Ranking cadena <b>${r||'—'}</b></span><span class="${cadCls}">${difCad>0?'+':''}${fmt2(difCad)}% vs. cadena</span></div>
+        <div class="kpi-rank"><span>Cadena <b>${r||'—'}</b>${rF?` · Formato <b>${rF.pos}/${rF.total}</b>`:''}</span>${isFinite(difF)?`<span class="${fCls}">${difF>0?'+':''}${fmt2(difF)}% vs. formato</span>`:''}</div>
       </div></div>`;
   }).join('');
 
