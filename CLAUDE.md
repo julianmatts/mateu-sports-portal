@@ -165,8 +165,9 @@ repo la primera vez.
 **Meses de stock** reutiliza `gestion-stock/datos-meses-stock.js` (mismo nombre de
 sucursal como clave); no se duplica el dato. Sin dato en el período → empty state.
 
-Pendiente de validar con Juli: el mapa slug de Portal → sucursal de datos (`SLUG_SUC`
-/ `OUTLET_SUC` en el módulo); `diagonal` y `deposito` no tienen datos de venta todavía.
+El mapa slug de Portal → sucursal de datos (`SLUG_SUC` / `OUTLET_SUC` en el módulo)
+lo validó Juli (14/07/2026). `diagonal` y `deposito` no tienen datos de venta todavía
+→ empty state.
 
 ## Reglas
 
