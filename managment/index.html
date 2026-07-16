@@ -132,6 +132,32 @@ table input:disabled,table select:disabled{opacity:.5;background:#f1f3f8;cursor:
   </div>
 </div>
 
+<div class="modal" id="providerModal" style="z-index:30">
+  <div class="modal-card" style="width:min(520px,100%)">
+    <div class="modal-head">
+      <div>
+        <h3>Nuevo proveedor / taller</h3>
+        <div class="collection-note">Se agrega al listado y queda seleccionado en la prenda.</div>
+      </div>
+      <button class="xbtn" type="button" onclick="closeModal('providerModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <form class="form" id="providerQuickForm">
+        <div class="field"><label>Nombre *</label><input name="nombre" required placeholder="Ej: Taller Nuevo SRL"></div>
+        <div class="row">
+          <div class="field"><label>CUIT</label><input name="cuit" placeholder="Opcional"></div>
+          <div class="field"><label>Contacto</label><input name="contacto" placeholder="Nombre y apellido"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Email</label><input name="email" type="email" placeholder="Opcional"></div>
+          <div class="field"><label>Telefono</label><input name="telefono" placeholder="Con codigo de pais"></div>
+        </div>
+        <div class="btn-row" style="justify-content:flex-end"><button class="btn secondary" type="button" onclick="closeModal('providerModal')">Cancelar</button><button class="btn" type="submit">Guardar proveedor</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="actionModal">
   <div class="modal-card" style="width:min(420px,100%)">
     <div class="modal-head">
@@ -962,14 +988,14 @@ function coleccionPanel(c){
       </div>
       ${prendas.length ? `
       <div class="table-wrap"><table>
-        <thead><tr><th>Linea</th><th>Marca</th><th>Prendas</th><th>Status</th><th>Bloqueado por</th></tr></thead>
+        <thead><tr><th>Linea</th><th>Marca</th><th>Prendas</th><th>Status</th><th>Acciones</th></tr></thead>
         <tbody>${grupos.map(g => `
           <tr>
             <td><b>${escapeHtml(g.linea)}</b></td>
             <td>${marcaBadges(g.items)}</td>
             <td>${g.items.length}</td>
             <td>${estadoResumen(g.items)}</td>
-            <td>${bloqueadoPorDetalle(g.items) ? `<span class="muted" style="font-size:12px">${bloqueadoPorDetalle(g.items)}</span>` : '<span class="muted">-</span>'}</td>
+            <td><button class="action primary" onclick="openItemsModal('${c.id}','${encodeURIComponent(g.linea)}')">Abrir linea</button></td>
           </tr>`).join('')}
         </tbody>
       </table></div>` : `<div class="empty" style="margin:0 14px 14px">Sin items creados. Abri la coleccion para cargar la primera prenda.</div>`}
@@ -1019,8 +1045,13 @@ function openCollectionModal(){
   setTimeout(()=>document.querySelector('#collectionForm input[name="tipo"]')?.focus(), 0);
 }
 
-function openItemsModal(id){
+// itemsLineaFilter: si tiene valor, el modal muestra solo esa linea (Abrir linea).
+// null = coleccion completa (Abrir coleccion).
+let itemsLineaFilter = null;
+
+function openItemsModal(id, lineaEnc){
   activeCollectionId = id;
+  itemsLineaFilter = lineaEnc ? decodeURIComponent(lineaEnc) : null;
   renderItemsModal();
   openModal('itemsModal');
 }
@@ -1028,20 +1059,28 @@ function openItemsModal(id){
 function renderItemsModal(){
   const c = state.colecciones.find(x=>x.id===activeCollectionId);
   if(!c) return;
-  $('itemsTitle').textContent = 'Coleccion: ' + c.nombre;
-  $('itemsSubtitle').textContent = 'Control por prenda. Los cambios se guardan automaticamente. Solo las prendas en Aprobado Comercial pasan a orden de compra.';
+  $('itemsTitle').textContent = 'Coleccion: ' + c.nombre + (itemsLineaFilter ? '  ·  Linea: ' + itemsLineaFilter : '');
+  $('itemsSubtitle').textContent = itemsLineaFilter
+    ? 'Estas viendo solo la linea "' + itemsLineaFilter + '". Usa "Ver toda la coleccion" para ver el resto.'
+    : 'Control por prenda. Los cambios se guardan automaticamente. Solo las prendas en Aprobado Comercial pasan a orden de compra.';
   $('itemsBody').innerHTML = `
+    ${itemsLineaFilter ? `<div class="btn-row" style="margin-bottom:12px"><button class="btn secondary" type="button" onclick="openItemsModal('${c.id}')">← Ver toda la coleccion</button></div>` : ''}
     <form class="form" id="itemForm">
       <div class="row">
         <div class="field"><label>Marca</label><select name="marca">${brandOptions()}</select></div>
-        <div class="field"><label>Linea</label><input name="tipo" required placeholder="Ej: ActiveWear, EveryWear, Court"></div>
+        <div class="field"><label>Linea</label><input name="tipo" required placeholder="Ej: ActiveWear, EveryWear, Court" value="${itemsLineaFilter && itemsLineaFilter !== 'Sin linea' ? escapeAttr(itemsLineaFilter) : ''}"></div>
       </div>
       <div class="row">
         <div class="field"><label>Nombre prenda</label><input name="nombre" required placeholder="Ej: Motion"></div>
         <div class="field"><label>Color</label><input name="color" placeholder="Ej: Negro"></div>
       </div>
       <div class="row">
-        <div class="field"><label>Proveedor / Taller</label><select name="proveedor" required>${providerOptions()}</select></div>
+        <div class="field"><label>Proveedor / Taller</label>
+          <div style="display:flex;gap:6px">
+            <select name="proveedor" required style="flex:1;min-width:0">${providerOptions()}</select>
+            <button class="btn secondary" type="button" style="padding:9px 12px;white-space:nowrap" onclick="openProviderModal()">+ Nuevo</button>
+          </div>
+        </div>
         <div class="field"><label>Costo unitario ARS</label><input name="costo" type="number" min="0" step="0.01" value="0"></div>
       </div>
       <div class="row">
@@ -1083,7 +1122,8 @@ function groupedByLinea(prendas){
 }
 
 function itemsTable(c){
-  const prendas = brandFilter === 'all' ? c.prendas : c.prendas.filter(p => p.marca === brandFilter);
+  let prendas = brandFilter === 'all' ? c.prendas : c.prendas.filter(p => p.marca === brandFilter);
+  if(itemsLineaFilter) prendas = prendas.filter(p => (String(p.tipo||'').trim() || 'Sin linea') === itemsLineaFilter);
   if(!prendas.length) return '<div class="empty">No hay prendas cargadas para la marca seleccionada en esta coleccion.</div>';
   return groupedByLinea(prendas).map(g => lineaPanel(c, g)).join('');
 }
@@ -1403,6 +1443,46 @@ function findPrenda(colId, prendaId){
 
 function openModal(id){ $(id).classList.add('show'); }
 function closeModal(id){ $(id).classList.remove('show'); }
+
+// Alta rapida de proveedor desde el modal de prendas (Paso 1), sin ir a
+// Configuracion. Al guardar, refresca el <select> del form sin re-renderizarlo
+// para no perder la prenda que se estaba cargando.
+function openProviderModal(){
+  const form = $('providerQuickForm');
+  if(form){
+    if(!form.dataset.bound){ form.dataset.bound = '1'; form.addEventListener('submit', saveNewProvider); }
+    form.reset();
+  }
+  openModal('providerModal');
+  setTimeout(()=>$('providerQuickForm')?.querySelector('input[name="nombre"]')?.focus(), 0);
+}
+
+function saveNewProvider(ev){
+  ev.preventDefault();
+  const fd = new FormData(ev.currentTarget);
+  const nombre = String(fd.get('nombre')||'').trim();
+  if(!nombre) return;
+  const existente = state.proveedores.find(p => providerKey(p.nombre) === providerKey(nombre));
+  if(existente){
+    showToast('Ya existe el proveedor "' + existente.nombre + '". Se selecciono ese.');
+  }else{
+    state.proveedores.push({
+      id:uid('prov'),
+      nombre,
+      cuit:String(fd.get('cuit')||'').trim(),
+      direccion:'',
+      contacto:String(fd.get('contacto')||'').trim(),
+      email:String(fd.get('email')||'').trim(),
+      telefono:String(fd.get('telefono')||'').trim(),
+      notas:''
+    });
+    saveState();
+  }
+  const nombreFinal = existente ? existente.nombre : nombre;
+  const sel = document.querySelector('#itemForm select[name="proveedor"]');
+  if(sel) sel.innerHTML = providerOptions(nombreFinal);
+  closeModal('providerModal');
+}
 
 function renderOC(){
   $('view').innerHTML = `
