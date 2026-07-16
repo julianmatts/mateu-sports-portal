@@ -141,3 +141,59 @@ podés:
 
 Como el Turnero y Marcas comparten la **misma base de Firebase**, el sitio viejo y
 el nuevo leen y escriben los mismos datos. No se duplica ni se pierde nada.
+
+---
+
+## Presupuesto de Compras (`presupuesto/`) — persistencia con Cloudflare KV
+
+El módulo `presupuesto/index.html` guarda sus líneas (presupuesto vs. ejecutado por
+proveedor/rubro/categoría/período) en **Cloudflare KV**, vía la Pages Function
+`functions/api/presupuesto.js`:
+
+- `GET /api/presupuesto` → devuelve el array de líneas (o `[]` si no hay nada).
+- `PUT /api/presupuesto` → recibe el array completo y lo guarda (valida que sea un
+  array y sanea los montos a número). Todo el dataset va bajo una sola key de KV
+  (`presupuesto:compras:v1`, last-write-wins).
+
+Si la API falla (sin conexión, sin binding), el front **degrada a `localStorage`**
+para no perder lo cargado; cuando la API vuelve, sincroniza. El binding de KV que
+espera la Function se llama **`PRESUPUESTO_KV`**.
+
+### Crear el namespace de KV en producción (una sola vez)
+
+1. Cloudflare Dashboard → **Storage & Databases → KV → Create a namespace**.
+   Nombre sugerido: `presupuesto-compras` (el nombre del namespace es libre; lo que
+   importa es el binding).
+2. Ir al proyecto de **Pages** (el del portal) → **Settings → Functions → KV
+   namespace bindings → Add binding**.
+   - **Variable name:** `PRESUPUESTO_KV`  ← tiene que ser exactamente este.
+   - **KV namespace:** el que creaste en el paso 1.
+3. **Guardar** y volver a deployar (o hacer un push cualquiera a `main`). Listo:
+   `/api/presupuesto` ya lee/escribe en KV.
+
+> **Producción = dashboard, no `wrangler.toml`.** Este repo deploya por Pages con
+> integración de Git y todo lo de runtime (env vars, bindings) se configura en el
+> **dashboard**, igual que `RESEND_API_KEY` del módulo Managment. El `wrangler.toml`
+> de la raíz es **local y no se commitea** (no se pushea, así que no afecta el build
+> de Pages): solo sirve para `wrangler pages dev` y declara los bindings de dev
+> (D1 de Recepciones + el KV `PRESUPUESTO_KV` de este módulo). El binding real de
+> producción es el que cargás en el dashboard (pasos de arriba).
+
+### Probar en local con `wrangler pages dev`
+
+`wrangler pages dev` levanta el sitio + las Functions con un KV **local simulado**
+(no toca el de producción), pasándole el binding por flag:
+
+```
+npx wrangler pages dev . --kv PRESUPUESTO_KV
+```
+
+Abrí la URL que imprime (típico `http://localhost:8788`) y entrá a `/presupuesto/`.
+Prueba de humo: cargá una línea → refrescá la página → tiene que seguir ahí (eso
+confirma que persiste en KV, no en el navegador). Para verificar el **fallback**:
+cortá la Function (Ctrl-C) y seguí usando el módulo — la UI sigue andando contra
+`localStorage` y en la consola vas a ver el `console.error` avisando que quedó en
+copia local.
+
+En **producción** la prueba es la misma: entrar al `/presupuesto/` del portal,
+cargar una línea y refrescar.
