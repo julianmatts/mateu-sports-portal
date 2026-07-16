@@ -220,6 +220,16 @@ table input:disabled,table select:disabled{opacity:.5;background:#f1f3f8;cursor:
   </div>
 </div>
 
+<div class="modal" id="historialProveedorModal">
+  <div class="modal-card maximized">
+    <div class="modal-head">
+      <h3 id="historialProveedorTitle">Historial de cumplimiento</h3>
+      <button class="xbtn" type="button" onclick="closeModal('historialProveedorModal')">×</button>
+    </div>
+    <div class="modal-body" id="historialProveedorBody"></div>
+  </div>
+</div>
+
 <div class="modal" id="facturaModal">
   <div class="modal-card maximized">
     <div class="modal-head">
@@ -2378,6 +2388,8 @@ function scoreProveedor(key){
 function scorePills(score){
   if(!score) return '';
   const pills = [];
+  const sg = scoreGlobal(score);
+  if(sg) pills.push(scorePillGlobal(sg));
   if(score.cumplimiento !== null){
     pills.push(pill('Cumplimiento ' + score.cumplimiento + '%', score.cumplimiento >= 95 ? 'ok' : score.cumplimiento >= 70 ? 'warn' : 'bad'));
   }
@@ -2389,6 +2401,53 @@ function scorePills(score){
     pills.push(pill(score.vencidas + ' OC vencida' + (score.vencidas === 1 ? '' : 's'), 'bad'));
   }
   return pills.join(' ');
+}
+
+// Score global 0-100 del proveedor: 65% cumplimiento de unidades + 35% puntualidad
+// (lineas no vencidas), con penalizacion por sobrecosto de ingreso. Nota A/B/C/D.
+function scoreGlobal(s){
+  if(!s || s.cumplimiento === null) return null;
+  const puntualidad = s.codigos ? Math.round((s.codigos - s.vencidas) / s.codigos * 100) : 100;
+  let valor = 0.65 * Math.min(100, s.cumplimiento) + 0.35 * puntualidad;
+  if(s.desvio !== null && s.desvio > 0) valor -= Math.min(15, s.desvio);
+  valor = Math.max(0, Math.round(valor));
+  const letra = valor >= 85 ? 'A' : valor >= 70 ? 'B' : valor >= 55 ? 'C' : 'D';
+  const tipo = valor >= 85 ? 'ok' : valor >= 55 ? 'warn' : 'bad';
+  return { valor, letra, tipo, puntualidad };
+}
+
+function scorePillGlobal(sg){
+  if(!sg) return '<span class="muted">-</span>';
+  return pill('Score ' + sg.valor + ' · ' + sg.letra, sg.tipo);
+}
+
+// Historial de cumplimiento por OC (agrupa las lineas no-borrador del proveedor
+// por numero de OC) para ver su track record entrega por entrega.
+function historialProveedorOC(key){
+  const items = state.ordenes.filter(o => providerKey(o.proveedor) === key && o.estado !== 'Borrador');
+  const map = new Map();
+  items.forEach(o => {
+    const oc = o.ocNumero || ('S/N · ' + (String(o.linea||'').trim() || '-') + ' / ' + (String(o.coleccion||'').trim() || '-'));
+    if(!map.has(oc)) map.set(oc, []);
+    map.get(oc).push(o);
+  });
+  const hoy = today();
+  const arr = [...map.entries()].map(([oc, lineas]) => {
+    const pedido = lineas.reduce((s,o)=>s + totalTalles(o.talles), 0);
+    const recibido = lineas.reduce((s,o)=>s + totalTalles(o.recibido), 0);
+    const cumplimiento = pedido ? Math.round(recibido / pedido * 100) : null;
+    const conCosto = lineas.filter(o => Number(o.costoIngreso||0) > 0 && Number(o.costo||0) > 0);
+    const desvio = conCosto.length
+      ? conCosto.reduce((s,o)=>s + (Number(o.costoIngreso) - Number(o.costo)) / Number(o.costo), 0) / conCosto.length * 100
+      : null;
+    const entrega = lineas.map(o=>o.entregaEstimada).filter(Boolean).sort()[0] || '';
+    const fecha = lineas.map(o=>o.fechaEnvio).filter(Boolean).sort()[0] || '';
+    const vencida = lineas.some(o => o.entregaEstimada && o.entregaEstimada < hoy && o.estado !== 'Recibida completa');
+    const completa = pedido > 0 && recibido >= pedido;
+    return { oc, fecha, entrega, codigos: lineas.length, pedido, recibido, cumplimiento, desvio, vencida, completa };
+  });
+  arr.sort((a,b) => (b.fecha||'').localeCompare(a.fecha||'') || String(b.oc).localeCompare(String(a.oc)));
+  return arr;
 }
 
 function ingresosGroups(rows){
@@ -3026,8 +3085,8 @@ function renderConfig(){
       <div class="btn-row"><button class="btn" type="submit">Guardar proveedor</button></div>
     </form>
     ${providersTable()}
-    <div class="section-title" style="margin-top:18px">Score de proveedores</div>
-    <div class="notice">Calculado automaticamente con las OC enviadas: cuanto entrego cada proveedor contra lo pedido, como vino el costo real de ingreso contra el costo de la OC, y cuantas OC tienen la entrega estimada vencida sin recibirse completas.</div>
+    <div class="section-title" style="margin-top:18px">Historial de cumplimiento y score de proveedores</div>
+    <div class="notice">Calculado automaticamente con las OC enviadas: cuanto entrego cada proveedor contra lo pedido, como vino el costo real de ingreso contra el costo de la OC, y cuantas OC tienen la entrega estimada vencida sin recibirse completas. El <b>Score</b> resume todo en una nota (A/B/C/D); "Ver historial" abre el detalle OC por OC.</div>
     ${scoreProveedoresTable()}
     <div class="section-title" style="margin-top:18px">Firebase</div>
     <div class="notice" style="${isFirebaseMode() ? 'border-color:var(--ok);background:#e9f8ef;color:var(--ok)' : ''}">
@@ -3157,23 +3216,71 @@ function scoreProveedoresTable(){
   if(!grupos.length) return '<div class="empty" style="margin-top:12px">Todavia no hay OC enviadas para calcular scores.</div>';
   return `
     <div class="table-wrap" style="margin-top:12px"><table>
-      <thead><tr><th>Proveedor</th><th>Codigos</th><th>Pedidas</th><th>Recibidas</th><th>Cumplimiento</th><th>Desvio costo real</th><th>OC vencidas</th></tr></thead>
+      <thead><tr><th>Proveedor</th><th>Score</th><th>Codigos</th><th>Pedidas</th><th>Recibidas</th><th>Cumplimiento</th><th>Desvio costo real</th><th>OC vencidas</th><th>Historial</th></tr></thead>
       <tbody>${grupos.map(g => {
         const s = scoreProveedor(g.key);
         if(!s) return '';
+        const sg = scoreGlobal(s);
         const signo = s.desvio !== null && s.desvio > 0 ? '+' : '';
         return `
         <tr>
           <td><b>${escapeHtml(g.proveedor)}</b></td>
+          <td>${scorePillGlobal(sg)}</td>
           <td>${s.codigos}</td>
           <td>${s.pedido}</td>
           <td>${s.recibido}</td>
           <td>${s.cumplimiento === null ? '<span class="muted">-</span>' : pill(s.cumplimiento + '%', s.cumplimiento >= 95 ? 'ok' : s.cumplimiento >= 70 ? 'warn' : 'bad')}</td>
           <td>${s.desvio === null ? '<span class="muted">Sin ingresos con costo</span>' : pill(signo + s.desvio.toFixed(1) + '%', s.desvio <= 0 ? 'ok' : s.desvio <= 5 ? 'warn' : 'bad')}</td>
           <td>${s.vencidas ? pill(String(s.vencidas), 'bad') : '<span class="muted">0</span>'}</td>
+          <td><button class="action" onclick="openHistorialProveedor('${encodeURIComponent(g.key)}')">Ver historial</button></td>
         </tr>`;
       }).join('')}</tbody>
     </table></div>`;
+}
+
+let historialProvActual = null;
+
+function openHistorialProveedor(keyEnc){
+  historialProvActual = decodeURIComponent(keyEnc);
+  renderHistorialProveedor();
+  openModal('historialProveedorModal');
+}
+
+function renderHistorialProveedor(){
+  const key = historialProvActual;
+  if(!key) return;
+  const prov = state.proveedores.find(p => providerKey(p.nombre) === key);
+  const nombre = prov ? prov.nombre : (groupedByProvider(state.ordenes).find(g=>g.key===key)?.proveedor || key);
+  const s = scoreProveedor(key);
+  const sg = scoreGlobal(s);
+  const hist = historialProveedorOC(key);
+  $('historialProveedorTitle').textContent = 'Historial de cumplimiento · ' + nombre;
+  $('historialProveedorBody').innerHTML = `
+    ${sg ? `<div class="summary" style="grid-template-columns:repeat(4,1fr);max-width:660px">
+      <div class="mini"><b>${sg.valor} <span style="font-size:15px;color:var(--muted)">(${sg.letra})</span></b><span>Score global</span></div>
+      <div class="mini"><b>${s.cumplimiento}%</b><span>Cumplimiento</span></div>
+      <div class="mini"><b>${sg.puntualidad}%</b><span>Puntualidad</span></div>
+      <div class="mini"><b>${s.desvio === null ? '-' : (s.desvio > 0 ? '+' : '') + s.desvio.toFixed(1) + '%'}</b><span>Desvio costo</span></div>
+    </div>
+    <div class="notice" style="margin-top:12px">Score = 65% cumplimiento de unidades + 35% puntualidad (OC no vencidas), menos penalizacion por sobrecosto de ingreso. Nota: A ≥ 85 · B ≥ 70 · C ≥ 55 · D &lt; 55.</div>`
+    : '<div class="notice">Todavia no hay OC enviadas de este proveedor para calcular el score.</div>'}
+    <div class="section-title" style="margin-top:16px">Historial por OC (${hist.length})</div>
+    ${hist.length ? `<div class="table-wrap"><table>
+      <thead><tr><th>OC</th><th>Envio</th><th>Entrega est.</th><th>Codigos</th><th>Pedidas</th><th>Recibidas</th><th>Cumplimiento</th><th>Desvio costo</th><th>Estado</th></tr></thead>
+      <tbody>${hist.map(h => `
+        <tr>
+          <td><b>${escapeHtml(h.oc)}</b></td>
+          <td>${h.fecha || '-'}</td>
+          <td>${h.entrega || '-'}</td>
+          <td>${h.codigos}</td>
+          <td>${h.pedido}</td>
+          <td>${h.recibido}</td>
+          <td>${h.cumplimiento === null ? '<span class="muted">-</span>' : pill(h.cumplimiento + '%', h.cumplimiento >= 95 ? 'ok' : h.cumplimiento >= 70 ? 'warn' : 'bad')}</td>
+          <td>${h.desvio === null ? '<span class="muted">-</span>' : pill((h.desvio > 0 ? '+' : '') + h.desvio.toFixed(1) + '%', h.desvio <= 0 ? 'ok' : h.desvio <= 5 ? 'warn' : 'bad')}</td>
+          <td>${h.completa ? pill('Completa','ok') : h.vencida ? pill('Vencida','bad') : pill('En curso','warn')}</td>
+        </tr>`).join('')}</tbody>
+    </table></div>` : '<div class="empty">Sin historial de OC.</div>'}
+  `;
 }
 
 function setMargenObjetivo(value){
