@@ -228,6 +228,30 @@ const ESTADOS_OC = ['Borrador','Enviada','Produccion','Recibida parcial','Recibi
 const GENEROS = ['Unisex','Hombre','Mujer','Kids'];
 const AVIOS_RESP = ['A cargo de la Fabrica / Taller Externo (Incluido en Costo)','A cargo del Diseñador / Entrega desde Marca'];
 
+// Paleta para diferenciar visualmente cada bloque (coleccion en Paso 1,
+// proveedor en Pasos 2 y 3). Cada entrada: c = color del acento (borde), t =
+// tinte suave para la cabecera. El color se elige por hash del nombre, asi el
+// mismo bloque mantiene su color entre renders y entre pasos.
+const PALETA_BLOQUES = [
+  { c:'#CC0000', t:'#fdeeee' },
+  { c:'#1E5FBF', t:'#edf3fc' },
+  { c:'#2E9E5B', t:'#edf7f0' },
+  { c:'#E08600', t:'#fdf4e6' },
+  { c:'#8E44AD', t:'#f5edfa' },
+  { c:'#00897B', t:'#e7f5f3' },
+  { c:'#C2185B', t:'#fbedf3' },
+  { c:'#3949AB', t:'#edeffa' },
+  { c:'#00838F', t:'#e6f5f7' },
+  { c:'#6D4C41', t:'#f4eeeb' }
+];
+
+function colorBloque(clave){
+  const s = String(clave || '');
+  let h = 0;
+  for(let i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) >>> 0; }
+  return PALETA_BLOQUES[h % PALETA_BLOQUES.length];
+}
+
 const $ = id => document.getElementById(id);
 const money = n => '$ ' + (Number(n || 0)).toLocaleString('es-AR');
 const uid = prefix => prefix + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,7);
@@ -923,9 +947,10 @@ function collectionsTable(){
 function coleccionPanel(c){
   const prendas = brandFilter === 'all' ? c.prendas : c.prendas.filter(p => p.marca === brandFilter);
   const grupos = groupedByLinea(prendas);
+  const col = colorBloque(c.nombre);
   return `
-    <section class="po-group">
-      <div class="po-head">
+    <section class="po-group" style="border-left:6px solid ${col.c}">
+      <div class="po-head" style="background:${col.t}">
         <div>
           <h3>${escapeHtml(c.nombre)}</h3>
           <div class="po-meta">${escapeHtml(c.tipo || '-')} · ${prendas.length} prenda${prendas.length === 1 ? '' : 's'} · ${grupos.length} linea${grupos.length === 1 ? '' : 's'}</div>
@@ -1395,9 +1420,10 @@ function ocTable(){
     const valorizado = group.items.reduce((sum,o)=>sum + valorizadoLinea(o), 0);
     const codigos = group.items.length;
     const mode = ocMode[group.key] || 'curva';
+    const col = colorBloque(group.proveedor);
     return `
-      <section class="po-group">
-        <div class="po-head">
+      <section class="po-group" style="border-left:6px solid ${col.c}">
+        <div class="po-head" style="background:${col.t}">
           <div>
             <h3>${escapeHtml(group.proveedor)}</h3>
             <div class="po-meta">${codigos} codigo${codigos === 1 ? '' : 's'} · ${unidades} unidades pedidas · Total OC ${money(valorizado)}</div>
@@ -2182,9 +2208,10 @@ function ingresosGroups(rows){
     const pedido = group.items.reduce((sum,o)=>sum + totalTalles(o.talles), 0);
     const recibido = group.items.reduce((sum,o)=>sum + totalTalles(o.recibido), 0);
     const codigos = group.items.length;
+    const col = colorBloque(group.proveedor);
     return `
-      <section class="po-group">
-        <div class="po-head">
+      <section class="po-group" style="border-left:6px solid ${col.c}">
+        <div class="po-head" style="background:${col.t}">
           <div>
             <h3>${escapeHtml(group.proveedor)}</h3>
             <div class="po-meta">${codigos} codigo${codigos === 1 ? '' : 's'} · ${pedido} unidades pedidas · ${recibido} recibidas</div>
