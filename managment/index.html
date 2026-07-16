@@ -158,6 +158,24 @@ table input:disabled,table select:disabled{opacity:.5;background:#f1f3f8;cursor:
   </div>
 </div>
 
+<div class="modal" id="lineaModal" style="z-index:30">
+  <div class="modal-card" style="width:min(460px,100%)">
+    <div class="modal-head">
+      <div>
+        <h3>Nueva linea</h3>
+        <div class="collection-note">Se agrega al listado y queda seleccionada en la prenda.</div>
+      </div>
+      <button class="xbtn" type="button" onclick="closeModal('lineaModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <form class="form" id="lineaQuickForm">
+        <div class="field"><label>Nombre de la linea *</label><input name="linea" required placeholder="Ej: ActiveWear, EveryWear, Court"></div>
+        <div class="btn-row" style="justify-content:flex-end"><button class="btn secondary" type="button" onclick="closeModal('lineaModal')">Cancelar</button><button class="btn" type="submit">Agregar linea</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="actionModal">
   <div class="modal-card" style="width:min(420px,100%)">
     <div class="modal-head">
@@ -247,6 +265,13 @@ const STORAGE_KEY = 'mateu_managment_local_v1';
 const TALLES = ['S','M','L','XL','XXL','XXXL'];
 const PREFIJOS = { mateu:'MAT', ruge:'RUG', aurelius:'AUR' };
 const MARCAS = { mateu:'Mateu', ruge:'Ruge', aurelius:'Aurelius' };
+// Color de cada marca (pildora con fondo lleno + letra blanca):
+// Mateu azul, Ruge negro, Aurelius bordo.
+const MARCA_COLORES = { mateu:'#1E5FBF', ruge:'#141414', aurelius:'#7B1F2E' };
+function marcaPill(m, extra){
+  const bg = MARCA_COLORES[m] || '#6b7280';
+  return `<span class="pill" style="background:${bg};color:#fff;${extra || ''}">${escapeHtml(MARCAS[m] || m)}</span>`;
+}
 const CONTADORES_INICIALES = { mateu:395, ruge:963, aurelius:201 };
 const CONFIG_INICIAL = { diasAlertaPrenda:7, margenObjetivo:2.2 };
 const ESTADOS_PRENDA = ['1. Diseño','2. Taller (Muestra)','3. Correccion-Devolucion','4. Aprobado Comercial','5. Desaprobado'];
@@ -1037,7 +1062,7 @@ function bloqueadoPorDetalle(prendas){
 function marcaBadges(prendas){
   const marcas = [...new Set(prendas.map(p=>p.marca))].filter(Boolean);
   if(!marcas.length) return '-';
-  return `<div style="display:flex;gap:4px;flex-wrap:wrap">${marcas.map(m=>`<span class="pill violet" style="font-size:9px">${escapeHtml(MARCAS[m] || m)}</span>`).join('')}</div>`;
+  return `<div style="display:flex;gap:4px;flex-wrap:wrap">${marcas.map(m=>marcaPill(m,'font-size:9px')).join('')}</div>`;
 }
 
 function openCollectionModal(){
@@ -1068,7 +1093,12 @@ function renderItemsModal(){
     <form class="form" id="itemForm">
       <div class="row">
         <div class="field"><label>Marca</label><select name="marca">${brandOptions()}</select></div>
-        <div class="field"><label>Linea</label><input name="tipo" required placeholder="Ej: ActiveWear, EveryWear, Court" value="${itemsLineaFilter && itemsLineaFilter !== 'Sin linea' ? escapeAttr(itemsLineaFilter) : ''}"></div>
+        <div class="field"><label>Linea</label>
+          <div style="display:flex;gap:6px">
+            <select name="tipo" required style="flex:1;min-width:0">${lineaOptions(itemsLineaFilter)}</select>
+            <button class="btn secondary" type="button" style="padding:9px 12px;white-space:nowrap" onclick="openLineaModal()">+ Nueva</button>
+          </div>
+        </div>
       </div>
       <div class="row">
         <div class="field"><label>Nombre prenda</label><input name="nombre" required placeholder="Ej: Motion"></div>
@@ -1119,6 +1149,23 @@ function groupedByLinea(prendas){
   return [...map.entries()]
     .sort((a,b) => a[0] === 'Sin linea' ? 1 : b[0] === 'Sin linea' ? -1 : a[0].localeCompare(b[0]))
     .map(([linea, items]) => ({ linea, items }));
+}
+
+// Lineas ya creadas en todo el sistema (para precargar el select del alta de prenda).
+function lineasExistentes(){
+  const set = new Set();
+  state.colecciones.forEach(c => (c.prendas||[]).forEach(p => {
+    const l = String(p.tipo||'').trim();
+    if(l) set.add(l);
+  }));
+  return [...set].sort((a,b)=>a.localeCompare(b));
+}
+
+function lineaOptions(selected){
+  const sel = selected && selected !== 'Sin linea' ? selected : '';
+  let lineas = lineasExistentes();
+  if(sel && !lineas.some(l => l.toLowerCase() === sel.toLowerCase())) lineas = [sel, ...lineas];
+  return '<option value="">Seleccionar linea</option>' + lineas.map(l=>`<option value="${escapeHtml(l)}" ${sel.toLowerCase()===l.toLowerCase()?'selected':''}>${escapeHtml(l)}</option>`).join('');
 }
 
 function itemsTable(c){
@@ -1482,6 +1529,37 @@ function saveNewProvider(ev){
   const sel = document.querySelector('#itemForm select[name="proveedor"]');
   if(sel) sel.innerHTML = providerOptions(nombreFinal);
   closeModal('providerModal');
+}
+
+// Alta rapida de linea desde el modal de prendas (Paso 1). La linea no se
+// persiste como entidad: existe cuando una prenda la usa. Aca solo se agrega la
+// opcion al <select> y se selecciona, sin re-renderizar (no se pierde la prenda).
+function openLineaModal(){
+  const form = $('lineaQuickForm');
+  if(form){
+    if(!form.dataset.bound){ form.dataset.bound = '1'; form.addEventListener('submit', saveNewLinea); }
+    form.reset();
+  }
+  openModal('lineaModal');
+  setTimeout(()=>$('lineaQuickForm')?.querySelector('input[name="linea"]')?.focus(), 0);
+}
+
+function saveNewLinea(ev){
+  ev.preventDefault();
+  const fd = new FormData(ev.currentTarget);
+  const linea = String(fd.get('linea')||'').trim();
+  if(!linea) return;
+  const sel = document.querySelector('#itemForm select[name="tipo"]');
+  if(sel){
+    let opt = [...sel.options].find(o => o.value.toLowerCase() === linea.toLowerCase());
+    if(!opt){
+      opt = document.createElement('option');
+      opt.value = linea; opt.textContent = linea;
+      sel.appendChild(opt);
+    }
+    sel.value = opt.value;
+  }
+  closeModal('lineaModal');
 }
 
 function renderOC(){
