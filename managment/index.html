@@ -1629,6 +1629,7 @@ function ocTable(){
   return groupedByProvider(ordenes).map(group => {
     const unidades = group.items.reduce((sum,o)=>sum + totalTalles(o.talles), 0);
     const valorizado = group.items.reduce((sum,o)=>sum + valorizadoLinea(o), 0);
+    const anticipoTotal = groupedByLineaColeccion(group.items).reduce((s,sg)=> s + sg.items.reduce((m,o)=>Math.max(m, Number(o.anticipoOC||0)), 0), 0);
     const codigos = group.items.length;
     const mode = ocMode[group.key] || 'curva';
     const col = colorBloque(group.proveedor);
@@ -1637,7 +1638,7 @@ function ocTable(){
         <div class="po-head" style="background:${col.t}">
           <div>
             <h3>${escapeHtml(group.proveedor)}</h3>
-            <div class="po-meta">${codigos} codigo${codigos === 1 ? '' : 's'} · ${unidades} unidades pedidas · Total OC ${money(valorizado)}</div>
+            <div class="po-meta">${codigos} codigo${codigos === 1 ? '' : 's'} · ${unidades} unidades pedidas · Total OC ${money(valorizado)}${anticipoTotal > 0 ? ' · Anticipo ' + money(anticipoTotal) + ' · Saldo ' + money(valorizado - anticipoTotal) : ''}</div>
           </div>
           <div class="actions">${accionesProveedor(group)}</div>
         </div>
@@ -1654,10 +1655,12 @@ function resumenLineaColeccion(group){
   const subgrupos = groupedByLineaColeccion(group.items);
   return `
     <div class="table-wrap"><table>
-      <thead><tr><th>Linea</th><th>Coleccion</th><th>Codigos</th><th>Unidades</th><th>Valorizado</th><th>Estado</th><th>Acciones</th></tr></thead>
+      <thead><tr><th>Linea</th><th>Coleccion</th><th>Codigos</th><th>Unidades</th><th>Valorizado</th><th>Anticipo abonado</th><th>Saldo</th><th>Estado</th><th>Acciones</th></tr></thead>
       <tbody>${subgrupos.map(sg => {
         const unidades = sg.items.reduce((sum,o)=>sum + totalTalles(o.talles), 0);
         const valorizado = sg.items.reduce((sum,o)=>sum + valorizadoLinea(o), 0);
+        const anticipo = sg.items.reduce((m,o)=>Math.max(m, Number(o.anticipoOC || 0)), 0);
+        const saldo = valorizado - anticipo;
         return `
         <tr>
           <td><b>${escapeHtml(sg.linea)}</b></td>
@@ -1665,6 +1668,8 @@ function resumenLineaColeccion(group){
           <td>${sg.items.length}</td>
           <td>${unidades}</td>
           <td>${money(valorizado)}</td>
+          <td><input class="small-input" style="width:120px" type="number" min="0" step="0.01" value="${anticipo}" title="Cuanto se abono de anticipo en esta OC" onchange="setAnticipoOC('${encodeURIComponent(group.key)}','${encodeURIComponent(sg.linea)}','${encodeURIComponent(sg.coleccion)}',this.value)"></td>
+          <td><b style="color:${saldo <= 0 ? 'var(--ok)' : 'var(--navy)'}">${money(saldo)}</b></td>
           <td>${estadoResumenOC(sg.items)}</td>
           <td><div class="actions">
             <button class="action ico" title="Ver detalle de la OC" aria-label="Ver detalle de la OC" onclick="openOCDetalle('${encodeURIComponent(group.key)}','${encodeURIComponent(sg.linea)}','${encodeURIComponent(sg.coleccion)}')">${ICO_LUPA}</button>
@@ -1699,6 +1704,21 @@ async function borrarSubgrupoOC(keyEnc, lineaEnc, coleccionEnc){
   if(!ok) return;
   const ids = new Set(items.map(o => o.id));
   state.ordenes = state.ordenes.filter(o => !ids.has(o.id));
+  saveState();
+  render();
+}
+
+// Anticipo abonado por OC (subgrupo linea/coleccion). Se guarda en cada linea de
+// la OC para viajar con el sync de ordenes; se muestra el saldo = valorizado - anticipo.
+function setAnticipoOC(keyEnc, lineaEnc, coleccionEnc, value){
+  const key = decodeURIComponent(keyEnc);
+  const linea = decodeURIComponent(lineaEnc);
+  const coleccion = decodeURIComponent(coleccionEnc);
+  const group = groupedByProvider(state.ordenes).find(g => g.key === key);
+  if(!group) return;
+  const items = group.items.filter(o => (String(o.linea||'').trim() || 'Sin linea') === linea && (String(o.coleccion||'').trim() || 'Sin coleccion') === coleccion);
+  const monto = Math.max(0, Number(value) || 0);
+  items.forEach(o => { o.anticipoOC = monto; });
   saveState();
   render();
 }
@@ -1766,7 +1786,6 @@ function curvaPanel(group, editMode){
           <td>${estadoPill(o.estado)}</td>
           <td>
             <div class="actions">
-              <button class="action" onclick="duplicarOC('${o.id}')">Duplicar color</button>
               <button class="action" onclick="cambiarEstadoOC('${o.id}')">Estado</button>
               <button class="action danger" onclick="borrarOC('${o.id}')">Borrar</button>
             </div>
