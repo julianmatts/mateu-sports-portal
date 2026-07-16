@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mateu Sports · Presupuesto de Compras</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap');
+
+:root{
+  --navy:#0B1527;
+  --panel:#111F38;
+  --panel-2:#0E1A30;
+  --line:#22375E;
+  --line-soft:#1A2C4C;
+  --red:#E63329;
+  --red-dim:#9B2A24;
+  --white:#FFFFFF;
+  --muted:#8496B8;
+  --muted-2:#5D6E90;
+  --green:#3FB57A;
+  --amber:#F0A500;
+  --radius:10px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--navy);color:var(--white);font-family:'Barlow Condensed',sans-serif}
+body{min-height:100vh;-webkit-font-smoothing:antialiased}
+
+/* ── Loader ── */
+#loader{position:fixed;inset:0;background:var(--navy);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:14px;z-index:100;transition:opacity .5s ease}
+#loader.hide{opacity:0;pointer-events:none}
+#loader .brand{font-family:'Bebas Neue';font-size:clamp(38px,7vw,66px);letter-spacing:2px;line-height:.9}
+#loader .brand .r{color:var(--red)}
+#loader .sub{font-size:14px;letter-spacing:5px;text-transform:uppercase;color:var(--muted)}
+#loader .bar{width:180px;height:3px;background:var(--line);overflow:hidden;border-radius:3px}
+#loader .bar i{display:block;height:100%;width:40%;background:var(--red);animation:load 1s ease-in-out infinite}
+@keyframes load{0%{transform:translateX(-120%)}100%{transform:translateX(320%)}}
+
+/* ── Layout ── */
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px 80px}
+header.top{position:sticky;top:0;z-index:40;background:rgba(11,21,39,.9);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line-soft)}
+.top-inner{max-width:1180px;margin:0 auto;padding:16px 20px;display:flex;align-items:center;
+  justify-content:space-between;gap:20px;flex-wrap:wrap}
+.logo{font-family:'Bebas Neue';font-size:28px;letter-spacing:1.5px;line-height:1;display:flex;
+  align-items:baseline;gap:8px}
+.logo .r{color:var(--red)}
+.logo small{font-family:'Barlow Condensed';font-size:11px;letter-spacing:4px;color:var(--muted);
+  text-transform:uppercase;font-weight:500}
+.tabs{display:flex;gap:4px;background:var(--panel-2);padding:4px;border-radius:var(--radius);
+  border:1px solid var(--line-soft)}
+.tab{font-family:'Barlow Condensed';font-size:15px;font-weight:600;letter-spacing:.5px;
+  text-transform:uppercase;color:var(--muted);background:none;border:none;cursor:pointer;
+  padding:8px 18px;border-radius:7px;transition:.18s}
+.tab:hover{color:var(--white)}
+.tab.active{background:var(--red);color:var(--white)}
+
+.eyebrow{font-size:12px;letter-spacing:4px;text-transform:uppercase;color:var(--red);font-weight:600;
+  margin:34px 0 6px}
+h1.title{font-family:'Bebas Neue';font-size:clamp(34px,5vw,52px);letter-spacing:1px;line-height:.95;
+  margin-bottom:26px}
+
+.view{display:none;animation:fade .35s ease}
+.view.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ── Form ── */
+.card{background:var(--panel);border:1px solid var(--line-soft);border-radius:var(--radius);padding:20px}
+.form-grid{display:grid;grid-template-columns:1.4fr 1fr 1.2fr .8fr .9fr .9fr auto;gap:12px;align-items:end}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);font-weight:500}
+input,select{font-family:'Barlow Condensed';font-size:16px;font-weight:500;color:var(--white);
+  background:var(--panel-2);border:1px solid var(--line);border-radius:7px;padding:9px 11px;width:100%;
+  transition:.15s}
+input:focus,select:focus{outline:none;border-color:var(--red);background:#0c1a33}
+input::placeholder{color:var(--muted-2)}
+select option{background:var(--panel-2)}
+.btn{font-family:'Barlow Condensed';font-size:15px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;
+  cursor:pointer;border:none;border-radius:7px;padding:10px 20px;transition:.16s;white-space:nowrap}
+.btn-red{background:var(--red);color:var(--white)}
+.btn-red:hover{background:#ff4237}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+.btn-ghost:hover{color:var(--white);border-color:var(--muted)}
+
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:22px 0 14px}
+.toolbar .spacer{flex:1}
+.filter-sel{min-width:130px}
+
+/* ── Table ── */
+.table-wrap{overflow-x:auto;border:1px solid var(--line-soft);border-radius:var(--radius)}
+table{width:100%;border-collapse:collapse;min-width:820px}
+thead th{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);font-weight:600;
+  text-align:left;padding:13px 14px;background:var(--panel-2);border-bottom:1px solid var(--line)}
+th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
+tbody td{padding:11px 14px;border-bottom:1px solid var(--line-soft);font-size:15.5px;font-weight:400}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--panel-2)}
+.tag{display:inline-block;font-size:12px;letter-spacing:.5px;text-transform:uppercase;font-weight:600;
+  padding:2px 9px;border-radius:20px;background:var(--line-soft);color:var(--muted)}
+.chip-exec{font-weight:600}
+.row-act{color:var(--muted-2);cursor:pointer;background:none;border:none;font-family:'Barlow Condensed';
+  font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px}
+.row-act:hover{color:var(--red)}
+.empty{text-align:center;padding:46px 20px;color:var(--muted)}
+.empty b{font-family:'Bebas Neue';font-size:24px;letter-spacing:1px;display:block;margin-bottom:6px;color:var(--white)}
+
+/* ── KPIs ── */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:28px}
+.kpi{background:var(--panel);border:1px solid var(--line-soft);border-radius:var(--radius);padding:18px 20px;
+  position:relative;overflow:hidden}
+.kpi::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red)}
+.kpi.k-green::after{background:var(--green)}
+.kpi.k-amber::after{background:var(--amber)}
+.kpi .lab{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);font-weight:500}
+.kpi .val{font-family:'Bebas Neue';font-size:clamp(30px,3.4vw,42px);letter-spacing:1px;line-height:1.05;margin-top:6px}
+.kpi .val.small{font-size:clamp(24px,2.6vw,32px)}
+.kpi .foot{font-size:13px;color:var(--muted);margin-top:3px}
+.kpi .foot.pos{color:var(--green)}
+.kpi .foot.neg{color:var(--amber)}
+
+/* ── Group bars ── */
+.grp-head{display:flex;align-items:center;gap:14px;margin:6px 0 16px;flex-wrap:wrap}
+.grp-head h2{font-family:'Bebas Neue';font-size:26px;letter-spacing:1px;font-weight:400}
+.seg{display:flex;gap:3px;background:var(--panel-2);padding:3px;border-radius:8px;border:1px solid var(--line-soft)}
+.seg button{font-family:'Barlow Condensed';font-size:14px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.5px;color:var(--muted);background:none;border:none;cursor:pointer;padding:6px 14px;border-radius:6px}
+.seg button.active{background:var(--red);color:var(--white)}
+.legend{display:flex;gap:16px;font-size:13px;color:var(--muted);margin-left:auto}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.legend .lp{background:var(--muted-2)}
+.legend .le{background:var(--red)}
+
+.bars{display:flex;flex-direction:column;gap:16px}
+.brow{display:grid;grid-template-columns:180px 1fr;gap:16px;align-items:center}
+.brow .name{font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brow .name small{display:block;font-size:12px;color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:.5px}
+.track{display:flex;flex-direction:column;gap:5px}
+.bar-line{display:flex;align-items:center;gap:10px}
+.bar-line .cap{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted-2);width:42px;flex-shrink:0}
+.bar-bg{flex:1;height:15px;background:var(--panel-2);border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;width:0;transition:width 1s cubic-bezier(.2,.8,.2,1)}
+.bar-fill.pres{background:var(--muted-2)}
+.bar-fill.exec{background:var(--red)}
+.bar-fill.over{background:repeating-linear-gradient(45deg,var(--red),var(--red) 7px,#ff5a50 7px,#ff5a50 14px)}
+.bar-amt{font-size:14px;font-variant-numeric:tabular-nums;width:112px;text-align:right;flex-shrink:0;color:var(--muted)}
+.brow .pct{font-size:13px;margin-top:4px;color:var(--muted)}
+.brow .pct b{font-weight:600}
+.pct .ok{color:var(--green)}.pct .warn{color:var(--amber)}.pct .over{color:var(--red)}
+
+.note{font-size:13.5px;color:var(--muted);line-height:1.5;margin-top:26px;padding:16px 18px;
+  background:var(--panel-2);border:1px solid var(--line-soft);border-radius:var(--radius)}
+.note b{color:var(--white)}
+
+/* ── Edición inline ── */
+.cell-in{font-family:'Barlow Condensed';font-size:15.5px;font-weight:400;color:var(--white);
+  background:transparent;border:1px solid transparent;border-radius:5px;padding:4px 6px;width:100%;transition:.12s}
+.cell-in:hover{border-color:var(--line-soft);background:var(--panel-2)}
+.cell-in:focus{outline:none;border-color:var(--red);background:#0c1a33}
+.cell-in.num{text-align:right;font-variant-numeric:tabular-nums}
+td.edit{padding:6px 8px}
+input.cell-in[type=month]{color-scheme:dark}
+
+/* ── Alertas de desvío ── */
+.alerts{margin-bottom:28px}
+.alerts-head{font-family:'Bebas Neue';font-size:22px;letter-spacing:1px;margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.alerts-head .dot{width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 0 4px rgba(230,51,41,.18)}
+.alert-row{display:flex;align-items:center;gap:14px;padding:12px 16px;background:var(--panel);
+  border:1px solid var(--line-soft);border-left:3px solid var(--red);border-radius:8px;margin-bottom:8px}
+.alert-row .who{font-weight:600;font-size:16px;flex:1;overflow:hidden}
+.alert-row .who small{display:block;color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:.5px;font-size:12px}
+.alert-row .over{font-family:'Bebas Neue';font-size:22px;color:var(--red);letter-spacing:.5px;white-space:nowrap}
+.alert-row .opct{font-size:14px;color:var(--muted);width:56px;text-align:right;font-variant-numeric:tabular-nums}
+.all-ok{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--panel);
+  border:1px solid var(--line-soft);border-left:3px solid var(--green);border-radius:8px;color:var(--muted)}
+.all-ok .ico{color:var(--green);font-size:18px;font-weight:700}
+.all-ok b{color:var(--green)}
+
+/* ── Tendencia por período ── */
+.trend-sec{margin-top:42px}
+.trend-cols{display:flex;align-items:flex-end;gap:20px;height:230px;padding:18px 6px 0;
+  border-bottom:1px solid var(--line);overflow-x:auto}
+.tcol{display:flex;flex-direction:column;align-items:center;gap:8px;min-width:60px;flex:1;height:100%;justify-content:flex-end}
+.tcol .pair{display:flex;align-items:flex-end;gap:5px;flex:1;width:100%;justify-content:center;min-height:0}
+.tcol .cb{width:22px;border-radius:4px 4px 0 0;height:0;transition:height 1s cubic-bezier(.2,.8,.2,1)}
+.tcol .cb.p{background:var(--muted-2)}
+.tcol .cb.e{background:var(--red)}
+.tcol .pv{font-size:12px;color:var(--muted-2);font-variant-numeric:tabular-nums}
+.tcol .plab{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+
+@media(max-width:920px){
+  .form-grid{grid-template-columns:1fr 1fr}
+  .kpis{grid-template-columns:1fr 1fr}
+  .brow{grid-template-columns:1fr}
+  .brow .name{white-space:normal}
+}
+@media(max-width:520px){
+  .kpis{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr}
+  .top-inner{gap:12px}
+}
+@media(prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+  .bar-fill{transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<div id="loader">
+  <div class="brand">MATEU<span class="r">.</span></div>
+  <div class="sub">Presupuesto de Compras</div>
+  <div class="bar"><i></i></div>
+</div>
+
+<header class="top">
+  <div class="top-inner">
+    <div class="logo">MATEU<span class="r">.</span> <small>Presupuesto de Compras</small></div>
+    <div class="tabs">
+      <button class="tab active" data-view="cargar">Cargar</button>
+      <button class="tab" data-view="visualizar">Visualizar</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ══════════ CARGAR ══════════ -->
+  <section class="view active" id="view-cargar">
+    <div class="eyebrow">Alta de líneas</div>
+    <h1 class="title">Cargar presupuesto</h1>
+
+    <div class="card">
+      <div class="form-grid">
+        <div class="field"><label>Proveedor</label><input id="f-prov" placeholder="Ej. Nike Argentina"></div>
+        <div class="field"><label>Rubro</label><input id="f-rubro" placeholder="Ej. Calzado" list="dl-rubro"></div>
+        <div class="field"><label>Categoría</label><input id="f-cat" placeholder="Ej. Running" list="dl-cat"></div>
+        <div class="field"><label>Período</label><input id="f-per" type="month"></div>
+        <div class="field"><label>Presupuestado</label><input id="f-pres" type="number" min="0" step="1000" placeholder="0"></div>
+        <div class="field"><label>Ejecutado</label><input id="f-exec" type="number" min="0" step="1000" placeholder="0"></div>
+        <button class="btn btn-red" id="btn-add">Agregar</button>
+      </div>
+      <datalist id="dl-rubro"></datalist>
+      <datalist id="dl-cat"></datalist>
+    </div>
+
+    <div class="toolbar">
+      <select class="filter-sel" id="flt-per"><option value="">Todos los períodos</option></select>
+      <select class="filter-sel" id="flt-prov"><option value="">Todos los proveedores</option></select>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" id="btn-demo">Datos de ejemplo</button>
+      <button class="btn btn-ghost" id="btn-export">Exportar</button>
+      <label class="btn btn-ghost" style="cursor:pointer">Importar<input id="imp" type="file" accept="application/json" hidden></label>
+      <button class="btn btn-ghost" id="btn-clear">Vaciar todo</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Proveedor</th><th>Rubro</th><th>Categoría</th><th>Período</th>
+          <th class="num">Presupuestado</th><th class="num">Ejecutado</th><th class="num">Saldo</th>
+          <th class="num">Ejec.</th><th></th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════ VISUALIZAR ══════════ -->
+  <section class="view" id="view-visualizar">
+    <div class="eyebrow">Panel de control</div>
+    <h1 class="title">Ejecución del presupuesto</h1>
+
+    <div class="toolbar" style="margin-top:0">
+      <select class="filter-sel" id="vis-per"><option value="">Todos los períodos</option></select>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="alerts" id="alerts"></div>
+
+    <div class="grp-head">
+      <h2>Desglose por</h2>
+      <div class="seg" id="seg-group">
+        <button data-g="proveedor" class="active">Proveedor</button>
+        <button data-g="rubro">Rubro</button>
+        <button data-g="categoria">Categoría</button>
+      </div>
+      <div class="legend">
+        <span><i class="lp"></i>Presupuestado</span>
+        <span><i class="le"></i>Ejecutado</span>
+      </div>
+    </div>
+
+    <div class="bars" id="bars"></div>
+
+    <div class="trend-sec">
+      <div class="grp-head">
+        <h2>Tendencia por período</h2>
+        <select class="filter-sel" id="trend-prov" style="margin-left:auto"><option value="">Todos los proveedores</option></select>
+        <div class="legend">
+          <span><i class="lp"></i>Presupuestado</span>
+          <span><i class="le"></i>Ejecutado</span>
+        </div>
+      </div>
+      <div class="trend-cols" id="trend"></div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* ─────────────────────────────────────────────────────────────
+   CAPA DE PERSISTENCIA  (aislada — swap-friendly)
+   Backend real: Pages Function functions/api/presupuesto.js sobre
+   Cloudflare KV. GET /api/presupuesto → array de líneas · PUT lo guarda.
+   Ante error de red degradamos a localStorage (fallback) para no perder
+   lo cargado. El resto del código depende solo de Store.load()/save().
+   ───────────────────────────────────────────────────────────── */
+const KEY = 'mateu:presupuesto:compras:v1';
+const API = '/api/presupuesto';
+
+// Fallback local — envuelto en try/catch para no romper en previews sin storage.
+const localStore = {
+  get(){ try{ const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; }catch(e){ return null; } },
+  set(v){ try{ localStorage.setItem(KEY, JSON.stringify(v)); }catch(e){ /* sin storage: se ignora */ } }
+};
+
+const Store = {
+  async load(){
+    try{
+      const r = await fetch(API);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const data = await r.json();
+      const arr = Array.isArray(data) ? data : [];
+      localStore.set(arr);              // espejo local: si después se cae la API, tenemos lo último
+      return arr;
+    }catch(e){
+      console.error('Presupuesto: no se pudo leer del servidor, uso copia local:', e);
+      return localStore.get() || [];
+    }
+  },
+  async save(lineas){
+    localStore.set(lineas);             // guardo copia local SIEMPRE primero, así no se pierde nada
+    try{
+      const r = await fetch(API, {
+        method:'PUT',
+        headers:{ 'Content-Type':'application/json' },
+        body:JSON.stringify(lineas)
+      });
+      if(!r.ok) throw new Error('HTTP '+r.status);
+    }catch(e){
+      console.error('Presupuesto: no se pudo guardar en el servidor (queda en copia local):', e);
+    }
+  }
+};
+
+/* ── Estado ── */
+let lineas = [];
+let groupBy = 'proveedor';
+
+/* ── Utils ── */
+const ars = n => new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n||0);
+const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const perLabel = p => {
+  if(!p) return '—';
+  const [y,m] = p.split('-');
+  const meses=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return `${meses[(+m)-1]||''} ${y}`;
+};
+const $ = id => document.getElementById(id);
+
+/* ── Alta ── */
+async function agregar(){
+  const prov=$('f-prov').value.trim(), rubro=$('f-rubro').value.trim(),
+        cat=$('f-cat').value.trim(), per=$('f-per').value,
+        pres=+$('f-pres').value||0, exec=+$('f-exec').value||0;
+  if(!prov){ $('f-prov').focus(); return; }
+  const limpiar=()=>{ ['f-prov','f-cat','f-pres','f-exec'].forEach(i=>$(i).value=''); $('f-prov').focus(); };
+  const dup = lineas.find(l =>
+    l.proveedor.toLowerCase()===prov.toLowerCase() &&
+    (l.rubro||'—')===(rubro||'—') && (l.categoria||'—')===(cat||'—') && l.periodo===per);
+  if(dup){
+    const ok = confirm(`Ya existe una línea para "${prov}" · ${rubro||'—'} · ${cat||'—'} en ${perLabel(per)}.\n\nAceptar: sumar estos montos a la línea existente.\nCancelar: no agregar nada.`);
+    if(ok){ dup.presupuestado+=pres; dup.ejecutado+=exec; await Store.save(lineas); limpiar(); renderAll(); }
+    return;
+  }
+  lineas.push({id:uid(),proveedor:prov,rubro:rubro||'—',categoria:cat||'—',periodo:per,presupuestado:pres,ejecutado:exec});
+  await Store.save(lineas);
+  limpiar();
+  renderAll();
+}
+
+async function eliminar(id){
+  lineas = lineas.filter(l=>l.id!==id);
+  await Store.save(lineas);
+  renderAll();
+}
+
+async function editarCampo(id, campo, valor){
+  const l = lineas.find(x=>x.id===id); if(!l) return;
+  l[campo] = (campo==='presupuestado'||campo==='ejecutado') ? (+valor||0) : valor;
+  await Store.save(lineas);
+  renderAll();
+}
+
+/* ── Filtros de tabla ── */
+function lineasFiltradas(){
+  const fp=$('flt-per').value, fpr=$('flt-prov').value;
+  return lineas.filter(l=>(!fp||l.periodo===fp)&&(!fpr||l.proveedor===fpr));
+}
+
+/* ── Render tabla ── */
+function renderTabla(){
+  const tb=$('tbody'); const rows=lineasFiltradas();
+  if(!rows.length){
+    tb.innerHTML=`<tr><td colspan="9" class="empty"><b>Sin líneas cargadas</b>Agregá una línea arriba o cargá datos de ejemplo para empezar.</td></tr>`;
+    return;
+  }
+  tb.innerHTML = rows.map(l=>{
+    const saldo=l.presupuestado-l.ejecutado;
+    const pct = l.presupuestado? l.ejecutado/l.presupuestado : 0;
+    const col = pct>1?'var(--red)':pct>=.9?'var(--amber)':'var(--green)';
+    return `<tr data-id="${l.id}">
+      <td class="edit"><input class="cell-in" data-c="proveedor" value="${esc(l.proveedor)}"></td>
+      <td class="edit"><input class="cell-in" data-c="rubro" value="${esc(l.rubro)}" list="dl-rubro"></td>
+      <td class="edit"><input class="cell-in" data-c="categoria" value="${esc(l.categoria)}" list="dl-cat"></td>
+      <td class="edit"><input class="cell-in" type="month" data-c="periodo" value="${l.periodo||''}"></td>
+      <td class="edit num"><input class="cell-in num" type="number" data-c="presupuestado" value="${l.presupuestado}"></td>
+      <td class="edit num"><input class="cell-in num" type="number" data-c="ejecutado" value="${l.ejecutado}"></td>
+      <td class="num" style="color:${saldo<0?'var(--red)':'var(--green)'}">${ars(saldo)}</td>
+      <td class="num chip-exec" style="color:${col}">${(pct*100).toFixed(0)}%</td>
+      <td class="num"><button class="row-act" data-del="${l.id}">Borrar</button></td>
+    </tr>`;
+  }).join('');
+}
+const esc = s => (s+'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ── Selects de filtro + datalists ── */
+function renderSelectores(){
+  const pers=[...new Set(lineas.map(l=>l.periodo).filter(Boolean))].sort().reverse();
+  const provs=[...new Set(lineas.map(l=>l.proveedor))].sort();
+  const rubros=[...new Set(lineas.map(l=>l.rubro).filter(r=>r&&r!=='—'))].sort();
+  const cats=[...new Set(lineas.map(l=>l.categoria).filter(c=>c&&c!=='—'))].sort();
+
+  fillSel('flt-per', pers.map(p=>[p,perLabel(p)]), 'Todos los períodos');
+  fillSel('vis-per', pers.map(p=>[p,perLabel(p)]), 'Todos los períodos');
+  fillSel('flt-prov', provs.map(p=>[p,p]), 'Todos los proveedores');
+  fillSel('trend-prov', provs.map(p=>[p,p]), 'Todos los proveedores');
+  $('dl-rubro').innerHTML = rubros.map(r=>`<option value="${esc(r)}">`).join('');
+  $('dl-cat').innerHTML = cats.map(c=>`<option value="${esc(c)}">`).join('');
+}
+function fillSel(id, pairs, allLabel){
+  const el=$(id); const cur=el.value;
+  el.innerHTML=`<option value="">${allLabel}</option>`+pairs.map(([v,l])=>`<option value="${esc(v)}">${esc(l)}</option>`).join('');
+  if([...el.options].some(o=>o.value===cur)) el.value=cur;
+}
+
+/* ── Visualizar ── */
+function datosVis(){
+  const fp=$('vis-per').value;
+  return lineas.filter(l=>!fp||l.periodo===fp);
+}
+function renderKPIs(){
+  const d=datosVis();
+  const pres=d.reduce((s,l)=>s+l.presupuestado,0);
+  const exec=d.reduce((s,l)=>s+l.ejecutado,0);
+  const saldo=pres-exec;
+  const pct=pres?exec/pres*100:0;
+  const saldoClass = saldo<0?'k-amber':'k-green';
+  $('kpis').innerHTML=`
+    <div class="kpi"><div class="lab">Presupuestado</div><div class="val">${ars(pres)}</div><div class="foot">${d.length} línea${d.length!==1?'s':''}</div></div>
+    <div class="kpi"><div class="lab">Ejecutado</div><div class="val">${ars(exec)}</div><div class="foot">${pct.toFixed(0)}% del presupuesto</div></div>
+    <div class="kpi ${pct>100?'k-amber':''}"><div class="lab">% Ejecución</div><div class="val">${pct.toFixed(0)}%</div><div class="foot ${pct>100?'neg':'pos'}">${pct>100?'Sobre-ejecutado':'En rango'}</div></div>
+    <div class="kpi ${saldoClass}"><div class="lab">Saldo disponible</div><div class="val ${Math.abs(saldo)>=1e9?'small':''}">${ars(saldo)}</div><div class="foot ${saldo<0?'neg':'pos'}">${saldo<0?'Excedido':'Disponible'}</div></div>`;
+}
+function renderBars(){
+  const d=datosVis();
+  const map={};
+  d.forEach(l=>{
+    const k=l[groupBy]||'—';
+    if(!map[k]) map[k]={pres:0,exec:0};
+    map[k].pres+=l.presupuestado; map[k].exec+=l.ejecutado;
+  });
+  const grupos=Object.entries(map).sort((a,b)=>b[1].pres-a[1].pres);
+  const max=Math.max(1,...grupos.map(g=>Math.max(g[1].pres,g[1].exec)));
+  if(!grupos.length){
+    $('bars').innerHTML=`<div class="empty"><b>Nada para mostrar</b>Cargá líneas de presupuesto para ver el desglose.</div>`;
+    return;
+  }
+  $('bars').innerHTML=grupos.map(([name,v])=>{
+    const pct=v.pres?v.exec/v.pres:0;
+    const over=pct>1;
+    const cls=over?'over':pct>=.9?'warn':'ok';
+    const saldo=v.pres-v.exec;
+    return `<div class="brow">
+      <div class="name">${esc(name)}<small>${groupBy}</small></div>
+      <div>
+        <div class="track">
+          <div class="bar-line"><span class="cap">Ppto</span><div class="bar-bg"><div class="bar-fill pres" data-w="${v.pres/max*100}"></div></div><span class="bar-amt">${ars(v.pres)}</span></div>
+          <div class="bar-line"><span class="cap">Ejec</span><div class="bar-bg"><div class="bar-fill ${over?'over':'exec'}" data-w="${Math.min(v.exec,max)/max*100}"></div></div><span class="bar-amt">${ars(v.exec)}</span></div>
+        </div>
+        <div class="pct"><b class="${cls}">${(pct*100).toFixed(0)}% ejecutado</b> · saldo <b style="color:${saldo<0?'var(--red)':'var(--green)'}">${ars(saldo)}</b></div>
+      </div>
+    </div>`;
+  }).join('');
+  requestAnimationFrame(()=>document.querySelectorAll('.bar-fill').forEach(b=>b.style.width=b.dataset.w+'%'));
+}
+
+/* ── Ranking de desvíos ── */
+function renderAlertas(){
+  const d=datosVis();
+  const desvios=d.filter(l=>l.ejecutado>l.presupuestado)
+    .map(l=>({...l,over:l.ejecutado-l.presupuestado,pct:l.presupuestado?l.ejecutado/l.presupuestado:Infinity}))
+    .sort((a,b)=>b.over-a.over);
+  const el=$('alerts');
+  if(!desvios.length){
+    el.innerHTML=`<div class="all-ok"><span class="ico">✓</span><span><b>Todo dentro del presupuesto.</b> Ninguna línea del período supera lo asignado.</span></div>`;
+    return;
+  }
+  const tot=desvios.reduce((s,l)=>s+l.over,0);
+  el.innerHTML=`<div class="alerts-head"><span class="dot"></span>Desvíos · ${desvios.length} línea${desvios.length!==1?'s':''} sobre presupuesto · +${ars(tot)}</div>`+
+    desvios.slice(0,6).map(l=>`<div class="alert-row">
+      <div class="who">${esc(l.proveedor)}<small>${esc(l.rubro)} · ${esc(l.categoria)} · ${perLabel(l.periodo)}</small></div>
+      <div class="opct">${(l.pct*100).toFixed(0)}%</div>
+      <div class="over">+${ars(l.over)}</div>
+    </div>`).join('');
+}
+
+/* ── Tendencia por período ── */
+function renderTendencia(){
+  const prov=$('trend-prov').value;
+  const base=lineas.filter(l=>(!prov||l.proveedor===prov)&&l.periodo);
+  const map={};
+  base.forEach(l=>{ if(!map[l.periodo])map[l.periodo]={pres:0,exec:0}; map[l.periodo].pres+=l.presupuestado; map[l.periodo].exec+=l.ejecutado; });
+  const pers=Object.keys(map).sort();
+  const el=$('trend');
+  if(!pers.length){
+    el.innerHTML=`<div class="empty" style="margin:auto"><b>Sin datos de tendencia</b>Cargá líneas con período para ver la evolución mes a mes.</div>`;
+    return;
+  }
+  const max=Math.max(1,...pers.map(p=>Math.max(map[p].pres,map[p].exec)));
+  el.innerHTML=pers.map(p=>{
+    const v=map[p]; const pct=v.pres?v.exec/v.pres*100:0;
+    return `<div class="tcol">
+      <div class="pair">
+        <div class="cb p" data-h="${v.pres/max*100}" title="Presupuestado ${ars(v.pres)}"></div>
+        <div class="cb e" data-h="${v.exec/max*100}" title="Ejecutado ${ars(v.exec)}"></div>
+      </div>
+      <div class="pv">${pct.toFixed(0)}%</div>
+      <div class="plab">${perLabel(p)}</div>
+    </div>`;
+  }).join('');
+  requestAnimationFrame(()=>el.querySelectorAll('.cb').forEach(b=>b.style.height=b.dataset.h+'%'));
+}
+
+/* ── Orquestador ── */
+function renderAll(){
+  renderSelectores();
+  renderTabla();
+  renderKPIs();
+  renderBars();
+  renderAlertas();
+  renderTendencia();
+}
+
+/* ── Datos de ejemplo ── */
+async function cargarDemo(){
+  const mes = new Date().toISOString().slice(0,7);
+  const prev = new Date(); prev.setMonth(prev.getMonth()-1);
+  const mesPrev = prev.toISOString().slice(0,7);
+  lineas = [
+    {proveedor:'Nike Argentina',rubro:'Calzado',categoria:'Running',periodo:mes,presupuestado:4500000,ejecutado:3980000},
+    {proveedor:'Nike Argentina',rubro:'Indumentaria',categoria:'Training',periodo:mes,presupuestado:2800000,ejecutado:2950000},
+    {proveedor:'Adidas',rubro:'Calzado',categoria:'Fútbol',periodo:mes,presupuestado:3600000,ejecutado:3120000},
+    {proveedor:'Adidas',rubro:'Indumentaria',categoria:'Lifestyle',periodo:mes,presupuestado:2100000,ejecutado:1740000},
+    {proveedor:'Topper',rubro:'Calzado',categoria:'Fútbol',periodo:mes,presupuestado:1900000,ejecutado:1880000},
+    {proveedor:'Under Armour',rubro:'Accesorios',categoria:'Guantes',periodo:mes,presupuestado:850000,ejecutado:410000},
+    {proveedor:'Nike Argentina',rubro:'Calzado',categoria:'Running',periodo:mesPrev,presupuestado:4200000,ejecutado:4150000},
+    {proveedor:'Adidas',rubro:'Calzado',categoria:'Fútbol',periodo:mesPrev,presupuestado:3400000,ejecutado:3600000},
+  ].map(l=>({id:uid(),...l}));
+  await Store.save(lineas);
+  renderAll();
+}
+
+/* ── Export / Import ── */
+function exportar(){
+  const blob=new Blob([JSON.stringify(lineas,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`presupuesto-compras-mateu-${new Date().toISOString().slice(0,10)}.json`;
+  a.click(); URL.revokeObjectURL(a.href);
+}
+function importar(file){
+  const rd=new FileReader();
+  rd.onload=async()=>{
+    try{
+      const data=JSON.parse(rd.result);
+      if(!Array.isArray(data)) throw 0;
+      lineas=data.map(l=>({id:l.id||uid(),proveedor:l.proveedor||'—',rubro:l.rubro||'—',
+        categoria:l.categoria||'—',periodo:l.periodo||'',presupuestado:+l.presupuestado||0,ejecutado:+l.ejecutado||0}));
+      await Store.save(lineas); renderAll();
+    }catch(e){ alert('El archivo no tiene un formato válido.'); }
+  };
+  rd.readAsText(file);
+}
+
+/* ── Eventos ── */
+$('btn-add').onclick=agregar;
+document.querySelectorAll('.form-grid input').forEach(i=>i.addEventListener('keydown',e=>{if(e.key==='Enter')agregar();}));
+$('tbody').addEventListener('click',e=>{const id=e.target.dataset.del; if(id&&confirm('¿Borrar esta línea?')) eliminar(id);});
+$('tbody').addEventListener('change',e=>{const inp=e.target;const tr=inp.closest('tr');if(tr&&inp.dataset.c) editarCampo(tr.dataset.id,inp.dataset.c,inp.value);});
+$('flt-per').onchange=renderTabla;
+$('flt-prov').onchange=renderTabla;
+$('vis-per').onchange=()=>{renderKPIs();renderBars();renderAlertas();};
+$('trend-prov').onchange=renderTendencia;
+$('btn-demo').onclick=()=>{ if(!lineas.length||confirm('Esto reemplaza los datos actuales por el ejemplo. ¿Seguir?')) cargarDemo(); };
+$('btn-clear').onclick=async()=>{ if(confirm('¿Vaciar todas las líneas? No se puede deshacer.')){ lineas=[]; await Store.save(lineas); renderAll(); }};
+$('btn-export').onclick=exportar;
+$('imp').onchange=e=>{ if(e.target.files[0]) importar(e.target.files[0]); e.target.value=''; };
+
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  t.classList.add('active');
+  $('view-'+t.dataset.view).classList.add('active');
+  if(t.dataset.view==='visualizar'){renderKPIs();renderBars();renderAlertas();renderTendencia();}
+});
+$('seg-group').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  $('seg-group').querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); groupBy=b.dataset.g; renderBars();
+});
+
+/* ── Init ── */
+(async()=>{
+  $('f-per').value = new Date().toISOString().slice(0,7);
+  lineas = await Store.load();
+  renderAll();
+  setTimeout(()=>$('loader').classList.add('hide'),650);
+})();
+</script>
+</body>
+</html>
