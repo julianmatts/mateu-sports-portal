@@ -51,6 +51,10 @@ table input:disabled,table select:disabled{opacity:.5;background:#f1f3f8;cursor:
 .buscador-item .bi-main{min-width:0}
 .buscador-item .bi-main b{color:var(--navy)}
 .buscador-item .bi-sub{color:var(--muted);font-size:12px;margin-top:2px}
+.brand-chips{display:flex;gap:8px;flex-wrap:wrap}
+.brand-chip{border:1.5px solid var(--line);border-radius:999px;padding:8px 18px;font-family:var(--font-c);font-weight:700;font-size:14px;letter-spacing:.6px;text-transform:uppercase;cursor:pointer;line-height:1;transition:transform .06s ease,box-shadow .15s ease}
+.brand-chip:hover{transform:translateY(-1px)}
+.brand-chip.active{box-shadow:0 4px 12px rgba(11,21,39,.20)}
 .buscador-vacio{padding:12px;color:var(--muted);font-size:13px}.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:2}.modal-head h3{font-family:var(--font-c);font-size:22px;letter-spacing:.4px;text-transform:uppercase}.modal-body{padding:18px 20px}.xbtn{border:0;background:transparent;color:var(--muted);font-size:28px;line-height:1;cursor:pointer}.file-input{padding:8px!important}.collection-note{color:var(--muted);font-size:13px;line-height:1.35}
 @media(max-width:980px){.layout{grid-template-columns:1fr}.summary{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:620px){main{padding:18px 12px 36px}.top{grid-template-columns:1fr;align-items:center}.brand{justify-self:center}.header-logo{order:-1}.top-actions{justify-self:stretch;justify-content:space-between}.row,.summary,.size-grid{grid-template-columns:1fr}.small-input{width:100%}}
@@ -76,8 +80,8 @@ table input:disabled,table select:disabled{opacity:.5;background:#f1f3f8;cursor:
       <div class="hint">Los datos se sincronizan en la nube: todos los usuarios ven y editan la misma informacion desde cualquier dispositivo.</div>
       <div class="brand-filter" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
         <div class="field">
-          <label>Marca</label>
-          <select id="brandFilter" onchange="setBrandFilter(this.value)"></select>
+          <label>Filtrar por marca</label>
+          <div id="brandFilter" class="brand-chips"></div>
         </div>
         <div class="field" id="buscadorBox" style="position:relative;flex:1;min-width:280px">
           <label>Buscador global</label>
@@ -762,9 +766,15 @@ function setBrandFilter(value){
 function renderBrandFilter(){
   const el = $('brandFilter');
   if(!el) return;
-  const opts = '<option value="all">Todas las marcas</option>' + Object.keys(MARCAS).map(k=>`<option value="${k}">${MARCAS[k]}</option>`).join('');
-  el.innerHTML = opts;
-  el.value = brandFilter;
+  const chips = [{ k:'all', label:'Todas', color:'#0B1527' }]
+    .concat(Object.keys(MARCAS).map(k => ({ k, label:MARCAS[k], color:MARCA_COLORES[k] || '#6b7280' })));
+  el.innerHTML = chips.map(it => {
+    const active = brandFilter === it.k;
+    const style = active
+      ? `background:${it.color};color:#fff;border-color:${it.color}`
+      : `background:#fff;color:${it.color};border-color:${it.color}`;
+    return `<button type="button" class="brand-chip${active?' active':''}" style="${style}" onclick="setBrandFilter('${it.k}')">${escapeHtml(it.label)}</button>`;
+  }).join('');
 }
 
 function totalTalles(obj){
