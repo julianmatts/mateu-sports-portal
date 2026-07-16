@@ -1024,6 +1024,10 @@ function renderItemsModal(){
         <div class="field"><label>Version</label><input name="version" placeholder="1"></div>
       </div>
       <div class="row">
+        <div class="field"><label>Codigo (opcional)</label><input name="codigoManual" placeholder="Vacio = automatico al crear la OC"></div>
+        <div class="field"><label>&nbsp;</label><span class="muted" style="display:block;font-size:12px;padding-top:9px">Dejalo vacio para que el sistema lo genere, o escribi un codigo propio.</span></div>
+      </div>
+      <div class="row">
         <div class="field"><label>PVP objetivo ARS</label><input name="pvpObjetivo" type="number" min="0" step="0.01" value="0"></div>
         <div class="field"><label>Link de referencia</label><input name="referenciaLink" type="url" placeholder="Link a Drive, Pinterest, etc."></div>
       </div>
@@ -1084,7 +1088,8 @@ function lineaPanel(c, group){
         <thead><tr><th>Nombre</th><th>Proveedor</th><th>PVP Obj.</th><th>Margen</th><th>Referencia</th><th>Paso actual</th><th>Version</th><th>Fotos</th><th>OC</th><th>Acciones</th></tr></thead>
         <tbody>${group.items.map(p=>`
         <tr>
-          <td><b>${escapeHtml(p.nombre)}</b><div class="muted">${MARCAS[p.marca] || ''} / ${escapeHtml(p.color || '-')}</div></td>
+          <td><b>${escapeHtml(p.nombre)}</b><div class="muted">${MARCAS[p.marca] || ''} / ${escapeHtml(p.color || '-')}</div>
+            <input class="small-input" style="width:120px;margin-top:4px" value="${escapeAttr(p.codigoManual || '')}" placeholder="Codigo (auto)" title="Vacio = codigo automatico al crear la OC" onchange="setCodigoManualPrenda('${c.id}','${p.id}',this.value)"></td>
           <td>${escapeHtml(p.proveedor || '-')}</td>
           <td>${money(p.pvpObjetivo)}<div class="muted" style="font-size:11px">Costo ${money(p.costo)}</div></td>
           <td>${margenPill(p)}</td>
@@ -1132,6 +1137,7 @@ function createItem(ev){
     nombre:String(fd.get('nombre')||'').trim(),
     color:String(fd.get('color')||'').trim(),
     genero:String(fd.get('genero')||'').trim(),
+    codigoManual:String(fd.get('codigoManual')||'').trim().toUpperCase(),
     proveedor:String(fd.get('proveedor')||'').trim(),
     costo:Number(fd.get('costo')||0),
     pvpObjetivo:Number(fd.get('pvpObjetivo')||0),
@@ -1183,6 +1189,13 @@ function setVersionPrenda(colId, prendaId, value){
   const p = findPrenda(colId, prendaId);
   if(!p) return;
   p.version = String(value || '').trim();
+  saveState();
+}
+
+function setCodigoManualPrenda(colId, prendaId, value){
+  const p = findPrenda(colId, prendaId);
+  if(!p) return;
+  p.codigoManual = String(value || '').trim().toUpperCase();
   saveState();
 }
 
@@ -1314,7 +1327,17 @@ async function crearOCDesdePrenda(colId, prendaId, silent){
     if(!silent){ currentView = 'oc'; setActiveTab(); render(); }
     return;
   }
-  const codigo = await nextCodigo(d.marca);
+  let codigo;
+  const manual = String(d.codigoManual || '').trim().toUpperCase();
+  if(manual){
+    if(codigoExiste(manual)){
+      showToast('El codigo ' + manual + ' ya existe en otra OC. Cambialo o dejalo vacio para generar uno automatico.');
+      return;
+    }
+    codigo = manual;
+  }else{
+    codigo = await nextCodigo(d.marca);
+  }
   state.ordenes.unshift({
     id:uid('oc'),
     desarrolloId:d.id,
@@ -1440,6 +1463,10 @@ function renderOCDetalleModal(){
   const items = group.items.filter(o => (String(o.linea||'').trim()||'Sin linea') === ocDetalleActual.linea && (String(o.coleccion||'').trim()||'Sin coleccion') === ocDetalleActual.coleccion);
   if(!items.length){ closeOCDetalle(); return; }
   $('ocDetalleTitle').textContent = group.proveedor + ' - ' + ocDetalleActual.linea + ' / ' + ocDetalleActual.coleccion;
+  // La tabla de detalle es muy ancha y scrollea en horizontal. Al re-renderizar
+  // (cambiar estado, cargar fecha, etc.) guardamos y restauramos la posicion del
+  // scroll para que no salte a la izquierda y se pierda de vista la columna Estado.
+  const scrollPrev = $('ocDetalleBody').querySelector('.table-wrap')?.scrollLeft || 0;
   $('ocDetalleBody').innerHTML = `
     <div class="notice" style="${editModeOC ? '' : 'display:none'}">Modo edicion: podes reasignar Linea, Coleccion y Proveedor de cada codigo. Las lineas ya Enviadas necesitan "Reabrir OC" primero.</div>
     <div class="btn-row" style="margin-bottom:12px;justify-content:flex-end">
@@ -1447,6 +1474,8 @@ function renderOCDetalleModal(){
     </div>
     ${curvaPanel({ key: group.key, proveedor: group.proveedor, items }, editModeOC)}
   `;
+  const wrapNuevo = $('ocDetalleBody').querySelector('.table-wrap');
+  if(wrapNuevo) wrapNuevo.scrollLeft = scrollPrev;
 }
 
 function curvaPanel(group, editMode){
@@ -1473,7 +1502,7 @@ function curvaPanel(group, editMode){
             <input class="small-input" style="width:110px" type="url" value="${escapeAttr(o.fichaLink || '')}" placeholder="Link" onchange="setOCField('${o.id}','fichaLink',this.value)">
             ${o.fichaLink ? `<a href="${escapeAttr(o.fichaLink)}" target="_blank" rel="noopener" style="display:block;margin-top:4px;font-size:11px">Abrir</a>` : ''}
           </td>
-          <td><input class="small-input" style="width:130px" type="date" value="${escapeHtml(o.entregaEstimada || '')}" onchange="setOCField('${o.id}','entregaEstimada',this.value)"></td>
+          <td><input class="small-input" style="width:165px" type="date" value="${escapeHtml(o.entregaEstimada || '')}" onchange="setOCField('${o.id}','entregaEstimada',this.value)"></td>
           <td><input class="small-input" style="width:90px" value="${escapeHtml(o.seguimiento || '')}" placeholder="Ej: Fran" onchange="setOCField('${o.id}','seguimiento',this.value)"></td>
           <td><input class="small-input" style="width:150px" value="${escapeHtml(o.notas || '')}" placeholder="Observaciones" onchange="setOCField('${o.id}','notas',this.value)"></td>
           <td>${estadoPill(o.estado)}</td>
