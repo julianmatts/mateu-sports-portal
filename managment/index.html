@@ -100,25 +100,6 @@ table input:disabled,table select:disabled{opacity:.5;background:#f1f3f8;cursor:
   </section>
 </main>
 
-<div class="modal" id="collectionModal">
-  <div class="modal-card">
-    <div class="modal-head">
-      <div>
-        <h3>Iniciar Nueva Coleccion / Desarrollo</h3>
-        <div class="collection-note">Crea el contenedor de trabajo. Despues abrilo para cargar prendas.</div>
-      </div>
-      <button class="xbtn" type="button" onclick="closeModal('collectionModal')">×</button>
-    </div>
-    <div class="modal-body">
-      <form class="form" id="collectionForm">
-        <div class="field"><label>Tipo de modulo / linea</label><input name="tipo" required placeholder="Ej: Invierno, Capsula Technical"></div>
-        <div class="field"><label>Nombre de la coleccion</label><input name="nombre" required placeholder="Ej: Axis 2027"></div>
-        <div class="btn-row" style="justify-content:flex-end"><button class="btn secondary" type="button" onclick="closeModal('collectionModal')">Cancelar</button><button class="btn" type="submit">Crear desarrollo</button></div>
-      </form>
-    </div>
-  </div>
-</div>
-
 <div class="modal" id="itemsModal">
   <div class="modal-card maximized">
     <div class="modal-head">
@@ -126,7 +107,7 @@ table input:disabled,table select:disabled{opacity:.5;background:#f1f3f8;cursor:
         <h3 id="itemsTitle">Coleccion</h3>
         <div class="collection-note" id="itemsSubtitle">Control pormenorizado por silueta textil.</div>
       </div>
-      <button class="xbtn" type="button" onclick="closeModal('itemsModal')">×</button>
+      <button class="xbtn" type="button" onclick="closeItemsModal()">×</button>
     </div>
     <div class="modal-body" id="itemsBody"></div>
   </div>
@@ -978,15 +959,10 @@ function renderDesarrollo(){
         <h2>Paso 1: Modulo de Desarrollo</h2>
         <p>Gestion directa de colecciones y aprobaciones de prototipos.</p>
       </div>
-      <button class="btn" type="button" onclick="openCollectionModal()">+ Nuevo Desarrollo</button>
+      <button class="btn" type="button" onclick="nuevoDesarrollo()">+ Nuevo Desarrollo</button>
     </div>
     ${collectionsTable()}
   `;
-  const form = $('collectionForm');
-  if(form && !form.dataset.bound){
-    form.dataset.bound = '1';
-    form.addEventListener('submit', createCollection);
-  }
 }
 
 function collectionsTable(){
@@ -1003,7 +979,7 @@ function coleccionPanel(c){
     <section class="po-group" style="border-left:6px solid ${col.c}">
       <div class="po-head" style="background:${col.t}">
         <div>
-          <h3>${escapeHtml(c.nombre)}</h3>
+          <h3>${escapeHtml(c.nombre || '(sin nombre)')}</h3>
           <div class="po-meta">${escapeHtml(c.tipo || '-')} · ${prendas.length} prenda${prendas.length === 1 ? '' : 's'} · ${grupos.length} linea${grupos.length === 1 ? '' : 's'}</div>
         </div>
         <div class="actions">
@@ -1027,20 +1003,39 @@ function coleccionPanel(c){
     </section>`;
 }
 
-function createCollection(ev){
-  ev.preventDefault();
-  const fd = new FormData(ev.currentTarget);
-  state.colecciones.unshift({
-    id:uid('col'),
-    tipo:String(fd.get('tipo')||'').trim(),
-    nombre:String(fd.get('nombre')||'').trim(),
-    creado:today(),
-    prendas:[]
-  });
+// Creacion unificada: "+ Nuevo Desarrollo" crea el contenedor y abre directo la
+// pantalla de carga (una sola instancia). El nombre y el tipo se editan arriba de
+// esa misma pantalla, junto a la carga de prendas.
+function nuevoDesarrollo(){
+  const col = { id:uid('col'), tipo:'', nombre:'', creado:today(), prendas:[] };
+  state.colecciones.unshift(col);
   brandFilter = 'all';
   saveState();
-  ev.currentTarget.reset();
-  closeModal('collectionModal');
+  render();
+  openItemsModal(col.id);
+  setTimeout(()=>document.querySelector('#itemsBody input[name="colNombre"]')?.focus(), 0);
+}
+
+function setColeccionCampo(colId, campo, valor){
+  const c = state.colecciones.find(x=>x.id===colId);
+  if(!c) return;
+  c[campo] = String(valor||'').trim();
+  saveState();
+  const t = $('itemsTitle');
+  if(t) t.textContent = 'Coleccion: ' + (c.nombre || '(sin nombre)') + (itemsLineaFilter ? '  ·  Linea: ' + itemsLineaFilter : '');
+  render();
+}
+
+// Al cerrar, si quedo un desarrollo recien creado sin nombre, sin tipo y sin
+// prendas, se descarta para no dejar contenedores vacios.
+function closeItemsModal(){
+  const c = state.colecciones.find(x=>x.id===activeCollectionId);
+  if(c && !c.prendas.length && !String(c.nombre||'').trim() && !String(c.tipo||'').trim()){
+    state.colecciones = state.colecciones.filter(x=>x.id!==c.id);
+    saveState();
+  }
+  itemsLineaFilter = null;
+  closeModal('itemsModal');
   render();
 }
 
@@ -1065,11 +1060,6 @@ function marcaBadges(prendas){
   return `<div style="display:flex;gap:4px;flex-wrap:wrap">${marcas.map(m=>marcaPill(m,'font-size:9px')).join('')}</div>`;
 }
 
-function openCollectionModal(){
-  openModal('collectionModal');
-  setTimeout(()=>document.querySelector('#collectionForm input[name="tipo"]')?.focus(), 0);
-}
-
 // itemsLineaFilter: si tiene valor, el modal muestra solo esa linea (Abrir linea).
 // null = coleccion completa (Abrir coleccion).
 let itemsLineaFilter = null;
@@ -1084,11 +1074,15 @@ function openItemsModal(id, lineaEnc){
 function renderItemsModal(){
   const c = state.colecciones.find(x=>x.id===activeCollectionId);
   if(!c) return;
-  $('itemsTitle').textContent = 'Coleccion: ' + c.nombre + (itemsLineaFilter ? '  ·  Linea: ' + itemsLineaFilter : '');
+  $('itemsTitle').textContent = 'Coleccion: ' + (c.nombre || '(sin nombre)') + (itemsLineaFilter ? '  ·  Linea: ' + itemsLineaFilter : '');
   $('itemsSubtitle').textContent = itemsLineaFilter
     ? 'Estas viendo solo la linea "' + itemsLineaFilter + '". Usa "Ver toda la coleccion" para ver el resto.'
     : 'Control por prenda. Los cambios se guardan automaticamente. Solo las prendas en Aprobado Comercial pasan a orden de compra.';
   $('itemsBody').innerHTML = `
+    <div class="row" style="margin-bottom:14px">
+      <div class="field"><label>Nombre del desarrollo / coleccion</label><input name="colNombre" value="${escapeAttr(c.nombre||'')}" placeholder="Ej: Axis 2027" onchange="setColeccionCampo('${c.id}','nombre',this.value)"></div>
+      <div class="field"><label>Tipo de modulo / linea</label><input name="colTipo" value="${escapeAttr(c.tipo||'')}" placeholder="Ej: Invierno, Capsula Technical" onchange="setColeccionCampo('${c.id}','tipo',this.value)"></div>
+    </div>
     ${itemsLineaFilter ? `<div class="btn-row" style="margin-bottom:12px"><button class="btn secondary" type="button" onclick="openItemsModal('${c.id}')">← Ver toda la coleccion</button></div>` : ''}
     <form class="form" id="itemForm">
       <div class="row">
@@ -1132,7 +1126,7 @@ function renderItemsModal(){
     ${itemsTable(c)}
     <div class="notice" style="margin-top:12px">Para pasar al Paso 2, la prenda tiene que estar en <b>4. Aprobado Comercial</b>.</div>
     <div class="btn-row" style="margin-top:12px;justify-content:space-between">
-      <button class="btn secondary" type="button" onclick="closeModal('itemsModal')">Cerrar coleccion</button>
+      <button class="btn secondary" type="button" onclick="closeItemsModal()">Cerrar coleccion</button>
       <button class="btn" type="button" onclick="procesarColeccionOC('${c.id}')" ${c.prendas.some(p=>p.paso === '4. Aprobado Comercial') ? '' : 'disabled'}>Procesar aprobados y armar orden de compra</button>
     </div>
   `;
@@ -3228,6 +3222,25 @@ async function resetDemo(){
 }
 
 document.addEventListener('mouseup', () => { draggingSizes = false; });
+
+// ESC cierra la ventana emergente de arriba (respeta z-index: primero los popups
+// anidados de proveedor/linea, despues el modal de fondo).
+function cerrarModalEsc(id){
+  switch(id){
+    case 'itemsModal': closeItemsModal(); break;
+    case 'ocDetalleModal': closeOCDetalle(); break;
+    case 'ingresoDetalleModal': closeIngresoDetalle(); break;
+    case 'actionModal': closeActionModal(false); break;
+    default: closeModal(id);
+  }
+}
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape') return;
+  const abiertos = [...document.querySelectorAll('.modal.show')];
+  if(!abiertos.length) return;
+  abiertos.sort((a,b)=>(parseInt(getComputedStyle(a).zIndex)||0)-(parseInt(getComputedStyle(b).zIndex)||0));
+  cerrarModalEsc(abiertos[abiertos.length-1].id);
+});
 document.addEventListener('keydown', e => {
   const key = String(e.key || '').toLowerCase();
   if(!(e.ctrlKey || e.metaKey)) return;
