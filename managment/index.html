@@ -61,6 +61,16 @@ table input:disabled,table select:disabled{opacity:.5;background:#f1f3f8;cursor:
 .buscador-vacio{padding:12px;color:var(--muted);font-size:13px}.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:2}.modal-head h3{font-family:var(--font-c);font-size:22px;letter-spacing:.4px;text-transform:uppercase}.modal-body{padding:18px 20px}.xbtn{border:0;background:transparent;color:var(--muted);font-size:28px;line-height:1;cursor:pointer}.file-input{padding:8px!important}.collection-note{color:var(--muted);font-size:13px;line-height:1.35}
 @media(max-width:980px){.layout{grid-template-columns:1fr}.summary{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:620px){main{padding:18px 12px 36px}.top{grid-template-columns:1fr;align-items:center}.brand{justify-self:center}.header-logo{order:-1}.top-actions{justify-self:stretch;justify-content:space-between}.row,.summary,.size-grid{grid-template-columns:1fr}.small-input{width:100%}}
+/* Celular: modales a pantalla completa (clave para controlar las OC) y grilla de talles compacta */
+@media(max-width:640px){
+  .modal,.modal:has(.modal-card.maximized){padding:0}
+  .modal-card,.modal-card.maximized{width:100vw!important;max-width:100vw;max-height:100vh;border-radius:0;border:0}
+  .modal-head{padding:12px 14px}.modal-head h3{font-size:16px}
+  .modal-body{padding:12px}
+  table th,table td{padding:7px 8px}
+  .table-wrap .size-grid{grid-template-columns:repeat(7,34px)}
+  .table-wrap .size-grid .small-input{width:100%;padding:6px 3px}
+}
 </style>
 </head>
 <body>
@@ -369,6 +379,7 @@ let currentView = 'desarrollo';
 let activeCollectionId = null;
 let ocMode = {};
 let brandFilter = 'all';
+let lastMarca = 'mateu'; // ultima marca usada en el alta de prenda (Desarrollo)
 let draggingSizes = false;
 let selectedSizes = new Map();
 let copiedCurve = null;
@@ -1297,6 +1308,7 @@ function createItem(ev){
   if(!c) return;
   const fd = new FormData(ev.currentTarget);
   const marca = fd.get('marca');
+  lastMarca = marca || lastMarca;
   c.prendas.push({
     id:uid('pr'),
     marca,
@@ -1802,7 +1814,7 @@ function curvaPanel(group, editMode){
           <td><select ${locked ? 'disabled title="Reabrí la OC para editar"' : ''} onchange="applyCurve('${o.id}',this.value)"><option value="">Aplicar</option><option value="__guardar__">＋ Guardar curva actual</option>${state.curvas.map(c=>`<option value="${c.id}">${escapeHtml(c.nombre)}</option>`).join('')}</select></td>
           <td><div class="size-grid">${TALLES.map(t=>sizeInput(o.id,'talles',t,o.talles[t],locked)).join('')}</div></td>
           <td><b data-total-id="${o.id}">${totalTalles(o.talles)}</b></td>
-          <td>${money(o.costo)}</td>
+          <td><input class="small-input" style="width:110px" type="number" min="0" step="0.01" value="${Number(o.costo||0)}" title="Podes corregir el costo aunque la OC ya este creada" onchange="setCostoOC('${o.id}',this.value)"></td>
           <td><b data-val-id="${o.id}">${money(valorizadoLinea(o))}</b></td>
           <td>
             <input class="small-input" style="width:110px" type="url" value="${escapeAttr(o.fichaLink || '')}" placeholder="Link" onchange="setOCField('${o.id}','fichaLink',this.value)">
@@ -1978,6 +1990,15 @@ function pasteCopiedSizes(target){
   updateLineTotals(o);
   showToast('Curva pegada');
 }
+// Corregir el costo del articulo desde la OC, aunque ya este creada/enviada.
+function setCostoOC(id, value){
+  const o = state.ordenes.find(x=>x.id===id);
+  if(!o) return;
+  o.costo = Math.max(0, Number(value || 0));
+  saveState();
+  render();
+}
+
 function setCostoIngreso(id, value){
   const o = state.ordenes.find(x=>x.id===id);
   if(!o) return;
@@ -1986,7 +2007,7 @@ function setCostoIngreso(id, value){
   render();
 }
 
-const LOCKED_FIELDS_ENVIADA = ['color','genero','proveedor','costo','linea','coleccion'];
+const LOCKED_FIELDS_ENVIADA = ['color','genero','proveedor','linea','coleccion'];
 function setOCField(id, field, value){
   const o = state.ordenes.find(x=>x.id===id);
   if(!o) return;
@@ -2037,6 +2058,13 @@ function cambiarEstadoOC(id){
   if(!o) return;
   const idx = ESTADOS_OC.indexOf(o.estado);
   o.estado = ESTADOS_OC[(idx + 1) % ESTADOS_OC.length];
+  // Al pasar a "Recibida completa", el ingreso se completa solo (recibido = pedido).
+  // Al volver a un estado previo a la recepcion, se limpia el recibido.
+  if(o.estado === 'Recibida completa'){
+    TALLES.forEach(t => { o.recibido[t] = Number(o.talles[t] || 0); });
+  }else if(o.estado === 'Borrador' || o.estado === 'Enviada' || o.estado === 'Produccion'){
+    TALLES.forEach(t => { o.recibido[t] = 0; });
+  }
   saveState();
   render();
 }
@@ -2447,7 +2475,10 @@ async function duplicarOC(id){
   render();
 }
 
-function borrarOC(id){
+async function borrarOC(id){
+  const o = state.ordenes.find(x=>x.id===id);
+  if(!o) return;
+  if(!(await askConfirm('Estas seguro que queres eliminar el articulo ' + o.codigo + (o.articulo ? ' (' + o.articulo + ')' : '') + '?'))) return;
   state.ordenes = state.ordenes.filter(x=>x.id!==id);
   saveState();
   render();
@@ -3020,8 +3051,8 @@ function ingresosTable(rows){
         const dif = recibido - pedido;
         const difCosto = costoDif(o);
         return `<tr>
-          <td><b>${o.codigo}</b><div class="muted">${MARCAS[o.marca]} / ${escapeHtml(o.color)}</div></td>
-          <td>${escapeHtml(o.articulo)}<div class="muted">${escapeHtml(o.proveedor || '-')}</div></td>
+          <td><b>${o.codigo}</b><div class="muted">${MARCAS[o.marca]} / ${escapeHtml(o.proveedor || '-')}</div></td>
+          <td>${escapeHtml(o.articulo)}<div class="muted">${escapeHtml(o.color || '-')}</div></td>
           <td><b>${pedido}</b></td>
           <td><b>${recibido}</b></td>
           <td>${difLabel(dif)}</td>
@@ -3422,8 +3453,11 @@ function deleteProvider(id){
   renderConfig();
 }
 
+// Marca por defecto en el alta de prenda: si hay filtro de marca activo lo usa;
+// si no, recuerda la ultima marca cargada (para no re-seleccionar Ruge cada vez).
 function brandOptions(){
-  return Object.keys(MARCAS).map(k=>`<option value="${k}" ${brandFilter===k?'selected':''}>${MARCAS[k]}</option>`).join('');
+  const sel = brandFilter !== 'all' ? brandFilter : lastMarca;
+  return Object.keys(MARCAS).map(k=>`<option value="${k}" ${sel===k?'selected':''}>${MARCAS[k]}</option>`).join('');
 }
 
 function providerOptions(selected){
@@ -3512,10 +3546,12 @@ document.addEventListener('keydown', e => {
     copySelectedSizes();
   }
   if(key === 'v' && copiedCurve){
-    const target = document.activeElement?.classList?.contains('size-copy') ? document.activeElement : window.lastSizeFocus;
-    if(target){
+    // Solo pegar la curva si el foco esta en un input de talle. En cualquier otro
+    // campo (Link, Notas, etc.) se deja el pegado normal del navegador.
+    const active = document.activeElement;
+    if(active && active.classList && active.classList.contains('size-copy')){
       e.preventDefault();
-      pasteCopiedSizes(target);
+      pasteCopiedSizes(active);
     }
   }
 });
