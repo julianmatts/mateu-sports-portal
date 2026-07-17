@@ -312,14 +312,17 @@ input.cell-in[type=month]{color-scheme:dark}
 
 <script>
 /* ─────────────────────────────────────────────────────────────
-   CAPA DE PERSISTENCIA  (aislada — swap-friendly)
-   Backend real: Pages Function functions/api/presupuesto.js sobre
-   Cloudflare KV. GET /api/presupuesto → array de líneas · PUT lo guarda.
-   Ante error de red degradamos a localStorage (fallback) para no perder
-   lo cargado. El resto del código depende solo de Store.load()/save().
+   CAPA DE PERSISTENCIA  (Firebase Realtime Database vía REST)
+   Igual que el resto de los módulos: los datos viven en Firebase.
+   Pegá abajo la URL de la base (la crea Juli en la consola de Firebase,
+   p.ej. 'https://presupuesto-mateu-default-rtdb.firebaseio.com', con reglas
+   .read/.write abiertas como las demás). Mientras FIREBASE_URL esté vacía,
+   o si se cae la red, cae a localStorage y la UI sigue andando. El resto del
+   código solo usa Store.load()/save().
    ───────────────────────────────────────────────────────────── */
-const KEY = 'mateu:presupuesto:compras:v1';
-const API = '/api/presupuesto';
+const FIREBASE_URL = ''; // ej: 'https://presupuesto-mateu-default-rtdb.firebaseio.com'
+const FB_PATH = '/presupuesto.json';
+const KEY = 'mateu:presupuesto:compras:v1'; // copia/fallback local
 
 // Fallback local — envuelto en try/catch para no romper en previews sin storage.
 const localStore = {
@@ -329,29 +332,31 @@ const localStore = {
 
 const Store = {
   async load(){
+    if(!FIREBASE_URL) return localStore.get() || [];   // sin URL todavía: modo local
     try{
-      const r = await fetch(API);
+      const r = await fetch(FIREBASE_URL + FB_PATH);
       if(!r.ok) throw new Error('HTTP '+r.status);
-      const data = await r.json();
+      const data = await r.json();                      // Firebase devuelve null si no hay nada
       const arr = Array.isArray(data) ? data : [];
-      localStore.set(arr);              // espejo local: si después se cae la API, tenemos lo último
+      localStore.set(arr);              // espejo local: si después se cae la red, tenemos lo último
       return arr;
     }catch(e){
-      console.error('Presupuesto: no se pudo leer del servidor, uso copia local:', e);
+      console.error('Presupuesto: no se pudo leer de Firebase, uso copia local:', e);
       return localStore.get() || [];
     }
   },
   async save(lineas){
     localStore.set(lineas);             // guardo copia local SIEMPRE primero, así no se pierde nada
+    if(!FIREBASE_URL) return;           // sin URL todavía: solo local
     try{
-      const r = await fetch(API, {
+      const r = await fetch(FIREBASE_URL + FB_PATH, {
         method:'PUT',
         headers:{ 'Content-Type':'application/json' },
         body:JSON.stringify(lineas)
       });
       if(!r.ok) throw new Error('HTTP '+r.status);
     }catch(e){
-      console.error('Presupuesto: no se pudo guardar en el servidor (queda en copia local):', e);
+      console.error('Presupuesto: no se pudo guardar en Firebase (queda en copia local):', e);
     }
   }
 };
