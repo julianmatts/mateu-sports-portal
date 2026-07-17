@@ -259,7 +259,9 @@ const FIREBASE_URL = 'https://managment-mateu-default-rtdb.firebaseio.com';
 // variable de entorno en Cloudflare Pages.
 
 const STORAGE_KEY = 'mateu_managment_local_v1';
-const TALLES = ['S','M','L','XL','XXL','XXXL'];
+const TALLES = ['S','M','L','XL','XXL','XXXL','U'];
+// 'U' = Talle Unico. Se muestra como "ÚN" en las grillas.
+const talleLabel = t => t === 'U' ? 'ÚN' : t;
 const PREFIJOS = { mateu:'MAT', ruge:'RUG', aurelius:'AUR' };
 const MARCAS = { mateu:'Mateu', ruge:'Ruge', aurelius:'Aurelius' };
 // Color de cada marca (pildora con fondo lleno + letra blanca):
@@ -1723,6 +1725,31 @@ function setAnticipoOC(keyEnc, lineaEnc, coleccionEnc, value){
   render();
 }
 
+// Copia el data entry del primer articulo de la OC al resto (agiliza la carga
+// cuando comparten curva/costo/entrega). No toca codigo, articulo ni color, ni las
+// lineas ya Enviadas.
+async function copiarPrimeroOC(keyEnc, lineaEnc, coleccionEnc){
+  const key = decodeURIComponent(keyEnc);
+  const linea = decodeURIComponent(lineaEnc);
+  const coleccion = decodeURIComponent(coleccionEnc);
+  const group = groupedByProvider(state.ordenes).find(g => g.key === key);
+  if(!group) return;
+  const items = group.items.filter(o => (String(o.linea||'').trim() || 'Sin linea') === linea && (String(o.coleccion||'').trim() || 'Sin coleccion') === coleccion);
+  if(items.length < 2) return;
+  const first = items[0];
+  const destino = items.filter(o => o.id !== first.id && o.estado !== 'Enviada');
+  if(!destino.length){ showToast('No hay articulos editables para copiar (las lineas Enviadas no se tocan).'); return; }
+  if(!(await askConfirm('Copiar los datos del primer articulo (' + first.codigo + ') a los otros ' + destino.length + ' articulo(s) de la OC? Se copian talles, costo, genero, proveedor, entrega, seguimiento y notas. No se tocan el codigo, el articulo ni el color.'))) return;
+  const campos = ['costo','genero','proveedor','entregaEstimada','seguimiento','notas','fichaLink'];
+  destino.forEach(o => {
+    TALLES.forEach(t => { o.talles[t] = Number(first.talles[t] || 0); });
+    campos.forEach(c => { o[c] = first[c]; });
+  });
+  saveState();
+  render();
+  showToast('Se copiaron los datos del primer articulo a ' + destino.length + ' articulo(s).');
+}
+
 function closeOCDetalle(){
   closeModal('ocDetalleModal');
   ocDetalleActual = null;
@@ -1747,7 +1774,8 @@ function renderOCDetalleModal(){
   const scrollPrev = $('ocDetalleBody').querySelector('.table-wrap')?.scrollLeft || 0;
   $('ocDetalleBody').innerHTML = `
     <div class="notice" style="${editModeOC ? '' : 'display:none'}">Modo edicion: podes reasignar Linea, Coleccion y Proveedor de cada codigo. Las lineas ya Enviadas necesitan abrirse primero (boton verde "OC enviada" en el encabezado de la OC).</div>
-    <div class="btn-row" style="margin-bottom:12px;justify-content:flex-end">
+    <div class="btn-row" style="margin-bottom:12px;justify-content:flex-end;gap:8px">
+      ${items.length >= 2 ? `<button class="btn secondary" type="button" onclick="copiarPrimeroOC('${encodeURIComponent(group.key)}','${encodeURIComponent(ocDetalleActual.linea)}','${encodeURIComponent(ocDetalleActual.coleccion)}')" title="Copia talles, costo, genero, proveedor, entrega, seguimiento y notas del primer articulo a los demas">Copiar 1er articulo a todos</button>` : ''}
       <button class="btn ${editModeOC ? 'red' : 'secondary'}" type="button" onclick="toggleEditModeOC()">${editModeOC ? 'Salir del modo edicion' : 'Modo edicion (mover articulos)'}</button>
     </div>
     ${curvaPanel({ key: group.key, proveedor: group.proveedor, items }, editModeOC)}
@@ -1771,7 +1799,7 @@ function curvaPanel(group, editMode){
           <td><select ${locked ? 'disabled title="Reabrí la OC para editar"' : ''} onchange="setOCField('${o.id}','proveedor',this.value)">${providerOptions(o.proveedor)}</select></td>
           <td><input class="small-input" style="width:110px" ${locked ? 'disabled title="Reabrí la OC para editar"' : ''} value="${escapeHtml(o.color || '')}" onchange="setOCField('${o.id}','color',this.value)"></td>
           <td><select ${locked ? 'disabled title="Reabrí la OC para editar"' : ''} onchange="setOCField('${o.id}','genero',this.value)">${GENEROS.map(g=>`<option ${o.genero===g?'selected':''}>${g}</option>`).join('')}</select></td>
-          <td><select ${locked ? 'disabled title="Reabrí la OC para editar"' : ''} onchange="applyCurve('${o.id}',this.value)"><option value="">Aplicar</option>${state.curvas.map(c=>`<option value="${c.id}">${escapeHtml(c.nombre)}</option>`).join('')}</select></td>
+          <td><select ${locked ? 'disabled title="Reabrí la OC para editar"' : ''} onchange="applyCurve('${o.id}',this.value)"><option value="">Aplicar</option><option value="__guardar__">＋ Guardar curva actual</option>${state.curvas.map(c=>`<option value="${c.id}">${escapeHtml(c.nombre)}</option>`).join('')}</select></td>
           <td><div class="size-grid">${TALLES.map(t=>sizeInput(o.id,'talles',t,o.talles[t],locked)).join('')}</div></td>
           <td><b data-total-id="${o.id}">${totalTalles(o.talles)}</b></td>
           <td>${money(o.costo)}</td>
@@ -1820,7 +1848,7 @@ function aviosPanel(group){
 }
 
 function sizeInput(id, grupo, talle, value, locked){
-  return `<label class="field" style="margin:0"><span style="display:block;font-size:10px;color:var(--muted);font-family:var(--font-c);font-weight:700">${talle}</span><input class="small-input size-copy" data-oc="${id}" data-grupo="${grupo}" data-talle="${talle}" type="number" min="0" step="1" value="${Number(value||0)}" ${locked ? 'disabled' : ''} onmousedown="startSizeSelection(event,this)" onmouseenter="extendSizeSelection(this)" onfocus="rememberSizeFocus(this)" oninput="setSize('${id}','${grupo}','${talle}',this.value,true)" onchange="setSize('${id}','${grupo}','${talle}',this.value,true)"></label>`;
+  return `<label class="field" style="margin:0"><span style="display:block;font-size:10px;color:var(--muted);font-family:var(--font-c);font-weight:700">${talleLabel(talle)}</span><input class="small-input size-copy" data-oc="${id}" data-grupo="${grupo}" data-talle="${talle}" type="number" min="0" step="1" value="${Number(value||0)}" ${locked ? 'disabled' : ''} onmousedown="startSizeSelection(event,this)" onmouseenter="extendSizeSelection(this)" onfocus="rememberSizeFocus(this)" oninput="setSize('${id}','${grupo}','${talle}',this.value,true)" onchange="setSize('${id}','${grupo}','${talle}',this.value,true)"></label>`;
 }
 
 function setSize(id, grupo, talle, value, keepFocus){
@@ -1982,10 +2010,23 @@ function setAviosProveedor(key, value){
   render();
 }
 
-function applyCurve(ocId, curveId){
+async function applyCurve(ocId, curveId){
   const o = state.ordenes.find(x=>x.id===ocId);
+  if(!o) return;
+  if(curveId === '__guardar__'){
+    if(totalTalles(o.talles) <= 0){ showToast('Cargá cantidades en los talles antes de guardar la curva.'); render(); return; }
+    const nombre = await askPrompt('Nombre de la nueva curva:', 'Curva ' + (o.articulo || o.codigo));
+    if(!nombre || !String(nombre).trim()){ render(); return; }
+    const talles = emptySizes();
+    TALLES.forEach(t => { talles[t] = Number(o.talles[t] || 0); });
+    state.curvas.push({ id:uid('curva'), nombre:String(nombre).trim(), talles });
+    saveState();
+    render();
+    showToast('Curva "' + String(nombre).trim() + '" guardada. Ya podés aplicarla a otras lineas.');
+    return;
+  }
   const curva = state.curvas.find(c=>c.id===curveId);
-  if(!o || !curva || o.estado === 'Enviada') return;
+  if(!curva || o.estado === 'Enviada') return;
   TALLES.forEach(t => { o.talles[t] = Number(curva.talles[t] || 0); });
   saveState();
   render();
@@ -3120,7 +3161,7 @@ function renderConfig(){
     <div class="section-title" style="margin-top:18px">Curvas prearmadas</div>
     <form class="form" id="curveForm">
       <div class="field"><label>Nombre de curva</label><input name="nombre" required placeholder="Ej: Curva remera adulto"></div>
-      <div class="size-grid">${TALLES.map(t=>`<label class="field" style="margin:0"><span style="display:block;font-size:10px;color:var(--muted);font-family:var(--font-c);font-weight:700">${t}</span><input class="small-input" name="${t}" type="number" min="0" step="1" value="0"></label>`).join('')}</div>
+      <div class="size-grid">${TALLES.map(t=>`<label class="field" style="margin:0"><span style="display:block;font-size:10px;color:var(--muted);font-family:var(--font-c);font-weight:700">${talleLabel(t)}</span><input class="small-input" name="${t}" type="number" min="0" step="1" value="0"></label>`).join('')}</div>
       <div class="btn-row"><button class="btn" type="submit">Guardar curva</button></div>
     </form>
     ${curvesTable()}
@@ -3221,7 +3262,7 @@ function curvesTable(){
   if(!state.curvas.length) return '<div class="empty" style="margin-top:12px">Todavia no hay curvas prearmadas.</div>';
   return `
     <div class="table-wrap" style="margin-top:12px"><table>
-      <thead><tr><th>Nombre</th>${TALLES.map(t=>`<th>${t}</th>`).join('')}<th>Total</th><th>Acciones</th></tr></thead>
+      <thead><tr><th>Nombre</th>${TALLES.map(t=>`<th>${talleLabel(t)}</th>`).join('')}<th>Total</th><th>Acciones</th></tr></thead>
       <tbody>${state.curvas.map(c=>`
         <tr>
           <td><b>${escapeHtml(c.nombre)}</b></td>
