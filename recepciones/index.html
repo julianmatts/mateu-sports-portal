@@ -128,6 +128,8 @@ tfoot th{background:#eef2fb;color:var(--navy-mid);position:static}
 .rep-pend{background:#fef3c7;color:#92620e;cursor:pointer}
 .rep-pend:hover{background:#fde68a}
 .rep-done{background:#dcfce7;color:#15803d}
+th.sortable{cursor:pointer;user-select:none}
+th.sortable:hover{background:#13233f}
 
 .prog{height:8px;border-radius:4px;background:#e6ebf5;overflow:hidden;min-width:90px}
 .prog>span{display:block;height:100%;border-radius:4px;background:var(--ok)}
@@ -206,6 +208,9 @@ textarea.code{width:100%;min-height:150px;font-family:ui-monospace,Menlo,Consola
   <div class="fgrp"><label for="fRubro">Rubro</label><select class="sel" id="fRubro"><option value="">Todos</option></select></div>
   <div class="fgrp"><label for="fDisc">Disciplina</label><select class="sel" id="fDisc"><option value="">Todas</option></select></div>
   <div class="fgrp"><label for="fTipo">Tipo</label><select class="sel" id="fTipo"><option value="">Todos</option></select></div>
+  <div class="fgrp"><label for="fProv">Proveedor</label><select class="sel" id="fProv"><option value="">Todos</option></select></div>
+  <div class="fgrp"><label for="fRep">Reparto</label><select class="sel" id="fRep"><option value="">Todos</option><option value="pendiente">Pendiente</option><option value="hecho">Hecho</option><option value="sin">Sin reparto</option></select></div>
+  <div class="fgrp" style="flex:1;min-width:190px"><label for="fQ">Buscar</label><input class="inp" id="fQ" placeholder="remito, artículo, código, proveedor…" style="width:100%"></div>
   <div class="fgrp" style="min-width:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="fReset">Limpiar</button></div>
   <div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="fReload" title="Traer los últimos datos de la base">↻ Recargar</button></div>
 </div>
@@ -289,14 +294,14 @@ function semanaISO(fecha){
 /* ============================================================
    ESTADO / DATOS (en memoria; espejo de la base)
    ============================================================ */
-const DATA = { pedidos:{}, remitos:{} };   // keyed por fbKey(nro)
-const state = { tab:'panel', filtros:{ mes:'', marca:'', rubro:'', disciplina:'', tipo:'' }, dims:null, uv:'u' };
+const DATA = { pedidos:{}, remitos:{}, repartos:{} };   // keyed por fbKey(nro)
+const state = { tab:'panel', filtros:{ mes:'', marca:'', rubro:'', disciplina:'', tipo:'', proveedor:'', reparto:'', q:'' }, dims:null, uv:'u' };
 const vals = o => o ? Object.keys(o).map(k=>o[k]) : [];
 
 async function cargarTodo(){
-  if(DEMO){ const m = window.RECEP_MOCK || {pedidos:{},remitos:{}}; DATA.pedidos=JSON.parse(JSON.stringify(m.pedidos||{})); DATA.remitos=JSON.parse(JSON.stringify(m.remitos||{})); return; }
-  const [ped, rem] = await Promise.all([ fbGet(ROOT+'/pedidos'), fbGet(ROOT+'/remitos') ]);
-  DATA.pedidos = ped || {}; DATA.remitos = rem || {};
+  if(DEMO){ const m = window.RECEP_MOCK || {pedidos:{},remitos:{}}; DATA.pedidos=JSON.parse(JSON.stringify(m.pedidos||{})); DATA.remitos=JSON.parse(JSON.stringify(m.remitos||{})); DATA.repartos={}; return; }
+  const [ped, rem, rep] = await Promise.all([ fbGet(ROOT+'/pedidos'), fbGet(ROOT+'/remitos'), fbGet(ROOT+'/repartos') ]);
+  DATA.pedidos = ped || {}; DATA.remitos = rem || {}; DATA.repartos = rep || {};
 }
 
 async function guardarPedido(doc){
@@ -322,10 +327,10 @@ function mesLabel(x){ const p=String(x||'').split('-'); return (p.length>=2 && M
 
 /* ---------- dimensiones (cliente) ---------- */
 function computeDims(){
-  const marcas=new Set(),rubros=new Set(),disc=new Set(),tipos=new Set(),meses=new Set();
-  vals(DATA.pedidos).forEach(p=>{ if(p.marca)marcas.add(p.marca); if(p.fecha)meses.add(mesKey(p.fecha)); (p.lineas||[]).forEach(l=>{ if(l.rubro)rubros.add(l.rubro); if(l.disciplina)disc.add(l.disciplina); if(l.tipo)tipos.add(l.tipo); }); });
-  vals(DATA.remitos).forEach(r=>{ if(r.marca)marcas.add(r.marca); if(r.fecha)meses.add(mesKey(r.fecha)); (r.lineas||[]).forEach(l=>{ if(l.rubro)rubros.add(l.rubro); if(l.disciplina)disc.add(l.disciplina); if(l.tipo)tipos.add(l.tipo); }); });
-  return { marcas:[...marcas].sort(cmp), rubros:[...rubros].sort(cmp), disciplinas:[...disc].sort(cmp), tipos:[...tipos].sort(cmp), meses:[...meses].sort(cmp) };
+  const marcas=new Set(),rubros=new Set(),disc=new Set(),tipos=new Set(),meses=new Set(),provs=new Set();
+  vals(DATA.pedidos).forEach(p=>{ if(p.marca)marcas.add(p.marca); if(p.proveedor)provs.add(p.proveedor); if(p.fecha)meses.add(mesKey(p.fecha)); (p.lineas||[]).forEach(l=>{ if(l.rubro)rubros.add(l.rubro); if(l.disciplina)disc.add(l.disciplina); if(l.tipo)tipos.add(l.tipo); }); });
+  vals(DATA.remitos).forEach(r=>{ if(r.marca)marcas.add(r.marca); if(r.proveedor)provs.add(r.proveedor); if(r.fecha)meses.add(mesKey(r.fecha)); (r.lineas||[]).forEach(l=>{ if(l.rubro)rubros.add(l.rubro); if(l.disciplina)disc.add(l.disciplina); if(l.tipo)tipos.add(l.tipo); }); });
+  return { marcas:[...marcas].sort(cmp), rubros:[...rubros].sort(cmp), disciplinas:[...disc].sort(cmp), tipos:[...tipos].sort(cmp), meses:[...meses].sort(cmp), proveedores:[...provs].sort(cmp) };
 }
 
 /* ---------- control ingresos vs pedido (cliente, = vista v_control) ---------- */
@@ -350,8 +355,9 @@ function computeControl(f){
 
 /* ---------- filtro de líneas ---------- */
 function lineaPasa(l){ const f=state.filtros; if(f.rubro&&l.rubro!==f.rubro)return false; if(f.disciplina&&l.disciplina!==f.disciplina)return false; if(f.tipo&&l.tipo!==f.tipo)return false; return true; }
-function remitosFiltrados(){ const f=state.filtros; return vals(DATA.remitos).filter(r=>(!f.marca||r.marca===f.marca)&&(!f.mes||mesKey(r.fecha)===f.mes)).sort((a,b)=>cmp(b.fecha,a.fecha)); }
-function pedidosFiltrados(){ const f=state.filtros; return vals(DATA.pedidos).filter(p=>!f.marca||p.marca===f.marca).sort((a,b)=>cmp(b.fecha,a.fecha)); }
+function matchQ(D, q){ if(!q) return true; q=q.toLowerCase(); if((((D.nro||'')+' '+(D.marca||'')+' '+(D.proveedor||'')+' '+(D.pedido_nro||'')+' '+(D.comprador||'')).toLowerCase()).indexOf(q)>-1) return true; return (D.lineas||[]).some(l=>(((l.modelo||'')+' '+(l.descripcion||'')+' '+(l.rubro||'')+' '+(l.disciplina||'')+' '+(l.tipo||'')).toLowerCase()).indexOf(q)>-1); }
+function remitosFiltrados(){ const f=state.filtros; return vals(DATA.remitos).filter(r=>(!f.marca||r.marca===f.marca)&&(!f.mes||mesKey(r.fecha)===f.mes)&&(!f.proveedor||r.proveedor===f.proveedor)&&repartoPasa(r,f.reparto)&&matchQ(r,f.q)).sort((a,b)=>cmp(b.fecha,a.fecha)); }
+function pedidosFiltrados(){ const f=state.filtros; return vals(DATA.pedidos).filter(p=>(!f.marca||p.marca===f.marca)&&(!f.proveedor||p.proveedor===f.proveedor)&&matchQ(p,f.q)).sort((a,b)=>cmp(b.fecha,a.fecha)); }
 
 /* ============================================================
    DIMENSIONES / FILTROS UI
@@ -363,6 +369,7 @@ function refreshDims(){
   fillSel('fRubro', state.dims.rubros, 'Todos');
   fillSel('fDisc', state.dims.disciplinas, 'Todas');
   fillSel('fTipo', state.dims.tipos, 'Todos');
+  fillSel('fProv', state.dims.proveedores, 'Todos');
   updateRepartoBadge();
 }
 function fillSel(id, arr, allLbl){
@@ -485,6 +492,9 @@ function renderPedidos(){
 /* ---------- CONTROL ---------- */
 function renderControl(){
   const filas = computeControl(state.filtros);
+  const SC=state.ctrlSort||{col:null,dir:1}; const _Vs=state.uv==='v';
+  if(SC.col){ const g=c=>({marca:c.marca,rubro:c.rubro,disciplina:c.disciplina,tipo:c.tipo,ped:_Vs?c.importe_pedido:c.cant_pedida,rec:_Vs?c.importe_recibido:c.cant_recibida,pen:_Vs?c.importe_pendiente:c.cant_pendiente,pct:c.pct,estado:c.estado})[SC.col]; filas.sort((a,b)=>{ const av=g(a),bv=g(b); const rr=(typeof av==='number')?(av-bv):cmp(String(av),String(bv)); return rr*(SC.dir||1); }); }
+  const sarr=c=>SC.col===c?(SC.dir>0?' ▲':' ▼'):'';
   let html = seccionHead('Ingresos vs pedido','Pedido total vs ingresado, por marca y categoría (agregado, no por nº de OC)',
     '<div class="toggle-uv"><button id="uvU" class="'+(state.uv==='u'?'on':'')+'">Unidades</button><button id="uvV" class="'+(state.uv==='v'?'on':'')+'">Pesos $</button></div>'
     + '<button class="btn btn-outline btn-sm" id="btnExpCtrl">⇩ Exportar</button>');
@@ -499,8 +509,9 @@ function renderControl(){
     const pct=Math.max(0,Math.min(100,c.pct));
     return '<tr><td>'+esc(c.marca||'')+'</td><td>'+esc(c.rubro||'')+'</td><td>'+esc(c.disciplina||'')+'</td><td>'+esc(c.tipo||'')+'</td><td class="num big">'+fmt(ped)+'</td><td class="num big">'+fmt(rec)+'</td><td class="num mono" style="color:'+(pen>0.001?'#b91c1c':(pen<-0.001?'#6d28d9':'var(--muted)'))+'">'+fmt(pen)+'</td><td><div style="display:flex;align-items:center;gap:8px"><div class="prog p-'+esc(c.estado)+'"><span style="width:'+pct+'%"></span></div><span class="mono" style="min-width:42px">'+c.pct+'%</span></div></td><td><span class="badge b-'+esc(c.estado)+'">'+esc(c.estado)+'</span></td></tr>';
   }).join('');
-  html += '<div class="tbl-wrap"><table><thead><tr><th>Marca</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Pedido</th><th class="num">Recibido</th><th class="num">Pendiente</th><th>Avance</th><th>Estado</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr><th colspan="4" style="text-align:right">Totales</th><th class="num big">'+fmt(tp)+'</th><th class="num big">'+fmt(tr)+'</th><th class="num big">'+fmt(tpe)+'</th><th colspan="2"></th></tr></tfoot></table></div>';
+  html += '<div class="tbl-wrap"><table><thead><tr><th class="sortable" data-sort="marca">Marca'+sarr('marca')+'</th><th class="sortable" data-sort="rubro">Rubro'+sarr('rubro')+'</th><th class="sortable" data-sort="disciplina">Disciplina'+sarr('disciplina')+'</th><th class="sortable" data-sort="tipo">Tipo'+sarr('tipo')+'</th><th class="num sortable" data-sort="ped">Pedido'+sarr('ped')+'</th><th class="num sortable" data-sort="rec">Recibido'+sarr('rec')+'</th><th class="num sortable" data-sort="pen">Pendiente'+sarr('pen')+'</th><th class="sortable" data-sort="pct">Avance'+sarr('pct')+'</th><th class="sortable" data-sort="estado">Estado'+sarr('estado')+'</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr><th colspan="4" style="text-align:right">Totales</th><th class="num big">'+fmt(tp)+'</th><th class="num big">'+fmt(tr)+'</th><th class="num big">'+fmt(tpe)+'</th><th colspan="2"></th></tr></tfoot></table></div>';
   $('view').innerHTML = html; bindUV();
+  document.querySelectorAll('#view th.sortable').forEach(th=>th.onclick=()=>{ const c=th.getAttribute('data-sort'); state.ctrlSort={col:c, dir:(SC.col===c?-(SC.dir||1):1)}; renderControl(); });
   $('btnExpCtrl').onclick=()=>exportar('control', filas);
 }
 function bindUV(){ const u=$('uvU'),v=$('uvV'); if(u)u.onclick=()=>{state.uv='u';renderControl();}; if(v)v.onclick=()=>{state.uv='v';renderControl();}; }
@@ -895,57 +906,75 @@ function _mail(){ return ((SESSION&&SESSION.email)||'').toLowerCase(); }
 function esCompras(){ return !!SESSION && (SESSION.rol==='admin' || COMPRAS_MAILS.includes(_mail())); }
 function esDeposito(){ return !!SESSION && (SESSION.rol==='admin' || DEPOSITO_MAILS.includes(_mail())); }
 
+/* Estado de reparto en un nodo liviano recepciones/repartos/<key> (así el Portal
+   puede contar los pendientes sin bajarse todos los remitos). */
+function repartoDe(R){ return (DATA.repartos||{})[fbKey((R&&R.nro)||R)]||null; }
 async function setReparto(nro, reparto){
   const key=fbKey(nro);
-  if(reparto===null){ if(!DEMO) await fbDelete(ROOT+'/remitos/'+key+'/reparto'); if(DATA.remitos[key]) delete DATA.remitos[key].reparto; }
-  else { if(!DEMO) await fbPut(ROOT+'/remitos/'+key+'/reparto', reparto); if(DATA.remitos[key]) DATA.remitos[key].reparto=reparto; }
+  if(reparto===null){ if(!DEMO) await fbDelete(ROOT+'/repartos/'+key); if(DATA.repartos) delete DATA.repartos[key]; }
+  else { if(!DEMO) await fbPut(ROOT+'/repartos/'+key, reparto); DATA.repartos=DATA.repartos||{}; DATA.repartos[key]=reparto; }
 }
+function repartoPasa(R, filt){ if(!filt) return true; const r=repartoDe(R); if(filt==='sin') return !r; if(filt==='pendiente') return !!r&&r.estado==='pendiente'; if(filt==='hecho') return !!r&&r.estado==='hecho'; return true; }
 
 function repChip(R){
-  const r=R.reparto;
-  if(!r) return esDeposito()?'<button class="btn btn-outline btn-sm" data-rep-flag="'+esc(R.nro)+'" title="Marcar que este remito necesita reparto de Compras">⚑ Reparto</button>':'';
-  if(r.estado==='pendiente') return '<button class="rep-badge rep-pend" data-rep-unflag="'+esc(R.nro)+'" title="Reparto pendiente de Compras · click para desmarcar">⚑ Pendiente</button>';
-  return '<span class="rep-badge rep-done" title="Reparto hecho'+(r.hecho_por?(' por '+esc(r.hecho_por)):'')+'">✓ Repartido</span>';
+  const r=repartoDe(R);
+  if(!r) return esDeposito()?'<button class="btn btn-outline btn-sm" data-rep-open="'+esc(R.nro)+'" title="Marcar que este remito necesita reparto de Compras">⚑ Reparto</button>':'';
+  if(r.estado==='pendiente') return '<button class="rep-badge rep-pend" data-rep-open="'+esc(R.nro)+'" title="Reparto pendiente'+(r.nota?(' — '+esc(r.nota)):'')+'">⚑ Pendiente</button>';
+  return '<button class="rep-badge rep-done" data-rep-open="'+esc(R.nro)+'" title="Reparto hecho'+(r.hecho_por?(' por '+esc(r.hecho_por)):'')+'">✓ Repartido</button>';
 }
-function bindReparto(){
-  document.querySelectorAll('[data-rep-flag]').forEach(b=>b.onclick=async(e)=>{ if(e)e.stopPropagation(); const nro=b.getAttribute('data-rep-flag'); b.disabled=true;
-    try{ await setReparto(nro,{estado:'pendiente',creado_por:_mail(),creado_en:nowISO()}); refreshDims(); render(); toast('Marcado: necesita reparto','ok'); }catch(err){ b.disabled=false; toast('Error: '+err.message,'bad'); } });
-  document.querySelectorAll('[data-rep-unflag]').forEach(b=>b.onclick=async(e)=>{ if(e)e.stopPropagation(); const nro=b.getAttribute('data-rep-unflag'); if(!confirm('¿Desmarcar el reparto de este remito?'))return; b.disabled=true;
-    try{ await setReparto(nro,null); refreshDims(); render(); toast('Reparto desmarcado','ok'); }catch(err){ b.disabled=false; toast('Error: '+err.message,'bad'); } });
+function bindReparto(){ document.querySelectorAll('#view [data-rep-open]').forEach(b=>b.onclick=(e)=>{ if(e)e.stopPropagation(); openRepartoModal(b.getAttribute('data-rep-open')); }); }
+
+function openRepartoModal(nro){
+  const R=DATA.remitos[fbKey(nro)]; if(!R){ toast('Remito no encontrado','bad'); return; }
+  const r=repartoDe(R); let u=0; (R.lineas||[]).forEach(l=>u+=num(l.cantidad));
+  const editable = esDeposito()||esCompras();
+  openModal('<button class="close" onclick="closeModal()">×</button><h2>Reparto · Remito '+esc(R.nro)+'</h2>'
+    +'<div class="msub">'+esc(R.marca||'—')+' · '+esc(R.fecha||'')+' · '+fmtInt(u)+' u'+(r?(r.estado==='hecho'?' · ✓ hecho':' · ⚑ pendiente'):'')+'</div>'
+    +'<div class="field"><label>Nota — qué hay que repartir</label><textarea class="inp" id="repNota" '+(editable?'':'disabled')+' placeholder="Ej: repartir 3 curvas a...">'+esc(r?(r.nota||''):'')+'</textarea></div>'
+    +'<div class="field"><label>Sucursales destino</label><input class="inp" id="repDest" '+(editable?'':'disabled')+' placeholder="Ej: Calle 49, Diagonal 80" value="'+esc(r?(r.destino||''):'')+'" style="width:100%"></div>'
+    +(r?('<div class="hint">'+(r.creado_por?('Marcado por '+esc(r.creado_por)+(r.creado_en?(' · '+esc(r.creado_en)):'')):'')+(r.hecho_por?('<br>Hecho por '+esc(r.hecho_por)+(r.hecho_en?(' · '+esc(r.hecho_en)):'')):'')+'</div>'):'')
+    +'<div class="modal-actions">'+repModalBtns(r)+'</div>');
+  bindRepModal(nro, r);
+}
+function repModalBtns(r){
+  let b='<button class="btn btn-outline" onclick="closeModal()">Cerrar</button>';
+  if(!r){ if(esDeposito()) b+='<button class="btn btn-primary" id="repSave">⚑ Marcar reparto</button>'; return b; }
+  if(r.estado==='pendiente'){
+    if(esDeposito()||esCompras()) b+='<button class="btn btn-outline" id="repEdit">Guardar cambios</button>';
+    if(esDeposito()) b+='<button class="btn btn-outline" id="repDel">Desmarcar</button>';
+    if(esCompras()) b+='<button class="btn btn-primary" id="repDone">Marcar hecho</button>';
+  } else { if(esCompras()) b+='<button class="btn btn-outline" id="repReopen">Reabrir</button>'; }
+  return b;
+}
+function bindRepModal(nro, r){
+  const val=()=>({ nota:(($('repNota')||{}).value||'').trim(), destino:(($('repDest')||{}).value||'').trim() });
+  const doSet=async(obj)=>{ try{ await setReparto(nro,obj); closeModal(); refreshDims(); render(); toast('Guardado','ok'); }catch(e){ toast('Error: '+e.message,'bad'); } };
+  if($('repSave')) $('repSave').onclick=()=>{ const v=val(); doSet({estado:'pendiente',nota:v.nota,destino:v.destino,creado_por:_mail(),creado_en:nowISO()}); };
+  if($('repEdit')) $('repEdit').onclick=()=>{ const v=val(); doSet(Object.assign({},r,{nota:v.nota,destino:v.destino})); };
+  if($('repDel')) $('repDel').onclick=()=>{ if(confirm('¿Desmarcar el reparto de este remito?')) doSet(null); };
+  if($('repDone')) $('repDone').onclick=()=>{ const v=val(); doSet(Object.assign({},r,{nota:v.nota,destino:v.destino,estado:'hecho',hecho_por:_mail(),hecho_en:nowISO()})); };
+  if($('repReopen')) $('repReopen').onclick=()=>{ doSet(Object.assign({},r,{estado:'pendiente',hecho_por:null,hecho_en:null})); };
 }
 
-function updateRepartoBadge(){
-  const n=vals(DATA.remitos).filter(R=>R.reparto && R.reparto.estado==='pendiente').length;
-  const t=document.querySelector('.tab[data-tab="repartos"]'); if(t) t.textContent='Repartos'+(n?(' ('+n+')'):'');
-}
+function updateRepartoBadge(){ const n=vals(DATA.repartos).filter(r=>r&&r.estado==='pendiente').length; const t=document.querySelector('.tab[data-tab="repartos"]'); if(t) t.textContent='Repartos'+(n?(' ('+n+')'):''); }
 
 function renderRepartos(){
-  const all=vals(DATA.remitos).filter(R=>R.reparto);
-  const pend=all.filter(R=>R.reparto.estado==='pendiente').sort((a,b)=>cmp(b.fecha,a.fecha));
-  const hechos=all.filter(R=>R.reparto.estado==='hecho').sort((a,b)=>cmp(b.reparto.hecho_en||'',a.reparto.hecho_en||''));
+  const items=Object.keys(DATA.repartos||{}).map(k=>({r:DATA.repartos[k], R:DATA.remitos[k]})).filter(x=>x.r);
+  const pend=items.filter(x=>x.r.estado==='pendiente').sort((a,b)=>cmp((b.R&&b.R.fecha)||'',(a.R&&a.R.fecha)||''));
+  const hechos=items.filter(x=>x.r.estado==='hecho').sort((a,b)=>cmp(b.r.hecho_en||'',a.r.hecho_en||''));
   let html=seccionHead('Repartos','Remitos que el depósito marcó para que Compras haga el reparto');
-  if(!all.length){ $('view').innerHTML=html+stateEmpty('No hay repartos marcados. El depósito los marca con ⚑ Reparto en cada remito (pestaña Ingresos).'); return; }
-  html+=repList('Pendientes', pend, 'pendiente');
-  html+=repList('Hechos', hechos, 'hecho');
+  if(!items.length){ $('view').innerHTML=html+stateEmpty('No hay repartos marcados. El depósito los marca con ⚑ Reparto en cada remito (pestaña Ingresos).'); return; }
+  html+=repList('Pendientes', pend, 'pendiente')+repList('Hechos', hechos, 'hecho');
   $('view').innerHTML=html;
-  bindRepartoAcciones();
+  document.querySelectorAll('#view tr[data-rep-open]').forEach(tr=>tr.onclick=()=>openRepartoModal(tr.getAttribute('data-rep-open')));
 }
 function repList(titulo, arr, estado){
-  const rows=arr.map(R=>{ let u=0,imp=0; (R.lineas||[]).forEach(l=>{u+=num(l.cantidad);imp+=num(l.cantidad)*num(l.costo_unitario);}); const r=R.reparto;
-    const accion = estado==='pendiente'
-      ? (esCompras()?'<button class="btn btn-primary btn-sm" data-rep-done="'+esc(R.nro)+'">Marcar hecho</button>':'<span class="muted" style="font-size:12px">esperando a Compras</span>')
-      : (esCompras()?'<button class="btn btn-outline btn-sm" data-rep-reopen="'+esc(R.nro)+'">Reabrir</button>':'<span class="rep-badge rep-done">✓ hecho</span>');
-    const quien = estado==='hecho' ? (r.hecho_por?('hecho por '+esc(r.hecho_por)):'') : (r.creado_por?('marcó '+esc(r.creado_por)):'');
-    return '<tr><td class="mono">'+esc(R.nro)+'</td><td>'+esc(R.marca||'')+'</td><td class="mono">'+esc(R.fecha||'')+'</td><td class="num big">'+fmtInt(u)+'</td><td class="num mono">'+fmtMoney(imp)+'</td><td style="font-size:12px;color:var(--muted)">'+quien+'</td><td>'+accion+'</td></tr>';
+  const rows=arr.map(x=>{ const R=x.R||{nro:x.r.nro,marca:x.r.marca,fecha:x.r.fecha,lineas:[]}; const r=x.r; let u=0; (R.lineas||[]).forEach(l=>u+=num(l.cantidad));
+    const quien = estado==='hecho'?(r.hecho_por?('hecho por '+esc(r.hecho_por)):''):(r.creado_por?('marcó '+esc(r.creado_por)):'');
+    return '<tr data-rep-open="'+esc(R.nro)+'" style="cursor:pointer"><td class="mono">'+esc(R.nro)+'</td><td>'+esc(R.marca||'')+'</td><td class="mono">'+esc(R.fecha||'')+'</td><td class="num big">'+fmtInt(u)+'</td><td>'+esc(r.nota||'')+'</td><td>'+esc(r.destino||'')+'</td><td style="font-size:12px;color:var(--muted)">'+quien+'</td></tr>';
   }).join('');
   return '<div class="card"><div class="card-h">'+esc(titulo)+' ('+arr.length+')</div>'
-    +(arr.length?('<div class="tbl-wrap" style="margin-top:8px"><table style="min-width:640px"><thead><tr><th>Remito</th><th>Marca</th><th>Fecha</th><th class="num">Unid.</th><th class="num">Valorizado</th><th>Quién</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>'):'<div class="card-hs" style="margin-top:6px">—</div>')+'</div>';
-}
-function bindRepartoAcciones(){
-  document.querySelectorAll('[data-rep-done]').forEach(b=>b.onclick=async()=>{ const nro=b.getAttribute('data-rep-done'); const R=DATA.remitos[fbKey(nro)]; if(!R)return; b.disabled=true;
-    try{ await setReparto(nro,Object.assign({},R.reparto,{estado:'hecho',hecho_por:_mail(),hecho_en:nowISO()})); refreshDims(); render(); toast('Reparto marcado como hecho','ok'); }catch(e){ b.disabled=false; toast('Error: '+e.message,'bad'); } });
-  document.querySelectorAll('[data-rep-reopen]').forEach(b=>b.onclick=async()=>{ const nro=b.getAttribute('data-rep-reopen'); const R=DATA.remitos[fbKey(nro)]; if(!R)return; b.disabled=true;
-    try{ await setReparto(nro,{estado:'pendiente',creado_por:(R.reparto&&R.reparto.creado_por)||_mail(),creado_en:(R.reparto&&R.reparto.creado_en)||nowISO()}); refreshDims(); render(); toast('Reparto reabierto','ok'); }catch(e){ b.disabled=false; toast('Error: '+e.message,'bad'); } });
+    +(arr.length?('<div class="card-hs" style="margin-top:2px">Click en una fila para ver / gestionar</div><div class="tbl-wrap" style="margin-top:8px"><table style="min-width:700px"><thead><tr><th>Remito</th><th>Marca</th><th>Fecha</th><th class="num">Unid.</th><th>Nota</th><th>Destino</th><th>Quién</th></tr></thead><tbody>'+rows+'</tbody></table></div>'):'<div class="card-hs" style="margin-top:6px">—</div>')+'</div>';
 }
 
 
@@ -957,9 +986,10 @@ window.closeModal=closeModal;
 
 function bindTabs(){ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on')); b.classList.add('on'); state.tab=b.dataset.tab; render(); }); }
 function bindFiltros(){
-  const map={fMes:'mes',fMarca:'marca',fRubro:'rubro',fDisc:'disciplina',fTipo:'tipo'};
-  Object.keys(map).forEach(id=>$(id).onchange=()=>{ state.filtros[map[id]]=$(id).value; render(); });
-  $('fReset').onclick=()=>{ state.filtros={mes:'',marca:'',rubro:'',disciplina:'',tipo:''}; ['fMes','fMarca','fRubro','fDisc','fTipo'].forEach(id=>$(id).value=''); render(); };
+  const map={fMes:'mes',fMarca:'marca',fRubro:'rubro',fDisc:'disciplina',fTipo:'tipo',fProv:'proveedor',fRep:'reparto'};
+  Object.keys(map).forEach(id=>{ const el=$(id); if(el) el.onchange=()=>{ state.filtros[map[id]]=el.value; render(); }; });
+  let _qt; const fq=$('fQ'); if(fq) fq.oninput=()=>{ clearTimeout(_qt); _qt=setTimeout(()=>{ state.filtros.q=fq.value; render(); },180); };
+  $('fReset').onclick=()=>{ state.filtros={mes:'',marca:'',rubro:'',disciplina:'',tipo:'',proveedor:'',reparto:'',q:''}; ['fMes','fMarca','fRubro','fDisc','fTipo','fProv','fRep','fQ'].forEach(id=>{const e=$(id); if(e)e.value='';}); render(); };
   $('fReload').onclick=recargar;
 }
 async function recargar(){

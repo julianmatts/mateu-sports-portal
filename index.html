@@ -526,6 +526,7 @@ function render(session){
   closeSettings();
   showApp();
   pintarBadgeEvaluaciones(session);
+  pintarBadgeRecepciones(session);
 
   // Si llegaron desde la campana del módulo Indicadores (?ver=bandeja), abrir la bandeja.
   if(verBandeja && MENSAJES_OK){
@@ -542,8 +543,25 @@ function render(session){
    agregado "X de N sin evaluar esta semana".
    ============================================================ */
 const EVAL_DB_URL = 'https://evaluaciones-mateu-default-rtdb.firebaseio.com';   // misma base que el módulo (vacío = sin badge)
+const RECEP_DB_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
+const RECEP_COMPRAS = ['julian@mateu.com.ar','julian.demarco@mateu.com.ar'];
 const EVAL_SUCS_TODAS = SUCURSALES.map(s=>s.slug).concat(OUTLETS_LIST.map(o=>o.id));
 function isoWeekActual(){ const d=new Date(); const u=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())); const day=(u.getUTCDay()+6)%7; u.setUTCDate(u.getUTCDate()-day+3); const f=new Date(Date.UTC(u.getUTCFullYear(),0,4)); const w=1+Math.round(((u-f)/864e5-3+((f.getUTCDay()+6)%7))/7); return u.getUTCFullYear()+'-W'+String(w).padStart(2,'0'); }
+async function pintarBadgeRecepciones(session){
+  try{
+    if(RECEP_DB_URL.indexOf('http')!==0) return;
+    const esCompras = session.rol==='admin' || RECEP_COMPRAS.includes((session.email||'').toLowerCase());
+    if(!esCompras) return;
+    const tile = $('grid') && $('grid').querySelector('a[href="./recepciones/"]'); if(!tile) return;
+    const obj = await (await fetch(RECEP_DB_URL.replace(/[/]+$/,'')+'/recepciones/repartos.json')).json() || {};
+    const pend = Object.keys(obj).filter(k=>obj[k] && obj[k].estado==='pendiente').length;
+    if(!pend) return;
+    const badge = document.createElement('div');
+    badge.textContent = pend+' reparto'+(pend>1?'s':'')+' pend.';
+    badge.style.cssText = 'position:absolute;top:16px;right:18px;background:#d97706;color:#fff;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.5px;padding:3px 9px;border-radius:20px;z-index:2';
+    tile.appendChild(badge);
+  }catch(e){ /* sin badge si falla */ }
+}
 async function pintarBadgeEvaluaciones(session){
   try{
     if(!/^https?:\/\//.test(EVAL_DB_URL)) return;   // sin base configurada → sin badge
