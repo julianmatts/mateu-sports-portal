@@ -19,17 +19,25 @@ Portal desde `localStorage` (no tiene login propio) y guarda los datos en
 - `import.js` (raíz) — parseo de Excel en el navegador (SheetJS por CDN) + mapeos
   de importación por marca.
 
-## Conectar la base Firebase
+### Qué se puede hacer
 
-1. Juli crea una base Realtime Database (p.ej. `recepciones-mateu`) con reglas
-   abiertas (`.read`/`.write` = true), como el resto del portal.
-2. Pega la URL en la constante **`FIREBASE_DB_URL`** arriba del `<script>` de
-   `recepciones/index.html`, por ejemplo:
-   ```js
-   const FIREBASE_DB_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
-   ```
-3. Listo. Con la URL vacía el módulo corre en **modo demo** (banner naranja,
-   datos de `mock-data.js`, no persiste).
+- **Panel**: KPIs (unidades e **$ ingresado**, remitos, marcas activas,
+  cumplimiento de OC) y gráficos por semana / marca / rubro.
+- **Remitos** y **Pedidos**: detalle, **importar Excel** (con preview) o alta
+  manual, **eliminar** (con confirmación) y **exportar a Excel** la vista actual.
+- **Ingresos vs pedido**: control por línea con resumen de estados, avance y
+  totales en unidades y $, exportable.
+- **↻ Recargar** en la barra de filtros trae los últimos datos de la base (es
+  multi-usuario).
+
+## Base Firebase
+
+La base ya está conectada: la URL está en la constante **`FIREBASE_DB_URL`**
+arriba del `<script>` de `recepciones/index.html`
+(`https://recepciones-mateu-default-rtdb.firebaseio.com`), con reglas abiertas
+(`.read`/`.write` = true), como el resto del portal. Si esa constante queda vacía,
+el módulo cae a **modo demo** (banner naranja, datos de `mock-data.js`, no
+persiste).
 
 ### Estructura en la base
 

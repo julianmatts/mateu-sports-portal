@@ -107,6 +107,9 @@ tfoot th{background:#eef2fb;color:var(--navy-mid);position:static}
 .b-completo{background:#dcfce7;color:#15803d}
 .b-excedido{background:#ede9fe;color:#6d28d9}
 .chip{display:inline-block;background:#f1f5fd;border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:12px;color:var(--navy-mid);margin:0 3px 3px 0}
+.lnk-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px;line-height:1}
+.lnk-del:hover{color:var(--bad)}
+.lnk-del:focus-visible{outline:2px solid var(--red);outline-offset:1px}
 
 .prog{height:8px;border-radius:4px;background:#e6ebf5;overflow:hidden;min-width:90px}
 .prog>span{display:block;height:100%;border-radius:4px;background:var(--ok)}
@@ -185,6 +188,7 @@ textarea.code{width:100%;min-height:150px;font-family:ui-monospace,Menlo,Consola
   <div class="fgrp"><label for="fDisc">Disciplina</label><select class="sel" id="fDisc"><option value="">Todas</option></select></div>
   <div class="fgrp"><label for="fTipo">Tipo</label><select class="sel" id="fTipo"><option value="">Todos</option></select></div>
   <div class="fgrp" style="min-width:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="fReset">Limpiar</button></div>
+  <div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="fReload" title="Traer los últimos datos de la base">↻ Recargar</button></div>
 </div>
 
 <main>
@@ -215,7 +219,7 @@ const $ = id => document.getElementById(id);
 /* ---------- Firebase: pegar la URL de la base cuando Juli la cree ----------
    Ej: 'https://recepciones-mateu-default-rtdb.firebaseio.com'
    Vacío => modo demo. */
-const FIREBASE_DB_URL = '';
+const FIREBASE_DB_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
 const DEMO = !FIREBASE_DB_URL;
 const ROOT = 'recepciones';   // rama raíz en la base
 
@@ -244,6 +248,7 @@ function fbUrl(path){ return FIREBASE_DB_URL.replace(/\/+$/,'') + '/' + path + '
 function fbKey(nro){ return String(nro||'').trim().replace(/[.#$/\[\]]/g,'~'); }
 async function fbGet(path){ const r=await fetch(fbUrl(path)); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
 async function fbPut(path, data){ const r=await fetch(fbUrl(path),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
+async function fbDelete(path){ const r=await fetch(fbUrl(path),{method:'DELETE'}); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return true; }
 function nowISO(){ return new Date().toISOString().slice(0,19).replace('T',' '); }
 
 /* semana ISO 8601 -> 'Sem NN' desde 'YYYY-MM-DD' */
@@ -287,6 +292,8 @@ async function guardarRemito(doc){
   if(!DEMO) await fbPut(ROOT+'/remitos/'+key, rec);
   DATA.remitos[key] = rec;
 }
+async function borrarPedido(nro){ const key=fbKey(nro); if(!DEMO) await fbDelete(ROOT+'/pedidos/'+key); delete DATA.pedidos[key]; }
+async function borrarRemito(nro){ const key=fbKey(nro); if(!DEMO) await fbDelete(ROOT+'/remitos/'+key); delete DATA.remitos[key]; }
 
 /* ---------- dimensiones (cliente) ---------- */
 function computeDims(){
@@ -354,9 +361,9 @@ function render(){
 /* ---------- PANEL ---------- */
 function renderPanel(){
   const rem = remitosFiltrados();
-  let unidades=0, remitosCount=0; const porSemana={}, porMarca={}, porRubro={}, marcasAct={};
+  let unidades=0, importe=0, remitosCount=0; const porSemana={}, porMarca={}, porRubro={}, marcasAct={};
   rem.forEach(R=>{ const lins=(R.lineas||[]).filter(lineaPasa); if(!lins.length) return; remitosCount++; marcasAct[R.marca||'—']=1;
-    lins.forEach(l=>{ const c=num(l.cantidad); unidades+=c; porSemana[R.semana||'—']=(porSemana[R.semana||'—']||0)+c; porMarca[R.marca||'—']=(porMarca[R.marca||'—']||0)+c; porRubro[l.rubro||'—']=(porRubro[l.rubro||'—']||0)+c; }); });
+    lins.forEach(l=>{ const c=num(l.cantidad); importe+=c*num(l.costo_unitario); unidades+=c; porSemana[R.semana||'—']=(porSemana[R.semana||'—']||0)+c; porMarca[R.marca||'—']=(porMarca[R.marca||'—']||0)+c; porRubro[l.rubro||'—']=(porRubro[l.rubro||'—']||0)+c; }); });
   const ctrl=computeControl(state.filtros); let ped=0,rec=0; ctrl.forEach(c=>{ped+=c.cant_pedida;rec+=c.cant_recibida;});
   const cumpl = ped>0?Math.round(rec/ped*100):(rec>0?100:0);
 
@@ -364,6 +371,7 @@ function renderPanel(){
   if(!remitosCount && !ctrl.length){ $('view').innerHTML=html+stateEmpty('Todavía no hay ingresos ni pedidos cargados. Importá un Excel o cargá uno manual.'); return; }
   html += '<div class="kpis">'
     + kpi('Unidades ingresadas', fmtInt(unidades))
+    + kpi('Ingresado $', fmtMoney(importe))
     + kpi('Remitos', fmtInt(remitosCount))
     + kpi('Marcas activas', fmtInt(Object.keys(marcasAct).length))
     + kpi('Cumplimiento OC', cumpl+'<small>%</small>') + '</div>';
@@ -385,38 +393,51 @@ function cardBars(title, sub, obj, keepOrder){
 
 /* ---------- REMITOS ---------- */
 function renderRemitos(){
-  let rows=[]; let tot=0, totImp=0;
-  remitosFiltrados().forEach(R=>{ (R.lineas||[]).filter(lineaPasa).forEach(l=>{ const c=num(l.cantidad), cu=num(l.costo_unitario), imp=c*cu; tot+=c; totImp+=imp;
-    rows.push('<tr><td class="mono">'+esc(R.nro)+'</td><td class="mono">'+esc(R.fecha)+'</td><td>'+esc(R.semana||'')+'</td><td>'+esc(R.marca||'')+'</td><td>'+esc(R.pedido_nro||'—')+'</td><td>'+esc(l.rubro||'')+'</td><td>'+esc(l.disciplina||'')+'</td><td>'+esc(l.tipo||'')+'</td><td class="num big">'+fmtInt(c)+'</td><td class="num mono">'+fmtMoney(cu)+'</td><td class="num mono">'+fmtMoney(imp)+'</td></tr>'); }); });
+  let rows=[]; let tot=0, totImp=0; const flat=[];
+  remitosFiltrados().forEach(R=>{ const lins=(R.lineas||[]).filter(lineaPasa); lins.forEach((l,i)=>{ const c=num(l.cantidad), cu=num(l.costo_unitario), imp=c*cu; tot+=c; totImp+=imp;
+    flat.push({ remito:R.nro, fecha:R.fecha, semana:R.semana||'', marca:R.marca||'', oc:R.pedido_nro||'', rubro:l.rubro||'', disciplina:l.disciplina||'', tipo:l.tipo||'', cantidad:c, costo_unitario:cu, importe:imp });
+    const nroCell = '<td class="mono">'+esc(R.nro)+(i===0?' <button class="lnk-del" data-del-remito="'+esc(R.nro)+'" title="Eliminar remito completo">✕</button>':'')+'</td>';
+    rows.push('<tr>'+nroCell+'<td class="mono">'+esc(R.fecha)+'</td><td>'+esc(R.semana||'')+'</td><td>'+esc(R.marca||'')+'</td><td>'+esc(R.pedido_nro||'—')+'</td><td>'+esc(l.rubro||'')+'</td><td>'+esc(l.disciplina||'')+'</td><td>'+esc(l.tipo||'')+'</td><td class="num big">'+fmtInt(c)+'</td><td class="num mono">'+fmtMoney(cu)+'</td><td class="num mono">'+fmtMoney(imp)+'</td></tr>'); }); });
   let html = seccionHead('Remitos de ingreso','Detalle línea por línea de la mercadería ingresada',
-    '<button class="btn btn-outline btn-sm" id="btnAltaRem">+ Alta manual</button><button class="btn btn-primary btn-sm" id="btnImpRem">⇪ Importar Excel</button>');
+    (rows.length?'<button class="btn btn-outline btn-sm" id="btnExpRem">⇩ Exportar</button>':'')+'<button class="btn btn-outline btn-sm" id="btnAltaRem">+ Alta manual</button><button class="btn btn-primary btn-sm" id="btnImpRem">⇪ Importar Excel</button>');
   if(!rows.length){ html+=stateEmpty('No hay remitos para los filtros actuales.'); }
   else html += '<div class="tbl-wrap"><table><thead><tr><th>Remito</th><th>Fecha</th><th>Semana</th><th>Marca</th><th>OC</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Costo U.</th><th class="num">Importe</th></tr></thead><tbody>'+rows.join('')+'</tbody><tfoot><tr><th colspan="8" style="text-align:right">Totales</th><th class="num big">'+fmtInt(tot)+'</th><th></th><th class="num big">'+fmtMoney(totImp)+'</th></tr></tfoot></table></div>';
   $('view').innerHTML = html;
   $('btnImpRem').onclick=()=>openImport('ingreso'); $('btnAltaRem').onclick=()=>openAlta('ingreso');
+  if($('btnExpRem')) $('btnExpRem').onclick=()=>exportar('remitos', flat);
+  bindDeletes();
 }
 
 /* ---------- PEDIDOS ---------- */
 function renderPedidos(){
-  const f=state.filtros; let cards=[];
+  const f=state.filtros; let cards=[]; const flat=[];
   pedidosFiltrados().forEach(P=>{ const lins=(P.lineas||[]).filter(lineaPasa); if(!lins.length && (f.rubro||f.disciplina||f.tipo)) return;
-    let u=0, imp=0; lins.forEach(l=>{u+=num(l.cantidad); imp+=num(l.cantidad)*num(l.costo_unitario);});
+    let u=0, imp=0; lins.forEach(l=>{u+=num(l.cantidad); imp+=num(l.cantidad)*num(l.costo_unitario);
+      flat.push({ oc:P.nro, fecha:P.fecha, comprador:P.comprador||'', proveedor:P.proveedor||'', marca:P.marca||'', moneda:P.moneda||'ARS', rubro:l.rubro||'', disciplina:l.disciplina||'', tipo:l.tipo||'', cantidad:num(l.cantidad), costo_unitario:num(l.costo_unitario), importe:num(l.cantidad)*num(l.costo_unitario) }); });
     const rows=lins.map(l=>'<tr><td>'+esc(l.rubro||'')+'</td><td>'+esc(l.disciplina||'')+'</td><td>'+esc(l.tipo||'')+'</td><td class="num big">'+fmtInt(l.cantidad)+'</td><td class="num mono">'+fmtMoney(l.costo_unitario)+'</td><td class="num mono">'+fmtMoney(num(l.cantidad)*num(l.costo_unitario))+'</td></tr>').join('');
-    cards.push('<div class="card"><div class="sec-head" style="margin-bottom:8px"><div><div class="card-h">OC '+esc(P.nro)+' · '+esc(P.marca||'—')+'</div><div class="card-hs" style="margin:0">'+esc(P.fecha)+' · '+esc(P.proveedor||'—')+(P.comprador?(' · Comprador: '+esc(P.comprador)):'')+' · '+esc(P.moneda||'ARS')+'</div></div><div style="text-align:right"><div class="big" style="font-size:22px">'+fmtInt(u)+' u.</div><div class="mono" style="color:var(--muted)">'+fmtMoney(imp)+'</div></div></div><div class="tbl-wrap"><table style="min-width:520px"><thead><tr><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Costo U.</th><th class="num">Importe</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>');
+    cards.push('<div class="card"><div class="sec-head" style="margin-bottom:8px"><div><div class="card-h">OC '+esc(P.nro)+' · '+esc(P.marca||'—')+'</div><div class="card-hs" style="margin:0">'+esc(P.fecha)+' · '+esc(P.proveedor||'—')+(P.comprador?(' · Comprador: '+esc(P.comprador)):'')+' · '+esc(P.moneda||'ARS')+'</div></div><div style="text-align:right;display:flex;align-items:center;gap:12px"><div><div class="big" style="font-size:22px">'+fmtInt(u)+' u.</div><div class="mono" style="color:var(--muted)">'+fmtMoney(imp)+'</div></div><button class="btn btn-outline btn-sm" data-del-pedido="'+esc(P.nro)+'" title="Eliminar OC">🗑</button></div></div><div class="tbl-wrap"><table style="min-width:520px"><thead><tr><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Costo U.</th><th class="num">Importe</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>');
   });
   let html = seccionHead('Pedidos de compra','Órdenes de compra por proveedor y sus líneas',
-    '<button class="btn btn-outline btn-sm" id="btnAltaPed">+ Alta manual</button><button class="btn btn-primary btn-sm" id="btnImpPed">⇪ Importar Excel</button>');
+    (flat.length?'<button class="btn btn-outline btn-sm" id="btnExpPed">⇩ Exportar</button>':'')+'<button class="btn btn-outline btn-sm" id="btnAltaPed">+ Alta manual</button><button class="btn btn-primary btn-sm" id="btnImpPed">⇪ Importar Excel</button>');
   html += cards.length ? cards.join('') : stateEmpty('No hay pedidos para los filtros actuales.');
   $('view').innerHTML = html;
   $('btnImpPed').onclick=()=>openImport('pedido'); $('btnAltaPed').onclick=()=>openAlta('pedido');
+  if($('btnExpPed')) $('btnExpPed').onclick=()=>exportar('pedidos', flat);
+  bindDeletes();
 }
 
 /* ---------- CONTROL ---------- */
 function renderControl(){
   const filas = computeControl(state.filtros);
   let html = seccionHead('Ingresos vs pedido','Cumplimiento de cada línea de OC contra lo recibido',
-    '<div class="toggle-uv"><button id="uvU" class="'+(state.uv==='u'?'on':'')+'">Unidades</button><button id="uvV" class="'+(state.uv==='v'?'on':'')+'">Pesos $</button></div>');
+    '<div class="toggle-uv"><button id="uvU" class="'+(state.uv==='u'?'on':'')+'">Unidades</button><button id="uvV" class="'+(state.uv==='v'?'on':'')+'">Pesos $</button></div>'
+    + '<button class="btn btn-outline btn-sm" id="btnExpCtrl">⇩ Exportar</button>');
   if(!filas.length){ $('view').innerHTML=html+stateEmpty('No hay pedidos cargados para controlar. Importá una OC en “Pedidos de compra”.'); bindUV(); return; }
+  // resumen de estados
+  const cuenta={pendiente:0,parcial:0,completo:0,excedido:0}; filas.forEach(c=>cuenta[c.estado]++);
+  html += '<div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap">'
+    + ['completo','parcial','pendiente','excedido'].map(e=> cuenta[e]?('<span class="badge b-'+e+'" style="font-size:12px;padding:5px 11px">'+cuenta[e]+' '+e+(cuenta[e]>1?'s':'')+'</span>'):'').join('')
+    + '</div>';
   const V=state.uv==='v'; let tp=0,tr=0,tpe=0; const fmt=V?fmtMoney:fmtInt;
   const rows=filas.map(c=>{ const ped=V?c.importe_pedido:c.cant_pedida, rec=V?c.importe_recibido:c.cant_recibida, pen=V?c.importe_pendiente:c.cant_pendiente; tp+=ped;tr+=rec;tpe+=pen;
     const pct=Math.max(0,Math.min(100,c.pct));
@@ -424,11 +445,38 @@ function renderControl(){
   }).join('');
   html += '<div class="tbl-wrap"><table><thead><tr><th>OC</th><th>Marca</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Pedido</th><th class="num">Recibido</th><th class="num">Pendiente</th><th>Avance</th><th>Estado</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr><th colspan="5" style="text-align:right">Totales</th><th class="num big">'+fmt(tp)+'</th><th class="num big">'+fmt(tr)+'</th><th class="num big">'+fmt(tpe)+'</th><th colspan="2"></th></tr></tfoot></table></div>';
   $('view').innerHTML = html; bindUV();
+  $('btnExpCtrl').onclick=()=>exportar('control', filas);
 }
 function bindUV(){ const u=$('uvU'),v=$('uvV'); if(u)u.onclick=()=>{state.uv='u';renderControl();}; if(v)v.onclick=()=>{state.uv='v';renderControl();}; }
 
 /* ---------- helpers de render ---------- */
-function seccionHead(title, sub, actions){ return '<div class="sec-head"><div><h1>'+esc(title)+'</h1>'+(sub?'<div class="sub">'+esc(sub)+'</div>':'')+'</div>'+(actions?'<div style="display:flex;gap:8px;flex-wrap:wrap">'+actions+'</div>':'')+'</div>'; }
+function seccionHead(title, sub, actions){ return '<div class="sec-head"><div><h1>'+esc(title)+'</h1>'+(sub?'<div class="sub">'+esc(sub)+'</div>':'')+'</div>'+(actions?'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+actions+'</div>':'')+'</div>'; }
+
+/* eliminar documentos (con confirmación) */
+function bindDeletes(){
+  document.querySelectorAll('[data-del-pedido]').forEach(b=>b.onclick=async()=>{
+    const nro=b.getAttribute('data-del-pedido');
+    if(!confirm('¿Eliminar la OC '+nro+' y todas sus líneas? No se puede deshacer.')) return;
+    b.disabled=true; try{ await borrarPedido(nro); refreshDims(); render(); toast('OC '+nro+' eliminada','ok'); }catch(e){ b.disabled=false; toast('No se pudo eliminar: '+e.message,'bad'); }
+  });
+  document.querySelectorAll('[data-del-remito]').forEach(b=>b.onclick=async()=>{
+    const nro=b.getAttribute('data-del-remito');
+    if(!confirm('¿Eliminar el remito '+nro+' completo? No se puede deshacer.')) return;
+    b.disabled=true; try{ await borrarRemito(nro); refreshDims(); render(); toast('Remito '+nro+' eliminado','ok'); }catch(e){ b.disabled=false; toast('No se pudo eliminar: '+e.message,'bad'); }
+  });
+}
+
+/* exportar a Excel la vista actual (SheetJS ya cargado) */
+function exportar(tipo, rows){
+  if(!rows || !rows.length){ toast('No hay filas para exportar'); return; }
+  try{
+    const ws=XLSX.utils.json_to_sheet(rows);
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, tipo);
+    XLSX.writeFile(wb, 'recepciones-'+tipo+'-'+new Date().toISOString().slice(0,10)+'.xlsx');
+    toast('Excel exportado','ok');
+  }catch(e){ toast('No se pudo exportar: '+e.message,'bad'); }
+}
 
 /* ============================================================
    IMPORTACIÓN DE EXCEL (parse navegador → preview → confirmar → Firebase)
@@ -514,6 +562,7 @@ async function confirmImport(){
    ============================================================ */
 function openAlta(tipoDoc){
   const marcas=(state.dims&&state.dims.marcas)||[]; const esPed=tipoDoc==='pedido';
+  const ocs=vals(DATA.pedidos).map(p=>p.nro).sort(cmp);
   openModal(
     '<button class="close" onclick="closeModal()">×</button><h2>'+(esPed?'Alta manual de pedido':'Alta manual de remito')+'</h2><div class="msub">Respaldo para cargar sin Excel. Agregá al menos una línea.</div>'
     + '<div class="formgrid">'
@@ -521,7 +570,7 @@ function openAlta(tipoDoc){
       + field('Fecha', '<input class="inp" type="date" id="aFecha">')
       + field('Marca', '<input class="inp" id="aMarca" list="aMarcaList" placeholder="Marca"><datalist id="aMarcaList">'+marcas.map(m=>'<option>'+esc(m)+'</option>').join('')+'</datalist>')
       + field('Proveedor', '<input class="inp" id="aProv">')
-      + (esPed? field('Comprador','<input class="inp" id="aComp">') : field('OC asociada (opcional)','<input class="inp" id="aOC">'))
+      + (esPed? field('Comprador','<input class="inp" id="aComp">') : field('OC asociada (opcional)','<input class="inp" id="aOC" list="aOCList" placeholder="Nº de OC"><datalist id="aOCList">'+ocs.map(o=>'<option>'+esc(o)+'</option>').join('')+'</datalist>'))
       + (esPed? field('Moneda','<select class="sel" id="aMon"><option>ARS</option><option>USD</option></select>') : '')
     + '</div><div style="margin:10px 0 6px;font-family:var(--font-c);font-weight:700;letter-spacing:.5px">Líneas</div>'
     + '<div class="tbl-wrap"><table style="min-width:560px"><thead><tr><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Cant.</th><th class="num">Costo U.</th><th></th></tr></thead><tbody id="aLineas"></tbody></table></div>'
@@ -564,6 +613,13 @@ function bindFiltros(){
   const map={fSemana:'semana',fMarca:'marca',fRubro:'rubro',fDisc:'disciplina',fTipo:'tipo'};
   Object.keys(map).forEach(id=>$(id).onchange=()=>{ state.filtros[map[id]]=$(id).value; render(); });
   $('fReset').onclick=()=>{ state.filtros={semana:'',marca:'',rubro:'',disciplina:'',tipo:''}; ['fSemana','fMarca','fRubro','fDisc','fTipo'].forEach(id=>$(id).value=''); render(); };
+  $('fReload').onclick=recargar;
+}
+async function recargar(){
+  const btn=$('fReload'); if(btn){ btn.disabled=true; btn.textContent='Recargando…'; }
+  try{ await cargarTodo(); refreshDims(); render(); toast('Datos actualizados','ok'); }
+  catch(e){ toast('No se pudo recargar: '+e.message,'bad'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='↻ Recargar'; } }
 }
 $('salir').onclick=()=>{ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} location.replace('../'); };
 
@@ -571,7 +627,12 @@ async function init(){
   $('whoName').textContent=SESSION.email||'—'; $('whoRole').textContent=SESSION.rol||'—';
   if(DEMO) $('demoBanner').classList.add('show');
   bindTabs(); bindFiltros();
-  try{ await cargarTodo(); }catch(e){ $('view').innerHTML=stateError('No se pudo cargar la base ('+e.message+').'); return; }
+  try{ await cargarTodo(); }
+  catch(e){
+    $('view').innerHTML=stateError('No se pudo cargar la base ('+e.message+').')
+      +'<div style="text-align:center;margin-top:-22px;padding-bottom:26px"><button class="btn btn-primary btn-sm" id="btnRetry">Reintentar</button></div>';
+    $('btnRetry').onclick=init; return;
+  }
   refreshDims(); render();
 }
 init();
