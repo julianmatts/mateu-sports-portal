@@ -201,6 +201,34 @@ td.edit{padding:4px 8px}
 .cfg-fields.show{display:flex}
 .cfg-fields .param label{display:block;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
 .cfg-fields .hint{font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.35}
+
+/* Panel por marca + drill-down */
+.marca-head{display:grid;grid-template-columns:1fr 200px 220px 90px;gap:12px;padding:6px 18px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.marca-head .num{text-align:right}
+.marca-list{display:flex;flex-direction:column;gap:8px}
+.marca-card{background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);overflow:hidden}
+.marca-row{display:grid;grid-template-columns:1fr 200px 220px 90px;gap:12px;align-items:center;padding:14px 18px;cursor:pointer;transition:background .12s}
+.marca-row:hover{background:#f7f9fd}
+.mc-name{font-size:16px;font-weight:600;color:var(--navy);display:flex;align-items:center;gap:8px;min-width:0}
+.mc-name small{font-family:var(--font-c);font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.mc-caret{color:var(--muted);font-size:12px;transition:transform .18s;flex-shrink:0}
+.marca-card.open .mc-caret{transform:rotate(90deg)}
+.mc-ventas{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);font-size:14px}
+.mc-pres{text-align:right;font-variant-numeric:tabular-nums;line-height:1.1}
+.mc-pres b{font-family:var(--font-d);font-size:22px;letter-spacing:.5px;color:var(--navy)}
+.mc-pres small{display:block;font-size:11px;color:var(--muted)}
+.mc-var{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:14px}
+.marca-detail{display:none;border-top:1px solid var(--border);background:#fafbfe;padding:6px 10px 12px;overflow-x:auto}
+.marca-card.open .marca-detail{display:block}
+.det-table{width:100%;border-collapse:collapse;min-width:840px}
+.det-table th{font-family:var(--font-c);font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);font-weight:700;text-align:left;padding:8px 10px;white-space:nowrap}
+.det-table td{padding:7px 10px;border-top:1px solid var(--border);font-size:13.5px;color:var(--navy);vertical-align:top}
+.det-table .num{text-align:right;font-variant-numeric:tabular-nums}
+.det-table .ctr{text-align:center}
+.det-table .sug{font-weight:700}
+.pq{display:inline-block;font-family:var(--font-c);font-size:11px;font-weight:700;padding:2px 8px;border-radius:12px;white-space:nowrap}
+.pq.ms-sobrestock{background:#fdeaea;color:#b3261e}.pq.ms-faltante{background:#e7f5ec;color:#1e7a3a}.pq.ms-ok{background:#eaf1fb;color:#1a56b0}.pq.ms-sindato{background:#eef1f6;color:#8895ab}
+@media(max-width:720px){.marca-head,.marca-row{grid-template-columns:1fr 120px}.marca-head div:nth-child(2),.marca-row .mc-ventas{display:none}.marca-head div:nth-child(4),.marca-row .mc-var{display:none}}
 </style>
 </head>
 <body>
@@ -223,18 +251,18 @@ td.edit{padding:4px 8px}
 </header>
 
 <div class="main-tabs">
-  <button class="tab active" data-view="cargar">Armar presupuesto</button>
-  <button class="tab" data-view="visualizar">Análisis</button>
+  <button class="tab active" data-view="visualizar">Panel</button>
+  <button class="tab" data-view="cargar">Datos</button>
 </div>
 
 <div class="wrap">
 
-  <!-- ══════════ ARMAR ══════════ -->
-  <section class="view active" id="view-cargar">
+  <!-- ══════════ DATOS (carga y ajuste) ══════════ -->
+  <section class="view" id="view-cargar">
     <div class="hero">
       <div>
-        <div class="eyebrow">Ventas → presupuesto sugerido</div>
-        <h1>Armar presupuesto</h1>
+        <div class="eyebrow">Carga y ajuste de ventas</div>
+        <h1>Datos</h1>
       </div>
     </div>
 
@@ -247,6 +275,7 @@ td.edit{padding:4px 8px}
         <div class="field"><label>Marca</label><input id="f-marca" placeholder="Ej. Nike" list="dl-marca"></div>
         <div class="field"><label>Rubro</label><input id="f-rubro" placeholder="Calzado" list="dl-rubro"></div>
         <div class="field"><label>Género</label><input id="f-gen" placeholder="Hombre" list="dl-gen"></div>
+        <div class="field"><label>Disciplina</label><input id="f-disc" placeholder="Training" list="dl-disc"></div>
         <div class="field"><label>Tipo</label><input id="f-tipo" placeholder="Running" list="dl-tipo"></div>
         <div class="field"><label>Período</label><input id="f-per" type="month"></div>
         <div class="field"><label>Ventas $</label><input id="f-ventas" type="number" min="0" step="1000" placeholder="0"></div>
@@ -256,6 +285,7 @@ td.edit{padding:4px 8px}
       <datalist id="dl-marca"></datalist>
       <datalist id="dl-rubro"><option value="Calzado"><option value="Indumentaria"><option value="Accesorios"></datalist>
       <datalist id="dl-gen"><option value="Hombre"><option value="Mujer"><option value="Niño"><option value="Unisex"></datalist>
+      <datalist id="dl-disc"></datalist>
       <datalist id="dl-tipo"></datalist>
     </div>
 
@@ -273,7 +303,7 @@ td.edit{padding:4px 8px}
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Marca</th><th>Rubro</th><th>Género</th><th>Tipo</th><th>Período</th>
+          <th>Marca</th><th>Rubro</th><th>Género</th><th>Disciplina</th><th>Tipo</th><th>Período</th>
           <th class="num">Ventas $</th><th class="num">Ventas U</th>
           <th class="ctr">Meses stock</th>
           <th class="num">Sugerido $</th><th class="num">Presupuesto $</th><th class="num">Presup. U</th><th></th>
@@ -284,12 +314,12 @@ td.edit{padding:4px 8px}
     <div class="note">💡 <b>Meses de stock</b> viene de Gestión de Stock (a nivel cadena, por marca + rubro). <b style="color:#b3261e">Sobrestock</b> → el sugerido baja (comprar menos); <b style="color:#1e7a3a">Faltante</b> → el sugerido sube (comprar más). Si la marca no está en Gestión de Stock, no se ajusta (factor 1).</div>
   </section>
 
-  <!-- ══════════ ANÁLISIS ══════════ -->
-  <section class="view" id="view-visualizar">
+  <!-- ══════════ PANEL (dashboard) ══════════ -->
+  <section class="view active" id="view-visualizar">
     <div class="hero">
       <div>
-        <div class="eyebrow">Panel de control</div>
-        <h1>Análisis del presupuesto</h1>
+        <div class="eyebrow">Presupuesto de compras</div>
+        <h1>Panel por marca</h1>
       </div>
       <div class="hero-per">
         <select class="filter-sel" id="vis-per"><option value="">Todos los períodos</option></select>
@@ -298,18 +328,23 @@ td.edit{padding:4px 8px}
 
     <div class="kpis" id="kpis"></div>
 
-    <div class="mos-sec">
-      <div class="mos-head">Meses de stock por marca</div>
-      <div class="mos-sub">Cruce con Gestión de Stock: qué marcas tienen exceso (comprar menos) o faltante (comprar más).</div>
-      <div class="mos-grid" id="mos"></div>
-    </div>
-
     <div class="grp-head">
+      <h2>Presupuesto por marca</h2>
+      <div class="mb-stock" id="panelHint" style="margin-left:auto"></div>
+    </div>
+    <div class="marca-head">
+      <div>Marca</div><div class="num">Ventas del mes</div><div class="num">Presupuesto compra</div><div class="num">vs. venta</div>
+    </div>
+    <div class="marca-list" id="panel-marcas"></div>
+    <div class="note">💡 Tocá una marca para ver el detalle por <b>rubro, disciplina, género y tipo</b>, con las ventas, los meses de stock y el <b>por qué</b> de cada presupuesto. El cálculo se define en <b>⚙ Método</b>.</div>
+
+    <div class="grp-head" style="margin-top:34px">
       <h2>Ventas vs. Presupuesto por</h2>
       <div class="seg" id="seg-group">
         <button data-g="marca" class="active">Marca</button>
         <button data-g="rubro">Rubro</button>
         <button data-g="genero">Género</button>
+        <button data-g="disciplina">Disciplina</button>
         <button data-g="tipo">Tipo</button>
       </div>
       <div class="legend">
@@ -369,15 +404,7 @@ td.edit{padding:4px 8px}
           <label>Mes base</label>
           <select id="imp-mes"></select>
           <div class="hint">Las ventas de ese mes son la base para el presupuesto del mes que viene. "Promedio" = media de todos los meses del archivo.</div>
-        </div>
-        <div class="param">
-          <label>Nivel de detalle</label>
-          <select id="imp-nivel">
-            <option value="mr">Marca + Rubro (recomendado)</option>
-            <option value="mrg">Marca + Rubro + Género</option>
-            <option value="mrgt">Máximo detalle (Marca + Rubro + Género + Tipo)</option>
-          </select>
-          <div class="hint" id="imp-count">—</div>
+          <div class="hint" id="imp-count" style="margin-top:8px;color:var(--navy);font-weight:600">—</div>
         </div>
         <div class="param">
           <label>Modo</label>
@@ -427,6 +454,7 @@ function migrarLinea(l){
     marca: l.marca || l.proveedor || '—',          // compat con esquema viejo
     rubro: l.rubro || '—',
     genero: l.genero || '—',
+    disciplina: l.disciplina || '—',
     tipo: l.tipo || l.categoria || '—',
     periodo: l.periodo || '',
     ventas: +l.ventas || 0,
@@ -550,18 +578,18 @@ function msBadge(ev){
 /* ── Alta ── */
 async function agregar(){
   const marca=$('f-marca').value.trim(), rubro=$('f-rubro').value.trim(), gen=$('f-gen').value.trim(),
-        tipo=$('f-tipo').value.trim(), per=$('f-per').value,
+        disc=$('f-disc').value.trim(), tipo=$('f-tipo').value.trim(), per=$('f-per').value,
         ventas=+$('f-ventas').value||0, ventasU=+$('f-ventasU').value||0;
   if(!marca){ $('f-marca').focus(); return; }
-  const limpiar=()=>{ ['f-tipo','f-ventas','f-ventasU'].forEach(i=>$(i).value=''); $('f-marca').focus(); };
+  const limpiar=()=>{ ['f-disc','f-tipo','f-ventas','f-ventasU'].forEach(i=>$(i).value=''); $('f-marca').focus(); };
   const dup = lineas.find(l => normMarca(l.marca)===normMarca(marca) && (l.rubro||'—')===(rubro||'—') &&
-    (l.genero||'—')===(gen||'—') && (l.tipo||'—')===(tipo||'—') && l.periodo===per);
+    (l.genero||'—')===(gen||'—') && (l.disciplina||'—')===(disc||'—') && (l.tipo||'—')===(tipo||'—') && l.periodo===per);
   if(dup){
-    const ok = confirm(`Ya existe una línea para "${marca}" · ${rubro||'—'} · ${gen||'—'} · ${tipo||'—'} en ${perLabel(per)}.\n\nAceptar: sumar estas ventas a la línea existente.\nCancelar: no agregar nada.`);
+    const ok = confirm(`Ya existe una línea para "${marca}" · ${rubro||'—'} · ${gen||'—'} · ${disc||'—'} · ${tipo||'—'} en ${perLabel(per)}.\n\nAceptar: sumar estas ventas a la línea existente.\nCancelar: no agregar nada.`);
     if(ok){ dup.ventas+=ventas; dup.ventasU+=ventasU; await Store.save(); limpiar(); renderAll(); }
     return;
   }
-  const l = {id:uid(),marca,rubro:rubro||'—',genero:gen||'—',tipo:tipo||'—',periodo:per,ventas,ventasU,presupuesto:0,presupuestoU:0};
+  const l = {id:uid(),marca,rubro:rubro||'—',genero:gen||'—',disciplina:disc||'—',tipo:tipo||'—',periodo:per,ventas,ventasU,presupuesto:0,presupuestoU:0};
   const sug = sugeridoDe(l); l.presupuesto=sug.$; l.presupuestoU=sug.U;   // arranca en el sugerido
   lineas.push(l);
   await Store.save(); limpiar(); renderAll();
@@ -644,10 +672,12 @@ function renderSelectores(){
   const pers=[...new Set(lineas.map(l=>l.periodo).filter(Boolean))].sort().reverse();
   const marcas=[...new Set(lineas.map(l=>l.marca))].sort();
   const tipos=[...new Set(lineas.map(l=>l.tipo).filter(t=>t&&t!=='—'))].sort();
+  const discs=[...new Set(lineas.map(l=>l.disciplina).filter(t=>t&&t!=='—'))].sort();
   fillSel('flt-per', pers.map(p=>[p,perLabel(p)]), 'Todos los períodos');
   fillSel('vis-per', pers.map(p=>[p,perLabel(p)]), 'Todos los períodos');
   fillSel('flt-marca', marcas.map(p=>[p,p]), 'Todas las marcas');
   $('dl-tipo').innerHTML = tipos.map(t=>`<option value="${esc(t)}">`).join('');
+  $('dl-disc').innerHTML = discs.map(t=>`<option value="${esc(t)}">`).join('');
   // datalist de marcas: las cargadas + las de Gestión de Stock
   let dm = new Set(marcas);
   if(stockDisponible()) Object.values(window.STOCK_DATA.sucursales).forEach(s=>Object.values(s.rubros||{}).forEach(r=>Object.keys(r.marcas||{}).forEach(m=>dm.add(m))));
@@ -663,7 +693,7 @@ function fillSel(id, pairs, allLabel){
 function renderTabla(){
   const tb=$('tbody'); const rows=lineasFiltradas();
   if(!rows.length){
-    tb.innerHTML=`<tr><td colspan="12" class="empty"><b>Sin líneas cargadas</b>Cargá las ventas del mes pasado por marca/rubro y el presupuesto sugerido sale solo.</td></tr>`;
+    tb.innerHTML=`<tr><td colspan="13" class="empty"><b>Sin líneas cargadas</b>Importá tu Excel de ventas (botón arriba) o cargá una línea a mano.</td></tr>`;
     return;
   }
   tb.innerHTML = rows.map(l=>{
@@ -672,6 +702,7 @@ function renderTabla(){
       <td class="edit"><input class="cell-in" data-c="marca" value="${esc(l.marca)}" list="dl-marca"></td>
       <td class="edit"><input class="cell-in" data-c="rubro" value="${esc(l.rubro)}" list="dl-rubro"></td>
       <td class="edit"><input class="cell-in" data-c="genero" value="${esc(l.genero)}" list="dl-gen"></td>
+      <td class="edit"><input class="cell-in" data-c="disciplina" value="${esc(l.disciplina||'—')}" list="dl-disc"></td>
       <td class="edit"><input class="cell-in" data-c="tipo" value="${esc(l.tipo)}" list="dl-tipo"></td>
       <td class="edit"><input class="cell-in" type="month" data-c="periodo" value="${l.periodo||''}"></td>
       <td class="edit num"><input class="cell-in num" type="number" data-c="ventas" value="${l.ventas}"></td>
@@ -700,24 +731,57 @@ function renderKPIs(){
     <div class="kpi ${varr>=0?'k-green':'k-amber'}"><div class="lab">Variación vs. ventas</div><div class="val">${varr>=0?'+':''}${varr.toFixed(0)}%</div><div class="foot ${varr>=0?'pos':'neg'}">${varr>=0?'Compra > venta':'Compra < venta'}</div></div>
     <div class="kpi"><div class="lab">Crecimiento objetivo</div><div class="val">+${(+params.crecimiento||0)}%</div><div class="foot">antes del ajuste por stock</div></div>`;
 }
-function renderMoS(){
-  const el=$('mos');
-  if(!stockDisponible()){ el.innerHTML=`<div class="mos-empty">Gestión de Stock no está disponible (no cargó <code>datos-meses-stock.js</code>). El presupuesto no se ajusta por stock.</div>`; return; }
-  const d=datosVis();
-  const map={};
-  d.forEach(l=>{ const k=l.marca+'||'+l.rubro; if(!map[k])map[k]={marca:l.marca,rubro:l.rubro}; });
-  const cards = Object.values(map).map(x=>({...x, ev:evalStock(x.marca,x.rubro)}))
-    .filter(x=>x.ev.status!=='sin-dato')
-    .sort((a,b)=> (a.ev.status==='sobrestock'?-1:1) - (b.ev.status==='sobrestock'?-1:1) || b.ev.meses-a.ev.meses);
-  if(!cards.length){ el.innerHTML=`<div class="mos-empty">Ninguna de las marcas cargadas coincide con Gestión de Stock todavía. Cargá marcas con el mismo nombre (ej. Nike, Adidas).</div>`; return; }
-  el.innerHTML = cards.map(x=>{
-    const st=x.ev.status;
-    const fx = params.metodo==='repos' ? ` (×${x.ev.factor})` : '';
-    const msg = st==='sobrestock'?`↓ Comprar menos${fx}`:st==='faltante'?`↑ Comprar más${fx}`:'En rango';
-    const m = x.ev.meses===Infinity?'∞':x.ev.meses.toFixed(1);
-    return `<div class="mos-card ${st}"><div class="m">${esc(x.marca)}</div><div class="r">${esc(x.rubro)}</div>
-      <div class="big">${m}<small> meses</small></div><div class="msg">${msg}</div></div>`;
+// Explicación corta del presupuesto de una línea, según método + stock.
+function porQueLinea(l){
+  const ev = evalStock(l.marca, l.rubro);
+  if(params.metodo==='pct') return { txt:`${+params.pctCompra||0}% de la venta`, cls:'ms-ok' };
+  if(ev.status==='sin-dato') return { txt:'sin dato de stock → = venta', cls:'ms-sindato' };
+  const m = ev.meses===Infinity?'∞':ev.meses.toFixed(1);
+  if(ev.status==='sobrestock') return { txt:`lleno (${m}m) → comprar menos`, cls:'ms-sobrestock' };
+  if(ev.status==='faltante') return { txt:`corto (${m}m) → reforzar`, cls:'ms-faltante' };
+  return { txt:`en rango (${m}m)`, cls:'ms-ok' };
+}
+// Panel por marca con drill-down al detalle (rubro/disciplina/género/tipo).
+function renderPanel(){
+  const d = datosVis();
+  const marcas = {};
+  d.forEach(l=>{
+    const s = sugeridoDe(l);
+    if(!marcas[l.marca]) marcas[l.marca] = { marca:l.marca, ventas:0, ventasU:0, pres:0, presU:0, lineas:[] };
+    const m = marcas[l.marca];
+    m.ventas+=l.ventas; m.ventasU+=l.ventasU; m.pres+=s.$; m.presU+=s.U; m.lineas.push({l, s});
+  });
+  const arr = Object.values(marcas).sort((a,b)=>b.pres-a.pres);
+  $('panelHint').textContent = stockDisponible() ? `✓ Meses de stock conectado (${window.STOCK_DATA.meses.slice(-1)[0]})` : '⚠ Sin datos de stock';
+  if(!arr.length){ $('panel-marcas').innerHTML = `<div class="mos-empty">Sin datos todavía. Andá a <b>Datos</b> → <b>Importar ventas (Excel)</b>.</div>`; return; }
+  $('panel-marcas').innerHTML = arr.map(m=>{
+    const varr = m.ventas ? (m.pres/m.ventas-1)*100 : 0;
+    const det = m.lineas.slice().sort((a,b)=>b.s.$-a.s.$).map(x=>{
+      const pq = porQueLinea(x.l);
+      return `<tr>
+        <td>${esc(x.l.rubro)}</td><td>${esc(x.l.genero)}</td><td>${esc(x.l.disciplina||'—')}</td><td>${esc(x.l.tipo)}</td>
+        <td class="num">${ars(x.l.ventas)}</td><td class="num">${nu(x.l.ventasU)}</td>
+        <td class="ctr">${msBadge(x.s.ev)}</td>
+        <td class="num sug">${ars(x.s.$)}</td><td class="num">${nu(x.s.U)}</td>
+        <td><span class="pq ${pq.cls}">${pq.txt}</span></td></tr>`;
+    }).join('');
+    return `<div class="marca-card">
+      <div class="marca-row">
+        <div class="mc-name"><span class="mc-caret">▸</span> ${esc(m.marca)} <small>${m.lineas.length} líneas</small></div>
+        <div class="mc-ventas">${ars(m.ventas)}</div>
+        <div class="mc-pres"><b>${ars(m.pres)}</b><small>${nu(m.presU)} u</small></div>
+        <div class="mc-var" style="color:${varr>=0?'var(--green)':'var(--amber)'}">${varr>=0?'+':''}${varr.toFixed(0)}%</div>
+      </div>
+      <div class="marca-detail">
+        <table class="det-table"><thead><tr>
+          <th>Rubro</th><th>Género</th><th>Disciplina</th><th>Tipo</th>
+          <th class="num">Ventas $</th><th class="num">Ventas U</th><th class="ctr">Meses stock</th>
+          <th class="num">Presup $</th><th class="num">Presup U</th><th>Por qué</th>
+        </tr></thead><tbody>${det}</tbody></table>
+      </div>
+    </div>`;
   }).join('');
+  $('panel-marcas').querySelectorAll('.marca-row').forEach(r=>r.onclick=()=>r.closest('.marca-card').classList.toggle('open'));
 }
 function renderBars(){
   const d=datosVis();
@@ -740,7 +804,7 @@ function renderBars(){
 }
 
 /* ── Orquestador ── */
-function renderAll(){ renderSelectores(); renderTabla(); renderKPIs(); renderMoS(); renderBars(); }
+function renderAll(){ renderSelectores(); renderTabla(); renderKPIs(); renderPanel(); renderBars(); }
 
 /* ── Datos de ejemplo (marcas que existen en Gestión de Stock) ── */
 async function cargarDemo(){
@@ -794,7 +858,7 @@ function leerVentasExcel(file){
       if(!rows.length){ alert('La hoja está vacía.'); return; }
       const hdr = rows[0].map(h=> (h==null?'':String(h)).trim());
       const find = n => hdr.findIndex(h=>h.toLowerCase()===n.toLowerCase());
-      const idx = { marca:find('Marca'), rubro:find('Rubro'), gen:find('Subrubro'), tipo:find('Grupo 1') };
+      const idx = { marca:find('Marca'), rubro:find('Rubro'), gen:find('Subrubro'), disc:find('Disciplina'), tipo:find('Grupo 1') };
       const meses=[];
       hdr.forEach((h,i)=>{ const m=/^(\d{2})-(\d{2})\s+unidades$/i.exec(h); if(m){ const imp=hdr.findIndex(x=>x.toLowerCase()===`${m[1]}-${m[2]} importe`); if(imp>=0) meses.push({key:`${m[1]}-${m[2]}`, u:i, i:imp}); } });
       if(idx.marca<0 || idx.rubro<0 || !meses.length){
@@ -804,39 +868,42 @@ function leerVentasExcel(file){
       // poblar selects
       $('imp-mes').innerHTML = meses.map(m=>`<option value="${m.key}">${mesLabelXlsx(m.key)}</option>`).join('') + `<option value="prom">Promedio (${meses.length} meses)</option>`;
       $('imp-mes').value = meses[meses.length-1] ? meses[meses.length-1].key : 'prom';  // último mes
-      $('imp-info').innerHTML = `Archivo leído: <b>${IMP.rows.length}</b> filas, <b>${meses.length}</b> meses (${mesLabelXlsx(meses[0].key)} → ${mesLabelXlsx(meses[meses.length-1].key)}). Elegí mes y nivel.`;
+      $('imp-info').innerHTML = `Archivo leído: <b>${IMP.rows.length}</b> filas, <b>${meses.length}</b> meses (${mesLabelXlsx(meses[0].key)} → ${mesLabelXlsx(meses[meses.length-1].key)}). Elegí el mes base.`;
       recontarImport();
       $('impModal').classList.add('show');
     }catch(e){ console.error(e); alert('No pude leer el Excel: '+e.message); }
   };
   rd.readAsArrayBuffer(file);
 }
-function agregarVentas(mesSel, nivel){
+// Agrega el Excel a máximo detalle (Marca·Rubro·Género·Disciplina·Tipo) para el mes elegido.
+function agregarVentas(mesSel){
   const {rows, idx, meses} = IMP;
-  const keyParts = r => { const p=[String(r[idx.marca]).trim(), capFirst(r[idx.rubro])]; if(nivel!=='mr') p.push(genLabel(r[idx.gen])); if(nivel==='mrgt') p.push(capFirst(r[idx.tipo])); return p; };
+  const val = (r,i) => i>=0 ? r[i] : '';
   const agg={};
   rows.forEach(r=>{
     let u=0, imp=0;
     if(mesSel==='prom'){ meses.forEach(m=>{ u+=+r[m.u]||0; imp+=+r[m.i]||0; }); u/=meses.length; imp/=meses.length; }
     else { const m=meses.find(x=>x.key===mesSel); if(!m) return; u=+r[m.u]||0; imp=+r[m.i]||0; }
     if(u<=0 && imp<=0) return;
-    const parts=keyParts(r), k=parts.join('␟');
-    if(!agg[k]) agg[k]={ marca:parts[0], rubro:parts[1], genero: nivel!=='mr'?parts[2]:'—', tipo: nivel==='mrgt'?parts[3]:'—', ventas:0, ventasU:0 };
+    const marca=String(r[idx.marca]).trim(), rubro=capFirst(val(r,idx.rubro)),
+          genero=genLabel(val(r,idx.gen)), disciplina=capFirst(val(r,idx.disc)), tipo=capFirst(val(r,idx.tipo));
+    const k=[marca,rubro,genero,disciplina,tipo].join('␟');
+    if(!agg[k]) agg[k]={ marca, rubro, genero, disciplina, tipo, ventas:0, ventasU:0 };
     agg[k].ventas+=imp; agg[k].ventasU+=u;
   });
   return Object.values(agg);
 }
 function recontarImport(){
   if(!IMP) return;
-  const n = agregarVentas($('imp-mes').value, $('imp-nivel').value).length;
-  $('imp-count').innerHTML = `Se van a cargar <b>${n}</b> líneas (marcas con venta en ese mes).`;
+  const n = agregarVentas($('imp-mes').value).length;
+  $('imp-count').innerHTML = `Se van a cargar <b>${n}</b> líneas (marca·rubro·género·disciplina·tipo con venta en ese mes). El Panel las agrupa por marca.`;
 }
 async function ejecutarImport(){
   if(!IMP) return;
-  const mesSel=$('imp-mes').value, nivel=$('imp-nivel').value, modo=$('imp-modo').value;
+  const mesSel=$('imp-mes').value, modo=$('imp-modo').value;
   const periodo = mesSel==='prom' ? periodoDe(IMP.meses[IMP.meses.length-1].key) : periodoDe(mesSel);
-  const nuevas = agregarVentas(mesSel, nivel).map(a=>{
-    const o = migrarLinea({ id:uid(), marca:a.marca, rubro:a.rubro, genero:a.genero, tipo:a.tipo, periodo, ventas:Math.round(a.ventas), ventasU:Math.round(a.ventasU) });
+  const nuevas = agregarVentas(mesSel).map(a=>{
+    const o = migrarLinea({ id:uid(), marca:a.marca, rubro:a.rubro, genero:a.genero, disciplina:a.disciplina, tipo:a.tipo, periodo, ventas:Math.round(a.ventas), ventasU:Math.round(a.ventasU) });
     const s = sugeridoDe(o); o.presupuesto=s.$; o.presupuestoU=s.U; return o;
   });
   if(!nuevas.length){ alert('No hay ventas para ese mes.'); return; }
@@ -857,7 +924,7 @@ $('cfg-metodo').addEventListener('change', onCfgChange);
 $('tbody').addEventListener('click',e=>{const id=e.target.dataset.del; if(id&&confirm('¿Borrar esta línea?')) eliminar(id);});
 $('tbody').addEventListener('change',e=>{const inp=e.target;const tr=inp.closest('tr');if(tr&&inp.dataset.c) editarCampo(tr.dataset.id,inp.dataset.c,inp.value);});
 $('flt-per').onchange=renderTabla; $('flt-marca').onchange=renderTabla;
-$('vis-per').onchange=()=>{renderKPIs();renderMoS();renderBars();};
+$('vis-per').onchange=()=>{renderKPIs();renderPanel();renderBars();};
 $('btn-demo').onclick=()=>{ if(!lineas.length||confirm('Esto reemplaza los datos actuales por el ejemplo. ¿Seguir?')) cargarDemo(); };
 $('btn-clear').onclick=async()=>{ if(confirm('¿Vaciar todas las líneas? No se puede deshacer.')){ lineas=[]; await Store.save(); renderAll(); }};
 $('btn-export').onclick=exportar;
@@ -866,14 +933,13 @@ $('impXlsx').onchange=e=>{ if(e.target.files[0]) leerVentasExcel(e.target.files[
 $('impClose').onclick=()=>$('impModal').classList.remove('show');
 $('impModal').addEventListener('click', e=>{ if(e.target.id==='impModal') $('impModal').classList.remove('show'); });
 $('imp-mes').addEventListener('change', recontarImport);
-$('imp-nivel').addEventListener('change', recontarImport);
 $('imp-go').onclick=ejecutarImport;
 
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   t.classList.add('active'); $('view-'+t.dataset.view).classList.add('active');
-  if(t.dataset.view==='visualizar'){renderKPIs();renderMoS();renderBars();}
+  if(t.dataset.view==='visualizar'){renderKPIs();renderPanel();renderBars();}
 });
 $('seg-group').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   $('seg-group').querySelectorAll('button').forEach(x=>x.classList.remove('active'));
