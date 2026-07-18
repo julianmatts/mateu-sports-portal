@@ -6,6 +6,7 @@
 <title>Presupuesto de Compras — Mateu Sports</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{
   --navy:#0B1527;--navy-mid:#1a2f55;--navy-soft:#13203a;
@@ -262,9 +263,10 @@ td.edit{padding:4px 8px}
       <select class="filter-sel" id="flt-per"><option value="">Todos los períodos</option></select>
       <select class="filter-sel" id="flt-marca"><option value="">Todas las marcas</option></select>
       <div class="spacer"></div>
+      <label class="btn btn-red" style="cursor:pointer">⬆ Importar ventas (Excel)<input id="impXlsx" type="file" accept=".xlsx,.xls" hidden></label>
       <button class="btn btn-ghost" id="btn-demo">Datos de ejemplo</button>
-      <button class="btn btn-ghost" id="btn-export">Exportar</button>
-      <label class="btn btn-ghost" style="cursor:pointer">Importar<input id="imp" type="file" accept="application/json" hidden></label>
+      <button class="btn btn-ghost" id="btn-export">Exportar JSON</button>
+      <label class="btn btn-ghost" style="cursor:pointer">Importar JSON<input id="imp" type="file" accept="application/json" hidden></label>
       <button class="btn btn-ghost" id="btn-clear">Vaciar todo</button>
     </div>
 
@@ -351,6 +353,40 @@ td.edit{padding:4px 8px}
         <div class="param"><label>Crecimiento objetivo (%)</label><input type="number" id="c-crec" step="1"><div class="hint">% sobre la venta mensual.</div></div>
         <div class="param"><label>Factor si sobrestock</label><input type="number" id="c-sobre" step="0.05" min="0"><div class="hint">Multiplica el sugerido cuando la marca tiene más meses de stock que el umbral (comprar menos). Ej. 0,7.</div></div>
         <div class="param"><label>Factor si faltante</label><input type="number" id="c-falta" step="0.05" min="0"><div class="hint">Cuando tiene menos meses que el umbral (comprar más). Ej. 1,3.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Importar ventas desde Excel -->
+<div class="modal-bg" id="impModal">
+  <div class="modal">
+    <div class="modal-head"><h3>Importar ventas de Excel</h3><button id="impClose" title="Cerrar">✕</button></div>
+    <div class="modal-body">
+      <div class="cfg-desc" id="imp-info">—</div>
+      <div class="cfg-fields show" style="gap:16px">
+        <div class="param">
+          <label>Mes base</label>
+          <select id="imp-mes"></select>
+          <div class="hint">Las ventas de ese mes son la base para el presupuesto del mes que viene. "Promedio" = media de todos los meses del archivo.</div>
+        </div>
+        <div class="param">
+          <label>Nivel de detalle</label>
+          <select id="imp-nivel">
+            <option value="mr">Marca + Rubro (recomendado)</option>
+            <option value="mrg">Marca + Rubro + Género</option>
+            <option value="mrgt">Máximo detalle (Marca + Rubro + Género + Tipo)</option>
+          </select>
+          <div class="hint" id="imp-count">—</div>
+        </div>
+        <div class="param">
+          <label>Modo</label>
+          <select id="imp-modo">
+            <option value="rep">Reemplazar todo lo cargado</option>
+            <option value="sum">Sumar a lo existente</option>
+          </select>
+        </div>
+        <button class="btn btn-red" id="imp-go" style="width:100%;justify-content:center">Importar ventas</button>
       </div>
     </div>
   </div>
@@ -735,6 +771,81 @@ function importar(file){
   rd.readAsText(file);
 }
 
+/* ─────────────────────────────────────────────────────────────
+   IMPORTADOR de ventas desde Excel (SheetJS).
+   Espera columnas: Marca, Rubro, Subrubro (género), Grupo 1 (tipo)
+   y pares "MM-AA Unidades" / "MM-AA Importe" por mes. Agrega al nivel
+   elegido para el mes elegido y carga las líneas (ventas $ y unidades).
+   ───────────────────────────────────────────────────────────── */
+let IMP = null;  // { rows, idx, meses }
+const capFirst = s => { s=(s||'').toString().trim(); return s? s.charAt(0).toUpperCase()+s.slice(1).toLowerCase() : '—'; };
+const genLabel = g => capFirst((g||'').toString().replace(/^\d+\s*-\s*/,''));    // 03-DAMA → Dama
+const mesLabelXlsx = key => { const [mm,yy]=key.split('-'); return perLabel('20'+yy+'-'+mm); };
+const periodoDe = key => { const [mm,yy]=key.split('-'); return '20'+yy+'-'+mm; };
+
+function leerVentasExcel(file){
+  if(typeof XLSX==='undefined'){ alert('No cargó la librería de Excel (revisá tu conexión).'); return; }
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const wb = XLSX.read(rd.result, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+      if(!rows.length){ alert('La hoja está vacía.'); return; }
+      const hdr = rows[0].map(h=> (h==null?'':String(h)).trim());
+      const find = n => hdr.findIndex(h=>h.toLowerCase()===n.toLowerCase());
+      const idx = { marca:find('Marca'), rubro:find('Rubro'), gen:find('Subrubro'), tipo:find('Grupo 1') };
+      const meses=[];
+      hdr.forEach((h,i)=>{ const m=/^(\d{2})-(\d{2})\s+unidades$/i.exec(h); if(m){ const imp=hdr.findIndex(x=>x.toLowerCase()===`${m[1]}-${m[2]} importe`); if(imp>=0) meses.push({key:`${m[1]}-${m[2]}`, u:i, i:imp}); } });
+      if(idx.marca<0 || idx.rubro<0 || !meses.length){
+        alert('No reconozco el formato. Necesito columnas "Marca", "Rubro" y pares "MM-AA Unidades" / "MM-AA Importe".'); return;
+      }
+      IMP = { rows: rows.slice(1).filter(r=>r[idx.marca]!=null && String(r[idx.marca]).trim()), idx, meses };
+      // poblar selects
+      $('imp-mes').innerHTML = meses.map(m=>`<option value="${m.key}">${mesLabelXlsx(m.key)}</option>`).join('') + `<option value="prom">Promedio (${meses.length} meses)</option>`;
+      $('imp-mes').value = meses[meses.length-1] ? meses[meses.length-1].key : 'prom';  // último mes
+      $('imp-info').innerHTML = `Archivo leído: <b>${IMP.rows.length}</b> filas, <b>${meses.length}</b> meses (${mesLabelXlsx(meses[0].key)} → ${mesLabelXlsx(meses[meses.length-1].key)}). Elegí mes y nivel.`;
+      recontarImport();
+      $('impModal').classList.add('show');
+    }catch(e){ console.error(e); alert('No pude leer el Excel: '+e.message); }
+  };
+  rd.readAsArrayBuffer(file);
+}
+function agregarVentas(mesSel, nivel){
+  const {rows, idx, meses} = IMP;
+  const keyParts = r => { const p=[String(r[idx.marca]).trim(), capFirst(r[idx.rubro])]; if(nivel!=='mr') p.push(genLabel(r[idx.gen])); if(nivel==='mrgt') p.push(capFirst(r[idx.tipo])); return p; };
+  const agg={};
+  rows.forEach(r=>{
+    let u=0, imp=0;
+    if(mesSel==='prom'){ meses.forEach(m=>{ u+=+r[m.u]||0; imp+=+r[m.i]||0; }); u/=meses.length; imp/=meses.length; }
+    else { const m=meses.find(x=>x.key===mesSel); if(!m) return; u=+r[m.u]||0; imp=+r[m.i]||0; }
+    if(u<=0 && imp<=0) return;
+    const parts=keyParts(r), k=parts.join('␟');
+    if(!agg[k]) agg[k]={ marca:parts[0], rubro:parts[1], genero: nivel!=='mr'?parts[2]:'—', tipo: nivel==='mrgt'?parts[3]:'—', ventas:0, ventasU:0 };
+    agg[k].ventas+=imp; agg[k].ventasU+=u;
+  });
+  return Object.values(agg);
+}
+function recontarImport(){
+  if(!IMP) return;
+  const n = agregarVentas($('imp-mes').value, $('imp-nivel').value).length;
+  $('imp-count').innerHTML = `Se van a cargar <b>${n}</b> líneas (marcas con venta en ese mes).`;
+}
+async function ejecutarImport(){
+  if(!IMP) return;
+  const mesSel=$('imp-mes').value, nivel=$('imp-nivel').value, modo=$('imp-modo').value;
+  const periodo = mesSel==='prom' ? periodoDe(IMP.meses[IMP.meses.length-1].key) : periodoDe(mesSel);
+  const nuevas = agregarVentas(mesSel, nivel).map(a=>{
+    const o = migrarLinea({ id:uid(), marca:a.marca, rubro:a.rubro, genero:a.genero, tipo:a.tipo, periodo, ventas:Math.round(a.ventas), ventasU:Math.round(a.ventasU) });
+    const s = sugeridoDe(o); o.presupuesto=s.$; o.presupuestoU=s.U; return o;
+  });
+  if(!nuevas.length){ alert('No hay ventas para ese mes.'); return; }
+  lineas = (modo==='sum') ? lineas.concat(nuevas) : nuevas;
+  await Store.save(); renderAll();
+  $('impModal').classList.remove('show');
+  alert(`Importadas ${nuevas.length} líneas (${mesSel==='prom'?'promedio':mesLabelXlsx(mesSel)}).`);
+}
+
 /* ── Eventos ── */
 $('btn-add').onclick=agregar;
 document.querySelectorAll('.form-grid input').forEach(i=>i.addEventListener('keydown',e=>{if(e.key==='Enter')agregar();}));
@@ -751,6 +862,12 @@ $('btn-demo').onclick=()=>{ if(!lineas.length||confirm('Esto reemplaza los datos
 $('btn-clear').onclick=async()=>{ if(confirm('¿Vaciar todas las líneas? No se puede deshacer.')){ lineas=[]; await Store.save(); renderAll(); }};
 $('btn-export').onclick=exportar;
 $('imp').onchange=e=>{ if(e.target.files[0]) importar(e.target.files[0]); e.target.value=''; };
+$('impXlsx').onchange=e=>{ if(e.target.files[0]) leerVentasExcel(e.target.files[0]); e.target.value=''; };
+$('impClose').onclick=()=>$('impModal').classList.remove('show');
+$('impModal').addEventListener('click', e=>{ if(e.target.id==='impModal') $('impModal').classList.remove('show'); });
+$('imp-mes').addEventListener('change', recontarImport);
+$('imp-nivel').addEventListener('change', recontarImport);
+$('imp-go').onclick=ejecutarImport;
 
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
