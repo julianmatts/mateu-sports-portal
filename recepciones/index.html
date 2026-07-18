@@ -202,6 +202,8 @@ textarea.code{width:100%;min-height:150px;font-family:ui-monospace,Menlo,Consola
 <!-- SheetJS por CDN (convención del portal: libs externas por <script src>) -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="../import.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <!-- Datos de prueba para el modo demo (mientras no esté pegada FIREBASE_DB_URL) -->
 <script src="./mock-data.js" onerror="window.RECEP_MOCK=null"></script>
 <script>
@@ -243,7 +245,7 @@ function stateEmpty(txt){ return '<div class="state"><div class="big-ic">📭</d
 function stateError(txt){ return '<div class="state err"><div class="big-ic">⚠️</div>'+esc(txt||'No se pudo cargar la base.')+'</div>'; }
 
 /* ---------- Firebase REST ---------- */
-function fbUrl(path){ return FIREBASE_DB_URL.replace(/\/+$/,'') + '/' + path + '.json'; }
+function fbUrl(path){ return FIREBASE_DB_URL.replace(/\/+$/,'') + '/' + path.split('/').map(encodeURIComponent).join('/') + '.json'; }
 // nro -> key válida de Firebase (sin . # $ / [ ])
 function fbKey(nro){ return String(nro||'').trim().replace(/[.#$/\[\]]/g,'~'); }
 async function fbGet(path){ const r=await fetch(fbUrl(path)); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
@@ -414,14 +416,14 @@ function renderPedidos(){
   pedidosFiltrados().forEach(P=>{ const lins=(P.lineas||[]).filter(lineaPasa); if(!lins.length && (f.rubro||f.disciplina||f.tipo)) return;
     let u=0, imp=0; lins.forEach(l=>{u+=num(l.cantidad); imp+=num(l.cantidad)*num(l.costo_unitario);
       flat.push({ oc:P.nro, fecha:P.fecha, comprador:P.comprador||'', proveedor:P.proveedor||'', marca:P.marca||'', moneda:P.moneda||'ARS', rubro:l.rubro||'', disciplina:l.disciplina||'', tipo:l.tipo||'', cantidad:num(l.cantidad), costo_unitario:num(l.costo_unitario), importe:num(l.cantidad)*num(l.costo_unitario) }); });
-    const rows=lins.map(l=>'<tr><td>'+esc(l.rubro||'')+'</td><td>'+esc(l.disciplina||'')+'</td><td>'+esc(l.tipo||'')+'</td><td class="num big">'+fmtInt(l.cantidad)+'</td><td class="num mono">'+fmtMoney(l.costo_unitario)+'</td><td class="num mono">'+fmtMoney(num(l.cantidad)*num(l.costo_unitario))+'</td></tr>').join('');
-    cards.push('<div class="card"><div class="sec-head" style="margin-bottom:8px"><div><div class="card-h">OC '+esc(P.nro)+' · '+esc(P.marca||'—')+'</div><div class="card-hs" style="margin:0">'+esc(P.fecha)+' · '+esc(P.proveedor||'—')+(P.comprador?(' · Comprador: '+esc(P.comprador)):'')+' · '+esc(P.moneda||'ARS')+'</div></div><div style="text-align:right;display:flex;align-items:center;gap:12px"><div><div class="big" style="font-size:22px">'+fmtInt(u)+' u.</div><div class="mono" style="color:var(--muted)">'+fmtMoney(imp)+'</div></div><button class="btn btn-outline btn-sm" data-del-pedido="'+esc(P.nro)+'" title="Eliminar OC">🗑</button></div></div><div class="tbl-wrap"><table style="min-width:520px"><thead><tr><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Costo U.</th><th class="num">Importe</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>');
+    const rows=lins.map(l=>'<tr><td class="mono">'+esc(l.modelo||'')+'</td><td>'+esc(l.descripcion||'')+'</td><td>'+esc(l.rubro||'')+'</td><td>'+esc(l.disciplina||'')+'</td><td>'+esc(l.tipo||'')+'</td><td class="num big">'+fmtInt(l.cantidad)+'</td><td class="num mono">'+fmtMoney(l.costo_unitario)+'</td><td class="num mono">'+fmtMoney(num(l.cantidad)*num(l.costo_unitario))+'</td></tr>').join('');
+    cards.push('<div class="card"><div class="sec-head" style="margin-bottom:8px"><div><div class="card-h">OC '+esc(P.nro)+' · '+esc(P.marca||'—')+'</div><div class="card-hs" style="margin:0">'+esc(P.fecha)+' · '+esc(P.proveedor||'—')+(P.comprador?(' · Comprador: '+esc(P.comprador)):'')+' · '+esc(P.moneda||'ARS')+'</div></div><div style="text-align:right;display:flex;align-items:center;gap:12px"><div><div class="big" style="font-size:22px">'+fmtInt(u)+' u.</div><div class="mono" style="color:var(--muted)">'+fmtMoney(imp)+'</div></div><button class="btn btn-outline btn-sm" data-del-pedido="'+esc(P.nro)+'" title="Eliminar OC">🗑</button></div></div><div class="tbl-wrap"><table style="min-width:520px"><thead><tr><th>Modelo</th><th>Descripción</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Costo U.</th><th class="num">Importe</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>');
   });
   let html = seccionHead('Pedidos de compra','Órdenes de compra por proveedor y sus líneas',
-    (flat.length?'<button class="btn btn-outline btn-sm" id="btnExpPed">⇩ Exportar</button>':'')+'<button class="btn btn-outline btn-sm" id="btnAltaPed">+ Alta manual</button><button class="btn btn-primary btn-sm" id="btnImpPed">⇪ Importar Excel</button>');
+    (flat.length?'<button class="btn btn-outline btn-sm" id="btnExpPed">⇩ Exportar</button>':'')+'<button class="btn btn-outline btn-sm" id="btnAltaPed">+ Alta manual</button><button class="btn btn-primary btn-sm" id="btnImpPed">⇪ Importar Excel</button><button class="btn btn-outline btn-sm" id="btnConvPed">⇆ Convertir OC de marca</button>');
   html += cards.length ? cards.join('') : stateEmpty('No hay pedidos para los filtros actuales.');
   $('view').innerHTML = html;
-  $('btnImpPed').onclick=()=>openImport('pedido'); $('btnAltaPed').onclick=()=>openAlta('pedido');
+  $('btnImpPed').onclick=()=>openImport('pedido'); $('btnAltaPed').onclick=()=>openAlta('pedido'); $('btnConvPed').onclick=openConvertir;
   if($('btnExpPed')) $('btnExpPed').onclick=()=>exportar('pedidos', flat);
   bindDeletes();
 }
@@ -602,8 +604,136 @@ async function guardarAlta(tipoDoc){
 /* ============================================================
    MODAL / ARRANQUE
    ============================================================ */
+/* ============================================================
+   CONVERSOR de OC de marca -> OC unificada Mateu Sports
+   Importa la planilla que manda la marca, la convierte al modelo unificado Mateu
+   (detalle por artículo con curva de talles), permite descargar Excel/PDF y
+   guardar la OC al sistema (alimenta Pedidos y el control). El envío por mail se
+   suma más adelante reusando functions/enviar-oc.js.
+   ============================================================ */
+const OC_DISC_MAP = { 'RUNNING':'RUNNING','FOOTBALL/SOCCER':'FUTBOL 11','NIKE BASKETBALL':'BASQUET','MEN TRAINING':'TRAINING','SPORTSWEAR':'CASUAL','TENNIS':'TENIS','JORDAN BRAND':'JORDAN','YOUNG ATHLETES':'CASUAL' };
+const OC_TIPO_MAP = { 'MEN':'CALZADO ADULTO','WOMEN':'CALZADO ADULTO','UNISEX':'CALZADO ADULTO','KIDS':'CALZADO NIÑO' };
+const OC_MESES = { enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,setiembre:9,octubre:10,noviembre:11,diciembre:12 };
+
+function ocFromFilename(name, marcaDefault){
+  const base=name.replace(/\.[^.]+$/,''); const low=base.toLowerCase(); let mes=0,anio=0;
+  for(const k in OC_MESES){ if(low.includes(k)){ mes=OC_MESES[k]; const m=low.slice(low.indexOf(k)).match(/(\d{2,4})/); if(m) anio=m[1].length===2?2000+ +m[1]:+m[1]; break; } }
+  const fecha=(mes&&anio)?anio+'-'+String(mes).padStart(2,'0')+'-01':'';
+  const marca=/adidas/i.test(low)?'adidas':(/nike/i.test(low)?'Nike':(marcaDefault||base.split(/\s+/)[0]));
+  const nro=base.replace(/^\s*copia de\s*/i,'').replace(/\s+/g,' ').trim();
+  return { nro, fecha, marca };
+}
+
+/* Conversor Nike — hoja "Resumen Pedido" (modelo x talles) */
+function convNike(wb){
+  const sheet = wb.SheetNames.includes('Resumen Pedido')?'Resumen Pedido':wb.SheetNames[0];
+  const raw = XLSX.utils.sheet_to_json(wb.Sheets[sheet],{header:1,defval:''});
+  const H=raw[1]||[]; const col=n=>H.indexOf(n);
+  const iMat=col('Material Nike'), iDesc=col('Descripcion Nike'), iCat=col('Categoria'), iGen=col('Genero'), iPw=col('Precio Whsl'), iTot=col('Total Unidades');
+  if(iTot<0) throw new Error('No parece un Excel de OC Nike (falta "Total Unidades" en la hoja "Resumen Pedido").');
+  const talleCols=[]; for(let j=iPw+1;j<iTot;j++){ if(H[j]!=='' && H[j]!=null) talleCols.push([j,String(H[j])]); }
+  const arts=[];
+  for(let i=2;i<raw.length;i++){ const r=raw[i]; const tot=num(r[iTot]); if(tot<=0) continue;
+    if(/^total/i.test(String(r[iMat]||'').trim())) continue;
+    const cat=String(r[iCat]||'').trim().toUpperCase(), gen=String(r[iGen]||'').trim().toUpperCase();
+    const talles=[]; talleCols.forEach(([j,lbl])=>{ const q=num(r[j]); if(q>0) talles.push({talle:lbl,cant:q}); });
+    arts.push({ modelo:String(r[iMat]||'').trim(), descripcion:String(r[iDesc]||'').trim(), genero:gen,
+      rubro:'CALZADO', disciplina:OC_DISC_MAP[cat]||cat||'SIN DISCIPLINA', tipo:OC_TIPO_MAP[gen]||'CALZADO ADULTO',
+      talles, cantidad:tot, costo_unitario:num(r[iPw]) });
+  }
+  return arts;
+}
+
+const OC_CONVERTERS = { 'Nike': convNike };   // agregar 'adidas': convAdidas cuando haya una muestra
+
+function convertirOC(marca, wb, filename){
+  const conv = OC_CONVERTERS[marca]; if(!conv) throw new Error('Todavía no hay conversor para '+marca+'.');
+  const meta = ocFromFilename(filename, marca);
+  const arts = conv(wb);
+  if(!arts.length) throw new Error('No se detectaron artículos con cantidad en la planilla.');
+  let unid=0, imp=0; arts.forEach(a=>{ unid+=a.cantidad; imp+=a.cantidad*a.costo_unitario; });
+  return { nro:meta.nro, fecha:meta.fecha, marca:meta.marca, proveedor:meta.marca+' Argentina', comprador:'', moneda:'ARS', total_unidades:unid, total_importe:imp, articulos:arts };
+}
+
+let convCtx=null;
+function openConvertir(){
+  const marcas=Object.keys(OC_CONVERTERS); convCtx=null;
+  openModal(
+    '<button class="close" onclick="closeModal()">×</button><h2>Convertir OC de marca</h2>'
+    +'<div class="msub">Importá la planilla que manda la marca y la convertimos al modelo unificado Mateu Sports (detalle por artículo con curva de talles). Después descargás el Excel/PDF o la guardás al sistema.</div>'
+    +'<div class="field"><label>Marca</label><select class="sel" id="convMarca">'+marcas.map(m=>'<option>'+esc(m)+'</option>').join('')+'</select></div>'
+    +'<div class="field"><label>Planilla de la marca (.xlsx / .xls)</label><input class="inp" type="file" id="convFile" accept=".xlsx,.xls" style="width:100%"></div>'
+    +'<div id="convPreview"></div>'
+    +'<div class="modal-actions" id="convActions"><button class="btn btn-outline" onclick="closeModal()">Cerrar</button></div>'
+  );
+  $('convFile').onchange=onConvFile;
+}
+async function onConvFile(e){
+  const file=e.target.files[0]; if(!file) return;
+  try{
+    const buf=await file.arrayBuffer(); const wb=XLSX.read(buf,{type:'array'});
+    convCtx=convertirOC($('convMarca').value, wb, file.name);
+    renderConvPreview();
+  }catch(err){ $('convPreview').innerHTML='<div class="warn">'+esc(err.message)+'</div>'; $('convActions').innerHTML='<button class="btn btn-outline" onclick="closeModal()">Cerrar</button>'; }
+}
+function renderConvPreview(){
+  const oc=convCtx;
+  let html='<div class="hint">OC <b>'+esc(oc.nro)+'</b> · '+esc(oc.marca)+' · '+esc(oc.fecha||'sin fecha')+' · '+oc.articulos.length+' artículos · <b>'+fmtInt(oc.total_unidades)+' u</b> · '+fmtMoney(oc.total_importe)+'</div>';
+  html+='<div class="tbl-wrap" style="max-height:320px;overflow:auto"><table style="min-width:640px"><thead><tr><th>Modelo</th><th>Descripción</th><th>Disciplina</th><th>Tipo</th><th class="num">Talles</th><th class="num">Total</th><th class="num">Costo</th><th class="num">Importe</th></tr></thead><tbody>'
+    + oc.articulos.map(a=>'<tr><td class="mono">'+esc(a.modelo)+'</td><td>'+esc(a.descripcion)+'</td><td>'+esc(a.disciplina)+'</td><td>'+esc(a.tipo)+'</td><td class="num">'+a.talles.length+'</td><td class="num big">'+fmtInt(a.cantidad)+'</td><td class="num mono">'+fmtMoney(a.costo_unitario)+'</td><td class="num mono">'+fmtMoney(a.cantidad*a.costo_unitario)+'</td></tr>').join('')
+    +'</tbody></table></div>';
+  if(!oc.fecha) html+='<div class="warn">No pude leer la fecha del nombre del archivo. Renombralo con el mes (ej. "… julio 26").</div>';
+  $('convPreview').innerHTML=html;
+  $('convActions').innerHTML='<button class="btn btn-outline" onclick="closeModal()">Cancelar</button>'
+    +'<button class="btn btn-outline" id="convXls">⇩ Excel Mateu</button>'
+    +'<button class="btn btn-outline" id="convPdf">⇩ PDF</button>'
+    +'<button class="btn btn-primary" id="convSave">Guardar al sistema</button>';
+  $('convXls').onclick=()=>exportOCExcel(oc);
+  $('convPdf').onclick=()=>exportOCPdf(oc);
+  $('convSave').onclick=guardarConvertida;
+}
+function tallesUnion(oc){ const seen=[], set={}; oc.articulos.forEach(a=>a.talles.forEach(t=>{ if(!set[t.talle]){set[t.talle]=1;seen.push(t.talle);} })); return seen; }
+function exportOCExcel(oc){
+  try{
+    const talles=tallesUnion(oc); const A=[];
+    A.push(['OC MATEU SPORTS']);
+    A.push(['Marca',oc.marca,'','OC',oc.nro]);
+    A.push(['Fecha',oc.fecha,'','Proveedor',oc.proveedor]);
+    A.push(['Total unidades',oc.total_unidades,'','Total $',Math.round(oc.total_importe)]);
+    A.push([]);
+    A.push(['Modelo','Descripción','Rubro','Disciplina','Tipo','Género',...talles,'Total','Costo Unit.','Importe']);
+    oc.articulos.forEach(a=>{ const m={}; a.talles.forEach(t=>m[t.talle]=t.cant); A.push([a.modelo,a.descripcion,a.rubro,a.disciplina,a.tipo,a.genero,...talles.map(t=>m[t]||''),a.cantidad,Math.round(a.costo_unitario),Math.round(a.cantidad*a.costo_unitario)]); });
+    const ws=XLSX.utils.aoa_to_sheet(A); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'OC Mateu');
+    XLSX.writeFile(wb,'OC-Mateu-'+oc.marca+'-'+(oc.fecha||'')+'.xlsx'); toast('Excel generado','ok');
+  }catch(e){ toast('No se pudo generar el Excel: '+e.message,'bad'); }
+}
+function exportOCPdf(oc){
+  try{
+    if(!window.jspdf) { toast('No cargó la librería de PDF','bad'); return; }
+    const { jsPDF }=window.jspdf; const doc=new jsPDF({orientation:'landscape',unit:'pt',format:'a4'});
+    doc.setFontSize(16); doc.text('OC Mateu Sports — '+oc.marca,40,40);
+    doc.setFontSize(10);
+    doc.text('OC: '+oc.nro+'     Fecha: '+(oc.fecha||'-')+'     Proveedor: '+oc.proveedor,40,58);
+    doc.text('Total: '+fmtInt(oc.total_unidades)+' u     '+fmtMoney(oc.total_importe),40,72);
+    const body=oc.articulos.map(a=>{ const curva=a.talles.map(t=>t.talle+':'+t.cant).join('  '); return [a.modelo,a.descripcion,a.disciplina,a.tipo,curva,fmtInt(a.cantidad),fmtMoney(a.costo_unitario),fmtMoney(a.cantidad*a.costo_unitario)]; });
+    doc.autoTable({ startY:88, head:[['Modelo','Descripción','Disciplina','Tipo','Curva de talles','Total','Costo','Importe']], body, styles:{fontSize:7,cellPadding:2,overflow:'linebreak'}, headStyles:{fillColor:[11,21,39]}, columnStyles:{1:{cellWidth:120},4:{cellWidth:230}} });
+    doc.save('OC-Mateu-'+oc.marca+'-'+(oc.fecha||'')+'.pdf'); toast('PDF generado','ok');
+  }catch(e){ toast('No se pudo generar el PDF: '+e.message,'bad'); }
+}
+async function guardarConvertida(){
+  const oc=convCtx; if(!oc) return;
+  if(!oc.fecha){ toast('Falta la fecha (del nombre del archivo)','bad'); return; }
+  const btn=$('convSave'); if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
+  const doc={ nro:oc.nro, fecha:oc.fecha, comprador:oc.comprador||'', proveedor:oc.proveedor||'', marca:oc.marca||'', moneda:oc.moneda||'ARS', creado_en:nowISO(), origen:'conversor', lineas:oc.articulos };
+  try{
+    if(!DEMO) await fbPut(ROOT+'/pedidos/'+fbKey(oc.nro), doc);
+    DATA.pedidos[fbKey(oc.nro)]=doc; closeModal(); refreshDims(); render(); toast('OC guardada al sistema','ok');
+  }catch(e){ if(btn){ btn.disabled=false; btn.textContent='Guardar al sistema'; } toast('No se pudo guardar: '+e.message,'bad'); }
+}
+
+
 function openModal(html){ $('modal').innerHTML=html; $('overlay').classList.add('show'); document.addEventListener('keydown',escClose); }
-function closeModal(){ $('overlay').classList.remove('show'); document.removeEventListener('keydown',escClose); impCtx=null; }
+function closeModal(){ $('overlay').classList.remove('show'); document.removeEventListener('keydown',escClose); impCtx=null; convCtx=null; }
 function escClose(e){ if(e.key==='Escape') closeModal(); }
 $('overlay').addEventListener('click', e=>{ if(e.target===$('overlay')) closeModal(); });
 window.closeModal=closeModal;

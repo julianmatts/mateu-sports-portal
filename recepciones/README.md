@@ -71,10 +71,27 @@ Detecta los meses solos (columnas `MM-YY Cantidad`), así que sirve para reporte
 meses posteriores. Correr sin `--commit` primero para ver que los totales cuadren.
 Carga inicial (ene→jul 2026): 1765 remitos, 666.987 unidades.
 
-## Carga de pedidos (OC) de Nike
+## Conversor de OCs de marca → OC unificada Mateu (pestaña Pedidos)
 
-Las OCs de Nike (formato "Resumen Pedido": modelo × talles) se cargan con
-`scripts/cargar-pedido-nike.mjs`:
+Cada marca manda su OC en su propio formato. Desde **Pedidos → "⇆ Convertir OC de
+marca"** se importa esa planilla y se convierte al **modelo unificado Mateu**
+(detalle por artículo con curva de talles). Después se puede:
+- **⇩ Excel Mateu** — planilla unificada con el detalle completo (columnas de talles).
+- **⇩ PDF** — documento de la OC (con la curva de talles como texto).
+- **Guardar al sistema** — persiste la OC en Firebase (alimenta Pedidos y el control).
+
+El nº de OC y la fecha salen del **nombre del archivo** (mes → 1° de mes). La
+traducción de taxonomía por marca vive en el bloque del conversor del `index.html`
+(`OC_CONVERTERS`, `OC_DISC_MAP`, `OC_TIPO_MAP`). Hoy está el conversor de **Nike**;
+para agregar **Adidas** u otra marca se suma su función a `OC_CONVERTERS`.
+
+> Envío por mail a la marca (Excel marca + Excel Mateu + PDF): pendiente, se hará
+> reusando `functions/enviar-oc.js` (Resend), lo mismo que usa Managment.
+
+## Carga de pedidos (OC) de Nike por script (alternativa)
+
+Además del conversor de la UI, las OCs de Nike se pueden cargar con
+`scripts/cargar-pedido-nike.mjs` (útil para cargas masivas / dry-run):
 
 ```
 node scripts/cargar-pedido-nike.mjs "Pedido Nike Calzado julio 26.xlsx" https://recepciones-mateu-default-rtdb.firebaseio.com          # dry-run
