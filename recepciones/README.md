@@ -53,6 +53,25 @@ recepciones/
 permite en claves). El `importe` (cantidad × costo) se calcula en el cliente; la
 `semana` (ISO) se calcula al guardar el remito y se persiste.
 
+## Carga histórica de ingresos (reporte "Estadistica de remitos")
+
+El histórico se cargó con `scripts/cargar-remitos-estadistica.mjs`, que reforma el
+reporte matriz por mes que exporta el sistema de stock (una fila por
+artículo-en-remito, con cantidad/valorizado en la columna del mes) a documentos de
+remito. Agrupa por remito+marca, agrega líneas por rubro/disciplina/tipo (=Grupo 1),
+`fecha` = 1° del mes y escribe con PATCH (merge, no pisa lo existente).
+
+```
+npm i xlsx
+node scripts/cargar-remitos-estadistica.mjs "Estadistica de remitos ....xlsx" https://recepciones-mateu-default-rtdb.firebaseio.com          # dry-run
+node scripts/cargar-remitos-estadistica.mjs "Estadistica de remitos ....xlsx" https://recepciones-mateu-default-rtdb.firebaseio.com --commit  # carga
+```
+
+Detecta los meses solos (columnas `MM-YY Cantidad`), así que sirve para reportes de
+meses posteriores. Correr sin `--commit` primero para ver que los totales cuadren.
+Carga inicial (ene→jul 2026): 1765 remitos, 666.987 unidades. Estos ingresos no
+traen OC, así que alimentan Panel y Remitos, pero no el cruce "Ingresos vs pedido".
+
 ## Importar Excel
 
 Botón **Importar Excel** en Remitos o Pedidos:
