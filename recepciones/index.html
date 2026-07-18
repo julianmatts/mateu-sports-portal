@@ -305,11 +305,11 @@ function computeDims(){
 
 /* ---------- control ingresos vs pedido (cliente, = vista v_control) ---------- */
 function computeControl(f){
-  const key=(nro,marca,l)=>[nro,marca,l.rubro||'',l.disciplina||'',l.tipo||''].join('');
+  const key=(marca,l)=>[marca||'',l.rubro||'',l.disciplina||'',l.tipo||''].join('|');
   const ped={};
-  vals(DATA.pedidos).forEach(p=>{ (p.lineas||[]).forEach(l=>{ const k=key(p.nro,p.marca,l); const a=ped[k]||(ped[k]={pedido_nro:p.nro,marca:p.marca||'',rubro:l.rubro||'',disciplina:l.disciplina||'',tipo:l.tipo||'',cant_pedida:0,importe_pedido:0}); a.cant_pedida+=num(l.cantidad); a.importe_pedido+=num(l.cantidad)*num(l.costo_unitario); }); });
+  vals(DATA.pedidos).forEach(p=>{ (p.lineas||[]).forEach(l=>{ const k=key(p.marca,l); const a=ped[k]||(ped[k]={marca:p.marca||'',rubro:l.rubro||'',disciplina:l.disciplina||'',tipo:l.tipo||'',cant_pedida:0,importe_pedido:0}); a.cant_pedida+=num(l.cantidad); a.importe_pedido+=num(l.cantidad)*num(l.costo_unitario); }); });
   const rec={};
-  vals(DATA.remitos).forEach(r=>{ if(!r.pedido_nro) return; (r.lineas||[]).forEach(l=>{ const k=key(r.pedido_nro,r.marca,l); const a=rec[k]||(rec[k]={c:0,i:0}); a.c+=num(l.cantidad); a.i+=num(l.cantidad)*num(l.costo_unitario); }); });
+  vals(DATA.remitos).forEach(r=>{ (r.lineas||[]).forEach(l=>{ const k=key(r.marca,l); const a=rec[k]||(rec[k]={c:0,i:0}); a.c+=num(l.cantidad); a.i+=num(l.cantidad)*num(l.costo_unitario); }); });
   let rows = Object.keys(ped).map(k=>{
     const p=ped[k]; const rr=rec[k]||{c:0,i:0};
     const cant_recibida=rr.c, importe_recibido=rr.i;
@@ -319,7 +319,7 @@ function computeControl(f){
     return Object.assign({},p,{cant_recibida,importe_recibido,cant_pendiente,importe_pendiente,pct,estado});
   });
   rows = rows.filter(c=>(!f.marca||c.marca===f.marca)&&(!f.rubro||c.rubro===f.rubro)&&(!f.disciplina||c.disciplina===f.disciplina)&&(!f.tipo||c.tipo===f.tipo));
-  rows.sort((a,b)=>cmp(a.marca,b.marca)||cmp(a.rubro,b.rubro)||cmp(a.disciplina,b.disciplina)||cmp(a.tipo,b.tipo)||cmp(a.pedido_nro,b.pedido_nro));
+  rows.sort((a,b)=>cmp(a.marca,b.marca)||cmp(a.rubro,b.rubro)||cmp(a.disciplina,b.disciplina)||cmp(a.tipo,b.tipo));
   return rows;
 }
 
@@ -429,7 +429,7 @@ function renderPedidos(){
 /* ---------- CONTROL ---------- */
 function renderControl(){
   const filas = computeControl(state.filtros);
-  let html = seccionHead('Ingresos vs pedido','Cumplimiento de cada línea de OC contra lo recibido',
+  let html = seccionHead('Ingresos vs pedido','Pedido total vs ingresado, por marca y categoría (agregado, no por nº de OC)',
     '<div class="toggle-uv"><button id="uvU" class="'+(state.uv==='u'?'on':'')+'">Unidades</button><button id="uvV" class="'+(state.uv==='v'?'on':'')+'">Pesos $</button></div>'
     + '<button class="btn btn-outline btn-sm" id="btnExpCtrl">⇩ Exportar</button>');
   if(!filas.length){ $('view').innerHTML=html+stateEmpty('No hay pedidos cargados para controlar. Importá una OC en “Pedidos de compra”.'); bindUV(); return; }
@@ -441,9 +441,9 @@ function renderControl(){
   const V=state.uv==='v'; let tp=0,tr=0,tpe=0; const fmt=V?fmtMoney:fmtInt;
   const rows=filas.map(c=>{ const ped=V?c.importe_pedido:c.cant_pedida, rec=V?c.importe_recibido:c.cant_recibida, pen=V?c.importe_pendiente:c.cant_pendiente; tp+=ped;tr+=rec;tpe+=pen;
     const pct=Math.max(0,Math.min(100,c.pct));
-    return '<tr><td class="mono">'+esc(c.pedido_nro)+'</td><td>'+esc(c.marca||'')+'</td><td>'+esc(c.rubro||'')+'</td><td>'+esc(c.disciplina||'')+'</td><td>'+esc(c.tipo||'')+'</td><td class="num big">'+fmt(ped)+'</td><td class="num big">'+fmt(rec)+'</td><td class="num mono" style="color:'+(pen>0.001?'#b91c1c':(pen<-0.001?'#6d28d9':'var(--muted)'))+'">'+fmt(pen)+'</td><td><div style="display:flex;align-items:center;gap:8px"><div class="prog p-'+esc(c.estado)+'"><span style="width:'+pct+'%"></span></div><span class="mono" style="min-width:42px">'+c.pct+'%</span></div></td><td><span class="badge b-'+esc(c.estado)+'">'+esc(c.estado)+'</span></td></tr>';
+    return '<tr><td>'+esc(c.marca||'')+'</td><td>'+esc(c.rubro||'')+'</td><td>'+esc(c.disciplina||'')+'</td><td>'+esc(c.tipo||'')+'</td><td class="num big">'+fmt(ped)+'</td><td class="num big">'+fmt(rec)+'</td><td class="num mono" style="color:'+(pen>0.001?'#b91c1c':(pen<-0.001?'#6d28d9':'var(--muted)'))+'">'+fmt(pen)+'</td><td><div style="display:flex;align-items:center;gap:8px"><div class="prog p-'+esc(c.estado)+'"><span style="width:'+pct+'%"></span></div><span class="mono" style="min-width:42px">'+c.pct+'%</span></div></td><td><span class="badge b-'+esc(c.estado)+'">'+esc(c.estado)+'</span></td></tr>';
   }).join('');
-  html += '<div class="tbl-wrap"><table><thead><tr><th>OC</th><th>Marca</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Pedido</th><th class="num">Recibido</th><th class="num">Pendiente</th><th>Avance</th><th>Estado</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr><th colspan="5" style="text-align:right">Totales</th><th class="num big">'+fmt(tp)+'</th><th class="num big">'+fmt(tr)+'</th><th class="num big">'+fmt(tpe)+'</th><th colspan="2"></th></tr></tfoot></table></div>';
+  html += '<div class="tbl-wrap"><table><thead><tr><th>Marca</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Pedido</th><th class="num">Recibido</th><th class="num">Pendiente</th><th>Avance</th><th>Estado</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr><th colspan="4" style="text-align:right">Totales</th><th class="num big">'+fmt(tp)+'</th><th class="num big">'+fmt(tr)+'</th><th class="num big">'+fmt(tpe)+'</th><th colspan="2"></th></tr></tfoot></table></div>';
   $('view').innerHTML = html; bindUV();
   $('btnExpCtrl').onclick=()=>exportar('control', filas);
 }

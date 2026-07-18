@@ -69,8 +69,34 @@ node scripts/cargar-remitos-estadistica.mjs "Estadistica de remitos ....xlsx" ht
 
 Detecta los meses solos (columnas `MM-YY Cantidad`), así que sirve para reportes de
 meses posteriores. Correr sin `--commit` primero para ver que los totales cuadren.
-Carga inicial (ene→jul 2026): 1765 remitos, 666.987 unidades. Estos ingresos no
-traen OC, así que alimentan Panel y Remitos, pero no el cruce "Ingresos vs pedido".
+Carga inicial (ene→jul 2026): 1765 remitos, 666.987 unidades.
+
+## Carga de pedidos (OC) de Nike
+
+Las OCs de Nike (formato "Resumen Pedido": modelo × talles) se cargan con
+`scripts/cargar-pedido-nike.mjs`:
+
+```
+node scripts/cargar-pedido-nike.mjs "Pedido Nike Calzado julio 26.xlsx" https://recepciones-mateu-default-rtdb.firebaseio.com          # dry-run
+node scripts/cargar-pedido-nike.mjs "Pedido Nike Calzado julio 26.xlsx" https://recepciones-mateu-default-rtdb.firebaseio.com --commit  # carga
+```
+
+- Toma las filas con `Total Unidades > 0` (saltea la fila "TOTAL"). cantidad =
+  Total Unidades, costo = Precio Whsl.
+- **Traduce la taxonomía de Nike a la nuestra** (para que cruce con los ingresos):
+  `rubro` = CALZADO (o `--rubro`), `disciplina` = `DISC_MAP[Categoria]`, `tipo` =
+  `TIPO_MAP[Genero]`. Ajustá esas tablas en el script si algo no cruza.
+- El **nº de OC y la fecha salen del nombre del archivo** (mes → 1° de mes). Como
+  hay varias OCs por mes, mantené nombres distintos por archivo.
+- El dry-run imprime la traducción (Categoria→disciplina, Genero→tipo) y avisa lo
+  que no mapea, para revisar antes de cargar.
+
+### Cruce Ingresos vs pedido (agregado)
+
+El control compara **por marca + rubro + disciplina + tipo** (agregado, no por nº
+de OC), porque los ingresos no traen OC. Ojo: mezcla todo el histórico de ingresos
+con las OCs cargadas, así que hasta tener las OCs de todos los meses, lo pedido
+queda chico frente a lo ingresado. (Mejora futura: filtrar el cruce por período.)
 
 ## Importar Excel
 
