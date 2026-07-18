@@ -121,6 +121,9 @@ tfoot th{background:#eef2fb;color:var(--navy-mid);position:static}
 .ped-tot .big{font-family:var(--font-d);font-size:20px;letter-spacing:.5px;line-height:1}
 .ped-chev{color:var(--muted);font-size:13px;width:12px;flex:none}
 .ped-detail{border-top:1px solid var(--border);padding:10px 14px;background:#fbfcfe}
+.barrow.drill{cursor:pointer;border-radius:6px;padding:2px 5px;margin:0 -5px}
+.barrow.drill:hover{background:#f1f5fd}
+.barrow.drill .lb{color:var(--red);font-weight:600}
 
 .prog{height:8px;border-radius:4px;background:#e6ebf5;overflow:hidden;min-width:90px}
 .prog>span{display:block;height:100%;border-radius:4px;background:var(--ok)}
@@ -395,17 +398,18 @@ function renderPanel(){
     + kpi('Cumplimiento OC', cumpl+'<small>%</small>') + '</div>';
   html += '<div class="grid2">'
     + cardBars('Ingresos por mes','Unidades ingresadas por mes', porMes, true, mesLabel)
-    + cardBars('Participación por marca','Unidades ingresadas por marca', porMarca, false) + '</div>';
+    + cardBars('Participación por marca','Unidades por marca · click para ver el detalle', porMarca, false, null, 'marca') + '</div>';
   html += cardBars('Desglose por rubro','Unidades ingresadas por rubro', porRubro, false);
   $('view').innerHTML = html;
+  document.querySelectorAll('#view [data-drill]').forEach(el=>el.onclick=()=>openMarcaDetalle(el.getAttribute('data-drill')));
 }
 function kpi(k,v){ return '<div class="kpi"><div class="k">'+esc(k)+'</div><div class="v">'+v+'</div></div>'; }
-function cardBars(title, sub, obj, keepOrder, labelFn){
+function cardBars(title, sub, obj, keepOrder, labelFn, drillKey){
   let entries=Object.keys(obj).map(k=>[k,obj[k]]);
   if(!entries.length) return '<div class="card"><div class="card-h">'+esc(title)+'</div><div class="card-hs">'+esc(sub)+'</div>'+stateEmpty('Sin datos.')+'</div>';
   if(keepOrder) entries.sort((a,b)=>cmp(a[0],b[0])); else entries.sort((a,b)=>b[1]-a[1]);
   const max=Math.max.apply(null, entries.map(e=>e[1]))||1;
-  const rows=entries.map(([k,v])=>{ const lbl=labelFn?labelFn(k):k; return '<div class="barrow"><span class="lb" title="'+esc(lbl)+'">'+esc(lbl)+'</span><span class="bar"><span style="width:'+Math.max(2,Math.round(v/max*100))+'%"></span></span><span class="vv">'+fmtInt(v)+'</span></div>'; }).join('');
+  const rows=entries.map(([k,v])=>{ const lbl=labelFn?labelFn(k):k; return '<div class="barrow'+(drillKey?' drill':'')+'"'+(drillKey?' data-drill="'+esc(k)+'"':'')+'><span class="lb" title="'+esc(lbl)+'">'+esc(lbl)+'</span><span class="bar"><span style="width:'+Math.max(2,Math.round(v/max*100))+'%"></span></span><span class="vv">'+fmtInt(v)+'</span></div>'; }).join('');
   return '<div class="card"><div class="card-h">'+esc(title)+'</div><div class="card-hs">'+esc(sub)+'</div><div class="barlist">'+rows+'</div></div>';
 }
 
@@ -436,8 +440,9 @@ function renderRemitos(){
   bindDeletes();
 }
 function recDetailHtml(lins){
-  const rows=(lins||[]).map(l=>'<tr><td>'+esc(l.rubro||'')+'</td><td>'+esc(l.disciplina||'')+'</td><td>'+esc(l.tipo||'')+'</td><td class="num big">'+fmtInt(l.cantidad)+'</td><td class="num mono">'+fmtMoney(l.costo_unitario)+'</td><td class="num mono">'+fmtMoney(num(l.cantidad)*num(l.costo_unitario))+'</td></tr>').join('');
-  return '<div class="tbl-wrap"><table style="min-width:480px"><thead><tr><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Costo U.</th><th class="num">Importe</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  const conMod=!!(lins&&lins[0]&&lins[0].modelo);
+  const rows=(lins||[]).map(l=>'<tr>'+(conMod?('<td class="mono">'+esc(l.modelo||'')+'</td><td>'+esc(l.descripcion||'')+'</td>'):'')+'<td>'+esc(l.rubro||'')+'</td><td>'+esc(l.disciplina||'')+'</td><td>'+esc(l.tipo||'')+'</td><td class="num big">'+fmtInt(l.cantidad)+'</td><td class="num mono">'+fmtMoney(l.costo_unitario)+'</td><td class="num mono">'+fmtMoney(num(l.cantidad)*num(l.costo_unitario))+'</td></tr>').join('');
+  return '<div class="tbl-wrap"><table style="min-width:480px"><thead><tr>'+(conMod?'<th>Código</th><th>Artículo</th>':'')+'<th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Costo U.</th><th class="num">Importe</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 
 /* ---------- PEDIDOS ---------- */
@@ -773,6 +778,18 @@ async function guardarConvertida(){
 }
 
 
+function openMarcaDetalle(marca){
+  const f=state.filtros; const art={}; let totU=0, totV=0; const remset={};
+  vals(DATA.remitos).forEach(R=>{ if((R.marca||'')!==marca) return; if(f.mes && mesKey(R.fecha)!==f.mes) return;
+    (R.lineas||[]).filter(lineaPasa).forEach(l=>{ const c=num(l.cantidad), v=c*num(l.costo_unitario); const key=(l.modelo||'')+'|'+(l.descripcion||'')+'|'+(l.rubro||'')+'|'+(l.disciplina||'')+'|'+(l.tipo||''); const a=art[key]||(art[key]={modelo:l.modelo||'',descripcion:l.descripcion||'',rubro:l.rubro||'',disciplina:l.disciplina||'',tipo:l.tipo||'',cant:0,val:0}); a.cant+=c; a.val+=v; totU+=c; totV+=v; remset[R.nro]=1; });
+  });
+  const arts=Object.keys(art).map(k=>art[k]).sort((a,b)=>b.cant-a.cant);
+  const rows=arts.map(a=>'<tr><td class="mono">'+esc(a.modelo)+'</td><td>'+esc(a.descripcion)+'</td><td>'+esc(a.rubro)+'</td><td>'+esc(a.disciplina)+'</td><td>'+esc(a.tipo)+'</td><td class="num big">'+fmtInt(a.cant)+'</td><td class="num mono">'+fmtMoney(a.val)+'</td></tr>').join('');
+  openModal('<button class="close" onclick="closeModal()">×</button><h2>Ingresos · '+esc(marca)+'</h2>'
+    +'<div class="msub">'+fmtInt(Object.keys(remset).length)+' remitos · '+fmtInt(totU)+' u · '+fmtMoney(totV)+(f.mes?(' · '+esc(mesLabel(f.mes))):'')+' · '+arts.length+' artículos</div>'
+    +(arts.length?'<div style="margin-bottom:10px"><button class="btn btn-outline btn-sm" id="mdExp">⇩ Exportar</button></div><div class="tbl-wrap" style="max-height:58vh;overflow:auto"><table style="min-width:660px"><thead><tr><th>Código</th><th>Artículo</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Valorizado</th></tr></thead><tbody>'+rows+'</tbody></table></div>':stateEmpty('Sin ingresos de esta marca para el filtro actual.')));
+  const be=$('mdExp'); if(be) be.onclick=()=>exportar('ingresos-'+marca, arts.map(a=>({codigo:a.modelo,articulo:a.descripcion,rubro:a.rubro,disciplina:a.disciplina,tipo:a.tipo,cantidad:a.cant,valorizado:Math.round(a.val)})));
+}
 function openModal(html){ $('modal').innerHTML=html; $('overlay').classList.add('show'); document.addEventListener('keydown',escClose); }
 function closeModal(){ $('overlay').classList.remove('show'); document.removeEventListener('keydown',escClose); impCtx=null; convCtx=null; }
 function escClose(e){ if(e.key==='Escape') closeModal(); }

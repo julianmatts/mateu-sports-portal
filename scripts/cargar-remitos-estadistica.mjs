@@ -69,15 +69,15 @@ for(const r of rows){
   const key = fbKey(docNro);
   let d = docs[key];
   if(!d){ const fecha=mesAFecha(mes); d = docs[key] = { nro:docNro, fecha, proveedor:String(r['Proveedor']||'').trim(), marca, pedido_nro:'', semana:semanaISO(fecha), creado_en:'import '+new Date().toISOString().slice(0,10), _lineas:{} }; }
-  const lk = (r['Rubro']||'')+'|'+(r['Disciplina']||'')+'|'+(r['Grupo 1']||'');
-  const L = d._lineas[lk] || (d._lineas[lk]={ rubro:String(r['Rubro']||'').trim(), disciplina:String(r['Disciplina']||'').trim(), tipo:String(r['Grupo 1']||'').trim(), _cant:0, _val:0 });
+  const cod=String(r['Código barras']||'').trim(), art=String(r['Artículo']||'').trim(); const lk = cod+'|'+art+'|'+(r['Rubro']||'')+'|'+(r['Disciplina']||'')+'|'+(r['Grupo 1']||'');
+  const L = d._lineas[lk] || (d._lineas[lk]={ modelo:cod, descripcion:art, rubro:String(r['Rubro']||'').trim(), disciplina:String(r['Disciplina']||'').trim(), tipo:String(r['Grupo 1']||'').trim(), _cant:0, _val:0 });
   L._cant+=cant; L._val+=val;
 }
 
 // 3) materializar líneas (costo_unitario = valorizado / cantidad)
 let outUnid=0, outVal=0, nLineas=0;
 for(const d of Object.values(docs)){
-  d.lineas = Object.values(d._lineas).map(L=>{ const cu=L._cant>0?L._val/L._cant:0; outUnid+=L._cant; outVal+=L._cant*cu; nLineas++; return { rubro:L.rubro, disciplina:L.disciplina, tipo:L.tipo, cantidad:L._cant, costo_unitario:cu }; });
+  d.lineas = Object.values(d._lineas).map(L=>{ const cu=L._cant>0?L._val/L._cant:0; outUnid+=L._cant; outVal+=L._cant*cu; nLineas++; return { modelo:L.modelo, descripcion:L.descripcion, rubro:L.rubro, disciplina:L.disciplina, tipo:L.tipo, cantidad:L._cant, costo_unitario:cu }; });
   delete d._lineas;
 }
 
