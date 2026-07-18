@@ -110,6 +110,17 @@ tfoot th{background:#eef2fb;color:var(--navy-mid);position:static}
 .lnk-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px;line-height:1}
 .lnk-del:hover{color:var(--bad)}
 .lnk-del:focus-visible{outline:2px solid var(--red);outline-offset:1px}
+.ped-card{background:#fff;border:1px solid var(--border);border-radius:11px;margin-bottom:10px;box-shadow:var(--shadow);overflow:hidden}
+.ped-head{display:flex;align-items:center;gap:12px;padding:11px 15px;cursor:pointer}
+.ped-head:hover{background:#f8f9fe}
+.ped-dot{width:11px;height:11px;border-radius:50%;flex:none}
+.ped-title{flex:1;min-width:0}
+.ped-oc{font-family:var(--font-c);font-weight:700;font-size:15px;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ped-sub{font-family:var(--font-c);font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ped-tot{text-align:right;flex:none}
+.ped-tot .big{font-family:var(--font-d);font-size:20px;letter-spacing:.5px;line-height:1}
+.ped-chev{color:var(--muted);font-size:13px;width:12px;flex:none}
+.ped-detail{border-top:1px solid var(--border);padding:10px 14px;background:#fbfcfe}
 
 .prog{height:8px;border-radius:4px;background:#e6ebf5;overflow:hidden;min-width:90px}
 .prog>span{display:block;height:100%;border-radius:4px;background:var(--ok)}
@@ -182,7 +193,7 @@ textarea.code{width:100%;min-height:150px;font-family:ui-monospace,Menlo,Consola
 </nav>
 
 <div class="filtros" id="filtros">
-  <div class="fgrp"><label for="fSemana">Semana</label><select class="sel" id="fSemana"><option value="">Todas</option></select></div>
+  <div class="fgrp"><label for="fMes">Mes</label><select class="sel" id="fMes"><option value="">Todos</option></select></div>
   <div class="fgrp"><label for="fMarca">Marca</label><select class="sel" id="fMarca"><option value="">Todas</option></select></div>
   <div class="fgrp"><label for="fRubro">Rubro</label><select class="sel" id="fRubro"><option value="">Todos</option></select></div>
   <div class="fgrp"><label for="fDisc">Disciplina</label><select class="sel" id="fDisc"><option value="">Todas</option></select></div>
@@ -271,7 +282,7 @@ function semanaISO(fecha){
    ESTADO / DATOS (en memoria; espejo de la base)
    ============================================================ */
 const DATA = { pedidos:{}, remitos:{} };   // keyed por fbKey(nro)
-const state = { tab:'panel', filtros:{ semana:'', marca:'', rubro:'', disciplina:'', tipo:'' }, dims:null, uv:'u' };
+const state = { tab:'panel', filtros:{ mes:'', marca:'', rubro:'', disciplina:'', tipo:'' }, dims:null, uv:'u' };
 const vals = o => o ? Object.keys(o).map(k=>o[k]) : [];
 
 async function cargarTodo(){
@@ -297,21 +308,25 @@ async function guardarRemito(doc){
 async function borrarPedido(nro){ const key=fbKey(nro); if(!DEMO) await fbDelete(ROOT+'/pedidos/'+key); delete DATA.pedidos[key]; }
 async function borrarRemito(nro){ const key=fbKey(nro); if(!DEMO) await fbDelete(ROOT+'/remitos/'+key); delete DATA.remitos[key]; }
 
+const MES_NOMBRES=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+function mesKey(fecha){ return String(fecha||'').slice(0,7); }
+function mesLabel(x){ const p=String(x||'').split('-'); return (p.length>=2 && MES_NOMBRES[+p[1]-1]) ? MES_NOMBRES[+p[1]-1]+' '+p[0] : ''; }
+
 /* ---------- dimensiones (cliente) ---------- */
 function computeDims(){
-  const marcas=new Set(),rubros=new Set(),disc=new Set(),tipos=new Set(),semanas=new Set();
-  vals(DATA.pedidos).forEach(p=>{ if(p.marca)marcas.add(p.marca); (p.lineas||[]).forEach(l=>{ if(l.rubro)rubros.add(l.rubro); if(l.disciplina)disc.add(l.disciplina); if(l.tipo)tipos.add(l.tipo); }); });
-  vals(DATA.remitos).forEach(r=>{ if(r.marca)marcas.add(r.marca); if(r.semana)semanas.add(r.semana); (r.lineas||[]).forEach(l=>{ if(l.rubro)rubros.add(l.rubro); if(l.disciplina)disc.add(l.disciplina); if(l.tipo)tipos.add(l.tipo); }); });
-  return { marcas:[...marcas].sort(cmp), rubros:[...rubros].sort(cmp), disciplinas:[...disc].sort(cmp), tipos:[...tipos].sort(cmp), semanas:[...semanas].sort(cmp) };
+  const marcas=new Set(),rubros=new Set(),disc=new Set(),tipos=new Set(),meses=new Set();
+  vals(DATA.pedidos).forEach(p=>{ if(p.marca)marcas.add(p.marca); if(p.fecha)meses.add(mesKey(p.fecha)); (p.lineas||[]).forEach(l=>{ if(l.rubro)rubros.add(l.rubro); if(l.disciplina)disc.add(l.disciplina); if(l.tipo)tipos.add(l.tipo); }); });
+  vals(DATA.remitos).forEach(r=>{ if(r.marca)marcas.add(r.marca); if(r.fecha)meses.add(mesKey(r.fecha)); (r.lineas||[]).forEach(l=>{ if(l.rubro)rubros.add(l.rubro); if(l.disciplina)disc.add(l.disciplina); if(l.tipo)tipos.add(l.tipo); }); });
+  return { marcas:[...marcas].sort(cmp), rubros:[...rubros].sort(cmp), disciplinas:[...disc].sort(cmp), tipos:[...tipos].sort(cmp), meses:[...meses].sort(cmp) };
 }
 
 /* ---------- control ingresos vs pedido (cliente, = vista v_control) ---------- */
 function computeControl(f){
   const key=(marca,l)=>[marca||'',l.rubro||'',l.disciplina||'',l.tipo||''].join('|');
   const ped={};
-  vals(DATA.pedidos).forEach(p=>{ (p.lineas||[]).forEach(l=>{ const k=key(p.marca,l); const a=ped[k]||(ped[k]={marca:p.marca||'',rubro:l.rubro||'',disciplina:l.disciplina||'',tipo:l.tipo||'',cant_pedida:0,importe_pedido:0}); a.cant_pedida+=num(l.cantidad); a.importe_pedido+=num(l.cantidad)*num(l.costo_unitario); }); });
+  vals(DATA.pedidos).forEach(p=>{ if(f.mes && mesKey(p.fecha)!==f.mes) return; (p.lineas||[]).forEach(l=>{ const k=key(p.marca,l); const a=ped[k]||(ped[k]={marca:p.marca||'',rubro:l.rubro||'',disciplina:l.disciplina||'',tipo:l.tipo||'',cant_pedida:0,importe_pedido:0}); a.cant_pedida+=num(l.cantidad); a.importe_pedido+=num(l.cantidad)*num(l.costo_unitario); }); });
   const rec={};
-  vals(DATA.remitos).forEach(r=>{ (r.lineas||[]).forEach(l=>{ const k=key(r.marca,l); const a=rec[k]||(rec[k]={c:0,i:0}); a.c+=num(l.cantidad); a.i+=num(l.cantidad)*num(l.costo_unitario); }); });
+  vals(DATA.remitos).forEach(r=>{ if(f.mes && mesKey(r.fecha)!==f.mes) return; (r.lineas||[]).forEach(l=>{ const k=key(r.marca,l); const a=rec[k]||(rec[k]={c:0,i:0}); a.c+=num(l.cantidad); a.i+=num(l.cantidad)*num(l.costo_unitario); }); });
   let rows = Object.keys(ped).map(k=>{
     const p=ped[k]; const rr=rec[k]||{c:0,i:0};
     const cant_recibida=rr.c, importe_recibido=rr.i;
@@ -327,7 +342,7 @@ function computeControl(f){
 
 /* ---------- filtro de líneas ---------- */
 function lineaPasa(l){ const f=state.filtros; if(f.rubro&&l.rubro!==f.rubro)return false; if(f.disciplina&&l.disciplina!==f.disciplina)return false; if(f.tipo&&l.tipo!==f.tipo)return false; return true; }
-function remitosFiltrados(){ const f=state.filtros; return vals(DATA.remitos).filter(r=>(!f.marca||r.marca===f.marca)&&(!f.semana||r.semana===f.semana)).sort((a,b)=>cmp(b.fecha,a.fecha)); }
+function remitosFiltrados(){ const f=state.filtros; return vals(DATA.remitos).filter(r=>(!f.marca||r.marca===f.marca)&&(!f.mes||mesKey(r.fecha)===f.mes)).sort((a,b)=>cmp(b.fecha,a.fecha)); }
 function pedidosFiltrados(){ const f=state.filtros; return vals(DATA.pedidos).filter(p=>!f.marca||p.marca===f.marca).sort((a,b)=>cmp(b.fecha,a.fecha)); }
 
 /* ============================================================
@@ -335,7 +350,7 @@ function pedidosFiltrados(){ const f=state.filtros; return vals(DATA.pedidos).fi
    ============================================================ */
 function refreshDims(){
   state.dims = computeDims();
-  fillSel('fSemana', state.dims.semanas, 'Todas');
+  fillSelMes();
   fillSel('fMarca', state.dims.marcas, 'Todas');
   fillSel('fRubro', state.dims.rubros, 'Todos');
   fillSel('fDisc', state.dims.disciplinas, 'Todas');
@@ -346,6 +361,7 @@ function fillSel(id, arr, allLbl){
   el.innerHTML='<option value="">'+allLbl+'</option>'+(arr||[]).map(v=>'<option value="'+esc(v)+'">'+esc(v)+'</option>').join('');
   if(arr && arr.includes(cur)) el.value=cur;
 }
+function fillSelMes(){ const el=$('fMes'); if(!el) return; const cur=el.value; const ms=(state.dims&&state.dims.meses)||[]; el.innerHTML='<option value="">Todos</option>'+ms.map(k=>'<option value="'+esc(k)+'">'+esc(mesLabel(k))+'</option>').join(''); if(ms.includes(cur)) el.value=cur; }
 
 /* ============================================================
    RENDER
@@ -363,9 +379,9 @@ function render(){
 /* ---------- PANEL ---------- */
 function renderPanel(){
   const rem = remitosFiltrados();
-  let unidades=0, importe=0, remitosCount=0; const porSemana={}, porMarca={}, porRubro={}, marcasAct={};
+  let unidades=0, importe=0, remitosCount=0; const porMes={}, porMarca={}, porRubro={}, marcasAct={};
   rem.forEach(R=>{ const lins=(R.lineas||[]).filter(lineaPasa); if(!lins.length) return; remitosCount++; marcasAct[R.marca||'—']=1;
-    lins.forEach(l=>{ const c=num(l.cantidad); importe+=c*num(l.costo_unitario); unidades+=c; porSemana[R.semana||'—']=(porSemana[R.semana||'—']||0)+c; porMarca[R.marca||'—']=(porMarca[R.marca||'—']||0)+c; porRubro[l.rubro||'—']=(porRubro[l.rubro||'—']||0)+c; }); });
+    lins.forEach(l=>{ const c=num(l.cantidad); importe+=c*num(l.costo_unitario); unidades+=c; porMes[mesKey(R.fecha)]=(porMes[mesKey(R.fecha)]||0)+c; porMarca[R.marca||'—']=(porMarca[R.marca||'—']||0)+c; porRubro[l.rubro||'—']=(porRubro[l.rubro||'—']||0)+c; }); });
   const ctrl=computeControl(state.filtros); let ped=0,rec=0; ctrl.forEach(c=>{ped+=c.cant_pedida;rec+=c.cant_recibida;});
   const cumpl = ped>0?Math.round(rec/ped*100):(rec>0?100:0);
 
@@ -378,18 +394,18 @@ function renderPanel(){
     + kpi('Marcas activas', fmtInt(Object.keys(marcasAct).length))
     + kpi('Cumplimiento OC', cumpl+'<small>%</small>') + '</div>';
   html += '<div class="grid2">'
-    + cardBars('Ingresos por semana','Unidades ingresadas por semana ISO', porSemana, true)
+    + cardBars('Ingresos por mes','Unidades ingresadas por mes', porMes, true, mesLabel)
     + cardBars('Participación por marca','Unidades ingresadas por marca', porMarca, false) + '</div>';
   html += cardBars('Desglose por rubro','Unidades ingresadas por rubro', porRubro, false);
   $('view').innerHTML = html;
 }
 function kpi(k,v){ return '<div class="kpi"><div class="k">'+esc(k)+'</div><div class="v">'+v+'</div></div>'; }
-function cardBars(title, sub, obj, keepOrder){
+function cardBars(title, sub, obj, keepOrder, labelFn){
   let entries=Object.keys(obj).map(k=>[k,obj[k]]);
   if(!entries.length) return '<div class="card"><div class="card-h">'+esc(title)+'</div><div class="card-hs">'+esc(sub)+'</div>'+stateEmpty('Sin datos.')+'</div>';
   if(keepOrder) entries.sort((a,b)=>cmp(a[0],b[0])); else entries.sort((a,b)=>b[1]-a[1]);
   const max=Math.max.apply(null, entries.map(e=>e[1]))||1;
-  const rows=entries.map(([k,v])=>'<div class="barrow"><span class="lb" title="'+esc(k)+'">'+esc(k)+'</span><span class="bar"><span style="width:'+Math.max(2,Math.round(v/max*100))+'%"></span></span><span class="vv">'+fmtInt(v)+'</span></div>').join('');
+  const rows=entries.map(([k,v])=>{ const lbl=labelFn?labelFn(k):k; return '<div class="barrow"><span class="lb" title="'+esc(lbl)+'">'+esc(lbl)+'</span><span class="bar"><span style="width:'+Math.max(2,Math.round(v/max*100))+'%"></span></span><span class="vv">'+fmtInt(v)+'</span></div>'; }).join('');
   return '<div class="card"><div class="card-h">'+esc(title)+'</div><div class="card-hs">'+esc(sub)+'</div><div class="barlist">'+rows+'</div></div>';
 }
 
@@ -397,13 +413,13 @@ function cardBars(title, sub, obj, keepOrder){
 function renderRemitos(){
   let rows=[]; let tot=0, totImp=0; const flat=[];
   remitosFiltrados().forEach(R=>{ const lins=(R.lineas||[]).filter(lineaPasa); lins.forEach((l,i)=>{ const c=num(l.cantidad), cu=num(l.costo_unitario), imp=c*cu; tot+=c; totImp+=imp;
-    flat.push({ remito:R.nro, fecha:R.fecha, semana:R.semana||'', marca:R.marca||'', oc:R.pedido_nro||'', rubro:l.rubro||'', disciplina:l.disciplina||'', tipo:l.tipo||'', cantidad:c, costo_unitario:cu, importe:imp });
+    flat.push({ remito:R.nro, fecha:R.fecha, mes:mesLabel(R.fecha), marca:R.marca||'', oc:R.pedido_nro||'', rubro:l.rubro||'', disciplina:l.disciplina||'', tipo:l.tipo||'', cantidad:c, costo_unitario:cu, importe:imp });
     const nroCell = '<td class="mono">'+esc(R.nro)+(i===0?' <button class="lnk-del" data-del-remito="'+esc(R.nro)+'" title="Eliminar remito completo">✕</button>':'')+'</td>';
-    rows.push('<tr>'+nroCell+'<td class="mono">'+esc(R.fecha)+'</td><td>'+esc(R.semana||'')+'</td><td>'+esc(R.marca||'')+'</td><td>'+esc(R.pedido_nro||'—')+'</td><td>'+esc(l.rubro||'')+'</td><td>'+esc(l.disciplina||'')+'</td><td>'+esc(l.tipo||'')+'</td><td class="num big">'+fmtInt(c)+'</td><td class="num mono">'+fmtMoney(cu)+'</td><td class="num mono">'+fmtMoney(imp)+'</td></tr>'); }); });
+    rows.push('<tr>'+nroCell+'<td class="mono">'+esc(R.fecha)+'</td><td>'+esc(mesLabel(R.fecha))+'</td><td>'+esc(R.marca||'')+'</td><td>'+esc(R.pedido_nro||'—')+'</td><td>'+esc(l.rubro||'')+'</td><td>'+esc(l.disciplina||'')+'</td><td>'+esc(l.tipo||'')+'</td><td class="num big">'+fmtInt(c)+'</td><td class="num mono">'+fmtMoney(cu)+'</td><td class="num mono">'+fmtMoney(imp)+'</td></tr>'); }); });
   let html = seccionHead('Remitos de ingreso','Detalle línea por línea de la mercadería ingresada',
     (rows.length?'<button class="btn btn-outline btn-sm" id="btnExpRem">⇩ Exportar</button>':'')+'<button class="btn btn-outline btn-sm" id="btnAltaRem">+ Alta manual</button><button class="btn btn-primary btn-sm" id="btnImpRem">⇪ Importar Excel</button>');
   if(!rows.length){ html+=stateEmpty('No hay remitos para los filtros actuales.'); }
-  else html += '<div class="tbl-wrap"><table><thead><tr><th>Remito</th><th>Fecha</th><th>Semana</th><th>Marca</th><th>OC</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Costo U.</th><th class="num">Importe</th></tr></thead><tbody>'+rows.join('')+'</tbody><tfoot><tr><th colspan="8" style="text-align:right">Totales</th><th class="num big">'+fmtInt(tot)+'</th><th></th><th class="num big">'+fmtMoney(totImp)+'</th></tr></tfoot></table></div>';
+  else html += '<div class="tbl-wrap"><table><thead><tr><th>Remito</th><th>Fecha</th><th>Mes</th><th>Marca</th><th>OC</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Costo U.</th><th class="num">Importe</th></tr></thead><tbody>'+rows.join('')+'</tbody><tfoot><tr><th colspan="8" style="text-align:right">Totales</th><th class="num big">'+fmtInt(tot)+'</th><th></th><th class="num big">'+fmtMoney(totImp)+'</th></tr></tfoot></table></div>';
   $('view').innerHTML = html;
   $('btnImpRem').onclick=()=>openImport('ingreso'); $('btnAltaRem').onclick=()=>openAlta('ingreso');
   if($('btnExpRem')) $('btnExpRem').onclick=()=>exportar('remitos', flat);
@@ -412,19 +428,30 @@ function renderRemitos(){
 
 /* ---------- PEDIDOS ---------- */
 function renderPedidos(){
-  const f=state.filtros; let cards=[]; const flat=[];
+  const f=state.filtros; const flat=[]; let cards=[]; let idx=0;
+  const PAL=['#CC0000','#1a56db','#0e7490','#7c3aed','#b45309','#16803d','#be185d','#4d7c0f','#0891b2','#9333ea'];
   pedidosFiltrados().forEach(P=>{ const lins=(P.lineas||[]).filter(lineaPasa); if(!lins.length && (f.rubro||f.disciplina||f.tipo)) return;
-    let u=0, imp=0; lins.forEach(l=>{u+=num(l.cantidad); imp+=num(l.cantidad)*num(l.costo_unitario);
-      flat.push({ oc:P.nro, fecha:P.fecha, comprador:P.comprador||'', proveedor:P.proveedor||'', marca:P.marca||'', moneda:P.moneda||'ARS', rubro:l.rubro||'', disciplina:l.disciplina||'', tipo:l.tipo||'', cantidad:num(l.cantidad), costo_unitario:num(l.costo_unitario), importe:num(l.cantidad)*num(l.costo_unitario) }); });
-    const rows=lins.map(l=>'<tr><td class="mono">'+esc(l.modelo||'')+'</td><td>'+esc(l.descripcion||'')+'</td><td>'+esc(l.rubro||'')+'</td><td>'+esc(l.disciplina||'')+'</td><td>'+esc(l.tipo||'')+'</td><td class="num big">'+fmtInt(l.cantidad)+'</td><td class="num mono">'+fmtMoney(l.costo_unitario)+'</td><td class="num mono">'+fmtMoney(num(l.cantidad)*num(l.costo_unitario))+'</td></tr>').join('');
-    cards.push('<div class="card"><div class="sec-head" style="margin-bottom:8px"><div><div class="card-h">OC '+esc(P.nro)+' · '+esc(P.marca||'—')+'</div><div class="card-hs" style="margin:0">'+esc(P.fecha)+' · '+esc(P.proveedor||'—')+(P.comprador?(' · Comprador: '+esc(P.comprador)):'')+' · '+esc(P.moneda||'ARS')+'</div></div><div style="text-align:right;display:flex;align-items:center;gap:12px"><div><div class="big" style="font-size:22px">'+fmtInt(u)+' u.</div><div class="mono" style="color:var(--muted)">'+fmtMoney(imp)+'</div></div><button class="btn btn-outline btn-sm" data-del-pedido="'+esc(P.nro)+'" title="Eliminar OC">🗑</button></div></div><div class="tbl-wrap"><table style="min-width:520px"><thead><tr><th>Modelo</th><th>Descripción</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Costo U.</th><th class="num">Importe</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>');
+    let u=0, imp=0; lins.forEach(l=>{ u+=num(l.cantidad); imp+=num(l.cantidad)*num(l.costo_unitario);
+      flat.push({ oc:P.nro, fecha:P.fecha, comprador:P.comprador||'', proveedor:P.proveedor||'', marca:P.marca||'', moneda:P.moneda||'ARS', modelo:l.modelo||'', descripcion:l.descripcion||'', rubro:l.rubro||'', disciplina:l.disciplina||'', tipo:l.tipo||'', cantidad:num(l.cantidad), costo_unitario:num(l.costo_unitario), importe:num(l.cantidad)*num(l.costo_unitario) }); });
+    const color=PAL[idx%PAL.length]; const pid='ped'+idx; idx++;
+    const conMod=!!(P.lineas&&P.lineas[0]&&P.lineas[0].modelo);
+    const rows=lins.map(l=>'<tr>'+(conMod?('<td class="mono">'+esc(l.modelo||'')+'</td><td>'+esc(l.descripcion||'')+'</td>'):'')+'<td>'+esc(l.rubro||'')+'</td><td>'+esc(l.disciplina||'')+'</td><td>'+esc(l.tipo||'')+'</td><td class="num big">'+fmtInt(l.cantidad)+'</td><td class="num mono">'+fmtMoney(l.costo_unitario)+'</td><td class="num mono">'+fmtMoney(num(l.cantidad)*num(l.costo_unitario))+'</td></tr>').join('');
+    const detHead=(conMod?'<th>Modelo</th><th>Descripción</th>':'')+'<th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Costo U.</th><th class="num">Importe</th>';
+    cards.push('<div class="ped-card" style="border-left:5px solid '+color+'">'
+      +'<div class="ped-head" data-ped-toggle="'+pid+'"><span class="ped-dot" style="background:'+color+'"></span>'
+        +'<div class="ped-title"><div class="ped-oc">OC '+esc(P.nro)+'</div><div class="ped-sub">'+esc(P.marca||'—')+' · '+esc(P.fecha||'')+' · '+esc(P.proveedor||'—')+(P.comprador?(' · '+esc(P.comprador)):'')+' · '+lins.length+' art.</div></div>'
+        +'<div class="ped-tot"><div class="big">'+fmtInt(u)+' u.</div><div class="mono" style="color:var(--muted);font-size:13px">'+fmtMoney(imp)+'</div></div>'
+        +'<button class="btn btn-outline btn-sm" data-del-pedido="'+esc(P.nro)+'" title="Eliminar OC">🗑</button>'
+        +'<span class="ped-chev" id="chev_'+pid+'">▸</span></div>'
+      +'<div class="ped-detail" id="'+pid+'" style="display:none"><div class="tbl-wrap"><table style="min-width:520px"><thead><tr>'+detHead+'</tr></thead><tbody>'+rows+'</tbody></table></div></div></div>');
   });
-  let html = seccionHead('Pedidos de compra','Órdenes de compra por proveedor y sus líneas',
+  let html = seccionHead('Pedidos de compra','Órdenes de compra · click en un pedido para ver el detalle',
     (flat.length?'<button class="btn btn-outline btn-sm" id="btnExpPed">⇩ Exportar</button>':'')+'<button class="btn btn-outline btn-sm" id="btnAltaPed">+ Alta manual</button><button class="btn btn-primary btn-sm" id="btnImpPed">⇪ Importar Excel</button><button class="btn btn-outline btn-sm" id="btnConvPed">⇆ Convertir OC de marca</button>');
   html += cards.length ? cards.join('') : stateEmpty('No hay pedidos para los filtros actuales.');
   $('view').innerHTML = html;
   $('btnImpPed').onclick=()=>openImport('pedido'); $('btnAltaPed').onclick=()=>openAlta('pedido'); $('btnConvPed').onclick=openConvertir;
   if($('btnExpPed')) $('btnExpPed').onclick=()=>exportar('pedidos', flat);
+  document.querySelectorAll('[data-ped-toggle]').forEach(h=>h.onclick=()=>{ const id=h.getAttribute('data-ped-toggle'); const d=$(id); const ch=$('chev_'+id); const op=d.style.display==='none'; d.style.display=op?'block':'none'; if(ch)ch.textContent=op?'▾':'▸'; });
   bindDeletes();
 }
 
@@ -456,7 +483,7 @@ function seccionHead(title, sub, actions){ return '<div class="sec-head"><div><h
 
 /* eliminar documentos (con confirmación) */
 function bindDeletes(){
-  document.querySelectorAll('[data-del-pedido]').forEach(b=>b.onclick=async()=>{
+  document.querySelectorAll('[data-del-pedido]').forEach(b=>b.onclick=async(e)=>{ if(e)e.stopPropagation();
     const nro=b.getAttribute('data-del-pedido');
     if(!confirm('¿Eliminar la OC '+nro+' y todas sus líneas? No se puede deshacer.')) return;
     b.disabled=true; try{ await borrarPedido(nro); refreshDims(); render(); toast('OC '+nro+' eliminada','ok'); }catch(e){ b.disabled=false; toast('No se pudo eliminar: '+e.message,'bad'); }
@@ -740,9 +767,9 @@ window.closeModal=closeModal;
 
 function bindTabs(){ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on')); b.classList.add('on'); state.tab=b.dataset.tab; render(); }); }
 function bindFiltros(){
-  const map={fSemana:'semana',fMarca:'marca',fRubro:'rubro',fDisc:'disciplina',fTipo:'tipo'};
+  const map={fMes:'mes',fMarca:'marca',fRubro:'rubro',fDisc:'disciplina',fTipo:'tipo'};
   Object.keys(map).forEach(id=>$(id).onchange=()=>{ state.filtros[map[id]]=$(id).value; render(); });
-  $('fReset').onclick=()=>{ state.filtros={semana:'',marca:'',rubro:'',disciplina:'',tipo:''}; ['fSemana','fMarca','fRubro','fDisc','fTipo'].forEach(id=>$(id).value=''); render(); };
+  $('fReset').onclick=()=>{ state.filtros={mes:'',marca:'',rubro:'',disciplina:'',tipo:''}; ['fMes','fMarca','fRubro','fDisc','fTipo'].forEach(id=>$(id).value=''); render(); };
   $('fReload').onclick=recargar;
 }
 async function recargar(){
