@@ -434,7 +434,7 @@ function renderRemitos(){
   if(!cards.length){ html+=stateEmpty('No hay remitos para los filtros actuales.'); }
   else html += '<div class="card-hs" style="margin:-6px 0 12px">'+fmtInt(idx)+' remitos · '+fmtInt(totU)+' u · '+fmtMoney(totImp)+'</div>'+cards.join('');
   $('view').innerHTML = html;
-  $('btnImpRem').onclick=()=>openImport('ingreso'); $('btnAltaRem').onclick=()=>openAlta('ingreso');
+  $('btnImpRem').onclick=openImportEstadistica; $('btnAltaRem').onclick=()=>openAlta('ingreso');
   if($('btnExpRem')) $('btnExpRem').onclick=()=>exportar('remitos', flat);
   document.querySelectorAll('[data-rec-toggle]').forEach(h=>h.onclick=()=>{ const id=h.getAttribute('data-rec-toggle'); const d=$(id); const ch=$('chev_'+id); const op=d.style.display==='none'; if(op && !d.dataset.built){ d.innerHTML=recDetailHtml(REC[id]); d.dataset.built='1'; } d.style.display=op?'block':'none'; if(ch)ch.textContent=op?'▾':'▸'; });
   bindDeletes();
@@ -790,6 +790,89 @@ function openMarcaDetalle(marca){
     +(arts.length?'<div style="margin-bottom:10px"><button class="btn btn-outline btn-sm" id="mdExp">⇩ Exportar</button></div><div class="tbl-wrap" style="max-height:58vh;overflow:auto"><table style="min-width:660px"><thead><tr><th>Código</th><th>Artículo</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Valorizado</th></tr></thead><tbody>'+rows+'</tbody></table></div>':stateEmpty('Sin ingresos de esta marca para el filtro actual.')));
   const be=$('mdExp'); if(be) be.onclick=()=>exportar('ingresos-'+marca, arts.map(a=>({codigo:a.modelo,articulo:a.descripcion,rubro:a.rubro,disciplina:a.disciplina,tipo:a.tipo,cantidad:a.cant,valorizado:Math.round(a.val)})));
 }
+/* ============================================================
+   IMPORTACIÓN MASIVA de ingresos — reporte "Estadistica de remitos"
+   El depósito sube el Excel matriz por mes; se reforma en el navegador (una fila
+   por artículo-en-remito, con cantidad/valorizado por mes), se previsualiza y se
+   SUMA a lo ya cargado (PATCH/merge en Firebase; no pisa lo existente).
+   Para un remito suelto está el "Alta manual".
+   ============================================================ */
+function convEstadistica(wb){
+  const sheet = wb.SheetNames[0];
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheet], {defval:''});
+  if(!rows.length) throw new Error('El Excel no tiene filas.');
+  const MESES = Object.keys(rows[0]).map(h=>{ const m=h.match(/^(\d{2})-(\d{2}) Cantidad$/); return m?h.replace(/ Cantidad$/,''):null; }).filter(Boolean);
+  if(!MESES.length) throw new Error('No parece el reporte "Estadistica de remitos" (faltan columnas "MM-YY Cantidad").');
+  const marcasPorRemito = {};
+  rows.forEach(r=>{ const n=r['Nro.remito']; if(n){ (marcasPorRemito[n]=marcasPorRemito[n]||new Set()).add(r['Marca']); } });
+  const docs = {};
+  rows.forEach(r=>{
+    const nro=r['Nro.remito']; if(!nro) return;
+    const marca=String(r['Marca']||'Desconocida').trim();
+    const mes=MESES.find(m=>num(r[m+' Cantidad'])>0); if(!mes) return;
+    const cant=num(r[mes+' Cantidad']), val=num(r[mes+' Valorizado']);
+    const multi=(marcasPorRemito[nro]||new Set()).size>1;
+    const docNro = multi ? (nro+' · '+marca) : nro;
+    const key = fbKey(docNro);
+    let d = docs[key];
+    if(!d){ const parts=mes.split('-'); const fecha='20'+parts[1]+'-'+parts[0]+'-01'; d = docs[key] = { nro:docNro, fecha, proveedor:String(r['Proveedor']||'').trim(), marca, pedido_nro:'', semana:semanaISO(fecha), creado_en:nowISO(), origen:'import-estadistica', _lin:{} }; }
+    const cod=String(r['Código barras']||'').trim(), art=String(r['Artículo']||'').trim();
+    const lk = cod+'|'+art+'|'+(r['Rubro']||'')+'|'+(r['Disciplina']||'')+'|'+(r['Grupo 1']||'');
+    const L = d._lin[lk] || (d._lin[lk]={ modelo:cod, descripcion:art, rubro:String(r['Rubro']||'').trim(), disciplina:String(r['Disciplina']||'').trim(), tipo:String(r['Grupo 1']||'').trim(), _c:0, _v:0 });
+    L._c+=cant; L._v+=val;
+  });
+  const out = Object.keys(docs).map(k=>docs[k]);
+  out.forEach(d=>{ d.lineas=Object.keys(d._lin).map(k=>{ const L=d._lin[k]; return { modelo:L.modelo, descripcion:L.descripcion, rubro:L.rubro, disciplina:L.disciplina, tipo:L.tipo, cantidad:L._c, costo_unitario: L._c>0?L._v/L._c:0 }; }); delete d._lin; });
+  return out;
+}
+
+let estCtx = null;
+function openImportEstadistica(){
+  estCtx = null;
+  openModal(
+    '<button class="close" onclick="closeModal()">×</button><h2>Importar ingresos (masivo)</h2>'
+    +'<div class="msub">Subí el reporte <b>"Estadistica de remitos"</b> que exporta el sistema de stock. Se reforma acá, se previsualiza y se <b>suma</b> a los remitos ya cargados (no pisa lo existente). Para un remito suelto usá "Alta manual".</div>'
+    +'<div class="field"><label>Excel del reporte (.xlsx / .xls)</label><input class="inp" type="file" id="estFile" accept=".xlsx,.xls" style="width:100%"></div>'
+    +'<div id="estPreview"></div>'
+    +'<div class="modal-actions" id="estActions"><button class="btn btn-outline" onclick="closeModal()">Cerrar</button></div>'
+  );
+  $('estFile').onchange=onEstFile;
+}
+async function onEstFile(e){
+  const file=e.target.files[0]; if(!file) return;
+  $('estPreview').innerHTML='<div class="hint">Procesando '+esc(file.name)+'…</div>';
+  try{
+    const wb=XLSX.read(await file.arrayBuffer(), {type:'array'});
+    estCtx = convEstadistica(wb);
+    renderEstPreview(file.name);
+  }catch(err){ estCtx=null; $('estPreview').innerHTML='<div class="warn">'+esc(err.message)+'</div>'; $('estActions').innerHTML='<button class="btn btn-outline" onclick="closeModal()">Cerrar</button>'; }
+}
+function renderEstPreview(archivo){
+  const docs=estCtx||[]; let nLin=0, u=0, v=0; docs.forEach(d=>{ nLin+=d.lineas.length; d.lineas.forEach(l=>{ u+=num(l.cantidad); v+=num(l.cantidad)*num(l.costo_unitario); }); });
+  const yaCargados=Object.keys(DATA.remitos||{}).length;
+  const nuevos=docs.filter(d=>!DATA.remitos[fbKey(d.nro)]).length, pisa=docs.length-nuevos;
+  let html='<div class="hint">'+esc(archivo)+' → <b>'+fmtInt(docs.length)+' remitos</b> · '+fmtInt(nLin)+' líneas · <b>'+fmtInt(u)+' u</b> · '+fmtMoney(v)+'</div>';
+  html+='<div class="hint">Se suman a los <b>'+fmtInt(yaCargados)+'</b> ya cargados: '+fmtInt(nuevos)+' nuevos'+(pisa?(' · '+fmtInt(pisa)+' ya existen y se actualizan'):'')+'.</div>';
+  html+='<div class="card-hs" style="margin-top:6px">Muestra:</div><div class="tbl-wrap" style="max-height:240px;overflow:auto"><table style="min-width:520px"><thead><tr><th>Remito</th><th>Marca</th><th>Fecha</th><th class="num">Líneas</th><th class="num">Unid.</th><th class="num">Valorizado</th></tr></thead><tbody>'
+    + docs.slice(0,30).map(d=>{ let du=0,dv=0; d.lineas.forEach(l=>{du+=num(l.cantidad);dv+=num(l.cantidad)*num(l.costo_unitario);}); return '<tr><td class="mono">'+esc(d.nro)+'</td><td>'+esc(d.marca)+'</td><td class="mono">'+esc(d.fecha)+'</td><td class="num">'+d.lineas.length+'</td><td class="num big">'+fmtInt(du)+'</td><td class="num mono">'+fmtMoney(dv)+'</td></tr>'; }).join('')
+    + '</tbody></table></div>'+(docs.length>30?'<div class="card-hs">… y '+(docs.length-30)+' remitos más.</div>':'');
+  if(!docs.length){ html+='<div class="warn">No se detectaron remitos con cantidad.</div>'; }
+  $('estPreview').innerHTML=html;
+  $('estActions').innerHTML='<button class="btn btn-outline" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="estConfirm"'+(docs.length?'':' disabled')+'>Confirmar y sumar</button>';
+  const bc=$('estConfirm'); if(bc) bc.onclick=confirmEstadistica;
+}
+async function confirmEstadistica(){
+  const docs=estCtx||[]; if(!docs.length) return;
+  const btn=$('estConfirm'); if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
+  try{
+    const payload={}; docs.forEach(d=>payload[fbKey(d.nro)]=d);
+    if(!DEMO){ const r=await fetch(fbUrl(ROOT+'/remitos'),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); if(!r.ok) throw new Error('Firebase HTTP '+r.status); }
+    docs.forEach(d=>{ DATA.remitos[fbKey(d.nro)]=d; });
+    closeModal(); refreshDims(); render(); toast(fmtInt(docs.length)+' remitos sumados','ok');
+  }catch(e){ if(btn){ btn.disabled=false; btn.textContent='Confirmar y sumar'; } toast('No se pudo guardar: '+e.message,'bad'); }
+}
+
+
 function openModal(html){ $('modal').innerHTML=html; $('overlay').classList.add('show'); document.addEventListener('keydown',escClose); }
 function closeModal(){ $('overlay').classList.remove('show'); document.removeEventListener('keydown',escClose); impCtx=null; convCtx=null; }
 function escClose(e){ if(e.key==='Escape') closeModal(); }
