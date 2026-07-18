@@ -175,6 +175,31 @@ td.edit{padding:4px 8px}
 @media(max-width:920px){.kpis{grid-template-columns:1fr 1fr}.brow{grid-template-columns:1fr}.brow .name{white-space:normal}}
 @media(max-width:560px){.kpis{grid-template-columns:1fr}.hero h1{font-size:26px}.top{padding:12px 16px}.main-tabs,.wrap{padding-left:16px;padding-right:16px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Banner de método */
+.metodo-banner{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.mb-txt{flex:1;min-width:200px}
+.mb-lab{font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)}
+.mb-name{font-family:var(--font-d);font-size:20px;letter-spacing:.5px;color:var(--navy);margin-top:2px}
+.mb-desc{font-size:12.5px;color:var(--muted);margin-top:3px;max-width:640px}
+.mb-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.mb-stock{font-size:11.5px;color:var(--muted)}
+.top-right .logout#btnConfig{border-color:rgba(255,255,255,.4)}
+
+/* Modal de configuración */
+.modal-bg{position:fixed;inset:0;background:rgba(11,21,39,.55);display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
+.modal-bg.show{display:flex}
+.modal{background:#fff;border-radius:14px;width:100%;max-width:540px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;animation:fade .2s ease}
+.modal-head{background:var(--navy);color:#fff;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid var(--red)}
+.modal-head h3{font-family:var(--font-d);font-size:20px;letter-spacing:1px;font-weight:400}
+.modal-head button{background:transparent;border:none;color:#fff;font-size:20px;line-height:1;cursor:pointer}
+.modal-body{padding:20px;max-height:70vh;overflow-y:auto}
+.modal-body>label{display:block;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.cfg-desc{font-size:12.5px;color:var(--navy);background:#f0f3fa;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:12px 0 16px;line-height:1.4}
+.cfg-fields{display:none;flex-direction:column;gap:14px}
+.cfg-fields.show{display:flex}
+.cfg-fields .param label{display:block;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.cfg-fields .hint{font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.35}
 </style>
 </head>
 <body>
@@ -191,6 +216,7 @@ td.edit{padding:4px 8px}
   </div>
   <div class="top-right">
     <div class="who"><div class="n" id="whoName">—</div><div class="r" id="whoRole">—</div></div>
+    <button class="logout" id="btnConfig" title="Método de cálculo del presupuesto">⚙ Método</button>
     <button class="logout" id="logoutBtn">Salir</button>
   </div>
 </header>
@@ -211,32 +237,8 @@ td.edit{padding:4px 8px}
       </div>
     </div>
 
-    <!-- Parámetros -->
-    <div class="card params">
-      <div class="card-title">Parámetros de asignación</div>
-      <div class="card-sub">El sugerido = ventas del mes pasado × (1 + crecimiento) × factor por meses de stock (de Gestión de Stock). Ajustá y se recalcula todo.</div>
-      <div class="params-grid">
-        <div class="param">
-          <label>Crecimiento objetivo</label>
-          <input type="number" id="p-crec" step="1">
-          <div class="hint">% sobre las ventas del mes pasado (ej. 15 = comprar para vender 15% más).</div>
-        </div>
-        <div class="param">
-          <label>Factor si sobrestock</label>
-          <input type="number" id="p-sobre" step="0.05" min="0">
-          <div class="hint">Multiplica el sugerido cuando la marca tiene MÁS meses de stock que el umbral (comprar menos). Ej. 0,7.</div>
-        </div>
-        <div class="param">
-          <label>Factor si faltante</label>
-          <input type="number" id="p-falta" step="0.05" min="0">
-          <div class="hint">Multiplica el sugerido cuando la marca tiene MENOS meses de stock que el umbral (comprar más). Ej. 1,3.</div>
-        </div>
-        <div class="param" style="align-self:end">
-          <button class="btn btn-navy" id="btn-aplicar" title="Copiar el sugerido a la columna Presupuesto de cada línea">⟳ Aplicar sugeridos</button>
-          <div class="hint" id="stockStatus">Meses de stock: —</div>
-        </div>
-      </div>
-    </div>
+    <!-- Método actual (se configura en la ⚙ del header) -->
+    <div class="card metodo-banner" id="metodoBanner"></div>
 
     <!-- Alta de línea -->
     <div class="card" style="margin-top:16px">
@@ -318,6 +320,42 @@ td.edit{padding:4px 8px}
 
 </div>
 
+<!-- Configuración del método de cálculo -->
+<div class="modal-bg" id="cfgModal">
+  <div class="modal">
+    <div class="modal-head"><h3>Configuración del cálculo</h3><button id="cfgClose" title="Cerrar">✕</button></div>
+    <div class="modal-body">
+      <label>Método de cálculo del presupuesto</label>
+      <select id="cfg-metodo">
+        <option value="otb">Open To Buy — apuntar al stock ideal (recomendado)</option>
+        <option value="pct">% de la venta destinado a compra</option>
+        <option value="repos">Reposición + crecimiento + ajuste por stock</option>
+      </select>
+      <div class="cfg-desc" id="cfg-desc"></div>
+
+      <div class="cfg-fields" id="cfg-f-otb">
+        <div class="param">
+          <label>Meses de stock objetivo</label>
+          <input type="number" id="c-mesesobj" step="0.5" min="0">
+          <div class="hint">Cuántos meses de stock querés tener de cada marca. <b>0 = automático</b> (rango sano por rubro de Gestión de Stock). Compra = venta mensual × (1 + objetivo − meses actuales), con piso en 0.</div>
+        </div>
+      </div>
+      <div class="cfg-fields" id="cfg-f-pct">
+        <div class="param">
+          <label>% de la venta a compra</label>
+          <input type="number" id="c-pct" step="1" min="0">
+          <div class="hint">Presupuesto = venta mensual × este %. Ej. 60 = comprar por el 60% de lo que se vende.</div>
+        </div>
+      </div>
+      <div class="cfg-fields" id="cfg-f-repos">
+        <div class="param"><label>Crecimiento objetivo (%)</label><input type="number" id="c-crec" step="1"><div class="hint">% sobre la venta mensual.</div></div>
+        <div class="param"><label>Factor si sobrestock</label><input type="number" id="c-sobre" step="0.05" min="0"><div class="hint">Multiplica el sugerido cuando la marca tiene más meses de stock que el umbral (comprar menos). Ej. 0,7.</div></div>
+        <div class="param"><label>Factor si faltante</label><input type="number" id="c-falta" step="0.05" min="0"><div class="hint">Cuando tiene menos meses que el umbral (comprar más). Ej. 1,3.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Datos de Meses de Stock (para el cruce por marca+rubro). Si no carga, se ignora. -->
 <script src="../gestion-stock/datos-meses-stock.js"></script>
 <script>
@@ -340,7 +378,7 @@ const ROLE_LABEL = { admin:'Administrador', supervisor:'Supervisor', sucursal:'S
 const FIREBASE_URL = 'https://presupuesto-mateu-default-rtdb.firebaseio.com';
 const FB_PATH = '/presupuesto.json';
 const KEY = 'mateu:presupuesto:compras:v2';
-const DEFAULT_PARAMS = { crecimiento:15, factorSobre:0.7, factorFalta:1.3 };
+const DEFAULT_PARAMS = { metodo:'otb', pctCompra:60, crecimiento:15, factorSobre:0.7, factorFalta:1.3, mesesObjetivo:0 };
 
 const localStore = {
   get(){ try{ const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; }catch(e){ return null; } },
@@ -441,17 +479,36 @@ function evalStock(marca, rubro){
   if(ms.meses < low)  return { factor:+params.factorFalta||1, meses:ms.meses, status:'faltante' };
   return { factor:1, meses:ms.meses, status:'ok' };
 }
+// Meses de stock objetivo por rubro (para OTB). 0 = automático = punto medio del rango sano.
+function mesesObjetivoRubro(rubro){
+  const mo = +params.mesesObjetivo||0;
+  if(mo>0) return mo;
+  const [low,high] = thresholdsRubro(rubro);
+  return (low+high)/2;
+}
+// Sugerido según el método elegido (params.metodo). Devuelve $ y unidades.
 function sugeridoDe(l){
-  const ev = evalStock(l.marca, l.rubro);
-  const g = 1 + (+params.crecimiento||0)/100;
-  return { $:Math.round((l.ventas||0)*g*ev.factor), U:Math.round((l.ventasU||0)*g*ev.factor), ev };
+  const ev = evalStock(l.marca, l.rubro);   // meses actuales + status (para el badge)
+  const base$ = l.ventas||0, baseU = l.ventasU||0;
+  let k = 1;                                 // multiplicador sobre la venta mensual
+  if(params.metodo === 'pct'){
+    k = (+params.pctCompra||0)/100;
+  } else if(params.metodo === 'otb'){
+    // Open To Buy: apuntar al stock objetivo. Si no hay dato de stock, compra = venta.
+    if(ev.meses === null || ev.meses === Infinity) k = 1;
+    else k = Math.max(0, 1 + mesesObjetivoRubro(l.rubro) - ev.meses);
+  } else { // repos: reposición + crecimiento + factor por stock
+    k = (1 + (+params.crecimiento||0)/100) * ev.factor;
+  }
+  return { $:Math.round(base$*k), U:Math.round(baseU*k), ev };
 }
 const STATUS_LABEL = { sobrestock:'Comprar menos', faltante:'Comprar más', ok:'En rango', 'sin-dato':'Sin dato' };
 function msBadge(ev){
   if(ev.status==='sin-dato') return `<span class="ms-badge ms-sindato">— s/dato</span>`;
   const m = ev.meses===Infinity ? '∞' : ev.meses.toFixed(1);
   const cls = ev.status==='sobrestock'?'ms-sobrestock':ev.status==='faltante'?'ms-faltante':'ms-ok';
-  return `<span class="ms-badge ${cls}"><b>${m}</b> meses</span><span class="reco">${STATUS_LABEL[ev.status]} · ×${ev.factor}</span>`;
+  const extra = params.metodo==='repos' ? ` · ×${ev.factor}` : '';
+  return `<span class="ms-badge ${cls}"><b>${m}</b> meses</span><span class="reco">${STATUS_LABEL[ev.status]}${extra}</span>`;
 }
 
 /* ── Alta ── */
@@ -487,19 +544,59 @@ async function aplicarSugeridos(){
 }
 
 /* ── Params ── */
-function renderParams(){
-  $('p-crec').value = params.crecimiento;
-  $('p-sobre').value = params.factorSobre;
-  $('p-falta').value = params.factorFalta;
-  $('stockStatus').textContent = stockDisponible()
-    ? `Meses de stock: conectado (${window.STOCK_DATA.meses.slice(-1)[0]})`
-    : 'Meses de stock: sin datos (factor 1 en todas)';
+const METODO_INFO = {
+  otb:  { name:'Open To Buy (stock ideal)',        desc:'Compra = venta mensual × (1 + meses objetivo − meses actuales). Apunta al stock ideal por marca: no compra donde sobra y refuerza donde falta.' },
+  pct:  { name:'% de la venta a compra',           desc:'Presupuesto = venta mensual × un % fijo. Techo de gasto simple sobre la venta (no mira el stock).' },
+  repos:{ name:'Reposición + ajuste por stock',    desc:'Venta mensual × (1 + crecimiento%) × factor por meses de stock.' }
+};
+function descMetodo(m){
+  if(m==='pct') return `Presupuesto = venta mensual × ${+params.pctCompra||0}%. Techo de gasto simple sobre la venta.`;
+  if(m==='otb'){ const mo=+params.mesesObjetivo||0; return `Compra = venta mensual × (1 + ${mo>0?mo+' meses objetivo':'objetivo por rubro'} − meses actuales). Apunta al stock ideal.`; }
+  return `Venta mensual × (1 + ${+params.crecimiento||0}%) × factor por meses de stock.`;
 }
-async function onParamChange(){
-  params.crecimiento = +$('p-crec').value||0;
-  params.factorSobre = +$('p-sobre').value||0;
-  params.factorFalta = +$('p-falta').value||0;
-  await Store.save(); renderAll();
+function renderParams(){
+  const m = params.metodo||'otb';
+  const info = METODO_INFO[m]||METODO_INFO.otb;
+  const stockTxt = stockDisponible()
+    ? `✓ Meses de stock conectado (${window.STOCK_DATA.meses.slice(-1)[0]})`
+    : '⚠ Meses de stock sin datos (no ajusta)';
+  $('metodoBanner').innerHTML = `
+    <div class="mb-txt">
+      <div class="mb-lab">Método de cálculo</div>
+      <div class="mb-name">${esc(info.name)}</div>
+      <div class="mb-desc">${esc(descMetodo(m))}</div>
+    </div>
+    <div class="mb-actions">
+      <button class="btn btn-navy" id="btn-aplicar" title="Copiar el sugerido a la columna Presupuesto de cada línea">⟳ Aplicar sugeridos</button>
+      <button class="btn btn-ghost" id="btn-cfg2">⚙ Configurar</button>
+      <div class="mb-stock">${stockTxt}</div>
+    </div>`;
+  $('btn-aplicar').onclick = aplicarSugeridos;
+  $('btn-cfg2').onclick = openCfg;
+  // sincronizo los campos del modal con params
+  $('cfg-metodo').value = m;
+  $('c-mesesobj').value = params.mesesObjetivo;
+  $('c-pct').value = params.pctCompra;
+  $('c-crec').value = params.crecimiento;
+  $('c-sobre').value = params.factorSobre;
+  $('c-falta').value = params.factorFalta;
+  switchCfgFields(m);
+}
+function switchCfgFields(m){
+  ['otb','pct','repos'].forEach(k=>$('cfg-f-'+k).classList.toggle('show', k===m));
+  $('cfg-desc').textContent = (METODO_INFO[m]||METODO_INFO.otb).desc;
+}
+function openCfg(){ $('cfgModal').classList.add('show'); }
+function closeCfg(){ $('cfgModal').classList.remove('show'); }
+async function onCfgChange(){
+  params.metodo = $('cfg-metodo').value;
+  params.mesesObjetivo = +$('c-mesesobj').value||0;
+  params.pctCompra = +$('c-pct').value||0;
+  params.crecimiento = +$('c-crec').value||0;
+  params.factorSobre = +$('c-sobre').value||0;
+  params.factorFalta = +$('c-falta').value||0;
+  switchCfgFields(params.metodo);
+  await Store.save(); renderAll(); renderParams();
 }
 
 /* ── Filtros / selects ── */
@@ -579,7 +676,8 @@ function renderMoS(){
   if(!cards.length){ el.innerHTML=`<div class="mos-empty">Ninguna de las marcas cargadas coincide con Gestión de Stock todavía. Cargá marcas con el mismo nombre (ej. Nike, Adidas).</div>`; return; }
   el.innerHTML = cards.map(x=>{
     const st=x.ev.status;
-    const msg = st==='sobrestock'?`↓ Comprar menos (×${x.ev.factor})`:st==='faltante'?`↑ Comprar más (×${x.ev.factor})`:'En rango (×1)';
+    const fx = params.metodo==='repos' ? ` (×${x.ev.factor})` : '';
+    const msg = st==='sobrestock'?`↓ Comprar menos${fx}`:st==='faltante'?`↑ Comprar más${fx}`:'En rango';
     const m = x.ev.meses===Infinity?'∞':x.ev.meses.toFixed(1);
     return `<div class="mos-card ${st}"><div class="m">${esc(x.marca)}</div><div class="r">${esc(x.rubro)}</div>
       <div class="big">${m}<small> meses</small></div><div class="msg">${msg}</div></div>`;
@@ -640,8 +738,11 @@ function importar(file){
 /* ── Eventos ── */
 $('btn-add').onclick=agregar;
 document.querySelectorAll('.form-grid input').forEach(i=>i.addEventListener('keydown',e=>{if(e.key==='Enter')agregar();}));
-['p-crec','p-sobre','p-falta'].forEach(id=>$(id).addEventListener('change',onParamChange));
-$('btn-aplicar').onclick=aplicarSugeridos;
+$('btnConfig').onclick = openCfg;
+$('cfgClose').onclick = closeCfg;
+$('cfgModal').addEventListener('click', e=>{ if(e.target.id==='cfgModal') closeCfg(); });
+$('cfg-metodo').addEventListener('change', onCfgChange);
+['c-mesesobj','c-pct','c-crec','c-sobre','c-falta'].forEach(id=>$(id).addEventListener('change', onCfgChange));
 $('tbody').addEventListener('click',e=>{const id=e.target.dataset.del; if(id&&confirm('¿Borrar esta línea?')) eliminar(id);});
 $('tbody').addEventListener('change',e=>{const inp=e.target;const tr=inp.closest('tr');if(tr&&inp.dataset.c) editarCampo(tr.dataset.id,inp.dataset.c,inp.value);});
 $('flt-per').onchange=renderTabla; $('flt-marca').onchange=renderTabla;
