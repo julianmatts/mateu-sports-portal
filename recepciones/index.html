@@ -124,6 +124,10 @@ tfoot th{background:#eef2fb;color:var(--navy-mid);position:static}
 .barrow.drill{cursor:pointer;border-radius:6px;padding:2px 5px;margin:0 -5px}
 .barrow.drill:hover{background:#f1f5fd}
 .barrow.drill .lb{color:var(--red);font-weight:600}
+.rep-badge{display:inline-flex;align-items:center;gap:3px;font-family:var(--font-c);font-weight:700;font-size:11px;letter-spacing:.5px;text-transform:uppercase;padding:6px 11px;border-radius:20px;border:none;line-height:1}
+.rep-pend{background:#fef3c7;color:#92620e;cursor:pointer}
+.rep-pend:hover{background:#fde68a}
+.rep-done{background:#dcfce7;color:#15803d}
 
 .prog{height:8px;border-radius:4px;background:#e6ebf5;overflow:hidden;min-width:90px}
 .prog>span{display:block;height:100%;border-radius:4px;background:var(--ok)}
@@ -193,6 +197,7 @@ textarea.code{width:100%;min-height:150px;font-family:ui-monospace,Menlo,Consola
   <button class="tab" data-tab="remitos">Remitos de ingreso</button>
   <button class="tab" data-tab="pedidos">Pedidos de compra</button>
   <button class="tab" data-tab="control">Ingresos vs pedido</button>
+  <button class="tab" data-tab="repartos">Repartos</button>
 </nav>
 
 <div class="filtros" id="filtros">
@@ -358,6 +363,7 @@ function refreshDims(){
   fillSel('fRubro', state.dims.rubros, 'Todos');
   fillSel('fDisc', state.dims.disciplinas, 'Todas');
   fillSel('fTipo', state.dims.tipos, 'Todos');
+  updateRepartoBadge();
 }
 function fillSel(id, arr, allLbl){
   const el=$(id); const cur=el.value;
@@ -376,6 +382,7 @@ function render(){
     if(state.tab==='remitos') return renderRemitos();
     if(state.tab==='pedidos') return renderPedidos();
     if(state.tab==='control') return renderControl();
+    if(state.tab==='repartos') return renderRepartos();
   }catch(e){ $('view').innerHTML = stateError(e.message); }
 }
 
@@ -420,12 +427,12 @@ function renderRemitos(){
   rem.forEach(R=>{ const lins=(R.lineas||[]).filter(lineaPasa); if(!lins.length) return;
     let u=0, imp=0; lins.forEach(l=>{ const c=num(l.cantidad), cu=num(l.costo_unitario); u+=c; imp+=c*cu; totU+=c; totImp+=c*cu;
       flat.push({ remito:R.nro, fecha:R.fecha, mes:mesLabel(R.fecha), marca:R.marca||'', oc:R.pedido_nro||'', rubro:l.rubro||'', disciplina:l.disciplina||'', tipo:l.tipo||'', cantidad:c, costo_unitario:cu, importe:c*cu }); });
-    const color=PAL[idx%PAL.length]; const pid='rec'+idx; REC[pid]=lins; idx++;
+    const color=PAL[idx%PAL.length]; const pid='rec'+idx; REC[pid]=lins; idx++; const repBtn=repChip(R);
     cards.push('<div class="ped-card" style="border-left:5px solid '+color+'">'
       +'<div class="ped-head" data-rec-toggle="'+pid+'"><span class="ped-dot" style="background:'+color+'"></span>'
         +'<div class="ped-title"><div class="ped-oc">Remito '+esc(R.nro)+'</div><div class="ped-sub">'+esc(R.marca||'—')+' · '+esc(mesLabel(R.fecha)||R.fecha||'')+(R.pedido_nro?(' · OC '+esc(R.pedido_nro)):'')+' · '+lins.length+' líneas</div></div>'
         +'<div class="ped-tot"><div class="big">'+fmtInt(u)+' u.</div><div class="mono" style="color:var(--muted);font-size:13px">'+fmtMoney(imp)+'</div></div>'
-        +'<button class="btn btn-outline btn-sm" data-del-remito="'+esc(R.nro)+'" title="Eliminar remito completo">🗑</button>'
+        +repBtn+'<button class="btn btn-outline btn-sm" data-del-remito="'+esc(R.nro)+'" title="Eliminar remito completo">🗑</button>'
         +'<span class="ped-chev" id="chev_'+pid+'">▸</span></div>'
       +'<div class="ped-detail" id="'+pid+'" style="display:none"></div></div>');
   });
@@ -436,6 +443,7 @@ function renderRemitos(){
   $('view').innerHTML = html;
   $('btnImpRem').onclick=openImportEstadistica; $('btnAltaRem').onclick=()=>openAlta('ingreso');
   if($('btnExpRem')) $('btnExpRem').onclick=()=>exportar('remitos', flat);
+  bindReparto();
   document.querySelectorAll('[data-rec-toggle]').forEach(h=>h.onclick=()=>{ const id=h.getAttribute('data-rec-toggle'); const d=$(id); const ch=$('chev_'+id); const op=d.style.display==='none'; if(op && !d.dataset.built){ d.innerHTML=recDetailHtml(REC[id]); d.dataset.built='1'; } d.style.display=op?'block':'none'; if(ch)ch.textContent=op?'▾':'▸'; });
   bindDeletes();
 }
@@ -870,6 +878,74 @@ async function confirmEstadistica(){
     docs.forEach(d=>{ DATA.remitos[fbKey(d.nro)]=d; });
     closeModal(); refreshDims(); render(); toast(fmtInt(docs.length)+' remitos sumados','ok');
   }catch(e){ if(btn){ btn.disabled=false; btn.textContent='Confirmar y sumar'; } toast('No se pudo guardar: '+e.message,'bad'); }
+}
+
+
+/* ============================================================
+   FLUJO DE REPARTO (Fase 3)
+   El depósito marca un remito como "necesita reparto de Compras" (⚑ en Ingresos).
+   Aparece como tarea pendiente en la pestaña "Repartos" para Compras, que lo marca
+   como hecho. Roles blandos por mail (como el resto del portal). Sin mail por ahora.
+   Estado guardado en el propio remito: remitos/<key>/reparto = {estado, creado_por,
+   creado_en, hecho_por?, hecho_en?}.
+   ============================================================ */
+const COMPRAS_MAILS=['julian@mateu.com.ar','julian.demarco@mateu.com.ar'];
+const DEPOSITO_MAILS=['logistica@mateu.com.ar','deposito@mateu.com.ar'];
+function _mail(){ return ((SESSION&&SESSION.email)||'').toLowerCase(); }
+function esCompras(){ return !!SESSION && (SESSION.rol==='admin' || COMPRAS_MAILS.includes(_mail())); }
+function esDeposito(){ return !!SESSION && (SESSION.rol==='admin' || DEPOSITO_MAILS.includes(_mail())); }
+
+async function setReparto(nro, reparto){
+  const key=fbKey(nro);
+  if(reparto===null){ if(!DEMO) await fbDelete(ROOT+'/remitos/'+key+'/reparto'); if(DATA.remitos[key]) delete DATA.remitos[key].reparto; }
+  else { if(!DEMO) await fbPut(ROOT+'/remitos/'+key+'/reparto', reparto); if(DATA.remitos[key]) DATA.remitos[key].reparto=reparto; }
+}
+
+function repChip(R){
+  const r=R.reparto;
+  if(!r) return esDeposito()?'<button class="btn btn-outline btn-sm" data-rep-flag="'+esc(R.nro)+'" title="Marcar que este remito necesita reparto de Compras">⚑ Reparto</button>':'';
+  if(r.estado==='pendiente') return '<button class="rep-badge rep-pend" data-rep-unflag="'+esc(R.nro)+'" title="Reparto pendiente de Compras · click para desmarcar">⚑ Pendiente</button>';
+  return '<span class="rep-badge rep-done" title="Reparto hecho'+(r.hecho_por?(' por '+esc(r.hecho_por)):'')+'">✓ Repartido</span>';
+}
+function bindReparto(){
+  document.querySelectorAll('[data-rep-flag]').forEach(b=>b.onclick=async(e)=>{ if(e)e.stopPropagation(); const nro=b.getAttribute('data-rep-flag'); b.disabled=true;
+    try{ await setReparto(nro,{estado:'pendiente',creado_por:_mail(),creado_en:nowISO()}); refreshDims(); render(); toast('Marcado: necesita reparto','ok'); }catch(err){ b.disabled=false; toast('Error: '+err.message,'bad'); } });
+  document.querySelectorAll('[data-rep-unflag]').forEach(b=>b.onclick=async(e)=>{ if(e)e.stopPropagation(); const nro=b.getAttribute('data-rep-unflag'); if(!confirm('¿Desmarcar el reparto de este remito?'))return; b.disabled=true;
+    try{ await setReparto(nro,null); refreshDims(); render(); toast('Reparto desmarcado','ok'); }catch(err){ b.disabled=false; toast('Error: '+err.message,'bad'); } });
+}
+
+function updateRepartoBadge(){
+  const n=vals(DATA.remitos).filter(R=>R.reparto && R.reparto.estado==='pendiente').length;
+  const t=document.querySelector('.tab[data-tab="repartos"]'); if(t) t.textContent='Repartos'+(n?(' ('+n+')'):'');
+}
+
+function renderRepartos(){
+  const all=vals(DATA.remitos).filter(R=>R.reparto);
+  const pend=all.filter(R=>R.reparto.estado==='pendiente').sort((a,b)=>cmp(b.fecha,a.fecha));
+  const hechos=all.filter(R=>R.reparto.estado==='hecho').sort((a,b)=>cmp(b.reparto.hecho_en||'',a.reparto.hecho_en||''));
+  let html=seccionHead('Repartos','Remitos que el depósito marcó para que Compras haga el reparto');
+  if(!all.length){ $('view').innerHTML=html+stateEmpty('No hay repartos marcados. El depósito los marca con ⚑ Reparto en cada remito (pestaña Ingresos).'); return; }
+  html+=repList('Pendientes', pend, 'pendiente');
+  html+=repList('Hechos', hechos, 'hecho');
+  $('view').innerHTML=html;
+  bindRepartoAcciones();
+}
+function repList(titulo, arr, estado){
+  const rows=arr.map(R=>{ let u=0,imp=0; (R.lineas||[]).forEach(l=>{u+=num(l.cantidad);imp+=num(l.cantidad)*num(l.costo_unitario);}); const r=R.reparto;
+    const accion = estado==='pendiente'
+      ? (esCompras()?'<button class="btn btn-primary btn-sm" data-rep-done="'+esc(R.nro)+'">Marcar hecho</button>':'<span class="muted" style="font-size:12px">esperando a Compras</span>')
+      : (esCompras()?'<button class="btn btn-outline btn-sm" data-rep-reopen="'+esc(R.nro)+'">Reabrir</button>':'<span class="rep-badge rep-done">✓ hecho</span>');
+    const quien = estado==='hecho' ? (r.hecho_por?('hecho por '+esc(r.hecho_por)):'') : (r.creado_por?('marcó '+esc(r.creado_por)):'');
+    return '<tr><td class="mono">'+esc(R.nro)+'</td><td>'+esc(R.marca||'')+'</td><td class="mono">'+esc(R.fecha||'')+'</td><td class="num big">'+fmtInt(u)+'</td><td class="num mono">'+fmtMoney(imp)+'</td><td style="font-size:12px;color:var(--muted)">'+quien+'</td><td>'+accion+'</td></tr>';
+  }).join('');
+  return '<div class="card"><div class="card-h">'+esc(titulo)+' ('+arr.length+')</div>'
+    +(arr.length?('<div class="tbl-wrap" style="margin-top:8px"><table style="min-width:640px"><thead><tr><th>Remito</th><th>Marca</th><th>Fecha</th><th class="num">Unid.</th><th class="num">Valorizado</th><th>Quién</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>'):'<div class="card-hs" style="margin-top:6px">—</div>')+'</div>';
+}
+function bindRepartoAcciones(){
+  document.querySelectorAll('[data-rep-done]').forEach(b=>b.onclick=async()=>{ const nro=b.getAttribute('data-rep-done'); const R=DATA.remitos[fbKey(nro)]; if(!R)return; b.disabled=true;
+    try{ await setReparto(nro,Object.assign({},R.reparto,{estado:'hecho',hecho_por:_mail(),hecho_en:nowISO()})); refreshDims(); render(); toast('Reparto marcado como hecho','ok'); }catch(e){ b.disabled=false; toast('Error: '+e.message,'bad'); } });
+  document.querySelectorAll('[data-rep-reopen]').forEach(b=>b.onclick=async()=>{ const nro=b.getAttribute('data-rep-reopen'); const R=DATA.remitos[fbKey(nro)]; if(!R)return; b.disabled=true;
+    try{ await setReparto(nro,{estado:'pendiente',creado_por:(R.reparto&&R.reparto.creado_por)||_mail(),creado_en:(R.reparto&&R.reparto.creado_en)||nowISO()}); refreshDims(); render(); toast('Reparto reabierto','ok'); }catch(e){ b.disabled=false; toast('Error: '+e.message,'bad'); } });
 }
 
 
