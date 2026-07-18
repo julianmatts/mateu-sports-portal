@@ -141,3 +141,32 @@ podés:
 
 Como el Turnero y Marcas comparten la **misma base de Firebase**, el sitio viejo y
 el nuevo leen y escriben los mismos datos. No se duplica ni se pierde nada.
+
+---
+
+## Presupuesto de Compras (`presupuesto/`) — persistencia con Firebase
+
+El módulo `presupuesto/index.html` guarda sus líneas (presupuesto vs. ejecutado por
+proveedor/rubro/categoría/período) en **Firebase Realtime Database vía REST**, igual
+que el resto de los módulos (marcas, pedidos-semanales, evaluaciones, etc.). No usa
+backend propio ni Cloudflare KV: se deploya solo con el push, sin tocar el dashboard.
+
+Toda la data va como un array bajo el nodo `/presupuesto.json` de su base. El objeto
+`Store` del front solo hace `GET`/`PUT` a esa URL; si la red falla o la URL todavía
+no está cargada, **cae a `localStorage`** para no perder lo cargado.
+
+### Puesta en marcha (una sola vez, lo hace Juli)
+
+1. En la **consola de Firebase**, creá una Realtime Database nueva para este módulo
+   (sugerido: proyecto/base `presupuesto-mateu`). Copiá su URL, del tipo
+   `https://presupuesto-mateu-default-rtdb.firebaseio.com`.
+2. Poné las **reglas abiertas** (`.read` y `.write` en `true`), como el resto de los
+   módulos (seguridad "blanda", ordena accesos, no es auth real).
+3. Pegá esa URL en la constante **`FIREBASE_URL`** arriba del `<script>` de
+   `presupuesto/index.html`.
+4. Commit + push a `main` → Cloudflare republica en ~30s y el módulo queda guardando
+   en Firebase.
+
+Mientras `FIREBASE_URL` esté vacía, el módulo funciona igual pero guardando solo en
+`localStorage` (por navegador). Al pegar la URL pasa a Firebase (compartido entre
+dispositivos y personas).
