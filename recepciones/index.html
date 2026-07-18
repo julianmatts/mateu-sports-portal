@@ -411,19 +411,33 @@ function cardBars(title, sub, obj, keepOrder, labelFn){
 
 /* ---------- REMITOS ---------- */
 function renderRemitos(){
-  let rows=[]; let tot=0, totImp=0; const flat=[];
-  remitosFiltrados().forEach(R=>{ const lins=(R.lineas||[]).filter(lineaPasa); lins.forEach((l,i)=>{ const c=num(l.cantidad), cu=num(l.costo_unitario), imp=c*cu; tot+=c; totImp+=imp;
-    flat.push({ remito:R.nro, fecha:R.fecha, mes:mesLabel(R.fecha), marca:R.marca||'', oc:R.pedido_nro||'', rubro:l.rubro||'', disciplina:l.disciplina||'', tipo:l.tipo||'', cantidad:c, costo_unitario:cu, importe:imp });
-    const nroCell = '<td class="mono">'+esc(R.nro)+(i===0?' <button class="lnk-del" data-del-remito="'+esc(R.nro)+'" title="Eliminar remito completo">✕</button>':'')+'</td>';
-    rows.push('<tr>'+nroCell+'<td class="mono">'+esc(R.fecha)+'</td><td>'+esc(mesLabel(R.fecha))+'</td><td>'+esc(R.marca||'')+'</td><td>'+esc(R.pedido_nro||'—')+'</td><td>'+esc(l.rubro||'')+'</td><td>'+esc(l.disciplina||'')+'</td><td>'+esc(l.tipo||'')+'</td><td class="num big">'+fmtInt(c)+'</td><td class="num mono">'+fmtMoney(cu)+'</td><td class="num mono">'+fmtMoney(imp)+'</td></tr>'); }); });
-  let html = seccionHead('Remitos de ingreso','Detalle línea por línea de la mercadería ingresada',
-    (rows.length?'<button class="btn btn-outline btn-sm" id="btnExpRem">⇩ Exportar</button>':'')+'<button class="btn btn-outline btn-sm" id="btnAltaRem">+ Alta manual</button><button class="btn btn-primary btn-sm" id="btnImpRem">⇪ Importar Excel</button>');
-  if(!rows.length){ html+=stateEmpty('No hay remitos para los filtros actuales.'); }
-  else html += '<div class="tbl-wrap"><table><thead><tr><th>Remito</th><th>Fecha</th><th>Mes</th><th>Marca</th><th>OC</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Costo U.</th><th class="num">Importe</th></tr></thead><tbody>'+rows.join('')+'</tbody><tfoot><tr><th colspan="8" style="text-align:right">Totales</th><th class="num big">'+fmtInt(tot)+'</th><th></th><th class="num big">'+fmtMoney(totImp)+'</th></tr></tfoot></table></div>';
+  const rem=remitosFiltrados(); const PAL=['#CC0000','#1a56db','#0e7490','#7c3aed','#b45309','#16803d','#be185d','#4d7c0f','#0891b2','#9333ea'];
+  const flat=[]; const REC={}; let cards=[]; let idx=0; let totU=0, totImp=0;
+  rem.forEach(R=>{ const lins=(R.lineas||[]).filter(lineaPasa); if(!lins.length) return;
+    let u=0, imp=0; lins.forEach(l=>{ const c=num(l.cantidad), cu=num(l.costo_unitario); u+=c; imp+=c*cu; totU+=c; totImp+=c*cu;
+      flat.push({ remito:R.nro, fecha:R.fecha, mes:mesLabel(R.fecha), marca:R.marca||'', oc:R.pedido_nro||'', rubro:l.rubro||'', disciplina:l.disciplina||'', tipo:l.tipo||'', cantidad:c, costo_unitario:cu, importe:c*cu }); });
+    const color=PAL[idx%PAL.length]; const pid='rec'+idx; REC[pid]=lins; idx++;
+    cards.push('<div class="ped-card" style="border-left:5px solid '+color+'">'
+      +'<div class="ped-head" data-rec-toggle="'+pid+'"><span class="ped-dot" style="background:'+color+'"></span>'
+        +'<div class="ped-title"><div class="ped-oc">Remito '+esc(R.nro)+'</div><div class="ped-sub">'+esc(R.marca||'—')+' · '+esc(mesLabel(R.fecha)||R.fecha||'')+(R.pedido_nro?(' · OC '+esc(R.pedido_nro)):'')+' · '+lins.length+' líneas</div></div>'
+        +'<div class="ped-tot"><div class="big">'+fmtInt(u)+' u.</div><div class="mono" style="color:var(--muted);font-size:13px">'+fmtMoney(imp)+'</div></div>'
+        +'<button class="btn btn-outline btn-sm" data-del-remito="'+esc(R.nro)+'" title="Eliminar remito completo">🗑</button>'
+        +'<span class="ped-chev" id="chev_'+pid+'">▸</span></div>'
+      +'<div class="ped-detail" id="'+pid+'" style="display:none"></div></div>');
+  });
+  let html = seccionHead('Remitos de ingreso','Ingresos agrupados por remito · click en un remito para ver el detalle',
+    (flat.length?'<button class="btn btn-outline btn-sm" id="btnExpRem">⇩ Exportar</button>':'')+'<button class="btn btn-outline btn-sm" id="btnAltaRem">+ Alta manual</button><button class="btn btn-primary btn-sm" id="btnImpRem">⇪ Importar Excel</button>');
+  if(!cards.length){ html+=stateEmpty('No hay remitos para los filtros actuales.'); }
+  else html += '<div class="card-hs" style="margin:-6px 0 12px">'+fmtInt(idx)+' remitos · '+fmtInt(totU)+' u · '+fmtMoney(totImp)+'</div>'+cards.join('');
   $('view').innerHTML = html;
   $('btnImpRem').onclick=()=>openImport('ingreso'); $('btnAltaRem').onclick=()=>openAlta('ingreso');
   if($('btnExpRem')) $('btnExpRem').onclick=()=>exportar('remitos', flat);
+  document.querySelectorAll('[data-rec-toggle]').forEach(h=>h.onclick=()=>{ const id=h.getAttribute('data-rec-toggle'); const d=$(id); const ch=$('chev_'+id); const op=d.style.display==='none'; if(op && !d.dataset.built){ d.innerHTML=recDetailHtml(REC[id]); d.dataset.built='1'; } d.style.display=op?'block':'none'; if(ch)ch.textContent=op?'▾':'▸'; });
   bindDeletes();
+}
+function recDetailHtml(lins){
+  const rows=(lins||[]).map(l=>'<tr><td>'+esc(l.rubro||'')+'</td><td>'+esc(l.disciplina||'')+'</td><td>'+esc(l.tipo||'')+'</td><td class="num big">'+fmtInt(l.cantidad)+'</td><td class="num mono">'+fmtMoney(l.costo_unitario)+'</td><td class="num mono">'+fmtMoney(num(l.cantidad)*num(l.costo_unitario))+'</td></tr>').join('');
+  return '<div class="tbl-wrap"><table style="min-width:480px"><thead><tr><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Costo U.</th><th class="num">Importe</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 
 /* ---------- PEDIDOS ---------- */
@@ -488,7 +502,7 @@ function bindDeletes(){
     if(!confirm('¿Eliminar la OC '+nro+' y todas sus líneas? No se puede deshacer.')) return;
     b.disabled=true; try{ await borrarPedido(nro); refreshDims(); render(); toast('OC '+nro+' eliminada','ok'); }catch(e){ b.disabled=false; toast('No se pudo eliminar: '+e.message,'bad'); }
   });
-  document.querySelectorAll('[data-del-remito]').forEach(b=>b.onclick=async()=>{
+  document.querySelectorAll('[data-del-remito]').forEach(b=>b.onclick=async(e)=>{ if(e)e.stopPropagation();
     const nro=b.getAttribute('data-del-remito');
     if(!confirm('¿Eliminar el remito '+nro+' completo? No se puede deshacer.')) return;
     b.disabled=true; try{ await borrarRemito(nro); refreshDims(); render(); toast('Remito '+nro+' eliminado','ok'); }catch(e){ b.disabled=false; toast('No se pudo eliminar: '+e.message,'bad'); }
