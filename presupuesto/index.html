@@ -405,9 +405,10 @@ td.edit{padding:4px 8px}
         <div class="param">
           <label>Modo</label>
           <select id="imp-modo">
-            <option value="rep">Reemplazar todo lo cargado</option>
-            <option value="sum">Sumar a lo existente</option>
+            <option value="merge">Agregar / actualizar meses (recomendado)</option>
+            <option value="rep">Reemplazar todo desde cero</option>
           </select>
+          <div class="hint"><b>Agregar/actualizar</b>: suma o pisa solo los meses del archivo y conserva el resto (para la carga mes a mes). <b>Reemplazar</b>: borra todo y carga de cero.</div>
         </div>
         <button class="btn btn-red" id="imp-go" style="width:100%;justify-content:center">Importar ventas</button>
       </div>
@@ -469,7 +470,13 @@ function nextMonth(ym){ if(!/^\d{4}-\d{2}$/.test(ym||'')) return ''; let [y,m]=y
 function mesesConDatos(){ const s=new Set(); lineas.forEach(l=>Object.keys(l.ventas||{}).forEach(k=>{ const v=l.ventas[k]||{}; if((v.imp||0)>0||(v.u||0)>0) s.add(k); })); return [...s].sort(); }
 function baseMonth(){ return prevMonth(params.mesObjetivo); }              // el presupuesto de X usa las ventas de X-1
 function ventasBase(l){ const v=(l.ventas||{})[baseMonth()]||{}; return { imp:+v.imp||0, u:+v.u||0 }; }
-function resolverMesObjetivo(){ if(params.mesObjetivo && /^\d{4}-\d{2}$/.test(params.mesObjetivo)) return; const ms=mesesConDatos(); params.mesObjetivo = ms.length ? ms[ms.length-1] : ''; }
+function mesActual(){ return new Date().toISOString().slice(0,7); }
+// Por defecto se presupuesta el MES ACTUAL (base = mes anterior). Avanza solo cada mes;
+// si elegiste a mano un mes adelante, se respeta.
+function resolverMesObjetivo(){
+  const cur = mesActual();
+  if(!/^\d{4}-\d{2}$/.test(params.mesObjetivo||'') || params.mesObjetivo < cur) params.mesObjetivo = cur;
+}
 function normalizar(d){
   if(Array.isArray(d)) return { lineas: d.map(migrarLinea), params: {...DEFAULT_PARAMS} };
   if(d && typeof d==='object') return { lineas: (d.lineas||[]).map(migrarLinea), params: {...DEFAULT_PARAMS, ...(d.params||{})} };
@@ -895,17 +902,32 @@ function recontarImport(){
   const n = construirLineas().length;
   $('imp-count').innerHTML = `Se van a cargar <b>${n}</b> líneas (marca·rubro·género·disciplina·tipo), cada una con sus <b>${IMP.meses.length}</b> meses. El Panel las agrupa por marca.`;
 }
+const lineaKey = o => [o.marca, o.rubro, o.genero, o.disciplina, o.tipo].join('␟');
 async function ejecutarImport(){
   if(!IMP) return;
-  const modo=$('imp-modo').value;
-  const nuevas = construirLineas().map(a=>migrarLinea({ id:uid(), ...a }));
+  const modo=$('imp-modo').value;               // 'merge' | 'rep'
+  const nuevas = construirLineas();
   if(!nuevas.length){ alert('No encontré ventas en el archivo.'); return; }
-  lineas = (modo==='sum') ? lineas.concat(nuevas) : nuevas;
-  // Presupuestar el último mes con datos (base = mes anterior). Ej: datos ene→jul → objetivo julio, base junio.
-  const ms = mesesConDatos(); if(ms.length) params.mesObjetivo = ms[ms.length-1];
+  let add=0, upd=0;
+  if(modo==='rep'){
+    lineas = nuevas.map(a=>migrarLinea({ id:uid(), ...a })); add=nuevas.length;
+  } else {
+    // MERGE: por cada línea del archivo, pisa/agrega solo SUS meses y conserva el resto.
+    const byKey={}; lineas.forEach(l=>{ byKey[lineaKey(l)]=l; });
+    nuevas.forEach(a=>{
+      let l = byKey[lineaKey(a)];
+      if(!l){ l = migrarLinea({ id:uid(), marca:a.marca, rubro:a.rubro, genero:a.genero, disciplina:a.disciplina, tipo:a.tipo, ventas:{} }); lineas.push(l); byKey[lineaKey(l)]=l; add++; }
+      else upd++;
+      Object.keys(a.ventas).forEach(ym=>{ l.ventas[ym] = { imp:a.ventas[ym].imp, u:a.ventas[ym].u }; });
+    });
+  }
+  resolverMesObjetivo();     // mes objetivo = mes actual (o el que hayas elegido adelante)
   await Store.save(); renderAll();
   $('impModal').classList.remove('show');
-  alert(`Importadas ${nuevas.length} líneas con toda la serie (${IMP.meses.length} meses). Presupuestando ${perLabel(params.mesObjetivo)} en base a ${perLabel(baseMonth())}.`);
+  const mesesTxt = IMP.meses.map(m=>mesLabelXlsx(m.key)).join(', ');
+  alert(modo==='rep'
+    ? `Reemplazado: ${add} líneas cargadas (meses: ${mesesTxt}).`
+    : `Actualizado: ${upd} líneas al día + ${add} nuevas. Meses tocados: ${mesesTxt}. El resto de los meses se conservó.`);
 }
 
 /* ── Eventos ── */
