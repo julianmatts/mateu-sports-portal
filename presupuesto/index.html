@@ -230,12 +230,22 @@ td.edit{padding:4px 8px}
 .mc-var{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:14px}
 .marca-detail{display:none;border-top:1px solid var(--border);background:#fafbfe;padding:6px 10px 12px;overflow-x:auto}
 .marca-card.open .marca-detail{display:block}
-.det-table{width:100%;border-collapse:collapse;min-width:840px}
-.det-table th{font-family:var(--font-c);font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);font-weight:700;text-align:left;padding:8px 10px;white-space:nowrap}
-.det-table td{padding:7px 10px;border-top:1px solid var(--border);font-size:13.5px;color:var(--navy);vertical-align:top}
-.det-table .num{text-align:right;font-variant-numeric:tabular-nums}
-.det-table .ctr{text-align:center}
-.det-table .sug{font-weight:700}
+/* Drill-down: Disciplina → (click) → Tipo de producto */
+.dd-head,.dd-disc,.dd-tipo{display:grid;grid-template-columns:minmax(190px,1fr) 120px 80px 130px 120px 80px 150px;gap:8px;align-items:center;padding:8px 12px;min-width:840px}
+.dd-head{font-family:var(--font-c);font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)}
+.dd-disc{border-top:1px solid var(--border);cursor:pointer;font-size:14px}
+.dd-disc-card:first-child .dd-disc{border-top:none}
+.dd-disc:hover{background:#f2f5fb}
+.dd-name{font-weight:600;color:var(--navy);display:flex;align-items:center;gap:7px;min-width:0}
+.dd-caret{font-size:11px;color:var(--muted);transition:transform .15s;flex-shrink:0}
+.dd-disc-card.open .dd-caret{transform:rotate(90deg)}
+.dd-num{text-align:right;font-variant-numeric:tabular-nums}
+.dd-ctr{text-align:center}
+.dd-num.sug{font-weight:700}
+.dd-tipos{display:none}
+.dd-disc-card.open .dd-tipos{display:block}
+.dd-tipo{background:#fafbfe;border-top:1px solid #eef1f8;font-size:13px;color:var(--navy)}
+.dd-tipo .dd-name{font-weight:400;padding-left:24px}
 .pq{display:inline-block;font-family:var(--font-c);font-size:11px;font-weight:700;padding:2px 8px;border-radius:12px;white-space:nowrap}
 .pq.ms-sobrestock{background:#fdeaea;color:#b3261e}.pq.ms-faltante{background:#e7f5ec;color:#1e7a3a}.pq.ms-ok{background:#eaf1fb;color:#1a56b0}.pq.ms-sindato{background:#eef1f6;color:#8895ab}
 @media(max-width:720px){.marca-head,.marca-row{grid-template-columns:1fr 120px}.marca-head div:nth-child(2),.marca-row .mc-ventas{display:none}.marca-head div:nth-child(4),.marca-row .mc-var{display:none}}
@@ -385,9 +395,13 @@ td.edit{padding:4px 8px}
 
       <div class="cfg-fields" id="cfg-f-otb">
         <div class="param">
-          <label>Meses de stock objetivo</label>
-          <input type="number" id="c-mesesobj" step="0.5" min="0">
-          <div class="hint">Cuántos meses de stock querés tener de cada marca. <b>0 = automático</b> (rango sano por rubro de Gestión de Stock). Compra = venta mensual × (1 + objetivo − meses actuales), con piso en 0.</div>
+          <label>Meses de stock objetivo por rubro</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+            <div><div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--navy)">Calzado</div><input type="number" id="c-mo-cal" step="0.5" min="0" placeholder="auto"></div>
+            <div><div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--navy)">Indumentaria</div><input type="number" id="c-mo-ind" step="0.5" min="0" placeholder="auto"></div>
+            <div><div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--navy)">Accesorios</div><input type="number" id="c-mo-acc" step="0.5" min="0" placeholder="auto"></div>
+          </div>
+          <div class="hint">Cuántos meses de stock querés tener de cada rubro. <b>Vacío / 0 = automático</b> (rango sano del rubro según Gestión de Stock). Compra = venta mensual × (1 + objetivo − meses actuales), con piso en 0.</div>
         </div>
       </div>
       <div class="cfg-fields" id="cfg-f-pct">
@@ -450,7 +464,7 @@ const ROLE_LABEL = { admin:'Administrador', supervisor:'Supervisor', sucursal:'S
 const FIREBASE_URL = 'https://presupuesto-mateu-default-rtdb.firebaseio.com';
 const FB_PATH = '/presupuesto.json';
 const KEY = 'mateu:presupuesto:compras:v2';
-const DEFAULT_PARAMS = { metodo:'otb', pctCompra:60, crecimiento:15, factorSobre:0.7, factorFalta:1.3, mesesObjetivo:0, mesObjetivo:'' };
+const DEFAULT_PARAMS = { metodo:'otb', pctCompra:60, crecimiento:15, factorSobre:0.7, factorFalta:1.3, mesesObjetivo:0, mesObjetivo:'', mesesObjRubro:{} };
 
 const localStore = {
   get(){ try{ const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; }catch(e){ return null; } },
@@ -598,10 +612,14 @@ function evalStock(marca, rubro){
   if(ms.meses < low)  return { factor:+params.factorFalta||1, meses:ms.meses, status:'faltante' };
   return { factor:1, meses:ms.meses, status:'ok' };
 }
-// Meses de stock objetivo por rubro (para OTB). 0 = automático = punto medio del rango sano.
+// Meses de stock objetivo por rubro (para OTB): valor propio del rubro, si no el global
+// viejo, si no automático (punto medio del rango sano de Gestión de Stock).
 function mesesObjetivoRubro(rubro){
-  const mo = +params.mesesObjetivo||0;
-  if(mo>0) return mo;
+  const R = normRubro(rubro);
+  const per = params.mesesObjRubro ? +params.mesesObjRubro[R] : 0;
+  if(per>0) return per;
+  const glob = +params.mesesObjetivo||0;
+  if(glob>0) return glob;
   const [low,high] = thresholdsRubro(rubro);
   return (low+high)/2;
 }
@@ -688,7 +706,10 @@ function renderParams(){
   $('btn-cfg2').onclick = openCfg;
   // sincronizo los campos del modal con params
   $('cfg-metodo').value = m;
-  $('c-mesesobj').value = params.mesesObjetivo;
+  const mor = params.mesesObjRubro||{};
+  $('c-mo-cal').value = mor.CALZADO || '';
+  $('c-mo-ind').value = mor.INDUMENTARIA || '';
+  $('c-mo-acc').value = mor.ACCESORIOS || '';
   $('c-pct').value = params.pctCompra;
   $('c-crec').value = params.crecimiento;
   $('c-sobre').value = params.factorSobre;
@@ -703,7 +724,8 @@ function openCfg(){ $('cfgModal').classList.add('show'); }
 function closeCfg(){ $('cfgModal').classList.remove('show'); }
 async function onCfgChange(){
   params.metodo = $('cfg-metodo').value;
-  params.mesesObjetivo = +$('c-mesesobj').value||0;
+  params.mesesObjRubro = { CALZADO:+$('c-mo-cal').value||0, INDUMENTARIA:+$('c-mo-ind').value||0, ACCESORIOS:+$('c-mo-acc').value||0 };
+  params.mesesObjetivo = 0;   // ya no se usa el global; queda el por-rubro
   params.pctCompra = +$('c-pct').value||0;
   params.crecimiento = +$('c-crec').value||0;
   params.factorSobre = +$('c-sobre').value||0;
@@ -791,7 +813,29 @@ function porQueLinea(l){
   if(ev.status==='faltante') return { txt:`corto (${m}m) → reforzar`, cls:'ms-faltante' };
   return { txt:`en rango (${m}m)`, cls:'ms-ok' };
 }
-// Panel por marca con drill-down al detalle (rubro/disciplina/género/tipo).
+// Agrupa items [{l,s}] por un campo de la línea, sumando ventas/presupuesto y
+// calculando meses de stock + "por qué" según el rubro dominante del grupo.
+function agruparPor(items, campo){
+  const map={};
+  items.forEach(x=>{ const k=x.l[campo]||'—'; if(!map[k])map[k]={key:k,items:[],ventas:0,ventasU:0,pres:0,presU:0}; const g=map[k]; g.items.push(x); g.ventas+=x.s.ventas; g.ventasU+=x.s.ventasU; g.pres+=x.s.$; g.presU+=x.s.U; });
+  return Object.values(map).map(g=>{
+    const byR={}; g.items.forEach(x=>byR[x.l.rubro]=(byR[x.l.rubro]||0)+x.s.ventas);
+    const domR = Object.entries(byR).sort((a,b)=>b[1]-a[1])[0]?.[0] || (g.items[0]&&g.items[0].l.rubro);
+    g.ev = evalStock(g.items[0].l.marca, domR);
+    g.pq = porQueLinea({ marca:g.items[0].l.marca, rubro:domR });
+    return g;
+  }).sort((a,b)=>b.pres-a.pres);
+}
+function ddRow(cls, nombre, g, caret){
+  return `<div class="${cls}">
+    <div class="dd-name">${caret?'<span class="dd-caret">▸</span>':''}${esc(nombre)}</div>
+    <div class="dd-num">${ars(g.ventas)}</div><div class="dd-num">${nu(g.ventasU)}</div>
+    <div class="dd-ctr">${msBadge(g.ev)}</div>
+    <div class="dd-num sug">${ars(g.pres)}</div><div class="dd-num">${nu(g.presU)}</div>
+    <div><span class="pq ${g.pq.cls}">${g.pq.txt}</span></div>
+  </div>`;
+}
+// Panel por marca con drill-down: Marca → Disciplina → (click) → Tipo de producto.
 function renderPanel(){
   const marcas = {};
   lineasVisibles().forEach(l=>{
@@ -807,14 +851,9 @@ function renderPanel(){
   if(!arr.length){ $('panel-marcas').innerHTML = `<div class="mos-empty">Sin ventas en <b>${perLabel(bm)}</b>. Importá el Excel en <b>Datos</b> o cambiá el mes a presupuestar.</div>`; return; }
   $('panel-marcas').innerHTML = arr.map(m=>{
     const varr = m.ventas ? (m.pres/m.ventas-1)*100 : 0;
-    const det = m.lineas.slice().sort((a,b)=>b.s.$-a.s.$).map(x=>{
-      const pq = porQueLinea(x.l);
-      return `<tr>
-        <td>${esc(x.l.rubro)}</td><td>${esc(x.l.genero)}</td><td>${esc(x.l.disciplina||'—')}</td><td>${esc(x.l.tipo)}</td>
-        <td class="num">${ars(x.s.ventas)}</td><td class="num">${nu(x.s.ventasU)}</td>
-        <td class="ctr">${msBadge(x.s.ev)}</td>
-        <td class="num sug">${ars(x.s.$)}</td><td class="num">${nu(x.s.U)}</td>
-        <td><span class="pq ${pq.cls}">${pq.txt}</span></td></tr>`;
+    const discs = agruparPor(m.lineas, 'disciplina').map(dg=>{
+      const tipos = agruparPor(dg.items, 'tipo').map(tg=>ddRow('dd-tipo', tg.key, tg, false)).join('');
+      return `<div class="dd-disc-card">${ddRow('dd-disc', dg.key, dg, true)}<div class="dd-tipos">${tipos}</div></div>`;
     }).join('');
     return `<div class="marca-card">
       <div class="marca-row">
@@ -824,15 +863,17 @@ function renderPanel(){
         <div class="mc-var" style="color:${varr>=0?'var(--green)':'var(--amber)'}">${varr>=0?'+':''}${varr.toFixed(0)}%</div>
       </div>
       <div class="marca-detail">
-        <table class="det-table"><thead><tr>
-          <th>Rubro</th><th>Género</th><th>Disciplina</th><th>Tipo</th>
-          <th class="num">Ventas $</th><th class="num">Ventas U</th><th class="ctr">Meses stock</th>
-          <th class="num">Presup $</th><th class="num">Presup U</th><th>Por qué</th>
-        </tr></thead><tbody>${det}</tbody></table>
+        <div class="dd-head">
+          <div>Disciplina / Tipo de producto</div>
+          <div class="dd-num">Ventas $</div><div class="dd-num">Ventas U</div><div class="dd-ctr">Meses stock</div>
+          <div class="dd-num">Presup $</div><div class="dd-num">Presup U</div><div>Por qué</div>
+        </div>
+        ${discs}
       </div>
     </div>`;
   }).join('');
   $('panel-marcas').querySelectorAll('.marca-row').forEach(r=>r.onclick=()=>r.closest('.marca-card').classList.toggle('open'));
+  $('panel-marcas').querySelectorAll('.dd-disc').forEach(r=>r.onclick=e=>{ e.stopPropagation(); r.closest('.dd-disc-card').classList.toggle('open'); });
 }
 function renderBars(){
   const map={};
@@ -1000,7 +1041,7 @@ $('btnConfig').onclick = openCfg;
 $('cfgClose').onclick = closeCfg;
 $('cfgModal').addEventListener('click', e=>{ if(e.target.id==='cfgModal') closeCfg(); });
 $('cfg-metodo').addEventListener('change', onCfgChange);
-['c-mesesobj','c-pct','c-crec','c-sobre','c-falta'].forEach(id=>$(id).addEventListener('change', onCfgChange));
+['c-mo-cal','c-mo-ind','c-mo-acc','c-pct','c-crec','c-sobre','c-falta'].forEach(id=>$(id).addEventListener('change', onCfgChange));
 $('tbody').addEventListener('click',e=>{const id=e.target.dataset.del; if(id&&confirm('¿Borrar esta línea?')) eliminar(id);});
 $('tbody').addEventListener('change',e=>{const inp=e.target;const tr=inp.closest('tr');if(tr&&inp.dataset.c) editarCampo(tr.dataset.id,inp.dataset.c,inp.value);});
 $('flt-marca').onchange=renderTabla;
