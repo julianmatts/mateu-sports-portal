@@ -529,8 +529,32 @@ let params = {...DEFAULT_PARAMS};
 let groupBy = 'marca';
 // Filtros del panel (combinables entre sí): rubros y géneros seleccionados. Vacío = todos.
 const fRubros = new Set(), fGeneros = new Set();
+// "Solo marcas del módulo Asignación de Marcas" (default ON).
+let soloAsignadas = true;
+// Lista de respaldo (catálogo de asignacion de marcas al 18/07/2026). Se completa/actualiza
+// en vivo con cargarMarcasModulo() (catálogo + asignadas). Match por nombre normalizado.
+const MARCAS_MODULO_FALLBACK = ['47 Street','Addnice','Adidas','Arena','Asics','Atomik','Aurelius','Babolat','Champion','Columbia','Converse','Crocs','DC Shoes','Fila','Folau','Footy','Gilbert','Givova','Havaianas','Head','Kappa','Le Coq Sportif','Mateu Sports','Mens Sana','Montagne','New Balance','Nike','Olympikus','ON','Puma','Quiksilver','Reebok','Revolver','Roxy','Ruge','Rush Town','Salomon','Saucony','Skechers','Speed','Sport Complements','Team Gear','Timberland','Topper','Umbro','Under Armour','Vans'];
+let MARCAS_MODULO = new Set(MARCAS_MODULO_FALLBACK.map(m=>m.toLowerCase().trim()));
+// Trae la lista real del módulo Asignación de Marcas (catálogo del código + marcas asignadas en Firebase).
+async function cargarMarcasModulo(){
+  const set = new Set(MARCAS_MODULO_FALLBACK.map(m=>normMarca(m)));
+  try{
+    const html = await (await fetch('../marcas/index.html')).text();
+    const blk = html.match(/const CATALOGO_RUBRO\s*=\s*\{[\s\S]*?\n\};/);
+    if(blk) [...blk[0].matchAll(/n:\s*'([^']+)'/g)].forEach(x=>set.add(normMarca(x[1])));
+  }catch(e){}
+  try{
+    const j = await (await fetch('https://asignacion-marcas-mateu-default-rtdb.firebaseio.com/asignacion_marcas.json')).json();
+    const data = j && (j.data || j);
+    Object.values(data||{}).forEach(c=>(c.sucursales||[]).forEach(s=>(s.brands||[]).forEach(b=>{ if(b&&b.n) set.add(normMarca(b.n)); })));
+  }catch(e){}
+  MARCAS_MODULO = set;
+}
 function lineasVisibles(){
-  return lineas.filter(l => (fRubros.size===0 || fRubros.has(l.rubro)) && (fGeneros.size===0 || fGeneros.has(l.genero)));
+  return lineas.filter(l =>
+    (fRubros.size===0 || fRubros.has(l.rubro)) &&
+    (fGeneros.size===0 || fGeneros.has(l.genero)) &&
+    (!soloAsignadas || MARCAS_MODULO.has(normMarca(l.marca))));
 }
 
 /* ── Utils ── */
@@ -839,12 +863,15 @@ function renderFiltros(){
     `<div class="pf-group"><span class="pf-lab">Rubro</span>${btns(rubros,fRubros,'r')}</div>`+
     `<div class="pf-sep"></div>`+
     `<div class="pf-group"><span class="pf-lab">Género</span>${btns(generos,fGeneros,'g')}</div>`+
+    `<div class="pf-sep"></div>`+
+    `<button class="pf-btn ${soloAsignadas?'on':''}" id="pf-asig" title="Mostrar solo las marcas del módulo Asignación de Marcas">${soloAsignadas?'✓ ':''}Solo Asignación de Marcas</button>`+
     (hayFiltro?`<button class="pf-clear" id="pf-clear">✕ Limpiar</button>`:'');
   const refrescar=()=>{ renderFiltros(); renderKPIs(); renderPanel(); renderBars(); };
-  $('panelFiltros').querySelectorAll('.pf-btn').forEach(b=>b.onclick=()=>{
+  $('panelFiltros').querySelectorAll('.pf-btn[data-t]').forEach(b=>b.onclick=()=>{
     const set = b.dataset.t==='r'?fRubros:fGeneros, v=b.dataset.v;
     set.has(v)?set.delete(v):set.add(v); refrescar();
   });
+  $('pf-asig').onclick=()=>{ soloAsignadas=!soloAsignadas; refrescar(); };
   const clr=$('pf-clear'); if(clr) clr.onclick=()=>{ fRubros.clear(); fGeneros.clear(); refrescar(); };
 }
 
@@ -1010,7 +1037,9 @@ $('seg-group').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   lineas = state.lineas; params = state.params;
   resolverMesObjetivo();     // si no hay mes objetivo, presupuestar el último mes con datos
   renderParams();
-  renderAll();
+  renderAll();               // primer render con la lista de respaldo de marcas
+  // traer la lista real del módulo Asignación de Marcas y re-renderizar
+  cargarMarcasModulo().then(()=>{ renderFiltros(); renderKPIs(); renderPanel(); renderBars(); });
 })();
 </script>
 </body>
