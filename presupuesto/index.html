@@ -290,8 +290,8 @@ td.edit{padding:4px 8px}
     </div>
 
     <div class="toolbar">
-      <select class="filter-sel" id="flt-per"><option value="">Todos los períodos</option></select>
       <select class="filter-sel" id="flt-marca"><option value="">Todas las marcas</option></select>
+      <div class="mb-stock" id="datosHint"></div>
       <div class="spacer"></div>
       <label class="btn btn-red" style="cursor:pointer">⬆ Importar ventas (Excel)<input id="impXlsx" type="file" accept=".xlsx,.xls" hidden></label>
       <button class="btn btn-ghost" id="btn-demo">Datos de ejemplo</button>
@@ -303,10 +303,10 @@ td.edit{padding:4px 8px}
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Marca</th><th>Rubro</th><th>Género</th><th>Disciplina</th><th>Tipo</th><th>Período</th>
-          <th class="num">Ventas $</th><th class="num">Ventas U</th>
+          <th>Marca</th><th>Rubro</th><th>Género</th><th>Disciplina</th><th>Tipo</th>
+          <th class="num" id="th-vbase">Ventas $</th><th class="num">Ventas U</th>
           <th class="ctr">Meses stock</th>
-          <th class="num">Sugerido $</th><th class="num">Presupuesto $</th><th class="num">Presup. U</th><th></th>
+          <th class="num">Sugerido $</th><th class="num">Sugerido U</th><th></th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -322,7 +322,8 @@ td.edit{padding:4px 8px}
         <h1>Panel por marca</h1>
       </div>
       <div class="hero-per">
-        <select class="filter-sel" id="vis-per"><option value="">Todos los períodos</option></select>
+        <label style="font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted-light);margin-right:2px">Mes a presupuestar</label>
+        <select class="filter-sel" id="mesObj"></select>
       </div>
     </div>
 
@@ -400,12 +401,7 @@ td.edit{padding:4px 8px}
     <div class="modal-body">
       <div class="cfg-desc" id="imp-info">—</div>
       <div class="cfg-fields show" style="gap:16px">
-        <div class="param">
-          <label>Mes base</label>
-          <select id="imp-mes"></select>
-          <div class="hint">Las ventas de ese mes son la base para el presupuesto del mes que viene. "Promedio" = media de todos los meses del archivo.</div>
-          <div class="hint" id="imp-count" style="margin-top:8px;color:var(--navy);font-weight:600">—</div>
-        </div>
+        <div class="hint" id="imp-count" style="color:var(--navy);font-weight:600">—</div>
         <div class="param">
           <label>Modo</label>
           <select id="imp-modo">
@@ -441,28 +437,39 @@ const ROLE_LABEL = { admin:'Administrador', supervisor:'Supervisor', sucursal:'S
 const FIREBASE_URL = 'https://presupuesto-mateu-default-rtdb.firebaseio.com';
 const FB_PATH = '/presupuesto.json';
 const KEY = 'mateu:presupuesto:compras:v2';
-const DEFAULT_PARAMS = { metodo:'otb', pctCompra:60, crecimiento:15, factorSobre:0.7, factorFalta:1.3, mesesObjetivo:0 };
+const DEFAULT_PARAMS = { metodo:'otb', pctCompra:60, crecimiento:15, factorSobre:0.7, factorFalta:1.3, mesesObjetivo:0, mesObjetivo:'' };
 
 const localStore = {
   get(){ try{ const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; }catch(e){ return null; } },
   set(v){ try{ localStorage.setItem(KEY, JSON.stringify(v)); }catch(e){} }
 };
+// Cada línea guarda su SERIE MENSUAL de ventas: ventas = { "YYYY-MM": {imp, u} }.
 function migrarLinea(l){
   l = l || {};
+  let ventas = {};
+  if(l.ventas && typeof l.ventas === 'object' && !Array.isArray(l.ventas)){
+    Object.keys(l.ventas).forEach(k=>{ const v=l.ventas[k]||{}; ventas[k]={ imp:+v.imp||0, u:+v.u||0 }; });
+  } else if(l.periodo){
+    // esquema viejo (un mes suelto): ventas $/u en l.periodo
+    ventas[l.periodo] = { imp:+l.ventas||0, u:+l.ventasU||0 };
+  }
   return {
     id: l.id || uid(),
-    marca: l.marca || l.proveedor || '—',          // compat con esquema viejo
+    marca: l.marca || l.proveedor || '—',
     rubro: l.rubro || '—',
     genero: l.genero || '—',
     disciplina: l.disciplina || '—',
     tipo: l.tipo || l.categoria || '—',
-    periodo: l.periodo || '',
-    ventas: +l.ventas || 0,
-    ventasU: +l.ventasU || 0,
-    presupuesto: +l.presupuesto || +l.presupuestado || 0,
-    presupuestoU: +l.presupuestoU || 0
+    ventas
   };
 }
+/* ── Meses / base del presupuesto ── */
+function prevMonth(ym){ if(!/^\d{4}-\d{2}$/.test(ym||'')) return ''; let [y,m]=ym.split('-').map(Number); m--; if(m<1){m=12;y--;} return y+'-'+String(m).padStart(2,'0'); }
+function nextMonth(ym){ if(!/^\d{4}-\d{2}$/.test(ym||'')) return ''; let [y,m]=ym.split('-').map(Number); m++; if(m>12){m=1;y++;} return y+'-'+String(m).padStart(2,'0'); }
+function mesesConDatos(){ const s=new Set(); lineas.forEach(l=>Object.keys(l.ventas||{}).forEach(k=>{ const v=l.ventas[k]||{}; if((v.imp||0)>0||(v.u||0)>0) s.add(k); })); return [...s].sort(); }
+function baseMonth(){ return prevMonth(params.mesObjetivo); }              // el presupuesto de X usa las ventas de X-1
+function ventasBase(l){ const v=(l.ventas||{})[baseMonth()]||{}; return { imp:+v.imp||0, u:+v.u||0 }; }
+function resolverMesObjetivo(){ if(params.mesObjetivo && /^\d{4}-\d{2}$/.test(params.mesObjetivo)) return; const ms=mesesConDatos(); params.mesObjetivo = ms.length ? ms[ms.length-1] : ''; }
 function normalizar(d){
   if(Array.isArray(d)) return { lineas: d.map(migrarLinea), params: {...DEFAULT_PARAMS} };
   if(d && typeof d==='object') return { lineas: (d.lineas||[]).map(migrarLinea), params: {...DEFAULT_PARAMS, ...(d.params||{})} };
@@ -550,10 +557,11 @@ function mesesObjetivoRubro(rubro){
   const [low,high] = thresholdsRubro(rubro);
   return (low+high)/2;
 }
-// Sugerido según el método elegido (params.metodo). Devuelve $ y unidades.
+// Sugerido para el mes objetivo, en base a la venta del mes anterior + método.
 function sugeridoDe(l){
   const ev = evalStock(l.marca, l.rubro);   // meses actuales + status (para el badge)
-  const base$ = l.ventas||0, baseU = l.ventasU||0;
+  const vb = ventasBase(l);                  // ventas del mes base (mesObjetivo - 1)
+  const base$ = vb.imp, baseU = vb.u;
   let k = 1;                                 // multiplicador sobre la venta mensual
   if(params.metodo === 'pct'){
     k = (+params.pctCompra||0)/100;
@@ -564,7 +572,7 @@ function sugeridoDe(l){
   } else { // repos: reposición + crecimiento + factor por stock
     k = (1 + (+params.crecimiento||0)/100) * ev.factor;
   }
-  return { $:Math.round(base$*k), U:Math.round(baseU*k), ev };
+  return { $:Math.round(base$*k), U:Math.round(baseU*k), ev, ventas:base$, ventasU:baseU };
 }
 const STATUS_LABEL = { sobrestock:'Comprar menos', faltante:'Comprar más', ok:'En rango', 'sin-dato':'Sin dato' };
 function msBadge(ev){
@@ -575,35 +583,30 @@ function msBadge(ev){
   return `<span class="ms-badge ${cls}"><b>${m}</b> meses</span><span class="reco">${STATUS_LABEL[ev.status]}${extra}</span>`;
 }
 
-/* ── Alta ── */
+/* ── Alta manual (carga las ventas de un mes en la serie de la línea) ── */
 async function agregar(){
   const marca=$('f-marca').value.trim(), rubro=$('f-rubro').value.trim(), gen=$('f-gen').value.trim(),
         disc=$('f-disc').value.trim(), tipo=$('f-tipo').value.trim(), per=$('f-per').value,
         ventas=+$('f-ventas').value||0, ventasU=+$('f-ventasU').value||0;
   if(!marca){ $('f-marca').focus(); return; }
+  if(!per){ alert('Elegí el período (mes) de esas ventas.'); $('f-per').focus(); return; }
   const limpiar=()=>{ ['f-disc','f-tipo','f-ventas','f-ventasU'].forEach(i=>$(i).value=''); $('f-marca').focus(); };
-  const dup = lineas.find(l => normMarca(l.marca)===normMarca(marca) && (l.rubro||'—')===(rubro||'—') &&
-    (l.genero||'—')===(gen||'—') && (l.disciplina||'—')===(disc||'—') && (l.tipo||'—')===(tipo||'—') && l.periodo===per);
-  if(dup){
-    const ok = confirm(`Ya existe una línea para "${marca}" · ${rubro||'—'} · ${gen||'—'} · ${disc||'—'} · ${tipo||'—'} en ${perLabel(per)}.\n\nAceptar: sumar estas ventas a la línea existente.\nCancelar: no agregar nada.`);
-    if(ok){ dup.ventas+=ventas; dup.ventasU+=ventasU; await Store.save(); limpiar(); renderAll(); }
-    return;
-  }
-  const l = {id:uid(),marca,rubro:rubro||'—',genero:gen||'—',disciplina:disc||'—',tipo:tipo||'—',periodo:per,ventas,ventasU,presupuesto:0,presupuestoU:0};
-  const sug = sugeridoDe(l); l.presupuesto=sug.$; l.presupuestoU=sug.U;   // arranca en el sugerido
-  lineas.push(l);
+  let l = lineas.find(x => normMarca(x.marca)===normMarca(marca) && (x.rubro||'—')===(rubro||'—') &&
+    (x.genero||'—')===(gen||'—') && (x.disciplina||'—')===(disc||'—') && (x.tipo||'—')===(tipo||'—'));
+  if(!l){ l = {id:uid(),marca,rubro:rubro||'—',genero:gen||'—',disciplina:disc||'—',tipo:tipo||'—',ventas:{}}; lineas.push(l); }
+  const cur = l.ventas[per] || {imp:0,u:0};
+  l.ventas[per] = { imp:cur.imp+ventas, u:cur.u+ventasU };
   await Store.save(); limpiar(); renderAll();
 }
 async function eliminar(id){ lineas = lineas.filter(l=>l.id!==id); await Store.save(); renderAll(); }
 async function editarCampo(id, campo, valor){
   const l = lineas.find(x=>x.id===id); if(!l) return;
-  l[campo] = ['ventas','ventasU','presupuesto','presupuestoU'].includes(campo) ? (+valor||0) : valor;
-  await Store.save(); renderAll();
-}
-async function aplicarSugeridos(){
-  if(!lineas.length) return;
-  if(!confirm('Copiar el presupuesto sugerido a la columna Presupuesto de todas las líneas? (podés editar después)')) return;
-  lineas.forEach(l=>{ const s=sugeridoDe(l); l.presupuesto=s.$; l.presupuestoU=s.U; });
+  if(campo==='vbimp' || campo==='vbu'){
+    const bm = baseMonth(); if(!bm) return;
+    const v = l.ventas[bm] || {imp:0,u:0};
+    if(campo==='vbimp') v.imp=+valor||0; else v.u=+valor||0;
+    l.ventas[bm]=v;
+  } else { l[campo]=valor; }
   await Store.save(); renderAll();
 }
 
@@ -631,11 +634,9 @@ function renderParams(){
       <div class="mb-desc">${esc(descMetodo(m))}</div>
     </div>
     <div class="mb-actions">
-      <button class="btn btn-navy" id="btn-aplicar" title="Copiar el sugerido a la columna Presupuesto de cada línea">⟳ Aplicar sugeridos</button>
-      <button class="btn btn-ghost" id="btn-cfg2">⚙ Configurar</button>
+      <button class="btn btn-navy" id="btn-cfg2">⚙ Configurar método</button>
       <div class="mb-stock">${stockTxt}</div>
     </div>`;
-  $('btn-aplicar').onclick = aplicarSugeridos;
   $('btn-cfg2').onclick = openCfg;
   // sincronizo los campos del modal con params
   $('cfg-metodo').value = m;
@@ -665,16 +666,19 @@ async function onCfgChange(){
 
 /* ── Filtros / selects ── */
 function lineasFiltradas(){
-  const fp=$('flt-per').value, fm=$('flt-marca').value;
-  return lineas.filter(l=>(!fp||l.periodo===fp)&&(!fm||l.marca===fm));
+  const fm=$('flt-marca').value;
+  return lineas.filter(l=>(!fm||l.marca===fm));
 }
 function renderSelectores(){
-  const pers=[...new Set(lineas.map(l=>l.periodo).filter(Boolean))].sort().reverse();
   const marcas=[...new Set(lineas.map(l=>l.marca))].sort();
   const tipos=[...new Set(lineas.map(l=>l.tipo).filter(t=>t&&t!=='—'))].sort();
   const discs=[...new Set(lineas.map(l=>l.disciplina).filter(t=>t&&t!=='—'))].sort();
-  fillSel('flt-per', pers.map(p=>[p,perLabel(p)]), 'Todos los períodos');
-  fillSel('vis-per', pers.map(p=>[p,perLabel(p)]), 'Todos los períodos');
+  // Mes a presupuestar: los meses con datos + el siguiente al último (para presupuestar el mes que viene).
+  const md = mesesConDatos();
+  const opts = md.slice();
+  if(md.length){ const nx = nextMonth(md[md.length-1]); if(nx && !opts.includes(nx)) opts.push(nx); }
+  fillSel('mesObj', opts.map(m=>[m, `${perLabel(m)} — en base a ${perLabel(prevMonth(m))}`]), null);
+  if(params.mesObjetivo) $('mesObj').value = params.mesObjetivo;
   fillSel('flt-marca', marcas.map(p=>[p,p]), 'Todas las marcas');
   $('dl-tipo').innerHTML = tipos.map(t=>`<option value="${esc(t)}">`).join('');
   $('dl-disc').innerHTML = discs.map(t=>`<option value="${esc(t)}">`).join('');
@@ -685,51 +689,49 @@ function renderSelectores(){
 }
 function fillSel(id, pairs, allLabel){
   const el=$(id); const cur=el.value;
-  el.innerHTML=`<option value="">${allLabel}</option>`+pairs.map(([v,l])=>`<option value="${esc(v)}">${esc(l)}</option>`).join('');
+  el.innerHTML=(allLabel!=null?`<option value="">${allLabel}</option>`:'')+pairs.map(([v,l])=>`<option value="${esc(v)}">${esc(l)}</option>`).join('');
   if([...el.options].some(o=>o.value===cur)) el.value=cur;
 }
 
 /* ── Tabla ── */
 function renderTabla(){
-  const tb=$('tbody'); const rows=lineasFiltradas();
+  const tb=$('tbody'); const rows=lineasFiltradas(); const bm=baseMonth();
+  if($('th-vbase')) $('th-vbase').textContent = `Ventas ${perLabel(bm)} $`;
+  if($('datosHint')) $('datosHint').textContent = `Editás las ventas de ${perLabel(bm)} (mes base del presupuesto de ${perLabel(params.mesObjetivo)}).`;
   if(!rows.length){
-    tb.innerHTML=`<tr><td colspan="13" class="empty"><b>Sin líneas cargadas</b>Importá tu Excel de ventas (botón arriba) o cargá una línea a mano.</td></tr>`;
+    tb.innerHTML=`<tr><td colspan="11" class="empty"><b>Sin líneas cargadas</b>Importá tu Excel de ventas (botón arriba) o cargá una línea a mano.</td></tr>`;
     return;
   }
   tb.innerHTML = rows.map(l=>{
-    const sug = sugeridoDe(l);
+    const sug = sugeridoDe(l); const vb = ventasBase(l);
     return `<tr data-id="${l.id}">
       <td class="edit"><input class="cell-in" data-c="marca" value="${esc(l.marca)}" list="dl-marca"></td>
       <td class="edit"><input class="cell-in" data-c="rubro" value="${esc(l.rubro)}" list="dl-rubro"></td>
       <td class="edit"><input class="cell-in" data-c="genero" value="${esc(l.genero)}" list="dl-gen"></td>
       <td class="edit"><input class="cell-in" data-c="disciplina" value="${esc(l.disciplina||'—')}" list="dl-disc"></td>
       <td class="edit"><input class="cell-in" data-c="tipo" value="${esc(l.tipo)}" list="dl-tipo"></td>
-      <td class="edit"><input class="cell-in" type="month" data-c="periodo" value="${l.periodo||''}"></td>
-      <td class="edit num"><input class="cell-in num" type="number" data-c="ventas" value="${l.ventas}"></td>
-      <td class="edit num"><input class="cell-in num" type="number" data-c="ventasU" value="${l.ventasU}"></td>
+      <td class="edit num"><input class="cell-in num" type="number" data-c="vbimp" value="${vb.imp}"></td>
+      <td class="edit num"><input class="cell-in num" type="number" data-c="vbu" value="${vb.u}"></td>
       <td class="ctr">${msBadge(sug.ev)}</td>
-      <td class="num sug" title="Sugerido en unidades: ${nu(sug.U)}">${ars(sug.$)}</td>
-      <td class="edit num"><input class="cell-in num" type="number" data-c="presupuesto" value="${l.presupuesto}"></td>
-      <td class="edit num"><input class="cell-in num" type="number" data-c="presupuestoU" value="${l.presupuestoU}"></td>
+      <td class="num sug">${ars(sug.$)}</td>
+      <td class="num">${nu(sug.U)}</td>
       <td class="num"><button class="row-act" data-del="${l.id}">Borrar</button></td>
     </tr>`;
   }).join('');
 }
 
-/* ── Análisis ── */
-function datosVis(){ const fp=$('vis-per').value; return lineas.filter(l=>!fp||l.periodo===fp); }
+/* ── Análisis (usa la venta del mes base + el sugerido en vivo) ── */
 function renderKPIs(){
-  const d=datosVis();
-  const ventas=d.reduce((s,l)=>s+l.ventas,0);
-  const pres=d.reduce((s,l)=>s+l.presupuesto,0);
-  const presU=d.reduce((s,l)=>s+l.presupuestoU,0);
+  let ventas=0, pres=0, presU=0; const mset=new Set();
+  lineas.forEach(l=>{ const s=sugeridoDe(l); ventas+=s.ventas; pres+=s.$; presU+=s.U; if(s.ventas>0||s.$>0) mset.add(l.marca); });
   const varr = ventas? (pres/ventas-1)*100 : 0;
-  const marcas=new Set(d.map(l=>l.marca)).size;
+  const bm=baseMonth(), tm=params.mesObjetivo;
+  const met=(typeof METODO_INFO!=='undefined'&&METODO_INFO[params.metodo])?METODO_INFO[params.metodo].name:params.metodo;
   $('kpis').innerHTML=`
-    <div class="kpi k-blue"><div class="lab">Ventas mes pasado</div><div class="val ${Math.abs(ventas)>=1e9?'small':''}">${ars(ventas)}</div><div class="foot">${d.length} línea${d.length!==1?'s':''} · ${marcas} marca${marcas!==1?'s':''}</div></div>
-    <div class="kpi"><div class="lab">Presupuesto compras</div><div class="val ${Math.abs(pres)>=1e9?'small':''}">${ars(pres)}</div><div class="foot">${nu(presU)} unidades</div></div>
-    <div class="kpi ${varr>=0?'k-green':'k-amber'}"><div class="lab">Variación vs. ventas</div><div class="val">${varr>=0?'+':''}${varr.toFixed(0)}%</div><div class="foot ${varr>=0?'pos':'neg'}">${varr>=0?'Compra > venta':'Compra < venta'}</div></div>
-    <div class="kpi"><div class="lab">Crecimiento objetivo</div><div class="val">+${(+params.crecimiento||0)}%</div><div class="foot">antes del ajuste por stock</div></div>`;
+    <div class="kpi k-blue"><div class="lab">Ventas ${esc(perLabel(bm))}</div><div class="val ${Math.abs(ventas)>=1e9?'small':''}">${ars(ventas)}</div><div class="foot">mes base · ${mset.size} marca${mset.size!==1?'s':''}</div></div>
+    <div class="kpi"><div class="lab">Presupuesto ${esc(perLabel(tm))}</div><div class="val ${Math.abs(pres)>=1e9?'small':''}">${ars(pres)}</div><div class="foot">${nu(presU)} unidades</div></div>
+    <div class="kpi ${varr>=0?'k-green':'k-amber'}"><div class="lab">Compra vs. venta</div><div class="val">${varr>=0?'+':''}${varr.toFixed(0)}%</div><div class="foot ${varr>=0?'pos':'neg'}">${varr>=0?'Compra > venta':'Compra < venta'}</div></div>
+    <div class="kpi"><div class="lab">Método</div><div class="val small">${esc(met)}</div><div class="foot">se cambia en ⚙ Método</div></div>`;
 }
 // Explicación corta del presupuesto de una línea, según método + stock.
 function porQueLinea(l){
@@ -743,24 +745,25 @@ function porQueLinea(l){
 }
 // Panel por marca con drill-down al detalle (rubro/disciplina/género/tipo).
 function renderPanel(){
-  const d = datosVis();
   const marcas = {};
-  d.forEach(l=>{
+  lineas.forEach(l=>{
     const s = sugeridoDe(l);
+    if(s.ventas<=0 && s.$<=0) return;                 // sin venta en el mes base → no entra
     if(!marcas[l.marca]) marcas[l.marca] = { marca:l.marca, ventas:0, ventasU:0, pres:0, presU:0, lineas:[] };
     const m = marcas[l.marca];
-    m.ventas+=l.ventas; m.ventasU+=l.ventasU; m.pres+=s.$; m.presU+=s.U; m.lineas.push({l, s});
+    m.ventas+=s.ventas; m.ventasU+=s.ventasU; m.pres+=s.$; m.presU+=s.U; m.lineas.push({l, s});
   });
   const arr = Object.values(marcas).sort((a,b)=>b.pres-a.pres);
-  $('panelHint').textContent = stockDisponible() ? `✓ Meses de stock conectado (${window.STOCK_DATA.meses.slice(-1)[0]})` : '⚠ Sin datos de stock';
-  if(!arr.length){ $('panel-marcas').innerHTML = `<div class="mos-empty">Sin datos todavía. Andá a <b>Datos</b> → <b>Importar ventas (Excel)</b>.</div>`; return; }
+  const bm=baseMonth();
+  $('panelHint').textContent = `Presupuesto de ${perLabel(params.mesObjetivo)} · base ventas de ${perLabel(bm)}` + (stockDisponible()?'':' · ⚠ sin datos de stock');
+  if(!arr.length){ $('panel-marcas').innerHTML = `<div class="mos-empty">Sin ventas en <b>${perLabel(bm)}</b>. Importá el Excel en <b>Datos</b> o cambiá el mes a presupuestar.</div>`; return; }
   $('panel-marcas').innerHTML = arr.map(m=>{
     const varr = m.ventas ? (m.pres/m.ventas-1)*100 : 0;
     const det = m.lineas.slice().sort((a,b)=>b.s.$-a.s.$).map(x=>{
       const pq = porQueLinea(x.l);
       return `<tr>
         <td>${esc(x.l.rubro)}</td><td>${esc(x.l.genero)}</td><td>${esc(x.l.disciplina||'—')}</td><td>${esc(x.l.tipo)}</td>
-        <td class="num">${ars(x.l.ventas)}</td><td class="num">${nu(x.l.ventasU)}</td>
+        <td class="num">${ars(x.s.ventas)}</td><td class="num">${nu(x.s.ventasU)}</td>
         <td class="ctr">${msBadge(x.s.ev)}</td>
         <td class="num sug">${ars(x.s.$)}</td><td class="num">${nu(x.s.U)}</td>
         <td><span class="pq ${pq.cls}">${pq.txt}</span></td></tr>`;
@@ -784,9 +787,8 @@ function renderPanel(){
   $('panel-marcas').querySelectorAll('.marca-row').forEach(r=>r.onclick=()=>r.closest('.marca-card').classList.toggle('open'));
 }
 function renderBars(){
-  const d=datosVis();
   const map={};
-  d.forEach(l=>{ const k=l[groupBy]||'—'; if(!map[k])map[k]={ventas:0,pres:0}; map[k].ventas+=l.ventas; map[k].pres+=l.presupuesto; });
+  lineas.forEach(l=>{ const s=sugeridoDe(l); if(s.ventas<=0&&s.$<=0) return; const k=l[groupBy]||'—'; if(!map[k])map[k]={ventas:0,pres:0}; map[k].ventas+=s.ventas; map[k].pres+=s.$; });
   const grupos=Object.entries(map).sort((a,b)=>b[1].pres-a[1].pres);
   const max=Math.max(1,...grupos.map(g=>Math.max(g[1].ventas,g[1].pres)));
   if(!grupos.length){ $('bars').innerHTML=`<div class="empty"><b>Nada para mostrar</b>Cargá líneas para ver el desglose.</div>`; return; }
@@ -809,14 +811,16 @@ function renderAll(){ renderSelectores(); renderTabla(); renderKPIs(); renderPan
 /* ── Datos de ejemplo (marcas que existen en Gestión de Stock) ── */
 async function cargarDemo(){
   const mes = new Date().toISOString().slice(0,7);
+  const V = (imp,u) => ({ [mes]:{imp,u} });
   lineas = [
-    {marca:'Nike',rubro:'Calzado',genero:'Hombre',tipo:'Running',periodo:mes,ventas:4500000,ventasU:900},
-    {marca:'Adidas',rubro:'Calzado',genero:'Hombre',tipo:'Fútbol',periodo:mes,ventas:3600000,ventasU:720},
-    {marca:'Adidas',rubro:'Indumentaria',genero:'Mujer',tipo:'Training',periodo:mes,ventas:2100000,ventasU:1050},
-    {marca:'New Balance',rubro:'Calzado',genero:'Hombre',tipo:'Lifestyle',periodo:mes,ventas:1800000,ventasU:300},
-    {marca:'Converse',rubro:'Calzado',genero:'Unisex',tipo:'Urbano',periodo:mes,ventas:1200000,ventasU:400},
-    {marca:'Topper',rubro:'Calzado',genero:'Niño',tipo:'Fútbol',periodo:mes,ventas:900000,ventasU:450},
-  ].map(l=>{ const o=migrarLinea({id:uid(),...l}); const s=sugeridoDe(o); o.presupuesto=s.$; o.presupuestoU=s.U; return o; });
+    {marca:'Nike',rubro:'Calzado',genero:'Hombre',disciplina:'Running',tipo:'Calzado adulto',ventas:V(4500000,900)},
+    {marca:'Adidas',rubro:'Calzado',genero:'Hombre',disciplina:'Futbol',tipo:'Botines',ventas:V(3600000,720)},
+    {marca:'Adidas',rubro:'Indumentaria',genero:'Mujer',disciplina:'Training',tipo:'Remeras',ventas:V(2100000,1050)},
+    {marca:'New Balance',rubro:'Calzado',genero:'Hombre',disciplina:'Running',tipo:'Calzado adulto',ventas:V(1800000,300)},
+    {marca:'Converse',rubro:'Calzado',genero:'Unisex',disciplina:'Casual',tipo:'Calzado adulto',ventas:V(1200000,400)},
+    {marca:'Topper',rubro:'Calzado',genero:'Niño',disciplina:'Futbol',tipo:'Calzado niño',ventas:V(900000,450)},
+  ].map(migrarLinea);
+  params.mesObjetivo = nextMonth(mes);   // presupuestar el mes que viene, base = mes actual
   await Store.save(); renderAll();
 }
 
@@ -865,52 +869,43 @@ function leerVentasExcel(file){
         alert('No reconozco el formato. Necesito columnas "Marca", "Rubro" y pares "MM-AA Unidades" / "MM-AA Importe".'); return;
       }
       IMP = { rows: rows.slice(1).filter(r=>r[idx.marca]!=null && String(r[idx.marca]).trim()), idx, meses };
-      // poblar selects
-      $('imp-mes').innerHTML = meses.map(m=>`<option value="${m.key}">${mesLabelXlsx(m.key)}</option>`).join('') + `<option value="prom">Promedio (${meses.length} meses)</option>`;
-      $('imp-mes').value = meses[meses.length-1] ? meses[meses.length-1].key : 'prom';  // último mes
-      $('imp-info').innerHTML = `Archivo leído: <b>${IMP.rows.length}</b> filas, <b>${meses.length}</b> meses (${mesLabelXlsx(meses[0].key)} → ${mesLabelXlsx(meses[meses.length-1].key)}). Elegí el mes base.`;
+      $('imp-info').innerHTML = `Archivo leído: <b>${IMP.rows.length}</b> filas, <b>${meses.length}</b> meses (${mesLabelXlsx(meses[0].key)} → ${mesLabelXlsx(meses[meses.length-1].key)}). Se cargan TODOS los meses.`;
       recontarImport();
       $('impModal').classList.add('show');
     }catch(e){ console.error(e); alert('No pude leer el Excel: '+e.message); }
   };
   rd.readAsArrayBuffer(file);
 }
-// Agrega el Excel a máximo detalle (Marca·Rubro·Género·Disciplina·Tipo) para el mes elegido.
-function agregarVentas(mesSel){
+// Construye las líneas con su SERIE MENSUAL completa (Marca·Rubro·Género·Disciplina·Tipo).
+function construirLineas(){
   const {rows, idx, meses} = IMP;
   const val = (r,i) => i>=0 ? r[i] : '';
   const agg={};
   rows.forEach(r=>{
-    let u=0, imp=0;
-    if(mesSel==='prom'){ meses.forEach(m=>{ u+=+r[m.u]||0; imp+=+r[m.i]||0; }); u/=meses.length; imp/=meses.length; }
-    else { const m=meses.find(x=>x.key===mesSel); if(!m) return; u=+r[m.u]||0; imp=+r[m.i]||0; }
-    if(u<=0 && imp<=0) return;
     const marca=String(r[idx.marca]).trim(), rubro=capFirst(val(r,idx.rubro)),
           genero=genLabel(val(r,idx.gen)), disciplina=capFirst(val(r,idx.disc)), tipo=capFirst(val(r,idx.tipo));
     const k=[marca,rubro,genero,disciplina,tipo].join('␟');
-    if(!agg[k]) agg[k]={ marca, rubro, genero, disciplina, tipo, ventas:0, ventasU:0 };
-    agg[k].ventas+=imp; agg[k].ventasU+=u;
+    if(!agg[k]) agg[k]={ marca, rubro, genero, disciplina, tipo, ventas:{} };
+    meses.forEach(m=>{ const imp=+r[m.i]||0, u=+r[m.u]||0; if(imp||u){ const ym=periodoDe(m.key); const cur=agg[k].ventas[ym]||{imp:0,u:0}; agg[k].ventas[ym]={ imp:cur.imp+imp, u:cur.u+u }; } });
   });
-  return Object.values(agg);
+  return Object.values(agg).filter(a=>Object.keys(a.ventas).length);
 }
 function recontarImport(){
   if(!IMP) return;
-  const n = agregarVentas($('imp-mes').value).length;
-  $('imp-count').innerHTML = `Se van a cargar <b>${n}</b> líneas (marca·rubro·género·disciplina·tipo con venta en ese mes). El Panel las agrupa por marca.`;
+  const n = construirLineas().length;
+  $('imp-count').innerHTML = `Se van a cargar <b>${n}</b> líneas (marca·rubro·género·disciplina·tipo), cada una con sus <b>${IMP.meses.length}</b> meses. El Panel las agrupa por marca.`;
 }
 async function ejecutarImport(){
   if(!IMP) return;
-  const mesSel=$('imp-mes').value, modo=$('imp-modo').value;
-  const periodo = mesSel==='prom' ? periodoDe(IMP.meses[IMP.meses.length-1].key) : periodoDe(mesSel);
-  const nuevas = agregarVentas(mesSel).map(a=>{
-    const o = migrarLinea({ id:uid(), marca:a.marca, rubro:a.rubro, genero:a.genero, disciplina:a.disciplina, tipo:a.tipo, periodo, ventas:Math.round(a.ventas), ventasU:Math.round(a.ventasU) });
-    const s = sugeridoDe(o); o.presupuesto=s.$; o.presupuestoU=s.U; return o;
-  });
-  if(!nuevas.length){ alert('No hay ventas para ese mes.'); return; }
+  const modo=$('imp-modo').value;
+  const nuevas = construirLineas().map(a=>migrarLinea({ id:uid(), ...a }));
+  if(!nuevas.length){ alert('No encontré ventas en el archivo.'); return; }
   lineas = (modo==='sum') ? lineas.concat(nuevas) : nuevas;
+  // Presupuestar el último mes con datos (base = mes anterior). Ej: datos ene→jul → objetivo julio, base junio.
+  const ms = mesesConDatos(); if(ms.length) params.mesObjetivo = ms[ms.length-1];
   await Store.save(); renderAll();
   $('impModal').classList.remove('show');
-  alert(`Importadas ${nuevas.length} líneas (${mesSel==='prom'?'promedio':mesLabelXlsx(mesSel)}).`);
+  alert(`Importadas ${nuevas.length} líneas con toda la serie (${IMP.meses.length} meses). Presupuestando ${perLabel(params.mesObjetivo)} en base a ${perLabel(baseMonth())}.`);
 }
 
 /* ── Eventos ── */
@@ -923,8 +918,8 @@ $('cfg-metodo').addEventListener('change', onCfgChange);
 ['c-mesesobj','c-pct','c-crec','c-sobre','c-falta'].forEach(id=>$(id).addEventListener('change', onCfgChange));
 $('tbody').addEventListener('click',e=>{const id=e.target.dataset.del; if(id&&confirm('¿Borrar esta línea?')) eliminar(id);});
 $('tbody').addEventListener('change',e=>{const inp=e.target;const tr=inp.closest('tr');if(tr&&inp.dataset.c) editarCampo(tr.dataset.id,inp.dataset.c,inp.value);});
-$('flt-per').onchange=renderTabla; $('flt-marca').onchange=renderTabla;
-$('vis-per').onchange=()=>{renderKPIs();renderPanel();renderBars();};
+$('flt-marca').onchange=renderTabla;
+$('mesObj').onchange=async()=>{ params.mesObjetivo=$('mesObj').value; await Store.save(); renderAll(); };
 $('btn-demo').onclick=()=>{ if(!lineas.length||confirm('Esto reemplaza los datos actuales por el ejemplo. ¿Seguir?')) cargarDemo(); };
 $('btn-clear').onclick=async()=>{ if(confirm('¿Vaciar todas las líneas? No se puede deshacer.')){ lineas=[]; await Store.save(); renderAll(); }};
 $('btn-export').onclick=exportar;
@@ -932,7 +927,6 @@ $('imp').onchange=e=>{ if(e.target.files[0]) importar(e.target.files[0]); e.targ
 $('impXlsx').onchange=e=>{ if(e.target.files[0]) leerVentasExcel(e.target.files[0]); e.target.value=''; };
 $('impClose').onclick=()=>$('impModal').classList.remove('show');
 $('impModal').addEventListener('click', e=>{ if(e.target.id==='impModal') $('impModal').classList.remove('show'); });
-$('imp-mes').addEventListener('change', recontarImport);
 $('imp-go').onclick=ejecutarImport;
 
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
@@ -956,6 +950,7 @@ $('seg-group').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   $('f-per').value = new Date().toISOString().slice(0,7);
   const state = await Store.load();
   lineas = state.lineas; params = state.params;
+  resolverMesObjetivo();     // si no hay mes objetivo, presupuestar el último mes con datos
   renderParams();
   renderAll();
 })();
