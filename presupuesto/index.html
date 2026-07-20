@@ -203,6 +203,16 @@ td.edit{padding:4px 8px}
 .cfg-fields .hint{font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.35}
 
 /* Panel por marca + drill-down */
+/* Filtros del panel (Rubro / Género combinables) */
+.panel-filtros{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;margin:2px 0 20px;padding:14px 16px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow)}
+.pf-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pf-lab{font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-right:2px}
+.pf-btn{font-family:var(--font-c);font-size:12.5px;font-weight:700;letter-spacing:.3px;color:var(--muted);background:#eef1f8;border:1.5px solid var(--border);border-radius:20px;padding:5px 14px;transition:.12s}
+.pf-btn:hover{border-color:var(--navy-mid);color:var(--navy)}
+.pf-btn.on{background:var(--red);border-color:var(--red);color:#fff}
+.pf-sep{width:1px;height:22px;background:var(--border)}
+.pf-clear{font-family:var(--font-c);font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);background:none;border:none;padding:4px 6px}
+.pf-clear:hover{color:var(--red)}
 .marca-head{display:grid;grid-template-columns:1fr 200px 220px 90px;gap:12px;padding:6px 18px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
 .marca-head .num{text-align:right}
 .marca-list{display:flex;flex-direction:column;gap:8px}
@@ -328,6 +338,8 @@ td.edit{padding:4px 8px}
     </div>
 
     <div class="kpis" id="kpis"></div>
+
+    <div class="panel-filtros" id="panelFiltros"></div>
 
     <div class="grp-head">
       <h2>Presupuesto por marca</h2>
@@ -515,6 +527,11 @@ const Store = {
 let lineas = [];
 let params = {...DEFAULT_PARAMS};
 let groupBy = 'marca';
+// Filtros del panel (combinables entre sí): rubros y géneros seleccionados. Vacío = todos.
+const fRubros = new Set(), fGeneros = new Set();
+function lineasVisibles(){
+  return lineas.filter(l => (fRubros.size===0 || fRubros.has(l.rubro)) && (fGeneros.size===0 || fGeneros.has(l.genero)));
+}
 
 /* ── Utils ── */
 const ars = n => new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n||0);
@@ -730,7 +747,7 @@ function renderTabla(){
 /* ── Análisis (usa la venta del mes base + el sugerido en vivo) ── */
 function renderKPIs(){
   let ventas=0, pres=0, presU=0; const mset=new Set();
-  lineas.forEach(l=>{ const s=sugeridoDe(l); ventas+=s.ventas; pres+=s.$; presU+=s.U; if(s.ventas>0||s.$>0) mset.add(l.marca); });
+  lineasVisibles().forEach(l=>{ const s=sugeridoDe(l); ventas+=s.ventas; pres+=s.$; presU+=s.U; if(s.ventas>0||s.$>0) mset.add(l.marca); });
   const varr = ventas? (pres/ventas-1)*100 : 0;
   const bm=baseMonth(), tm=params.mesObjetivo;
   const met=(typeof METODO_INFO!=='undefined'&&METODO_INFO[params.metodo])?METODO_INFO[params.metodo].name:params.metodo;
@@ -753,7 +770,7 @@ function porQueLinea(l){
 // Panel por marca con drill-down al detalle (rubro/disciplina/género/tipo).
 function renderPanel(){
   const marcas = {};
-  lineas.forEach(l=>{
+  lineasVisibles().forEach(l=>{
     const s = sugeridoDe(l);
     if(s.ventas<=0 && s.$<=0) return;                 // sin venta en el mes base → no entra
     if(!marcas[l.marca]) marcas[l.marca] = { marca:l.marca, ventas:0, ventasU:0, pres:0, presU:0, lineas:[] };
@@ -795,7 +812,7 @@ function renderPanel(){
 }
 function renderBars(){
   const map={};
-  lineas.forEach(l=>{ const s=sugeridoDe(l); if(s.ventas<=0&&s.$<=0) return; const k=l[groupBy]||'—'; if(!map[k])map[k]={ventas:0,pres:0}; map[k].ventas+=s.ventas; map[k].pres+=s.$; });
+  lineasVisibles().forEach(l=>{ const s=sugeridoDe(l); if(s.ventas<=0&&s.$<=0) return; const k=l[groupBy]||'—'; if(!map[k])map[k]={ventas:0,pres:0}; map[k].ventas+=s.ventas; map[k].pres+=s.$; });
   const grupos=Object.entries(map).sort((a,b)=>b[1].pres-a[1].pres);
   const max=Math.max(1,...grupos.map(g=>Math.max(g[1].ventas,g[1].pres)));
   if(!grupos.length){ $('bars').innerHTML=`<div class="empty"><b>Nada para mostrar</b>Cargá líneas para ver el desglose.</div>`; return; }
@@ -812,8 +829,27 @@ function renderBars(){
   requestAnimationFrame(()=>document.querySelectorAll('.bar-fill').forEach(b=>b.style.width=b.dataset.w+'%'));
 }
 
+// Filtros del panel: botones Rubro / Género combinables (multi-select).
+function renderFiltros(){
+  const rubros=[...new Set(lineas.map(l=>l.rubro).filter(r=>r&&r!=='—'))].sort();
+  const generos=[...new Set(lineas.map(l=>l.genero).filter(g=>g&&g!=='—'))].sort();
+  const btns=(arr,set,t)=>arr.map(v=>`<button class="pf-btn ${set.has(v)?'on':''}" data-t="${t}" data-v="${esc(v)}">${esc(v)}</button>`).join('') || '<span class="pf-lab" style="text-transform:none;letter-spacing:0">sin datos</span>';
+  const hayFiltro = fRubros.size||fGeneros.size;
+  $('panelFiltros').innerHTML =
+    `<div class="pf-group"><span class="pf-lab">Rubro</span>${btns(rubros,fRubros,'r')}</div>`+
+    `<div class="pf-sep"></div>`+
+    `<div class="pf-group"><span class="pf-lab">Género</span>${btns(generos,fGeneros,'g')}</div>`+
+    (hayFiltro?`<button class="pf-clear" id="pf-clear">✕ Limpiar</button>`:'');
+  const refrescar=()=>{ renderFiltros(); renderKPIs(); renderPanel(); renderBars(); };
+  $('panelFiltros').querySelectorAll('.pf-btn').forEach(b=>b.onclick=()=>{
+    const set = b.dataset.t==='r'?fRubros:fGeneros, v=b.dataset.v;
+    set.has(v)?set.delete(v):set.add(v); refrescar();
+  });
+  const clr=$('pf-clear'); if(clr) clr.onclick=()=>{ fRubros.clear(); fGeneros.clear(); refrescar(); };
+}
+
 /* ── Orquestador ── */
-function renderAll(){ renderSelectores(); renderTabla(); renderKPIs(); renderPanel(); renderBars(); }
+function renderAll(){ renderSelectores(); renderTabla(); renderFiltros(); renderKPIs(); renderPanel(); renderBars(); }
 
 /* ── Datos de ejemplo (marcas que existen en Gestión de Stock) ── */
 async function cargarDemo(){
