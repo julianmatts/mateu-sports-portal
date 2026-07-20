@@ -218,21 +218,21 @@ td.edit{padding:4px 8px}
 .pf-sep{width:1px;height:22px;background:var(--border)}
 .pf-clear{font-family:var(--font-c);font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);background:none;border:none;padding:4px 6px}
 .pf-clear:hover{color:var(--red)}
-.marca-head{display:grid;grid-template-columns:1fr 200px 220px 90px;gap:12px;padding:6px 18px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.marca-head{display:grid;grid-template-columns:1fr 160px 165px 160px 140px;gap:12px;padding:6px 18px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
 .marca-head .num{text-align:right}
 .marca-list{display:flex;flex-direction:column;gap:8px}
 .marca-card{background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);overflow:hidden}
-.marca-row{display:grid;grid-template-columns:1fr 200px 220px 90px;gap:12px;align-items:center;padding:14px 18px;cursor:pointer;transition:background .12s}
+.marca-row{display:grid;grid-template-columns:1fr 160px 165px 160px 140px;gap:12px;align-items:center;padding:14px 18px;cursor:pointer;transition:background .12s}
 .marca-row:hover{background:#f7f9fd}
 .mc-name{font-size:16px;font-weight:600;color:var(--navy);display:flex;align-items:center;gap:8px;min-width:0}
 .mc-name small{font-family:var(--font-c);font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
 .mc-caret{color:var(--muted);font-size:12px;transition:transform .18s;flex-shrink:0}
 .marca-card.open .mc-caret{transform:rotate(90deg)}
-.mc-ventas{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);font-size:14px}
-.mc-pres{text-align:right;font-variant-numeric:tabular-nums;line-height:1.1}
-.mc-pres b{font-family:var(--font-d);font-size:22px;letter-spacing:.5px;color:var(--navy)}
-.mc-pres small{display:block;font-size:11px;color:var(--muted)}
-.mc-var{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:14px}
+.mc-pres,.mc-ped,.mc-ing,.mc-falta{text-align:right;font-variant-numeric:tabular-nums;line-height:1.15}
+.mc-pres b,.mc-ped b,.mc-ing b,.mc-falta b{font-family:var(--font-d);font-size:20px;letter-spacing:.5px;color:var(--navy)}
+.mc-pres small,.mc-ped small,.mc-ing small,.mc-falta small{display:block;font-size:11px;color:var(--muted)}
+.mc-ped b{color:var(--blue)} .mc-ing b{color:var(--green)}
+.mc-falta b{font-size:17px}
 .marca-detail{display:none;border-top:1px solid var(--border);background:#fafbfe;padding:6px 10px 12px;overflow-x:auto}
 .marca-card.open .marca-detail{display:block}
 /* Drill-down: Disciplina → (click) → Tipo de producto */
@@ -253,7 +253,7 @@ td.edit{padding:4px 8px}
 .dd-tipo .dd-name{font-weight:400;padding-left:24px}
 .pq{display:inline-block;font-family:var(--font-c);font-size:11px;font-weight:700;padding:2px 8px;border-radius:12px;white-space:nowrap}
 .pq.ms-sobrestock{background:#fdeaea;color:#b3261e}.pq.ms-faltante{background:#e7f5ec;color:#1e7a3a}.pq.ms-ok{background:#eaf1fb;color:#1a56b0}.pq.ms-sindato{background:#eef1f6;color:#8895ab}
-@media(max-width:720px){.marca-head,.marca-row{grid-template-columns:1fr 120px}.marca-head div:nth-child(2),.marca-row .mc-ventas{display:none}.marca-head div:nth-child(4),.marca-row .mc-var{display:none}}
+@media(max-width:820px){.marca-head,.marca-row{grid-template-columns:1fr 130px 130px}.marca-head div:nth-child(4),.marca-head div:nth-child(5),.marca-row .mc-ing,.marca-row .mc-falta{display:none}}
 </style>
 </head>
 <body>
@@ -362,7 +362,7 @@ td.edit{padding:4px 8px}
       <div class="mb-stock" id="panelHint" style="margin-left:auto"></div>
     </div>
     <div class="marca-head">
-      <div>Marca</div><div class="num">Ventas del mes</div><div class="num">Presupuesto compra</div><div class="num">vs. venta</div>
+      <div>Marca</div><div class="num">Presupuesto</div><div class="num">Pedido (OC)</div><div class="num">Ingreso</div><div class="num">Falta pedir</div>
     </div>
     <div class="marca-list" id="panel-marcas"></div>
     <div class="note">💡 Tocá una marca para ver el detalle por <b>rubro, disciplina, género y tipo</b>, con las ventas, los meses de stock y el <b>por qué</b> de cada presupuesto. El cálculo se define en <b>⚙ Método</b>.</div>
@@ -576,6 +576,46 @@ function lineasVisibles(){
     (fGeneros.size===0 || fGeneros.has(l.genero)) &&
     (!soloAsignadas || MARCAS_MODULO.has(normMarca(l.marca))));
 }
+
+/* ─────────────────────────────────────────────────────────────
+   INTEGRACIÓN con Control de Recepciones (base recepciones-mateu).
+   Lee pedidos (OC) y remitos (ingresos) y los cruza con el presupuesto
+   por marca · disciplina · tipo, del MISMO mes (mesObjetivo).
+   ───────────────────────────────────────────────────────────── */
+const RECEP_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com/recepciones';
+let RECEP = { ped:[], ing:[] };   // líneas planas {marca, ym, disc, tipo, u, imp}
+function _flatDocs(obj){
+  const out=[];
+  Object.values(obj||{}).forEach(d=>{ const ym=(d.fecha||'').slice(0,7), marca=d.marca||'';
+    (d.lineas||[]).forEach(l=>{ const u=+l.cantidad||0; out.push({ marca, ym, disc:l.disciplina||'', tipo:l.tipo||'', u, imp:u*(+l.costo_unitario||0) }); });
+  });
+  return out;
+}
+async function cargarRecepciones(){
+  try{
+    const [ped, rem] = await Promise.all([
+      fetch(RECEP_URL+'/pedidos.json').then(r=>r.json()),
+      fetch(RECEP_URL+'/remitos.json').then(r=>r.json())
+    ]);
+    RECEP = { ped:_flatDocs(ped), ing:_flatDocs(rem) };
+  }catch(e){ console.error('Presupuesto: no pude leer recepciones:', e); RECEP={ped:[],ing:[]}; }
+  _recepCache.mes = null;
+}
+const nrm = s => (s||'').toString().toLowerCase().trim();
+let _recepCache = { mes:null, marca:{}, disc:{}, tipo:{} };
+function recepMaps(){
+  if(_recepCache.mes===params.mesObjetivo) return _recepCache;
+  const mes=params.mesObjetivo, mk=()=>({ped:{u:0,imp:0},ing:{u:0,imp:0}});
+  const c={mes, marca:{}, disc:{}, tipo:{}};
+  const put=(map,k,kind,l)=>{ const a=map[k]||(map[k]=mk()); a[kind].u+=l.u; a[kind].imp+=l.imp; };
+  [['ped',RECEP.ped],['ing',RECEP.ing]].forEach(([kind,arr])=>{
+    arr.forEach(l=>{ if(l.ym!==mes) return; const m=normMarca(l.marca), d=nrm(l.disc), t=nrm(l.tipo);
+      put(c.marca,m,kind,l); put(c.disc,m+'|'+d,kind,l); put(c.tipo,m+'|'+d+'|'+t,kind,l);
+    });
+  });
+  _recepCache=c; return c;
+}
+function recepDe(nivel, ...keys){ return recepMaps()[nivel][keys.join('|')] || {ped:{u:0,imp:0},ing:{u:0,imp:0}}; }
 
 /* ── Utils ── */
 const ars = n => new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n||0);
@@ -862,12 +902,20 @@ function renderPanel(){
       return `<div class="dd-disc-card">${ddRow('dd-disc', dg.key, dg, true)}<div class="dd-tipos">${tipos}</div></div>`;
     }).join('');
     return `<div class="marca-card">
-      <div class="marca-row">
+      ${(()=>{
+        const rc = recepMaps().marca[normMarca(m.marca)] || {ped:{u:0,imp:0},ing:{u:0,imp:0}};
+        const ped=rc.ped.imp, ing=rc.ing.imp;
+        const pctPed = m.pres>0 ? Math.round(ped/m.pres*100) : (ped>0?100:0);
+        const pctIng = ped>0 ? Math.round(ing/ped*100) : (ing>0?100:0);
+        const falta = Math.max(0, m.pres-ped);
+        return `<div class="marca-row">
         <div class="mc-name"><span class="mc-caret">▸</span> ${esc(m.marca)} <small>${m.lineas.length} líneas</small></div>
-        <div class="mc-ventas">${ars(m.ventas)}</div>
         <div class="mc-pres"><b>${ars(m.pres)}</b><small>${nu(m.presU)} u</small></div>
-        <div class="mc-var" style="color:${varr>=0?'var(--green)':'var(--amber)'}">${varr>=0?'+':''}${varr.toFixed(0)}%</div>
-      </div>
+        <div class="mc-ped"><b>${ped>0?ars(ped):'—'}</b><small>${ped>0?pctPed+'% del presup':'sin OC'}</small></div>
+        <div class="mc-ing"><b>${ing>0?ars(ing):'—'}</b><small>${ing>0?(ped>0?pctIng+'% del pedido':(m.pres>0?Math.round(ing/m.pres*100)+'% del presup':'ingresado')):'sin ingreso'}</small></div>
+        <div class="mc-falta"><b style="color:${falta>0?'var(--amber)':'var(--green)'}">${ars(falta)}</b><small>${falta>0?'falta pedir':'✓ pedido'}</small></div>
+      </div>`;
+      })()}
       <div class="marca-detail">
         <div class="dd-head">
           <div>Disciplina / Tipo de producto</div>
@@ -1086,7 +1134,7 @@ $('seg-group').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   renderParams();
   renderAll();               // primer render con la lista de respaldo de marcas
   // traer la lista real del módulo Asignación de Marcas y re-renderizar
-  cargarMarcasModulo().then(()=>{ renderFiltros(); renderKPIs(); renderPanel(); renderBars(); });
+  Promise.all([cargarMarcasModulo(), cargarRecepciones()]).then(()=>{ renderFiltros(); renderKPIs(); renderPanel(); renderBars(); });
 })();
 </script>
 </body>
