@@ -212,7 +212,7 @@ textarea.code{width:100%;min-height:150px;font-family:ui-monospace,Menlo,Consola
   <div class="fgrp"><label for="fRep">Reparto</label><select class="sel" id="fRep"><option value="">Todos</option><option value="pendiente">Pendiente</option><option value="hecho">Hecho</option><option value="sin">Sin reparto</option></select></div>
   <div class="fgrp" style="flex:1;min-width:190px"><label for="fQ">Buscar</label><input class="inp" id="fQ" placeholder="remito, artículo, código, proveedor…" style="width:100%"></div>
   <div class="fgrp" style="min-width:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="fReset">Limpiar</button></div>
-  <div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="fReload" title="Traer los últimos datos de la base">↻ Recargar</button></div>
+  <div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="fHist" title="Historial de cargas">🕘 Historial</button><button class="btn btn-outline btn-sm" id="fReload" title="Traer los últimos datos de la base">↻ Recargar</button></div>
 </div>
 
 <main>
@@ -410,8 +410,9 @@ function renderPanel(){
     + kpi('Remitos', fmtInt(remitosCount))
     + kpi('Marcas activas', fmtInt(Object.keys(marcasAct).length))
     + kpi('Cumplimiento OC', cumpl+'<small>%</small>') + '</div>';
+  html += alertasCard(ctrl);
   html += '<div class="grid2">'
-    + cardBars('Ingresos por mes','Unidades ingresadas por mes', porMes, true, mesLabel)
+    + cardMeses(porMes)
     + cardBars('Participación por marca','Unidades por marca · click para ver el detalle', porMarca, false, null, 'marca') + '</div>';
   html += cardBars('Desglose por rubro','Unidades ingresadas por rubro', porRubro, false);
   $('view').innerHTML = html;
@@ -439,7 +440,7 @@ function renderRemitos(){
       +'<div class="ped-head" data-rec-toggle="'+pid+'"><span class="ped-dot" style="background:'+color+'"></span>'
         +'<div class="ped-title"><div class="ped-oc">Remito '+esc(R.nro)+'</div><div class="ped-sub">'+esc(R.marca||'—')+' · '+esc(mesLabel(R.fecha)||R.fecha||'')+(R.pedido_nro?(' · OC '+esc(R.pedido_nro)):'')+' · '+lins.length+' líneas</div></div>'
         +'<div class="ped-tot"><div class="big">'+fmtInt(u)+' u.</div><div class="mono" style="color:var(--muted);font-size:13px">'+fmtMoney(imp)+'</div></div>'
-        +repBtn+'<button class="btn btn-outline btn-sm" data-del-remito="'+esc(R.nro)+'" title="Eliminar remito completo">🗑</button>'
+        +repBtn+'<button class="btn btn-outline btn-sm" data-edit-remito="'+esc(R.nro)+'" title="Editar remito">✎</button><button class="btn btn-outline btn-sm" data-del-remito="'+esc(R.nro)+'" title="Eliminar remito completo">🗑</button>'
         +'<span class="ped-chev" id="chev_'+pid+'">▸</span></div>'
       +'<div class="ped-detail" id="'+pid+'" style="display:none"></div></div>');
   });
@@ -451,6 +452,7 @@ function renderRemitos(){
   $('btnImpRem').onclick=openImportEstadistica; $('btnAltaRem').onclick=()=>openAlta('ingreso');
   if($('btnExpRem')) $('btnExpRem').onclick=()=>exportar('remitos', flat);
   bindReparto();
+  document.querySelectorAll('#view [data-edit-remito]').forEach(b=>b.onclick=(e)=>{ if(e)e.stopPropagation(); openEditar('remito', fbKey(b.getAttribute('data-edit-remito'))); });
   document.querySelectorAll('[data-rec-toggle]').forEach(h=>h.onclick=()=>{ const id=h.getAttribute('data-rec-toggle'); const d=$(id); const ch=$('chev_'+id); const op=d.style.display==='none'; if(op && !d.dataset.built){ d.innerHTML=recDetailHtml(REC[id]); d.dataset.built='1'; } d.style.display=op?'block':'none'; if(ch)ch.textContent=op?'▾':'▸'; });
   bindDeletes();
 }
@@ -475,7 +477,7 @@ function renderPedidos(){
       +'<div class="ped-head" data-ped-toggle="'+pid+'"><span class="ped-dot" style="background:'+color+'"></span>'
         +'<div class="ped-title"><div class="ped-oc">OC '+esc(P.nro)+'</div><div class="ped-sub">'+esc(P.marca||'—')+' · '+esc(P.fecha||'')+' · '+esc(P.proveedor||'—')+(P.comprador?(' · '+esc(P.comprador)):'')+' · '+lins.length+' art.</div></div>'
         +'<div class="ped-tot"><div class="big">'+fmtInt(u)+' u.</div><div class="mono" style="color:var(--muted);font-size:13px">'+fmtMoney(imp)+'</div></div>'
-        +'<button class="btn btn-outline btn-sm" data-del-pedido="'+esc(P.nro)+'" title="Eliminar OC">🗑</button>'
+        +'<button class="btn btn-outline btn-sm" data-edit-pedido="'+esc(P.nro)+'" title="Editar OC">✎</button><button class="btn btn-outline btn-sm" data-del-pedido="'+esc(P.nro)+'" title="Eliminar OC">🗑</button>'
         +'<span class="ped-chev" id="chev_'+pid+'">▸</span></div>'
       +'<div class="ped-detail" id="'+pid+'" style="display:none"><div class="tbl-wrap"><table style="min-width:520px"><thead><tr>'+detHead+'</tr></thead><tbody>'+rows+'</tbody></table></div></div></div>');
   });
@@ -484,6 +486,7 @@ function renderPedidos(){
   html += cards.length ? cards.join('') : stateEmpty('No hay pedidos para los filtros actuales.');
   $('view').innerHTML = html;
   $('btnImpPed').onclick=()=>openImport('pedido'); $('btnAltaPed').onclick=()=>openAlta('pedido'); $('btnConvPed').onclick=openConvertir;
+  document.querySelectorAll('#view [data-edit-pedido]').forEach(b=>b.onclick=(e)=>{ if(e)e.stopPropagation(); openEditar('pedido', fbKey(b.getAttribute('data-edit-pedido'))); });
   if($('btnExpPed')) $('btnExpPed').onclick=()=>exportar('pedidos', flat);
   document.querySelectorAll('[data-ped-toggle]').forEach(h=>h.onclick=()=>{ const id=h.getAttribute('data-ped-toggle'); const d=$(id); const ch=$('chev_'+id); const op=d.style.display==='none'; d.style.display=op?'block':'none'; if(ch)ch.textContent=op?'▾':'▸'; });
   bindDeletes();
@@ -792,23 +795,38 @@ async function guardarConvertida(){
   const doc={ nro:oc.nro, fecha:oc.fecha, comprador:oc.comprador||'', proveedor:oc.proveedor||'', marca:oc.marca||'', moneda:oc.moneda||'ARS', creado_en:nowISO(), origen:'conversor', lineas:oc.articulos };
   try{
     if(!DEMO) await fbPut(ROOT+'/pedidos/'+fbKey(oc.nro), doc);
-    DATA.pedidos[fbKey(oc.nro)]=doc; closeModal(); refreshDims(); render(); toast('OC guardada al sistema','ok');
+    DATA.pedidos[fbKey(oc.nro)]=doc; logCarga('oc','OC '+oc.nro, oc.total_unidades); closeModal(); refreshDims(); render(); toast('OC guardada al sistema','ok');
   }catch(e){ if(btn){ btn.disabled=false; btn.textContent='Guardar al sistema'; } toast('No se pudo guardar: '+e.message,'bad'); }
 }
 
 
+let _mdArts=[], _mdSort={col:'cant',dir:-1}, _mdMarca='';
 function openMarcaDetalle(marca){
   const f=state.filtros; const art={}; let totU=0, totV=0; const remset={};
   vals(DATA.remitos).forEach(R=>{ if((R.marca||'')!==marca) return; if(f.mes && mesKey(R.fecha)!==f.mes) return;
     (R.lineas||[]).filter(lineaPasa).forEach(l=>{ const c=num(l.cantidad), v=c*num(l.costo_unitario); const key=(l.modelo||'')+'|'+(l.descripcion||'')+'|'+(l.rubro||'')+'|'+(l.disciplina||'')+'|'+(l.tipo||''); const a=art[key]||(art[key]={modelo:l.modelo||'',descripcion:l.descripcion||'',rubro:l.rubro||'',disciplina:l.disciplina||'',tipo:l.tipo||'',cant:0,val:0}); a.cant+=c; a.val+=v; totU+=c; totV+=v; remset[R.nro]=1; });
   });
-  const arts=Object.keys(art).map(k=>art[k]).sort((a,b)=>b.cant-a.cant);
-  const rows=arts.map(a=>'<tr><td class="mono">'+esc(a.modelo)+'</td><td>'+esc(a.descripcion)+'</td><td>'+esc(a.rubro)+'</td><td>'+esc(a.disciplina)+'</td><td>'+esc(a.tipo)+'</td><td class="num big">'+fmtInt(a.cant)+'</td><td class="num mono">'+fmtMoney(a.val)+'</td></tr>').join('');
+  _mdArts=Object.keys(art).map(k=>art[k]); _mdSort={col:'cant',dir:-1}; _mdMarca=marca;
   openModal('<button class="close" onclick="closeModal()">×</button><h2>Ingresos · '+esc(marca)+'</h2>'
-    +'<div class="msub">'+fmtInt(Object.keys(remset).length)+' remitos · '+fmtInt(totU)+' u · '+fmtMoney(totV)+(f.mes?(' · '+esc(mesLabel(f.mes))):'')+' · '+arts.length+' artículos</div>'
-    +(arts.length?'<div style="margin-bottom:10px"><button class="btn btn-outline btn-sm" id="mdExp">⇩ Exportar</button></div><div class="tbl-wrap" style="max-height:58vh;overflow:auto"><table style="min-width:660px"><thead><tr><th>Código</th><th>Artículo</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Unid.</th><th class="num">Valorizado</th></tr></thead><tbody>'+rows+'</tbody></table></div>':stateEmpty('Sin ingresos de esta marca para el filtro actual.')));
-  const be=$('mdExp'); if(be) be.onclick=()=>exportar('ingresos-'+marca, arts.map(a=>({codigo:a.modelo,articulo:a.descripcion,rubro:a.rubro,disciplina:a.disciplina,tipo:a.tipo,cantidad:a.cant,valorizado:Math.round(a.val)})));
+    +'<div class="msub">'+fmtInt(Object.keys(remset).length)+' remitos · '+fmtInt(totU)+' u · '+fmtMoney(totV)+(f.mes?(' · '+esc(mesLabel(f.mes))):'')+' · '+_mdArts.length+' artículos</div>'
+    +(_mdArts.length?('<div class="row" style="margin-bottom:10px;gap:8px"><input class="inp" id="mdQ" placeholder="Buscar código o artículo…" style="flex:1;min-width:160px"><button class="btn btn-outline btn-sm" id="mdExp">⇩ Exportar</button></div><div id="mdTbl"></div>'):stateEmpty('Sin ingresos de esta marca para el filtro actual.')));
+  if(_mdArts.length){ renderMdTbl(); const q=$('mdQ'); let t; q.oninput=()=>{ clearTimeout(t); t=setTimeout(renderMdTbl,150); };
+    $('mdExp').onclick=()=>exportar('ingresos-'+marca, mdFiltradas().map(a=>({codigo:a.modelo,articulo:a.descripcion,rubro:a.rubro,disciplina:a.disciplina,tipo:a.tipo,cantidad:a.cant,valorizado:Math.round(a.val)}))); }
 }
+function mdFiltradas(){
+  const q=(($('mdQ')||{}).value||'').toLowerCase().trim(); let a=_mdArts;
+  if(q) a=a.filter(x=>((x.modelo||'')+' '+(x.descripcion||'')).toLowerCase().indexOf(q)>-1);
+  const s=_mdSort;
+  return a.slice().sort((x,y)=>{ const xv=x[s.col],yv=y[s.col]; const r=(typeof xv==='number')?(xv-yv):cmp(String(xv),String(yv)); return r*s.dir; });
+}
+function renderMdTbl(){
+  const arts=mdFiltradas(); const s=_mdSort; const ar=c=>s.col===c?(s.dir>0?' ▲':' ▼'):'';
+  const rows=arts.map(a=>'<tr><td class="mono">'+esc(a.modelo)+'</td><td>'+esc(a.descripcion)+'</td><td>'+esc(a.rubro)+'</td><td>'+esc(a.disciplina)+'</td><td>'+esc(a.tipo)+'</td><td class="num big">'+fmtInt(a.cant)+'</td><td class="num mono">'+fmtMoney(a.val)+'</td></tr>').join('');
+  const tbl=$('mdTbl'); if(!tbl) return;
+  tbl.innerHTML='<div class="tbl-wrap" style="max-height:52vh;overflow:auto"><table style="min-width:660px"><thead><tr><th class="sortable" data-s="modelo">Código'+ar('modelo')+'</th><th class="sortable" data-s="descripcion">Artículo'+ar('descripcion')+'</th><th class="sortable" data-s="rubro">Rubro'+ar('rubro')+'</th><th class="sortable" data-s="disciplina">Disciplina'+ar('disciplina')+'</th><th class="sortable" data-s="tipo">Tipo'+ar('tipo')+'</th><th class="num sortable" data-s="cant">Unid.'+ar('cant')+'</th><th class="num sortable" data-s="val">Valorizado'+ar('val')+'</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="card-hs" style="margin-top:4px">'+arts.length+' artículos</div>';
+  tbl.querySelectorAll('th.sortable').forEach(th=>th.onclick=()=>{ const c=th.getAttribute('data-s'); _mdSort={col:c, dir:(s.col===c?-s.dir:((c==='cant'||c==='val')?-1:1))}; renderMdTbl(); });
+}
+
 /* ============================================================
    IMPORTACIÓN MASIVA de ingresos — reporte "Estadistica de remitos"
    El depósito sube el Excel matriz por mes; se reforma en el navegador (una fila
@@ -887,7 +905,7 @@ async function confirmEstadistica(){
     const payload={}; docs.forEach(d=>payload[fbKey(d.nro)]=d);
     if(!DEMO){ const r=await fetch(fbUrl(ROOT+'/remitos'),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); if(!r.ok) throw new Error('Firebase HTTP '+r.status); }
     docs.forEach(d=>{ DATA.remitos[fbKey(d.nro)]=d; });
-    closeModal(); refreshDims(); render(); toast(fmtInt(docs.length)+' remitos sumados','ok');
+    logCarga('import', fmtInt(docs.length)+' remitos', docs.reduce((s,d)=>s+(d.lineas||[]).reduce((a,l)=>a+num(l.cantidad),0),0)); closeModal(); refreshDims(); render(); toast(fmtInt(docs.length)+' remitos sumados','ok');
   }catch(e){ if(btn){ btn.disabled=false; btn.textContent='Confirmar y sumar'; } toast('No se pudo guardar: '+e.message,'bad'); }
 }
 
@@ -978,6 +996,89 @@ function repList(titulo, arr, estado){
 }
 
 
+/* ===== v2 (mejoras 1-5): roles, historial, tendencia/alertas, edición ===== */
+function aplicarRol(){
+  const dep = esDeposito() && !esCompras();
+  const allowed = dep ? ['panel','remitos','repartos'] : ['panel','remitos','pedidos','control','repartos'];
+  document.querySelectorAll('.tab').forEach(t=>{ t.style.display = allowed.includes(t.dataset.tab)?'':'none'; });
+  if(!allowed.includes(state.tab)) state.tab=allowed[0];
+}
+
+/* Historial / auditoría — cada carga deja un registro en recepciones/log */
+async function logCarga(tipo, detalle, cant){
+  try{ if(DEMO) return; const k=nowISO().replace(/[^0-9]/g,'')+'-'+Math.floor((performance.now()*1000)%100000); await fbPut(ROOT+'/log/'+k,{ts:nowISO(),tipo:tipo,detalle:detalle||'',cant:cant||0,quien:_mail()}); }catch(e){}
+}
+async function openHistorial(){
+  openModal('<button class="close" onclick="closeModal()">×</button><h2>Historial de cargas</h2><div class="msub">Últimas importaciones, ediciones y borrados.</div><div id="histBody">'+stateLoading()+'</div><div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cerrar</button></div>');
+  try{
+    const obj = DEMO ? {} : (await fbGet(ROOT+'/log')||{});
+    const items = Object.keys(obj).map(k=>obj[k]).sort((a,b)=>cmp(b.ts||'',a.ts||'')).slice(0,150);
+    const map={import:'Import masivo','alta-remito':'Alta remito','alta-pedido':'Alta pedido',oc:'OC convertida',editar:'Edición',borrado:'Borrado'};
+    $('histBody').innerHTML = items.length ? ('<div class="tbl-wrap" style="max-height:58vh;overflow:auto"><table style="min-width:560px"><thead><tr><th>Fecha</th><th>Acción</th><th>Detalle</th><th class="num">Cant.</th><th>Quién</th></tr></thead><tbody>'+items.map(x=>'<tr><td class="mono">'+esc(x.ts||'')+'</td><td>'+esc(map[x.tipo]||x.tipo||'')+'</td><td>'+esc(x.detalle||'')+'</td><td class="num">'+(x.cant?fmtInt(x.cant):'')+'</td><td style="font-size:12px;color:var(--muted)">'+esc(x.quien||'')+'</td></tr>').join('')+'</tbody></table></div>') : stateEmpty('Sin registros todavía.');
+  }catch(e){ $('histBody').innerHTML=stateError(e.message); }
+}
+
+/* Panel: ingresos por mes con variación vs mes anterior */
+function cardMeses(obj){
+  const ks=Object.keys(obj).sort(cmp);
+  if(!ks.length) return '<div class="card"><div class="card-h">Ingresos por mes</div>'+stateEmpty('Sin datos.')+'</div>';
+  const max=Math.max.apply(null,ks.map(k=>obj[k]))||1;
+  const rows=ks.map((k,i)=>{ const v=obj[k]; const prev=i>0?obj[ks[i-1]]:null; const d=(prev&&prev>0)?Math.round((v-prev)/prev*100):null;
+    const dh=d==null?'':(' <span style="font-size:11px;font-weight:700;color:'+(d>0?'#16a34a':d<0?'#dc2626':'#6B7A99')+'">'+(d>0?'▲+'+d:d<0?'▼'+d:'0')+'%</span>');
+    return '<div class="barrow"><span class="lb">'+esc(mesLabel(k))+'</span><span class="bar"><span style="width:'+Math.max(2,Math.round(v/max*100))+'%"></span></span><span class="vv">'+fmtInt(v)+dh+'</span></div>'; }).join('');
+  return '<div class="card"><div class="card-h">Ingresos por mes</div><div class="card-hs">Unidades por mes · variación vs mes anterior</div><div class="barlist">'+rows+'</div></div>';
+}
+/* Panel: alertas del control (pedidos sin ingresar / excedidos) */
+function alertasCard(ctrl){
+  const pend=ctrl.filter(c=>c.estado==='pendiente').sort((a,b)=>b.cant_pendiente-a.cant_pendiente).slice(0,8);
+  const exc=ctrl.filter(c=>c.estado==='excedido').sort((a,b)=>a.cant_pendiente-b.cant_pendiente).slice(0,8);
+  if(!pend.length && !exc.length) return '';
+  const row=(c,t)=>'<div class="barrow" style="grid-template-columns:1fr auto"><span class="lb" title="'+esc(c.marca+' · '+c.disciplina+' / '+c.tipo)+'">'+esc(c.marca)+' · '+esc(c.disciplina)+' / '+esc(c.tipo)+'</span><span class="badge b-'+esc(c.estado)+'">'+(t==='p'?('faltan '+fmtInt(c.cant_pendiente)):('sobran '+fmtInt(-c.cant_pendiente)))+'</span></div>';
+  let h='<div class="card"><div class="card-h">Alertas</div><div class="card-hs">Del control: pedidos sin ingresar y excedidos</div><div class="barlist">';
+  if(pend.length) h+='<div style="font-family:var(--font-c);font-weight:700;font-size:12px;color:var(--muted)">Pendientes de ingresar</div>'+pend.map(c=>row(c,'p')).join('');
+  if(exc.length) h+='<div style="font-family:var(--font-c);font-weight:700;font-size:12px;color:var(--muted);margin-top:6px">Excedidos</div>'+exc.map(c=>row(c,'e')).join('');
+  return h+'</div></div>';
+}
+
+/* Editar remito / pedido (reemplaza el documento; conserva talles de líneas no tocadas) */
+function openEditar(tipoDoc, key){
+  const doc=(tipoDoc==='pedido'?DATA.pedidos:DATA.remitos)[key]; if(!doc){ toast('Documento no encontrado','bad'); return; }
+  const esPed=tipoDoc==='pedido'; const marcas=(state.dims&&state.dims.marcas)||[];
+  openModal('<button class="close" onclick="closeModal()">×</button><h2>Editar '+(esPed?'OC ':'remito ')+esc(doc.nro)+'</h2><div class="msub">Cambiá la cabecera y las líneas. Guardar reemplaza el documento.</div>'
+    +'<div class="formgrid">'
+      + field('Fecha','<input class="inp" type="date" id="eFecha" value="'+esc(doc.fecha||'')+'">')
+      + field('Marca','<input class="inp" id="eMarca" list="eMarcaList" value="'+esc(doc.marca||'')+'"><datalist id="eMarcaList">'+marcas.map(m=>'<option>'+esc(m)+'</option>').join('')+'</datalist>')
+      + field('Proveedor','<input class="inp" id="eProv" value="'+esc(doc.proveedor||'')+'">')
+      + (esPed?field('Comprador','<input class="inp" id="eComp" value="'+esc(doc.comprador||'')+'">'):field('OC asociada','<input class="inp" id="eOC" value="'+esc(doc.pedido_nro||'')+'">'))
+    +'</div><div style="margin:10px 0 6px;font-family:var(--font-c);font-weight:700;letter-spacing:.5px">Líneas</div>'
+    +'<div class="tbl-wrap" style="max-height:40vh;overflow:auto"><table style="min-width:660px"><thead><tr><th>Código</th><th>Artículo</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Cant.</th><th class="num">Costo U.</th><th></th></tr></thead><tbody id="eLineas"></tbody></table></div>'
+    +'<div style="margin-top:8px"><button class="btn btn-outline btn-sm" id="eAdd">+ Línea</button></div>'
+    +'<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="eSave">Guardar cambios</button></div>');
+  const tb=$('eLineas'); (doc.lineas||[]).forEach(l=>eLinRow(tb,l)); $('eAdd').onclick=()=>eLinRow(tb,{});
+  $('eSave').onclick=()=>guardarEdicion(tipoDoc, key, doc);
+}
+function eLinRow(tb, l){
+  const tr=document.createElement('tr'); tr._talles=l.talles||null;
+  tr.innerHTML='<td><input class="inp" style="width:120px" value="'+esc(l.modelo||'')+'"></td><td><input class="inp" style="width:100%" value="'+esc(l.descripcion||'')+'"></td><td><input class="inp" style="width:100%" value="'+esc(l.rubro||'')+'"></td><td><input class="inp" style="width:100%" value="'+esc(l.disciplina||'')+'"></td><td><input class="inp" style="width:100%" value="'+esc(l.tipo||'')+'"></td><td><input class="inp num" type="number" step="1" style="width:80px;text-align:right" value="'+num(l.cantidad)+'"></td><td><input class="inp num" type="number" step="0.01" style="width:100px;text-align:right" value="'+num(l.costo_unitario)+'"></td><td><button class="btn btn-outline btn-sm" title="Quitar">✕</button></td>';
+  tr.querySelector('button').onclick=()=>tr.remove(); tb.appendChild(tr);
+}
+async function guardarEdicion(tipoDoc, key, orig){
+  const esPed=tipoDoc==='pedido';
+  const lineas=[...$('eLineas').querySelectorAll('tr')].map(tr=>{ const c=tr.querySelectorAll('input'); const o={ modelo:c[0].value.trim(), descripcion:c[1].value.trim(), rubro:c[2].value.trim(), disciplina:c[3].value.trim(), tipo:c[4].value.trim(), cantidad:parseFloat(c[5].value)||0, costo_unitario:parseFloat(c[6].value)||0 }; if(tr._talles) o.talles=tr._talles; return o; }).filter(l=>l.cantidad||l.costo_unitario||l.rubro||l.tipo||l.modelo);
+  if(!$('eFecha').value){ toast('Falta la fecha','bad'); return; }
+  if(!lineas.length){ toast('Agregá al menos una línea','bad'); return; }
+  const btn=$('eSave'); if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
+  const doc=Object.assign({}, orig, { fecha:$('eFecha').value, marca:$('eMarca').value.trim(), proveedor:$('eProv').value.trim(), lineas });
+  if(esPed) doc.comprador=$('eComp').value.trim(); else { doc.pedido_nro=($('eOC')?$('eOC').value.trim():''); doc.semana=semanaISO($('eFecha').value); }
+  try{
+    if(!DEMO) await fbPut(ROOT+'/'+(esPed?'pedidos':'remitos')+'/'+key, doc);
+    (esPed?DATA.pedidos:DATA.remitos)[key]=doc;
+    logCarga('editar',(esPed?'OC ':'Remito ')+doc.nro, lineas.reduce((s,l)=>s+num(l.cantidad),0));
+    closeModal(); refreshDims(); render(); toast('Cambios guardados','ok');
+  }catch(e){ if(btn){ btn.disabled=false; btn.textContent='Guardar cambios'; } toast(e.message,'bad'); }
+}
+
+
 function openModal(html){ $('modal').innerHTML=html; $('overlay').classList.add('show'); document.addEventListener('keydown',escClose); }
 function closeModal(){ $('overlay').classList.remove('show'); document.removeEventListener('keydown',escClose); impCtx=null; convCtx=null; }
 function escClose(e){ if(e.key==='Escape') closeModal(); }
@@ -991,6 +1092,7 @@ function bindFiltros(){
   let _qt; const fq=$('fQ'); if(fq) fq.oninput=()=>{ clearTimeout(_qt); _qt=setTimeout(()=>{ state.filtros.q=fq.value; render(); },180); };
   $('fReset').onclick=()=>{ state.filtros={mes:'',marca:'',rubro:'',disciplina:'',tipo:'',proveedor:'',reparto:'',q:''}; ['fMes','fMarca','fRubro','fDisc','fTipo','fProv','fRep','fQ'].forEach(id=>{const e=$(id); if(e)e.value='';}); render(); };
   $('fReload').onclick=recargar;
+  const fh=$('fHist'); if(fh) fh.onclick=openHistorial;
 }
 async function recargar(){
   const btn=$('fReload'); if(btn){ btn.disabled=true; btn.textContent='Recargando…'; }
@@ -1010,7 +1112,7 @@ async function init(){
       +'<div style="text-align:center;margin-top:-22px;padding-bottom:26px"><button class="btn btn-primary btn-sm" id="btnRetry">Reintentar</button></div>';
     $('btnRetry').onclick=init; return;
   }
-  refreshDims(); render();
+  refreshDims(); aplicarRol(); render();
 }
 init();
 </script>
