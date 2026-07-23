@@ -236,7 +236,7 @@ td.edit{padding:4px 8px}
 .marca-detail{display:none;border-top:1px solid var(--border);background:#fafbfe;padding:6px 10px 12px;overflow-x:auto}
 .marca-card.open .marca-detail{display:block}
 /* Drill-down: Disciplina → (click) → Tipo de producto */
-.dd-head,.dd-disc,.dd-tipo{display:grid;grid-template-columns:minmax(190px,1fr) 120px 80px 130px 120px 80px 150px;gap:8px;align-items:center;padding:8px 12px;min-width:840px}
+.dd-head,.dd-disc,.dd-tipo{display:grid;grid-template-columns:minmax(180px,1fr) 115px 120px 120px 120px 120px 140px;gap:8px;align-items:center;padding:8px 12px;min-width:900px}
 .dd-head{font-family:var(--font-c);font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)}
 .dd-disc{border-top:1px solid var(--border);cursor:pointer;font-size:14px}
 .dd-disc-card:first-child .dd-disc{border-top:none}
@@ -839,15 +839,19 @@ function renderTabla(){
 /* ── Análisis (usa la venta del mes base + el sugerido en vivo) ── */
 function renderKPIs(){
   let ventas=0, pres=0, presU=0; const mset=new Set();
-  lineasVisibles().forEach(l=>{ const s=sugeridoDe(l); ventas+=s.ventas; pres+=s.$; presU+=s.U; if(s.ventas>0||s.$>0) mset.add(l.marca); });
-  const varr = ventas? (pres/ventas-1)*100 : 0;
+  lineasVisibles().forEach(l=>{ const s=sugeridoDe(l); ventas+=s.ventas; pres+=s.$; presU+=s.U; if(s.ventas>0||s.$>0) mset.add(normMarca(l.marca)); });
+  // Ciclo: pedido + ingreso de las marcas visibles (mismo mes)
+  const rm=recepMaps(); let ped=0, ing=0;
+  mset.forEach(k=>{ const r=rm.marca[k]; if(r){ ped+=r.ped.imp; ing+=r.ing.imp; } });
+  const falta=Math.max(0,pres-ped);
   const bm=baseMonth(), tm=params.mesObjetivo;
-  const met=(typeof METODO_INFO!=='undefined'&&METODO_INFO[params.metodo])?METODO_INFO[params.metodo].name:params.metodo;
+  const pctPed=pres>0?Math.round(ped/pres*100):0, pctIng=pres>0?Math.round(ing/pres*100):0;
+  const sm=n=>Math.abs(n)>=1e9?'small':'';
   $('kpis').innerHTML=`
-    <div class="kpi k-blue"><div class="lab">Ventas ${esc(perLabel(bm))}</div><div class="val ${Math.abs(ventas)>=1e9?'small':''}">${ars(ventas)}</div><div class="foot">mes base · ${mset.size} marca${mset.size!==1?'s':''}</div></div>
-    <div class="kpi"><div class="lab">Presupuesto ${esc(perLabel(tm))}</div><div class="val ${Math.abs(pres)>=1e9?'small':''}">${ars(pres)}</div><div class="foot">${nu(presU)} unidades</div></div>
-    <div class="kpi ${varr>=0?'k-green':'k-amber'}"><div class="lab">Compra vs. venta</div><div class="val">${varr>=0?'+':''}${varr.toFixed(0)}%</div><div class="foot ${varr>=0?'pos':'neg'}">${varr>=0?'Compra > venta':'Compra < venta'}</div></div>
-    <div class="kpi"><div class="lab">Método</div><div class="val small">${esc(met)}</div><div class="foot">se cambia en ⚙ Método</div></div>`;
+    <div class="kpi k-blue"><div class="lab">Presupuesto ${esc(perLabel(tm))}</div><div class="val ${sm(pres)}">${ars(pres)}</div><div class="foot">${nu(presU)} u · ventas ${ars(ventas)}</div></div>
+    <div class="kpi"><div class="lab">Pedido (OC)</div><div class="val ${sm(ped)}">${ped>0?ars(ped):'—'}</div><div class="foot">${pctPed}% del presupuesto</div></div>
+    <div class="kpi k-green"><div class="lab">Ingreso</div><div class="val ${sm(ing)}">${ing>0?ars(ing):'—'}</div><div class="foot">${pctIng}% del presupuesto</div></div>
+    <div class="kpi ${falta>0?'k-amber':'k-green'}"><div class="lab">Falta pedir</div><div class="val ${sm(falta)}">${ars(falta)}</div><div class="foot">${mset.size} marca${mset.size!==1?'s':''} · ${esc(perLabel(bm))} base</div></div>`;
 }
 // Explicación corta del presupuesto de una línea, según método + stock.
 function porQueLinea(l){
@@ -872,12 +876,15 @@ function agruparPor(items, campo){
     return g;
   }).sort((a,b)=>b.pres-a.pres);
 }
-function ddRow(cls, nombre, g, caret){
+function ddRow(cls, nombre, g, caret, rc){
+  const ped=rc?rc.ped.imp:0, ing=rc?rc.ing.imp:0;
   return `<div class="${cls}">
     <div class="dd-name">${caret?'<span class="dd-caret">▸</span>':''}${esc(nombre)}</div>
-    <div class="dd-num">${ars(g.ventas)}</div><div class="dd-num">${nu(g.ventasU)}</div>
+    <div class="dd-num">${ars(g.ventas)}</div>
     <div class="dd-ctr">${msBadge(g.ev)}</div>
-    <div class="dd-num sug">${ars(g.pres)}</div><div class="dd-num">${nu(g.presU)}</div>
+    <div class="dd-num sug">${ars(g.pres)}</div>
+    <div class="dd-num" style="color:var(--blue)">${ped>0?ars(ped):'—'}</div>
+    <div class="dd-num" style="color:var(--green)">${ing>0?ars(ing):'—'}</div>
     <div><span class="pq ${g.pq.cls}">${g.pq.txt}</span></div>
   </div>`;
 }
@@ -897,9 +904,11 @@ function renderPanel(){
   if(!arr.length){ $('panel-marcas').innerHTML = `<div class="mos-empty">Sin ventas en <b>${perLabel(bm)}</b>. Importá el Excel en <b>Datos</b> o cambiá el mes a presupuestar.</div>`; return; }
   $('panel-marcas').innerHTML = arr.map(m=>{
     const varr = m.ventas ? (m.pres/m.ventas-1)*100 : 0;
+    const nm = normMarca(m.marca);
     const discs = agruparPor(m.lineas, 'disciplina').map(dg=>{
-      const tipos = agruparPor(dg.items, 'tipo').map(tg=>ddRow('dd-tipo', tg.key, tg, false)).join('');
-      return `<div class="dd-disc-card">${ddRow('dd-disc', dg.key, dg, true)}<div class="dd-tipos">${tipos}</div></div>`;
+      const rD = recepDe('disc', nm, nrm(dg.key));
+      const tipos = agruparPor(dg.items, 'tipo').map(tg=>ddRow('dd-tipo', tg.key, tg, false, recepDe('tipo', nm, nrm(dg.key), nrm(tg.key)))).join('');
+      return `<div class="dd-disc-card">${ddRow('dd-disc', dg.key, dg, true, rD)}<div class="dd-tipos">${tipos}</div></div>`;
     }).join('');
     return `<div class="marca-card">
       ${(()=>{
@@ -919,8 +928,8 @@ function renderPanel(){
       <div class="marca-detail">
         <div class="dd-head">
           <div>Disciplina / Tipo de producto</div>
-          <div class="dd-num">Ventas $</div><div class="dd-num">Ventas U</div><div class="dd-ctr">Meses stock</div>
-          <div class="dd-num">Presup $</div><div class="dd-num">Presup U</div><div>Por qué</div>
+          <div class="dd-num">Ventas $</div><div class="dd-ctr">Meses stock</div>
+          <div class="dd-num">Presup $</div><div class="dd-num">Pedido $</div><div class="dd-num">Ingreso $</div><div>Por qué</div>
         </div>
         ${discs}
       </div>
