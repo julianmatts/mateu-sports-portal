@@ -2,8 +2,17 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Portal — Mateu Sports</title>
+<!-- ===== PWA (app instalable en el celular) ===== -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0B1527">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Mateu">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="shared/components/calendario-retail/calendario.css">
 <style>
@@ -1188,5 +1197,55 @@ document.addEventListener('click', e=>{
 </script>
 <!-- Calendario retail del shell (se auto-monta en .top-right del header) -->
 <script src="shared/components/calendario-retail/calendario.js" defer></script>
+
+<!-- ===== PWA: registro del service worker + botón "Instalar app" ===== -->
+<script>
+(function(){
+  // Registrar el service worker (habilita instalación + offline básico).
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('sw.js').catch(function(){});
+    });
+  }
+
+  // Botón flotante "Instalar app" (Android/Chrome dispara beforeinstallprompt).
+  var deferred = null, btn = null;
+  function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){ return null; } }
+  function makeBtn(label, onClick){
+    var b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:9999;'+
+      'font-family:"Barlow Condensed",sans-serif;font-weight:700;letter-spacing:1px;'+
+      'text-transform:uppercase;font-size:13px;padding:11px 16px;border:none;border-radius:999px;'+
+      'background:#CC0000;color:#fff;box-shadow:0 8px 24px rgba(11,21,39,.35);cursor:pointer';
+    b.addEventListener('click', onClick);
+    document.body.appendChild(b);
+    return b;
+  }
+  window.addEventListener('beforeinstallprompt', function(e){
+    e.preventDefault();
+    deferred = e;
+    if(btn) return;
+    btn = makeBtn('⬇ Instalar app', function(){
+      btn.remove(); btn=null;
+      deferred.prompt();
+      deferred.userChoice.finally(function(){ deferred=null; });
+    });
+  });
+  window.addEventListener('appinstalled', function(){ if(btn){ btn.remove(); btn=null; } });
+
+  // iOS/Safari no dispara beforeinstallprompt: mostrar una pista una sola vez.
+  var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  var standalone = window.navigator.standalone === true ||
+                   (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  if(isIOS && !standalone && ls('mateu_pwa_ios_hint') !== '1'){
+    window.addEventListener('load', function(){
+      btn = makeBtn('⬇ Instalar: Compartir → Agregar a inicio', function(){
+        ls('mateu_pwa_ios_hint','1'); btn.remove(); btn=null;
+      });
+    });
+  }
+})();
+</script>
 </body>
 </html>
