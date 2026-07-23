@@ -141,6 +141,19 @@ main{max-width:1240px;margin:0 auto;padding:26px 26px 60px}
 .bar-row.on .bf{background:var(--red)}
 .bar-row.on .bl{color:var(--red)}
 .bar-row .bv{flex:0 0 54px;font-size:12px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+/* Silueta desplegable: chevron para ver las marcas de cada silueta */
+.bar-row .bx{flex:0 0 14px;text-align:center;color:var(--muted);font-size:11px;cursor:pointer;
+  transition:transform .12s;user-select:none;border-radius:4px;line-height:14px}
+.bar-row .bx:hover{color:var(--navy)}
+.bar-row .bx.open{transform:rotate(90deg);color:var(--navy)}
+.subbars{margin:2px 0 8px 22px;padding-left:8px;border-left:2px solid #eef1f8}
+.bar-row.sub{padding:2px 4px}
+.bar-row.sub .bl{flex:0 0 108px;font-size:11.5px;font-weight:500;color:var(--muted)}
+.bar-row.sub .bt{height:10px}
+.bar-row.sub .bf{background:#8a97b5}
+.bar-row.sub.on .bl{color:var(--red)}
+.bar-row.sub.on .bf{background:var(--red)}
+.bar-row.sub .bv{flex:0 0 54px;font-size:11.5px}
 
 /* ===== CARGA EXCEL ===== */
 .dropzone{border:2px dashed var(--border);border-radius:12px;padding:30px 20px;text-align:center;
@@ -415,6 +428,7 @@ const ST = {
   cargaMsg: null,        // {text, cls} — estado de la última carga
   filtros: { r:[], m:[], d:[], sr:[], g1:[] },  // filtros compartidos por Dashboard y Detalle
   medida: 'u',           // 'u' = unidades · 'sku' = artículos distintos
+  siluetasExp: {},       // siluetas desplegadas en el Dashboard (key silueta -> true) para ver marcas
   busqueda: '',          // texto de búsqueda de la pestaña Detalle
   orden: { col:null, dir:1 },  // orden por columna de la pestaña Detalle
 };
@@ -565,7 +579,7 @@ function renderDashboard(el){
     h += barChart(uLbl+' por rubro', 'r', agrupar(ff,'r'));
     h += barChart(uLbl+' por género', 'sr', agrupar(ff,'sr'));
     h += barChart('Top 15 marcas ('+uLbl.toLowerCase()+')', 'm', agrupar(ff,'m').slice(0,15));
-    h += barChart('Top 15 siluetas ('+uLbl.toLowerCase()+')', 'g1', agrupar(ff,'g1').slice(0,15));
+    h += barChartDrill('Siluetas ('+uLbl.toLowerCase()+') · desplegá una para ver sus marcas', 'g1', 'm', ff);
     h += '</div>';
 
     h += '<div class="hint" style="margin:8px 0 18px">Archivo: '+esc(t.meta && t.meta.archivo || '—')+
@@ -692,7 +706,50 @@ function barChart(titulo, dim, datos, ancho){
   return h;
 }
 
+// Como barChart pero cada fila se despliega para ver el detalle por `subDim`
+// (ej.: silueta → marcas). Muestra TODAS las filas, sin recortar a un top.
+function barChartDrill(titulo, dim, subDim, filas){
+  const datos = agrupar(filas, dim);
+  let h = '<div class="card chart-wide" style="margin-bottom:0">'+
+    '<div class="chart-title">'+esc(titulo)+'</div>';
+  if(!datos.length){
+    return h + '<div class="hint">Sin datos con los filtros activos.</div></div>';
+  }
+  const max = datos[0].v || 1;
+  datos.forEach(dt => {
+    const on = ST.filtros[dim].includes(dt.k);
+    const exp = !!ST.siluetasExp[dt.k];
+    h += '<div class="bar-row drill'+(on?' on':'')+'" data-dim="'+dim+'" data-val="'+esc(dt.k)+'" title="'+esc(dimDisplay(dim, dt.k))+'">'+
+      '<span class="bx'+(exp?' open':'')+'" data-exp="'+esc(dt.k)+'" title="Ver marcas">▸</span>'+
+      '<span class="bl">'+esc(dimDisplay(dim, dt.k))+'</span>'+
+      '<span class="bt"><span class="bf" style="width:'+Math.max(0,(dt.v/max*100)).toFixed(1)+'%"></span></span>'+
+      '<span class="bv">'+fmtNum(dt.v)+'</span></div>';
+    if(exp){
+      const sub = agrupar(filas.filter(f => (f[dim]||'—')===dt.k), subDim);
+      h += '<div class="subbars">';
+      if(!sub.length){
+        h += '<div class="hint">Sin '+DIMS[subDim].label.toLowerCase()+'.</div>';
+      } else {
+        const smax = sub[0].v || 1;
+        sub.forEach(s => {
+          const son = ST.filtros[subDim].includes(s.k);
+          h += '<div class="bar-row sub'+(son?' on':'')+'" data-dim="'+subDim+'" data-val="'+esc(s.k)+'" title="'+esc(dimDisplay(subDim, s.k))+'">'+
+            '<span class="bl">'+esc(dimDisplay(subDim, s.k))+'</span>'+
+            '<span class="bt"><span class="bf" style="width:'+Math.max(0,(s.v/smax*100)).toFixed(1)+'%"></span></span>'+
+            '<span class="bv">'+fmtNum(s.v)+'</span></div>';
+        });
+      }
+      h += '</div>';
+    }
+  });
+  h += '</div>';
+  return h;
+}
+
 function wireDashboard(el){
+  // El chevron despliega/oculta las marcas de la silueta (sin tocar el filtro).
+  el.querySelectorAll('.bx[data-exp]').forEach(x =>
+    x.addEventListener('click', e => { e.stopPropagation(); toggleExpSilueta(x.dataset.exp); }));
   el.querySelectorAll('.bar-row').forEach(b =>
     b.addEventListener('click', ()=> toggleFiltro(b.dataset.dim, b.dataset.val)));
   el.querySelectorAll('.chip[data-dim]').forEach(c =>
@@ -709,6 +766,12 @@ function toggleFiltro(dim, val){
   const a = ST.filtros[dim];
   const i = a.indexOf(val);
   if(i >= 0) a.splice(i, 1); else a.push(val);
+  renderTab(ST.tab);
+}
+
+function toggleExpSilueta(key){
+  if(ST.siluetasExp[key]) delete ST.siluetasExp[key];
+  else ST.siluetasExp[key] = true;
   renderTab(ST.tab);
 }
 
