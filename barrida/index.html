@@ -976,8 +976,9 @@ async function exportRepXlsx(){
   const rows=reposFiltradas();
   if(!rows.length){ toast('No hay filas para exportar','err'); return; }
   const faltaEn = r => Object.values(r.talles).some(d=>d.v>0 && d.v>d.r);
-  // talles vendidos (union), orden numérico primero
-  const set=new Set(); rows.forEach(r=>Object.entries(r.talles).forEach(([t,d])=>{ if(d.v>0) set.add(t); }));
+  // columnas de talle: solo las que tienen SUGERIDO>0 en al menos un artículo de lo
+  // filtrado (no ensuciar con talles que quedaron vacíos según el filtro actual).
+  const set=new Set(); rows.forEach(r=>Object.entries(r.talles).forEach(([t,d])=>{ if(d.s>0) set.add(t); }));
   const numT=t=>{ const n=parseFloat(String(t).replace(',','.')); return isFinite(n)?n:Infinity; };
   const talles=[...set].sort((a,b)=>(numT(a)-numT(b))||cmp(a,b));
 
