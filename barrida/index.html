@@ -616,7 +616,7 @@ function viewCompras(){
       +[10,20,30,50,100,0].map(n=>'<option value="'+n+'"'+(f.topN===n?' selected':'')+'>'+(n===0?'Todos':'Top '+n)+'</option>').join('')+'</select></div>'
     +'<div class="fgrp" style="flex:1;min-width:170px"><label for="cQ">Buscar</label><input class="inp" id="cQ" placeholder="artículo, código, marca…" value="'+esc(f.q)+'" style="width:100%"></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="cVarios" '+(f.excluirVarios?'checked':'')+'> Excluir Varios/Facturación</label></div>'
-    +'<div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="btnCsvCom">⇩ CSV</button></div>'
+    +'<div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="btnCsvCom">⇩ Excel</button></div>'
     +'</div>';
 
   // KPIs
@@ -702,7 +702,7 @@ function viewParada(){
     +'<div class="fgrp" style="flex:1;min-width:180px"><label for="pQ">Buscar</label><input class="inp" id="pQ" placeholder="artículo, código, ID…" value="'+esc(f.q)+'" style="width:100%"></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="pVarios" '+(f.excluirVarios?'checked':'')+'> Excluir Varios/Facturación</label></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="pCron" '+(f.soloCronica?'checked':'')+'> Solo crónica (3+ sem)</label></div>'
-    +'<div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="btnCsvPar">⇩ CSV</button></div>'
+    +'<div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="btnCsvPar">⇩ Excel</button></div>'
     +'</div>';
   if(!rows.length) return html+'<div class="state"><div class="big-ic">✅</div>Sin reserva parada para estos filtros.</div>';
   html+='<div class="tbl-wrap"><table><thead><tr>'
@@ -769,7 +769,7 @@ function wireCompras(){
   document.querySelectorAll('.segbar button[data-vista]').forEach(b=>b.onclick=()=>{ f.vista=b.dataset.vista; render(); });
   const q=$('cQ'); if(q) q.oninput=e=>{ f.q=e.target.value; renderDebounce(); };
   const vr=$('cVarios'); if(vr) vr.onchange=e=>{ f.excluirVarios=e.target.checked; render(); };
-  const csv=$('btnCsvCom'); if(csv) csv.onclick=exportComCsv;
+  const csv=$('btnCsvCom'); if(csv) csv.onclick=exportComXlsx;
   wireSort('sortCom');
 }
 
@@ -873,7 +873,7 @@ function wireParada(){
   const q=$('pQ'); if(q) q.oninput=e=>{ f.q=e.target.value; renderDebounce(); };
   const cv=$('pVarios'); if(cv) cv.onchange=e=>{ f.excluirVarios=e.target.checked; render(); };
   const cr=$('pCron'); if(cr) cr.onchange=e=>{ f.soloCronica=e.target.checked; render(); };
-  const csv=$('btnCsvPar'); if(csv) csv.onclick=exportParCsv;
+  const csv=$('btnCsvPar'); if(csv) csv.onclick=exportParXlsx;
   wireSort('sortPar');
 }
 function wireSort(which){
@@ -914,11 +914,6 @@ async function abrirBarrida(sem){
 /* ============================================================
    EXPORT CSV
    ============================================================ */
-function descargarCsv(nombre, filas){
-  const csv=filas.map(r=>r.map(c=>{ const s=String(c==null?'':c); return /[",;\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }).join(';')).join('\n');
-  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nombre; a.click(); URL.revokeObjectURL(a.href);
-}
 /* ---- Export Excel estilizado (referencia: OC de Managment, ExcelJS) ---- */
 const BRAND = { navy:'FF0B1527', red:'FFCC0000', white:'FFFFFFFF', band:'FFF5F7FC',
   border:'FFDCE3F0', totalBg:'FFF6F8FD', muted:'FF6B7A99', faltaBg:'FFFDE7E7', faltaTxt:'FFB91C1C' };
@@ -928,6 +923,37 @@ async function downloadWorkbook(wb, filename){
   const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+// hoja estilizada genérica: membrete + banda resumen + header navy + autofiltro + freeze
+function hojaEstilizada(wb, nombre, titulo, resumen, headers, widths, leftCols){
+  const ws=wb.addWorksheet(nombre, {views:[{showGridLines:false}]});
+  ws.columns=widths.map(w=>({width:w}));
+  const nCols=headers.length; let r=1;
+  ws.mergeCells(r,1,r,nCols);
+  const tit=ws.getCell(r,1);
+  tit.value={ richText:[ {font:{bold:true,size:14,name:'Calibri',color:{argb:BRAND.navy}},text:titulo+'\n'},
+    {font:{size:9,name:'Calibri',color:{argb:BRAND.muted}},text:'Depósito Central · Semana del '+lunesLabel(state.semana)} ]};
+  tit.alignment={horizontal:'left',vertical:'middle',wrapText:true,indent:1};
+  for(let c=1;c<=nCols;c++){ ws.getCell(r,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.white}}; ws.getCell(r,c).border={bottom:{style:'medium',color:{argb:BRAND.red}}}; }
+  ws.getRow(r).height=34; r++;
+  ws.mergeCells(r,1,r,nCols);
+  const sub=ws.getCell(r,1); sub.value=resumen; sub.font={size:10,name:'Calibri',color:{argb:BRAND.navy}};
+  sub.alignment={horizontal:'left',vertical:'middle',indent:1}; sub.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.band}};
+  ws.getRow(r).height=20; r+=2;
+  const headerRowIdx=r;
+  headers.forEach((h,i)=>{ const c=ws.getCell(r,i+1); c.value=h; c.font={bold:true,color:{argb:BRAND.white},size:10,name:'Calibri'};
+    c.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.navy}}; c.alignment={horizontal:i<leftCols?'left':'center',vertical:'middle'}; c.border=thinBorder(BRAND.navy); });
+  ws.getRow(r).height=18;
+  ws.autoFilter={from:{row:headerRowIdx,column:1},to:{row:headerRowIdx,column:nCols}};
+  ws.views=[{state:'frozen', ySplit:headerRowIdx, showGridLines:false}];
+  ws.pageSetup={orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}};
+  return { ws, headerRowIdx, nCols, leftCols };
+}
+function filaEstilizada(meta, rowIdx, valores, i, tint){
+  const bg = tint || (i%2===0?BRAND.white:BRAND.band);
+  valores.forEach((v,idx)=>{ const c=meta.ws.getCell(rowIdx,idx+1); c.value=(v===''||v==null?null:v);
+    c.font={size:10,name:'Calibri',color:{argb:BRAND.navy}}; c.alignment={horizontal:idx<meta.leftCols?'left':'center',vertical:'middle'};
+    c.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}}; c.border=thinBorder(BRAND.border); });
 }
 // filas de reposición filtradas + ordenadas igual que la tabla
 function reposFiltradas(){
@@ -955,11 +981,11 @@ async function exportRepXlsx(){
   const numT=t=>{ const n=parseFloat(String(t).replace(',','.')); return isFinite(n)?n:Infinity; };
   const talles=[...set].sort((a,b)=>(numT(a)-numT(b))||cmp(a,b));
 
-  const fixed=['Rubro','Sucursal','Artículo','Marca','Código','Vendido','Reserva','Sugerido','Falta'];
+  const fixed=['Rubro','Marca','Artículo','Código','Sucursal','Vendido','Reserva','Sugerido','Falta'];
   const headers=[...fixed, ...talles]; const nCols=headers.length; const FIX=fixed.length;
   const wb=new ExcelJS.Workbook();
   const ws=wb.addWorksheet('Reposición', {views:[{showGridLines:false}]});
-  ws.columns=[{width:16},{width:20},{width:34},{width:16},{width:14},{width:9},{width:9},{width:9},{width:7}, ...talles.map(()=>({width:6}))];
+  ws.columns=[{width:16},{width:16},{width:34},{width:14},{width:20},{width:9},{width:9},{width:9},{width:7}, ...talles.map(()=>({width:6}))];
 
   let r=1;
   ws.mergeCells(r,1,r,nCols);
@@ -986,7 +1012,7 @@ async function exportRepXlsx(){
 
   rows.forEach((row,i)=>{
     const falta=faltaEn(row); const bg=i%2===0?BRAND.white:BRAND.band;
-    const base=[row.rubro,row.sucNombre,row.desc,row.marca,(row.codigo||row.id),row.vendido,row.reservaTotal,row.sugerido, falta?'Sí':''];
+    const base=[row.rubro,row.marca,row.desc,(row.codigo||row.id),row.sucNombre,row.vendido,row.reservaTotal,row.sugerido, falta?'Sí':''];
     base.forEach((v,idx)=>{ const c=ws.getCell(r,idx+1); c.value=v; c.font={size:10,name:'Calibri',color:{argb:BRAND.navy}};
       c.alignment={horizontal:idx<5?'left':'center',vertical:'middle'}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}}; c.border=thinBorder(BRAND.border); });
     if(falta){ const fc=ws.getCell(r,9); fc.font={size:10,bold:true,name:'Calibri',color:{argb:BRAND.faltaTxt}}; fc.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.faltaBg}}; }
@@ -1006,22 +1032,56 @@ async function exportRepXlsx(){
   await downloadWorkbook(wb, 'reposicion-'+state.semana+'.xlsx');
   toast('Excel generado ✓','ok');
 }
-function exportParCsv(){
+async function exportParXlsx(){
   const R=state.resultado; if(!R) return;
-  const filas=[['Articulo','Codigo','Marca','Rubro','Reserva','Semanas','IngresoReciente']];
-  R.parada.forEach(r=>filas.push([r.desc,r.codigo||r.id,r.marca,r.rubro,r.reservaTotal,r.semanas,r.ingresoReciente?'si':'']));
-  descargarCsv('reserva-parada-'+state.semana+'.csv',filas);
+  if(typeof ExcelJS==='undefined'){ toast('ExcelJS no cargó; recargá la página','err'); return; }
+  const f=state.filtrosPar;
+  let rows=R.parada.slice();
+  if(f.excluirVarios) rows=rows.filter(r=>!/varios|facturacion/i.test(r.rubro+' '+r.tipo));
+  if(f.soloCronica) rows=rows.filter(r=>r.semanas>=3 && !r.ingresoReciente);
+  if(f.rubro) rows=rows.filter(r=>r.rubro===f.rubro);
+  if(f.marca) rows=rows.filter(r=>r.marca===f.marca);
+  if(f.q){ const q=f.q.toLowerCase(); rows=rows.filter(r=>(r.desc+' '+r.codigo+' '+r.id+' '+r.marca).toLowerCase().includes(q)); }
+  const s=state.sortPar; rows.sort((a,b)=>{ const va=a[s.k],vb=b[s.k]; return (typeof va==='number'?va-vb:cmp(va,vb))*s.dir; });
+  if(!rows.length){ toast('No hay filas para exportar','err'); return; }
+  const wb=new ExcelJS.Workbook();
+  const headers=['Rubro','Marca','Artículo','Código','Reserva','Semanas','Estado','Talles'];
+  const meta=hojaEstilizada(wb,'Reserva parada','ANÁLISIS DE RESERVA · Reserva parada',
+    fmtInt(rows.length)+' artículos · '+fmtInt(rows.reduce((a,r)=>a+r.reservaTotal,0))+' unidades paradas',
+    headers,[16,16,34,14,9,9,17,30],4);
+  let r=meta.headerRowIdx+1;
+  rows.forEach((row,i)=>{
+    const estado = row.ingresoReciente===true?'Ingreso reciente':(row.semanas>=3?'Crónica '+row.semanas+' sem':'');
+    filaEstilizada(meta,r,[row.rubro,row.marca,row.desc,(row.codigo||row.id),row.reservaTotal,row.semanas,estado,row.talles],i);
+    r++;
+  });
+  await downloadWorkbook(wb,'reserva-parada-'+state.semana+'.xlsx');
+  toast('Excel generado ✓','ok');
 }
-function exportComCsv(){
-  const R=state.resultado; if(!R||!R.compras) return;
+async function exportComXlsx(){
+  const R=state.resultado; if(!R||!R.compras){ toast('Sin datos de compras','err'); return; }
+  if(typeof ExcelJS==='undefined'){ toast('ExcelJS no cargó; recargá la página','err'); return; }
   const f=state.filtrosCom;
   const aplica = c => (!f.excluirVarios || !/varios|facturacion/i.test(c.rubro+' '+c.tipo))
-    && c.vendido>=f.minVendido && (!f.rubro||c.rubro===f.rubro) && (!f.marca||c.marca===f.marca);
-  const filas=[['Categoria','Articulo','Codigo','Marca','Rubro','Vendido','Sucursales','Reserva']];
-  R.compras.filter(aplica).sort((a,b)=>b.vendido-a.vendido).forEach(c=>filas.push([
-    c.tieneReserva?'CON reserva (seguimiento)':'SIN reserva (reponer a marca)',
-    c.desc,c.codigo||c.id,c.marca,c.rubro,c.vendido,c.sucursales,c.reservaTotal]));
-  descargarCsv('compras-'+state.semana+'.csv',filas);
+    && c.vendido>=f.minVendido && (!f.rubro||c.rubro===f.rubro) && (!f.marca||c.marca===f.marca)
+    && (!f.q || (c.desc+' '+c.codigo+' '+c.id+' '+c.marca).toLowerCase().includes(f.q.toLowerCase()));
+  const rows=R.compras.filter(aplica).sort((a,b)=>b.vendido-a.vendido);
+  if(!rows.length){ toast('No hay filas para exportar','err'); return; }
+  const wb=new ExcelJS.Workbook();
+  const headers=['Categoría','Rubro','Marca','Artículo','Código','Vendido','Sucursales','Reserva'];
+  const sin=rows.filter(c=>!c.tieneReserva).length;
+  const meta=hojaEstilizada(wb,'Compras','ANÁLISIS DE RESERVA · Compras',
+    fmtInt(rows.length)+' artículos · '+fmtInt(sin)+' sin reserva (reponer a la marca) · '+fmtInt(rows.length-sin)+' con reserva (seguimiento)',
+    headers,[28,16,16,34,14,9,10,9],4);
+  let r=meta.headerRowIdx+1;
+  rows.forEach((c,i)=>{
+    const cat=c.tieneReserva?'CON reserva — seguimiento':'SIN reserva — reponer a la marca';
+    const tint=c.tieneReserva ? (i%2===0?'FFF1FAF4':'FFE9F6EC') : (i%2===0?'FFFDF3F3':'FFFBE9E9');
+    filaEstilizada(meta,r,[cat,c.rubro,c.marca,c.desc,(c.codigo||c.id),c.vendido,c.sucursales,c.reservaTotal],i,tint);
+    r++;
+  });
+  await downloadWorkbook(wb,'compras-'+state.semana+'.xlsx');
+  toast('Excel generado ✓','ok');
 }
 
 /* ============================================================

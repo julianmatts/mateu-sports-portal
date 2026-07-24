@@ -233,10 +233,12 @@ Indicadores, ver abajo).
   en una sucursal → sugerido por talle = `mín(vendido, reserva)`; los talles donde
   `vendido > reserva` van en **rojo** + pill ⚠ falta en el artículo = reserva no
   alcanza, señal de recompra a la marca; filtro "Solo con faltante de talle").
-  Botón **⇩ Excel** de Reposición: exporta con estilo (ExcelJS, como el OC de
-  Managment) — membrete, header navy, autofiltro, freeze; columnas Rubro · Sucursal ·
-  Artículo · Marca · Código · Vendido · Reserva · Sugerido · Falta + el **sugerido
-  abierto por talle en columnas** (talles faltantes en rojo). Y **Reserva parada**
+  Botón **⇩ Excel** (las tres pestañas exportan): estilo ExcelJS como el OC de
+  Managment — membrete, header navy, autofiltro, freeze. Orden de columnas
+  Rubro · Marca · Artículo · Código · Sucursal · Vendido · Reserva · Sugerido · Falta
+  + el **sugerido abierto por talle en columnas** (talles faltantes en rojo). Parada y
+  Compras usan el mismo estilo/orden (sin Sucursal; Compras antepone Categoría y tiñe
+  rojo/verde según sin/con reserva). Y **Reserva parada**
   (reserva y CERO venta en toda la cadena). El Depósito y filas basura (`Sucursal`)
   se excluyen de la demanda; se puede filtrar `Varios/Facturación` (gift cards,
   cupones). El grano fino es art×sucursal.
