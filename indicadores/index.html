@@ -413,6 +413,13 @@ footer b{color:var(--navy)}
       <div class="diag" id="diagBox" style="display:none"></div>
     </section>
 
+    <section class="sec" id="secBarrida" style="display:none">
+      <div class="sec-label">Depósito central</div>
+      <h2 class="sec-title">Reposición <em>disponible</em></h2>
+      <p class="hint">Artículos que tu sucursal vendió la última semana y que <b>hay en reserva del depósito central</b>. Salen de la Barrida semanal; pedilos por el canal de siempre.</p>
+      <div class="card pad" id="barridaCard"></div>
+    </section>
+
     <section class="sec" id="secTbl">
       <div class="sec-label">Mi equipo</div>
       <h2 class="sec-title">Mi <em>equipo</em></h2>
@@ -608,6 +615,13 @@ const SLUG_SUC = {
 const OUTLET_SUC = {
   'gonnet':'14-Outlet Gonnet','av-44':'20-Outlet Av. 44','calle-55':'03-Outlet Calle 55','aurelius-10':'07-Aurelius Calle 10',
 };
+// nombre de sucursal (dato) -> slug del Portal, para leer la Barrida de reserva.
+const SUC2SLUG = {};
+Object.entries(SLUG_SUC).forEach(([slug,n])=>SUC2SLUG[n]=slug);
+Object.entries(OUTLET_SUC).forEach(([slug,n])=>SUC2SLUG[n]=slug);
+// Base de la Barrida de Reserva (mismo criterio de seguridad blanda: cada sucursal
+// baja solo su propia lista de reposición). Vacío => la sección no aparece.
+const BARRIDA_URL = 'https://barrida-mateu-default-rtdb.firebaseio.com';
 
 const esGerencia = SESSION.rol === 'admin';
 let miSucursal = null;   // nombre en datos para roles de sucursal/outlet (null = sin dato)
@@ -810,7 +824,7 @@ async function render(){
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
   $('secCanales').style.display = ecom?'':'none';
-  if(ecom) ['secEq','secMix','secPlantilla','secTbl','secSem'].forEach(id=>$(id).style.display='none');
+  if(ecom) ['secEq','secMix','secPlantilla','secTbl','secSem','secBarrida'].forEach(id=>$(id).style.display='none');
   const seg=document.querySelector('.seg'); if(seg) seg.style.display = ecom?'none':'flex';
   renderKPIs();
   renderDiagnostico();
@@ -819,11 +833,11 @@ async function render(){
   renderHeat();
   renderNotas();
   if(ecom){ renderCanales(); }
-  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderSem(); }
+  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderSem(); renderBarrida(); }
 }
 
 function mostrarEmpty(msg){
-  ['secEq','secMix','secCov','secPlantilla','secTbl','secSem','secHeat'].forEach(id=>$(id).style.display='none');
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secSem','secHeat','secBarrida'].forEach(id=>$(id).style.display='none');
   $('cobNota').style.display='none';
   $('diagBox').style.display='none';
   $('kpis').innerHTML = '<div class="empty" style="grid-column:1/-1">'+msg+'</div>';
@@ -1130,6 +1144,49 @@ function renderStockCard(){
     const d=deltaHtml(r, r0); if(d) deltaStr=`${d} vs. ${mesCorto(pp)}`; }
   foot.innerHTML = `<div class="kpi-obj"><span class="dot"></span><span class="cum-${sem}">${estado}</span></div>`
     + (deltaStr?`<div class="kpi-delta">${deltaStr}</div>`:'');
+}
+
+/* --- reposición disponible en depósito (Barrida de Reserva) --- */
+const _barridaCache = {};   // slug -> Promise<{lista,semana}|null>
+function fetchBarrida(slug){
+  if(_barridaCache[slug]) return _barridaCache[slug];
+  const base = BARRIDA_URL.replace(/\/+$/,'');
+  _barridaCache[slug] = (async()=>{
+    const ultima = await fetch(base+'/barrida/ultima.json').then(r=>r.ok?r.json():null).catch(()=>null);
+    if(!ultima) return null;
+    const rep = await fetch(base+'/barrida/barridas/'+encodeURIComponent(ultima)+'/reposicion/'+encodeURIComponent(slug)+'.json')
+      .then(r=>r.ok?r.json():null).catch(()=>null);
+    return (rep && rep.length) ? {lista:rep, semana:ultima} : null;
+  })();
+  return _barridaCache[slug];
+}
+async function renderBarrida(){
+  const sec=$('secBarrida'); if(!sec) return;
+  sec.style.display='none';
+  if(!BARRIDA_URL) return;
+  const slug = SUC2SLUG[sucName];
+  if(!slug) return;                 // Depósito / Diagonal / Ecommerce sin reposición dirigida
+  const target = sucName;
+  let data=null;
+  try{ data = await fetchBarrida(slug); }catch(e){ return; }
+  if(sucName!==target) return;       // el usuario cambió de sucursal mientras cargaba
+  const top = (data && data.lista || []).filter(x=>x.sugerido>0).sort((a,b)=>b.sugerido-a.sugerido);
+  if(!top.length){ sec.style.display='none'; return; }
+  const totalU = top.reduce((a,x)=>a+(x.sugerido||0),0);
+  const semLbl = (()=>{ const p=String(data.semana||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:data.semana; })();
+  let html='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+    +'<div style="font-size:15px"><b>'+top.length+'</b> artículo'+(top.length===1?'':'s')+' con reposición posible · <b>'+fmtN(totalU)+'</b> unidades sugeridas</div>'
+    +'<div class="hint" style="margin:0">Barrida del '+esc(semLbl)+'</div></div>';
+  html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Artículo</th><th class="L">Marca</th><th>Vendido</th><th>Sugerido</th><th class="L">Talles</th></tr></thead><tbody>';
+  top.slice(0,25).forEach(x=>{
+    const tt=Object.entries(x.talles||{}).filter(([t,d])=>d.s>0).map(([t,d])=>t+'×'+d.s).join('  ');
+    html+='<tr><td class="L">'+esc(x.desc||x.codigo||x.id)+'</td><td class="L">'+esc(x.marca||'')+'</td>'
+      +'<td>'+fmtN(x.vendido||0)+'</td><td><b>'+fmtN(x.sugerido)+'</b></td><td class="L">'+esc(tt||'—')+'</td></tr>';
+  });
+  html+='</tbody></table></div>';
+  if(top.length>25) html+='<p class="hint" style="margin-top:8px">…y '+(top.length-25)+' artículos más.</p>';
+  $('barridaCard').innerHTML=html;
+  sec.style.display='';
 }
 
 /* --- descomposición --- */

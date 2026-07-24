@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Barrida de Reserva — Mateu Sports</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0B1527;--navy-mid:#1a2f55;--navy-soft:#13203a;
+  --red:#CC0000;--red-soft:#ff3b3b;
+  --white:#fff;--off:#f5f7fc;--muted:#6B7A99;--muted-light:#b0bcd4;
+  --card:#fff;--border:#dce3f0;
+  --ok:#16a34a;--warn:#d97706;--bad:#dc2626;--exc:#7c3aed;
+  --font-d:'Bebas Neue',sans-serif;--font-c:'Barlow Condensed',sans-serif;--font-b:'Barlow',sans-serif;
+  --shadow:0 1px 4px rgba(11,21,39,.08);--shadow-md:0 8px 30px rgba(11,21,39,.18);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--off);color:var(--navy);font-family:var(--font-b);min-height:100vh}
+img,svg{max-width:100%}
+
+/* ===== HEADER ===== */
+.top{background:var(--navy);padding:12px 22px;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:3px solid var(--red);position:sticky;top:0;z-index:40;flex-wrap:wrap;gap:10px}
+.top a.logo{display:flex;align-items:center;gap:11px;text-decoration:none;min-width:0}
+.top img{height:32px;filter:brightness(0) invert(1)}
+.top .tt{font-family:var(--font-d);font-size:19px;letter-spacing:1.5px;color:#fff;line-height:1}
+.top .ts{font-family:var(--font-c);font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted-light)}
+.top-right{display:flex;align-items:center;gap:12px;margin-left:auto}
+.who{text-align:right;line-height:1.1}
+.who .n{font-family:var(--font-c);font-size:13px;font-weight:600;color:#fff;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.who .r{font-family:var(--font-c);font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--red-soft)}
+.salir{background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:6px;color:rgba(255,255,255,.7);
+  font-family:var(--font-c);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;padding:7px 13px;cursor:pointer}
+.salir:hover{color:#fff;border-color:#fff}
+
+/* ===== NAV TABS ===== */
+.tabs{background:#fff;border-bottom:1px solid var(--border);padding:0 22px;display:flex;gap:4px;overflow-x:auto;position:sticky;top:57px;z-index:30}
+.tab{padding:13px 16px;border:0;background:none;cursor:pointer;font-family:var(--font-c);font-size:14px;font-weight:600;
+  letter-spacing:.5px;color:var(--muted);border-bottom:3px solid transparent;white-space:nowrap}
+.tab.on{color:var(--navy);border-bottom-color:var(--red)}
+.tab:hover{color:var(--navy)}
+.tab:focus-visible{outline:2px solid var(--red);outline-offset:-2px}
+.tab .badge{display:inline-block;min-width:18px;padding:0 5px;margin-left:6px;border-radius:10px;background:#e6ebf5;
+  color:var(--navy-mid);font-family:var(--font-b);font-size:11px;font-weight:700;line-height:18px;text-align:center}
+.tab.on .badge{background:var(--red);color:#fff}
+
+main{max-width:1200px;margin:0 auto;padding:22px 22px 80px}
+
+.banner{border-radius:9px;padding:10px 14px;font-size:13px;margin-bottom:16px}
+.banner.warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412}
+.banner.info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+.banner code{background:rgba(0,0,0,.06);padding:1px 5px;border-radius:4px;font-size:12px}
+
+/* ===== CONTROLES ===== */
+.sel,.inp{padding:9px 11px;border:1px solid var(--border);border-radius:7px;font-size:14px;color:var(--navy);background:#fff;font-family:var(--font-b)}
+.sel:focus,.inp:focus{outline:none;border-color:var(--navy-mid)}
+.btn{border:none;border-radius:8px;padding:10px 16px;font-family:var(--font-c);font-size:13px;font-weight:700;
+  letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:all .15s}
+.btn-primary{background:var(--red);color:#fff}.btn-primary:hover{background:#a00000}
+.btn-outline{background:#fff;border:1.5px solid var(--border);color:var(--navy)}.btn-outline:hover{border-color:var(--navy-mid)}
+.btn-sm{padding:6px 11px;font-size:11px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn:focus-visible,.sel:focus-visible,.inp:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+
+/* ===== CARDS ===== */
+.sec-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.sec-head h1{font-family:var(--font-d);font-size:30px;letter-spacing:1px;line-height:1}
+.sec-head .sub{font-family:var(--font-c);font-size:13px;font-weight:500;color:var(--muted);margin-top:2px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:var(--shadow)}
+.card-h{font-family:var(--font-d);font-size:20px;letter-spacing:.5px;margin-bottom:2px}
+.card-hs{font-family:var(--font-c);font-size:12px;color:var(--muted);margin-bottom:14px}
+
+/* ===== DROPZONE ===== */
+.drop{border:2px dashed var(--border);border-radius:12px;padding:26px;text-align:center;background:#fff;cursor:pointer;transition:all .15s}
+.drop.over{border-color:var(--red);background:#fff5f5}
+.drop .ic{font-size:34px}
+.drop .t{font-family:var(--font-c);font-weight:600;font-size:15px;margin-top:6px}
+.drop .s{font-size:12.5px;color:var(--muted);margin-top:3px}
+.filechip{display:inline-flex;align-items:center;gap:8px;background:#eef2fb;border:1px solid var(--border);border-radius:20px;
+  padding:5px 12px;font-family:var(--font-c);font-size:12.5px;font-weight:600;color:var(--navy-mid);margin:4px 4px 0 0}
+.filechip .ok{color:var(--ok)}.filechip .no{color:var(--bad)}
+
+/* ===== KPIs ===== */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:#fff;border:1px solid var(--border);border-radius:11px;padding:14px 16px;box-shadow:var(--shadow)}
+.kpi.rep{border-left:4px solid var(--ok)}
+.kpi.par{border-left:4px solid var(--warn)}
+.kpi .k{font-family:var(--font-c);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.kpi .v{font-family:var(--font-d);font-size:32px;letter-spacing:.5px;margin-top:4px;line-height:1}
+.kpi .v small{font-size:14px;color:var(--muted);font-family:var(--font-c)}
+
+/* ===== FILTROS ===== */
+.filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px}
+.fgrp{display:flex;flex-direction:column;gap:4px;min-width:120px}
+.fgrp label{font-family:var(--font-c);font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)}
+.chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--navy-mid);cursor:pointer;user-select:none}
+
+/* ===== TABLAS ===== */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:11px;background:#fff}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:680px}
+th{background:var(--navy);color:#fff;font-family:var(--font-c);font-weight:600;letter-spacing:.5px;padding:9px 11px;text-align:left;white-space:nowrap;position:sticky;top:0;cursor:pointer}
+th.num,td.num{text-align:right}
+th.noord{cursor:default}
+td{padding:8px 11px;border-bottom:1px solid #eef0f7;vertical-align:middle}
+tbody tr:hover td{background:#f8f9fe}
+.mono{font-variant-numeric:tabular-nums}
+.pill{display:inline-block;padding:2px 8px;border-radius:20px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.4px}
+.pill.rec{background:#eff6ff;color:#1e40af}
+.pill.cron{background:#fef2f2;color:#b91c1c}
+.pill.suc{background:#eef2fb;color:var(--navy-mid)}
+.talles{font-size:12px;color:var(--muted);font-family:var(--font-c)}
+.desc{max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grp-suc{background:#eef2fb;font-family:var(--font-c);font-weight:700;color:var(--navy-mid);letter-spacing:.5px}
+
+/* ===== ESTADOS ===== */
+.state{text-align:center;padding:52px 20px;color:var(--muted)}
+.state .big-ic{font-size:40px;margin-bottom:10px}
+.state.err{color:var(--bad)}
+.spinner{width:26px;height:26px;border:3px solid #e6ebf5;border-top-color:var(--red);border-radius:50%;
+  display:inline-block;animation:spin .7s linear infinite;margin-bottom:10px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ===== HISTÓRICO ===== */
+.histrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid var(--border);
+  border-radius:10px;background:#fff;margin-bottom:9px}
+.histrow .hl{font-family:var(--font-c);font-weight:700;font-size:15px;color:var(--navy)}
+.histrow .hs{font-size:12.5px;color:var(--muted)}
+
+/* ===== TOAST ===== */
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--navy);color:#fff;
+  padding:11px 18px;border-radius:9px;font-size:13.5px;box-shadow:var(--shadow-md);opacity:0;pointer-events:none;transition:all .25s;z-index:60}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.ok{background:#166534}.toast.err{background:#991b1b}
+
+@media(max-width:640px){ .sec-head h1{font-size:24px} .kpi .v{font-size:26px} }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <a class="logo" href="../" title="Volver al Portal">
+    <img src="data:image/webp;base64,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" alt="Mateu Sports">
+    <span><span class="tt">Barrida de Reserva</span><br><span class="ts">Depósito Central · Mateu Sports</span></span>
+  </a>
+  <div class="top-right">
+    <div class="who"><div class="n" id="whoName">—</div><div class="r" id="whoRole">—</div></div>
+    <button class="salir" id="salir">Salir</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab on" data-tab="cargar">Cargar barrida</button>
+  <button class="tab" data-tab="reposicion">Reposición <span class="badge" id="bRep">0</span></button>
+  <button class="tab" data-tab="parada">Reserva parada <span class="badge" id="bPar">0</span></button>
+  <button class="tab" data-tab="historico">Histórico</button>
+</nav>
+
+<main>
+  <div class="banner warn" id="cfgBanner" style="display:none"></div>
+  <div id="view"><div class="state"><div class="spinner"></div>Cargando…</div></div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<!-- SheetJS por CDN (convención del portal: libs externas por <script src>) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+/* ============================================================
+   Barrida de Reserva — módulo self-contained del Portal.
+   Cruza la RESERVA del depósito central con las VENTAS de la semana
+   abiertas por sucursal (dos hojas de un mismo Excel, o dos archivos)
+   y genera dos alertas:
+     • REPOSICIÓN  — artículo con reserva Y venta en una sucursal.
+     • RESERVA PARADA — artículo con reserva y CERO venta en la cadena.
+   Se corre semana a semana (típicamente los lunes). El histórico se
+   guarda en Firebase (base barrida-mateu) como el resto del portal.
+   Lee la sesión del Portal (localStorage), sin login propio.
+   El cruce se calcula en el cliente; el Excel se parsea con SheetJS (CDN).
+   ============================================================ */
+'use strict';
+const $ = id => document.getElementById(id);
+
+/* ---------- Firebase: base propia del módulo ----------
+   Cuando Juli cree la base a mano y las reglas queden abiertas, funciona solo.
+   Vacío => MODO SIN BASE (permite cargar y ver, pero no guarda histórico). */
+const FIREBASE_DB_URL = 'https://barrida-mateu-default-rtdb.firebaseio.com';
+const ROOT = 'barrida';   // rama raíz en la base
+
+/* ---------- sesión ---------- */
+const SESSION_KEY = 'mateu_portal_session';
+function readSession(){ try{ const s=localStorage.getItem(SESSION_KEY); return s?JSON.parse(s):null; }catch(e){ return window.__sess||null; } }
+const SESSION = readSession();
+if(!SESSION || !SESSION.rol){ location.replace('../'); }
+// La barrida la corre el depósito / gerencia. Las sucursales ven su aviso en Indicadores.
+const puedeVer = SESSION && (SESSION.rol==='admin' || (SESSION.herramientas||[]).includes('barrida'));
+if(SESSION && SESSION.rol && !puedeVer){ location.replace('../'); }
+
+/* ---------- mapa nombre de sucursal (dato) -> slug del Portal ----------
+   Mismo criterio que Indicadores; el Depósito no es destino de reposición. */
+const SLUG_SUC = {
+  'calle-12':'12-MS Calle 12','city-bell':'06-MS City Bell','calle-47':'08-MS Calle 47',
+  'calle-49':'19-MS Calle 49','los-hornos':'13-MS Los Hornos','plaza':'01-MS Plaza Italia',
+  'berisso':'16-MS Berisso','ensenada':'11-MS Ensenada','kids':'02-Mateu Kids',
+  'aurelius-12':'04-Aurelius Calle 12','aurelius-5':'18-Aurelius Calle 5','aurelius-cb':'17-Aurelius City Bell',
+  'adidas-12':'21-Adidas Calle 12','adidas':'09-Adidas Av. 7','originals':'15-Adidas Originals',
+  'ecommerce':'99-Ecommerce',
+};
+const OUTLET_SUC = {
+  'gonnet':'14-Outlet Gonnet','av-44':'20-Outlet Av. 44','calle-55':'03-Outlet Calle 55','aurelius-10':'07-Aurelius Calle 10',
+};
+// nombre normalizado -> {slug, nombre}
+const NAME2SLUG = {};
+function normName(s){ return String(s||'').trim().toLowerCase().replace(/\s+/g,' '); }
+Object.entries(SLUG_SUC).forEach(([slug,n])=>NAME2SLUG[normName(n)]={slug,nombre:n});
+Object.entries(OUTLET_SUC).forEach(([slug,n])=>NAME2SLUG[normName(n)]={slug,nombre:n});
+
+/* ---------- helpers ---------- */
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+const num = x => { const n=Number(String(x==null?'':x).replace(',','.')); return isFinite(n)?n:0; };
+const fmtInt = n => (Math.round(n||0)).toLocaleString('es-AR');
+const cmp = (a,b)=>String(a).localeCompare(String(b),'es');
+function toast(msg, kind){ const t=$('toast'); t.textContent=msg; t.className='toast show '+(kind||''); setTimeout(()=>{t.className='toast '+(kind||'');},2800); }
+function nowISO(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); }
+// lunes (ISO YYYY-MM-DD) de la semana de una fecha dada
+function lunesDe(date){ const d=new Date(date); const day=(d.getDay()+6)%7; d.setDate(d.getDate()-day); const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+function lunesLabel(iso){ if(!iso) return ''; const [y,m,dd]=iso.split('-'); return dd+'/'+m+'/'+y; }
+
+/* ---------- Firebase REST ---------- */
+function fbUrl(path){ return FIREBASE_DB_URL.replace(/\/+$/,'') + '/' + path.split('/').map(encodeURIComponent).join('/') + '.json'; }
+async function fbGet(path){ const r=await fetch(fbUrl(path)); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
+async function fbPut(path, data){ const r=await fetch(fbUrl(path),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
+
+/* ============================================================
+   ESTADO
+   ============================================================ */
+const state = {
+  tab:'cargar',
+  files:{ ventas:null, reserva:null },   // {name, rows, headerIdx, cols}
+  resultado:null,                        // salida de computar()
+  semana: lunesDe(new Date()),           // lunes de la barrida
+  histKeys:[],                           // lunes con barrida guardada
+  filtros:{ suc:'', rubro:'', marca:'', q:'', soloSugerido:true, excluirVarios:true },
+  filtrosPar:{ rubro:'', marca:'', q:'', excluirVarios:true, soloCronica:false },
+  sortRep:{k:'sugerido',dir:-1}, sortPar:{k:'reserva',dir:-1},
+};
+
+/* ============================================================
+   PARSEO DEL EXCEL
+   ============================================================ */
+// Detecta la fila de encabezado y las columnas relevantes de una hoja.
+function detectarCols(matrix){
+  // Busca en las primeras 8 filas la que tenga 'ID ITEM' o 'DESCRIP'
+  let headerIdx=-1;
+  for(let i=0;i<Math.min(8,matrix.length);i++){
+    const row=matrix[i].map(c=>normName(c));
+    if(row.some(c=>c.includes('id item')) || (row.some(c=>c.includes('descrip'))&&row.some(c=>c.includes('codigo')))){ headerIdx=i; break; }
+  }
+  if(headerIdx<0) return null;
+  const H = matrix[headerIdx].map(c=>normName(c));
+  const find = preds => { for(let j=0;j<H.length;j++){ if(preds(H[j],j)) return j; } return -1; };
+  const cols = {
+    suc:   find(h=>h==='sucursal'||h.startsWith('sucursal')),
+    rubro: find(h=>h==='rubro'||h.startsWith('rubro')),
+    marca: find(h=>h==='marca'),
+    disc:  find(h=>h.includes('disciplina')),
+    gen:   find(h=>h.includes('genero')),
+    tipo:  find(h=>h.includes('tipo')),
+    desc:  find(h=>h.includes('descrip')),
+    id:    find(h=>h.includes('id item')||h==='id'),
+    cod:   find(h=>h.includes('codigo')&&h.includes('barra')),
+  };
+  // Talles = columnas a la derecha de CODIGO BARRAS con encabezado no vacío.
+  // Se excluye la columna "Total" (la hoja de reserva trae al final el total de la
+  // fila; si se contara como talle, duplicaría el stock).
+  const desdeIdx = Math.max(cols.cod, cols.id, cols.desc);
+  const talles=[];
+  for(let j=desdeIdx+1;j<H.length;j++){
+    const lbl=String(matrix[headerIdx][j]==null?'':matrix[headerIdx][j]).trim();
+    if(lbl!=='' && normName(lbl)!=='total') talles.push({idx:j,label:lbl});
+  }
+  return { headerIdx, cols, talles };
+}
+
+// Convierte un ArrayBuffer de xlsx en {sheets:[{name,matrix}]}
+function leerLibro(buf){
+  const wb = XLSX.read(buf, {type:'array'});
+  return wb.SheetNames.map(name=>({
+    name,
+    matrix: XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, blankrows:false, defval:''})
+  }));
+}
+
+// Clasifica una hoja: 'ventas' (tiene Sucursal) | 'reserva' | null
+function clasificarHoja(sheet){
+  const det = detectarCols(sheet.matrix);
+  if(!det || det.talles.length===0) return null;
+  const tipo = det.cols.suc>=0 ? 'ventas' : 'reserva';
+  return { name:sheet.name, matrix:sheet.matrix, tipo, ...det };
+}
+
+// Procesa un File -> asigna a state.files.ventas / .reserva según lo que traiga
+async function ingerirArchivo(file){
+  const buf = await file.arrayBuffer();
+  const sheets = leerLibro(buf);
+  let asignadas=0;
+  sheets.forEach(sh=>{
+    const c = clasificarHoja(sh);
+    if(!c) return;
+    state.files[c.tipo] = { archivo:file.name, hoja:sh.name, matrix:c.matrix, headerIdx:c.headerIdx, cols:c.cols, talles:c.talles };
+    asignadas++;
+  });
+  if(asignadas===0) throw new Error('No reconocí ninguna hoja de ventas o reserva en "'+file.name+'". Revisá que tenga los encabezados (Sucursal, ID ITEM, Descripción, talles…).');
+  return asignadas;
+}
+
+/* ============================================================
+   CÁLCULO DE LA BARRIDA
+   ============================================================ */
+// Agrega una hoja a un mapa idItem -> {meta, talles:{}, total, porSuc?}
+function filasDeHoja(f){
+  const out=[];
+  for(let i=f.headerIdx+1;i<f.matrix.length;i++){
+    const row=f.matrix[i];
+    const id=String(row[f.cols.id]==null?'':row[f.cols.id]).trim();
+    if(!id) continue;
+    const talles={}; let total=0;
+    f.talles.forEach(t=>{ const q=num(row[t.idx]); if(q!==0){ talles[t.label]=(talles[t.label]||0)+q; total+=q; } });
+    out.push({
+      id,
+      suc: f.cols.suc>=0 ? String(row[f.cols.suc]||'').trim() : '',
+      meta:{
+        rubro:String(row[f.cols.rubro]||'').trim(),
+        marca:String(row[f.cols.marca]||'').trim(),
+        tipo: f.cols.tipo>=0?String(row[f.cols.tipo]||'').trim():'',
+        desc: String(row[f.cols.desc]||'').trim(),
+        cod:  f.cols.cod>=0?String(row[f.cols.cod]||'').trim():'',
+      },
+      talles, total,
+    });
+  }
+  return out;
+}
+
+// Cruza reserva x ventas. histPrev = {idItem:total} de la semana anterior (o null).
+// histSnaps = array de {idItem:total} de semanas previas ordenadas de más nueva a más vieja.
+function computar(histPrev, histSnaps){
+  const fV = state.files.ventas, fR = state.files.reserva;
+  // ---- reserva ----
+  const reserva={};
+  filasDeHoja(fR).forEach(r=>{
+    if(!reserva[r.id]) reserva[r.id]={ meta:r.meta, talles:{}, total:0 };
+    const R=reserva[r.id];
+    Object.entries(r.talles).forEach(([t,q])=>{ R.talles[t]=(R.talles[t]||0)+q; });
+    R.total+=r.total;
+    if(!R.meta.desc && r.meta.desc) R.meta=r.meta;
+  });
+  // ---- ventas (por sucursal, solo destinos válidos; Depósito/otros quedan afuera) ----
+  const ventas={};   // id -> { porSuc:{slug:{nombre,total,talles}}, totalCadena, meta }
+  filasDeHoja(fV).forEach(v=>{
+    const m = NAME2SLUG[normName(v.suc)];
+    if(!m) return;                 // excluye Depósito, "Sucursal" y cualquier no mapeada
+    if(v.total<=0) return;
+    if(!ventas[v.id]) ventas[v.id]={ porSuc:{}, totalCadena:0, meta:v.meta };
+    const V=ventas[v.id];
+    if(!V.porSuc[m.slug]) V.porSuc[m.slug]={ nombre:m.nombre, total:0, talles:{} };
+    const S=V.porSuc[m.slug];
+    Object.entries(v.talles).forEach(([t,q])=>{ if(q>0){ S.talles[t]=(S.talles[t]||0)+q; } });
+    S.total+=v.total; V.totalCadena+=v.total;
+  });
+
+  // ---- cruce ----
+  const reposicion=[];   // una fila por (artículo × sucursal candidata)
+  const parada=[];
+  Object.entries(reserva).forEach(([id,R])=>{
+    if(R.total<=0) return;
+    const V=ventas[id];
+    if(V && V.totalCadena>0){
+      Object.entries(V.porSuc).forEach(([slug,S])=>{
+        // sugerido por talle = min(vendido en la suc, reserva del talle)
+        let sugerido=0; const detTalles={};
+        Object.entries(S.talles).forEach(([t,vq])=>{
+          const rq=R.talles[t]||0; const s=Math.min(vq,rq);
+          if(vq>0||rq>0) detTalles[t]={v:vq,r:rq,s};
+          sugerido+=s;
+        });
+        reposicion.push({
+          id, slug, sucNombre:S.nombre,
+          codigo:R.meta.cod||V.meta.cod||'', desc:R.meta.desc||V.meta.desc||'',
+          marca:R.meta.marca||V.meta.marca||'', rubro:R.meta.rubro||V.meta.rubro||'', tipo:R.meta.tipo||V.meta.tipo||'',
+          vendido:S.total, reservaTotal:R.total, sugerido, talles:detTalles,
+        });
+      });
+    } else {
+      // sin venta en toda la cadena -> reserva parada
+      const reciente = histPrev ? !(id in histPrev) : null;   // null = primera barrida, sin histórico
+      let semanas=1;
+      if(histSnaps){ for(const snap of histSnaps){ if(id in snap) semanas++; else break; } }
+      parada.push({
+        id, codigo:R.meta.cod||'', desc:R.meta.desc||'', marca:R.meta.marca||'', rubro:R.meta.rubro||'', tipo:R.meta.tipo||'',
+        reservaTotal:R.total, semanas, ingresoReciente:reciente,
+        talles:Object.entries(R.talles).map(([t,q])=>t+':'+q).join('  '),
+      });
+    }
+  });
+
+  // snapshot de reserva de esta semana (para futuras barridas)
+  const snapshot={}; Object.entries(reserva).forEach(([id,R])=>{ if(R.total>0) snapshot[id]=R.total; });
+
+  const sucSet = new Set(reposicion.map(r=>r.slug));
+  return {
+    reposicion, parada, snapshot,
+    totales:{
+      items_reserva: Object.keys(snapshot).length,
+      items_reponibles: new Set(reposicion.map(r=>r.id)).size,
+      lineas_reposicion: reposicion.length,
+      sucursales: sucSet.size,
+      unidades_sugeridas: reposicion.reduce((a,r)=>a+r.sugerido,0),
+      items_parados: parada.length,
+      unidades_paradas: parada.reduce((a,r)=>a+r.reservaTotal,0),
+    },
+    sinHistorial: histPrev===null,
+  };
+}
+
+/* ============================================================
+   VISTAS
+   ============================================================ */
+function setTab(t){ state.tab=t; document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t)); render(); }
+
+function render(){
+  const R=state.resultado;
+  $('bRep').textContent = R? R.totales.lineas_reposicion : 0;
+  $('bPar').textContent = R? R.totales.items_parados : 0;
+  const v=$('view');
+  if(state.tab==='cargar')      v.innerHTML=viewCargar();
+  else if(state.tab==='reposicion') v.innerHTML=viewReposicion();
+  else if(state.tab==='parada') v.innerHTML=viewParada();
+  else if(state.tab==='historico') v.innerHTML=viewHistorico();
+  wire();
+}
+
+function chipArchivo(tipo, label){
+  const f=state.files[tipo];
+  if(f) return '<span class="filechip"><span class="ok">✓</span> '+esc(label)+': <b>'+esc(f.archivo)+'</b> · hoja "'+esc(f.hoja)+'" · '+f.talles.length+' talles</span>';
+  return '<span class="filechip"><span class="no">○</span> '+esc(label)+': sin cargar</span>';
+}
+
+function viewCargar(){
+  const R=state.resultado;
+  const listo = state.files.ventas && state.files.reserva;
+  let html='<div class="sec-head"><div><h1>Cargar barrida</h1>'
+    +'<div class="sub">Subí el Excel de la semana (ventas por sucursal + reserva del depósito). Puede ser un archivo con las dos hojas o dos archivos.</div></div></div>';
+
+  html+='<div class="card">'
+    +'<div class="card-h">1 · Archivo(s) de la semana</div>'
+    +'<div class="card-hs">Reconozco automáticamente cuál hoja es ventas (tiene columna Sucursal) y cuál es reserva.</div>'
+    +'<div class="drop" id="drop"><div class="ic">📄</div><div class="t">Arrastrá acá el/los Excel o hacé clic para elegir</div>'
+    +'<div class="s">.xlsx — se procesa en tu navegador, no se sube a ningún lado hasta que guardes</div></div>'
+    +'<input type="file" id="fileInput" accept=".xlsx,.xls" multiple style="display:none">'
+    +'<div style="margin-top:12px">'+chipArchivo('ventas','Ventas por sucursal')+chipArchivo('reserva','Reserva depósito')+'</div>'
+    +'</div>';
+
+  html+='<div class="card">'
+    +'<div class="card-h">2 · Semana de la barrida</div>'
+    +'<div class="card-hs">Se guarda con la fecha del lunes de la semana. Por defecto, la semana actual.</div>'
+    +'<div class="filtros" style="margin-bottom:0">'
+    +'<div class="fgrp"><label for="semInput">Lunes de la semana</label><input type="date" class="inp" id="semInput" value="'+esc(state.semana)+'"></div>'
+    +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><button class="btn btn-primary" id="btnProcesar"'+(listo?'':' disabled')+'>⚙ Procesar barrida</button></div>'
+    +'</div></div>';
+
+  if(R){
+    html+='<div class="kpis">'
+      +kpi('Artículos en reserva',fmtInt(R.totales.items_reserva))
+      +kpi('Con reposición posible',fmtInt(R.totales.items_reponibles),'rep')
+      +kpi('Unidades sugeridas',fmtInt(R.totales.unidades_sugeridas),'rep')
+      +kpi('Reserva parada',fmtInt(R.totales.items_parados)+' <small>art.</small>','par')
+      +kpi('Unidades paradas',fmtInt(R.totales.unidades_paradas),'par')
+      +'</div>';
+    if(R.sinHistorial) html+='<div class="banner info">ℹ️ <b>Primera barrida guardada o sin semana previa en la base:</b> todavía no puedo distinguir qué artículos ingresaron recién. Desde la próxima semana, los que aparezcan por primera vez se marcan como <b>ingreso reciente</b> y se separan de la reserva parada.</div>';
+    html+='<div class="card"><div class="card-h">3 · Guardar</div>'
+      +'<div class="card-hs">Guarda la barrida de la semana en la base <code>barrida-mateu</code>: alimenta el histórico y el aviso de reposición que ven las sucursales en Indicadores.</div>'
+      +'<button class="btn btn-primary" id="btnGuardar">💾 Guardar barrida del '+esc(lunesLabel(state.semana))+'</button> '
+      +'<button class="btn btn-outline" id="btnVerRep">Ver reposición →</button>'
+      +'</div>';
+  }
+  return html;
+}
+function kpi(k,v,cls){ return '<div class="kpi '+(cls||'')+'"><div class="k">'+esc(k)+'</div><div class="v mono">'+v+'</div></div>'; }
+
+function opts(list, sel){ return '<option value="">Todas</option>'+list.map(x=>'<option value="'+esc(x)+'"'+(x===sel?' selected':'')+'>'+esc(x)+'</option>').join(''); }
+function uniq(arr){ return [...new Set(arr.filter(Boolean))].sort(cmp); }
+
+function viewReposicion(){
+  const R=state.resultado;
+  if(!R) return '<div class="state"><div class="big-ic">⚙️</div>Procesá una barrida en la pestaña «Cargar».</div>';
+  const f=state.filtros;
+  let rows=R.reposicion.slice();
+  if(f.excluirVarios) rows=rows.filter(r=>!/varios|facturacion/i.test(r.rubro+' '+r.tipo));
+  if(f.soloSugerido) rows=rows.filter(r=>r.sugerido>0);
+  if(f.suc) rows=rows.filter(r=>r.slug===f.suc);
+  if(f.rubro) rows=rows.filter(r=>r.rubro===f.rubro);
+  if(f.marca) rows=rows.filter(r=>r.marca===f.marca);
+  if(f.q){ const q=f.q.toLowerCase(); rows=rows.filter(r=>(r.desc+' '+r.codigo+' '+r.id+' '+r.marca).toLowerCase().includes(q)); }
+  const s=state.sortRep; rows.sort((a,b)=>{ const va=a[s.k],vb=b[s.k]; return (typeof va==='number'? va-vb : cmp(va,vb))*s.dir; });
+
+  const sucList = uniq(R.reposicion.map(r=>r.sucNombre));
+  const sucBySlug={}; R.reposicion.forEach(r=>sucBySlug[r.slug]=r.sucNombre);
+  let html='<div class="sec-head"><div><h1>Reposición posible</h1>'
+    +'<div class="sub">Artículos con reserva en depósito que la sucursal vendió la última semana. Sugerido = mín(vendido, reserva) por talle.</div></div></div>';
+  html+='<div class="filtros">'
+    +fsel('Sucursal', 'fSuc', '<option value="">Todas</option>'+sucList.map(n=>{ const slug=Object.keys(sucBySlug).find(k=>sucBySlug[k]===n); return '<option value="'+esc(slug)+'"'+(slug===f.suc?' selected':'')+'>'+esc(n)+'</option>'; }).join(''))
+    +fsel('Rubro','fRubro',opts(uniq(R.reposicion.map(r=>r.rubro)),f.rubro))
+    +fsel('Marca','fMarca',opts(uniq(R.reposicion.map(r=>r.marca)),f.marca))
+    +'<div class="fgrp" style="flex:1;min-width:180px"><label for="fQ">Buscar</label><input class="inp" id="fQ" placeholder="artículo, código, ID…" value="'+esc(f.q)+'" style="width:100%"></div>'
+    +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fSug" '+(f.soloSugerido?'checked':'')+'> Solo con talle disponible</label></div>'
+    +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fVarios" '+(f.excluirVarios?'checked':'')+'> Excluir Varios/Facturación</label></div>'
+    +'<div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="btnCsvRep">⇩ CSV</button></div>'
+    +'</div>';
+  if(!rows.length) return html+'<div class="state"><div class="big-ic">📭</div>Sin candidatos para estos filtros.</div>';
+  html+='<div class="tbl-wrap"><table><thead><tr>'
+    +th('Sucursal','sucNombre')+th('Artículo','desc')+th('Código','codigo')+th('Marca','marca')
+    +thNum('Vendido','vendido')+thNum('Reserva','reservaTotal')+thNum('Sugerido','sugerido')+'<th class="noord">Talles (vend/res)</th>'
+    +'</tr></thead><tbody>';
+  rows.forEach(r=>{
+    const tt=Object.entries(r.talles).filter(([t,d])=>d.v>0).map(([t,d])=>t+':'+d.v+'/'+d.r).join('  ');
+    html+='<tr><td><span class="pill suc">'+esc(r.sucNombre)+'</span></td>'
+      +'<td class="desc" title="'+esc(r.desc)+'">'+esc(r.desc||'—')+'</td>'
+      +'<td class="mono">'+esc(r.codigo||r.id)+'</td><td>'+esc(r.marca)+'</td>'
+      +'<td class="num mono">'+fmtInt(r.vendido)+'</td><td class="num mono">'+fmtInt(r.reservaTotal)+'</td>'
+      +'<td class="num mono"><b>'+fmtInt(r.sugerido)+'</b></td>'
+      +'<td class="talles">'+esc(tt||'—')+'</td></tr>';
+  });
+  html+='</tbody></table></div>';
+  html+='<div class="card-hs" style="margin-top:10px">'+fmtInt(rows.length)+' líneas · '+fmtInt(rows.reduce((a,r)=>a+r.sugerido,0))+' unidades sugeridas.</div>';
+  return html;
+}
+
+function viewParada(){
+  const R=state.resultado;
+  if(!R) return '<div class="state"><div class="big-ic">⚙️</div>Procesá una barrida en la pestaña «Cargar».</div>';
+  const f=state.filtrosPar;
+  let rows=R.parada.slice();
+  if(f.excluirVarios) rows=rows.filter(r=>!/varios|facturacion/i.test(r.rubro+' '+r.tipo));
+  if(f.soloCronica) rows=rows.filter(r=>r.semanas>=3 && !r.ingresoReciente);
+  if(f.rubro) rows=rows.filter(r=>r.rubro===f.rubro);
+  if(f.marca) rows=rows.filter(r=>r.marca===f.marca);
+  if(f.q){ const q=f.q.toLowerCase(); rows=rows.filter(r=>(r.desc+' '+r.codigo+' '+r.id+' '+r.marca).toLowerCase().includes(q)); }
+  const s=state.sortPar; rows.sort((a,b)=>{ const va=a[s.k],vb=b[s.k]; return (typeof va==='number'? va-vb : cmp(va,vb))*s.dir; });
+
+  let html='<div class="sec-head"><div><h1>Reserva parada</h1>'
+    +'<div class="sub">Artículos con stock en depósito y CERO venta en toda la cadena esta semana. Los de ingreso reciente se marcan aparte.</div></div></div>';
+  html+='<div class="filtros">'
+    +fsel('Rubro','pRubro',opts(uniq(R.parada.map(r=>r.rubro)),f.rubro))
+    +fsel('Marca','pMarca',opts(uniq(R.parada.map(r=>r.marca)),f.marca))
+    +'<div class="fgrp" style="flex:1;min-width:180px"><label for="pQ">Buscar</label><input class="inp" id="pQ" placeholder="artículo, código, ID…" value="'+esc(f.q)+'" style="width:100%"></div>'
+    +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="pVarios" '+(f.excluirVarios?'checked':'')+'> Excluir Varios/Facturación</label></div>'
+    +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="pCron" '+(f.soloCronica?'checked':'')+'> Solo crónica (3+ sem)</label></div>'
+    +'<div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="btnCsvPar">⇩ CSV</button></div>'
+    +'</div>';
+  if(!rows.length) return html+'<div class="state"><div class="big-ic">✅</div>Sin reserva parada para estos filtros.</div>';
+  html+='<div class="tbl-wrap"><table><thead><tr>'
+    +th('Artículo','desc')+th('Código','codigo')+th('Marca','marca')+th('Rubro','rubro')
+    +thNum('Reserva','reservaTotal')+thNum('Semanas','semanas')+'<th class="noord">Estado</th><th class="noord">Talles</th>'
+    +'</tr></thead><tbody>';
+  rows.forEach(r=>{
+    let estado='';
+    if(r.ingresoReciente===true) estado='<span class="pill rec">Ingreso reciente</span>';
+    else if(r.semanas>=3) estado='<span class="pill cron">Crónica '+r.semanas+' sem</span>';
+    html+='<tr><td class="desc" title="'+esc(r.desc)+'">'+esc(r.desc||'—')+'</td>'
+      +'<td class="mono">'+esc(r.codigo||r.id)+'</td><td>'+esc(r.marca)+'</td><td>'+esc(r.rubro)+'</td>'
+      +'<td class="num mono">'+fmtInt(r.reservaTotal)+'</td><td class="num mono">'+fmtInt(r.semanas)+'</td>'
+      +'<td>'+estado+'</td><td class="talles">'+esc(r.talles||'—')+'</td></tr>';
+  });
+  html+='</tbody></table></div>';
+  html+='<div class="card-hs" style="margin-top:10px">'+fmtInt(rows.length)+' artículos · '+fmtInt(rows.reduce((a,r)=>a+r.reservaTotal,0))+' unidades paradas.</div>';
+  return html;
+}
+
+function viewHistorico(){
+  let html='<div class="sec-head"><div><h1>Histórico de barridas</h1>'
+    +'<div class="sub">Semanas guardadas en la base. Abrí una para ver su reposición y reserva parada.</div></div>'
+    +'<button class="btn btn-outline btn-sm" id="btnRecargarHist">↻ Recargar</button></div>';
+  if(!FIREBASE_DB_URL) return html+'<div class="banner warn">Sin base configurada: no hay histórico. Pegá la URL en <code>FIREBASE_DB_URL</code>.</div>';
+  if(!state.histKeys.length) return html+'<div class="state"><div class="big-ic">🗂️</div>Todavía no hay barridas guardadas.</div>';
+  state.histKeys.slice().sort().reverse().forEach(k=>{
+    const cur = state.resultado && state.resultadoSemana===k;
+    html+='<div class="histrow"><div><div class="hl">Semana del '+esc(lunesLabel(k))+(cur?' · <span class="pill suc">cargada</span>':'')+'</div>'
+      +'<div class="hs">'+esc(k)+'</div></div>'
+      +'<button class="btn btn-outline btn-sm" data-hist="'+esc(k)+'">Abrir</button></div>';
+  });
+  return html;
+}
+
+/* encabezado ordenable */
+function th(label,key){ const s=state.tab==='parada'?state.sortPar:state.sortRep; const on=s.k===key; return '<th data-sort="'+key+'">'+esc(label)+(on?(s.dir<0?' ▾':' ▴'):'')+'</th>'; }
+function thNum(label,key){ const s=state.tab==='parada'?state.sortPar:state.sortRep; const on=s.k===key; return '<th class="num" data-sort="'+key+'">'+esc(label)+(on?(s.dir<0?' ▾':' ▴'):'')+'</th>'; }
+function fsel(label,id,inner){ return '<div class="fgrp"><label for="'+id+'">'+esc(label)+'</label><select class="sel" id="'+id+'">'+inner+'</select></div>'; }
+
+/* ============================================================
+   WIRING
+   ============================================================ */
+function wire(){
+  // header
+  $('whoName').textContent = SESSION.email||'—';
+  $('whoRole').textContent = SESSION.rol||'';
+  const salir=$('salir'); if(salir) salir.onclick=()=>{ try{localStorage.removeItem(SESSION_KEY);}catch(e){} location.replace('../'); };
+
+  if(state.tab==='cargar') wireCargar();
+  if(state.tab==='reposicion') wireReposicion();
+  if(state.tab==='parada') wireParada();
+  if(state.tab==='historico') wireHistorico();
+}
+
+function wireCargar(){
+  const drop=$('drop'), input=$('fileInput');
+  if(drop){
+    drop.onclick=()=>input.click();
+    drop.ondragover=e=>{e.preventDefault();drop.classList.add('over');};
+    drop.ondragleave=()=>drop.classList.remove('over');
+    drop.ondrop=async e=>{ e.preventDefault();drop.classList.remove('over'); await cargarFiles(e.dataTransfer.files); };
+  }
+  if(input) input.onchange=async e=>{ await cargarFiles(e.target.files); input.value=''; };
+  const sem=$('semInput'); if(sem) sem.onchange=e=>{ state.semana=e.target.value; render(); };
+  const bp=$('btnProcesar'); if(bp) bp.onclick=procesarBarrida;
+  const bg=$('btnGuardar'); if(bg) bg.onclick=guardarBarrida;
+  const bv=$('btnVerRep'); if(bv) bv.onclick=()=>setTab('reposicion');
+}
+
+async function cargarFiles(fileList){
+  const files=[...fileList].filter(f=>/\.xlsx?$/i.test(f.name));
+  if(!files.length){ toast('Subí un archivo .xlsx','err'); return; }
+  try{
+    toast('Leyendo Excel…');
+    for(const f of files){ await ingerirArchivo(f); }
+    render();
+    toast('Archivo(s) cargado(s)','ok');
+  }catch(err){ toast(err.message||'No pude leer el archivo','err'); }
+}
+
+async function procesarBarrida(){
+  if(!state.files.ventas || !state.files.reserva){ toast('Faltan las dos hojas','err'); return; }
+  let histPrev=null, histSnaps=[];
+  try{
+    if(FIREBASE_DB_URL){
+      const hist = await fbGet(ROOT+'/reservaHist');
+      if(hist){
+        const keys=Object.keys(hist).filter(k=>k<state.semana).sort().reverse();
+        histSnaps=keys.map(k=>hist[k]||{});
+        histPrev=histSnaps[0]||null;
+      }
+    }
+  }catch(e){ /* si falla la base, seguimos sin histórico */ }
+  try{
+    state.resultado=computar(histPrev, histSnaps);
+    state.resultadoSemana=null;
+    render();
+    toast('Barrida procesada','ok');
+  }catch(err){ console.error(err); toast('Error al procesar: '+(err.message||err),'err'); }
+}
+
+async function guardarBarrida(){
+  if(!state.resultado){ toast('Procesá primero','err'); return; }
+  if(!FIREBASE_DB_URL){ toast('Sin base configurada','err'); return; }
+  const R=state.resultado, sem=state.semana;
+  // reposición agrupada por slug (para que cada sucursal baje solo lo suyo)
+  const repBySlug={};
+  R.reposicion.forEach(r=>{ (repBySlug[r.slug]=repBySlug[r.slug]||[]).push({
+    id:r.id, codigo:r.codigo, desc:r.desc, marca:r.marca, rubro:r.rubro, tipo:r.tipo,
+    vendido:r.vendido, reservaTotal:r.reservaTotal, sugerido:r.sugerido, talles:r.talles
+  }); });
+  const payload={
+    meta:{ generado_en:nowISO(), generado_por:SESSION.email||'', semana:sem,
+      archivo_ventas:state.files.ventas.archivo, archivo_reserva:state.files.reserva.archivo,
+      totales:R.totales },
+    reposicion:repBySlug,
+    parada:R.parada,
+  };
+  try{
+    const btn=$('btnGuardar'); if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
+    await fbPut(ROOT+'/barridas/'+sem, payload);
+    await fbPut(ROOT+'/reservaHist/'+sem, R.snapshot);
+    await fbPut(ROOT+'/ultima', sem);
+    state.resultadoSemana=sem;
+    if(!state.histKeys.includes(sem)) state.histKeys.push(sem);
+    toast('Barrida guardada ✓','ok');
+    render();
+  }catch(err){
+    console.error(err);
+    toast('No se pudo guardar (¿existe la base barrida-mateu?): '+(err.message||err),'err');
+    render();
+  }
+}
+
+function wireReposicion(){
+  const f=state.filtros;
+  const bind=(id,key)=>{ const el=$(id); if(el) el.onchange=e=>{ f[key]=e.target.value; render(); }; };
+  bind('fSuc','suc'); bind('fRubro','rubro'); bind('fMarca','marca');
+  const q=$('fQ'); if(q) q.oninput=e=>{ f.q=e.target.value; renderDebounce(); };
+  const sug=$('fSug'); if(sug) sug.onchange=e=>{ f.soloSugerido=e.target.checked; render(); };
+  const vr=$('fVarios'); if(vr) vr.onchange=e=>{ f.excluirVarios=e.target.checked; render(); };
+  const csv=$('btnCsvRep'); if(csv) csv.onclick=exportRepCsv;
+  wireSort('sortRep');
+}
+function wireParada(){
+  const f=state.filtrosPar;
+  const bind=(id,key)=>{ const el=$(id); if(el) el.onchange=e=>{ f[key]=e.target.value; render(); }; };
+  bind('pRubro','rubro'); bind('pMarca','marca');
+  const q=$('pQ'); if(q) q.oninput=e=>{ f.q=e.target.value; renderDebounce(); };
+  const cv=$('pVarios'); if(cv) cv.onchange=e=>{ f.excluirVarios=e.target.checked; render(); };
+  const cr=$('pCron'); if(cr) cr.onchange=e=>{ f.soloCronica=e.target.checked; render(); };
+  const csv=$('btnCsvPar'); if(csv) csv.onclick=exportParCsv;
+  wireSort('sortPar');
+}
+function wireSort(which){
+  document.querySelectorAll('th[data-sort]').forEach(th=>{
+    th.onclick=()=>{ const k=th.dataset.sort; const s=state[which]; if(s.k===k) s.dir*=-1; else { s.k=k; s.dir=-1; } render(); };
+  });
+}
+let _deb=null; function renderDebounce(){ clearTimeout(_deb); _deb=setTimeout(render,180); }
+
+function wireHistorico(){
+  const rc=$('btnRecargarHist'); if(rc) rc.onclick=async()=>{ await cargarHistKeys(); render(); };
+  document.querySelectorAll('[data-hist]').forEach(b=>b.onclick=()=>abrirBarrida(b.dataset.hist));
+}
+
+async function cargarHistKeys(){
+  if(!FIREBASE_DB_URL) return;
+  try{ const b=await fbGet(ROOT+'/barridas'); state.histKeys = b? Object.keys(b) : []; }
+  catch(e){ state.histKeys=[]; }
+}
+
+async function abrirBarrida(sem){
+  try{
+    toast('Abriendo…');
+    const b=await fbGet(ROOT+'/barridas/'+sem);
+    if(!b){ toast('No encontré esa barrida','err'); return; }
+    // reconstituir el shape de state.resultado desde lo guardado
+    const reposicion=[];
+    Object.entries(b.reposicion||{}).forEach(([slug,arr])=>{ (arr||[]).forEach(r=>{
+      reposicion.push({ ...r, slug, sucNombre:(SLUG_SUC[slug]||OUTLET_SUC[slug]||slug) });
+    }); });
+    state.resultado={ reposicion, parada:b.parada||[], snapshot:{}, totales:(b.meta&&b.meta.totales)||{}, sinHistorial:false };
+    state.resultadoSemana=sem; state.semana=sem;
+    setTab('reposicion');
+    toast('Barrida del '+lunesLabel(sem),'ok');
+  }catch(err){ toast('No se pudo abrir: '+(err.message||err),'err'); }
+}
+
+/* ============================================================
+   EXPORT CSV
+   ============================================================ */
+function descargarCsv(nombre, filas){
+  const csv=filas.map(r=>r.map(c=>{ const s=String(c==null?'':c); return /[",;\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }).join(';')).join('\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nombre; a.click(); URL.revokeObjectURL(a.href);
+}
+function exportRepCsv(){
+  const R=state.resultado; if(!R) return;
+  const f=state.filtros;
+  const filas=[['Sucursal','Articulo','Codigo','Marca','Rubro','Vendido','Reserva','Sugerido']];
+  R.reposicion
+    .filter(r=>!f.excluirVarios || !/varios|facturacion/i.test(r.rubro+' '+r.tipo))
+    .filter(r=>!f.soloSugerido||r.sugerido>0)
+    .forEach(r=>filas.push([r.sucNombre,r.desc,r.codigo||r.id,r.marca,r.rubro,r.vendido,r.reservaTotal,r.sugerido]));
+  descargarCsv('reposicion-'+state.semana+'.csv',filas);
+}
+function exportParCsv(){
+  const R=state.resultado; if(!R) return;
+  const filas=[['Articulo','Codigo','Marca','Rubro','Reserva','Semanas','IngresoReciente']];
+  R.parada.forEach(r=>filas.push([r.desc,r.codigo||r.id,r.marca,r.rubro,r.reservaTotal,r.semanas,r.ingresoReciente?'si':'']));
+  descargarCsv('reserva-parada-'+state.semana+'.csv',filas);
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
+(function init(){
+  if(!FIREBASE_DB_URL){
+    $('cfgBanner').style.display='block';
+    $('cfgBanner').innerHTML='⚙️ <b>Falta la base:</b> pegá la URL de <code>barrida-mateu</code> en la constante <code>FIREBASE_DB_URL</code>. Podés cargar y ver barridas, pero no se guarda el histórico ni el aviso a sucursales.';
+  }
+  render();
+  // El histórico se trae en segundo plano para no bloquear la UI si la base tarda/no existe.
+  if(FIREBASE_DB_URL) cargarHistKeys().then(()=>{ if(state.tab==='historico') render(); });
+})();
+</script>
+</body>
+</html>

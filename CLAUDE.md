@@ -28,6 +28,7 @@ mateu-sports-portal/
 ├── data/indicadores/   # salida particionada (un JSON por sucursal + cadena.json) que consume el módulo
 ├── regalias/           # Liquidador de Regalías RUGE/EDLP (Estudiantes): clasifica ventas, aplica escalas, exporta el Excel del mes y genera la presentación comercial (plantilla-presentacion.html, embebida en index.html)
 ├── evaluaciones/       # Evaluaciones de Supervisor: carga semanal operativa+actitudinal por sucursal, ranking, gráficos y vista de encargado. Escribe a Firebase (base evaluaciones-mateu). Ver "Evaluaciones de Supervisor" abajo.
+├── barrida/            # Barrida de Reserva: cruce semanal (subir Excel) de la reserva del depósito central con las ventas por sucursal → alertas de reposición posible y de reserva parada. Firebase base barrida-mateu. Ver "Barrida de Reserva" abajo.
 ├── lib/                # código JS común versionado y testeable (hoy: evaluacion.js = cálculo puro de Evaluaciones + tests con node --test)
 └── shared/             # código común del shell (calendario retail, etc.)
 ```
@@ -211,6 +212,46 @@ server, pero Juli eligió mantenerlo consistente con el resto (seguridad blanda)
   `gestion-stock/datos-meses-stock.js` con el mismo mapa slug→nombre que Indicadores.
 
 **Puesta en marcha (crear la base y pegar la URL): ver `docs/EVALUACIONES-SETUP.md`.**
+
+## Barrida de Reserva
+
+`barrida/` es un `index.html` self-contained (lee la sesión del Portal, sin login
+propio). Lo corre el **depósito / gerencia** semana a semana (típico: los lunes) para
+decidir la reposición de la semana anterior. La ve el rol `admin` o quien tenga la
+herramienta `barrida` en su lista; las sucursales NO entran acá (ven su aviso en
+Indicadores, ver abajo).
+
+- **Entrada = subir Excel** (client-side, SheetJS por CDN, no se sube nada hasta
+  guardar). Dos hojas: **ventas por sucursal** (columna `Sucursal` + `ID ITEM` +
+  columnas por talle) y **reserva del depósito** (sin `Sucursal`, `ID ITEM` +
+  columnas por talle). Puede ser un archivo con las dos hojas o dos archivos: se
+  autodetecta cuál es cuál por los encabezados. Cruce por **`ID ITEM`**, abierto por
+  talle. ⚠️ La hoja de reserva trae una columna final **`Total`** (suma de la fila):
+  se excluye de los talles a propósito; si se contara, **duplicaría el stock**.
+- **Salida = dos alertas**: **Reposición** (artículo con reserva Y venta en una
+  sucursal → sugerido por talle = `mín(vendido, reserva)`) y **Reserva parada**
+  (reserva y CERO venta en toda la cadena). El Depósito y filas basura (`Sucursal`)
+  se excluyen de la demanda; se puede filtrar `Varios/Facturación` (gift cards,
+  cupones). El grano fino es art×sucursal.
+- **Ingreso reciente / crónica**: NO hay columna de fecha ni SKU en recepciones, así
+  que se resuelve con el **histórico semanal** guardado: un artículo que aparece por
+  primera vez en la reserva = *ingreso reciente* (se separa de "parada"); "semanas"
+  cuenta cuántas semanas seguidas lleva en reserva. En una sola semana el ~65% de los
+  SKUs no vende → la lista "parada" cruda es ruidosa; el valor sale del filtro
+  *crónica (3+ semanas)* que se acumula semana a semana.
+- **Firebase**: base propia **`barrida-mateu`** (constante `FIREBASE_DB_URL`; reglas
+  abiertas como el resto). Árbol: `barrida/barridas/<lunesISO>` con
+  `{meta, reposicion:{<slug>:[...]}, parada:[...]}`, `barrida/reservaHist/<lunesISO>`
+  (snapshot `{idItem:total}` para ingreso reciente / semanas) y `barrida/ultima`
+  (puntero al último lunes). La reposición se guarda **agrupada por slug de sucursal**
+  para que cada sucursal baje solo lo suyo (seguridad blanda, como Indicadores).
+- **Aviso a la sucursal**: vive en **`indicadores/`** (la home de sucursal/outlet).
+  La sección `secBarrida` lee `barrida-mateu/barrida/ultima` + `.../reposicion/<slug>`
+  y muestra "Reposición disponible" con lo que esa sucursal puede pedir del depósito.
+  Sin base/dato → la sección no aparece. Usa el mapa `SUC2SLUG` (nombre→slug).
+
+**Puesta en marcha: crear la base `barrida-mateu` a mano (reglas `.read`/`.write`
+true) — la URL ya está pegada en `FIREBASE_DB_URL` de `barrida/` y de `indicadores/`.**
 
 ## Reglas
 
