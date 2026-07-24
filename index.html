@@ -1244,17 +1244,23 @@ document.addEventListener('click', e=>{
   });
   window.addEventListener('appinstalled', function(){ if(btn){ btn.remove(); btn=null; } });
 
-  // iOS/Safari no dispara beforeinstallprompt: mostrar una pista una sola vez.
-  var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  // iOS/iPadOS: Safari NO dispara beforeinstallprompt. Mostramos un botón
+  // PERSISTENTE con las instrucciones (Compartir → Agregar a inicio). Aparece
+  // siempre mientras no esté instalada; no se autooculta para siempre.
+  var ua = navigator.userAgent || '';
+  var isIOS = /iphone|ipad|ipod/i.test(ua) ||
+              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS se hace pasar por Mac
   var standalone = window.navigator.standalone === true ||
                    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
-  if(isIOS && !standalone && ls('mateu_pwa_ios_hint') !== '1'){
-    window.addEventListener('load', function(){
+  if(isIOS && !standalone){
+    var showIOSBtn = function(){
+      if(btn) return;
       btn = makeBtn('⬇ Instalar app', function(){
-        alert('Para instalar la app en tu iPhone:\n\n1) Tocá Compartir (el cuadrado con la flecha ↑, abajo)\n2) Elegí "Agregar a inicio"\n3) Tocá "Agregar"');
-        ls('mateu_pwa_ios_hint','1'); btn.remove(); btn=null;
+        alert('Para instalar la app:\n\n1) Tocá Compartir (el ícono del cuadrado con la flecha ↑)\n2) Deslizá y elegí "Agregar a inicio"\n3) Tocá "Agregar"\n\n(Tiene que ser desde Safari.)');
       });
-    });
+    };
+    if(document.readyState === 'complete') showIOSBtn();
+    else window.addEventListener('load', showIOSBtn);
   }
 })();
 </script>
