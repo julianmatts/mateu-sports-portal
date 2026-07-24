@@ -28,7 +28,7 @@ mateu-sports-portal/
 ├── data/indicadores/   # salida particionada (un JSON por sucursal + cadena.json) que consume el módulo
 ├── regalias/           # Liquidador de Regalías RUGE/EDLP (Estudiantes): clasifica ventas, aplica escalas, exporta el Excel del mes y genera la presentación comercial (plantilla-presentacion.html, embebida en index.html)
 ├── evaluaciones/       # Evaluaciones de Supervisor: carga semanal operativa+actitudinal por sucursal, ranking, gráficos y vista de encargado. Escribe a Firebase (base evaluaciones-mateu). Ver "Evaluaciones de Supervisor" abajo.
-├── barrida/            # Barrida de Reserva: cruce semanal (subir Excel) de la reserva del depósito central con las ventas por sucursal → alertas de reposición posible y de reserva parada. Firebase base barrida-mateu. Ver "Barrida de Reserva" abajo.
+├── barrida/            # Análisis de Reserva Depósito Central: cruce semanal (subir Excel) de la reserva del depósito central con las ventas por sucursal → alertas de reposición posible y de reserva parada. Firebase base barrida-mateu. Ver "Análisis de Reserva Depósito Central" abajo.
 ├── lib/                # código JS común versionado y testeable (hoy: evaluacion.js = cálculo puro de Evaluaciones + tests con node --test)
 └── shared/             # código común del shell (calendario retail, etc.)
 ```
@@ -213,10 +213,11 @@ server, pero Juli eligió mantenerlo consistente con el resto (seguridad blanda)
 
 **Puesta en marcha (crear la base y pegar la URL): ver `docs/EVALUACIONES-SETUP.md`.**
 
-## Barrida de Reserva
+## Análisis de Reserva Depósito Central
 
-`barrida/` es un `index.html` self-contained (lee la sesión del Portal, sin login
-propio). Lo corre el **depósito / gerencia** semana a semana (típico: los lunes) para
+`barrida/` (carpeta/URL se mantiene; el nombre visible es "Análisis de Reserva
+Depósito Central") es un `index.html` self-contained (lee la sesión del Portal, sin
+login propio). Lo corre el **depósito / gerencia** semana a semana (típico: los lunes) para
 decidir la reposición de la semana anterior. La ve el rol `admin` o quien tenga la
 herramienta `barrida` en su lista; las sucursales NO entran acá (ven su aviso en
 Indicadores, ver abajo).
@@ -228,11 +229,18 @@ Indicadores, ver abajo).
   autodetecta cuál es cuál por los encabezados. Cruce por **`ID ITEM`**, abierto por
   talle. ⚠️ La hoja de reserva trae una columna final **`Total`** (suma de la fila):
   se excluye de los talles a propósito; si se contara, **duplicaría el stock**.
-- **Salida = dos alertas**: **Reposición** (artículo con reserva Y venta en una
-  sucursal → sugerido por talle = `mín(vendido, reserva)`) y **Reserva parada**
+- **Salida = dos alertas por sucursal**: **Reposición** (artículo con reserva Y venta
+  en una sucursal → sugerido por talle = `mín(vendido, reserva)`) y **Reserva parada**
   (reserva y CERO venta en toda la cadena). El Depósito y filas basura (`Sucursal`)
   se excluyen de la demanda; se puede filtrar `Varios/Facturación` (gift cards,
   cupones). El grano fino es art×sucursal.
+- **Vista Compras** (pestaña `compras`, para el rol Compras — Juli + Julián de Marco):
+  mirada por **artículo global** (no por sucursal), ranking por vendido en la cadena,
+  en tres grupos: **mejores vendidos SIN reserva** = reponer a la marca (recomprar),
+  **mejores vendidos CON reserva** = solo seguimiento, y **artículos frenados** (= la
+  reserva parada). "Mejores" usa un umbral `Vendidos ≥` (default 3, ajustable); el
+  badge del tab y los KPIs usan ese umbral. Incluye un resumen "a quién reponer" por
+  marca de lo sin reserva. Se guarda en el payload (`compras`) para el histórico.
 - **Ingreso reciente / crónica**: NO hay columna de fecha ni SKU en recepciones, así
   que se resuelve con el **histórico semanal** guardado: un artículo que aparece por
   primera vez en la reserva = *ingreso reciente* (se separa de "parada"); "semanas"
