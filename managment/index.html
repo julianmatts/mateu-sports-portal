@@ -129,6 +129,19 @@ table input:disabled,table select:disabled{opacity:.5;background:#f1f3f8;cursor:
   </div>
 </div>
 
+<div class="modal" id="exportProvModal" style="z-index:30">
+  <div class="modal-card" style="width:min(620px,100%)">
+    <div class="modal-head">
+      <div>
+        <h3>Exportar desarrollo para proveedor</h3>
+        <div class="collection-note">Un Excel por taller/proveedor con articulo, precio target y link de referencia.</div>
+      </div>
+      <button class="xbtn" type="button" onclick="closeModal('exportProvModal')">×</button>
+    </div>
+    <div class="modal-body" id="exportProvBody"></div>
+  </div>
+</div>
+
 <div class="modal" id="providerModal" style="z-index:30">
   <div class="modal-card" style="width:min(520px,100%)">
     <div class="modal-head">
@@ -1007,7 +1020,10 @@ function renderDesarrollo(){
         <h2>Paso 1: Modulo de Desarrollo</h2>
         <p>Gestion directa de colecciones y aprobaciones de prototipos.</p>
       </div>
-      <button class="btn" type="button" onclick="nuevoDesarrollo()">+ Nuevo Desarrollo</button>
+      <div class="btn-row" style="gap:8px">
+        <button class="btn secondary" type="button" onclick="openExportProvModal()">⇩ Exportar para proveedor</button>
+        <button class="btn" type="button" onclick="nuevoDesarrollo()">+ Nuevo Desarrollo</button>
+      </div>
     </div>
     ${collectionsTable()}
   `;
@@ -2272,6 +2288,155 @@ async function descargarExcelOC(key){
   const { wb, ocNumero } = buildExcelOCWorkbook(group);
   const nombreArchivo = 'OC_' + ocNumero.replace(/[^A-Za-z0-9-]+/g,'_') + '_' + providerKey(group.proveedor).replace(/\s+/g,'_') + '.xlsx';
   await downloadWorkbook(wb, nombreArchivo);
+}
+
+// --- Exportar Desarrollo para el proveedor -------------------------------
+// Junta las prendas de desarrollo (respetando el filtro de marca) agrupadas
+// por proveedor/taller. Cada grupo se exporta como un Excel con articulo,
+// precio target (costo + PVP objetivo) y link de referencia para cotizar.
+function prendasPorProveedor(){
+  const map = new Map();
+  filteredColecciones().forEach(c => (c.prendas||[]).forEach(p => {
+    const prov = String(p.proveedor||'').trim() || 'Sin proveedor';
+    if(!map.has(prov)) map.set(prov, []);
+    map.get(prov).push({...p, _coleccion:c.nombre||'(sin nombre)'});
+  }));
+  return [...map.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([proveedor, items])=>({proveedor, items}));
+}
+
+function openExportProvModal(){
+  const grupos = prendasPorProveedor();
+  const body = $('exportProvBody');
+  if(!grupos.length){
+    body.innerHTML = '<div class="empty">No hay prendas cargadas para exportar en la marca seleccionada.</div>';
+  }else{
+    body.innerHTML = `
+      <div class="collection-note" style="margin-bottom:12px">Elegi un proveedor para bajar su planilla, o descarga todos (una hoja por proveedor en un mismo archivo).</div>
+      <div class="table-wrap"><table class="tbl-compacta">
+        <thead><tr><th>Proveedor / Taller</th><th>Prendas</th><th></th></tr></thead>
+        <tbody>${grupos.map(g=>`
+          <tr>
+            <td><b>${escapeHtml(g.proveedor)}</b></td>
+            <td>${g.items.length}</td>
+            <td style="text-align:right"><button class="action primary" onclick="exportarDesarrolloProveedor('${encodeURIComponent(g.proveedor)}')">⇩ Excel</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+      <div class="btn-row" style="margin-top:14px;justify-content:flex-end">
+        <button class="btn" type="button" onclick="exportarDesarrolloProveedor('')">⇩ Exportar todos</button>
+      </div>`;
+  }
+  openModal('exportProvModal');
+}
+
+async function exportarDesarrolloProveedor(provEnc){
+  const provName = provEnc ? decodeURIComponent(provEnc) : '';
+  const grupos = prendasPorProveedor().filter(g => !provName || g.proveedor === provName);
+  if(!grupos.length){ showToast('No hay prendas para exportar.'); return; }
+
+  const wb = new ExcelJS.Workbook();
+  grupos.forEach(g => sheetDesarrolloProveedor(wb, g));
+
+  const base = 'Desarrollo_' + (provName ? providerKey(provName).replace(/\s+/g,'_') : 'todos');
+  await downloadWorkbook(wb, base + '_' + today() + '.xlsx');
+  closeModal('exportProvModal');
+}
+
+function sheetDesarrolloProveedor(wb, grupo){
+  const proveedorData = state.proveedores.find(p => providerKey(p.nombre) === providerKey(grupo.proveedor));
+  const headers = ['Coleccion','Linea','Articulo','Marca','Color','Genero','Precio target (costo ARS)','PVP objetivo ARS','Link de referencia','Paso actual'];
+  const nCols = headers.length;
+  const colCosto = 7, colPvp = 8, colLink = 9;
+
+  const safeName = (grupo.proveedor.replace(/[\\/*?:\[\]]/g,' ').trim() || 'Proveedor').slice(0,31);
+  const ws = wb.addWorksheet(safeName, { views:[{showGridLines:false}] });
+  ws.columns = [{width:20},{width:16},{width:24},{width:10},{width:12},{width:12},{width:20},{width:18},{width:42},{width:22}];
+
+  let r = 1;
+  // Membrete blanco con el logo Mateu (fallback al nombre escrito).
+  const brandCols = nCols - 3;
+  ws.mergeCells(r,1,r,brandCols);
+  const brandCell = ws.getCell(r,1);
+  if(LOGO_PNG){
+    const logoH = 42, logoW = Math.round(logoH * LOGO_PNG.width / LOGO_PNG.height);
+    const imgId = wb.addImage({ base64: LOGO_PNG.dataUri, extension:'png' });
+    ws.addImage(imgId, { tl:{col:0.15, row:0.12}, ext:{width:logoW, height:logoH}, editAs:'oneCell' });
+    brandCell.value = { richText:[ { font:{size:9, name:'Calibri', color:{argb:BRAND.muted}}, text:'Desarrollo de producto' } ]};
+    brandCell.alignment = {horizontal:'center', vertical:'middle'};
+  }else{
+    brandCell.value = { richText:[
+      { font:{bold:true, size:16, name:'Calibri', color:{argb:BRAND.navy}}, text:'MATEU SPORTS\n' },
+      { font:{size:9, name:'Calibri', color:{argb:BRAND.muted}}, text:'Desarrollo de producto' }
+    ]};
+    brandCell.alignment = {horizontal:'left', vertical:'middle', wrapText:true, indent:1};
+  }
+  ws.mergeCells(r,brandCols+1,r,nCols);
+  const fechaCell = ws.getCell(r,brandCols+1);
+  fechaCell.value = { richText:[
+    { font:{bold:true, size:11, name:'Calibri', color:{argb:BRAND.navy}}, text:'Listado para cotizar\n' },
+    { font:{size:9, name:'Calibri', color:{argb:BRAND.muted}}, text:today() }
+  ]};
+  fechaCell.alignment = {horizontal:'right', vertical:'middle', wrapText:true, indent:1};
+  for(let c=1;c<=nCols;c++){
+    ws.getCell(r,c).fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.white}};
+    ws.getCell(r,c).border = {bottom:{style:'medium', color:{argb:BRAND.red}}};
+  }
+  ws.getRow(r).height = 38;
+  r++;
+
+  // Banda del proveedor.
+  ws.mergeCells(r,1,r,nCols);
+  const provCell = ws.getCell(r,1);
+  provCell.value = 'Proveedor / Taller: ' + grupo.proveedor + (proveedorData?.email ? '   -   Email: ' + proveedorData.email : '') + '   -   ' + grupo.items.length + ' prenda' + (grupo.items.length===1?'':'s');
+  provCell.font = {bold:true, size:10, name:'Calibri', color:{argb:BRAND.navy}};
+  provCell.alignment = {horizontal:'left', vertical:'middle', indent:1};
+  provCell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.band}};
+  ws.getRow(r).height = 24;
+  r += 2;
+
+  const headerRowIdx = r;
+  headers.forEach((h,idx)=>{
+    const c = ws.getCell(r, idx+1);
+    c.value = h;
+    c.font = {bold:true, color:{argb:BRAND.white}, size:10, name:'Calibri'};
+    c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.navy}};
+    c.alignment = {horizontal:'center', vertical:'middle', wrapText:true};
+    c.border = thinBorder(BRAND.navy);
+  });
+  ws.getRow(r).height = 28;
+  ws.views = [{state:'frozen', ySplit:headerRowIdx, showGridLines:false}];
+  r++;
+
+  // Orden: coleccion, luego linea, luego articulo.
+  const items = grupo.items.slice().sort((a,b)=>
+    (a._coleccion||'').localeCompare(b._coleccion||'') ||
+    String(a.tipo||'').localeCompare(String(b.tipo||'')) ||
+    String(a.nombre||'').localeCompare(String(b.nombre||'')));
+
+  items.forEach((p, i) => {
+    const link = String(p.referenciaLink||'').trim();
+    const vals = [
+      p._coleccion, String(p.tipo||'').trim() || 'Sin linea', p.nombre || '-',
+      MARCAS[p.marca] || p.marca || '-', p.color || '-', p.genero || '-',
+      Number(p.costo||0), Number(p.pvpObjetivo||0),
+      link ? {text:link, hyperlink:link} : '', p.paso || '-'
+    ];
+    vals.forEach((v, idx) => {
+      const col = idx+1;
+      const c = ws.getCell(r, col);
+      c.value = v;
+      c.font = {size:10, name:'Calibri', color:{argb: col===colLink && link ? 'FF0B57D0' : BRAND.navy}};
+      if(col===colLink && link) c.font.underline = true;
+      c.alignment = {horizontal: (col===colCosto||col===colPvp) ? 'right' : 'left', vertical:'middle', wrapText: col===colLink};
+      c.fill = {type:'pattern', pattern:'solid', fgColor:{argb: i%2===0 ? BRAND.white : BRAND.band}};
+      c.border = thinBorder(BRAND.border);
+      if(col===colCosto || col===colPvp) c.numFmt = '"$" #,##0';
+    });
+    r++;
+  });
+
+  ws.pageSetup = {orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, paperSize:9, margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}};
+  return ws;
 }
 
 function buildPdfOC(group){
