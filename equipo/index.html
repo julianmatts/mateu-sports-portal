@@ -9,6 +9,7 @@
 <style>
 :root{--navy:#0B1527;--navy-mid:#1a2f55;--navy-light:#e8edf8;--red:#CC0000;--red-light:#fff0f0;--white:#ffffff;--off:#f5f7fc;--muted:#6B7A99;--muted-light:#b0bcd4;--card:#ffffff;--border:#dce3f0;--green:#00a86b;--yellow:#e6900a;--font-d:'Bebas Neue',sans-serif;--font-c:'Barlow Condensed',sans-serif;--font-b:'Barlow',sans-serif;--shadow:0 1px 4px rgba(11,21,39,.08);--shadow-md:0 4px 16px rgba(11,21,39,.12)}
 *{box-sizing:border-box;margin:0;padding:0}
+img,svg{max-width:100%}
 body{background:var(--off);color:var(--navy);font-family:var(--font-b);min-height:100vh}
 .site-header{background:linear-gradient(135deg,#002878 0%,#001040 100%);padding:16px 36px 12px;display:flex;flex-direction:column;align-items:center;border-bottom:3px solid var(--red);position:sticky;top:0;z-index:100}
 .site-header img{height:46px;filter:brightness(0) invert(1);margin-bottom:6px}
@@ -112,6 +113,35 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
 .toast.show{opacity:1;transform:translateY(0)}
 .empty{text-align:center;padding:36px;color:var(--muted);font-family:var(--font-c);font-size:13px;letter-spacing:1px}
 @media(max-width:768px){.operator-grid,.upload-grid,.summary-row{grid-template-columns:1fr}.view{padding:16px}nav{padding:0 16px}}
+/* ===== Mobile ≤560px: teléfonos (~360-400px) ===== */
+@media(max-width:560px){
+  /* Header más compacto y logo más chico */
+  .site-header{padding:12px 14px 9px}
+  .site-header img{height:34px}
+  .site-header-sub{letter-spacing:2px;text-align:center}
+  /* Nav: tabs con scroll horizontal, botones de reset debajo */
+  nav{padding:0 12px;height:auto;flex-wrap:wrap;gap:8px;padding-top:6px;padding-bottom:6px}
+  .nav-tabs{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch;gap:4px}
+  .nav-tab{white-space:nowrap;padding:6px 12px;letter-spacing:1px}
+  /* Barra de semana apilada */
+  .week-bar{flex-direction:column;align-items:stretch;gap:12px}
+  .week-label{font-size:24px}
+  .week-bar>div{flex-wrap:wrap;justify-content:center}
+  /* Grillas de resumen y stats a 2 columnas */
+  .summary-row{grid-template-columns:1fr 1fr}
+  .op-stats{grid-template-columns:repeat(2,1fr)}
+  #cruce-kpis{grid-template-columns:1fr 1fr !important}
+  #suc-dash-grid{grid-template-columns:1fr !important}
+  /* Tablas: menos padding para que respiren dentro del scroll */
+  .history-table th,.history-table td{padding:8px 10px}
+  /* Gráfico de evolución: scroll interno si hay muchas semanas */
+  .trend-chart{overflow-x:auto}
+  /* Toolbars/filtros: apilan vertical y controles full-width tappables */
+  select,input[type=date],input[type=text]{width:100%;min-width:0;padding:10px 11px;font-size:14px}
+  #f8-activo-select{min-width:0}
+  .btn{width:100%;padding:12px 20px}
+  .view{padding:12px}
+}
 </style>
 </head>
 <body>
@@ -159,10 +189,12 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
   </div>
   <div class="section-title">Últimos F8s registrados</div>
   <div class="card" style="overflow:hidden">
+    <div style="overflow-x:auto">
     <table class="history-table">
       <thead><tr><th>Fecha</th><th>Operador</th><th>Tipo</th><th>Líneas eval.</th><th>Movimientos</th><th>Artículos</th><th>Unidades</th><th>Top marcas</th></tr></thead>
       <tbody id="dash-recent"></tbody>
     </table>
+    </div>
   </div>
 </div>
 
@@ -261,10 +293,12 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
   <div id="cruce-result" style="display:none">
     <div class="section-title">Resultados del cruce</div>
     <div class="card" style="overflow:hidden">
+      <div style="overflow-x:auto">
       <table class="history-table">
         <thead><tr><th>Código</th><th>Artículo</th><th>Marca</th><th>Rubro</th><th>Origen F8</th><th>Destino</th><th>F8 Plan</th><th>Transferido</th><th>Diferencia</th><th>Estado</th></tr></thead>
         <tbody id="cruce-body"></tbody>
       </table>
+      </div>
       <div id="cruce-empty" class="empty" style="display:none">Sin resultados.</div>
     </div>
     <div id="cruce-count" style="font-family:var(--font-c);font-size:11px;color:var(--muted);margin-top:6px;text-align:right"></div>
@@ -7686,7 +7720,7 @@ function renderHistory(){
     const dCount=items.filter(f=>f.operator==='David').length;
     const dnCount=items.filter(f=>f.operator==='Daniel').length;
     const rows=items.map(f=>`<tr><td>${f.date}</td><td><span class="op-tag op-${f.operator.toLowerCase()}">${f.operator}</span></td><td><span style="font-family:var(--font-c);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">${f.tipo||'—'}</span></td><td>${f.totalRows}</td><td><strong style="color:var(--red)">${f.withMovCount}</strong></td><td>${f.uniqueArts}</td><td>${f.totalUnits.toLocaleString()}</td><td>${(f.topBrands||[]).slice(0,3).map(([b,c])=>'<span class="brand-pill">'+b+' '+c+'</span>').join('')}</td></tr>`).join('');
-    return`<div class="f8-date-row"><div class="f8-date-header" onclick="toggleHistWeek(this)"><div><div style="font-family:var(--font-d);font-size:18px;letter-spacing:1px;color:var(--navy)">Semana ${wk.split('-W')[1]} — ${weekKeyRange(wk)}</div><div style="font-family:var(--font-c);font-size:11px;color:var(--muted);margin-top:3px">David: ${dCount} F8s · Daniel: ${dnCount} F8s</div></div><div style="font-family:var(--font-d);font-size:24px;color:var(--navy-mid)">${items.length}</div></div><div style="display:none;border-top:1px solid var(--border);overflow:hidden"><table class="history-table" style="width:100%"><thead><tr><th>Fecha</th><th>Operador</th><th>Tipo</th><th>Líneas</th><th>Movimientos</th><th>Artículos</th><th>Unidades</th><th>Top marcas</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    return`<div class="f8-date-row"><div class="f8-date-header" onclick="toggleHistWeek(this)"><div><div style="font-family:var(--font-d);font-size:18px;letter-spacing:1px;color:var(--navy)">Semana ${wk.split('-W')[1]} — ${weekKeyRange(wk)}</div><div style="font-family:var(--font-c);font-size:11px;color:var(--muted);margin-top:3px">David: ${dCount} F8s · Daniel: ${dnCount} F8s</div></div><div style="font-family:var(--font-d);font-size:24px;color:var(--navy-mid)">${items.length}</div></div><div style="display:none;border-top:1px solid var(--border);overflow-x:auto"><table class="history-table" style="width:100%"><thead><tr><th>Fecha</th><th>Operador</th><th>Tipo</th><th>Líneas</th><th>Movimientos</th><th>Artículos</th><th>Unidades</th><th>Top marcas</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
   }).join('');
 }
 
