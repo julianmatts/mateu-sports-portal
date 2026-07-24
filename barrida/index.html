@@ -991,7 +991,7 @@ async function exportRepXlsx(){
   const headers=[...fixed, ...talles]; const nCols=headers.length; const FIX=fixed.length;
   const wb=new ExcelJS.Workbook();
   const ws=wb.addWorksheet('Reposición', {views:[{showGridLines:false}]});
-  ws.columns=[{width:16},{width:16},{width:34},{width:14},{width:20},{width:9},{width:9},{width:9},{width:7}, ...talles.map(()=>({width:6}))];
+  ws.columns=[{width:16},{width:16},{width:34},{width:14},{width:20},{width:9},{width:9},{width:9},{width:7}, ...talles.map(()=>({width:7}))];
 
   let r=1;
   ws.mergeCells(r,1,r,nCols);
@@ -1032,7 +1032,9 @@ async function exportRepXlsx(){
     r++;
   });
 
-  ws.autoFilter={ from:{row:headerRowIdx,column:1}, to:{row:headerRowIdx,column:nCols} };
+  // autofiltro SOLO en las columnas fijas: si abarca los talles, la flecha del filtro
+  // tapa el número en las columnas angostas.
+  ws.autoFilter={ from:{row:headerRowIdx,column:1}, to:{row:headerRowIdx,column:FIX} };
   ws.views=[{state:'frozen', xSplit:5, ySplit:headerRowIdx, showGridLines:false}];
   ws.pageSetup={orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}};
   await downloadWorkbook(wb, 'reposicion-'+state.semana+'.xlsx');
