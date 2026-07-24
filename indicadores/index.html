@@ -1186,7 +1186,9 @@ async function renderBarrida(){
     +'<div class="hint" style="margin:0">Semana del '+esc(semLbl)+'</div></div>';
   html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Artículo</th><th class="L">Marca</th><th>Vendido</th><th>Sugerido</th><th class="L">Talles</th></tr></thead><tbody>';
   top.slice(0,25).forEach(x=>{
-    const tt=Object.entries(x.talles||{}).filter(([t,d])=>d.s>0).map(([t,d])=>t+'×'+d.s).join('  ');
+    // talles viene como array [{t,v,r,s}] desde Firebase (las claves con punto no se permiten)
+    const tarr = Array.isArray(x.talles) ? x.talles : Object.entries(x.talles||{}).map(([t,d])=>({t,...d}));
+    const tt = tarr.filter(d=>d.s>0).map(d=>d.t+'×'+d.s).join('  ');
     html+='<tr><td class="L">'+esc(x.desc||x.codigo||x.id)+'</td><td class="L">'+esc(x.marca||'')+'</td>'
       +'<td>'+fmtN(x.vendido||0)+'</td><td><b>'+fmtN(x.sugerido)+'</b></td><td class="L">'+esc(tt||'—')+'</td></tr>';
   });

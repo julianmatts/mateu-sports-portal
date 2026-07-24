@@ -829,7 +829,9 @@ async function guardarBarrida(){
   const repBySlug={};
   R.reposicion.forEach(r=>{ (repBySlug[r.slug]=repBySlug[r.slug]||[]).push({
     id:r.id, codigo:r.codigo, desc:r.desc, marca:r.marca, rubro:r.rubro, tipo:r.tipo,
-    vendido:r.vendido, reservaTotal:r.reservaTotal, sugerido:r.sugerido, talles:r.talles
+    vendido:r.vendido, reservaTotal:r.reservaTotal, sugerido:r.sugerido,
+    // talles como ARRAY (no objeto): Firebase no admite claves con punto (ej "8.5").
+    talles: Object.entries(r.talles).map(([t,d])=>({t, v:d.v, r:d.r, s:d.s}))
   }); });
   const payload={
     meta:{ generado_en:nowISO(), generado_por:SESSION.email||'', semana:sem,
@@ -902,7 +904,10 @@ async function abrirBarrida(sem){
     // reconstituir el shape de state.resultado desde lo guardado
     const reposicion=[];
     Object.entries(b.reposicion||{}).forEach(([slug,arr])=>{ (arr||[]).forEach(r=>{
-      reposicion.push({ ...r, slug, sucNombre:(SLUG_SUC[slug]||OUTLET_SUC[slug]||slug) });
+      // talles vuelve como array [{t,v,r,s}] (por el punto en las claves) → reconstruir objeto
+      let talles=r.talles;
+      if(Array.isArray(talles)){ const o={}; talles.forEach(d=>{ o[d.t]={v:d.v,r:d.r,s:d.s}; }); talles=o; }
+      reposicion.push({ ...r, talles:talles||{}, slug, sucNombre:(SLUG_SUC[slug]||OUTLET_SUC[slug]||slug) });
     }); });
     state.resultado={ reposicion, parada:b.parada||[], compras:b.compras||null, snapshot:{}, totales:(b.meta&&b.meta.totales)||{}, sinHistorial:false };
     state.resultadoSemana=sem; state.semana=sem;
