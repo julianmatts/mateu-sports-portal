@@ -28,7 +28,7 @@ mateu-sports-portal/
 ├── data/indicadores/   # salida particionada (un JSON por sucursal + cadena.json) que consume el módulo
 ├── regalias/           # Liquidador de Regalías RUGE/EDLP (Estudiantes): clasifica ventas, aplica escalas, exporta el Excel del mes y genera la presentación comercial (plantilla-presentacion.html, embebida en index.html)
 ├── evaluaciones/       # Evaluaciones de Supervisor: carga semanal operativa+actitudinal por sucursal, ranking, gráficos y vista de encargado. Escribe a Firebase (base evaluaciones-mateu). Ver "Evaluaciones de Supervisor" abajo.
-├── barrida/            # Análisis de Reserva Depósito Central: cruce semanal (subir Excel) de la reserva del depósito central con las ventas por sucursal → alertas de reposición posible y de reserva parada. Firebase base barrida-mateu. Ver "Análisis de Reserva Depósito Central" abajo.
+├── barrida/            # Análisis de Reserva Depósito Central: cruce semanal (subir Excel) de la reserva del depósito central con las ventas por sucursal → alertas de reposición posible y de reserva parada. Firebase: reusa recepciones-mateu (nodo barrida/). Ver "Análisis de Reserva Depósito Central" abajo.
 ├── lib/                # código JS común versionado y testeable (hoy: evaluacion.js = cálculo puro de Evaluaciones + tests con node --test)
 └── shared/             # código común del shell (calendario retail, etc.)
 ```
@@ -250,19 +250,23 @@ Indicadores, ver abajo).
   cuenta cuántas semanas seguidas lleva en reserva. En una sola semana el ~65% de los
   SKUs no vende → la lista "parada" cruda es ruidosa; el valor sale del filtro
   *crónica (3+ semanas)* que se acumula semana a semana.
-- **Firebase**: base propia **`barrida-mateu`** (constante `FIREBASE_DB_URL`; reglas
-  abiertas como el resto). Árbol: `barrida/barridas/<lunesISO>` con
-  `{meta, reposicion:{<slug>:[...]}, parada:[...]}`, `barrida/reservaHist/<lunesISO>`
-  (snapshot `{idItem:total}` para ingreso reciente / semanas) y `barrida/ultima`
-  (puntero al último lunes). La reposición se guarda **agrupada por slug de sucursal**
-  para que cada sucursal baje solo lo suyo (seguridad blanda, como Indicadores).
+- **Firebase**: **reusa la base `recepciones-mateu`** (la del Depósito Central, ya
+  existe con reglas abiertas). Se descartó crear una base propia `barrida-mateu` para
+  no depender de un alta manual; los datos viven en un nodo aparte `barrida/…` sin
+  tocar el árbol `recepciones/…`. Constante `FIREBASE_DB_URL` en `barrida/` y
+  `BARRIDA_URL` en `indicadores/`. Árbol: `barrida/barridas/<lunesISO>` con
+  `{meta, reposicion:{<slug>:[...]}, parada:[...], compras:[...]}`,
+  `barrida/reservaHist/<lunesISO>` (snapshot `{idItem:total}` para ingreso reciente /
+  semanas) y `barrida/ultima` (puntero al último lunes). La reposición se guarda
+  **agrupada por slug de sucursal** para que cada sucursal baje solo lo suyo (seguridad
+  blanda, como Indicadores).
 - **Aviso a la sucursal**: vive en **`indicadores/`** (la home de sucursal/outlet).
-  La sección `secBarrida` lee `barrida-mateu/barrida/ultima` + `.../reposicion/<slug>`
+  La sección `secBarrida` lee `recepciones-mateu/barrida/ultima` + `.../reposicion/<slug>`
   y muestra "Reposición disponible" con lo que esa sucursal puede pedir del depósito.
-  Sin base/dato → la sección no aparece. Usa el mapa `SUC2SLUG` (nombre→slug).
+  Sin dato → la sección no aparece. Usa el mapa `SUC2SLUG` (nombre→slug).
 
-**Puesta en marcha: crear la base `barrida-mateu` a mano (reglas `.read`/`.write`
-true) — la URL ya está pegada en `FIREBASE_DB_URL` de `barrida/` y de `indicadores/`.**
+**Puesta en marcha: ya funciona (usa `recepciones-mateu`, que está en vivo). No hace
+falta crear ninguna base.**
 
 ## Reglas
 
