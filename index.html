@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Mateu">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-v2.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="shared/components/calendario-retail/calendario.css">
@@ -1219,8 +1219,19 @@ document.addEventListener('click', e=>{
 (function(){
   // Registrar el service worker (habilita instalación + offline básico).
   if('serviceWorker' in navigator){
+    // Cuando el nuevo service worker toma el control, recargar para mostrar la última versión.
+    var refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function(){
+      if(refreshing) return; refreshing = true; location.reload();
+    });
     window.addEventListener('load', function(){
-      navigator.serviceWorker.register('sw.js').catch(function(){});
+      navigator.serviceWorker.register('sw.js').then(function(reg){
+        // Buscar actualizaciones cada vez que se vuelve a la app (foco / volver a primer plano).
+        var check = function(){ if(reg) reg.update().catch(function(){}); };
+        document.addEventListener('visibilitychange', function(){ if(!document.hidden) check(); });
+        window.addEventListener('focus', check);
+        check();
+      }).catch(function(){});
     });
   }
 

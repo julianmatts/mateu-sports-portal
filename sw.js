@@ -4,7 +4,7 @@
    estando online, así que no interfiere con los deploys de Cloudflare Pages ni con
    los datos de Firebase (que van cross-origin y pasan de largo sin tocar cache).
    Subir CACHE_VERSION cuando quieras limpiar cachés viejos. */
-const CACHE = 'mateu-portal-v1';
+const CACHE = 'mateu-portal-v2';
 
 // Shell mínimo para que el Portal abra offline (los módulos se cachean solos al visitarlos).
 const APP_SHELL = [
