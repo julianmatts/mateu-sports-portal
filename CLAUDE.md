@@ -230,7 +230,10 @@ Indicadores, ver abajo).
   talle. ⚠️ La hoja de reserva trae una columna final **`Total`** (suma de la fila):
   se excluye de los talles a propósito; si se contara, **duplicaría el stock**.
 - **Salida = dos alertas por sucursal**: **Reposición** (artículo con reserva Y venta
-  en una sucursal → sugerido por talle = `mín(vendido, reserva)`) y **Reserva parada**
+  en una sucursal → sugerido por talle = `mín(vendido, reserva)`; los talles donde
+  `vendido > reserva` van en **rojo** + pill ⚠ falta en el artículo = reserva no
+  alcanza, señal de recompra a la marca; filtro "Solo con faltante de talle") y
+  **Reserva parada**
   (reserva y CERO venta en toda la cadena). El Depósito y filas basura (`Sucursal`)
   se excluyen de la demanda; se puede filtrar `Varios/Facturación` (gift cards,
   cupones). El grano fino es art×sucursal.

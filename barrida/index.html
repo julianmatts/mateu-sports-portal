@@ -109,7 +109,9 @@ tbody tr:hover td{background:#f8f9fe}
 .pill.rec{background:#eff6ff;color:#1e40af}
 .pill.cron{background:#fef2f2;color:#b91c1c}
 .pill.suc{background:#eef2fb;color:var(--navy-mid)}
+.pill.falta{background:#fef2f2;color:#b91c1c}
 .talles{font-size:12px;color:var(--muted);font-family:var(--font-c)}
+.talles .falta{color:var(--bad);font-weight:700}
 .desc{max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .grp-suc{background:#eef2fb;font-family:var(--font-c);font-weight:700;color:var(--navy-mid);letter-spacing:.5px}
 
@@ -241,7 +243,7 @@ const state = {
   resultado:null,                        // salida de computar()
   semana: lunesDe(new Date()),           // lunes de la barrida
   histKeys:[],                           // lunes con barrida guardada
-  filtros:{ suc:'', rubro:'', marca:'', q:'', soloSugerido:true, excluirVarios:true },
+  filtros:{ suc:'', rubro:'', marca:'', q:'', soloSugerido:true, excluirVarios:true, soloFaltante:false },
   filtrosPar:{ rubro:'', marca:'', q:'', excluirVarios:true, soloCronica:false },
   filtrosCom:{ rubro:'', marca:'', q:'', excluirVarios:true, minVendido:3 },
   sortRep:{k:'sugerido',dir:-1}, sortPar:{k:'reserva',dir:-1}, sortCom:{k:'vendido',dir:-1},
@@ -522,9 +524,12 @@ function viewReposicion(){
   const R=state.resultado;
   if(!R) return '<div class="state"><div class="big-ic">⚙️</div>Procesá una barrida en la pestaña «Cargar».</div>';
   const f=state.filtros;
+  // ¿algún talle vendido supera la reserva de ese talle? (reserva insuficiente → recompra)
+  const faltaEn = r => Object.values(r.talles).some(d=>d.v>0 && d.v>d.r);
   let rows=R.reposicion.slice();
   if(f.excluirVarios) rows=rows.filter(r=>!/varios|facturacion/i.test(r.rubro+' '+r.tipo));
   if(f.soloSugerido) rows=rows.filter(r=>r.sugerido>0);
+  if(f.soloFaltante) rows=rows.filter(faltaEn);
   if(f.suc) rows=rows.filter(r=>r.slug===f.suc);
   if(f.rubro) rows=rows.filter(r=>r.rubro===f.rubro);
   if(f.marca) rows=rows.filter(r=>r.marca===f.marca);
@@ -542,24 +547,30 @@ function viewReposicion(){
     +'<div class="fgrp" style="flex:1;min-width:180px"><label for="fQ">Buscar</label><input class="inp" id="fQ" placeholder="artículo, código, ID…" value="'+esc(f.q)+'" style="width:100%"></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fSug" '+(f.soloSugerido?'checked':'')+'> Solo con talle disponible</label></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fVarios" '+(f.excluirVarios?'checked':'')+'> Excluir Varios/Facturación</label></div>'
+    +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fFalta" '+(f.soloFaltante?'checked':'')+'> Solo con faltante de talle</label></div>'
     +'<div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="btnCsvRep">⇩ CSV</button></div>'
     +'</div>';
   if(!rows.length) return html+'<div class="state"><div class="big-ic">📭</div>Sin candidatos para estos filtros.</div>';
+  html+='<div class="card-hs" style="margin:-4px 0 12px"><span class="talles"><span class="falta">M:3/1</span></span> en rojo = la sucursal vendió más de lo que hay en reserva para ese talle: la reserva no alcanza y probablemente haya que <b>reponer a la marca</b>.</div>';
+  const nFalta = rows.filter(faltaEn).length;
   html+='<div class="tbl-wrap"><table><thead><tr>'
     +th('Sucursal','sucNombre')+th('Artículo','desc')+th('Código','codigo')+th('Marca','marca')
     +thNum('Vendido','vendido')+thNum('Reserva','reservaTotal')+thNum('Sugerido','sugerido')+'<th class="noord">Talles (vend/res)</th>'
     +'</tr></thead><tbody>';
   rows.forEach(r=>{
-    const tt=Object.entries(r.talles).filter(([t,d])=>d.v>0).map(([t,d])=>t+':'+d.v+'/'+d.r).join('  ');
+    const falta=faltaEn(r);
+    const tt=Object.entries(r.talles).filter(([t,d])=>d.v>0)
+      .map(([t,d])=>'<span class="'+(d.v>d.r?'falta':'')+'">'+esc(t)+':'+d.v+'/'+d.r+'</span>').join('  ');
     html+='<tr><td><span class="pill suc">'+esc(r.sucNombre)+'</span></td>'
-      +'<td class="desc" title="'+esc(r.desc)+'">'+esc(r.desc||'—')+'</td>'
+      +'<td class="desc" title="'+esc(r.desc)+'">'+esc(r.desc||'—')+(falta?' <span class="pill falta" title="Reserva insuficiente en algún talle">⚠ falta</span>':'')+'</td>'
       +'<td class="mono">'+esc(r.codigo||r.id)+'</td><td>'+esc(r.marca)+'</td>'
       +'<td class="num mono">'+fmtInt(r.vendido)+'</td><td class="num mono">'+fmtInt(r.reservaTotal)+'</td>'
       +'<td class="num mono"><b>'+fmtInt(r.sugerido)+'</b></td>'
-      +'<td class="talles">'+esc(tt||'—')+'</td></tr>';
+      +'<td class="talles">'+(tt||'—')+'</td></tr>';
   });
   html+='</tbody></table></div>';
-  html+='<div class="card-hs" style="margin-top:10px">'+fmtInt(rows.length)+' líneas · '+fmtInt(rows.reduce((a,r)=>a+r.sugerido,0))+' unidades sugeridas.</div>';
+  html+='<div class="card-hs" style="margin-top:10px">'+fmtInt(rows.length)+' líneas · '+fmtInt(rows.reduce((a,r)=>a+r.sugerido,0))+' unidades sugeridas'
+    +(nFalta?' · <span style="color:var(--bad)"><b>'+fmtInt(nFalta)+'</b> con faltante de talle (reserva no alcanza)</span>':'')+'.</div>';
   return html;
 }
 
@@ -824,6 +835,7 @@ function wireReposicion(){
   const q=$('fQ'); if(q) q.oninput=e=>{ f.q=e.target.value; renderDebounce(); };
   const sug=$('fSug'); if(sug) sug.onchange=e=>{ f.soloSugerido=e.target.checked; render(); };
   const vr=$('fVarios'); if(vr) vr.onchange=e=>{ f.excluirVarios=e.target.checked; render(); };
+  const fa=$('fFalta'); if(fa) fa.onchange=e=>{ f.soloFaltante=e.target.checked; render(); };
   const csv=$('btnCsvRep'); if(csv) csv.onclick=exportRepCsv;
   wireSort('sortRep');
 }
@@ -883,11 +895,16 @@ function descargarCsv(nombre, filas){
 function exportRepCsv(){
   const R=state.resultado; if(!R) return;
   const f=state.filtros;
-  const filas=[['Sucursal','Articulo','Codigo','Marca','Rubro','Vendido','Reserva','Sugerido']];
+  const faltaEn = r => Object.values(r.talles).some(d=>d.v>0 && d.v>d.r);
+  const filas=[['Sucursal','Articulo','Codigo','Marca','Rubro','Vendido','Reserva','Sugerido','FaltanteTalle','TallesFaltantes']];
   R.reposicion
     .filter(r=>!f.excluirVarios || !/varios|facturacion/i.test(r.rubro+' '+r.tipo))
     .filter(r=>!f.soloSugerido||r.sugerido>0)
-    .forEach(r=>filas.push([r.sucNombre,r.desc,r.codigo||r.id,r.marca,r.rubro,r.vendido,r.reservaTotal,r.sugerido]));
+    .filter(r=>!f.soloFaltante||faltaEn(r))
+    .forEach(r=>{
+      const faltantes=Object.entries(r.talles).filter(([t,d])=>d.v>0&&d.v>d.r).map(([t,d])=>t+'('+d.v+'/'+d.r+')').join(' ');
+      filas.push([r.sucNombre,r.desc,r.codigo||r.id,r.marca,r.rubro,r.vendido,r.reservaTotal,r.sugerido,faltantes?'si':'',faltantes]);
+    });
   descargarCsv('reposicion-'+state.semana+'.csv',filas);
 }
 function exportParCsv(){
