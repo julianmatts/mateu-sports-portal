@@ -90,6 +90,16 @@ main{max-width:1200px;margin:0 auto;padding:22px 22px 80px}
 .kpi .v{font-family:var(--font-d);font-size:32px;letter-spacing:.5px;margin-top:4px;line-height:1}
 .kpi .v small{font-size:14px;color:var(--muted);font-family:var(--font-c)}
 
+/* ===== SEGMENTADO (selector de sección) ===== */
+.segbar{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 18px}
+.segbar button{border:1.5px solid var(--border);background:#fff;border-radius:10px;padding:9px 14px;cursor:pointer;
+  font-family:var(--font-c);font-size:13.5px;font-weight:600;color:var(--navy-mid);display:flex;align-items:center;gap:7px;transition:all .12s}
+.segbar button:hover{border-color:var(--navy-mid)}
+.segbar button .n{font-family:var(--font-b);font-size:12px;font-weight:700;background:#eef2fb;border-radius:10px;padding:1px 8px;color:var(--navy-mid)}
+.segbar button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.segbar button.on .n{background:rgba(255,255,255,.22);color:#fff}
+.segbar button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+
 /* ===== FILTROS ===== */
 .filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px}
 .fgrp{display:flex;flex-direction:column;gap:4px;min-width:120px}
@@ -245,7 +255,7 @@ const state = {
   histKeys:[],                           // lunes con barrida guardada
   filtros:{ suc:'', rubro:'', marca:'', q:'', soloSugerido:true, excluirVarios:true, soloFaltante:false },
   filtrosPar:{ rubro:'', marca:'', q:'', excluirVarios:true, soloCronica:false },
-  filtrosCom:{ rubro:'', marca:'', q:'', excluirVarios:true, minVendido:3, topN:20 },
+  filtrosCom:{ rubro:'', marca:'', q:'', excluirVarios:true, minVendido:3, topN:20, vista:'sin' },
   sortRep:{k:'sugerido',dir:-1}, sortPar:{k:'reserva',dir:-1}, sortCom:{k:'vendido',dir:-1},
 };
 
@@ -615,30 +625,38 @@ function viewCompras(){
     +kpi('Artículos frenados',fmtInt(frenados.length)+' <small>art.</small>')
     +'</div>';
 
-  // resumen por marca de lo SIN reserva (a quién comprarle)
-  if(sinRes.length){
-    const porMarca={}; sinRes.forEach(c=>{ porMarca[c.marca||'—']=(porMarca[c.marca||'—']||0)+c.vendido; });
-    const chips=Object.entries(porMarca).sort((a,b)=>b[1]-a[1]).slice(0,12)
-      .map(([m,u])=>'<span class="filechip"><b>'+esc(m)+'</b> · '+fmtInt(u)+' u</span>').join('');
-    html+='<div class="card" style="padding:14px"><div class="card-h" style="font-size:16px">A quién reponer (top marcas sin reserva)</div>'
-      +'<div style="margin-top:8px">'+chips+'</div></div>';
-  }
+  // selector de sección (se ve una a la vez para que no quede una página larguísima)
+  const vista=f.vista;
+  html+='<div class="segbar">'
+    +'<button data-vista="sin" class="'+(vista==='sin'?'on':'')+'">🔴 Sin reserva — reponer a la marca <span class="n">'+fmtInt(sinRes.length)+'</span></button>'
+    +'<button data-vista="con" class="'+(vista==='con'?'on':'')+'">🟢 Con reserva — seguimiento <span class="n">'+fmtInt(conRes.length)+'</span></button>'
+    +'<button data-vista="frenados" class="'+(vista==='frenados'?'on':'')+'">⏸️ Frenados <span class="n">'+fmtInt(frenados.length)+'</span></button>'
+    +'</div>';
 
   const lim = f.topN>0 ? f.topN : Infinity;
-  // Sección 1 — sin reserva
-  html+=seccionCompras('🔴 Mejores vendidos SIN reserva — reponer a la marca', sinRes, lim);
-  // Sección 2 — con reserva
-  html+=seccionCompras('🟢 Mejores vendidos CON reserva — seguimiento', conRes, lim);
-  // Sección 3 — frenados
-  html+='<h2 class="card-h" style="font-size:18px;margin:22px 0 8px">⏸️ Artículos frenados <span class="card-hs" style="display:inline">('+fmtInt(frenados.length)+')</span></h2>';
-  if(!frenados.length) html+='<div class="card-hs">Sin artículos frenados para estos filtros.</div>';
-  else{
-    html+='<div class="tbl-wrap"><table><thead><tr><th>Artículo</th><th>Código</th><th>Marca</th><th>Rubro</th><th class="num">Reserva</th><th class="num">Semanas</th></tr></thead><tbody>';
-    frenados.slice(0,lim).forEach(p=>{ html+='<tr><td class="desc" title="'+esc(p.desc)+'">'+esc(p.desc||'—')+'</td>'
-      +'<td class="mono">'+esc(p.codigo||p.id)+'</td><td>'+esc(p.marca)+'</td><td>'+esc(p.rubro)+'</td>'
-      +'<td class="num mono">'+fmtInt(p.reservaTotal)+'</td><td class="num mono">'+fmtInt(p.semanas)+'</td></tr>'; });
-    html+='</tbody></table></div>';
-    if(frenados.length>lim) html+='<div class="card-hs" style="margin-top:8px">Mostrando los primeros '+fmtInt(lim)+' (de '+fmtInt(frenados.length)+'). Subí «Mostrar» o usá la pestaña «Reserva parada».</div>';
+  if(vista==='sin'){
+    // resumen por marca de lo SIN reserva (a quién comprarle)
+    if(sinRes.length){
+      const porMarca={}; sinRes.forEach(c=>{ porMarca[c.marca||'—']=(porMarca[c.marca||'—']||0)+c.vendido; });
+      const chips=Object.entries(porMarca).sort((a,b)=>b[1]-a[1]).slice(0,12)
+        .map(([m,u])=>'<span class="filechip"><b>'+esc(m)+'</b> · '+fmtInt(u)+' u</span>').join('');
+      html+='<div class="card" style="padding:14px"><div class="card-h" style="font-size:16px">A quién reponer (top marcas sin reserva)</div>'
+        +'<div style="margin-top:8px">'+chips+'</div></div>';
+    }
+    html+=seccionCompras('🔴 Mejores vendidos SIN reserva — reponer a la marca', sinRes, lim);
+  } else if(vista==='con'){
+    html+=seccionCompras('🟢 Mejores vendidos CON reserva — seguimiento', conRes, lim);
+  } else {
+    html+='<h2 class="card-h" style="font-size:18px;margin:6px 0 8px">⏸️ Artículos frenados <span class="card-hs" style="display:inline">('+fmtInt(frenados.length)+')</span></h2>';
+    if(!frenados.length) html+='<div class="card-hs">Sin artículos frenados para estos filtros.</div>';
+    else{
+      html+='<div class="tbl-wrap"><table><thead><tr><th>Artículo</th><th>Código</th><th>Marca</th><th>Rubro</th><th class="num">Reserva</th><th class="num">Semanas</th></tr></thead><tbody>';
+      frenados.slice(0,lim).forEach(p=>{ html+='<tr><td class="desc" title="'+esc(p.desc)+'">'+esc(p.desc||'—')+'</td>'
+        +'<td class="mono">'+esc(p.codigo||p.id)+'</td><td>'+esc(p.marca)+'</td><td>'+esc(p.rubro)+'</td>'
+        +'<td class="num mono">'+fmtInt(p.reservaTotal)+'</td><td class="num mono">'+fmtInt(p.semanas)+'</td></tr>'; });
+      html+='</tbody></table></div>';
+      if(frenados.length>lim) html+='<div class="card-hs" style="margin-top:8px">Mostrando los primeros '+fmtInt(lim)+' (de '+fmtInt(frenados.length)+'). Subí «Mostrar» o usá la pestaña «Reserva parada».</div>';
+    }
   }
   return html;
 }
@@ -746,6 +764,7 @@ function wireCompras(){
   bind('cRubro','rubro'); bind('cMarca','marca');
   const mn=$('cMin'); if(mn) mn.onchange=e=>{ f.minVendido=Math.max(1,parseInt(e.target.value,10)||1); render(); };
   const tp=$('cTop'); if(tp) tp.onchange=e=>{ f.topN=parseInt(e.target.value,10)||0; render(); };
+  document.querySelectorAll('.segbar button[data-vista]').forEach(b=>b.onclick=()=>{ f.vista=b.dataset.vista; render(); });
   const q=$('cQ'); if(q) q.oninput=e=>{ f.q=e.target.value; renderDebounce(); };
   const vr=$('cVarios'); if(vr) vr.onchange=e=>{ f.excluirVarios=e.target.checked; render(); };
   const csv=$('btnCsvCom'); if(csv) csv.onclick=exportComCsv;
