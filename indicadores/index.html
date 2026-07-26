@@ -187,6 +187,13 @@ tr:last-child td{border-bottom:none}
   border:1px solid var(--border);border-radius:4px;padding:1px 6px;margin-left:7px;white-space:nowrap}
 .tag.cover{color:var(--mid);border-color:#f0d0a0}
 .tag.baja{color:var(--bad);border-color:#f0bfbc}
+/* tabla cadena: destacados */
+td.td-lead{background:rgba(224,164,0,.12)}
+td.td-lead .num{font-weight:700}
+.lead-star{color:#e0a400;font-size:11px;margin-right:3px;vertical-align:middle}
+tr.team:hover td.td-lead{background:rgba(224,164,0,.18)}
+.fmt-tag{font-family:var(--font-c);font-size:10px;letter-spacing:.6px;text-transform:uppercase;
+  border-radius:4px;padding:1px 7px;white-space:nowrap;color:#fff;font-weight:600}
 .tag.rev{color:var(--navy-mid);border-color:#c3cfe8}
 .bar{position:relative;height:5px;background:#e7ebf5;width:74px;display:inline-block;vertical-align:middle;margin-left:6px;border-radius:3px;overflow:hidden}
 .bar i{position:absolute;left:0;top:0;height:100%;display:block;border-radius:3px}
@@ -574,8 +581,8 @@ footer b{color:var(--navy)}
 
     <section class="sec">
       <div class="sec-label">Gerencia</div>
-      <h2 class="sec-title">Comparación de <em>toda la cadena</em></h2>
-      <p class="hint">Las 20 sucursales, cada una contra el objetivo de <b>su formato</b>. Ecommerce se muestra pero no entra en el promedio ni en el ranking (no tiene horas de piso). Clic en el encabezado para ordenar.</p>
+      <h2 class="sec-title" id="cadTitle">Comparación de <em>toda la cadena</em></h2>
+      <p class="hint" id="cadHint">Las 20 sucursales, cada una contra el objetivo de <b>su formato</b>. Ecommerce se muestra pero no entra en el promedio ni en el ranking (no tiene horas de piso). El líder de cada columna va destacado con ★. Clic en el encabezado para ordenar; usá los chips de <b>Línea</b> de arriba para filtrar.</p>
       <div class="tbl-wrap">
         <table id="tblCad">
           <thead><tr>
@@ -723,6 +730,8 @@ function formatoDe(n){ n=(n||'').toLowerCase();
     :n.includes('outlet')?'Outlet':n.includes('kids')?'Kids':'MS'; }
 const FMT_LABEL = {MS:'Mateu Sports', Aurelius:'Aurelius', Adidas:'Adidas', Outlet:'Outlets', Kids:'Kids', Ecommerce:'Ecommerce'};
 const fmtLabel = f => FMT_LABEL[f] || f;
+const FMT_COLOR = {MS:'#1a2f55', Aurelius:'#0f766e', Adidas:'#111827', Outlet:'#c77700', Kids:'#CC0000', Ecommerce:'#6B7A99'};
+const fmtColor = f => FMT_COLOR[f] || 'var(--muted)';
 // Cuántas sucursales (excl. ecom) hay en el formato: si es una sola, comparar "línea" = comparar contra sí mismo.
 function paresFormato(fmt){ return (CAD.sucursales||[]).filter(s=>s.sucursal!==ECOM && (s.formato||formatoDe(s.sucursal))===fmt).length; }
 function archivoDe(n){ return n.replace(/\./g,'').replace(/\s+/g,'-'); }
@@ -1531,25 +1540,42 @@ function renderNotas(){
 /* --- vista cadena (gerencia) --- */
 let sortCad={k:'venta',dir:-1};
 function renderCadenaTabla(){
-  const c=cadenaAgg(CAD);
-  const rows=CAD.sucursales.map(s=>{ const k=kpis(s), fmt=s.formato||formatoDe(s.sucursal), obj=OBJ[fmt]||{};
+  // el filtro de Línea (chips del ranking) también aplica a esta tabla.
+  const filtrando = !!rkTipo;
+  let rows=CAD.sucursales.map(s=>{ const k=kpis(s), fmt=s.formato||formatoDe(s.sucursal), obj=OBJ[fmt]||{};
     return {s, fmt, k, obj, esEcom:s.sucursal===ECOM||!s.horas_contr}; });
+  if(filtrando) rows = rows.filter(r=>r.fmt===rkTipo);
+  // título / subtítulo dinámicos
+  const nSuc = rows.filter(r=>!r.esEcom).length;
+  if($('cadTitle')) $('cadTitle').innerHTML = filtrando ? `Comparación · <em>${esc(fmtLabel(rkTipo))}</em>` : 'Comparación de <em>toda la cadena</em>';
+  if($('cadHint')) $('cadHint').innerHTML = filtrando
+    ? `${nSuc} sucursales de la línea <b>${esc(fmtLabel(rkTipo))}</b>, cada una contra el objetivo de su formato. El líder de cada columna va destacado con ★. Clic en el encabezado para ordenar; tocá <b>Todas</b> arriba para ver la cadena completa.`
+    : `Las 20 sucursales, cada una contra el objetivo de <b>su formato</b>. Ecommerce se muestra pero no entra en el promedio ni en el ranking (no tiene horas de piso). El líder de cada columna va destacado con ★. Clic en el encabezado para ordenar; usá los chips de <b>Línea</b> de arriba para filtrar.`;
+  // líder por columna (entre las que rankean, excl. ecommerce)
+  const rankable = rows.filter(r=>!r.esEcom);
+  const maxOf = getter => rankable.reduce((m,r)=>{ const x=getter(r); return isFinite(x)&&x>m?x:m; }, -Infinity);
+  const lead = { upt:maxOf(r=>r.k.upt), tph:maxOf(r=>r.k.tph), tp:maxOf(r=>r.k.tp), vh:maxOf(r=>r.k.vh), venta:maxOf(r=>r.s.importe_neto) };
+  const isLead=(r,key,v)=> !r.esEcom && isFinite(v) && Math.abs(v-lead[key])<1e-6;
+  const star=`<span class="lead-star">★</span>`;
   const val=(r,key)=> key==='nombre'?r.s.sucursal : key==='formato'?r.fmt : key==='venta'?r.s.importe_neto : r.k[key];
   rows.sort((a,b)=>{ const va=val(a,sortCad.k), vb=val(b,sortCad.k);
     if(typeof va==='string') return va.localeCompare(vb)*(sortCad.dir);
     return ((vb||0)-(va||0))*(sortCad.dir===1?-1:1); });
-  const pill=(v,tgt)=>{ if(!tgt||!isFinite(v)) return '<span class="muted">—</span>';
-    const pct=v/tgt*100, sem=semaforo(pct);
-    return `<span class="num">${sortCad.k==='tp'||false? '':''}${v>=1000?fmtM(v):fmt2(v)}</span> <span class="dot" style="display:inline-block;vertical-align:middle" class2=""></span><span class="cum-${sem}" style="font-family:var(--font-c);font-size:12px"> ${Math.round(pct)}%</span>`; };
+  const metricCell=(r,key,tgt,txt)=>{
+    const ld=isLead(r,key,r.k[key]);
+    const cum = tgt?` <span class="cum-${semaforo(r.k[key]/tgt*100)}" style="font-family:var(--font-c);font-size:12px">${Math.round(r.k[key]/tgt*100)}%</span>`:'';
+    return `<td class="${ld?'td-lead':''}">${ld?star:''}<span class="num">${txt}</span>${cum}</td>`;
+  };
   $('tbodyCad').innerHTML = rows.map(r=>{
-    const upt=r.obj.upt?`<span class="num">${fmt2(r.k.upt)}</span> <span class="cum-${semaforo(r.k.upt/r.obj.upt*100)}" style="font-family:var(--font-c);font-size:12px">${Math.round(r.k.upt/r.obj.upt*100)}%</span>`:`<span class="num">${fmt2(r.k.upt)}</span>`;
-    const tph=r.esEcom?'<span class="muted">—</span>':(r.obj.tickets_hora?`<span class="num">${fmt2(r.k.tph)}</span> <span class="cum-${semaforo(r.k.tph/r.obj.tickets_hora*100)}" style="font-family:var(--font-c);font-size:12px">${Math.round(r.k.tph/r.obj.tickets_hora*100)}%</span>`:`<span class="num">${fmt2(r.k.tph)}</span>`);
-    const tp=r.obj.ticket_promedio?`<span class="num">${fmtM(r.k.tp)}</span> <span class="cum-${semaforo(r.k.tp/r.obj.ticket_promedio*100)}" style="font-family:var(--font-c);font-size:12px">${Math.round(r.k.tp/r.obj.ticket_promedio*100)}%</span>`:`<span class="num">${fmtM(r.k.tp)}</span>`;
+    const upt=metricCell(r,'upt',r.obj.upt,fmt2(r.k.upt));
+    const tph=r.esEcom?'<td><span class="muted">—</span></td>':metricCell(r,'tph',r.obj.tickets_hora,fmt2(r.k.tph));
+    const tp=metricCell(r,'tp',r.obj.ticket_promedio,fmtM(r.k.tp));
+    const vh=r.esEcom?'<td><span class="muted">—</span></td>':`<td class="${isLead(r,'vh',r.k.vh)?'td-lead':''}">${isLead(r,'vh',r.k.vh)?star:''}<span class="num">${fmtM(r.k.vh)}</span></td>`;
+    const ventaLd=isLead(r,'venta',r.s.importe_neto);
+    const venta=`<td class="${ventaLd?'td-lead':''}" style="text-align:right">${ventaLd?star:''}<span class="${ventaLd?'num':'muted'}">${kM(r.s.importe_neto)}</span></td>`;
     return `<tr class="team" style="cursor:default"><td class="L">${esc(r.s.sucursal)}${r.esEcom?'<span class="tag">no rankea</span>':''}</td>
-      <td style="text-align:right"><span class="tag">${esc(r.fmt)}</span></td>
-      <td>${upt}</td><td>${tph}</td><td>${tp}</td>
-      <td>${r.esEcom?'<span class="muted">—</span>':`<span class="num">${fmtM(r.k.vh)}</span>`}</td>
-      <td class="muted">${kM(r.s.importe_neto)}</td></tr>`;
+      <td style="text-align:right"><span class="fmt-tag" style="background:${fmtColor(r.fmt)}">${esc(r.fmt)}</span></td>
+      ${upt}${tph}${tp}${vh}${venta}</tr>`;
   }).join('');
   document.querySelectorAll('#tblCad th').forEach(th=>{ th.removeAttribute('data-sorted');
     if(th.dataset.k===sortCad.k) th.setAttribute('data-sorted','1');
@@ -1570,7 +1596,7 @@ function renderRankChips(){
   const presentes = new Set((CAD.sucursales||[]).filter(s=>s.sucursal!==ECOM && s.horas_contr>0).map(s=>s.formato||formatoDe(s.sucursal)));
   const chips = [''].concat(RK_LINEAS.filter(f=>presentes.has(f)));
   $('rkChips').innerHTML = chips.map(f=>`<button class="rk-chip${rkTipo===f?' on':''}" data-f="${esc(f)}">${f===''?'Todas':esc(fmtLabel(f))}</button>`).join('');
-  $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderRanking(); });
+  $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderRanking(); renderCadenaTabla(); });
 }
 function rkRow(r, i, kpi, avg, best){
   const v=r.k[kpi.k], dif=(isFinite(avg)&&avg)?((v/avg-1)*100):NaN;
