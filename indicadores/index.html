@@ -1089,15 +1089,22 @@ function renderKPIs(){
       const ws = (DET_FULL.summary.semanas||[]).find(x=>x.n===semSel);
       rankHtml = `<span class="muted">Semana ${semSel}${ws&&ws.rango?' · '+esc(ws.rango):''}</span>`;
     } else {
+      // referencia = pares de la misma línea/formato; si es la única de su tipo, cae a cadena.
+      const usarFmt = paresFormato(fmt)>1;
+      const refLbl = usarFmt ? 'línea' : 'cadena';
       deltaHtmlStr = '<span class="muted">sin período anterior</span>';
       if(prevSuc){
         const dp = deltaHtml(k[d.key], kpis(prevSuc)[d.key]);
-        const dc = cPrev ? deltaHtml(c[d.key], cPrev[d.key]) : null;
-        if(dp) deltaHtmlStr = `${dp} vs. ${mesAnt}` + (dc?` · <span class="muted">cadena ${dc}</span>`:'');
+        const refNow  = usarFmt ? avgFormato(CAD, d.key, fmt) : c[d.key];
+        const refPrev = cPrev ? (usarFmt ? avgFormato(CAD_PREV, d.key, fmt) : cPrev[d.key]) : null;
+        const dc = (refPrev!=null && isFinite(refNow) && isFinite(refPrev)) ? deltaHtml(refNow, refPrev) : null;
+        if(dp) deltaHtmlStr = `${dp} vs. ${mesAnt}` + (dc?` · <span class="muted">${refLbl} ${dc}</span>`:'');
       }
-      const r = rankDe(CAD, d.key, sucName), rF = rankFormato(CAD, d.key, sucName, fmt), avgF = avgFormato(CAD, d.key, fmt);
-      const difF = (isFinite(avgF)&&avgF)? (k[d.key]/avgF-1)*100 : NaN, fCls = difF>1.5?'up':difF<-1.5?'down':'flat';
-      rankHtml = `<span>Cadena <b>${r||'—'}</b>${rF?` · Formato <b>${rF.pos}/${rF.total}</b>`:''}</span>${isFinite(difF)?`<span class="${fCls}">${difF>0?'+':''}${fmt2(difF)}% vs. formato</span>`:''}`;
+      const r = rankDe(CAD, d.key, sucName), rF = rankFormato(CAD, d.key, sucName, fmt);
+      const refAgg = usarFmt ? avgFormato(CAD, d.key, fmt) : c[d.key];
+      const difF = (isFinite(refAgg)&&refAgg)? (k[d.key]/refAgg-1)*100 : NaN, fCls = difF>1.5?'up':difF<-1.5?'down':'flat';
+      // prioridad al ranking dentro del mismo tipo (formato); la cadena queda secundaria.
+      rankHtml = `<span>${usarFmt&&rF?`Formato <b>${rF.pos}/${rF.total}</b> · `:''}Cadena <b>${r||'—'}</b></span>${isFinite(difF)?`<span class="${fCls}">${difF>0?'+':''}${fmt2(difF)}% vs. ${refLbl}</span>`:''}`;
     }
     const spark = semSel ? '' : sparkSVG(serieKPI(d.key), d.tgt||NaN);
     return `<div class="kpi ${semClass}">
