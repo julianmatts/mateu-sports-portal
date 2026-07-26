@@ -215,6 +215,14 @@ tr.team:hover td.td-lead{background:rgba(224,164,0,.18)}
 .rk-kpi-tag{font-family:var(--font-c);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#fff;
   background:var(--red);border-radius:999px;padding:2px 9px}
 .rk-kpi-sub{font-family:var(--font-b);font-size:12.5px;color:var(--muted);margin:3px 0 4px}
+.rk-bar-sep{margin-left:10px;padding-left:12px;border-left:1px solid var(--border)}
+.rk-insight{font-family:var(--font-b);font-size:13px;color:var(--navy);background:#f2f5fc;border-left:3px solid var(--navy-mid);
+  border-radius:6px;padding:8px 11px;margin:8px 0 4px}
+.rk-insight b{color:var(--navy)}
+.rk-obj{display:block;font-family:var(--font-c);font-size:11.5px;font-weight:600;margin-top:1px}
+.rk-obj.cum-ok{color:var(--ok)} .rk-obj.cum-mid{color:var(--mid)} .rk-obj.cum-bad{color:var(--bad)}
+.rk-mom{display:block;font-family:var(--font-c);font-size:12px;margin-top:2px}
+.rk-mom.up{color:var(--ok)} .rk-mom.down{color:var(--bad)} .rk-mom.flat{color:var(--muted-light)}
 .rk-grp-h{font-family:var(--font-c);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
   margin:14px 0 2px;display:flex;align-items:center;gap:8px}
 .rk-grp-h .n{color:var(--navy)}
@@ -575,6 +583,8 @@ footer b{color:var(--navy)}
       <div class="rk-bar" id="rkBar">
         <span class="rk-bar-lbl">Línea</span>
         <div class="rk-chips" id="rkChips"></div>
+        <span class="rk-bar-lbl rk-bar-sep">KPI</span>
+        <div class="rk-chips" id="rkKpiChips"></div>
       </div>
       <div id="rkBody"></div>
     </section>
@@ -1063,21 +1073,41 @@ function renderDiagnostico(){
 }
 
 /* --- copiar resumen para compartir (WhatsApp) --- */
+// Vista gerencia: copia el ranking del KPI y la línea activos (respeta el filtro).
+function copiarCadena(){
+  const base=(CAD.sucursales||[]).filter(s=>s.sucursal!==ECOM && s.horas_contr>0)
+    .map(s=>({s, fmt:s.formato||formatoDe(s.sucursal), k:kpis(s)}));
+  const lineas = rkTipo? [rkTipo] : RK_LINEAS;
+  const kpi = RK_KPIS.find(x=>x.k===rkKpiSel) || RK_KPIS[0];
+  const L=[`📊 ${kpi.label} · ${perLabel(per)} · ${rkTipo?fmtLabel(rkTipo):'Cadena'}`];
+  lineas.forEach(fmt=>{
+    const rows=base.filter(r=>r.fmt===fmt && isFinite(r.k[kpi.k])).sort((a,b)=>b.k[kpi.k]-a.k[kpi.k]);
+    if(!rows.length) return;
+    const avg=avgFormato(CAD,kpi.k,fmt);
+    if(!rkTipo) L.push(`\n${fmtLabel(fmt)} (prom. ${kpi.fmt(avg)}):`);
+    rows.forEach((r,i)=>{ const dif=(isFinite(avg)&&avg)?((r.k[kpi.k]/avg-1)*100):NaN;
+      L.push(`${i+1}. ${r.s.sucursal.replace(/^\d+-\s*/,'')} — ${kpi.fmt(r.k[kpi.k])}${isFinite(dif)?` (${dif>0?'+':''}${fmt2(dif)}% vs línea)`:''}`); });
+  });
+  return L.join('\n');
+}
 function copiarResumen(){
-  if(!DET){ return; }
-  const s=DET.summary, k=kpis(s), fmt=DET.formato||formatoDe(sucName), obj=OBJ[fmt]||{};
-  const cu=(v,t)=> t? ' ('+Math.round(v/t*100)+'% obj)' : '';
-  const stock=$('stockVal')?$('stockVal').textContent.trim():'';
-  const rTp=rankFormato(CAD,'tp',sucName,fmt);
-  const L=[
-    `📊 ${sucName} · ${perLabel(per)}`,
-    `• UPT: ${fmt2(k.upt)}${cu(k.upt,obj.upt)}`,
-    `• Tickets/hora: ${s.horas_contr?fmt2(k.tph):'—'}${cu(k.tph,obj.tickets_hora)}`,
-    `• Ticket promedio: ${fmtM(k.tp)}${cu(k.tp,obj.ticket_promedio)}`,
-    (stock && stock!=='…' && stock!=='—') ? `• Meses de stock: ${stock}` : null,
-    rTp ? `• Ranking en formato ${fmt}: ${rTp.pos}/${rTp.total} (ticket prom.)` : null,
-  ].filter(Boolean);
-  const txt=L.join('\n');
+  let txt;
+  if(vistaCadena){ txt = copiarCadena(); }
+  else {
+    if(!DET){ return; }
+    const s=DET.summary, k=kpis(s), fmt=DET.formato||formatoDe(sucName), obj=OBJ[fmt]||{};
+    const cu=(v,t)=> t? ' ('+Math.round(v/t*100)+'% obj)' : '';
+    const stock=$('stockVal')?$('stockVal').textContent.trim():'';
+    const rTp=rankFormato(CAD,'tp',sucName,fmt);
+    txt=[
+      `📊 ${sucName} · ${perLabel(per)}`,
+      `• UPT: ${fmt2(k.upt)}${cu(k.upt,obj.upt)}`,
+      `• Tickets/hora: ${s.horas_contr?fmt2(k.tph):'—'}${cu(k.tph,obj.tickets_hora)}`,
+      `• Ticket promedio: ${fmtM(k.tp)}${cu(k.tp,obj.ticket_promedio)}`,
+      (stock && stock!=='…' && stock!=='—') ? `• Meses de stock: ${stock}` : null,
+      rTp ? `• Ranking en formato ${fmt}: ${rTp.pos}/${rTp.total} (ticket prom.)` : null,
+    ].filter(Boolean).join('\n');
+  }
   const ok=()=>{ const b=$('btnCopiar'); if(!b) return; const t=b.textContent; b.textContent='✓ Copiado'; b.classList.add('share-ok'); setTimeout(()=>{ b.textContent=t; b.classList.remove('share-ok'); },1600); };
   if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(ok).catch(()=>prompt('Copiá el resumen:', txt)); }
   else prompt('Copiá el resumen:', txt);
@@ -1583,20 +1613,25 @@ function renderCadenaTabla(){
 }
 
 /* --- ranking comparativo por línea (gerencia) --- */
-let rkTipo='';   // '' = todas las líneas
+let rkTipo='';        // '' = todas las líneas
+let rkKpiSel='tph';   // KPI mostrado en el ranking; 'todos' = todos
 const RK_LINEAS = ['MS','Aurelius','Adidas','Outlet','Kids'];
 // KPIs ordenados por prioridad: tickets/hora primero y destacado.
 const RK_KPIS = [
-  {k:'tph', label:'Tickets por hora',  sub:'Cuántos tickets rinde cada hora contratada — el stock de horas puesto a producir. Es la palanca principal.', fmt:v=>fmt2(v), obj:'tickets_hora',    primary:true, ratio:true},
-  {k:'upt', label:'Unidades por ticket',sub:'Cuántos artículos entran en cada venta.',                                                              fmt:v=>fmt2(v), obj:'upt'},
-  {k:'tp',  label:'Ticket promedio',    sub:'Venta neta por ticket.',                                                                                fmt:v=>fmtM(v), obj:'ticket_promedio'},
-  {k:'vh',  label:'Venta por hora',     sub:'Venta neta que genera cada hora de piso.',                                                              fmt:v=>fmtM(v)},
+  {k:'tph', label:'Tickets por hora',  short:'Tickets/hora', sub:'Cuántos tickets rinde cada hora contratada — el stock de horas puesto a producir. Es la palanca principal.', fmt:v=>fmt2(v), obj:'tickets_hora',    primary:true, ratio:true},
+  {k:'upt', label:'Unidades por ticket',short:'UPT',         sub:'Cuántos artículos entran en cada venta.',                                                              fmt:v=>fmt2(v), obj:'upt'},
+  {k:'tp',  label:'Ticket promedio',    short:'Ticket prom.',sub:'Venta neta por ticket.',                                                                                fmt:v=>fmtM(v), obj:'ticket_promedio'},
+  {k:'vh',  label:'Venta por hora',     short:'Venta/hora',  sub:'Venta neta que genera cada hora de piso.',                                                              fmt:v=>fmtM(v)},
 ];
 function renderRankChips(){
   const presentes = new Set((CAD.sucursales||[]).filter(s=>s.sucursal!==ECOM && s.horas_contr>0).map(s=>s.formato||formatoDe(s.sucursal)));
   const chips = [''].concat(RK_LINEAS.filter(f=>presentes.has(f)));
   $('rkChips').innerHTML = chips.map(f=>`<button class="rk-chip${rkTipo===f?' on':''}" data-f="${esc(f)}">${f===''?'Todas':esc(fmtLabel(f))}</button>`).join('');
   $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderRanking(); renderCadenaTabla(); });
+  const kchips = RK_KPIS.map(k=>`<button class="rk-chip${rkKpiSel===k.k?' on':''}" data-k="${k.k}">${esc(k.short)}</button>`).join('')
+    + `<button class="rk-chip${rkKpiSel==='todos'?' on':''}" data-k="todos">Todos</button>`;
+  $('rkKpiChips').innerHTML = kchips;
+  $('rkKpiChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkKpiSel=b.dataset.k; renderRanking(); });
 }
 function rkRow(r, i, kpi, avg, best){
   const v=r.k[kpi.k], dif=(isFinite(avg)&&avg)?((v/avg-1)*100):NaN;
@@ -1604,12 +1639,19 @@ function rkRow(r, i, kpi, avg, best){
   const barPct = best? Math.max(6,Math.min(100, v/best*100)) : 0;
   const barCol = sem==='ok'?'var(--ok)':sem==='bad'?'var(--bad)':'var(--mid)';
   const detail = kpi.ratio? `<span class="rk-detail">${fmtN(r.s.horas_contr)} h → ${fmtN(r.s.tickets)} tickets</span>` : '';
-  return `<div class="rk-row${i===0?' lead':''}" data-suc="${esc(r.s.sucursal)}" title="Ver desglose de horas y tickets">
+  // #2 cumplimiento vs objetivo del formato
+  let objHtml='';
+  if(kpi.obj){ const tgt=(OBJ[r.fmt]||{})[kpi.obj]; if(tgt){ const pct=v/tgt*100; objHtml=`<span class="rk-obj cum-${semaforo(pct)}">${Math.round(pct)}% obj</span>`; } }
+  // #5 momentum vs período anterior
+  let momHtml='';
+  if(CAD_PREV){ const ps=CAD_PREV.sucursales.find(x=>x.sucursal===r.s.sucursal), pv=ps?kpis(ps)[kpi.k]:NaN;
+    if(isFinite(pv)&&pv){ const m=(v/pv-1)*100, mc=m>1.5?'up':m<-1.5?'down':'flat'; momHtml=`<span class="rk-mom ${mc}">${m>0?'+':''}${fmt2(m)}% vs ${esc(mesCorto(prevPerId()))}</span>`; } }
+  return `<div class="rk-row${i===0?' lead':''}" data-suc="${esc(r.s.sucursal)}" tabindex="0" role="button" aria-expanded="false" title="Ver desglose de horas y tickets">
     <div class="rk-pos">${i+1}</div>
     <div><div class="rk-nm">${esc(r.s.sucursal.replace(/^\d+-\s*/,''))}<span class="rk-chev">▸</span>${detail}</div>
       <span class="bar" style="width:100%;max-width:200px;margin-left:0;margin-top:5px"><i style="width:${barPct.toFixed(0)}%;background:${barCol}"></i></span></div>
-    <div class="rk-val">${kpi.fmt(v)}</div>
-    <div class="rk-cmp"><span class="cum-${sem}">${isFinite(dif)?(dif>0?'+':'')+fmt2(dif)+'%':'—'}</span><span class="base">vs. línea</span></div>
+    <div class="rk-val">${kpi.fmt(v)}${objHtml}</div>
+    <div class="rk-cmp"><span class="cum-${sem}">${isFinite(dif)?(dif>0?'+':'')+fmt2(dif)+'%':'—'}</span><span class="base">vs. línea</span>${momHtml}</div>
   </div>`;
 }
 // Panel desplegable: de dónde sale el total (horas y tickets por grupo y por persona).
@@ -1634,35 +1676,50 @@ function rkPanelHTML(det){
 }
 async function rkTogglePanel(row){
   const nxt = row.nextElementSibling;
-  if(nxt && nxt.classList.contains('rk-panel')){ row.classList.remove('open'); nxt.remove(); return; }
-  row.classList.add('open');
+  if(nxt && nxt.classList.contains('rk-panel')){ row.classList.remove('open'); row.setAttribute('aria-expanded','false'); nxt.remove(); return; }
+  row.classList.add('open'); row.setAttribute('aria-expanded','true');
   const panel=document.createElement('div'); panel.className='rk-panel';
   panel.innerHTML='<div class="rk-panel-load">Cargando detalle…</div>';
   row.after(panel);
   const det = await detalleDe(per, row.dataset.suc);
   panel.innerHTML = rkPanelHTML(det);
 }
+// #2 lectura automática: quién se despega y quién arrastra en su propia línea.
+function rkInsight(rowsD){
+  const valid=rowsD.filter(x=>isFinite(x.dif));
+  if(valid.length<2) return '';
+  const top=valid.reduce((a,b)=>b.dif>a.dif?b:a), bot=valid.reduce((a,b)=>b.dif<a.dif?b:a);
+  if(top.name===bot.name) return '';
+  const up = top.dif>=1.5, down = bot.dif<=-1.5;
+  if(!up && !down) return `<div class="rk-insight">Todas las sucursales están cerca del promedio de su línea.</div>`;
+  const p1 = up ? `<b>${esc(top.name)}</b> es la que más se despega de su línea (+${fmt2(top.dif)}%)` : '';
+  const p2 = down ? `${up?'; ':''}<b>${esc(bot.name)}</b> es la que más arrastra el promedio (${fmt2(bot.dif)}%)` : '';
+  return `<div class="rk-insight">${p1}${p2}.</div>`;
+}
 function renderRanking(){
   renderRankChips();
   const base=(CAD.sucursales||[]).filter(s=>s.sucursal!==ECOM && s.horas_contr>0)
     .map(s=>({s, fmt:s.formato||formatoDe(s.sucursal), k:kpis(s)}));
   const lineas = rkTipo? [rkTipo] : RK_LINEAS;
-  const html = RK_KPIS.map(kpi=>{
+  const kpisMostrar = rkKpiSel==='todos'? RK_KPIS : RK_KPIS.filter(k=>k.k===rkKpiSel);
+  const html = kpisMostrar.map(kpi=>{
+    const rowsD=[];
     const grupos = lineas.map(fmt=>{
       const rows = base.filter(r=>r.fmt===fmt && isFinite(r.k[kpi.k])).sort((a,b)=>b.k[kpi.k]-a.k[kpi.k]);
       if(!rows.length) return '';
       const avg = avgFormato(CAD, kpi.k, fmt), best = rows[0].k[kpi.k];
+      rows.forEach(r=>{ const d=(isFinite(avg)&&avg)?((r.k[kpi.k]/avg-1)*100):NaN; rowsD.push({name:r.s.sucursal.replace(/^\d+-\s*/,''), dif:d}); });
       const head = `<div class="rk-grp-h"><span class="n">${esc(fmtLabel(fmt))}</span> · ${rows.length} suc.<span class="avg">Promedio de la línea: <b>${kpi.fmt(avg)}</b></span></div>`;
-      // con una sola línea seleccionada y una sola sucursal, igual mostramos (informativo)
       return head + rows.map((r,i)=>rkRow(r,i,kpi,avg,best)).join('');
     }).filter(Boolean).join('');
     if(!grupos) return '';
     return `<div class="rk-kpi${kpi.primary?' primary':''}">
       <div class="rk-kpi-h">${esc(kpi.label)}${kpi.primary?'<span class="rk-kpi-tag">Prioridad</span>':''}</div>
-      <div class="rk-kpi-sub">${esc(kpi.sub)}</div>${grupos}</div>`;
+      <div class="rk-kpi-sub">${esc(kpi.sub)}</div>${rkInsight(rowsD)}${grupos}</div>`;
   }).join('');
   $('rkBody').innerHTML = html || '<p class="muted" style="padding:12px 0">Sin datos de piso para esta línea.</p>';
   $('rkBody').onclick = e => { const row=e.target.closest('.rk-row[data-suc]'); if(row) rkTogglePanel(row); };
+  $('rkBody').onkeydown = e => { if(e.key==='Enter'||e.key===' '){ const row=e.target.closest('.rk-row[data-suc]'); if(row){ e.preventDefault(); rkTogglePanel(row); } } };
 }
 
 /* --- menú de herramientas --- */
