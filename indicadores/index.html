@@ -224,7 +224,26 @@ tr:last-child td{border-bottom:none}
 .rk-cmp{text-align:right;font-family:var(--font-c);font-size:14px}
 .rk-cmp .cum-ok{color:var(--ok)} .rk-cmp .cum-mid{color:var(--mid)} .rk-cmp .cum-bad{color:var(--bad)}
 .rk-cmp .base{display:block;font-size:11px;color:var(--muted-light);text-transform:uppercase;letter-spacing:.04em}
-@media(max-width:560px){ .rk-row{grid-template-columns:24px 1fr 72px 88px;gap:7px} .rk-val{font-size:18px} }
+.rk-row[data-suc]{cursor:pointer}
+.rk-row[data-suc]:hover{background:rgba(11,21,39,.035)}
+.rk-row.open{background:rgba(11,21,39,.05)}
+.rk-chev{display:inline-block;margin-left:7px;color:var(--muted-light);font-size:11px;transition:transform .15s;vertical-align:middle}
+.rk-row.open .rk-chev{transform:rotate(90deg);color:var(--red)}
+.rk-panel{background:#f7f9fe;border:1px solid var(--border);border-radius:10px;margin:3px 0 8px;padding:11px 13px;animation:rkFade .15s ease}
+@keyframes rkFade{from{opacity:0}to{opacity:1}}
+.rk-panel-load{color:var(--muted);font-size:13px;padding:4px 2px}
+.rk-panel-tot{font-family:var(--font-c);font-size:13.5px;color:var(--navy);padding-bottom:8px;margin-bottom:6px;border-bottom:1px solid var(--border)}
+.rk-g{margin-top:9px}
+.rk-g-h{font-family:var(--font-c);font-size:13px;color:var(--navy);display:flex;align-items:center;gap:7px;font-weight:600}
+.rk-g-h .dotc{width:9px;height:9px;border-radius:2px;display:inline-block;flex:none}
+.rk-g-sum{margin-left:auto;font-weight:400;color:var(--muted);font-size:12.5px}
+.rk-pp{display:grid;grid-template-columns:1fr auto 58px 58px 46px;gap:8px;align-items:center;padding:3px 0 3px 16px;font-size:12.5px;border-top:1px solid #eef1f8}
+.rk-pp-n{color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rk-pp-s{color:var(--muted-light);font-size:11px;font-family:var(--font-c);white-space:nowrap}
+.rk-pp-h,.rk-pp-t{color:var(--muted);text-align:right;font-family:var(--font-c)}
+.rk-pp-r{text-align:right;font-family:var(--font-d);color:var(--navy);font-size:15px}
+@media(max-width:560px){ .rk-row{grid-template-columns:24px 1fr 72px 88px;gap:7px} .rk-val{font-size:18px}
+  .rk-pp{grid-template-columns:1fr 50px 50px 40px} .rk-pp-s{display:none} }
 
 /* ===== PANELES / SVG ===== */
 .legend{display:flex;gap:22px;margin-top:14px;font-family:var(--font-c);font-size:11px;letter-spacing:1px;
@@ -750,7 +769,7 @@ async function boot(){
   if(!PERIODOS.length){ $('loading').textContent='Todavía no hay períodos cargados.'; return; }
   per = PERIODOS[0].id;
   // sucursal inicial
-  if(esGerencia){ sucName = null; /* se define al cargar cadena */ }
+  if(esGerencia){ sucName = null; vistaCadena = true; /* gerencia arranca en "Cadena (comparar todas)" */ }
   else { sucName = miSucursal; }
 
   construirMenu();
@@ -1559,13 +1578,43 @@ function rkRow(r, i, kpi, avg, best){
   const barPct = best? Math.max(6,Math.min(100, v/best*100)) : 0;
   const barCol = sem==='ok'?'var(--ok)':sem==='bad'?'var(--bad)':'var(--mid)';
   const detail = kpi.ratio? `<span class="rk-detail">${fmtN(r.s.horas_contr)} h → ${fmtN(r.s.tickets)} tickets</span>` : '';
-  return `<div class="rk-row${i===0?' lead':''}">
+  return `<div class="rk-row${i===0?' lead':''}" data-suc="${esc(r.s.sucursal)}" title="Ver desglose de horas y tickets">
     <div class="rk-pos">${i+1}</div>
-    <div><div class="rk-nm">${esc(r.s.sucursal.replace(/^\d+-\s*/,''))}${detail}</div>
+    <div><div class="rk-nm">${esc(r.s.sucursal.replace(/^\d+-\s*/,''))}<span class="rk-chev">▸</span>${detail}</div>
       <span class="bar" style="width:100%;max-width:200px;margin-left:0;margin-top:5px"><i style="width:${barPct.toFixed(0)}%;background:${barCol}"></i></span></div>
     <div class="rk-val">${kpi.fmt(v)}</div>
     <div class="rk-cmp"><span class="cum-${sem}">${isFinite(dif)?(dif>0?'+':'')+fmt2(dif)+'%':'—'}</span><span class="base">vs. línea</span></div>
   </div>`;
+}
+// Panel desplegable: de dónde sale el total (horas y tickets por grupo y por persona).
+function rkPanelHTML(det){
+  if(!det){ return '<div class="rk-panel-load">No se pudo cargar el detalle de esta sucursal.</div>'; }
+  const vs = (det.vendedores||[]).filter(v=>v.horas_contr>0 && GRUPOS_PISO.includes(v.grupo));
+  if(!vs.length){ return '<div class="rk-panel-load">Sin horas de piso registradas.</div>'; }
+  const byG = {};
+  vs.forEach(v=>{ const g=byG[v.grupo]=byG[v.grupo]||{h:0,t:0,people:[]}; g.h+=v.horas_contr; g.t+=v.tickets; g.people.push(v); });
+  const totH=vs.reduce((a,v)=>a+v.horas_contr,0), totT=vs.reduce((a,v)=>a+v.tickets,0);
+  const grupos = ['Ventas','Caja','Jefatura','Refuerzos'].filter(g=>byG[g]).map(g=>{
+    const gg=byG[g], tph=gg.h?gg.t/gg.h:0;
+    const people = gg.people.slice().sort((a,b)=>b.tickets-a.tickets).map(v=>{
+      const vt=v.horas_contr?v.tickets/v.horas_contr:0;
+      return `<div class="rk-pp"><span class="rk-pp-n">${esc(titleCase(v.vendedor))}</span><span class="rk-pp-s">${esc(v.sector||'')}</span>`+
+        `<span class="rk-pp-h">${fmtN(v.horas_contr)} h</span><span class="rk-pp-t">${fmtN(v.tickets)} tk</span><span class="rk-pp-r">${fmt2(vt)}</span></div>`;
+    }).join('');
+    return `<div class="rk-g"><div class="rk-g-h"><span class="dotc" style="background:${COL[g]}"></span>${esc(grupoLabel(g))}`+
+      `<span class="rk-g-sum">${fmtN(gg.h)} h · ${fmtN(gg.t)} tk · <b>${fmt2(tph)}</b> tk/h</span></div>${people}</div>`;
+  }).join('');
+  return `<div class="rk-panel-tot"><b>${fmtN(totH)} h</b> de piso en <b>${vs.length}</b> personas · <b>${fmtN(totT)}</b> tickets acreditados <span style="color:var(--muted-light)">(un comprobante puede sumar a más de un vendedor, por eso difiere del total de la sucursal)</span></div>${grupos}`;
+}
+async function rkTogglePanel(row){
+  const nxt = row.nextElementSibling;
+  if(nxt && nxt.classList.contains('rk-panel')){ row.classList.remove('open'); nxt.remove(); return; }
+  row.classList.add('open');
+  const panel=document.createElement('div'); panel.className='rk-panel';
+  panel.innerHTML='<div class="rk-panel-load">Cargando detalle…</div>';
+  row.after(panel);
+  const det = await detalleDe(per, row.dataset.suc);
+  panel.innerHTML = rkPanelHTML(det);
 }
 function renderRanking(){
   renderRankChips();
@@ -1587,6 +1636,7 @@ function renderRanking(){
       <div class="rk-kpi-sub">${esc(kpi.sub)}</div>${grupos}</div>`;
   }).join('');
   $('rkBody').innerHTML = html || '<p class="muted" style="padding:12px 0">Sin datos de piso para esta línea.</p>';
+  $('rkBody').onclick = e => { const row=e.target.closest('.rk-row[data-suc]'); if(row) rkTogglePanel(row); };
 }
 
 /* --- menú de herramientas --- */
