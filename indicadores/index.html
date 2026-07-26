@@ -191,6 +191,38 @@ tr:last-child td{border-bottom:none}
 .bar{position:relative;height:5px;background:#e7ebf5;width:74px;display:inline-block;vertical-align:middle;margin-left:6px;border-radius:3px;overflow:hidden}
 .bar i{position:absolute;left:0;top:0;height:100%;display:block;border-radius:3px}
 .num{font-family:var(--font-d);font-size:16px;font-weight:400}
+/* --- ranking comparativo por línea (gerencia) --- */
+.rk-bar{position:sticky;top:var(--rk-top,64px);z-index:30;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  background:var(--off);padding:12px 0 10px;margin-bottom:4px;border-bottom:1px solid var(--border)}
+.rk-bar-lbl{font-family:var(--font-c);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.rk-chips{display:flex;gap:6px;flex-wrap:wrap}
+.rk-chip{font-family:var(--font-c);font-size:14px;padding:6px 13px;border:1px solid var(--border);border-radius:999px;
+  background:var(--card);color:var(--navy);cursor:pointer;white-space:nowrap;transition:all .12s}
+.rk-chip:hover{border-color:var(--navy-mid)}
+.rk-chip.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.rk-kpi{margin-top:22px}
+.rk-kpi.primary{background:var(--card);border:1px solid var(--border);border-top:3px solid var(--red);
+  border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)}
+.rk-kpi-h{font-family:var(--font-d);font-size:23px;letter-spacing:.02em;color:var(--navy);display:flex;align-items:baseline;gap:10px}
+.rk-kpi.primary .rk-kpi-h{color:var(--red)}
+.rk-kpi-tag{font-family:var(--font-c);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#fff;
+  background:var(--red);border-radius:999px;padding:2px 9px}
+.rk-kpi-sub{font-family:var(--font-b);font-size:12.5px;color:var(--muted);margin:3px 0 4px}
+.rk-grp-h{font-family:var(--font-c);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+  margin:14px 0 2px;display:flex;align-items:center;gap:8px}
+.rk-grp-h .n{color:var(--navy)}
+.rk-grp-h .avg{margin-left:auto;text-transform:none;letter-spacing:0;font-size:12.5px}
+.rk-row{display:grid;grid-template-columns:28px 1fr 96px 108px;gap:10px;align-items:center;
+  padding:8px 0;border-top:1px solid var(--border)}
+.rk-pos{font-family:var(--font-d);font-size:19px;color:var(--muted-light);text-align:center}
+.rk-row.top .rk-pos{color:var(--ok)}
+.rk-nm{font-weight:600;color:var(--navy);font-size:14px;line-height:1.25}
+.rk-nm .rk-detail{display:block;font-weight:400;font-size:12px;color:var(--muted);font-family:var(--font-c)}
+.rk-val{font-family:var(--font-d);font-size:21px;color:var(--navy);text-align:right;line-height:1}
+.rk-cmp{text-align:right;font-family:var(--font-c);font-size:14px}
+.rk-cmp .cum-ok{color:var(--ok)} .rk-cmp .cum-mid{color:var(--mid)} .rk-cmp .cum-bad{color:var(--bad)}
+.rk-cmp .base{display:block;font-size:11px;color:var(--muted-light);text-transform:uppercase;letter-spacing:.04em}
+@media(max-width:560px){ .rk-row{grid-template-columns:24px 1fr 72px 88px;gap:7px} .rk-val{font-size:18px} }
 
 /* ===== PANELES / SVG ===== */
 .legend{display:flex;gap:22px;margin-top:14px;font-family:var(--font-c);font-size:11px;letter-spacing:1px;
@@ -471,7 +503,7 @@ footer b{color:var(--navy)}
     <section class="sec" id="secMix">
       <div class="sec-label">Mix de horas</div>
       <h2 class="sec-title">Dónde están las <em>horas</em></h2>
-      <p class="hint">Una hora en piso produce más tickets que una hora en caja, por diseño del rol. Cuanto más pesa la caja en el mix, más tiene que salir a vender el cajero para compensar. Cada grupo se compara con <b>su par de la cadena</b>, nunca contra el piso.</p>
+      <p class="hint">Una hora en piso produce más tickets que una hora en caja, por diseño del rol. Cuanto más pesa la caja en el mix, más tiene que salir a vender el cajero para compensar. Cada grupo se compara con <b>su par de la misma línea</b> (Mateu vs Mateu, Aurelius vs Aurelius, Adidas vs Adidas, Outlets vs Outlets), nunca contra el piso.</p>
       <div class="card pad" id="mix"></div>
     </section>
 
@@ -508,6 +540,17 @@ footer b{color:var(--navy)}
 
   <!-- Vista CADENA (solo gerencia) -->
   <div id="cadenaView" style="display:none">
+    <section class="sec" id="secRanking">
+      <div class="sec-label">Gerencia</div>
+      <h2 class="sec-title">Ranking comparativo <em>por línea</em></h2>
+      <p class="hint">Cada sucursal se mide contra las de <b>su misma línea</b> (Mateu vs Mateu, Aurelius vs Aurelius, Adidas vs Adidas, Outlets vs Outlets), nunca contra un formato distinto. La palanca principal es <b>tickets por hora</b>: cuántos tickets rinde el stock de horas contratadas. Elegí una línea para enfocar el análisis.</p>
+      <div class="rk-bar" id="rkBar">
+        <span class="rk-bar-lbl">Línea</span>
+        <div class="rk-chips" id="rkChips"></div>
+      </div>
+      <div id="rkBody"></div>
+    </section>
+
     <section class="sec">
       <div class="sec-label">Gerencia</div>
       <h2 class="sec-title">Comparación de <em>toda la cadena</em></h2>
@@ -657,6 +700,10 @@ const cacheCadena = {}, cacheDet = {};
 function formatoDe(n){ n=(n||'').toLowerCase();
   return n.includes('ecommerce')?'Ecommerce':n.includes('aurelius')?'Aurelius':n.includes('adidas')?'Adidas'
     :n.includes('outlet')?'Outlet':n.includes('kids')?'Kids':'MS'; }
+const FMT_LABEL = {MS:'Mateu Sports', Aurelius:'Aurelius', Adidas:'Adidas', Outlet:'Outlets', Kids:'Kids', Ecommerce:'Ecommerce'};
+const fmtLabel = f => FMT_LABEL[f] || f;
+// Cuántas sucursales (excl. ecom) hay en el formato: si es una sola, comparar "línea" = comparar contra sí mismo.
+function paresFormato(fmt){ return (CAD.sucursales||[]).filter(s=>s.sucursal!==ECOM && (s.formato||formatoDe(s.sucursal))===fmt).length; }
 function archivoDe(n){ return n.replace(/\./g,'').replace(/\s+/g,'-'); }
 const fmtN = n => (isFinite(n)?n:0).toLocaleString('es-AR',{maximumFractionDigits:0});
 const fmtM = n => '$'+Math.round(isFinite(n)?n:0).toLocaleString('es-AR');
@@ -807,6 +854,8 @@ async function render(){
   if(vistaCadena){
     $('content').style.display='none';
     $('cadenaView').style.display='block';
+    const top=document.querySelector('.top'); if(top) document.documentElement.style.setProperty('--rk-top', top.offsetHeight+'px');
+    renderRanking();
     renderCadenaTabla();
     return;
   }
@@ -919,8 +968,8 @@ function sparkSVG(serie, tgt){
 function mixCajaShare(){
   let cajaH=0, tot=0;
   DET.vendedores.forEach(v=>{ if(v.horas_contr>0 && GRUPOS_PISO.includes(v.grupo)){ tot+=v.horas_contr; if(v.grupo==='Caja') cajaH+=v.horas_contr; } });
-  const chain=CAD.mix||{}, ctot=Object.values(chain).reduce((a,x)=>a+x.h,0), ccaja=chain.Caja?chain.Caja.h:0;
-  return {mine: tot?cajaH/tot*100:0, chain: ctot?ccaja/ctot*100:0};
+  const ref=mixCadena(), rcaja=ref.g.Caja?ref.g.Caja.h:0;
+  return {mine: tot?cajaH/tot*100:0, chain: ref.tot?rcaja/ref.tot*100:0, esFormato:ref.esFormato};
 }
 function picoHora(){
   const d=(DET.cobertura||[]).filter(x=>x.dot>0); if(!d.length) return null;
@@ -967,7 +1016,7 @@ function renderDiagnostico(){
     tone = peorPct<85?'bad':'mid'; ic='💡'; tt='Dónde enfocar';
     if(peor==='tph'){
       const caja=mixCajaShare(), pico=picoHora();
-      const cajaTxt = caja.mine>caja.chain+4 ? ` La caja se lleva el <b>${fmt2(caja.mine)}%</b> de las horas (cadena ${fmt2(caja.chain)}%), así que falta gente en piso.` : '';
+      const cajaTxt = caja.mine>caja.chain+4 ? ` La caja se lleva el <b>${fmt2(caja.mine)}%</b> de las horas (${caja.esFormato?'tu línea':'cadena'} ${fmt2(caja.chain)}%), así que falta gente en piso.` : '';
       const picoTxt = pico!=null ? ` El pico de demanda es a las <b>${pico}h</b>: es donde más rinde sumar un vendedor.` : '';
       txt=`Tu punto más flojo es <b>tickets por hora</b> (${Math.round(peorPct)}% del objetivo): se atiende a menos gente por hora de la que podrías.${cajaTxt}${picoTxt}`;
     } else if(peor==='upt'){
@@ -1224,11 +1273,18 @@ function mixPropio(){
   DET.vendedores.forEach(v=>{ if(v.horas_contr>0 && COL[v.grupo]){ g[v.grupo]=g[v.grupo]||{h:0,t:0}; g[v.grupo].h+=v.horas_contr; g[v.grupo].t+=v.tickets; } });
   return {g, tot:Object.values(g).reduce((a,x)=>a+x.h,0)};
 }
+// Referencia del mix: los pares de la MISMA línea/formato (MS vs MS, Aurelius vs
+// Aurelius, Adidas vs Adidas, Outlets vs Outlets). Si la sucursal es la única de su
+// formato (p.ej. Kids), cae al promedio de toda la cadena.
 function mixCadena(){
-  const g = CAD.mix||{}; return {g, tot:Object.values(g).reduce((a,x)=>a+x.h,0)};
+  const fmt = DET.formato||formatoDe(sucName);
+  const usarFmt = paresFormato(fmt)>1 && CAD.mixFormato && CAD.mixFormato[fmt] && Object.keys(CAD.mixFormato[fmt]).length;
+  const g = usarFmt ? CAD.mixFormato[fmt] : (CAD.mix||{});
+  return {g, tot:Object.values(g).reduce((a,x)=>a+x.h,0), esFormato:usarFmt, fmt, ref: usarFmt?('tu línea · '+fmtLabel(fmt)):'la cadena'};
 }
 function renderMix(){
   const mine=mixPropio(), chain=mixCadena();
+  const REF = chain.ref;
   if(!mine.tot){ $('mix').innerHTML='<p class="muted">Sin horas de piso para esta sucursal.</p>'; return; }
   const orden=['Ventas','Caja','Jefatura','Refuerzos'].filter(kk=>mine.g[kk]);
   const barra=(m,lbl)=>`<div style="margin-bottom:16px"><div class="t-name" style="margin-bottom:6px">${lbl}</div>
@@ -1245,12 +1301,12 @@ function renderMix(){
   }).join('');
   const pCaja=(mine.g.Caja?mine.g.Caja.h:0)/mine.tot*100;
   const pCajaC=chain.g.Caja?chain.g.Caja.h/chain.tot*100:0;
-  $('mix').innerHTML = barra(mine,'Esta sucursal')+barra(chain,'Promedio de la cadena')+
-   `<table style="min-width:0;margin-top:16px"><thead><tr><th class="L">Grupo</th><th>Horas</th><th>Tickets / hora</th><th>vs. cadena</th></tr></thead><tbody>${filas}</tbody></table>
+  $('mix').innerHTML = barra(mine,'Esta sucursal')+barra(chain,'Promedio de '+REF)+
+   `<table style="min-width:0;margin-top:16px"><thead><tr><th class="L">Grupo</th><th>Horas</th><th>Tickets / hora</th><th>vs. ${chain.esFormato?'línea':'cadena'}</th></tr></thead><tbody>${filas}</tbody></table>
     <p class="eq-note">${pCaja>pCajaC+4
-      ? `La caja se lleva el <b>${fmt2(pCaja)}%</b> de las horas, contra ${fmt2(pCajaC)}% en la cadena. Es la sucursal la que empuja al cajero a salir a vender.`
-      : pCaja<pCajaC-4 ? `Solo el <b>${fmt2(pCaja)}%</b> de las horas están en caja, contra ${fmt2(pCajaC)}% en la cadena: casi toda la dotación está en piso.`
-      : `El reparto de horas entre piso y caja está en línea con la cadena.`}</p>`;
+      ? `La caja se lleva el <b>${fmt2(pCaja)}%</b> de las horas, contra ${fmt2(pCajaC)}% en ${REF}. Es la sucursal la que empuja al cajero a salir a vender.`
+      : pCaja<pCajaC-4 ? `Solo el <b>${fmt2(pCaja)}%</b> de las horas están en caja, contra ${fmt2(pCajaC)}% en ${REF}: casi toda la dotación está en piso.`
+      : `El reparto de horas entre piso y caja está en línea con ${REF}.`}</p>`;
 }
 
 /* --- cobertura vs demanda --- */
@@ -1470,6 +1526,58 @@ function renderCadenaTabla(){
   document.querySelectorAll('#tblCad th').forEach(th=>{ th.removeAttribute('data-sorted');
     if(th.dataset.k===sortCad.k) th.setAttribute('data-sorted','1');
     th.onclick=()=>{ sortCad={k:th.dataset.k, dir: sortCad.k===th.dataset.k?-sortCad.dir:-1}; renderCadenaTabla(); }; });
+}
+
+/* --- ranking comparativo por línea (gerencia) --- */
+let rkTipo='';   // '' = todas las líneas
+const RK_LINEAS = ['MS','Aurelius','Adidas','Outlet','Kids'];
+// KPIs ordenados por prioridad: tickets/hora primero y destacado.
+const RK_KPIS = [
+  {k:'tph', label:'Tickets por hora',  sub:'Cuántos tickets rinde cada hora contratada — el stock de horas puesto a producir. Es la palanca principal.', fmt:v=>fmt2(v), obj:'tickets_hora',    primary:true, ratio:true},
+  {k:'upt', label:'Unidades por ticket',sub:'Cuántos artículos entran en cada venta.',                                                              fmt:v=>fmt2(v), obj:'upt'},
+  {k:'tp',  label:'Ticket promedio',    sub:'Venta neta por ticket.',                                                                                fmt:v=>fmtM(v), obj:'ticket_promedio'},
+  {k:'vh',  label:'Venta por hora',     sub:'Venta neta que genera cada hora de piso.',                                                              fmt:v=>fmtM(v)},
+];
+function renderRankChips(){
+  const presentes = new Set((CAD.sucursales||[]).filter(s=>s.sucursal!==ECOM && s.horas_contr>0).map(s=>s.formato||formatoDe(s.sucursal)));
+  const chips = [''].concat(RK_LINEAS.filter(f=>presentes.has(f)));
+  $('rkChips').innerHTML = chips.map(f=>`<button class="rk-chip${rkTipo===f?' on':''}" data-f="${esc(f)}">${f===''?'Todas':esc(fmtLabel(f))}</button>`).join('');
+  $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderRanking(); });
+}
+function rkRow(r, i, kpi, avg, best){
+  const v=r.k[kpi.k], dif=(isFinite(avg)&&avg)?((v/avg-1)*100):NaN;
+  const sem = !isFinite(dif)?'mid':dif>=1.5?'ok':dif<=-1.5?'bad':'mid';
+  const barPct = best? Math.max(6,Math.min(100, v/best*100)) : 0;
+  const barCol = sem==='ok'?'var(--ok)':sem==='bad'?'var(--bad)':'var(--mid)';
+  const detail = kpi.ratio? `<span class="rk-detail">${fmtN(r.s.horas_contr)} h → ${fmtN(r.s.tickets)} tickets</span>` : '';
+  return `<div class="rk-row${i===0?' top':''}">
+    <div class="rk-pos">${i+1}</div>
+    <div><div class="rk-nm">${esc(r.s.sucursal.replace(/^\d+-\s*/,''))}${detail}</div>
+      <span class="bar" style="width:100%;max-width:200px;margin-left:0;margin-top:5px"><i style="width:${barPct.toFixed(0)}%;background:${barCol}"></i></span></div>
+    <div class="rk-val">${kpi.fmt(v)}</div>
+    <div class="rk-cmp"><span class="cum-${sem}">${isFinite(dif)?(dif>0?'+':'')+fmt2(dif)+'%':'—'}</span><span class="base">vs. línea</span></div>
+  </div>`;
+}
+function renderRanking(){
+  renderRankChips();
+  const base=(CAD.sucursales||[]).filter(s=>s.sucursal!==ECOM && s.horas_contr>0)
+    .map(s=>({s, fmt:s.formato||formatoDe(s.sucursal), k:kpis(s)}));
+  const lineas = rkTipo? [rkTipo] : RK_LINEAS;
+  const html = RK_KPIS.map(kpi=>{
+    const grupos = lineas.map(fmt=>{
+      const rows = base.filter(r=>r.fmt===fmt && isFinite(r.k[kpi.k])).sort((a,b)=>b.k[kpi.k]-a.k[kpi.k]);
+      if(!rows.length) return '';
+      const avg = avgFormato(CAD, kpi.k, fmt), best = rows[0].k[kpi.k];
+      const head = `<div class="rk-grp-h"><span class="n">${esc(fmtLabel(fmt))}</span> · ${rows.length} suc.<span class="avg">Promedio de la línea: <b>${kpi.fmt(avg)}</b></span></div>`;
+      // con una sola línea seleccionada y una sola sucursal, igual mostramos (informativo)
+      return head + rows.map((r,i)=>rkRow(r,i,kpi,avg,best)).join('');
+    }).filter(Boolean).join('');
+    if(!grupos) return '';
+    return `<div class="rk-kpi${kpi.primary?' primary':''}">
+      <div class="rk-kpi-h">${esc(kpi.label)}${kpi.primary?'<span class="rk-kpi-tag">Prioridad</span>':''}</div>
+      <div class="rk-kpi-sub">${esc(kpi.sub)}</div>${grupos}</div>`;
+  }).join('');
+  $('rkBody').innerHTML = html || '<p class="muted" style="padding:12px 0">Sin datos de piso para esta línea.</p>';
 }
 
 /* --- menú de herramientas --- */

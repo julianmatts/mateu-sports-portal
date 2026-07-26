@@ -302,14 +302,20 @@ def emitir_particionado(data, dest):
 
         # mix de la cadena por grupo (excl. ecommerce), sin personas
         mix = {}
+        # mix por formato/línea: cada sucursal se compara contra sus pares (MS vs MS,
+        # Aurelius vs Aurelius, Adidas vs Adidas, Outlet vs Outlet), no contra toda la cadena.
+        mix_formato = {}
         for v in d.get('vendedores', []):
             if v['sucursal'] != ECOM and v.get('horas_contr', 0) > 0 and v['grupo'] in GRUPOS_PISO:
                 g = mix.setdefault(v['grupo'], {'h': 0, 't': 0})
                 g['h'] += v['horas_contr']; g['t'] += v['tickets']
+                gf = mix_formato.setdefault(formato_de(v['sucursal']), {}).setdefault(v['grupo'], {'h': 0, 't': 0})
+                gf['h'] += v['horas_contr']; gf['t'] += v['tickets']
 
         suc_agg = [dict(s, formato=formato_de(s['sucursal'])) for s in d['sucursales']]
         dump({'periodo': per, 'meta': d['meta'], 'mesStock': MES_STOCK.get(mm),
-              'sucursales': suc_agg, 'mix': mix}, os.path.join(pdir, 'cadena.json'))
+              'sucursales': suc_agg, 'mix': mix, 'mixFormato': mix_formato},
+             os.path.join(pdir, 'cadena.json'))
 
         for s in d['sucursales']:
             b = por[s['sucursal']]

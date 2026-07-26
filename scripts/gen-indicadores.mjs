@@ -135,9 +135,17 @@ function main() {
 
     // cadena.json — agregados de todas las sucursales, SIN personas.
     const sucAgg = d.sucursales.map(s => ({ ...s, formato: formatoDe(s.sucursal) }));
-    const mixCadena = agregarMix((d.vendedores || []).filter(v => v.sucursal !== ECOM));
+    const vendPiso = (d.vendedores || []).filter(v => v.sucursal !== ECOM);
+    const mixCadena = agregarMix(vendPiso);
+    // mix por formato/línea: cada sucursal se compara contra sus pares (MS vs MS,
+    // Aurelius vs Aurelius, Adidas vs Adidas, Outlet vs Outlet), no contra toda la cadena.
+    const mixFormato = {};
+    for (const f of new Set(vendPiso.map(v => formatoDe(v.sucursal)))) {
+      mixFormato[f] = agregarMix(vendPiso.filter(v => formatoDe(v.sucursal) === f));
+    }
     fs.writeFileSync(path.join(dir, 'cadena.json'), JSON.stringify({
-      periodo: p, meta: d.meta, mesStock: MES_STOCK[mm], sucursales: sucAgg, mix: mixCadena,
+      periodo: p, meta: d.meta, mesStock: MES_STOCK[mm], sucursales: sucAgg,
+      mix: mixCadena, mixFormato,
     }));
 
     // Un archivo por sucursal, con su detalle de personas.
