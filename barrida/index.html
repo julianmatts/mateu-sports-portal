@@ -294,10 +294,18 @@ function detectarCols(matrix){
   // Disciplina · Género · Tipo de producto · Descripción · ID ITEM · CODIGO BARRAS ·
   // talles…), así que sus columnas descriptivas se toman por posición y no dependen
   // del texto del encabezado; la fila de encabezado sólo se usa para los talles.
+  // Distintos reportes nombran las columnas distinto: "ID ITEM" vs "Item",
+  // "Descripción" vs "Articulo", "Tipo de producto" vs "Grupo 1". Aceptamos los
+  // alias para reconocer tanto la hoja de ventas (trae "Sucursal") como la de
+  // reserva/stock del depósito (sin "Sucursal").
   let headerIdx=-1;
   for(let i=0;i<Math.min(8,matrix.length);i++){
     const row=matrix[i].map(c=>normName(c));
-    if(row.some(c=>c.includes('id item')) || (row.some(c=>c.includes('descrip'))&&row.some(c=>c.includes('codigo'))) || row.some(c=>c==='sucursal'||c.startsWith('sucursal'))){ headerIdx=i; break; }
+    const hasSuc  = row.some(c=>c==='sucursal'||c.startsWith('sucursal'));
+    const hasId   = row.some(c=>c.includes('id item')||c==='item'||c==='id');
+    const hasDesc = row.some(c=>c.includes('descrip')||c==='articulo'||c.startsWith('articulo'));
+    const hasCod  = row.some(c=>c.includes('codigo'));
+    if(hasSuc || hasId || (hasDesc&&hasCod)){ headerIdx=i; break; }
   }
   if(headerIdx<0) return null;
   const H = matrix[headerIdx].map(c=>normName(c));
@@ -308,15 +316,17 @@ function detectarCols(matrix){
     marca: find(h=>h==='marca'),
     disc:  find(h=>h.includes('disciplina')),
     gen:   find(h=>h.includes('genero')),
-    tipo:  find(h=>h.includes('tipo')),
-    desc:  find(h=>h.includes('descrip')),
-    id:    find(h=>h.includes('id item')||h==='id'),
+    tipo:  find(h=>h.includes('tipo')||h.includes('grupo')),
+    desc:  find(h=>h.includes('descrip')||h==='articulo'||h.startsWith('articulo')),
+    id:    find(h=>h.includes('id item')||h==='item'||h==='id'),
     cod:   find(h=>h.includes('codigo')&&h.includes('barra')),
   };
-  // Ventas: si la primera columna es Sucursal, el orden es fijo → mapear por posición.
-  // Así no hace falta que el Excel de ventas traiga los encabezados descriptivos exactos.
+  // Ventas con encabezados descriptivos en blanco/renombrados: si la 1ª columna
+  // es "Sucursal", el orden de columnas es fijo → completamos por posición SOLO
+  // las que no se detectaron por nombre (así no se pisan los alias correctos).
   if(cols.suc===0){
-    cols = { suc:0, rubro:1, marca:2, disc:3, gen:4, tipo:5, desc:6, id:7, cod:8 };
+    const POS = { rubro:1, marca:2, disc:3, gen:4, tipo:5, desc:6, id:7, cod:8 };
+    for(const k in POS){ if(cols[k]<0) cols[k]=POS[k]; }
   }
   // Talles = columnas a la derecha de CODIGO BARRAS con encabezado no vacío.
   // Se excluye la columna "Total" (la hoja de reserva trae al final el total de la
