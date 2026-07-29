@@ -315,6 +315,38 @@ entran acá: ven su objetivo en Indicadores.
 **Puesta en marcha: ya funciona (usa `recepciones-mateu`, en vivo). No hace falta
 crear ninguna base.**
 
+## Ingreso de Mercadería (pestaña en `recepciones/`)
+
+Circuito **físico** de recepción del depósito central, distinto de "Control de
+Recepciones" (mirada de Compras: ingresos vs pedido en $). Es una **pestaña dentro
+de `recepciones/`** (rol `admin` o depósito). MVP: **Adidas**.
+
+Flujo: **pre-ingreso** (Ariel/Luis cargan el remito → declarado por SKU) → **control
+ciego** (el operario escanea el EAN de cada unidad; NO ve las cantidades esperadas,
+para que no redondee) → **conciliación** (declarado vs controlado → faltantes/sobrantes
+por talle; "Ingresar a stock" cuando está ok) → reparto.
+
+- **Cruce por EAN:** ni el remito ni el packing list traen EAN; el operario escanea el
+  EAN de la caja. El puente es el **maestro de Adidas** (`recepciones/maestro-adidas.json`):
+  `scan EAN → SKU (material+talle) → cruce vs. declarado`. Se cumple exacto que el SKU
+  del packing list = `Material+Size` del maestro (validado). Se genera con:
+  `node scripts/gen-maestro-adidas.js "Lista Codigos EanNNN.XLSX"` (self-contained
+  fs+zlib, reusa el lector XLSX del generador de Meses de Stock; ~237k EANs, 7,4 MB /
+  1,5 MB gzip). Regenerar cuando Adidas mande catálogo nuevo.
+- **Arquitectura liviana (como Indicadores):** el maestro pesado se usa SOLO del lado
+  escritorio (Ariel/Luis). En pre-ingreso se hornea un **mini-mapa por remito** (EAN→SKU
+  de los SKU de ese remito) y el celular del operario baja solo eso.
+- **Escáner (ambos):** lector de mano (input siempre enfocado, EAN+Enter) + cámara
+  (ZXing por CDN, carga lazy).
+- **Firebase:** reusa `recepciones-mateu`, nodo aparte `ingreso/` (no toca
+  `recepciones/…`): `ingreso/remitos/<nro>` = {cabecera, `declarado{SKU:{talle,ean,desc,cant}}`,
+  `minimap{ean:SKU}`}, `ingreso/control/<nro>` = {`scans{SKU:cant}`, `unknown{ean:cant}`,
+  terminado}, `ingreso/ultima`.
+- **PENDIENTE:** import automático del packing list (Excel/CSV del bizlogit, para no
+  cargar el declarado a mano); la **hoja de apertura de cajas** (orden eficiente de
+  apertura con switch de criterio — ver algoritmo probado en el chat); aviso a Ariel/Luis
+  por `mensajes-mateu` al terminar el control; otras marcas.
+
 ## Reglas
 
 - Responder y comentar el código en **español**.

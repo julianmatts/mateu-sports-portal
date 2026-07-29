@@ -240,6 +240,7 @@ textarea.code{width:100%;min-height:150px;font-family:ui-monospace,Menlo,Consola
   <button class="tab" data-tab="pedidos">Pedidos de compra</button>
   <button class="tab" data-tab="control">Ingresos vs pedido</button>
   <button class="tab" data-tab="repartos">Repartos</button>
+  <button class="tab" data-tab="ingreso">Ingreso de Mercadería</button>
 </nav>
 
 <div class="filtros" id="filtros">
@@ -288,6 +289,7 @@ const $ = id => document.getElementById(id);
 const FIREBASE_DB_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
 const DEMO = !FIREBASE_DB_URL;
 const ROOT = 'recepciones';   // rama raíz en la base
+const ROOT_ING = 'ingreso';   // rama aparte para el circuito físico (no toca recepciones/…)
 
 /* ---------- sesión ---------- */
 const SESSION_KEY = 'mateu_portal_session';
@@ -334,14 +336,15 @@ function semanaISO(fecha){
 /* ============================================================
    ESTADO / DATOS (en memoria; espejo de la base)
    ============================================================ */
-const DATA = { pedidos:{}, remitos:{}, repartos:{} };   // keyed por fbKey(nro)
-const state = { tab:'panel', filtros:{ mes:'', marca:'', rubro:'', disciplina:'', tipo:'', proveedor:'', reparto:'', q:'' }, dims:null, uv:'u' };
+const DATA = { pedidos:{}, remitos:{}, repartos:{}, ingreso:{ remitos:{}, control:{} } };   // keyed por fbKey(nro)
+const state = { tab:'panel', filtros:{ mes:'', marca:'', rubro:'', disciplina:'', tipo:'', proveedor:'', reparto:'', q:'' }, dims:null, uv:'u', ing:{ view:'lista', remito:null } };
 const vals = o => o ? Object.keys(o).map(k=>o[k]) : [];
 
 async function cargarTodo(){
-  if(DEMO){ const m = window.RECEP_MOCK || {pedidos:{},remitos:{}}; DATA.pedidos=JSON.parse(JSON.stringify(m.pedidos||{})); DATA.remitos=JSON.parse(JSON.stringify(m.remitos||{})); DATA.repartos={}; return; }
-  const [ped, rem, rep] = await Promise.all([ fbGet(ROOT+'/pedidos'), fbGet(ROOT+'/remitos'), fbGet(ROOT+'/repartos') ]);
+  if(DEMO){ const m = window.RECEP_MOCK || {pedidos:{},remitos:{}}; DATA.pedidos=JSON.parse(JSON.stringify(m.pedidos||{})); DATA.remitos=JSON.parse(JSON.stringify(m.remitos||{})); DATA.repartos={}; DATA.ingreso={remitos:{},control:{}}; return; }
+  const [ped, rem, rep, iRem, iCon] = await Promise.all([ fbGet(ROOT+'/pedidos'), fbGet(ROOT+'/remitos'), fbGet(ROOT+'/repartos'), fbGet(ROOT_ING+'/remitos'), fbGet(ROOT_ING+'/control') ]);
   DATA.pedidos = ped || {}; DATA.remitos = rem || {}; DATA.repartos = rep || {};
+  DATA.ingreso = { remitos: iRem || {}, control: iCon || {} };
 }
 
 async function guardarPedido(doc){
@@ -423,6 +426,7 @@ function fillSelMes(){ const el=$('fMes'); if(!el) return; const cur=el.value; c
    RENDER
    ============================================================ */
 function render(){
+  const _fb=$('filtros'); if(_fb) _fb.style.display=(state.tab==='ingreso')?'none':'';
   $('view').innerHTML = stateLoading();
   try{
     if(state.tab==='panel') return renderPanel();
@@ -430,6 +434,7 @@ function render(){
     if(state.tab==='pedidos') return renderPedidos();
     if(state.tab==='control') return renderControl();
     if(state.tab==='repartos') return renderRepartos();
+    if(state.tab==='ingreso') return renderIngreso();
   }catch(e){ $('view').innerHTML = stateError(e.message); }
 }
 
@@ -1036,10 +1041,353 @@ function repList(titulo, arr, estado){
 }
 
 
+/* ============================================================
+   INGRESO DE MERCADERÍA — recepción física del depósito central.
+   Pre-ingreso (declarado) + control CIEGO por scan de EAN + conciliación.
+   Datos en Firebase, nodo aparte `ingreso/` (no toca recepciones/…).
+   El EAN se resuelve contra el maestro de Adidas (maestro-adidas.json):
+   scan EAN → SKU (material+talle) → cruce vs. declarado → faltantes/sobrantes.
+   ============================================================ */
+
+/* ---- maestro EAN de Adidas (lazy: ~1,5 MB gzip, se baja una sola vez) ---- */
+let MAESTRO=null, _maestroP=null, _sku2ean=null;
+function loadMaestro(){
+  if(MAESTRO) return Promise.resolve(MAESTRO);
+  if(_maestroP) return _maestroP;
+  _maestroP = fetch('./maestro-adidas.json').then(r=>{ if(!r.ok) throw new Error('No pude cargar el maestro de Adidas ('+r.status+')'); return r.json(); }).then(j=>{ MAESTRO=j; return j; });
+  return _maestroP;
+}
+function eanInfo(ean){ // EAN -> {sku,material,talle,desc} | null
+  if(!MAESTRO) return null;
+  const v = MAESTRO.ean[String(ean||'').replace(/\D/g,'')];
+  if(!v) return null;
+  const i=v.indexOf('\t'); const material=v.slice(0,i), talle=v.slice(i+1);
+  return { material, talle, sku:material+talle, desc:(MAESTRO.desc&&MAESTRO.desc[material])||'' };
+}
+function skuInfo(sku){ // SKU (material+talle) -> {ean,material,talle,desc} | null
+  if(!MAESTRO) return null;
+  if(!_sku2ean){ _sku2ean={}; const em=MAESTRO.ean; for(const e in em){ _sku2ean[em[e].replace('\t','')]=e; } }
+  const ean=_sku2ean[String(sku||'').trim().toUpperCase()]; if(!ean) return null;
+  const info=eanInfo(ean); return info?Object.assign(info,{ean:ean}):null;
+}
+
+/* ---- persistencia (nodo ingreso/) ---- */
+async function ingSaveRemito(rec){
+  const key=fbKey(rec.nro);
+  if(!DEMO) await fbPut(ROOT_ING+'/remitos/'+key, rec);
+  DATA.ingreso.remitos[key]=rec;
+  if(!DEMO) fbPut(ROOT_ING+'/ultima', key).catch(()=>{});
+}
+async function ingDeleteRemito(key){
+  if(!DEMO){ await fbDelete(ROOT_ING+'/remitos/'+key).catch(()=>{}); await fbDelete(ROOT_ING+'/control/'+key).catch(()=>{}); }
+  delete DATA.ingreso.remitos[key]; delete DATA.ingreso.control[key];
+}
+let _ctrlT=null;
+function ingSaveControl(key, now){
+  const C=DATA.ingreso.control[key]; if(!C||DEMO) return;
+  const go=()=>fbPut(ROOT_ING+'/control/'+key, C).catch(()=>{});
+  clearTimeout(_ctrlT); if(now) go(); else _ctrlT=setTimeout(go, 700);
+}
+
+/* ---- helpers de estado ---- */
+function ingCtrl(key){ return DATA.ingreso.control[key]||null; }
+function ingCtrlInit(key){ let C=DATA.ingreso.control[key]; if(!C){ C={scans:{},unknown:{},operario:_mail(),terminado:false,inicio:nowISO()}; DATA.ingreso.control[key]=C; } if(!C.scans)C.scans={}; if(!C.unknown)C.unknown={}; return C; }
+function ingDeclTot(R){ let t=0; const d=R.declarado||{}; for(const s in d) t+=num(d[s].cant); return t; }
+function ingScanTot(C){ let t=0; if(!C) return 0; for(const k in (C.scans||{})) t+=num(C.scans[k]); for(const k in (C.unknown||{})) t+=num(C.unknown[k]); return t; }
+function ingEstado(R,C){
+  if(R.ingresado) return {t:'Ingresado',cls:'ok'};
+  if(C&&C.terminado) return {t:'Controlado',cls:'warn'};
+  if(C&&ingScanTot(C)>0) return {t:'En control',cls:'info'};
+  return {t:'Pre-ingresado',cls:'mut'};
+}
+const ING_ORD_TALLE=['XS','S','M','L','XL','2XL','3XL','XXS'];
+function ingOrdTalle(t){ const i=ING_ORD_TALLE.indexOf(String(t||'')); return i<0?99:i; }
+
+/* ---- dispatch ---- */
+function renderIngreso(){
+  ingInjectCss();
+  const v=(state.ing&&state.ing.view)||'lista';
+  if(v==='control') return ingViewControl();
+  if(v==='concil')  return ingViewConcil();
+  return ingViewLista();
+}
+
+/* ---- 1) lista de remitos ---- */
+function ingViewLista(){
+  const rems = vals(DATA.ingreso.remitos).sort((a,b)=>cmp(b.creado_en||'',a.creado_en||''));
+  const head = seccionHead('Ingreso de Mercadería','Recepción del depósito central: pre-ingreso, control ciego por scan y conciliación.',
+    '<button class="btn btn-primary btn-sm" id="ingNuevo">+ Nuevo remito</button>');
+  if(!rems.length){ $('view').innerHTML = head + stateEmpty('No hay remitos en control. Cargá uno con “+ Nuevo remito”.'); ingBindLista(); return; }
+  const cards = rems.map(R=>{
+    const key=fbKey(R.nro); const C=ingCtrl(key);
+    const dec=ingDeclTot(R), sc=ingScanTot(C); const est=ingEstado(R,C);
+    const pct = dec>0?Math.min(100,Math.round(sc/dec*100)):0;
+    return '<div class="ing-card">'
+      + '<div class="ing-card-h"><div><div class="ing-nro">'+esc(R.nro)+'</div>'
+      + '<div class="ing-sub">'+esc(R.proveedor||'ADIDAS')+(R.fecha?(' · '+esc(R.fecha)):'')+(R.bultos?(' · '+esc(String(R.bultos))+' bultos'):'')+'</div></div>'
+      + '<span class="ing-pill '+est.cls+'">'+est.t+'</span></div>'
+      + '<div class="ing-prog"><div class="ing-prog-bar"><span style="width:'+pct+'%"></span></div>'
+      + '<div class="ing-prog-n">'+fmtInt(sc)+' / '+fmtInt(dec)+' u.</div></div>'
+      + '<div class="ing-actions">'
+      + '<button class="btn btn-outline btn-sm" data-ing-control="'+esc(key)+'">📷 Control</button>'
+      + '<button class="btn btn-outline btn-sm" data-ing-concil="'+esc(key)+'">🔎 Conciliación</button>'
+      + '<button class="btn btn-outline btn-sm" data-ing-del="'+esc(key)+'" title="Eliminar remito">🗑</button>'
+      + '</div></div>';
+  }).join('');
+  $('view').innerHTML = head + '<div class="ing-grid">'+cards+'</div>';
+  ingBindLista();
+}
+function ingBindLista(){
+  const n=$('ingNuevo'); if(n) n.onclick=ingOpenNuevo;
+  document.querySelectorAll('[data-ing-control]').forEach(b=>b.onclick=()=>{ state.ing={view:'control',remito:b.getAttribute('data-ing-control')}; render(); });
+  document.querySelectorAll('[data-ing-concil]').forEach(b=>b.onclick=()=>{ state.ing={view:'concil',remito:b.getAttribute('data-ing-concil')}; render(); });
+  document.querySelectorAll('[data-ing-del]').forEach(b=>b.onclick=async()=>{ const key=b.getAttribute('data-ing-del'); const R=DATA.ingreso.remitos[key]; if(!R) return; if(!confirm('¿Eliminar el remito '+R.nro+' y su control?')) return; b.disabled=true; try{ await ingDeleteRemito(key); render(); toast('Remito eliminado','ok'); }catch(e){ b.disabled=false; toast('No se pudo: '+e.message,'bad'); } });
+}
+
+/* ---- 2) nuevo remito (pre-ingreso manual; el import del packing list viene después) ---- */
+function ingOpenNuevo(){
+  openModal(
+    '<button class="close" onclick="closeModal()">×</button>'
+    + '<div style="font-family:var(--font-d);font-size:24px;color:var(--navy);letter-spacing:.5px">Nuevo remito — pre-ingreso</div>'
+    + '<div class="msub">Adidas. Cargá la cabecera y pegá el detalle del packing list (SKU y cantidad, uno por línea). El EAN y la descripción se resuelven contra el maestro.</div>'
+    + '<div class="ing-form2">'
+    +   '<div class="field"><label>Nº Remito</label><input class="inp" id="inNro" placeholder="R0139-11842168"></div>'
+    +   '<div class="field"><label>Nº Pedido</label><input class="inp" id="inPed" placeholder="7305411378"></div>'
+    +   '<div class="field"><label>Fecha</label><input class="inp" id="inFec" type="date"></div>'
+    +   '<div class="field"><label>Bultos</label><input class="inp num" id="inBul" type="number" min="1" step="1" placeholder="1"></div>'
+    + '</div>'
+    + '<div class="field" style="margin-top:10px"><label>Detalle — una línea por SKU: <code>SKU cantidad</code></label>'
+    +   '<textarea class="code" id="inDet" rows="7" placeholder="KY5654XS 1&#10;KY5654S 5&#10;KY5654M 5&#10;KY5654L 4&#10;KY5654XL 2"></textarea></div>'
+    + '<div id="inPrev" class="ing-prev"></div>'
+    + '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cancelar</button>'
+    +   '<button class="btn btn-outline" id="inResolver">Resolver detalle</button>'
+    +   '<button class="btn btn-primary" id="inGuardar" disabled>Guardar remito</button></div>'
+  );
+  try{ $('inFec').value = new Date().toISOString().slice(0,10); }catch(e){}
+  let resolved=null;
+  $('inResolver').onclick=async()=>{
+    const btn=$('inResolver'); btn.disabled=true; btn.textContent='Resolviendo…';
+    try{
+      await loadMaestro();
+      const lines=$('inDet').value.split('\n').map(s=>s.trim()).filter(Boolean);
+      const out=[]; let ok=0, bad=0;
+      for(const ln of lines){
+        const parts=ln.split(/[\s,;\t]+/); const sku=(parts[0]||'').toUpperCase(); const cant=num(parts[1]);
+        if(!sku) continue;
+        const info=skuInfo(sku);
+        if(info && cant>0){ ok++; out.push({sku:sku, talle:info.talle, material:info.material, desc:info.desc, ean:info.ean, cant:cant}); }
+        else { bad++; out.push({sku:sku, cant:cant, error: !info?'no está en el maestro':'cantidad inválida'}); }
+      }
+      resolved=out;
+      $('inPrev').innerHTML = ingPrevTable(out);
+      $('inGuardar').disabled = !(ok>0 && bad===0);
+      if(bad>0) toast(bad+' línea(s) con problema — corregí antes de guardar','bad');
+      else if(ok>0) toast(ok+' SKU resueltos','ok');
+    }catch(e){ toast(e.message,'bad'); }
+    btn.disabled=false; btn.textContent='Resolver detalle';
+  };
+  $('inGuardar').onclick=async()=>{
+    if(!resolved||!resolved.length) return;
+    const nro=$('inNro').value.trim(); if(!nro){ toast('Falta el Nº de remito','bad'); return; }
+    const key=fbKey(nro); if(DATA.ingreso.remitos[key]){ toast('Ya existe un remito con ese número','bad'); return; }
+    const declarado={}, minimap={};
+    resolved.forEach(l=>{ if(l.error) return; declarado[l.sku]={talle:l.talle,material:l.material,desc:l.desc,ean:l.ean,cant:l.cant}; minimap[l.ean]=l.sku; });
+    const rec={ nro:nro, pedido:$('inPed').value.trim(), fecha:$('inFec').value, proveedor:'ADIDAS', bultos:num($('inBul').value)||'', declarado:declarado, minimap:minimap, creado_en:nowISO(), quien:_mail(), ingresado:false };
+    const b=$('inGuardar'); b.disabled=true;
+    try{ await ingSaveRemito(rec); closeModal(); render(); toast('Remito '+nro+' pre-ingresado','ok'); }
+    catch(e){ b.disabled=false; toast('No se pudo guardar: '+e.message,'bad'); }
+  };
+}
+function ingPrevTable(out){
+  const rows=out.map(l=> l.error
+    ? '<tr class="err"><td>'+esc(l.sku)+'</td><td>—</td><td class="num">'+esc(String(l.cant||''))+'</td><td class="bad">'+esc(l.error)+'</td></tr>'
+    : '<tr><td>'+esc(l.sku)+'</td><td class="talle">'+esc(l.talle)+'</td><td class="num">'+fmtInt(l.cant)+'</td><td>'+esc(l.desc)+'</td></tr>'
+  ).join('');
+  return '<table class="ing-tbl"><thead><tr><th>SKU</th><th>Talle</th><th class="num">Cant.</th><th>Descripción / estado</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
+/* ---- 3) control del operario (A CIEGAS: no muestra lo esperado) ---- */
+let _ingKey=null;
+function ingViewControl(){
+  const key=state.ing.remito; const R=DATA.ingreso.remitos[key];
+  if(!R){ state.ing={view:'lista'}; return render(); }
+  _ingKey=key; ingCtrlInit(key);
+  let html = seccionHead('Control — '+esc(R.nro),'A ciegas: escaneá cada unidad. No ves las cantidades esperadas.',
+    '<button class="btn btn-outline btn-sm" id="ingBack">← Volver</button>');
+  html += '<div class="ing-control">'
+    + '<div class="ing-scan">'
+    +   '<div class="ing-scanbar"><input class="inp" id="ingScan" inputmode="numeric" autocomplete="off" placeholder="Escaneá o tipeá el EAN + Enter…"><button class="btn btn-primary" id="ingScanBtn">Registrar</button><button class="btn btn-outline" id="ingCamBtn">📷 Cámara</button></div>'
+    +   '<div class="ing-cam" id="ingCam" style="display:none"><video id="ingVideo" playsinline muted></video></div>'
+    +   '<div class="ing-flash" id="ingFlash"><span class="ic">📷</span><div><div class="big">Listo para escanear</div><div class="sub">El cursor queda en el campo (lector de mano) o tocá “Registrar”.</div></div></div>'
+    +   '<div class="ing-hero"><span class="n" id="ingTot">0</span><span class="lbl">unidades controladas</span></div>'
+    + '</div>'
+    + '<div class="ing-oplist"><table class="ing-tbl"><thead><tr><th>Talle</th><th class="num">Controladas</th></tr></thead><tbody id="ingOpBody"></tbody></table></div>'
+    + '</div>'
+    + '<div class="ing-actions" style="margin-top:16px"><button class="btn btn-primary" id="ingDone">✓ Terminé el control</button></div>';
+  $('view').innerHTML=html;
+  $('ingBack').onclick=()=>{ ingStopCam(); state.ing={view:'lista'}; render(); };
+  const inp=$('ingScan');
+  const doScan=()=>{ ingRegistrar(inp.value); inp.value=''; inp.focus(); };
+  inp.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); doScan(); } });
+  $('ingScanBtn').onclick=doScan;
+  $('ingCamBtn').onclick=ingToggleCam;
+  $('ingDone').onclick=ingTerminar;
+  ingUpdateControlDom();
+  inp.focus();
+}
+function ingRegistrar(raw){
+  const key=_ingKey; const R=DATA.ingreso.remitos[key]; if(!R) return;
+  const ean=String(raw||'').replace(/\D/g,''); if(!ean) return;
+  const C=ingCtrlInit(key);
+  const sku=(R.minimap||{})[ean];
+  if(sku){ C.scans[sku]=(C.scans[sku]||0)+1; const d=R.declarado[sku]||{}; ingFlash('ok','✓','Talle '+(d.talle||sku)+' · +1', (d.desc||'')+' · '+ean); }
+  else { C.unknown[ean]=(C.unknown[ean]||0)+1; ingFlash('bad','⚠','EAN desconocido', ean+' — no está en el remito (posible sobrante)'); }
+  ingUpdateControlDom(); ingSaveControl(key);
+}
+function ingFlash(kind,ic,big,sub){ const f=$('ingFlash'); if(!f) return; f.className='ing-flash '+(kind||''); f.innerHTML='<span class="ic">'+ic+'</span><div><div class="big">'+esc(big)+'</div><div class="sub">'+esc(sub||'')+'</div></div>'; }
+function ingUpdateControlDom(){
+  const key=_ingKey; const R=DATA.ingreso.remitos[key]; const C=ingCtrl(key); if(!R||!C) return;
+  const tot=$('ingTot'); if(tot) tot.textContent=fmtInt(ingScanTot(C));
+  const body=$('ingOpBody'); if(!body) return;
+  const rows=Object.keys(C.scans||{}).map(sku=>{ const d=R.declarado[sku]||{}; return [d.talle||sku, C.scans[sku]]; });
+  rows.sort((a,b)=> ingOrdTalle(a[0])-ingOrdTalle(b[0]) || cmp(a[0],b[0]));
+  let html=rows.map(r=>'<tr><td class="talle">'+esc(r[0])+'</td><td class="num">'+fmtInt(r[1])+'</td></tr>').join('');
+  const uk=Object.keys(C.unknown||{}); if(uk.length){ let n=0; uk.forEach(e=>n+=C.unknown[e]); html+='<tr><td class="talle bad">? desconocidos</td><td class="num">'+fmtInt(n)+'</td></tr>'; }
+  body.innerHTML = html || '<tr><td colspan="2" style="color:var(--muted)">Todavía no escaneaste nada.</td></tr>';
+}
+async function ingTerminar(){
+  const key=_ingKey; const C=ingCtrl(key); if(!C||ingScanTot(C)===0){ toast('No escaneaste nada','bad'); return; }
+  C.terminado=true; C.terminado_en=nowISO();
+  ingSaveControl(key,true);
+  ingStopCam();
+  toast('Control terminado — pendiente aviso a Ariel/Luis','ok');
+  /* TODO: notificación a la Bandeja de mensajes (mensajes-mateu) al terminar — pendiente. */
+  state.ing={view:'concil',remito:key}; render();
+}
+
+/* ---- cámara (ZXing por CDN, lazy) ---- */
+let _zx=null,_zxCtl=null;
+function ensureZXing(){ return new Promise((res,rej)=>{ if(window.ZXing) return res(); const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js'; s.onload=()=>res(); s.onerror=()=>rej(new Error('no pude cargar el lector de cámara')); document.head.appendChild(s); }); }
+async function ingToggleCam(){
+  const box=$('ingCam'); if(!box) return;
+  if(_zxCtl){ ingStopCam(); return; }
+  try{
+    await ensureZXing();
+    box.style.display='block';
+    const reader=new ZXing.BrowserMultiFormatReader(); _zx=reader;
+    _zxCtl=await reader.decodeFromVideoDevice(undefined, $('ingVideo'), (result)=>{ if(result){ ingRegistrar(result.getText()); } });
+    const b=$('ingCamBtn'); if(b) b.textContent='📷 Cerrar cámara';
+  }catch(e){ toast(e.message,'bad'); box.style.display='none'; }
+}
+function ingStopCam(){
+  try{ if(_zxCtl&&_zxCtl.stop) _zxCtl.stop(); }catch(e){}
+  try{ if(_zx&&_zx.reset) _zx.reset(); }catch(e){}
+  _zxCtl=null; _zx=null;
+  const box=$('ingCam'); if(box) box.style.display='none';
+  const b=$('ingCamBtn'); if(b) b.textContent='📷 Cámara';
+}
+
+/* ---- 4) conciliación (Ariel/Luis): declarado vs controlado ---- */
+async function ingViewConcil(){
+  const key=state.ing.remito; const R=DATA.ingreso.remitos[key];
+  if(!R){ state.ing={view:'lista'}; return render(); }
+  $('view').innerHTML = stateLoading();
+  try{ await loadMaestro(); }catch(e){}
+  const C=ingCtrl(key)||{scans:{},unknown:{}};
+  const skus = new Set(Object.keys(R.declarado||{}).concat(Object.keys(C.scans||{})));
+  const rows=[]; let okN=0, falN=0, sobN=0, decTot=0, conTot=0;
+  skus.forEach(sku=>{
+    const d=R.declarado[sku]||{}; const dec=num(d.cant); const con=num((C.scans||{})[sku]);
+    const talle=d.talle || (skuInfo(sku)||{}).talle || sku;
+    decTot+=dec; conTot+=con; const dif=con-dec;
+    let cls='', pill='<span class="ing-pill ok">OK</span>';
+    if(dif<0){ cls='faltan'; falN+=-dif; pill='<span class="ing-pill bad">Faltan '+(-dif)+'</span>'; }
+    else if(dif>0){ cls='sobran'; sobN+=dif; pill='<span class="ing-pill warn">Sobran '+dif+'</span>'; }
+    else if(dec>0) okN++;
+    rows.push({talle:talle,dec:dec,con:con,dif:dif,cls:cls,pill:pill});
+  });
+  rows.sort((a,b)=> ingOrdTalle(a.talle)-ingOrdTalle(b.talle) || cmp(a.talle,b.talle));
+  const uk=Object.keys(C.unknown||{}); let ukHtml='';
+  if(uk.length){
+    const parts=uk.map(e=>{ const info=eanInfo(e); sobN+=num(C.unknown[e]); return (info?('<b>'+esc(info.material+' '+info.talle)+'</b> '+esc(info.desc)):('<b>'+esc(e)+'</b>'))+' ×'+fmtInt(C.unknown[e]); });
+    ukHtml='<div class="ing-unknown"><b class="bad">Sobrantes no declarados:</b> '+parts.join(' · ')+' — EAN que no estaban en el remito.</div>';
+  }
+  const conTotAll = conTot + uk.reduce((a,e)=>a+num(C.unknown[e]),0);
+  let html=seccionHead('Conciliación — '+esc(R.nro), esc(R.proveedor||'ADIDAS')+' · pedido '+esc(R.pedido||'—')+' · declarado '+fmtInt(decTot)+' u.',
+    '<button class="btn btn-outline btn-sm" id="ingBack2">← Volver</button>');
+  html+='<div class="ing-sum">'
+    + '<div class="s ok"><div class="v">'+okN+'</div><div class="k">Talles OK</div></div>'
+    + '<div class="s bad"><div class="v">'+falN+'</div><div class="k">Faltan (u)</div></div>'
+    + '<div class="s warn"><div class="v">'+sobN+'</div><div class="k">Sobran (u)</div></div>'
+    + '<div class="s"><div class="v">'+fmtInt(conTotAll)+'</div><div class="k">Controlado</div></div>'
+    + '</div>';
+  html+='<table class="ing-tbl big"><thead><tr><th>Talle</th><th class="num">Declarado</th><th class="num">Controlado</th><th class="num">Dif.</th><th>Estado</th></tr></thead><tbody>'
+    + rows.map(r=>'<tr class="'+r.cls+'"><td class="talle">'+esc(r.talle)+'</td><td class="num">'+(r.dec||'—')+'</td><td class="num">'+(r.con||'—')+'</td><td class="num">'+(r.dif>0?'+':'')+(r.dif||0)+'</td><td>'+r.pill+'</td></tr>').join('')
+    + '</tbody></table>';
+  html+=ukHtml;
+  const diff = falN>0||sobN>0;
+  if(!C.terminado){ html+='<div class="ing-verdict">El control todavía no fue terminado por el operario.</div>'; }
+  else if(!diff){ html+='<div class="ing-verdict ok">✓ Todo OK — '+fmtInt(decTot)+' u. Listo para ingresar a stock y compartir el remito para reparto.</div>'; }
+  else { html+='<div class="ing-verdict bad">Diferencias: faltan '+falN+' u y sobran '+sobN+' u. Reportar a la marca antes de ingresar a stock.</div>'; }
+  html+='<div class="ing-actions" style="margin-top:14px">';
+  if(!R.ingresado) html+='<button class="btn btn-primary" id="ingStock"'+(C.terminado?'':' disabled')+'>✓ Ingresar a stock</button>';
+  else html+='<span class="ing-pill ok">Ingresado a stock '+esc((R.ingresado_en||'').slice(0,10))+'</span>';
+  html+='</div>';
+  $('view').innerHTML=html;
+  $('ingBack2').onclick=()=>{ state.ing={view:'lista'}; render(); };
+  const st=$('ingStock'); if(st) st.onclick=async()=>{ st.disabled=true; R.ingresado=true; R.ingresado_en=nowISO(); try{ await ingSaveRemito(R); toast('Ingresado a stock — remito listo para reparto','ok'); render(); }catch(e){ st.disabled=false; toast('No se pudo: '+e.message,'bad'); } };
+}
+
+/* ---- estilos del módulo (se inyectan una vez) ---- */
+function ingInjectCss(){
+  if($('ingCss')) return;
+  const css=''
+  +'.ing-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}'
+  +'.ing-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px}'
+  +'.ing-card-h{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}'
+  +'.ing-nro{font-family:var(--font-d);font-size:20px;color:var(--navy);letter-spacing:.5px}'
+  +'.ing-sub{font-family:var(--font-c);font-size:12px;color:var(--muted)}'
+  +'.ing-pill{font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:3px 9px;border-radius:999px;white-space:nowrap}'
+  +'.ing-pill.ok{background:#e8f5ee;color:#166534}.ing-pill.warn{background:#fff4e2;color:#9a5b00}.ing-pill.bad{background:#fdecec;color:#b00020}.ing-pill.info{background:#e7eefc;color:#1a3a8a}.ing-pill.mut{background:#eef1f7;color:var(--muted)}'
+  +'.ing-prog{display:flex;align-items:center;gap:10px;margin:12px 0}'
+  +'.ing-prog-bar{flex:1;height:8px;background:#eef1f7;border-radius:99px;overflow:hidden}'
+  +'.ing-prog-bar span{display:block;height:100%;background:var(--navy)}'
+  +'.ing-prog-n{font-family:var(--font-c);font-size:12px;color:var(--muted);white-space:nowrap}'
+  +'.ing-actions{display:flex;gap:8px;flex-wrap:wrap}'
+  +'.ing-control{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;margin-top:6px}'
+  +'@media(max-width:760px){.ing-control{grid-template-columns:1fr}}'
+  +'.ing-scanbar{display:flex;gap:8px}.ing-scanbar .inp{flex:1;font-size:16px;letter-spacing:1px}'
+  +'.ing-cam{margin-top:10px;border-radius:10px;overflow:hidden;background:#000}.ing-cam video{width:100%;max-height:280px;display:block}'
+  +'.ing-flash{margin-top:12px;border:1px solid var(--border);border-radius:10px;background:#f7f9fd;padding:12px 14px;min-height:56px;display:flex;gap:12px;align-items:center}'
+  +'.ing-flash .ic{font-size:22px}.ing-flash .big{font-family:var(--font-c);font-weight:700;font-size:16px}.ing-flash .sub{font-size:12px;color:var(--muted)}'
+  +'.ing-flash.ok{background:#e8f5ee;border-color:#bbe3c9}.ing-flash.ok .big{color:#166534}'
+  +'.ing-flash.bad{background:#fdecec;border-color:#f4c0c0}.ing-flash.bad .big{color:#b00020}'
+  +'.ing-hero{display:flex;align-items:baseline;gap:10px;margin-top:16px}'
+  +'.ing-hero .n{font-family:var(--font-d);font-size:46px;color:var(--navy);line-height:1}'
+  +'.ing-hero .lbl{font-family:var(--font-c);font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}'
+  +'.ing-tbl{width:100%;border-collapse:collapse;font-size:14px}'
+  +'.ing-tbl th{font-family:var(--font-c);text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:7px 8px;border-bottom:1px solid var(--border)}'
+  +'.ing-tbl td{padding:8px;border-bottom:1px solid #eef1f7;font-variant-numeric:tabular-nums}'
+  +'.ing-tbl td.num,.ing-tbl th.num{text-align:right}.ing-tbl td.talle{font-weight:700}.ing-tbl .bad{color:var(--bad)}'
+  +'.ing-tbl tr.faltan td{background:#fdecec}.ing-tbl tr.sobran td{background:#fff4e2}.ing-tbl tr.err td{background:#fdecec}'
+  +'.ing-prev{margin-top:12px;max-height:230px;overflow:auto}'
+  +'.ing-sum{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 14px}'
+  +'.ing-sum .s{flex:1;min-width:96px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:#f7f9fd}'
+  +'.ing-sum .v{font-family:var(--font-d);font-size:26px;color:var(--navy);line-height:1}.ing-sum .k{font-family:var(--font-c);font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}'
+  +'.ing-sum .s.bad .v{color:var(--bad)}.ing-sum .s.warn .v{color:var(--warn)}.ing-sum .s.ok .v{color:var(--ok)}'
+  +'.ing-verdict{margin-top:14px;padding:12px 14px;border-radius:10px;border:1px solid var(--border);background:#f7f9fd;font-family:var(--font-c);font-weight:600}'
+  +'.ing-verdict.ok{background:#e8f5ee;border-color:#bbe3c9;color:#166534}.ing-verdict.bad{background:#fdecec;border-color:#f4c0c0;color:#b00020}'
+  +'.ing-unknown{margin-top:10px;font-size:13px;color:var(--muted)}.ing-unknown .bad{color:var(--bad)}'
+  +'.ing-form2{display:grid;grid-template-columns:1fr 1fr;gap:10px}'
+  +'.ing-oplist{border:1px solid var(--border);border-radius:12px;padding:8px 12px}'
+  +'textarea.code{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;border:1px solid var(--border);border-radius:8px;padding:8px;color:var(--navy)}';
+  document.head.insertAdjacentHTML('beforeend','<style id="ingCss">'+css+'</style>');
+}
+
 /* ===== v2 (mejoras 1-5): roles, historial, tendencia/alertas, edición ===== */
 function aplicarRol(){
   const dep = esDeposito() && !esCompras();
-  const allowed = dep ? ['panel','remitos','repartos'] : ['panel','remitos','pedidos','control','repartos'];
+  const allowed = dep ? ['panel','remitos','repartos','ingreso'] : ['panel','remitos','pedidos','control','repartos','ingreso'];
   document.querySelectorAll('.tab').forEach(t=>{ t.style.display = allowed.includes(t.dataset.tab)?'':'none'; });
   if(!allowed.includes(state.tab)) state.tab=allowed[0];
 }
