@@ -45,6 +45,15 @@ Al editar: trabajar siempre dentro del `index.html` de la herramienta. No partir
 en múltiples archivos salvo que se decida explícitamente centralizar algo en
 `shared/`.
 
+**Íconos = SVG, no emojis.** Windows 7 y navegadores viejos no dibujan los emojis
+a color (salen como recuadros □). Por eso `shared/iconos.js` reemplaza al vuelo
+todos los emojis del DOM por su SVG inline equivalente (self-contained, sin CDN,
+con MutationObserver para lo que se genera por JS). **Todo módulo nuevo debe
+incluirlo** con una línea en el `<head>`: `<script src="../shared/iconos.js" defer></script>`
+(en el Portal raíz la ruta es `shared/iconos.js`). Se pueden seguir usando emojis
+en el código como hasta ahora: el script los convierte. Si falta un ícono nuevo,
+sumar la entrada al mapa `ICONS` de ese archivo.
+
 ## Stack — quién hace qué
 
 - **GitHub** → guarda el código y el historial.
