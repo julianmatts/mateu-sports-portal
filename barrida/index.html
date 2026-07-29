@@ -289,16 +289,20 @@ const state = {
    ============================================================ */
 // Detecta la fila de encabezado y las columnas relevantes de una hoja.
 function detectarCols(matrix){
-  // Busca en las primeras 8 filas la que tenga 'ID ITEM' o 'DESCRIP'
+  // Busca en las primeras 8 filas la que tenga 'ID ITEM' o 'DESCRIP' o 'Sucursal'.
+  // La hoja de ventas viene con orden de columnas FIJO (Sucursal · Rubro · Marca ·
+  // Disciplina · Género · Tipo de producto · Descripción · ID ITEM · CODIGO BARRAS ·
+  // talles…), así que sus columnas descriptivas se toman por posición y no dependen
+  // del texto del encabezado; la fila de encabezado sólo se usa para los talles.
   let headerIdx=-1;
   for(let i=0;i<Math.min(8,matrix.length);i++){
     const row=matrix[i].map(c=>normName(c));
-    if(row.some(c=>c.includes('id item')) || (row.some(c=>c.includes('descrip'))&&row.some(c=>c.includes('codigo')))){ headerIdx=i; break; }
+    if(row.some(c=>c.includes('id item')) || (row.some(c=>c.includes('descrip'))&&row.some(c=>c.includes('codigo'))) || row.some(c=>c==='sucursal'||c.startsWith('sucursal'))){ headerIdx=i; break; }
   }
   if(headerIdx<0) return null;
   const H = matrix[headerIdx].map(c=>normName(c));
   const find = preds => { for(let j=0;j<H.length;j++){ if(preds(H[j],j)) return j; } return -1; };
-  const cols = {
+  let cols = {
     suc:   find(h=>h==='sucursal'||h.startsWith('sucursal')),
     rubro: find(h=>h==='rubro'||h.startsWith('rubro')),
     marca: find(h=>h==='marca'),
@@ -309,6 +313,11 @@ function detectarCols(matrix){
     id:    find(h=>h.includes('id item')||h==='id'),
     cod:   find(h=>h.includes('codigo')&&h.includes('barra')),
   };
+  // Ventas: si la primera columna es Sucursal, el orden es fijo → mapear por posición.
+  // Así no hace falta que el Excel de ventas traiga los encabezados descriptivos exactos.
+  if(cols.suc===0){
+    cols = { suc:0, rubro:1, marca:2, disc:3, gen:4, tipo:5, desc:6, id:7, cod:8 };
+  }
   // Talles = columnas a la derecha de CODIGO BARRAS con encabezado no vacío.
   // Se excluye la columna "Total" (la hoja de reserva trae al final el total de la
   // fila; si se contara como talle, duplicaría el stock).
