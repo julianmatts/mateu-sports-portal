@@ -332,9 +332,16 @@ async function ingerirArchivo(file){
   const hojas = leerLibro(buf);
   state.hojas = hojas;
   state.archivo = {nombre:file.name};
-  // elegir por defecto una hoja: la que mapee al lunes de esta semana, o la primera con datos
-  let sel = hojas.find(h=>lunesDesdeHoja(h.name)===state.semana);
-  if(!sel) sel = hojas.find(h=>Object.keys(parseHoja(h.matrix)).length>=3) || hojas[0];
+  // Elegir la hoja por defecto. Las hojas de planificación semanal se llaman
+  // "SEMANA <día> <mes>" (formato bloque, objetivo semanal limpio); el resto del
+  // libro son hojas históricas con otro layout. Preferimos las "SEMANA …": la de
+  // esta semana, si no la primera con datos.
+  const esSemana = h=>/^\s*semana\b/i.test(h.name);
+  let sel = hojas.find(h=>esSemana(h) && lunesDesdeHoja(h.name)===state.semana)
+    || hojas.find(h=>esSemana(h) && Object.keys(parseHoja(h.matrix)).length>=10)
+    || hojas.find(h=>lunesDesdeHoja(h.name)===state.semana)
+    || hojas.find(h=>Object.keys(parseHoja(h.matrix)).length>=3)
+    || hojas[0];
   if(sel){ aplicarHoja(sel.name); }
 }
 function aplicarHoja(name){
