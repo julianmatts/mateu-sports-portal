@@ -239,22 +239,19 @@ Object.entries(SLUG_SUC).forEach(([slug,n])=>NAME2SLUG[normName(n)]={slug,nombre
 Object.entries(OUTLET_SUC).forEach(([slug,n])=>NAME2SLUG[normName(n)]={slug,nombre:n});
 
 /* ---------- Regla de reposición: medias Mateu Sports ----------
-   Piso fijo de surtido por sucursal por talle (docenas → unidades).
-   Se identifican por marca "Mateu Sports" + rubro "Accesorios" + tipo/grupo "Medias".
-   Para estos artículos "A reponer" = mín(reserva, mínimo) por talle, sin importar
-   lo vendido: cada sucursal debe sostener este surtido base. */
+   Mínimo por talle vendido (docenas → unidades). Se identifican por marca
+   "Mateu Sports" + rubro "Accesorios" + tipo/grupo "Medias". Para el/los talle(s)
+   que la sucursal VENDIÓ, "A reponer" = mín(reserva, mínimo del talle) — se repone
+   el mínimo aunque haya vendido menos; los talles NO vendidos no se tocan. Objetivo:
+   sostener un stock mínimo por talle y sucursal en los talles con rotación. */
 const MEDIAS_MIN = { S:12, M:24, L:36, XL:12 };   // 1/2/3/1 docenas
 function esMediaMateu(meta){
   if(!meta) return false;
   const t = normName(meta.tipo), r = normName(meta.rubro), m = normName(meta.marca);
   return m.includes('mateu') && r.includes('accesorio') && /\bmedias?\b/.test(t);
 }
-// busca la reserva de un talle tolerando diferencias de mayúsculas/espacios
-function reservaTalle(tallesObj, label){
-  const L = String(label).toUpperCase().trim();
-  for(const k in tallesObj){ if(String(k).toUpperCase().trim()===L) return tallesObj[k]||0; }
-  return 0;
-}
+// mínimo del talle (0 si el talle no está en la tabla → cae al cálculo normal)
+function mediasMin(label){ return MEDIAS_MIN[String(label).toUpperCase().trim()] || 0; }
 
 /* ---------- helpers ---------- */
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -411,54 +408,31 @@ function computar(histPrev, histSnaps){
     S.total+=v.total; V.totalCadena+=v.total;
   });
 
-  // universo de sucursales activas de la semana (aparecen vendiendo algo) —
-  // lo usa la regla de medias: cada una debe recibir su piso, haya vendido o no.
-  const sucActivas=[]; const _sucSeen=new Set();
-  Object.values(ventas).forEach(V=>Object.entries(V.porSuc).forEach(([slug,S])=>{
-    if(!_sucSeen.has(slug)){ _sucSeen.add(slug); sucActivas.push({slug,nombre:S.nombre}); }
-  }));
-
   // ---- cruce ----
   const reposicion=[];   // una fila por (artículo × sucursal candidata)
   const parada=[];
   Object.entries(reserva).forEach(([id,R])=>{
     if(R.total<=0) return;
     const V=ventas[id];
-    // ---- MEDIAS MATEU: piso fijo por talle a cada sucursal (sin importar lo vendido) ----
-    if(esMediaMateu(R.meta)){
-      sucActivas.forEach(({slug,nombre})=>{
-        const S = V && V.porSuc[slug];
-        let sugerido=0; const detTalles={};
-        Object.entries(MEDIAS_MIN).forEach(([t,minimo])=>{
-          const rq = reservaTalle(R.talles, t);
-          const vq = S ? reservaTalle(S.talles, t) : 0;
-          const s = Math.min(minimo, rq);           // piso fijo, limitado por reserva
-          detTalles[t] = { v:minimo, r:rq, s, vend:vq, piso:true };
-          sugerido += s;
-        });
-        reposicion.push({
-          id, slug, sucNombre:nombre,
-          codigo:R.meta.cod||(V&&V.meta.cod)||'', desc:R.meta.desc||(V&&V.meta.desc)||'',
-          marca:R.meta.marca||(V&&V.meta.marca)||'', rubro:R.meta.rubro||(V&&V.meta.rubro)||'', tipo:R.meta.tipo||(V&&V.meta.tipo)||'',
-          vendido:S?S.total:0, reservaTotal:R.total, sugerido, talles:detTalles, pisoMedias:true,
-        });
-      });
-      return;   // no cae ni en cruce normal ni en "parada"
-    }
     if(V && V.totalCadena>0){
+      const media = esMediaMateu(R.meta);   // medias Mateu: repone el mínimo del talle vendido
       Object.entries(V.porSuc).forEach(([slug,S])=>{
-        // sugerido por talle = min(vendido en la suc, reserva del talle)
         let sugerido=0; const detTalles={};
         Object.entries(S.talles).forEach(([t,vq])=>{
-          const rq=R.talles[t]||0; const s=Math.min(vq,rq);
-          if(vq>0||rq>0) detTalles[t]={v:vq,r:rq,s};
+          const rq=R.talles[t]||0;
+          // MEDIAS: para el talle vendido el objetivo es el mínimo (S:12 M:24 L:36 XL:12),
+          // aunque haya vendido menos; talle fuera de la tabla → objetivo = vendido.
+          const min = media ? mediasMin(t) : 0;
+          const objetivo = min>0 ? min : vq;
+          const s = Math.min(objetivo, rq);
+          if(vq>0||rq>0) detTalles[t]={v:objetivo, r:rq, s, vend:vq, piso:min>0};
           sugerido+=s;
         });
         reposicion.push({
           id, slug, sucNombre:S.nombre,
           codigo:R.meta.cod||V.meta.cod||'', desc:R.meta.desc||V.meta.desc||'',
           marca:R.meta.marca||V.meta.marca||'', rubro:R.meta.rubro||V.meta.rubro||'', tipo:R.meta.tipo||V.meta.tipo||'',
-          vendido:S.total, reservaTotal:R.total, sugerido, talles:detTalles,
+          vendido:S.total, reservaTotal:R.total, sugerido, talles:detTalles, pisoMedias:media,
         });
       });
     } else {
@@ -605,7 +579,7 @@ function viewReposicion(){
   const sucList = uniq(R.reposicion.map(r=>r.sucNombre));
   const sucBySlug={}; R.reposicion.forEach(r=>sucBySlug[r.slug]=r.sucNombre);
   let html='<div class="sec-head"><div><h1>Reposición posible</h1>'
-    +'<div class="sub">Artículos con reserva en depósito que la sucursal vendió la última semana. A reponer = mín(vendido, reserva) por talle. <b>Medias Mateu Sports</b>: piso fijo por talle (S:12 · M:24 · L:36 · XL:12) a cada sucursal, sin importar lo vendido.</div></div></div>';
+    +'<div class="sub">Artículos con reserva en depósito que la sucursal vendió la última semana. A reponer = mín(vendido, reserva) por talle. <b>Medias Mateu Sports</b>: por cada talle vendido se repone el mínimo del talle (S:12 · M:24 · L:36 · XL:12), aunque haya vendido menos.</div></div></div>';
   html+='<div class="filtros">'
     +fsel('Sucursal', 'fSuc', '<option value="">Todas</option>'+sucList.map(n=>{ const slug=Object.keys(sucBySlug).find(k=>sucBySlug[k]===n); return '<option value="'+esc(slug)+'"'+(slug===f.suc?' selected':'')+'>'+esc(n)+'</option>'; }).join(''))
     +fsel('Rubro','fRubro',opts(uniq(R.reposicion.map(r=>r.rubro)),f.rubro))
@@ -628,8 +602,8 @@ function viewReposicion(){
     const piso=r.pisoMedias;
     const tt=Object.entries(r.talles).filter(([t,d])=>d.v>0)
       .map(([t,d])=>'<span class="tg'+(d.v>d.r?' falta':'')+'"><span class="tl">'+esc(t)+'</span><span class="tv">'+d.v+'</span><span class="tsep">/</span><span class="tr">'+d.r+'</span></span>').join('');
-    const pillPiso = piso?' <span class="pill rec" title="Piso de surtido: objetivo mínimo por talle S:12 M:24 L:36 XL:12, sin importar lo vendido">piso medias</span>':'';
-    const tallesTitle = piso?' title="objetivo mínimo / reserva por talle"':'';
+    const pillPiso = piso?' <span class="pill rec" title="Medias Mateu: para el talle vendido se repone el mínimo (S:12 M:24 L:36 XL:12), aunque haya vendido menos">piso medias</span>':'';
+    const tallesTitle = piso?' title="objetivo mínimo / reserva por talle vendido"':'';
     html+='<tr><td><span class="pill suc">'+esc(r.sucNombre)+'</span></td>'
       +'<td class="desc" title="'+esc(r.desc)+'">'+esc(r.desc||'—')+pillPiso+(falta?' <span class="pill falta" title="'+(piso?'Reserva no cubre el piso en algún talle':'Reserva insuficiente en algún talle')+'">⚠ falta</span>':'')+'</td>'
       +'<td class="mono">'+esc(r.codigo||r.id)+'</td><td>'+esc(r.marca)+'</td>'
