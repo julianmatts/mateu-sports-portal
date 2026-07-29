@@ -29,6 +29,7 @@ mateu-sports-portal/
 ├── regalias/           # Liquidador de Regalías RUGE/EDLP (Estudiantes): clasifica ventas, aplica escalas, exporta el Excel del mes y genera la presentación comercial (plantilla-presentacion.html, embebida en index.html)
 ├── evaluaciones/       # Evaluaciones de Supervisor: carga semanal operativa+actitudinal por sucursal, ranking, gráficos y vista de encargado. Escribe a Firebase (base evaluaciones-mateu). Ver "Evaluaciones de Supervisor" abajo.
 ├── barrida/            # Análisis de Reserva Depósito Central: cruce semanal (subir Excel) de la reserva del depósito central con las ventas por sucursal → alertas de reposición posible y de reserva parada. Firebase: reusa recepciones-mateu (nodo barrida/). Ver "Análisis de Reserva Depósito Central" abajo.
+├── objetivos/          # Objetivos de Venta Semanal: gerencia carga el objetivo (Meta) de venta por sucursal por semana (subiendo el Excel "PMS Objetivos" o a mano) → dashboard vs. real; cada sucursal ve su objetivo en Indicadores. Firebase: reusa recepciones-mateu (nodo objetivos/). Ver "Objetivos de Venta Semanal" abajo.
 ├── lib/                # código JS común versionado y testeable (hoy: evaluacion.js = cálculo puro de Evaluaciones + tests con node --test)
 └── shared/             # código común del shell (calendario retail, etc.)
 ```
@@ -272,6 +273,47 @@ Indicadores, ver abajo).
 
 **Puesta en marcha: ya funciona (usa `recepciones-mateu`, que está en vivo). No hace
 falta crear ninguna base.**
+
+## Objetivos de Venta Semanal
+
+`objetivos/` es un `index.html` self-contained (lee la sesión del Portal, sin login
+propio). Lo carga **gerencia** semana a semana: el objetivo de venta por sucursal.
+La ve el rol `admin` o quien tenga la herramienta `objetivos`. Las sucursales NO
+entran acá: ven su objetivo en Indicadores.
+
+- **Valores por sucursal/semana**: **META** (el objetivo, el único que se carga),
+  **MÍNIMO** (= Meta ×0,8), **120** (= Meta ×1,2, superación) y **REAL** (venta de
+  la semana). Mínimo/120 se derivan solos; se guardan horneados. Los factores están
+  en `F_MIN`/`F_120` del módulo.
+- **Carga (Etapa 1, dos caminos)**: (a) subir el Excel **"PMS Objetivos Semanal
+  Locales"** (SheetJS por CDN, client-side, no se sube nada) → se elige la hoja de la
+  semana ("SEMANA 3 AGO"…) y se parsea la grilla; o (b) cargar los montos a mano. Todo
+  editable antes de guardar. El parseo detecta la sucursal por su **código NN** (01,
+  02, … → slug del Portal vía `PREFIJO_SLUG`), toma el objetivo y la venta real de la
+  fila, y las filas "FINAL AJUSTADO" (más abajo en la hoja) **pisan** a las de "FINAL".
+  El lunes de la semana se deduce del nombre de la hoja.
+- **Dashboard (gerencia)**: por semana, tabla con Meta/Mínimo/120/Real, % de
+  cumplimiento con color (verde ≥meta, ámbar ≥mínimo, rojo <mínimo), total cadena,
+  ranking ordenable y barra de avance. Selector de semana + histórico.
+- **Firebase**: **reusa `recepciones-mateu`** (nodo `objetivos/…`, sin tocar
+  `recepciones/…` ni `barrida/…`; no hace falta crear base). Árbol:
+  `objetivos/semanas/<lunesISO>` con `{meta:{…}, porSlug:{<slug>:{meta,minimo,s120,real,nota}}}`
+  y `objetivos/ultima` (puntero al último lunes). Se guarda **agrupado por slug** para
+  que cada sucursal baje solo lo suyo (seguridad blanda, como Indicadores/Barrida).
+  Constante `FIREBASE_DB_URL` en `objetivos/`, `OBJETIVOS_URL` en `indicadores/`.
+- **Aviso a la sucursal**: vive en **`indicadores/`** (home de sucursal/outlet).
+  La sección `secObjetivo` lee `recepciones-mateu/objetivos/ultima` +
+  `.../porSlug/<slug>` y muestra "Objetivo de la semana" (Meta destacada, Mínimo/120
+  y barra de avance vs. Real). Sin dato → la sección no aparece. Usa `SUC2SLUG`.
+  ⚠️ Diagonal 80 tiene objetivo pero no tiene datos de Indicadores todavía, así que
+  su encargado aún no ve la sección (Indicadores lo manda a empty state antes). Se
+  resuelve cuando Diagonal tenga datos de venta.
+- **Etapa 2 pendiente (pedida por Juli)**: armar los objetivos directo en el portal
+  (sin Excel) y, al confirmar, **enviar una notificación interna** a cada usuario de
+  sucursal. Enganchar con la Bandeja de mensajes (`mensajes-mateu`) del Portal.
+
+**Puesta en marcha: ya funciona (usa `recepciones-mateu`, en vivo). No hace falta
+crear ninguna base.**
 
 ## Reglas
 

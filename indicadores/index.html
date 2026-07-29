@@ -487,6 +487,13 @@ footer b{color:var(--navy)}
       <div class="diag" id="diagBox" style="display:none"></div>
     </section>
 
+    <section class="sec" id="secObjetivo" style="display:none">
+      <div class="sec-label">Objetivo de venta</div>
+      <h2 class="sec-title">Objetivo de <em>la semana</em></h2>
+      <p class="hint">La meta de venta que puso gerencia para tu sucursal esta semana, con el mínimo y el objetivo de superación. A medida que se cargue la venta, vas viendo el avance.</p>
+      <div class="card pad" id="objetivoCard"></div>
+    </section>
+
     <section class="sec" id="secBarrida" style="display:none">
       <div class="sec-label">Depósito central</div>
       <h2 class="sec-title">Reposición <em>disponible</em></h2>
@@ -711,6 +718,9 @@ Object.entries(OUTLET_SUC).forEach(([slug,n])=>SUC2SLUG[n]=slug);
 // nodo `barrida/…`). Mismo criterio de seguridad blanda: cada sucursal baja solo
 // su propia lista de reposición. Vacío => la sección no aparece.
 const BARRIDA_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
+// Objetivos de Venta: misma base (nodo `objetivos/…`). Cada sucursal baja solo su
+// objetivo. Vacío => la sección no aparece.
+const OBJETIVOS_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
 
 const esGerencia = SESSION.rol === 'admin';
 let miSucursal = null;   // nombre en datos para roles de sucursal/outlet (null = sin dato)
@@ -921,7 +931,7 @@ async function render(){
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
   $('secCanales').style.display = ecom?'':'none';
-  if(ecom) ['secEq','secMix','secPlantilla','secTbl','secSem','secBarrida'].forEach(id=>$(id).style.display='none');
+  if(ecom) ['secEq','secMix','secPlantilla','secTbl','secSem','secBarrida','secObjetivo'].forEach(id=>$(id).style.display='none');
   const seg=document.querySelector('.seg'); if(seg) seg.style.display = ecom?'none':'flex';
   renderKPIs();
   renderDiagnostico();
@@ -930,11 +940,11 @@ async function render(){
   renderHeat();
   renderNotas();
   if(ecom){ renderCanales(); }
-  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderSem(); renderBarrida(); }
+  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderSem(); renderObjetivo(); renderBarrida(); }
 }
 
 function mostrarEmpty(msg){
-  ['secEq','secMix','secCov','secPlantilla','secTbl','secSem','secHeat','secBarrida'].forEach(id=>$(id).style.display='none');
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secSem','secHeat','secBarrida','secObjetivo'].forEach(id=>$(id).style.display='none');
   $('cobNota').style.display='none';
   $('diagBox').style.display='none';
   $('kpis').innerHTML = '<div class="empty" style="grid-column:1/-1">'+msg+'</div>';
@@ -1268,6 +1278,59 @@ function renderStockCard(){
     const d=deltaHtml(r, r0); if(d) deltaStr=`${d} vs. ${mesCorto(pp)}`; }
   foot.innerHTML = `<div class="kpi-obj"><span class="dot"></span><span class="cum-${sem}">${estado}</span></div>`
     + (deltaStr?`<div class="kpi-delta">${deltaStr}</div>`:'');
+}
+
+/* --- objetivo de venta de la semana (módulo Objetivos) --- */
+const _objetivoCache = {};   // slug -> Promise<{v,semana}|null>
+function fetchObjetivo(slug){
+  if(_objetivoCache[slug]) return _objetivoCache[slug];
+  const base = OBJETIVOS_URL.replace(/\/+$/,'');
+  _objetivoCache[slug] = (async()=>{
+    const ultima = await fetch(base+'/objetivos/ultima.json').then(r=>r.ok?r.json():null).catch(()=>null);
+    if(!ultima) return null;
+    const v = await fetch(base+'/objetivos/semanas/'+encodeURIComponent(ultima)+'/porSlug/'+encodeURIComponent(slug)+'.json')
+      .then(r=>r.ok?r.json():null).catch(()=>null);
+    return (v && v.meta>0) ? {v, semana:ultima} : null;
+  })();
+  return _objetivoCache[slug];
+}
+async function renderObjetivo(){
+  const sec=$('secObjetivo'); if(!sec) return;
+  sec.style.display='none';
+  if(!OBJETIVOS_URL) return;
+  const slug = SUC2SLUG[sucName];
+  if(!slug) return;
+  const target = sucName;
+  let data=null;
+  try{ data = await fetchObjetivo(slug); }catch(e){ return; }
+  if(sucName!==target) return;
+  if(!data){ sec.style.display='none'; return; }
+  const v=data.v;
+  const meta=v.meta||0, minimo=v.minimo||Math.round(meta*0.8), s120=v.s120||Math.round(meta*1.2), real=v.real||0;
+  const semLbl=(()=>{ const p=String(data.semana||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:data.semana; })();
+  const pct = (real&&meta)? real/meta : 0;
+  const w = Math.min(100, Math.round(pct*100));
+  const cls = !real ? 'na' : real>=meta ? 'ok' : real>=minimo ? 'warn' : 'bad';
+  const col = cls==='ok' ? 'var(--ok,#16a34a)' : cls==='warn' ? '#d97706' : cls==='bad' ? '#dc2626' : 'var(--mid)';
+  const money = n => '$'+Math.round(n||0).toLocaleString('es-AR');
+  let html='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
+    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">Meta de la semana</div>'
+    +'<div class="hint" style="margin:0">Semana del '+esc(semLbl)+'</div></div>';
+  html+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">'
+    +'<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px">'+money(meta)+'</div>';
+  if(real) html+='<div style="font-size:14px;color:var(--mid);padding-bottom:5px">Real: <b style="color:'+col+'">'+money(real)+'</b> · '+Math.round(pct*100)+'%</div>';
+  html+='</div>';
+  // barra de avance
+  html+='<div style="position:relative;height:10px;background:#eef0f7;border-radius:6px;overflow:hidden;margin:10px 0 14px">'
+    +'<i style="position:absolute;left:0;top:0;bottom:0;border-radius:6px;width:'+w+'%;background:'+col+';display:block"></i></div>';
+  // mínimo / 120
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+    +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Mínimo</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+money(minimo)+'</div></div>'
+    +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Superación 120</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+money(s120)+'</div></div>'
+    +'</div>';
+  if(v.nota) html+='<p class="hint" style="margin-top:12px">📝 '+esc(v.nota)+'</p>';
+  $('objetivoCard').innerHTML=html;
+  sec.style.display='';
 }
 
 /* --- reposición disponible en depósito (Barrida de Reserva) --- */
