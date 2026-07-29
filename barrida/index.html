@@ -583,7 +583,7 @@ function viewReposicion(){
   html+='<div class="filtros">'
     +fsel('Sucursal', 'fSuc', '<option value="">Todas</option>'+sucList.map(n=>{ const slug=Object.keys(sucBySlug).find(k=>sucBySlug[k]===n); return '<option value="'+esc(slug)+'"'+(slug===f.suc?' selected':'')+'>'+esc(n)+'</option>'; }).join(''))
     +fsel('Rubro','fRubro',opts(uniq(R.reposicion.map(r=>r.rubro)),f.rubro))
-    +fsel('Marca','fMarca',opts(uniq(R.reposicion.map(r=>r.marca)),f.marca))
+    +fsel('Marca','fMarca',opts(uniq(R.reposicion.filter(r=>!f.rubro||r.rubro===f.rubro).map(r=>r.marca)),f.marca))
     +'<div class="fgrp" style="flex:1;min-width:180px"><label for="fQ">Buscar</label><input class="inp" id="fQ" placeholder="artículo, código, ID…" value="'+esc(f.q)+'" style="width:100%"></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fSug" '+(f.soloSugerido?'checked':'')+'> Solo con talle disponible</label></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fVarios" '+(f.excluirVarios?'checked':'')+'> Excluir Varios/Facturación</label></div>'
@@ -638,7 +638,7 @@ function viewCompras(){
     +'<div class="sub">Los más vendidos de la semana, separados según haya o no reserva en el depósito. Sin reserva = reponer a la marca; con reserva = seguimiento. Más los artículos frenados.</div></div></div>';
 
   // filtros comunes
-  const rubros=uniq(R.compras.map(c=>c.rubro)), marcas=uniq(R.compras.map(c=>c.marca));
+  const rubros=uniq(R.compras.map(c=>c.rubro)), marcas=uniq(R.compras.filter(c=>!f.rubro||c.rubro===f.rubro).map(c=>c.marca));
   html+='<div class="filtros">'
     +fsel('Rubro','cRubro',opts(rubros,f.rubro))
     +fsel('Marca','cMarca',opts(marcas,f.marca))
@@ -729,7 +729,7 @@ function viewParada(){
     +'<div class="sub">Artículos con stock en depósito y CERO venta en toda la cadena esta semana. Los de ingreso reciente se marcan aparte.</div></div></div>';
   html+='<div class="filtros">'
     +fsel('Rubro','pRubro',opts(uniq(R.parada.map(r=>r.rubro)),f.rubro))
-    +fsel('Marca','pMarca',opts(uniq(R.parada.map(r=>r.marca)),f.marca))
+    +fsel('Marca','pMarca',opts(uniq(R.parada.filter(r=>!f.rubro||r.rubro===f.rubro).map(r=>r.marca)),f.marca))
     +'<div class="fgrp" style="flex:1;min-width:180px"><label for="pQ">Buscar</label><input class="inp" id="pQ" placeholder="artículo, código, ID…" value="'+esc(f.q)+'" style="width:100%"></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="pVarios" '+(f.excluirVarios?'checked':'')+'> Excluir Varios/Facturación</label></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="pCron" '+(f.soloCronica?'checked':'')+'> Solo crónica (3+ sem)</label></div>'
@@ -793,7 +793,7 @@ function wire(){
 
 function wireCompras(){
   const f=state.filtrosCom;
-  const bind=(id,key)=>{ const el=$(id); if(el) el.onchange=e=>{ f[key]=e.target.value; render(); }; };
+  const bind=(id,key)=>{ const el=$(id); if(el) el.onchange=e=>{ f[key]=e.target.value; if(key==='rubro') f.marca=''; render(); }; };
   bind('cRubro','rubro'); bind('cMarca','marca');
   const mn=$('cMin'); if(mn) mn.onchange=e=>{ f.minVendido=Math.max(1,parseInt(e.target.value,10)||1); render(); };
   const tp=$('cTop'); if(tp) tp.onchange=e=>{ f.topN=parseInt(e.target.value,10)||0; render(); };
@@ -890,7 +890,7 @@ async function guardarBarrida(){
 
 function wireReposicion(){
   const f=state.filtros;
-  const bind=(id,key)=>{ const el=$(id); if(el) el.onchange=e=>{ f[key]=e.target.value; render(); }; };
+  const bind=(id,key)=>{ const el=$(id); if(el) el.onchange=e=>{ f[key]=e.target.value; if(key==='rubro') f.marca=''; render(); }; };
   bind('fSuc','suc'); bind('fRubro','rubro'); bind('fMarca','marca');
   const q=$('fQ'); if(q) q.oninput=e=>{ f.q=e.target.value; renderDebounce(); };
   const sug=$('fSug'); if(sug) sug.onchange=e=>{ f.soloSugerido=e.target.checked; render(); };
@@ -901,7 +901,7 @@ function wireReposicion(){
 }
 function wireParada(){
   const f=state.filtrosPar;
-  const bind=(id,key)=>{ const el=$(id); if(el) el.onchange=e=>{ f[key]=e.target.value; render(); }; };
+  const bind=(id,key)=>{ const el=$(id); if(el) el.onchange=e=>{ f[key]=e.target.value; if(key==='rubro') f.marca=''; render(); }; };
   bind('pRubro','rubro'); bind('pMarca','marca');
   const q=$('pQ'); if(q) q.oninput=e=>{ f.q=e.target.value; renderDebounce(); };
   const cv=$('pVarios'); if(cv) cv.onchange=e=>{ f.excluirVarios=e.target.checked; render(); };
