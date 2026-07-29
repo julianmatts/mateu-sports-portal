@@ -307,7 +307,8 @@ function detectarCols(matrix){
     const hasCod  = row.some(c=>c.includes('codigo'));
     if(hasSuc || hasId || (hasDesc&&hasCod)){ headerIdx=i; break; }
   }
-  if(headerIdx<0) return null;
+  // Sin encabezados descriptivos por nombre → probar el modo posicional (solo talles).
+  if(headerIdx<0) return detectarColsPosicional(matrix);
   const H = matrix[headerIdx].map(c=>normName(c));
   const find = preds => { for(let j=0;j<H.length;j++){ if(preds(H[j],j)) return j; } return -1; };
   let cols = {
@@ -334,6 +335,43 @@ function detectarCols(matrix){
   const desdeIdx = Math.max(cols.cod, cols.id, cols.desc);
   const talles=[];
   for(let j=desdeIdx+1;j<H.length;j++){
+    const lbl=String(matrix[headerIdx][j]==null?'':matrix[headerIdx][j]).trim();
+    if(lbl!=='' && normName(lbl)!=='total') talles.push({idx:j,label:lbl});
+  }
+  // Si detecté el ID (o la 1ª col es Sucursal) y hay talles, listo. Si no, la hoja
+  // vino con los encabezados descriptivos en blanco (sólo rotulados los talles):
+  // caemos al modo posicional, que no exige esos encabezados.
+  if((cols.id>=0 || cols.suc===0) && talles.length>0) return { headerIdx, cols, talles };
+  return detectarColsPosicional(matrix);
+}
+
+// Fallback: reportes SIN encabezados descriptivos (Sucursal/Item/Articulo/… en
+// blanco), sólo con los encabezados de TALLE. Detecta la fila de encabezado por
+// esos rótulos de talle y ubica las columnas descriptivas por su posición fija.
+// Distingue ventas vs. reserva por el CONTENIDO de la 1ª columna: si son nombres
+// de sucursal (mapa NAME2SLUG) → ventas; si no → reserva del depósito.
+function detectarColsPosicional(matrix){
+  // El header es la 1ª fila (de las primeras 8) con la col 0 vacía y ≥5 celdas
+  // rotuladas (los talles). Las filas de datos traen la sucursal/rubro en col 0.
+  let headerIdx=-1, talleStart=-1;
+  for(let i=0;i<Math.min(8,matrix.length);i++){
+    const row=matrix[i]||[];
+    if(String(row[0]==null?'':row[0]).trim()!=='') continue;
+    let start=-1, cnt=0;
+    for(let j=0;j<row.length;j++){ const v=String(row[j]==null?'':row[j]).trim(); if(v!==''){ if(start<0)start=j; cnt++; } }
+    if(start>=0 && cnt>=5){ headerIdx=i; talleStart=start; break; }
+  }
+  if(headerIdx<0) return null;
+  let esVentas=false;
+  for(let i=headerIdx+1;i<Math.min(headerIdx+40,matrix.length);i++){
+    const c0=normName(matrix[i] && matrix[i][0]);
+    if(c0 && NAME2SLUG[c0]){ esVentas=true; break; }
+  }
+  const cols = esVentas
+    ? { suc:0, rubro:1, marca:2, disc:3, gen:4, tipo:5, desc:6, id:7, cod:8 }
+    : { suc:-1, rubro:0, marca:1, tipo:2, disc:3, gen:4, desc:5, id:6, cod:7 };
+  const talles=[];
+  for(let j=talleStart;j<matrix[headerIdx].length;j++){
     const lbl=String(matrix[headerIdx][j]==null?'':matrix[headerIdx][j]).trim();
     if(lbl!=='' && normName(lbl)!=='total') talles.push({idx:j,label:lbl});
   }
