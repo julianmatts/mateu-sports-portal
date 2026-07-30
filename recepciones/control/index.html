@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Control de Ingreso — Depósito Mateu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="../../shared/iconos.js" defer></script>
+<style>
+  :root{
+    --navy:#0B1527;--navy-mid:#1a2f55;--red:#CC0000;--off:#f5f7fc;--card:#fff;--border:#dce3f0;
+    --muted:#6B7A99;--ok:#16a34a;--warn:#d97706;--bad:#dc2626;
+    --font-d:'Bebas Neue',sans-serif;--font-c:'Barlow Condensed',sans-serif;--font-b:'Barlow',sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--off);color:var(--navy);font-family:var(--font-b);min-height:100vh}
+  .top{background:var(--navy);border-bottom:3px solid var(--red);padding:12px 20px;display:flex;align-items:center;gap:12px}
+  .top h1{font-family:var(--font-d);font-size:24px;color:#fff;letter-spacing:1px;margin:0;font-weight:400}
+  .top .ts{font-family:var(--font-c);font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#b0bcd4}
+  .top .tag{margin-left:auto;font-family:var(--font-c);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);padding:4px 11px;border-radius:999px}
+  main{max-width:900px;margin:0 auto;padding:20px 16px 60px}
+  .sec-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .sec-head h2{font-family:var(--font-d);font-size:26px;letter-spacing:.5px;margin:0;font-weight:400}
+  .sec-head .sub{font-family:var(--font-c);font-size:13px;color:var(--muted)}
+  .btn{border:none;border-radius:9px;padding:11px 18px;font-family:var(--font-c);font-size:14px;font-weight:700;letter-spacing:.5px;cursor:pointer;text-transform:uppercase}
+  .btn-primary{background:var(--red);color:#fff}.btn-primary:hover{background:#a00000}
+  .btn-outline{background:#fff;border:1.5px solid var(--border);color:var(--navy)}.btn-outline:hover{border-color:var(--navy-mid)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .inp{padding:11px 13px;border:1px solid var(--border);border-radius:8px;font-size:16px;color:var(--navy);background:#fff;font-family:var(--font-b)}
+  .inp:focus{outline:2px solid var(--red);outline-offset:2px}
+  .state{text-align:center;padding:50px 20px;color:var(--muted);font-family:var(--font-c);font-size:16px}
+  .spin{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:sp 1s linear infinite;margin:0 auto 12px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:box-shadow .12s,transform .12s}
+  .card:hover{box-shadow:0 6px 18px rgba(11,21,39,.10);transform:translateY(-1px)}
+  .card .nro{font-family:var(--font-d);font-size:24px;letter-spacing:.5px}
+  .card .sub{font-family:var(--font-c);font-size:12px;color:var(--muted);margin-top:2px}
+  .card .foot{display:flex;align-items:center;justify-content:space-between;margin-top:14px}
+  .pill{font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:3px 10px;border-radius:999px}
+  .pill.info{background:#e7eefc;color:#1a3a8a}.pill.mut{background:#eef1f7;color:var(--muted)}
+  .card .n{font-family:var(--font-d);font-size:22px}
+  .card .n small{font-family:var(--font-c);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-left:4px}
+
+  .blind{background:#fff4e2;border:1px solid #f4cd93;color:#8a5200;font-family:var(--font-c);font-weight:600;font-size:13px;border-radius:10px;padding:10px 14px;margin-bottom:16px}
+  .scanbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .scanbar .inp{flex:1 1 260px;min-width:0;font-size:18px}
+  .cam{margin-top:12px;border-radius:10px;overflow:hidden;background:#000;display:none}
+  .cam video{width:100%;max-height:300px;display:block}
+  .flash{margin-top:14px;border:1px solid var(--border);border-radius:10px;background:#f7f9fd;padding:14px 16px;min-height:60px;display:flex;gap:12px;align-items:center}
+  .flash .ic{font-size:24px}.flash .big{font-family:var(--font-c);font-weight:700;font-size:18px}.flash .sub{font-size:13px;color:var(--muted)}
+  .flash.ok{background:#e8f5ee;border-color:#bbe3c9}.flash.ok .big{color:#166534}
+  .flash.bad{background:#fdecec;border-color:#f4c0c0}.flash.bad .big{color:#b00020}
+  .hero{display:flex;align-items:baseline;gap:10px;margin:18px 0 6px}
+  .hero .n{font-family:var(--font-d);font-size:56px;color:var(--navy);line-height:1}
+  .hero .lbl{font-family:var(--font-c);font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:15px}
+  th{font-family:var(--font-c);text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:8px;border-bottom:1px solid var(--border)}
+  td{padding:9px 8px;border-bottom:1px solid #eef1f7;font-variant-numeric:tabular-nums}
+  td.num,th.num{text-align:right}td.talle{font-weight:700}.bad{color:var(--bad)}
+  .ctrl-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:18px}
+  @media(max-width:760px){.ctrl-grid{grid-template-columns:1fr}}
+  .oplist{border:1px solid var(--border);border-radius:12px;padding:8px 14px;background:#fff}
+  .row-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+  .opname{display:flex;align-items:center;gap:8px;margin-top:14px}
+  .opname label{font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+  .opname .inp{flex:1;max-width:260px;font-size:15px}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;background:var(--navy);color:#fff;padding:12px 20px;border-radius:10px;font-family:var(--font-c);font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
+  .toast.show{opacity:1}.toast.bad{background:var(--bad)}.toast.ok{background:var(--ok)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div><h1>Control de Ingreso</h1><div class="ts">Depósito Central · Mateu Sports</div></div>
+  <span class="tag">Control a ciegas</span>
+</header>
+<main id="view"><div class="state"><div class="spin"></div>Cargando remitos…</div></main>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   Kiosco de CONTROL CIEGO — sin login, aislado del portal.
+   El operario elige un remito, escanea cada unidad (lector o cámara) y marca
+   "Terminé". Escribe SOLO el nodo ingreso/control de recepciones-mateu; NO
+   muestra las cantidades esperadas (control a ciegas). El pre-ingreso y la
+   conciliación los hacen Ariel/Luis desde recepciones/ (con login).
+   ============================================================ */
+'use strict';
+const $ = id => document.getElementById(id);
+const FIREBASE_DB_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
+const ROOT_ING = 'ingreso';
+
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+const num = x => { const n=Number(x); return isFinite(n)?n:0; };
+const fmtInt = n => (Math.round(n||0)).toLocaleString('es-AR');
+function fbUrl(path){ return FIREBASE_DB_URL.replace(/\/+$/,'')+'/'+path.split('/').map(encodeURIComponent).join('/')+'.json'; }
+function fbKey(nro){ return String(nro||'').trim().replace(/[.#$/\[\]]/g,'~'); }
+async function fbGet(path){ const r=await fetch(fbUrl(path)); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
+async function fbPut(path,data){ const r=await fetch(fbUrl(path),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
+function nowISO(){ return new Date().toISOString().slice(0,19).replace('T',' '); }
+function toast(msg,kind){ const t=$('toast'); t.textContent=msg; t.className='toast show '+(kind||''); setTimeout(()=>{t.className='toast '+(kind||'');},2600); }
+
+const DATA = { remitos:{}, control:{} };
+const state = { view:'lista', remito:null };
+const vals = o => o?Object.keys(o).map(k=>o[k]):[];
+const ING_ORD_TALLE=['XS','S','M','L','XL','2XL','3XL','XXS'];
+const ordTalle=t=>{ const i=ING_ORD_TALLE.indexOf(String(t||'')); return i<0?99:i; };
+
+function ctrlOf(key){ return DATA.control[key]||null; }
+function ctrlInit(key){ let C=DATA.control[key]; if(!C){ C={scans:{},unknown:{},operario:'',terminado:false,inicio:nowISO()}; DATA.control[key]=C; } if(!C.scans)C.scans={}; if(!C.unknown)C.unknown={}; return C; }
+function scanTot(C){ let t=0; if(!C) return 0; for(const k in (C.scans||{})) t+=num(C.scans[k]); for(const k in (C.unknown||{})) t+=num(C.unknown[k]); return t; }
+
+async function cargar(){
+  const [rem,con] = await Promise.all([ fbGet(ROOT_ING+'/remitos'), fbGet(ROOT_ING+'/control') ]);
+  DATA.remitos = rem||{}; DATA.control = con||{};
+}
+
+function render(){
+  if(state.view==='control') return renderControl();
+  return renderLista();
+}
+
+/* ---- lista de remitos pendientes de control ---- */
+function renderLista(){
+  // pendientes = no terminados y no ingresados
+  const pend = vals(DATA.remitos).filter(R=>{ const key=fbKey(R.nro); const C=ctrlOf(key); return !(C&&C.terminado) && !R.ingresado; })
+    .sort((a,b)=>String(b.creado_en||'').localeCompare(String(a.creado_en||'')));
+  let h = '<div class="sec-head"><div><h2>Remitos para controlar</h2>'
+    + '<div class="sub">Elegí el remito que estás controlando y escaneá cada unidad.</div></div>'
+    + '<button class="btn btn-outline" id="reload">↻ Actualizar</button></div>';
+  if(!pend.length){ $('view').innerHTML = h + '<div class="state">No hay remitos pendientes de control. Cuando Ariel o Luis pre-ingresen uno, aparece acá.<br><br><button class="btn btn-outline" id="reload2">↻ Actualizar</button></div>'; bindReload(); return; }
+  const cards = pend.map(R=>{
+    const key=fbKey(R.nro); const C=ctrlOf(key); const sc=scanTot(C);
+    const est = sc>0 ? '<span class="pill info">En control</span>' : '<span class="pill mut">Sin empezar</span>';
+    return '<div class="card" data-key="'+esc(key)+'">'
+      + '<div class="nro">'+esc(R.nro)+'</div>'
+      + '<div class="sub">'+esc(R.proveedor||'ADIDAS')+(R.fecha?(' · '+esc(R.fecha)):'')+(R.bultos?(' · '+esc(String(R.bultos))+' bultos'):'')+'</div>'
+      + '<div class="foot">'+est+'<div class="n">'+fmtInt(sc)+'<small>controladas</small></div></div>'
+      + '</div>';
+  }).join('');
+  $('view').innerHTML = h + '<div class="grid">'+cards+'</div>';
+  document.querySelectorAll('.card[data-key]').forEach(c=>c.onclick=()=>{ state.view='control'; state.remito=c.getAttribute('data-key'); render(); });
+  bindReload();
+}
+function bindReload(){ ['reload','reload2'].forEach(id=>{ const b=$(id); if(b) b.onclick=async()=>{ b.disabled=true; try{ await cargar(); render(); toast('Actualizado','ok'); }catch(e){ b.disabled=false; toast('No pude actualizar','bad'); } }; }); }
+
+/* ---- control ciego de un remito ---- */
+let _key=null;
+function renderControl(){
+  const key=state.remito; const R=DATA.remitos[key];
+  if(!R){ state.view='lista'; return render(); }
+  _key=key; const C=ctrlInit(key);
+  let h = '<div class="sec-head"><div><h2>'+esc(R.nro)+'</h2>'
+    + '<div class="sub">'+esc(R.proveedor||'ADIDAS')+' — escaneá cada unidad. No ves las cantidades esperadas.</div></div>'
+    + '<button class="btn btn-outline" id="back">← Volver</button></div>';
+  h += '<div class="blind">Control a ciegas: contá y escaneá todo lo que hay en las cajas. El sistema compara después contra el remito.</div>';
+  h += '<div class="ctrl-grid"><div>'
+    + '<div class="scanbar"><input class="inp" id="scan" inputmode="numeric" autocomplete="off" placeholder="Escaneá o tipeá el EAN + Enter"><button class="btn btn-primary" id="scanBtn">Registrar</button><button class="btn btn-outline" id="camBtn">📷 Cámara</button></div>'
+    + '<div class="cam" id="cam"><video id="video" playsinline muted></video></div>'
+    + '<div class="flash" id="flash"><span class="ic">📷</span><div><div class="big">Listo para escanear</div><div class="sub">El cursor queda en el campo (lector de mano) o tocá “Registrar”.</div></div></div>'
+    + '<div class="hero"><span class="n" id="tot">0</span><span class="lbl">unidades controladas</span></div>'
+    + '<div class="opname"><label for="op">Operario</label><input class="inp" id="op" placeholder="Tu nombre (opcional)" value="'+esc(C.operario||'')+'"></div>'
+    + '</div><div class="oplist"><table><thead><tr><th>Talle</th><th class="num">Controladas</th></tr></thead><tbody id="opBody"></tbody></table></div></div>';
+  h += '<div class="row-actions"><button class="btn btn-primary" id="done">✓ Terminé el control</button></div>';
+  $('view').innerHTML = h;
+  $('back').onclick=()=>{ stopCam(); state.view='lista'; cargar().then(render).catch(render); };
+  const inp=$('scan');
+  const doScan=()=>{ registrar(inp.value); inp.value=''; inp.focus(); };
+  inp.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); doScan(); } });
+  $('scanBtn').onclick=doScan;
+  $('camBtn').onclick=toggleCam;
+  $('op').onchange=()=>{ const C=ctrlOf(_key); if(C){ C.operario=$('op').value.trim(); saveControl(_key); } };
+  $('done').onclick=terminar;
+  updateDom(); inp.focus();
+}
+function registrar(raw){
+  const R=DATA.remitos[_key]; if(!R) return;
+  const ean=String(raw||'').replace(/\D/g,''); if(!ean) return;
+  const C=ctrlInit(_key);
+  const sku=(R.minimap||{})[ean];
+  if(sku){ C.scans[sku]=(C.scans[sku]||0)+1; const d=(R.declarado||{})[sku]||{}; flash('ok','✓','Talle '+(d.talle||sku)+' · +1', (d.desc||'')+' · '+ean); }
+  else { C.unknown[ean]=(C.unknown[ean]||0)+1; flash('bad','⚠','EAN desconocido', ean+' — no está en este remito'); }
+  updateDom(); saveControl(_key);
+}
+function flash(kind,ic,big,sub){ const f=$('flash'); if(!f) return; f.className='flash '+(kind||''); f.innerHTML='<span class="ic">'+ic+'</span><div><div class="big">'+esc(big)+'</div><div class="sub">'+esc(sub||'')+'</div></div>'; }
+function updateDom(){
+  const R=DATA.remitos[_key]; const C=ctrlOf(_key); if(!R||!C) return;
+  const t=$('tot'); if(t) t.textContent=fmtInt(scanTot(C));
+  const body=$('opBody'); if(!body) return;
+  const rows=Object.keys(C.scans||{}).map(sku=>{ const d=(R.declarado||{})[sku]||{}; return [d.talle||sku, C.scans[sku]]; });
+  rows.sort((a,b)=> ordTalle(a[0])-ordTalle(b[0]) || String(a[0]).localeCompare(String(b[0])));
+  let html=rows.map(r=>'<tr><td class="talle">'+esc(r[0])+'</td><td class="num">'+fmtInt(r[1])+'</td></tr>').join('');
+  const uk=Object.keys(C.unknown||{}); if(uk.length){ let n=0; uk.forEach(e=>n+=C.unknown[e]); html+='<tr><td class="talle bad">? desconocidos</td><td class="num">'+fmtInt(n)+'</td></tr>'; }
+  body.innerHTML = html || '<tr><td colspan="2" style="color:var(--muted)">Todavía no escaneaste nada.</td></tr>';
+}
+let _saveT=null;
+function saveControl(key, now){
+  const C=DATA.control[key]; if(!C) return;
+  const go=()=>fbPut(ROOT_ING+'/control/'+key, C).catch(()=>{});
+  clearTimeout(_saveT); if(now) go(); else _saveT=setTimeout(go, 700);
+}
+async function terminar(){
+  const C=ctrlOf(_key); if(!C||scanTot(C)===0){ toast('No escaneaste nada','bad'); return; }
+  if(!confirm('¿Terminaste el control de este remito? Se enviará para que Ariel y Luis hagan la conciliación.')) return;
+  C.terminado=true; C.terminado_en=nowISO(); if($('op')) C.operario=$('op').value.trim();
+  const b=$('done'); if(b) b.disabled=true;
+  try{ await fbPut(ROOT_ING+'/control/'+_key, C); stopCam(); toast('Control enviado ✓','ok'); state.view='lista'; await cargar(); render(); }
+  catch(e){ if(b) b.disabled=false; toast('No se pudo enviar: '+e.message,'bad'); }
+}
+
+/* ---- cámara (ZXing por CDN, lazy) ---- */
+let _zx=null,_zxCtl=null;
+function ensureZXing(){ return new Promise((res,rej)=>{ if(window.ZXing) return res(); const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js'; s.onload=()=>res(); s.onerror=()=>rej(new Error('no pude cargar el lector de cámara')); document.head.appendChild(s); }); }
+async function toggleCam(){
+  const box=$('cam'); if(!box) return;
+  if(_zxCtl){ stopCam(); return; }
+  try{
+    await ensureZXing(); box.style.display='block';
+    const reader=new ZXing.BrowserMultiFormatReader(); _zx=reader;
+    _zxCtl=await reader.decodeFromVideoDevice(undefined, $('video'), (result)=>{ if(result){ registrar(result.getText()); } });
+    const b=$('camBtn'); if(b) b.textContent='📷 Cerrar cámara';
+  }catch(e){ toast(e.message,'bad'); box.style.display='none'; }
+}
+function stopCam(){
+  try{ if(_zxCtl&&_zxCtl.stop) _zxCtl.stop(); }catch(e){}
+  try{ if(_zx&&_zx.reset) _zx.reset(); }catch(e){}
+  _zxCtl=null; _zx=null;
+  const box=$('cam'); if(box) box.style.display='none';
+  const b=$('camBtn'); if(b) b.textContent='📷 Cámara';
+}
+
+/* ---- init ---- */
+(async function init(){
+  try{ await cargar(); render(); }
+  catch(e){ $('view').innerHTML='<div class="state">No pude conectar con la base. Revisá la conexión y recargá.<br><br><button class="btn btn-outline" onclick="location.reload()">↻ Reintentar</button></div>'; }
+})();
+</script>
+</body>
+</html>
