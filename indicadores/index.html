@@ -463,6 +463,8 @@ footer b{color:var(--navy)}
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
 <script src="../shared/iconos.js" defer></script>
+<!-- matriz de pesos por turno de arranque (fallback si no hay publicada en Firebase) -->
+<script src="pesos-turnos.js" defer></script>
 </head>
 <body>
 
@@ -1594,18 +1596,111 @@ function veDetailHtml(ve, metaVal){
   if(hayDias) h+='<p class="hint" style="margin-top:8px">Clic en un vendedor para desplegar su día a día.</p>';
   return h;
 }
+/* ============================================================
+   EQUIPO SEMANAL — el encargado arma su equipo y asigna horas por
+   turno×día; el portal DISTRIBUYE el objetivo semanal (Meta/Mín/120)
+   entre las personas con la matriz de pesos por turno (reemplaza el
+   circuito del Excel PMS).
+   - Pesos: Firebase objetivos/pesosTurnos/porSlug/<slug> (los publica
+     gerencia desde el módulo Objetivos); fallback al horneado
+     pesos-turnos.js (Excel PESOS TURNOS a julio 2026).
+   - Equipo: objetivos/equipos/<slug>/<lunesISO>; una semana nueva
+     arranca copiando la anterior.
+   - Fórmula (validada contra el PMS real de Aurelius CB): el peso de
+     un turno-día se reparte entre las horas asignadas del equipo en
+     ese turno-día; share persona = Σ horas×peso/horasEquipo; su meta
+     = share × Meta de la sucursal.
+   ============================================================ */
+const EQ_DIAS=['Lu','Ma','Mi','Ju','Vi','Sá','Do'];
+const EQ_TURNOS=[{lbl:'T1',sub:'9-13',max:4},{lbl:'T2',sub:'13-16',max:3},{lbl:'T3',sub:'16-20',max:4}];
+const _eqCache={}, _eqPesosCache={}, _eqSemCache={};
+let _eqEdit=null;        // borrador del editor {slug,sem,equipo,copiadaDe}
+let _eqRealDraft=null;   // borrador de reales manuales {slug,sem,real:{key:monto}}
+
+const eqNorm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+const eqKeyName = s => (eqNorm(s).replace(/ /g,'-').slice(0,60)) || 'p';
+
+function fetchEqPesos(slug){
+  if(_eqPesosCache[slug]) return _eqPesosCache[slug];
+  const base=OBJETIVOS_URL.replace(/\/+$/,'');
+  const horneado = () => (window.PESOS_TURNOS && window.PESOS_TURNOS.pesos && window.PESOS_TURNOS.pesos[sucName]) || null;
+  _eqPesosCache[slug]=fetch(base+'/objetivos/pesosTurnos/porSlug/'+encodeURIComponent(slug)+'.json')
+    .then(r=>r.ok?r.json():null).catch(()=>null)
+    .then(p=> (p && p.t1) ? p : horneado());
+  return _eqPesosCache[slug];
+}
+function fetchEquipo(slug, sem){
+  const key=slug+'|'+sem;
+  if(_eqCache[key]) return _eqCache[key];
+  const base=OBJETIVOS_URL.replace(/\/+$/,'');
+  _eqCache[key]=fetch(base+'/objetivos/equipos/'+encodeURIComponent(slug)+'/'+encodeURIComponent(sem)+'.json')
+    .then(r=>r.ok?r.json():null).catch(()=>null);
+  return _eqCache[key];
+}
+function fetchEqSemanas(slug){
+  if(_eqSemCache[slug]) return _eqSemCache[slug];
+  const base=OBJETIVOS_URL.replace(/\/+$/,'');
+  _eqSemCache[slug]=fetch(base+'/objetivos/equipos/'+encodeURIComponent(slug)+'.json?shallow=true')
+    .then(r=>r.ok?r.json():null).catch(()=>null)
+    .then(o=> o ? Object.keys(o).sort().reverse() : []);
+  return _eqSemCache[slug];
+}
+async function saveEquipo(slug, sem, payload){
+  const base=OBJETIVOS_URL.replace(/\/+$/,'');
+  const r=await fetch(base+'/objetivos/equipos/'+encodeURIComponent(slug)+'/'+encodeURIComponent(sem)+'.json',
+    {method:'PUT',body:JSON.stringify(payload)});
+  if(!r.ok) throw new Error('No se pudo guardar');
+  delete _eqCache[slug+'|'+sem]; delete _eqSemCache[slug];
+  return payload;
+}
+const eqNuevaPersona = nombre => ({nombre:nombre||'', h:[[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]]});
+// normalizar h por si Firebase devolvió arrays ralos
+function eqSanea(equipo){
+  return (equipo||[]).map(p=>({nombre:p.nombre||'', h:EQ_DIAS.map((_,d)=>{
+    const day=(p.h&&p.h[d])||[]; return [0,1,2].map(t=>Number(day[t])||0); })}));
+}
+const eqHorasPersona = p => p.h.reduce((a,day)=>a+day.reduce((x,y)=>x+y,0),0);
+// reparto: peso(t,d) se divide entre las horas del equipo en ese turno-día
+function eqShares(equipo, pesos){
+  const P=[pesos.t1||[],pesos.t2||[],pesos.t3||[]];
+  const tot=EQ_DIAS.map(()=> [0,0,0]);
+  equipo.forEach(p=>p.h.forEach((day,d)=>day.forEach((v,t)=>{ tot[d][t]+=v||0; })));
+  let cobertura=0, totalPeso=0;
+  for(let d=0;d<7;d++) for(let t=0;t<3;t++){ const w=P[t][d]||0; totalPeso+=w; if(tot[d][t]>0) cobertura+=w; }
+  const shares=equipo.map(p=>{
+    let s=0;
+    p.h.forEach((day,d)=>day.forEach((v,t)=>{ const w=P[t][d]||0; if(v>0 && tot[d][t]>0) s+=w*(v/tot[d][t]); }));
+    return s/100;
+  });
+  return {shares, cobertura, totalPeso};
+}
+// real por persona: manual (payload.real) pisa el Excel subido (match por nombre)
+function eqRealDe(p, eqData, ve){
+  const k=eqKeyName(p.nombre);
+  if(eqData && eqData.real && eqData.real[k]>0) return {monto:eqData.real[k], src:'manual'};
+  if(ve && ve.vendedores){
+    const n=eqNorm(p.nombre);
+    const m=ve.vendedores.find(x=>{ const xn=eqNorm(x.nombre); return xn===n || (n.length>4 && xn.includes(n)) || (xn.length>4 && n.includes(xn)); });
+    if(m && m.venta>0) return {monto:m.venta, src:'excel'};
+  }
+  return null;
+}
+
 // bloque desplegable "cómo viene el equipo" dentro del card de Objetivo
-function veSectionHtml(slug, sem, metaVal, ve){
+function veSectionHtml(slug, sem, v, ve, eqData, pesos){
+  const metaVal=(v&&v.meta)||0;
   const prev = _vePreview && _vePreview.slug===slug && _vePreview.sem===sem ? _vePreview : null;
-  const hayDato = !!(ve && ve.vendedores && ve.vendedores.length);
-  const actu = ve && ve.actualizado ? new Date(ve.actualizado).toLocaleDateString('es-AR') : '';
-  const nV = ve && ve.vendedores ? ve.vendedores.length : 0;
+  const editando = _eqEdit && _eqEdit.slug===slug && _eqEdit.sem===sem;
+  const hayEquipo = !!(eqData && eqData.equipo && eqData.equipo.length);
+  const hayExcel = !!(ve && ve.vendedores && ve.vendedores.length);
   let sum = 'Cómo viene el equipo';
-  if(prev) sum += ' · <span style="color:var(--red)">previsualización</span>';
-  else if(hayDato) sum += ' · '+nV+' vendedor'+(nV===1?'':'es')+(actu?' · '+actu:'');
+  if(prev) sum += ' · <span style="color:var(--red)">previsualización Excel</span>';
+  else if(editando) sum += ' · <span style="color:var(--red)">editando equipo</span>';
+  else if(hayEquipo) sum += ' · '+eqData.equipo.length+' persona'+(eqData.equipo.length===1?'':'s');
+  else if(hayExcel) sum += ' · '+ve.vendedores.length+' vendedor'+(ve.vendedores.length===1?'':'es');
   let body;
   if(prev){
-    // aviso si la semana del archivo no coincide con la semana elegida
+    // previsualización del Excel de venta real por vendedor
     const otraSemana = prev.data.semArchivo && prev.data.semArchivo!==sem;
     body = '<div style="background:var(--mid-bg,#fdf3e3);border:1px solid #f0d8a8;border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:13px">'
       + 'Revisá los datos leídos de <b>'+esc(prev.fileName)+'</b> ('+prev.data.vendedores.length+' vendedores). Si está bien, guardá.'
@@ -1614,15 +1709,119 @@ function veSectionHtml(slug, sem, metaVal, ve){
       + veDetailHtml(prev.data, metaVal)
       + '<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="veSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">Guardar</button>'
       + '<button type="button" id="veCancel" class="tb-btn">Cancelar</button></div>';
+  } else if(editando){
+    body = eqEditorHtml();
+  } else if(hayEquipo){
+    body = eqDistribHtml(slug, sem, v, ve, eqData, pesos);
   } else {
-    body = veDetailHtml(ve, metaVal)
-      + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">'
-      + '<button type="button" id="veUpload" class="tb-btn">⇧ '+(hayDato?'Actualizar':'Cargar')+' venta por vendedor (Excel)</button>'
-      + '<span class="hint" style="margin:0">Se cruza con la meta de la semana. Solo lo ve tu sucursal.</span></div>';
+    // sin equipo armado: invitación + (si hay) la tabla del Excel como antes
+    body = '<div style="background:#f8f9fe;border:1px solid var(--border,#e6ebf5);border-radius:9px;padding:12px 14px;margin-bottom:12px;font-size:13.5px">'
+      + '<b>Armá tu equipo de la semana</b> y asigná las horas de venta por turno: el portal reparte la meta de la sucursal entre las personas (igual que el PMS, sin Excel).'
+      + '<div style="margin-top:10px"><button type="button" id="eqArmar" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">⚙ Armar equipo y horas</button></div></div>';
+    if(hayExcel) body += veDetailHtml(ve, metaVal);
+    body += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">'
+      + '<button type="button" id="veUpload" class="tb-btn">⇧ '+(hayExcel?'Actualizar':'Cargar')+' venta por vendedor (Excel)</button>'
+      + '<span class="hint" style="margin:0">El Excel también sirve como venta real cuando el equipo está armado.</span></div>';
   }
-  const open = (prev || hayDato) ? ' open' : '';
+  const open = (prev || editando || hayEquipo || hayExcel) ? ' open' : '';
   return '<details class="bgrupo" style="margin-top:16px"'+open+'><summary>'+sum+'</summary>'
     + '<div style="padding:12px 14px">'+body+'</div></details>';
+}
+
+/* --- vista distribución: metas individuales + real + % --- */
+function eqDistribHtml(slug, sem, v, ve, eqData, pesos){
+  const equipo=eqSanea(eqData.equipo);
+  const metaVal=(v&&v.meta)||0, minVal=(v&&(v.minimo||Math.round(metaVal/1.2)))||0;
+  let h='';
+  if(!pesos){
+    h+='<p class="empty" style="margin:4px 0 8px">No hay matriz de pesos para esta sucursal — pedile a gerencia que la publique desde Objetivos → Pesos por turno.</p>';
+    return h;
+  }
+  const {shares, cobertura, totalPeso}=eqShares(equipo, pesos);
+  const editReal = _eqRealDraft && _eqRealDraft.slug===slug && _eqRealDraft.sem===sem;
+  if(totalPeso>0 && cobertura < totalPeso-0.5){
+    h+='<div style="background:var(--mid-bg,#fdf3e3);border:1px solid #f0d8a8;border-radius:9px;padding:8px 12px;margin-bottom:12px;font-size:12.5px">⚠️ Hay turnos con venta esperada y <b>sin horas asignadas</b>: queda un <b>'+(totalPeso-cobertura).toFixed(1)+'%</b> de la semana sin dueño. Esa parte de la meta no se reparte.</div>';
+  }
+  if(!metaVal) h+='<p class="hint" style="margin:0 0 10px">Aún no hay meta publicada para esta semana: se muestran las participaciones; las metas individuales aparecen cuando gerencia publica el objetivo.</p>';
+  const pctCol = p => p>=1?'var(--ok,#16a34a)':p>=1/1.2?'#d97706':'#dc2626';
+  // total equipo vs meta
+  const reales=equipo.map(p=>eqRealDe(p, eqData, ve));
+  const totReal=reales.reduce((a,r)=>a+((r&&r.monto)||0),0);
+  if(metaVal && totReal){
+    const pct=totReal/metaVal, w=Math.min(100,Math.round(pct*100)), col=pctCol(pct);
+    h+='<div style="font-size:13px;color:var(--mid);margin:2px 0 6px">Equipo esta semana: <b style="color:'+col+'">'+objMoney(totReal)+'</b> · '+Math.round(pct*100)+'% de la meta</div>'
+      +'<div style="position:relative;height:8px;background:#eef0f7;border-radius:5px;overflow:hidden;margin:0 0 14px"><i style="position:absolute;left:0;top:0;bottom:0;border-radius:5px;width:'+w+'%;background:'+col+';display:block"></i></div>';
+  }
+  h+='<div class="tbl-wrap"><table><thead><tr><th class="L">Vendedor</th><th>Horas venta</th><th>Part.</th>'
+    +(metaVal?'<th>Su mínimo</th><th>Su meta</th>':'')
+    +'<th>Real</th>'+(metaVal?'<th>% de su meta</th>':'')+'</tr></thead><tbody>';
+  equipo.forEach((p,i)=>{
+    const hs=eqHorasPersona(p), sh=shares[i], meta_p=metaVal*sh, min_p=minVal*sh;
+    const r=reales[i], pct=(r&&meta_p)?r.monto/meta_p:0;
+    h+='<tr><td class="L">'+esc(p.nombre)+'</td><td>'+(hs?fmt2(hs)+' h':'—')+'</td><td>'+(sh*100).toFixed(1)+'%</td>';
+    if(metaVal) h+='<td>'+(sh?objMoney(min_p):'—')+'</td><td><b>'+(sh?objMoney(meta_p):'—')+'</b></td>';
+    if(editReal){
+      const k=eqKeyName(p.nombre), val=_eqRealDraft.real[k];
+      h+='<td><input type="text" inputmode="numeric" class="eq-real" data-k="'+esc(k)+'" value="'+(val>0?Math.round(val):'')+'" style="width:110px;text-align:right;border:1px solid var(--border);border-radius:6px;padding:5px 7px;font-size:13px"></td>';
+    } else {
+      h+='<td>'+(r?objMoney(r.monto)+(r.src==='excel'?' <span class="tag" title="del Excel subido">xls</span>':''):'—')+'</td>';
+    }
+    if(metaVal) h+='<td>'+(r&&meta_p?'<b style="color:'+pctCol(pct)+'">'+Math.round(pct*100)+'%</b>':'—')+'</td>';
+    h+='</tr>';
+  });
+  // total
+  const totHs=equipo.reduce((a,p)=>a+eqHorasPersona(p),0), totSh=shares.reduce((a,x)=>a+x,0);
+  h+='<tr class="team" style="cursor:default"><td class="L">Total equipo</td><td>'+fmt2(totHs)+' h</td><td>'+(totSh*100).toFixed(0)+'%</td>';
+  if(metaVal) h+='<td>'+objMoney(minVal*totSh)+'</td><td>'+objMoney(metaVal*totSh)+'</td>';
+  h+='<td>'+(totReal?objMoney(totReal):'—')+'</td>';
+  if(metaVal) h+='<td>'+(totReal&&totSh?'<b style="color:'+pctCol(totReal/(metaVal*totSh))+'">'+Math.round(totReal/(metaVal*totSh)*100)+'%</b>':'—')+'</td>';
+  h+='</tr></tbody></table></div>';
+  if(editReal){
+    h+='<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="eqRealSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">Guardar reales</button>'
+      +'<button type="button" id="eqRealCancel" class="tb-btn">Cancelar</button></div>';
+  } else {
+    const actu = eqData.actualizado ? new Date(eqData.actualizado).toLocaleDateString('es-AR') : '';
+    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px">'
+      +'<button type="button" id="eqEditar" class="tb-btn">✎ Equipo y horas</button>'
+      +'<button type="button" id="eqRealBtn" class="tb-btn">✎ Cargar venta real</button>'
+      +'<button type="button" id="veUpload" class="tb-btn">⇧ Excel de venta</button>'
+      +(actu?'<span class="hint" style="margin:0">Equipo actualizado el '+esc(actu)+'.</span>':'')+'</div>';
+  }
+  return h;
+}
+
+/* --- editor de equipo y horas --- */
+function eqEditorHtml(){
+  const E=_eqEdit;
+  let h='';
+  if(E.copiadaDe) h+='<div style="background:#f8f9fe;border:1px solid var(--border);border-radius:9px;padding:8px 12px;margin-bottom:12px;font-size:12.5px">Arranqué con el equipo de la <b>semana del '+esc(objSemLbl(E.copiadaDe))+'</b> — ajustá lo que cambió y guardá.</div>';
+  h+='<p class="hint" style="margin:0 0 10px">Horas de venta por turno y día de cada persona (T1 9-13 · T2 13-16 · T3 16-20). El botón <b>⇉</b> repite el lunes en Ma-Sá. Sin horas = no reparte meta (vacaciones, licencia).</p>';
+  h+='<div class="tbl-wrap"><table style="min-width:720px"><thead><tr><th class="L" style="min-width:150px">Persona</th><th class="L">Turno</th>'
+    +EQ_DIAS.map(d=>'<th>'+d+'</th>').join('')+'<th></th><th>Total</th><th></th></tr></thead><tbody>';
+  E.equipo.forEach((p,pi)=>{
+    EQ_TURNOS.forEach((T,t)=>{
+      h+='<tr>';
+      if(t===0) h+='<td class="L" rowspan="3" style="vertical-align:top"><input type="text" class="eq-nom" data-p="'+pi+'" value="'+esc(p.nombre)+'" placeholder="Nombre" style="width:140px;border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13.5px"></td>';
+      h+='<td class="L" style="white-space:nowrap;font-size:12px;color:var(--muted)">'+T.lbl+' <span style="font-size:10.5px">'+T.sub+'</span></td>';
+      for(let d=0;d<7;d++){
+        h+='<td style="padding:4px 3px"><input type="text" inputmode="decimal" class="eq-h" data-p="'+pi+'" data-d="'+d+'" data-t="'+t+'" value="'+(p.h[d][t]||'')+'" style="width:38px;text-align:center;border:1px solid var(--border);border-radius:5px;padding:4px 2px;font-size:12.5px"></td>';
+      }
+      h+='<td style="padding:4px 3px"><button type="button" class="eq-rep tb-btn" data-p="'+pi+'" data-t="'+t+'" title="Repetir Lu en Ma-Sá" style="padding:4px 8px;font-size:11px">⇉</button></td>';
+      if(t===0){
+        h+='<td rowspan="3" style="vertical-align:middle;font-weight:700" class="eq-tot" data-p="'+pi+'">'+fmt2(eqHorasPersona(p))+' h</td>'
+          +'<td rowspan="3" style="vertical-align:middle"><button type="button" class="eq-del tb-btn" data-p="'+pi+'" title="Quitar" style="padding:4px 9px;color:var(--bad,#c0261f)">✕</button></td>';
+      }
+      h+='</tr>';
+    });
+  });
+  h+='</tbody></table></div>';
+  h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px">'
+    +'<button type="button" id="eqAdd" class="tb-btn">+ Agregar persona</button>'
+    +'<button type="button" id="eqImportar" class="tb-btn">⇩ Importar de Plantilla</button>'
+    +'<span style="flex:1"></span>'
+    +'<button type="button" id="eqGuardar" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">Guardar equipo</button>'
+    +'<button type="button" id="eqCancelar" class="tb-btn">Cancelar</button></div>';
+  return h;
 }
 async function renderObjetivo(){
   const sec=$('secObjetivo'); if(!sec) return;
@@ -1638,8 +1837,11 @@ async function renderObjetivo(){
   // semana activa: la elegida (si sigue existiendo) o la última publicada
   const sem = (objSem && weeks.includes(objSem)) ? objSem : weeks[0];
   _objActiveSem = sem;
-  let v=null, ve=null;
-  try{ [v,ve] = await Promise.all([fetchObjetivoData(slug, sem), fetchVentaEquipo(slug, sem)]); }catch(e){ v=null; ve=null; }
+  let v=null, ve=null, eqData=null, pesos=null;
+  try{ [v,ve,eqData,pesos] = await Promise.all([
+    fetchObjetivoData(slug, sem), fetchVentaEquipo(slug, sem),
+    fetchEquipo(slug, sem), fetchEqPesos(slug)
+  ]); }catch(e){ v=null; ve=null; eqData=null; pesos=null; }
   if(sucName!==target) return;
 
   // selector de semanas (arriba a la derecha)
@@ -1673,9 +1875,9 @@ async function renderObjetivo(){
       +'</div>';
     if(v.nota) html+='<p class="hint" style="margin-top:12px">📝 '+esc(v.nota)+'</p>';
   }
-  html += veSectionHtml(slug, sem, (v&&v.meta)||0, ve);
+  html += veSectionHtml(slug, sem, v, ve, eqData, pesos);
   $('objetivoCard').innerHTML=html;
-  const selEl=$('objSemSel'); if(selEl) selEl.onchange = e => { objSem = e.target.value; renderObjetivo(); };
+  const selEl=$('objSemSel'); if(selEl) selEl.onchange = e => { objSem = e.target.value; _eqEdit=null; _eqRealDraft=null; renderObjetivo(); };
   const up=$('veUpload'); if(up) up.onclick = ()=> $('veFile').click();
   const sv=$('veSave'); if(sv) sv.onclick = veGuardar;
   const cn=$('veCancel'); if(cn) cn.onclick = ()=>{ _vePreview=null; renderObjetivo(); };
@@ -1686,7 +1888,96 @@ async function renderObjetivo(){
     nx.style.display=abierto?'none':'';
     const c=tr.querySelector('.caret'); if(c) c.textContent=abierto?'▸':'▾';
   });
+  eqWire(slug, sem, eqData);
   sec.style.display='';
+}
+
+/* --- wiring del equipo semanal --- */
+function eqWire(slug, sem, eqData){
+  const card=$('objetivoCard');
+  // armar equipo (primera vez): copia la última semana guardada; si no hay,
+  // precarga los nombres de la Plantilla del período; si no, una fila vacía.
+  const armar=$('eqArmar'); if(armar) armar.onclick = async ()=>{
+    armar.disabled=true; armar.textContent='Preparando…';
+    let equipo=null, copiadaDe=null;
+    try{
+      const sems=(await fetchEqSemanas(slug)).filter(s=>s<sem);
+      if(sems.length){
+        const prev=await fetchEquipo(slug, sems[0]);
+        if(prev && prev.equipo && prev.equipo.length){ equipo=eqSanea(prev.equipo); copiadaDe=sems[0]; }
+      }
+    }catch(e){}
+    if(!equipo){
+      const gente=(window.DET && DET.vendedores || []).filter(x=>x.horas_contr>0 && !x.cobertura).map(x=>x.nombre);
+      equipo = gente.length ? gente.map(eqNuevaPersona) : [eqNuevaPersona('')];
+    }
+    _eqEdit={slug, sem, equipo, copiadaDe};
+    renderObjetivo();
+  };
+  const editar=$('eqEditar'); if(editar) editar.onclick = ()=>{
+    _eqEdit={slug, sem, equipo:eqSanea(eqData&&eqData.equipo||[]), copiadaDe:null};
+    renderObjetivo();
+  };
+  // editor: inputs del borrador (sin re-render por tecla)
+  if(_eqEdit && _eqEdit.slug===slug && _eqEdit.sem===sem){
+    card.querySelectorAll('.eq-nom').forEach(inp=>inp.oninput=()=>{ _eqEdit.equipo[+inp.dataset.p].nombre=inp.value; });
+    card.querySelectorAll('.eq-h').forEach(inp=>inp.oninput=()=>{
+      const p=+inp.dataset.p, d=+inp.dataset.d, t=+inp.dataset.t;
+      let x=parseFloat(String(inp.value).replace(',','.')); if(!isFinite(x)||x<0) x=0;
+      if(x>EQ_TURNOS[t].max) x=EQ_TURNOS[t].max;
+      _eqEdit.equipo[p].h[d][t]=x;
+      const tot=card.querySelector('.eq-tot[data-p="'+p+'"]'); if(tot) tot.textContent=fmt2(eqHorasPersona(_eqEdit.equipo[p]))+' h';
+    });
+    card.querySelectorAll('.eq-rep').forEach(b=>b.onclick=()=>{
+      const p=+b.dataset.p, t=+b.dataset.t, v0=_eqEdit.equipo[p].h[0][t];
+      for(let d=1;d<6;d++) _eqEdit.equipo[p].h[d][t]=v0;   // Ma..Sá (el Do queda como está)
+      renderObjetivo();
+    });
+    card.querySelectorAll('.eq-del').forEach(b=>b.onclick=()=>{ _eqEdit.equipo.splice(+b.dataset.p,1); if(!_eqEdit.equipo.length) _eqEdit.equipo.push(eqNuevaPersona('')); renderObjetivo(); });
+    const add=$('eqAdd'); if(add) add.onclick=()=>{ _eqEdit.equipo.push(eqNuevaPersona('')); renderObjetivo(); };
+    const imp=$('eqImportar'); if(imp) imp.onclick=()=>{
+      const ya=new Set(_eqEdit.equipo.map(p=>eqNorm(p.nombre)).filter(Boolean));
+      const gente=(window.DET && DET.vendedores || []).filter(x=>x.horas_contr>0 && !x.cobertura && !ya.has(eqNorm(x.nombre)));
+      if(!gente.length){ alert('No hay nadie más para importar de la Plantilla del período.'); return; }
+      gente.forEach(x=>_eqEdit.equipo.push(eqNuevaPersona(x.nombre)));
+      _eqEdit.equipo=_eqEdit.equipo.filter(p=>p.nombre.trim()||eqHorasPersona(p)>0);
+      renderObjetivo();
+    };
+    const g=$('eqGuardar'); if(g) g.onclick=async ()=>{
+      const equipo=_eqEdit.equipo.filter(p=>p.nombre.trim());
+      if(!equipo.length){ alert('Cargá al menos una persona con nombre.'); return; }
+      g.disabled=true; g.textContent='Guardando…';
+      try{
+        const prevReal=(eqData&&eqData.real)||{};
+        await saveEquipo(slug, sem, {semana:sem, actualizado:new Date().toISOString(), por:(SESSION.email||''), equipo, real:prevReal});
+        _eqEdit=null;
+        renderObjetivo();
+      }catch(e){ alert('No se pudo guardar: '+(e.message||e)); g.disabled=false; g.textContent='Guardar equipo'; }
+    };
+    const c=$('eqCancelar'); if(c) c.onclick=()=>{ _eqEdit=null; renderObjetivo(); };
+  }
+  // carga manual de la venta real
+  const rb=$('eqRealBtn'); if(rb) rb.onclick=()=>{
+    const real={}; (eqData&&eqData.equipo||[]).forEach(p=>{ const k=eqKeyName(p.nombre); if(eqData.real&&eqData.real[k]>0) real[k]=eqData.real[k]; });
+    _eqRealDraft={slug, sem, real};
+    renderObjetivo();
+  };
+  if(_eqRealDraft && _eqRealDraft.slug===slug && _eqRealDraft.sem===sem){
+    card.querySelectorAll('.eq-real').forEach(inp=>inp.oninput=()=>{
+      const x=Math.round(parseFloat(String(inp.value).replace(/\./g,'').replace(',','.'))||0);
+      if(x>0) _eqRealDraft.real[inp.dataset.k]=x; else delete _eqRealDraft.real[inp.dataset.k];
+    });
+    const rs=$('eqRealSave'); if(rs) rs.onclick=async ()=>{
+      rs.disabled=true; rs.textContent='Guardando…';
+      try{
+        const payload={...eqData, real:_eqRealDraft.real, actualizado:new Date().toISOString(), por:(SESSION.email||'')};
+        await saveEquipo(slug, sem, payload);
+        _eqRealDraft=null;
+        renderObjetivo();
+      }catch(e){ alert('No se pudo guardar: '+(e.message||e)); rs.disabled=false; rs.textContent='Guardar reales'; }
+    };
+    const rc=$('eqRealCancel'); if(rc) rc.onclick=()=>{ _eqRealDraft=null; renderObjetivo(); };
+  }
 }
 // leer el Excel elegido → previsualizar
 async function veArchivo(file){

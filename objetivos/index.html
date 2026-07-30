@@ -162,6 +162,7 @@ td .gn:focus{outline:none;border-color:var(--navy-mid)}
   <button class="tab on" data-tab="cargar">Cargar objetivos</button>
   <button class="tab" data-tab="dashboard">Dashboard</button>
   <button class="tab" data-tab="historico">Histórico</button>
+  <button class="tab" data-tab="pesos">Pesos por turno</button>
 </nav>
 
 <main>
@@ -293,6 +294,7 @@ const state = {
   dashWeek:null,               // semana elegida en dashboard
   dashData:null,               // {meta, porSlug}
   dashSort:{k:'cumpl', dir:-1},
+  pesos:{ archivo:null, porSlug:null, actual:null, actualLoaded:false },  // tab Pesos por turno
 };
 // arranca con filas vacías para todas las sucursales
 function filasVacias(){ const o={}; STORES.forEach(s=>o[s.slug]={meta:null, real:null, nota:''}); return o; }
@@ -455,6 +457,7 @@ function render(){
   if(state.tab==='cargar')          v.innerHTML=viewCargar();
   else if(state.tab==='dashboard')  v.innerHTML=viewDashboard();
   else if(state.tab==='historico')  v.innerHTML=viewHistorico();
+  else if(state.tab==='pesos')      v.innerHTML=viewPesos();
   wire();
 }
 
@@ -593,6 +596,175 @@ function viewHistorico(){
 /* ============================================================
    WIRING
    ============================================================ */
+/* ============================================================
+   PESOS POR TURNO — carga mensual de la estadística de venta
+   ------------------------------------------------------------
+   Juli sube el Excel con la venta por sucursal × día × hora en $
+   (formato de la hoja "Datos actualizados" del Excel PESOS TURNOS).
+   Se calcula el peso % de cada turno×día en la semana por sucursal
+   (T1 = filas 9-12 · T2 = 13-16 · T3 = 17-20, igual que el Excel) y
+   se publica en `objetivos/pesosTurnos`. Indicadores lo usa para
+   DISTRIBUIR el objetivo semanal entre el equipo según las horas
+   asignadas por el encargado.
+   ============================================================ */
+const DIAS_PT = ['Lu','Ma','Mi','Ju','Vi','Sá','Do'];
+// hora → turno (misma partición que el Excel: el corte 16 va al turno 2)
+const horaTurno = h => (h>=9&&h<=12) ? 0 : (h>=13&&h<=16) ? 1 : (h>=17&&h<=20) ? 2 : -1;
+
+function parsePesosStat(matrix){
+  const norm = s => String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+  // encabezado: fila con "sucursal" + "hora"; los días son las columnas Lu..Do
+  // CONTIGUAS que siguen (así no se cuela el bloque de turnos de la derecha,
+  // que repite Lu/Ma/Mi/Ju)
+  let hr=-1, cSuc=-1, cHora=-1, diaCols=null;
+  for(let i=0;i<Math.min(matrix.length,15);i++){
+    const row=(matrix[i]||[]).map(norm);
+    const s=row.findIndex(c=>c==='sucursal'), h=row.findIndex(c=>c==='hora');
+    if(s>=0 && h>=0){
+      hr=i; cSuc=s; cHora=h; diaCols=[];
+      const DIA_N = {lu:0,ma:1,mi:2,ju:3,vi:4,sa:5,do:6};
+      for(let j=h+1;j<row.length && diaCols.length<7;j++){
+        const d=DIA_N[row[j].slice(0,2)];
+        if(d!=null && (!diaCols.length || j===diaCols[diaCols.length-1].col+1)) diaCols.push({col:j, d});
+        else if(diaCols.length) break;   // se cortó la secuencia de días
+      }
+      break;
+    }
+  }
+  if(hr<0 || !diaCols || diaCols.length<6) return null;
+  // ⚠️ num() está pensado para strings AR y come el punto decimal cuando hay
+  // exactamente 3 decimales ("7858714.322" → miles). Las celdas del Excel ya
+  // vienen numéricas: pasarlas directo.
+  const numCell = v => typeof v==='number' ? v : num(v);
+  // acumular $ por sucursal × turno × día
+  const acc={};   // slug -> [3][7] en $
+  let suc='', slug=null, filas=0;
+  for(let i=hr+1;i<matrix.length;i++){
+    const row=matrix[i]||[];
+    const a=String(row[cSuc]==null?'':row[cSuc]).trim();
+    if(a && !/^total/i.test(a)){ suc=a; slug=slugDeCelda(a); }
+    const hCell=String(row[cHora]==null?'':row[cHora]).trim();
+    if(/^total/i.test(hCell)) continue;
+    const h=parseInt(hCell,10);
+    const t=horaTurno(h);
+    if(!slug || !isFinite(h) || t<0) continue;
+    const m = acc[slug] = acc[slug] || [[0,0,0,0,0,0,0],[0,0,0,0,0,0,0],[0,0,0,0,0,0,0]];
+    diaCols.forEach(dc=>{ const v=numCell(row[dc.col]); if(v>0) m[t][dc.d]+=v; });
+    filas++;
+  }
+  if(!filas) return null;
+  // $ → % de la semana por sucursal
+  const porSlug={};
+  Object.keys(acc).forEach(sl=>{
+    const m=acc[sl];
+    const tot=m.flat().reduce((a,x)=>a+x,0);
+    if(!tot) return;
+    porSlug[sl]={
+      t1:m[0].map(v=>Math.round(v/tot*1000000)/10000),
+      t2:m[1].map(v=>Math.round(v/tot*1000000)/10000),
+      t3:m[2].map(v=>Math.round(v/tot*1000000)/10000),
+    };
+  });
+  return Object.keys(porSlug).length ? porSlug : null;
+}
+
+function viewPesos(){
+  const P=state.pesos;
+  let html='<div class="sec-head"><div><h1>Pesos por turno</h1>'
+    +'<div class="sub">La matriz que reparte el objetivo semanal de cada sucursal entre su equipo según las horas asignadas. Actualizala cuando quieras (típico: mensual) subiendo la estadística de venta por sucursal, día y hora.</div></div></div>';
+  // estado publicado
+  html+='<div class="card"><div class="card-h">Matriz publicada</div>';
+  if(!P.actualLoaded) html+='<div class="card-hs">Consultando…</div>';
+  else if(P.actual && P.actual.actualizado){
+    const n=Object.keys(P.actual.porSlug||{}).length;
+    html+='<div class="card-hs">Última actualización: <b>'+esc(P.actual.actualizado)+'</b> · fuente: '+esc(P.actual.fuente||'—')+' · <b>'+n+'</b> sucursales. Indicadores ya la usa para las metas individuales.</div>';
+  } else {
+    html+='<div class="card-hs">Todavía no hay matriz publicada — Indicadores usa la matriz de arranque (Excel PESOS TURNOS a julio 2026) hasta que publiques una.</div>';
+  }
+  html+='</div>';
+  // subir estadística
+  html+='<div class="card"><div class="card-h">Subir estadística de venta</div>'
+    +'<div class="card-hs">Excel con la venta en $ por <b>sucursal × hora × día</b> (como la hoja "Datos actualizados" del PESOS TURNOS: columnas Sucursal · Hora · Lu…Do). Turno 1 = 9-13 · Turno 2 = 13-16 · Turno 3 = 16-20, con el mismo corte de filas que el Excel. Se procesa en tu navegador.</div>'
+    +'<div class="drop" id="pesosDrop"><div class="ic">⏱</div><div class="t">Arrastrá acá el Excel o hacé clic para elegir</div>'
+    +'<div class="s">.xlsx — se procesa localmente</div></div>'
+    +'<input type="file" id="pesosFile" accept=".xlsx,.xls" style="display:none">';
+  if(P.archivo) html+='<div style="margin-top:12px"><span class="filechip"><span class="ok">✓</span> '+esc(P.archivo)+'</span></div>';
+  html+='</div>';
+  // preview + guardar
+  if(P.porSlug){
+    const slugs=Object.keys(P.porSlug);
+    html+='<div class="card"><div class="card-h">Revisá y publicá</div>'
+      +'<div class="card-hs"><b>'+slugs.length+'</b> sucursales detectadas. El total por turno debe rondar lo que ya conocés (T2+T3 pesan más que T1; el sábado es el día fuerte). Cada matriz suma 100%.</div>'
+      +'<div class="tbl-wrap"><table><thead><tr><th>Sucursal</th><th class="num">Turno 1</th><th class="num">Turno 2</th><th class="num">Turno 3</th><th class="num">Sáb (día pico)</th><th class="num">Suma</th></tr></thead><tbody>'
+      +slugs.map(sl=>{
+        const p=P.porSlug[sl], st=SLUG_STORE[sl];
+        const tt=t=>p[t].reduce((a,x)=>a+x,0);
+        const sab=p.t1[5]+p.t2[5]+p.t3[5];
+        const suma=tt('t1')+tt('t2')+tt('t3');
+        return '<tr><td>'+esc(st?st.nombre:sl)+'</td><td class="num">'+tt('t1').toFixed(1)+'%</td><td class="num">'+tt('t2').toFixed(1)+'%</td>'
+          +'<td class="num">'+tt('t3').toFixed(1)+'%</td><td class="num">'+sab.toFixed(1)+'%</td>'
+          +'<td class="num" style="color:'+(Math.abs(suma-100)<1?'var(--ok,#1c9d55)':'var(--bad,#c0261f)')+'">'+suma.toFixed(1)+'%</td></tr>';
+      }).join('')
+      +'</tbody></table></div>'
+      +'<div style="display:flex;gap:10px;margin-top:16px"><button class="btn btn-primary" id="btnPesosGuardar">💾 Publicar matriz</button>'
+      +'<button class="btn btn-outline" id="btnPesosCancelar">Cancelar</button></div></div>';
+  }
+  return html;
+}
+
+async function cargarPesosActual(){
+  if(state.pesos.actualLoaded) return;
+  try{ state.pesos.actual = await fbGet(ROOT+'/pesosTurnos'); }
+  catch(e){ state.pesos.actual = null; }
+  state.pesos.actualLoaded = true;
+  if(state.tab==='pesos') render();
+}
+
+function wirePesos(){
+  cargarPesosActual();
+  const drop=$('pesosDrop'), input=$('pesosFile');
+  const leer=async files=>{
+    const f=[...files].filter(x=>/\.xlsx?$/i.test(x.name))[0];
+    if(!f){ toast('Subí un archivo .xlsx','err'); return; }
+    try{
+      toast('Leyendo Excel…');
+      const buf=await f.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      let porSlug=null;
+      for(const name of wb.SheetNames){
+        const m=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,defval:''});
+        porSlug=parsePesosStat(m); if(porSlug) break;
+      }
+      if(!porSlug){ toast('No encontré la tabla Sucursal × Hora × días en el Excel','err'); return; }
+      state.pesos.porSlug=porSlug; state.pesos.archivo=f.name;
+      render();
+      toast('Estadística leída — revisá los pesos','ok');
+    }catch(err){ console.error(err); toast(err.message||'No pude leer el archivo','err'); }
+  };
+  if(drop){
+    drop.onclick=()=>input.click();
+    drop.ondragover=e=>{e.preventDefault();drop.classList.add('over');};
+    drop.ondragleave=()=>drop.classList.remove('over');
+    drop.ondrop=async e=>{ e.preventDefault();drop.classList.remove('over'); await leer(e.dataTransfer.files); };
+  }
+  if(input) input.onchange=async e=>{ await leer(e.target.files); input.value=''; };
+  const bg=$('btnPesosGuardar'); if(bg) bg.onclick=guardarPesos;
+  const bc=$('btnPesosCancelar'); if(bc) bc.onclick=()=>{ state.pesos.porSlug=null; state.pesos.archivo=null; render(); };
+}
+
+async function guardarPesos(){
+  const P=state.pesos;
+  if(!P.porSlug) return;
+  try{
+    toast('Publicando…');
+    const payload={ actualizado:nowISO(), fuente:P.archivo||'', por:(SESSION.email||''), porSlug:P.porSlug };
+    await fbPut(ROOT+'/pesosTurnos', payload);
+    P.actual=payload; P.actualLoaded=true; P.porSlug=null; P.archivo=null;
+    render();
+    toast('Matriz de pesos publicada ✓ — Indicadores ya la usa','ok');
+  }catch(err){ console.error(err); toast('No pude publicar: '+(err.message||''),'err'); }
+}
+
 function wire(){
   $('whoName').textContent = SESSION.email||'—';
   $('whoRole').textContent = SESSION.rol||'';
@@ -601,6 +773,7 @@ function wire(){
   if(state.tab==='cargar')     wireCargar();
   if(state.tab==='dashboard')  wireDashboard();
   if(state.tab==='historico')  wireHistorico();
+  if(state.tab==='pesos')      wirePesos();
 }
 
 function wireCargar(){
