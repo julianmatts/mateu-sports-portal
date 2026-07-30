@@ -1380,7 +1380,8 @@ function fetchVentaEquipo(slug, sem){
 }
 async function saveVentaEquipo(slug, sem, data){
   const base=OBJETIVOS_URL.replace(/\/+$/,'');
-  const payload={semana:sem, actualizado:new Date().toISOString(), por:(SESSION.email||''), vendedores:data.vendedores, total:data.total};
+  const payload={semana:sem, actualizado:new Date().toISOString(), por:(SESSION.email||''), vendedores:data.vendedores, total:data.total,
+    metaTienda:data.metaTienda||0, minimoTienda:data.minimoTienda||0};
   const r=await fetch(base+'/ventaEquipo/'+encodeURIComponent(slug)+'/'+encodeURIComponent(sem)+'.json',{method:'PUT',body:JSON.stringify(payload)});
   if(!r.ok) throw new Error('No se pudo guardar');
   delete _veCache[slug+'|'+sem];
@@ -1390,6 +1391,105 @@ async function saveVentaEquipo(slug, sem, data){
 function veNum(v){ if(typeof v==='number') return v;
   const s=String(v==null?'':v).replace(/[^\d.,-]/g,'').replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.');
   const n=parseFloat(s); return isFinite(n)?n:0; }
+const veStr = v => String(v==null?'':v).trim();
+/* Parser del template "PMS semana NN <SUC> REAL.xls" que comparten las sucursales los lunes.
+   Hoja "PMS(H)" = resumen semanal por vendedor: horas de venta reales, mínimo/meta
+   INDIVIDUAL (según las horas asignadas por rol en REAL), venta semanal y % de meta. */
+function veParsePMS(wb, X){
+  const shName = wb.SheetNames.find(n=>/pms\s*\(?\s*h\s*\)?/i.test(n));
+  if(!shName) return null;
+  const m = X.utils.sheet_to_json(wb.Sheets[shName], {header:1, blankrows:false, defval:''});
+  // fila de encabezado: la que dice "Venta Semanal"
+  let hr=-1, vsCol=-1;
+  for(let i=0;i<Math.min(m.length,12);i++){
+    const j=(m[i]||[]).findIndex(c=>/venta\s*semanal/i.test(veStr(c)));
+    if(j>=0){ hr=i; vsCol=j; break; }
+  }
+  if(hr<0) return null;
+  const hdr=m[hr]||[], sub=m[hr+1]||[];
+  const pctCol = hdr.findIndex(c=>/%\s*meta/i.test(veStr(c)));
+  const realCol = hdr.findIndex(c=>/^real$/i.test(veStr(c)));
+  const vendCol = hdr.findIndex(c=>/vendedor/i.test(veStr(c)));
+  if(realCol<0 || vendCol<0) return null;
+  // dentro del bloque Real: Horas Prop. está bajo "Real"; Mínimo/Meta individuales después
+  let iMin=-1, iMet=-1;
+  for(let j=realCol;j<vsCol;j++){
+    const s=veStr(sub[j]);
+    if(/m[ií]nimo/i.test(s)) iMin=j; else if(/^meta$/i.test(s)) iMet=j;
+  }
+  // meta/mínimo de la tienda + semana (serial Excel) del encabezado del archivo
+  let metaT=0, minT=0, semArchivo='';
+  for(let i=0;i<Math.min(m.length,4);i++) (m[i]||[]).forEach((c,j)=>{
+    const s=veStr(c);
+    if(/^m[ií]nimo/i.test(s) && veNum(m[i][j+1])>0) minT=veNum(m[i][j+1]);
+    else if(/^meta/i.test(s) && veNum(m[i][j+1])>0) metaT=veNum(m[i][j+1]);
+    else if(/^semana/i.test(s)){ const ser=veNum(m[i][j+1]);
+      if(ser>40000 && ser<60000) semArchivo=new Date(Date.UTC(1899,11,30)+ser*86400000).toISOString().slice(0,10); }
+  });
+  const out=[]; let tot=null;
+  for(let i=hr+2;i<m.length;i++){
+    const row=m[i]||[];
+    if(/totales/i.test(veStr(row[vendCol]))){ tot=row; break; }
+    // el nombre está en la col siguiente a "Vendedor" (celdas combinadas en el hdr)
+    let nombre=veStr(row[vendCol+1]);
+    if(!nombre || !isNaN(Number(nombre))) nombre='';
+    if(!nombre) continue;
+    const venta=veNum(row[vsCol]), horas=veNum(row[realCol]);
+    const nota=pctCol>=0?veStr(row[pctCol+1]):'';
+    if(!venta && !horas && !nota) continue;   // fila vacía; con nota (VAC…) sí se muestra
+    out.push({nombre, venta, horas,
+      minimo: iMin>=0?veNum(row[iMin]):0,
+      meta:   iMet>=0?veNum(row[iMet]):0,
+      pct:    pctCol>=0?veNum(row[pctCol]):0,
+      nota});
+  }
+  if(!out.length) return null;
+  const total={ venta: tot?veNum(tot[vsCol]):out.reduce((a,x)=>a+x.venta,0),
+                horas: tot?veNum(tot[realCol]):out.reduce((a,x)=>a+x.horas,0),
+                tickets:0, unidades:0 };
+  return {vendedores:out, total, metaTienda:metaT, minimoTienda:minT, semArchivo};
+}
+/* Hoja "REAL" del mismo template: bloques de 12 filas por empleado con horas de venta
+   y venta por día → detalle diario desplegable por vendedor. */
+function veParseDias(wb, X){
+  const shName = wb.SheetNames.find(n=>/^real$/i.test(veStr(n)));
+  if(!shName) return null;
+  const m=X.utils.sheet_to_json(wb.Sheets[shName],{header:1,blankrows:false,defval:''});
+  // etiquetas de los días ("Lun\n20/07"…): la primera fila que arranca con Lun
+  let dias=null;
+  for(let i=0;i<Math.min(m.length,8) && !dias;i++){
+    const row=m[i]||[];
+    for(let j=0;j<row.length;j++){
+      if(/^lun/i.test(veStr(row[j]))){
+        dias=[];
+        for(let k=j;k<row.length;k++){ const t=veStr(row[k]).replace(/\s+/g,' ');
+          if(/^(lun|mar|mie|jue|vie|sab|dom)/i.test(t)) dias.push({col:k,lbl:t});
+          else if(dias.length) break; }
+        break;
+      }
+    }
+  }
+  if(!dias || !dias.length) return null;
+  const out={};
+  for(let i=0;i<m.length;i++){
+    const row=m[i]||[];
+    const nombre=veStr(row[2]);
+    // cabecera de bloque: [1, <código numérico>, "Nombre"]
+    if(veNum(row[0])===1 && nombre && isNaN(Number(nombre)) && row[1]!=='' && !isNaN(Number(row[1])) && !/totales/i.test(nombre)){
+      let hRow=null, vRow=null;
+      for(let k=i+1;k<Math.min(i+14,m.length);k++){
+        const lbl=veStr((m[k]||[])[1]).toLowerCase();
+        if(lbl==='horas') hRow=m[k];
+        else if(/ventas\s*totales/.test(lbl)){ vRow=m[k]; break; }
+      }
+      if(vRow){
+        const d=dias.map(x=>({d:x.lbl, v:veNum(vRow[x.col]), h:hRow?veNum(hRow[x.col]):0})).filter(x=>x.v||x.h);
+        if(d.length) out[nombre]=d;
+      }
+    }
+  }
+  return out;
+}
 // parsea la matriz del Excel: autodetecta la fila de encabezado y las columnas
 function veParse(matrix){
   const norm=s=>String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
@@ -1421,7 +1521,9 @@ function veParse(matrix){
   const total={ venta:out.reduce((a,x)=>a+x.venta,0), tickets:out.reduce((a,x)=>a+x.tickets,0), unidades:out.reduce((a,x)=>a+x.unidades,0) };
   return {vendedores:out, total};
 }
-// HTML del detalle del equipo (ranking + avance vs meta + tickets/UPT/ticket prom si vienen)
+// HTML del detalle del equipo. Dos variantes según lo que traiga el Excel:
+// PMS: horas de venta + meta individual + % de meta (+ detalle diario desplegable).
+// Genérico: tickets/UPT/ticket prom. si vienen.
 function veDetailHtml(ve, metaVal){
   if(!ve || !ve.vendedores || !ve.vendedores.length)
     return '<p class="empty" style="margin:4px 0 2px">Todavía no cargaste la venta por vendedor de esta semana.</p>';
@@ -1429,35 +1531,67 @@ function veDetailHtml(ve, metaVal){
   const totV=(ve.total&&ve.total.venta)||vs.reduce((a,x)=>a+(x.venta||0),0);
   const totT=(ve.total&&ve.total.tickets)||vs.reduce((a,x)=>a+(x.tickets||0),0);
   const hayTk=vs.some(x=>x.tickets>0), hayUn=vs.some(x=>x.unidades>0);
+  const hayMeta=vs.some(x=>x.meta>0), hayDias=vs.some(x=>x.dias&&x.dias.length);
+  const pctCol = p => p>=1?'var(--ok,#16a34a)':p>=1/1.2?'#d97706':'#dc2626';
+  const metaRef = metaVal || ve.metaTienda || 0;
   let h='';
-  if(metaVal){ const pct=totV/metaVal, w=Math.min(100,Math.round(pct*100));
-    const col=pct>=1?'var(--ok,#16a34a)':pct>=1/1.2?'#d97706':'#dc2626';
+  if(metaRef){ const pct=totV/metaRef, w=Math.min(100,Math.round(pct*100)), col=pctCol(pct);
     h+='<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:2px 0 6px">'
       +'<div style="font-size:13px;color:var(--mid)">Equipo esta semana: <b style="color:'+col+'">'+objMoney(totV)+'</b> · '+Math.round(pct*100)+'% de la meta</div></div>'
       +'<div style="position:relative;height:8px;background:#eef0f7;border-radius:5px;overflow:hidden;margin:0 0 14px">'
       +'<i style="position:absolute;left:0;top:0;bottom:0;border-radius:5px;width:'+w+'%;background:'+col+';display:block"></i></div>';
   }
-  h+='<div class="tbl-wrap"><table><thead><tr><th class="L">Vendedor</th><th>Venta</th><th>Participación</th>';
+  h+='<div class="tbl-wrap"><table><thead><tr><th class="L">Vendedor</th>';
+  if(hayMeta) h+='<th>Horas venta</th><th>Su meta</th>';
+  h+='<th>Venta</th>';
+  if(hayMeta) h+='<th>% de su meta</th>';
+  h+='<th>Participación</th>';
   if(hayTk) h+='<th>Tickets</th>';
   if(hayTk&&hayUn) h+='<th>UPT</th>';
   if(hayTk) h+='<th>Ticket prom.</th>';
   h+='</tr></thead><tbody>';
-  vs.forEach(x=>{
+  const nCols = 2 + (hayMeta?3:0) + (hayTk?2:0) + (hayTk&&hayUn?1:0);
+  vs.forEach((x,i)=>{
     const part=totV?x.venta/totV:0, w=Math.round(part*100);
     const upt=x.tickets?x.unidades/x.tickets:null, tp=x.tickets?x.venta/x.tickets:null;
-    h+='<tr><td class="L">'+esc(x.nombre)+'</td><td>'+objMoney(x.venta)+'</td>'
-      +'<td><div style="display:flex;align-items:center;gap:8px;justify-content:flex-end"><span style="font-variant-numeric:tabular-nums">'+w+'%</span>'
+    const conDias = x.dias && x.dias.length;
+    const pctInd = x.pct || (x.meta?x.venta/x.meta:0);
+    h+='<tr'+(conDias?' class="vetr" style="cursor:pointer" title="Clic para ver el día a día"':'')+'>'
+      +'<td class="L">'+(conDias?'<span class="caret">▸</span>':'')+esc(x.nombre)
+      +(x.nota?' <span class="tag cover">'+esc(x.nota)+'</span>':'')+'</td>';
+    if(hayMeta) h+='<td>'+(x.horas?fmt2(x.horas)+' h':'—')+'</td><td>'+(x.meta?objMoney(x.meta):'—')+'</td>';
+    h+='<td><b>'+objMoney(x.venta)+'</b></td>';
+    if(hayMeta) h+='<td>'+(x.meta?'<b style="color:'+pctCol(pctInd)+'">'+Math.round(pctInd*100)+'%</b>':'—')+'</td>';
+    h+='<td><div style="display:flex;align-items:center;gap:8px;justify-content:flex-end"><span style="font-variant-numeric:tabular-nums">'+w+'%</span>'
       +'<span style="display:inline-block;width:60px;height:6px;background:#eef0f7;border-radius:4px;overflow:hidden"><i style="display:block;height:100%;width:'+w+'%;background:var(--red)"></i></span></div></td>';
     if(hayTk) h+='<td>'+fmtN(x.tickets||0)+'</td>';
     if(hayTk&&hayUn) h+='<td>'+(upt!=null?fmt2(upt):'—')+'</td>';
     if(hayTk) h+='<td>'+(tp!=null?objMoney(tp):'—')+'</td>';
     h+='</tr>';
+    if(conDias){
+      // fila oculta con el día a día (venta + horas de venta por día)
+      h+='<tr class="vedias" style="display:none"><td colspan="'+nCols+'" class="L" style="background:#f8f9fe;padding:8px 14px 12px">'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+        +x.dias.map(d=>'<div style="border:1px solid var(--border,#e6ebf5);border-radius:8px;padding:6px 10px;background:#fff;min-width:86px">'
+          +'<div style="font-family:var(--font-c,inherit);font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted,#6B7A99)">'+esc(d.d)+'</div>'
+          +'<div style="font-size:13px;font-weight:700;margin-top:1px">'+objMoney(d.v)+'</div>'
+          +'<div style="font-size:11px;color:var(--muted,#6B7A99)">'+(d.h?fmt2(d.h)+' h venta':'—')+'</div></div>').join('')
+        +'</div></td></tr>';
+    }
   });
-  h+='<tr class="team"><td class="L">Total equipo</td><td>'+objMoney(totV)+'</td><td>100%</td>';
+  h+='<tr class="team" style="cursor:default"><td class="L">Total equipo</td>';
+  if(hayMeta){ const hTot=(ve.total&&ve.total.horas)||vs.reduce((a,x)=>a+(x.horas||0),0);
+    const pctTot = metaRef?totV/metaRef:0;
+    h+='<td>'+fmt2(hTot)+' h</td><td>'+(metaRef?objMoney(metaRef):'—')+'</td><td>'+objMoney(totV)+'</td>'
+      +'<td>'+(metaRef?'<b style="color:'+pctCol(pctTot)+'">'+Math.round(pctTot*100)+'%</b>':'—')+'</td><td>100%</td>';
+  } else {
+    h+='<td>'+objMoney(totV)+'</td><td>100%</td>';
+  }
   if(hayTk) h+='<td>'+fmtN(totT)+'</td>';
   if(hayTk&&hayUn){ const u=vs.reduce((a,x)=>a+(x.unidades||0),0); h+='<td>'+(totT?fmt2(u/totT):'—')+'</td>'; }
   if(hayTk) h+='<td>'+(totT?objMoney(totV/totT):'—')+'</td>';
   h+='</tr></tbody></table></div>';
+  if(hayDias) h+='<p class="hint" style="margin-top:8px">Clic en un vendedor para desplegar su día a día.</p>';
   return h;
 }
 // bloque desplegable "cómo viene el equipo" dentro del card de Objetivo
@@ -1471,8 +1605,12 @@ function veSectionHtml(slug, sem, metaVal, ve){
   else if(hayDato) sum += ' · '+nV+' vendedor'+(nV===1?'':'es')+(actu?' · '+actu:'');
   let body;
   if(prev){
+    // aviso si la semana del archivo no coincide con la semana elegida
+    const otraSemana = prev.data.semArchivo && prev.data.semArchivo!==sem;
     body = '<div style="background:var(--mid-bg,#fdf3e3);border:1px solid #f0d8a8;border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:13px">'
-      + 'Revisá los datos leídos de <b>'+esc(prev.fileName)+'</b> ('+prev.data.vendedores.length+' vendedores). Si está bien, guardá.</div>'
+      + 'Revisá los datos leídos de <b>'+esc(prev.fileName)+'</b> ('+prev.data.vendedores.length+' vendedores). Si está bien, guardá.'
+      + (otraSemana?'<br>⚠️ <b>Ojo:</b> el archivo es de la semana del <b>'+esc(objSemLbl(prev.data.semArchivo))+'</b> y estás guardando en la del <b>'+esc(objSemLbl(sem))+'</b>.':'')
+      + '</div>'
       + veDetailHtml(prev.data, metaVal)
       + '<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="veSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">Guardar</button>'
       + '<button type="button" id="veCancel" class="tb-btn">Cancelar</button></div>';
@@ -1541,6 +1679,13 @@ async function renderObjetivo(){
   const up=$('veUpload'); if(up) up.onclick = ()=> $('veFile').click();
   const sv=$('veSave'); if(sv) sv.onclick = veGuardar;
   const cn=$('veCancel'); if(cn) cn.onclick = ()=>{ _vePreview=null; renderObjetivo(); };
+  // desplegar el día a día de un vendedor
+  $('objetivoCard').querySelectorAll('tr.vetr').forEach(tr=>tr.onclick=()=>{
+    const nx=tr.nextElementSibling; if(!nx||!nx.classList.contains('vedias')) return;
+    const abierto=nx.style.display!=='none';
+    nx.style.display=abierto?'none':'';
+    const c=tr.querySelector('.caret'); if(c) c.textContent=abierto?'▸':'▾';
+  });
   sec.style.display='';
 }
 // leer el Excel elegido → previsualizar
@@ -1552,11 +1697,17 @@ async function veArchivo(file){
     const XLSX=await loadXLSX();
     const buf=await file.arrayBuffer();
     const wb=XLSX.read(buf,{type:'array'});
-    // toma la primera hoja con datos reconocibles
-    let data=null;
-    for(const name of wb.SheetNames){
-      const m=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,defval:''});
-      data=veParse(m); if(data) break;
+    // 1º el template PMS semanal de las sucursales (hoja PMS(H) + detalle diario de REAL)
+    let data=veParsePMS(wb, XLSX);
+    if(data){
+      const dias=veParseDias(wb, XLSX);
+      if(dias) data.vendedores.forEach(v=>{ if(dias[v.nombre]) v.dias=dias[v.nombre]; });
+    } else {
+      // genérico: la primera hoja con columnas reconocibles (vendedor + venta)
+      for(const name of wb.SheetNames){
+        const m=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,defval:''});
+        data=veParse(m); if(data) break;
+      }
     }
     if(!data){ alert('No pude reconocer las columnas (vendedor y venta) en el Excel. Revisá que tenga esos encabezados.'); return; }
     _vePreview={slug, sem, data, fileName:file.name};
