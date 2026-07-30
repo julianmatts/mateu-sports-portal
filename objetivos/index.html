@@ -113,6 +113,9 @@ td .gn:focus{outline:none;border-color:var(--navy-mid)}
 .pill.bad{background:#fef2f2;color:#b91c1c}
 .pill.na{background:#f1f4fa;color:var(--muted-light)}
 .grp-total{background:#eef2fb;font-family:var(--font-c);font-weight:700;color:var(--navy-mid)}
+tfoot .gtot td{background:#eef2fb;font-weight:800;color:var(--navy);border-top:2px solid var(--navy-mid);
+  font-variant-numeric:tabular-nums;position:sticky;bottom:0}
+tfoot .gtot td:first-child{font-family:var(--font-c);letter-spacing:1px}
 
 /* barra de cumplimiento */
 .bar{position:relative;height:8px;background:#eef0f7;border-radius:6px;overflow:hidden;min-width:90px}
@@ -499,7 +502,8 @@ function viewCargar(){
     +'<div class="card-hs">Editá la <b>Meta</b> (el objetivo) de cada sucursal; Mínimo (÷1,2) y 120 (×1,2) se calculan solos. La <b>Venta real</b> la completo solo desde la hoja <b>HISTÓRICO</b> del Excel cuando la semana cierra (al guardar, también actualizo el real de las semanas anteriores). <b>'+nCargadas()+'</b> de '+STORES.length+' con meta cargada.</div>'
     +'<div class="tbl-wrap"><table><thead><tr>'
     +'<th>Sucursal</th><th class="num">Meta</th><th class="num">Mínimo ÷1,2</th><th class="num">120 ×1,2</th><th class="num">Venta real</th><th>Nota</th>'
-    +'</tr></thead><tbody id="gridBody">'+gridRows()+'</tbody></table></div>';
+    +'</tr></thead><tbody id="gridBody">'+gridRows()+'</tbody>'
+    +'<tfoot>'+gridTotales()+'</tfoot></table></div>';
   html+='<div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">'
     +'<button class="btn btn-primary" id="btnGuardar">💾 Guardar y publicar</button>'
     +'<button class="btn btn-outline" id="btnLimpiar">Limpiar grilla</button>'
@@ -507,6 +511,31 @@ function viewCargar(){
     +'</div>';
   html+='</div>';
   return html;
+}
+// Totales por columna (para control rápido). Se recalculan en vivo al editar.
+function totalesGrid(){
+  let m=0, mn=0, s=0, r=0;
+  STORES.forEach(x=>{
+    const f=state.filas[x.slug]; if(!f) return;
+    if(f.meta>0){ m+=f.meta; mn+=r0(f.meta*F_MIN); s+=r0(f.meta*F_120); }
+    if(f.real>0) r+=f.real;
+  });
+  return {m, mn, s, r};
+}
+function gridTotales(){
+  const t=totalesGrid();
+  return '<tr class="gtot">'
+    +'<td>TOTAL</td>'
+    +'<td class="num" id="totMeta">'+fmtMoney(t.m)+'</td>'
+    +'<td class="num" id="totMin">'+fmtMoney(t.mn)+'</td>'
+    +'<td class="num" id="totS120">'+fmtMoney(t.s)+'</td>'
+    +'<td class="num" id="totReal">'+(t.r?fmtMoney(t.r):'—')+'</td>'
+    +'<td></td></tr>';
+}
+function refrescarTotales(){
+  const t=totalesGrid();
+  const set=(id,v)=>{ const el=$(id); if(el) el.textContent=v; };
+  set('totMeta', fmtMoney(t.m)); set('totMin', fmtMoney(t.mn)); set('totS120', fmtMoney(t.s)); set('totReal', t.r?fmtMoney(t.r):'—');
 }
 function gridRows(){
   return STORES.map(s=>{
@@ -801,6 +830,7 @@ function wireCargar(){
         tr.querySelector('[data-der="min"]').textContent = v?fmtMoney(r0(v*F_MIN)):'—';
         tr.querySelector('[data-der="s120"]').textContent = v?fmtMoney(r0(v*F_120)):'—';
       }
+      if(k==='meta'||k==='real') refrescarTotales();
     });
   }
   const bg=$('btnGuardar'); if(bg) bg.onclick=guardar;
