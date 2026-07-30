@@ -564,24 +564,32 @@ function viewDashboard(){
   const d = state.dashData;
   if(!d){ return html+'<div class="state"><div class="spinner"></div>Cargando semana…</div>'; }
 
+  const UMBRAL_DIF = 5;   // % de diferencia encargado vs oficial para marcar
+  const enc = state.dashEnc || {};
   const rows = STORES.map(s=>{
     const v = (d.porSlug&&d.porSlug[s.slug])||null;
     if(!v || !(v.meta>0)) return null;
-    const est = estadoCumpl(v.meta, v.real);
-    return {s, meta:v.meta, minimo:v.minimo||r0(v.meta*F_MIN), s120:v.s120||r0(v.meta*F_120), real:v.real||0, nota:v.nota||'', est};
+    const realOf=v.real||0, realEnc=enc[s.slug]||0;
+    const usaOf=realOf>0, real=usaOf?realOf:realEnc, provisorio=!usaOf&&realEnc>0;
+    const dif=(usaOf&&realEnc>0)?(realEnc-realOf):0, difPct=(usaOf&&realOf)?(dif/realOf*100):0;
+    const est=estadoCumpl(v.meta, real);
+    return {s, meta:v.meta, minimo:v.minimo||r0(v.meta*F_MIN), s120:v.s120||r0(v.meta*F_120),
+      real, realOf, realEnc, usaOf, provisorio, dif, difPct, nota:v.nota||'', est};
   }).filter(Boolean);
 
   const totMeta = rows.reduce((a,r)=>a+r.meta,0);
   const totReal = rows.reduce((a,r)=>a+r.real,0);
+  const hayProv = rows.some(r=>r.provisorio);
   const cumplen = rows.filter(r=>r.real>=r.meta).length;
   const totEst = estadoCumpl(totMeta, totReal);
 
   html+='<div class="kpis">'
     +'<div class="kpi meta"><div class="k">Meta cadena</div><div class="v">'+fmtMoney(totMeta)+'</div></div>'
-    +'<div class="kpi real"><div class="k">Venta real</div><div class="v">'+(totReal?fmtMoney(totReal):'<small>sin cargar</small>')+'</div></div>'
+    +'<div class="kpi real"><div class="k">Venta'+(hayProv?' (parcial)':'')+'</div><div class="v">'+(totReal?fmtMoney(totReal):'<small>sin cargar</small>')+'</div></div>'
     +'<div class="kpi cum"><div class="k">Cumplimiento</div><div class="v">'+(totReal?totEst.label:'—')+'</div></div>'
     +'<div class="kpi"><div class="k">Sucursales que llegan</div><div class="v">'+cumplen+' <small>/ '+rows.length+'</small></div></div>'
     +'</div>';
+  if(hayProv) html+='<div class="banner info" style="margin-bottom:14px">La venta marcada <b>«prov»</b> es la que reportó el <b>encargado</b> durante la semana (todavía sin el real oficial). Al subir el Excel del lunes, HISTÓRICO la reemplaza por el real y calcula la diferencia.</div>';
 
   // orden
   const sk=state.dashSort;
@@ -595,19 +603,29 @@ function viewDashboard(){
     +'<th class="num">Mínimo</th><th class="num">120</th>'
     +'<th class="num" data-sort="real" style="cursor:pointer">Real'+arrow('real')+'</th>'
     +'<th class="num" data-sort="cumpl" style="cursor:pointer">Cumpl.'+arrow('cumpl')+'</th>'
+    +'<th class="num">vs encargado</th>'
     +'<th>Avance</th></tr></thead><tbody>';
   rows.forEach(r=>{
     const w=Math.min(100, Math.round(r.est.pct*100));
+    const realCell = r.real
+      ? fmtMoney(r.real)+(r.provisorio?' <span class="pill warn" title="Venta reportada por el encargado, aún sin real oficial">prov</span>':'')
+      : '—';
+    let vsCell='—';
+    if(r.usaOf && r.realEnc>0){
+      const al=Math.abs(r.difPct)>UMBRAL_DIF, sg=r.dif>=0?'+':'−';
+      vsCell='<span style="color:'+(al?'var(--bad,#dc2626)':'var(--muted)')+'">'+(al?'⚠ ':'')+sg+Math.abs(r.difPct).toFixed(1)+'%</span>';
+    } else if(r.provisorio){ vsCell='<span class="pill warn">prov</span>'; }
     html+='<tr><td class="sucn"><span class="pfx">'+r.s.pfx+'</span>'+esc(r.s.nombre)+(r.nota?' <span class="pill na" title="'+esc(r.nota)+'">nota</span>':'')+'</td>'
       +'<td class="num mono">'+fmtMoney(r.meta)+'</td>'
       +'<td class="num mono der">'+fmtMoney(r.minimo)+'</td>'
       +'<td class="num mono der">'+fmtMoney(r.s120)+'</td>'
-      +'<td class="num mono">'+(r.real?fmtMoney(r.real):'—')+'</td>'
+      +'<td class="num mono">'+realCell+'</td>'
       +'<td class="num"><span class="pill '+r.est.cls+'">'+r.est.label+'</span></td>'
+      +'<td class="num">'+vsCell+'</td>'
       +'<td><div class="bar '+(r.est.cls==='ok'?'':r.est.cls)+'"><i style="width:'+w+'%"></i></div></td></tr>';
   });
   html+='<tr class="grp-total"><td>TOTAL CADENA</td><td class="num mono">'+fmtMoney(totMeta)+'</td><td></td><td></td>'
-    +'<td class="num mono">'+(totReal?fmtMoney(totReal):'—')+'</td><td class="num">'+(totReal?'<span class="pill '+totEst.cls+'">'+totEst.label+'</span>':'—')+'</td><td></td></tr>';
+    +'<td class="num mono">'+(totReal?fmtMoney(totReal):'—')+'</td><td class="num">'+(totReal?'<span class="pill '+totEst.cls+'">'+totEst.label+'</span>':'—')+'</td><td></td><td></td></tr>';
   html+='</tbody></table></div>';
   return html;
 }
@@ -909,9 +927,16 @@ function wireDashboard(){
   if(!state.dashWeek && state.histKeys.length){ abrirDash(state.histKeys.slice().sort().reverse()[0]); }
 }
 async function abrirDash(sem){
-  state.dashWeek=sem; state.dashData=null; render();
+  state.dashWeek=sem; state.dashData=null; state.dashEnc={}; render();
   try{ const d=await fbGet(ROOT+'/semanas/'+sem); state.dashData=d||{porSlug:{}}; }
   catch(e){ state.dashData={porSlug:{}}; toast('No pude leer la semana','err'); }
+  // venta reportada por el encargado durante la semana (provisorio): ventaEquipo/<slug>/<sem>
+  try{
+    const ve=await fbGet('ventaEquipo');   // {slug:{sem:{total,…}}}
+    const enc={};
+    if(ve) STORES.forEach(s=>{ const t=ve[s.slug]&&ve[s.slug][sem]&&ve[s.slug][sem].total; if(t>0) enc[s.slug]=r0(t); });
+    state.dashEnc=enc;
+  }catch(e){ state.dashEnc={}; }
   if(state.tab==='dashboard') render();
 }
 
