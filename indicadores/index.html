@@ -1583,10 +1583,11 @@ function veParse(matrix){
 // HTML del detalle del equipo. Dos variantes según lo que traiga el Excel:
 // PMS: horas de venta + meta individual + % de meta (+ detalle diario desplegable).
 // Genérico: tickets/UPT/ticket prom. si vienen.
-function veDetailHtml(ve, metaVal){
+function veDetailHtml(ve, metaVal, prevVe){
   if(!ve || !ve.vendedores || !ve.vendedores.length)
     return '<p class="empty" style="margin:4px 0 2px">Todavía no cargaste la venta por vendedor de esta semana.</p>';
   const vs=ve.vendedores.slice().sort((a,b)=>(b.venta||0)-(a.venta||0));
+  const diasSet=eqDiasSet(ve), prevM=eqPrevMatcher(prevVe);
   const totV=(ve.total&&ve.total.venta)||vs.reduce((a,x)=>a+(x.venta||0),0);
   const totT=(ve.total&&ve.total.tickets)||vs.reduce((a,x)=>a+(x.tickets||0),0);
   const hayTk=vs.some(x=>x.tickets>0), hayUn=vs.some(x=>x.unidades>0);
@@ -1613,9 +1614,9 @@ function veDetailHtml(ve, metaVal){
   vs.forEach((x,i)=>{
     const part=totV?x.venta/totV:0, w=Math.round(part*100);
     const upt=x.tickets?x.unidades/x.tickets:null, tp=x.tickets?x.venta/x.tickets:null;
-    const conDias = x.dias && x.dias.length;
+    const conDias = (x.dias && x.dias.length) || x.venta>0;
     const pctInd = x.pct || (x.meta?x.venta/x.meta:0);
-    h+='<tr'+(conDias?' class="vetr" style="cursor:pointer" title="Clic para ver el día a día"':'')+'>'
+    h+='<tr'+(conDias?' class="vetr" style="cursor:pointer" title="Clic para ver KPIs y día a día"':'')+'>'
       +'<td class="L">'+(conDias?'<span class="caret">▸</span>':'')+esc(x.nombre)
       +(x.nota?' <span class="tag cover">'+esc(x.nota)+'</span>':'')+'</td>';
     if(hayMeta) h+='<td>'+(x.horas?fmt2(x.horas)+' h':'—')+'</td><td>'+(x.meta?objMoney(x.meta):'—')+'</td>';
@@ -1628,14 +1629,10 @@ function veDetailHtml(ve, metaVal){
     if(hayTk) h+='<td>'+(tp!=null?objMoney(tp):'—')+'</td>';
     h+='</tr>';
     if(conDias){
-      // fila oculta con el día a día (venta + horas de venta por día)
-      h+='<tr class="vedias" style="display:none"><td colspan="'+nCols+'" class="L" style="background:#f8f9fe;padding:8px 14px 12px">'
-        +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
-        +x.dias.map(d=>'<div style="border:1px solid var(--border,#e6ebf5);border-radius:8px;padding:6px 10px;background:#fff;min-width:86px">'
-          +'<div style="font-family:var(--font-c,inherit);font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted,#6B7A99)">'+esc(d.d)+'</div>'
-          +'<div style="font-size:13px;font-weight:700;margin-top:1px">'+objMoney(d.v)+'</div>'
-          +'<div style="font-size:11px;color:var(--muted,#6B7A99)">'+(d.h?fmt2(d.h)+' h venta':'—')+'</div></div>').join('')
-        +'</div></td></tr>';
+      // fila oculta: KPIs + comparativa vs semana anterior + insight + día a día
+      const notaMin = x.minimo>0 ? 'Mínimo: <b>'+objMoney(x.minimo)+'</b>'+(x.meta?' · Meta: <b>'+objMoney(x.meta)+'</b>':'') : null;
+      h+='<tr class="vedias" style="display:none"><td colspan="'+nCols+'" class="L" style="background:#f8f9fe;padding:10px 14px 12px">'
+        + eqDetalleHtml(x.nombre, x, prevM(x.nombre), diasSet, notaMin) + '</td></tr>';
     }
   });
   h+='<tr class="team" style="cursor:default"><td class="L">Total equipo</td>';
@@ -1650,7 +1647,7 @@ function veDetailHtml(ve, metaVal){
   if(hayTk&&hayUn){ const u=vs.reduce((a,x)=>a+(x.unidades||0),0); h+='<td>'+(totT?fmt2(u/totT):'—')+'</td>'; }
   if(hayTk) h+='<td>'+(totT?objMoney(totV/totT):'—')+'</td>';
   h+='</tr></tbody></table></div>';
-  if(hayDias) h+='<p class="hint" style="margin-top:8px">Clic en un vendedor para desplegar su día a día.</p>';
+  if(hayDias || vs.some(x=>x.venta>0)) h+='<p class="hint" style="margin-top:8px">Clic en un vendedor para ver sus KPIs, la comparativa con la semana pasada y su día a día.</p>';
   return h;
 }
 /* ============================================================
@@ -1765,23 +1762,27 @@ function eqMatchScore(a,b){
 }
 // real por persona: manual (payload.real) pisa el Excel subido (match por nombre).
 // `used` acumula los índices del Excel ya asignados (para listar los sobrantes).
+// Devuelve {monto, src, ix} — ix = índice del Excel matcheado (para KPIs/día a día).
 function eqRealDe(p, eqData, ve, used){
-  const k=eqKeyName(p.nombre);
-  if(eqData && eqData.real && eqData.real[k]>0) return {monto:eqData.real[k], src:'manual'};
+  let ix=-1;
   if(ve && ve.vendedores){
-    let best=-1, bestSc=0;
-    ve.vendedores.forEach((x,ix)=>{
-      if(used && used.has(ix)) return;
+    let bestSc=0;
+    ve.vendedores.forEach((x,i2)=>{
+      if(used && used.has(i2)) return;
       const sc=eqMatchScore(p.nombre, x.nombre);
-      if(sc>bestSc){ bestSc=sc; best=ix; }
+      if(sc>bestSc){ bestSc=sc; ix=i2; }
     });
-    if(best>=0 && ve.vendedores[best].venta>0){ if(used) used.add(best); return {monto:ve.vendedores[best].venta, src:'excel'}; }
+    if(ix>=0 && used) used.add(ix);
   }
-  return null;
+  let monto = (ix>=0 && ve.vendedores[ix].venta>0) ? ve.vendedores[ix].venta : 0;
+  let src = monto>0 ? 'excel' : null;
+  const k=eqKeyName(p.nombre);
+  if(eqData && eqData.real && eqData.real[k]>0){ monto=eqData.real[k]; src='manual'; }
+  return src ? {monto, src, ix} : (ix>=0 ? {monto:0, src:null, ix} : null);
 }
 
 // bloque desplegable "cómo viene el equipo" dentro del card de Objetivo
-function veSectionHtml(slug, sem, v, ve, eqData, pesos){
+function veSectionHtml(slug, sem, v, ve, eqData, pesos, prevVe){
   const metaVal=(v&&v.meta)||0;
   const prev = _vePreview && _vePreview.slug===slug && _vePreview.sem===sem ? _vePreview : null;
   const editando = _eqEdit && _eqEdit.slug===slug && _eqEdit.sem===sem;
@@ -1800,19 +1801,19 @@ function veSectionHtml(slug, sem, v, ve, eqData, pesos){
       + 'Revisá los datos leídos de <b>'+esc(prev.fileName)+'</b> ('+prev.data.vendedores.length+' vendedores). Si está bien, guardá.'
       + (otraSemana?'<br>⚠️ <b>Ojo:</b> el archivo es de la semana del <b>'+esc(objSemLbl(prev.data.semArchivo))+'</b> y estás guardando en la del <b>'+esc(objSemLbl(sem))+'</b>.':'')
       + '</div>'
-      + veDetailHtml(prev.data, metaVal)
+      + veDetailHtml(prev.data, metaVal, prevVe)
       + '<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="veSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">Guardar</button>'
       + '<button type="button" id="veCancel" class="tb-btn">Cancelar</button></div>';
   } else if(editando){
     body = eqEditorHtml();
   } else if(hayEquipo){
-    body = eqDistribHtml(slug, sem, v, ve, eqData, pesos);
+    body = eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe);
   } else {
     // sin equipo armado: invitación + (si hay) la tabla del Excel como antes
     body = '<div style="background:#f8f9fe;border:1px solid var(--border,#e6ebf5);border-radius:9px;padding:12px 14px;margin-bottom:12px;font-size:13.5px">'
       + '<b>Armá tu equipo de la semana</b> y asigná las horas de venta por turno: el portal reparte la meta de la sucursal entre las personas (igual que el PMS, sin Excel). Dentro del editor también podés <b>importar el Excel PMS</b> que ya venías usando (trae equipo y horas de la hoja REAL).'
       + '<div style="margin-top:10px"><button type="button" id="eqArmar" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">⚙ Armar equipo y horas</button></div></div>';
-    if(hayExcel) body += veDetailHtml(ve, metaVal);
+    if(hayExcel) body += veDetailHtml(ve, metaVal, prevVe);
     body += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">'
       + '<button type="button" id="veUpload" class="tb-btn">⇧ '+(hayExcel?'Actualizar':'Cargar')+' venta por vendedor (Excel)</button>'
       + '<span class="hint" style="margin:0">El Excel también sirve como venta real cuando el equipo está armado.</span></div>';
@@ -1822,8 +1823,91 @@ function veSectionHtml(slug, sem, v, ve, eqData, pesos){
     + '<div style="padding:12px 14px">'+body+'</div></details>';
 }
 
+/* --- KPIs por vendedor + comparativa vs semana anterior + insight --- */
+function eqKpisDe(x){
+  if(!x) return null;
+  const t=x.tickets||0;
+  return { venta:x.venta||0, tickets:t, upt:t?(x.unidades||0)/t:null, tp:t?(x.venta||0)/t:null };
+}
+// días presentes en la data de la semana actual ('lu','ma','mi'…) para comparar
+// la venta contra la semana anterior A LA MISMA ALTURA (si no, a mitad de semana
+// la comparación contra la semana completa daría siempre en contra)
+function eqDiasSet(ve){
+  const s=new Set();
+  (ve&&ve.vendedores||[]).forEach(x=>(x.dias||[]).forEach(d=>{ const p=eqNorm(String(d.d||'')).slice(0,2); if(p) s.add(p); }));
+  return s;
+}
+function eqVentaAltura(prevX, diasSet){
+  if(!prevX) return null;
+  if(!diasSet || !diasSet.size || !Array.isArray(prevX.dias) || !prevX.dias.length) return prevX.venta||null;
+  const s=prevX.dias.filter(d=>diasSet.has(eqNorm(String(d.d||'')).slice(0,2))).reduce((a,d)=>a+(d.v||0),0);
+  return s>0 ? s : (prevX.venta||null);
+}
+// matcher de la semana anterior (cada vendedor previo se asigna una sola vez)
+function eqPrevMatcher(prevVe){
+  const used=new Set();
+  return nombre=>{
+    if(!prevVe || !prevVe.vendedores) return null;
+    let best=-1, sc=0;
+    prevVe.vendedores.forEach((x,ix)=>{ if(used.has(ix)) return; const s=eqMatchScore(nombre, x.nombre); if(s>sc){ sc=s; best=ix; } });
+    if(best<0) return null;
+    used.add(best);
+    return prevVe.vendedores[best];
+  };
+}
+// contenido del desplegable por vendedor: KPIs con flechas vs. semana anterior,
+// insight a trabajar (o felicitación si mejoró en todo) y el día a día
+function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin){
+  let h='';
+  if(notaMin) h+='<div style="font-size:12px;color:var(--muted,#6B7A99);margin-bottom:8px">'+notaMin+'</div>';
+  if(!cur || !(cur.venta>0)){
+    h+='<p class="hint" style="margin:0">Todavía sin ventas registradas esta semana.</p>';
+    return h;
+  }
+  const k=eqKpisDe(cur), kp=eqKpisDe(prevX);
+  const pv=eqVentaAltura(prevX, diasSet);
+  const deltas=[];
+  const dVenta = (pv>0) ? k.venta/pv-1 : null; if(dVenta!=null) deltas.push(['venta',dVenta]);
+  const dUpt = (k.upt!=null && kp && kp.upt>0) ? k.upt/kp.upt-1 : null; if(dUpt!=null) deltas.push(['upt',dUpt]);
+  const dTp  = (k.tp!=null && kp && kp.tp>0) ? k.tp/kp.tp-1 : null; if(dTp!=null) deltas.push(['tp',dTp]);
+  const arrow=d=> d==null?'' : ' <b style="color:'+(d>=0?'var(--ok,#16a34a)':'#dc2626')+';font-size:11px">'+(d>=0?'▲':'▼')+(d>0?'+':'')+Math.round(d*100)+'%</b>';
+  const chip=(lbl,val,d)=>'<span style="border:1px solid var(--border,#e6ebf5);border-radius:8px;padding:5px 10px;background:#fff;font-size:12.5px;white-space:nowrap">'
+    +'<span style="font-family:var(--font-c,inherit);font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted,#6B7A99)">'+lbl+'</span> <b>'+val+'</b>'+arrow(d)+'</span>';
+  h+='<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px">'
+    + chip('Venta', objMoney(k.venta), dVenta)
+    + (k.tickets? chip('Tickets', fmtN(k.tickets), null):'')
+    + (k.upt!=null? chip('UPT', fmt2(k.upt), dUpt):'')
+    + (k.tp!=null? chip('Ticket prom.', objMoney(k.tp), dTp):'')
+    + '</div>';
+  let ins;
+  if(!prevX) ins='Sin datos de la semana anterior para comparar.';
+  else if(!deltas.length) ins='La semana anterior no tiene indicadores comparables.';
+  else if(deltas.every(([,d])=>d>=0)){
+    const pila=String(nombre||'').trim().split(/\s+/)[0];
+    ins='🎉 <b>¡Felicitaciones'+(pila?', '+esc(pila.charAt(0).toUpperCase()+pila.slice(1).toLowerCase()):'')+'!</b> Mejora en todos los indicadores vs. la semana pasada'
+      +(dVenta!=null && diasSet && diasSet.size ? ' (venta comparada a la misma altura de semana)':'')+'. A sostenerlo.';
+  } else {
+    const [pk,pd]=deltas.slice().sort((a,b)=>a[1]-b[1])[0];
+    const txt={
+      upt:'el <b>UPT</b>: se venden pocas unidades por ticket — trabajar el segundo artículo y los accesorios en el mostrador',
+      tp:'el <b>ticket promedio</b>: sumar unidades y apuntar a artículos de más valor en cada venta',
+      venta:'la <b>venta</b>, comparada a la misma altura de la semana pasada — foco en cerrar más tickets'
+    }[pk];
+    ins='Punto a trabajar: '+txt+' <b>('+(pd>0?'+':'')+Math.round(pd*100)+'% vs. semana anterior)</b>.';
+  }
+  h+='<div style="font-size:12.5px;margin-bottom:10px">'+ins+'</div>';
+  if(Array.isArray(cur.dias) && cur.dias.length){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+cur.dias.map(d=>'<div style="border:1px solid var(--border,#e6ebf5);border-radius:8px;padding:6px 10px;background:#fff;min-width:86px">'
+      +'<div style="font-family:var(--font-c,inherit);font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted,#6B7A99)">'+esc(d.d)+'</div>'
+      +'<div style="font-size:13px;font-weight:700;margin-top:1px">'+objMoney(d.v)+'</div>'
+      +(d.h?'<div style="font-size:11px;color:var(--muted,#6B7A99)">'+fmt2(d.h)+' h venta</div>':'')
+      +'</div>').join('')+'</div>';
+  }
+  return h;
+}
+
 /* --- vista distribución: metas individuales + real + % --- */
-function eqDistribHtml(slug, sem, v, ve, eqData, pesos){
+function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
   const equipo=eqSanea(eqData.equipo);
   const metaVal=(v&&v.meta)||0, minVal=(v&&(v.minimo||Math.round(metaVal/1.2)))||0;
   let h='';
@@ -1840,47 +1924,67 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos){
   const pctCol = p => p>=1?'var(--ok,#16a34a)':p>=1/1.2?'#d97706':'#dc2626';
   // total equipo vs meta (los vendedores del Excel sin asignar también suman)
   const usedVe=new Set();
-  const reales=equipo.map(p=>eqRealDe(p, eqData, ve, usedVe));
+  const matches=equipo.map(p=>eqRealDe(p, eqData, ve, usedVe));
   const sueltos=(ve&&ve.vendedores||[]).filter((x,ix)=>!usedVe.has(ix) && x.venta>0);
-  const totReal=reales.reduce((a,r)=>a+((r&&r.monto)||0),0) + sueltos.reduce((a,x)=>a+x.venta,0);
+  const totReal=matches.reduce((a,r)=>a+((r&&r.monto)||0),0) + sueltos.reduce((a,x)=>a+x.venta,0);
   if(metaVal && totReal){
     const pct=totReal/metaVal, w=Math.min(100,Math.round(pct*100)), col=pctCol(pct);
     h+='<div style="font-size:13px;color:var(--mid);margin:2px 0 6px">Equipo esta semana: <b style="color:'+col+'">'+objMoney(totReal)+'</b> · '+Math.round(pct*100)+'% de la meta</div>'
       +'<div style="position:relative;height:8px;background:#eef0f7;border-radius:5px;overflow:hidden;margin:0 0 14px"><i style="position:absolute;left:0;top:0;bottom:0;border-radius:5px;width:'+w+'%;background:'+col+';display:block"></i></div>';
   }
-  h+='<div class="tbl-wrap"><table><thead><tr><th class="L">Vendedor</th><th>Horas venta</th><th>Part.</th>'
-    +(metaVal?'<th>Su mínimo</th><th>Su meta</th>':'')
-    +'<th>Real</th>'+(metaVal?'<th>% de su meta</th>':'')+'</tr></thead><tbody>';
+  // filas unificadas (mismo formato que las semanas anteriores): equipo + fuera
+  // del equipo, ordenadas por venta; cada una despliega KPIs + día a día
+  const diasSet=eqDiasSet(ve);
+  const prevM=eqPrevMatcher(prevVe);
+  const rows=[];
   equipo.forEach((p,i)=>{
-    const hs=eqHorasPersona(p), sh=shares[i], meta_p=metaVal*sh, min_p=minVal*sh;
-    const r=reales[i], pct=(r&&meta_p)?r.monto/meta_p:0;
-    h+='<tr><td class="L">'+esc(p.nombre)+'</td><td>'+(hs?fmt2(hs)+' h':'—')+'</td><td>'+(sh*100).toFixed(1)+'%</td>';
-    if(metaVal) h+='<td>'+(sh?objMoney(min_p):'—')+'</td><td><b>'+(sh?objMoney(meta_p):'—')+'</b></td>';
-    if(editReal){
-      const k=eqKeyName(p.nombre), val=_eqRealDraft.real[k];
-      h+='<td><input type="text" inputmode="numeric" class="eq-real" data-k="'+esc(k)+'" value="'+(val>0?Math.round(val):'')+'" style="width:110px;text-align:right;border:1px solid var(--border);border-radius:6px;padding:5px 7px;font-size:13px"></td>';
-    } else {
-      h+='<td>'+(r?objMoney(r.monto)+(r.src==='excel'?' <span class="tag" title="del Excel subido">xls</span>':''):'—')+'</td>';
-    }
-    if(metaVal) h+='<td>'+(r&&meta_p?'<b style="color:'+pctCol(pct)+'">'+Math.round(pct*100)+'%</b>':'—')+'</td>';
-    h+='</tr>';
+    const r=matches[i];
+    rows.push({ nombre:p.nombre, horas:eqHorasPersona(p), share:shares[i],
+      meta:metaVal*shares[i], min:minVal*shares[i],
+      venta:(r&&r.monto)||0, src:r&&r.src, veRow:(r&&r.ix>=0)?ve.vendedores[r.ix]:null, fuera:false });
   });
-  // vendedores del Excel que no están en el equipo (coberturas, altas nuevas):
-  // se muestran para que el encargado los vea y, si corresponde, los sume al equipo
-  sueltos.forEach(x=>{
-    h+='<tr><td class="L">'+esc(x.nombre)+' <span class="tag cover">fuera del equipo</span></td><td>—</td><td>—</td>';
-    if(metaVal) h+='<td>—</td><td>—</td>';
-    h+='<td>'+objMoney(x.venta)+' <span class="tag" title="del Excel subido">xls</span></td>';
-    if(metaVal) h+='<td>—</td>';
+  sueltos.forEach(x=>rows.push({nombre:x.nombre, horas:0, share:0, meta:0, min:0, venta:x.venta, src:'excel', veRow:x, fuera:true}));
+  rows.sort((a,b)=> (b.venta-a.venta) || (b.share-a.share));
+  h+='<div class="tbl-wrap"><table><thead><tr><th class="L">Vendedor</th><th>Horas venta</th>'
+    +(metaVal?'<th>Su meta</th>':'')
+    +'<th>Venta</th>'+(metaVal?'<th>% de su meta</th>':'')+'<th>Participación</th></tr></thead><tbody>';
+  const nCols = 3 + (metaVal?2:0);
+  rows.forEach(row=>{
+    const pct = (row.venta&&row.meta) ? row.venta/row.meta : 0;
+    const part = totReal ? row.venta/totReal : 0, wp=Math.round(part*100);
+    // datos para el desplegable: el registro del Excel (KPIs/día a día) o el real manual
+    const cur = row.veRow ? (row.src==='manual' ? {...row.veRow, venta:row.venta} : row.veRow)
+                          : (row.venta>0 ? {venta:row.venta} : null);
+    h+='<tr class="vetr" style="cursor:pointer" title="Clic para ver KPIs y día a día"><td class="L"><span class="caret">▸</span>'+esc(row.nombre)
+      +(row.fuera?' <span class="tag cover">fuera del equipo</span>':'')
+      +(row.src==='manual'?' <span class="tag" title="cargado a mano">✎</span>':'')+'</td>';
+    h+='<td>'+(row.horas?fmt2(row.horas)+' h':'—')+'</td>';
+    if(metaVal) h+='<td>'+(row.share?objMoney(row.meta):'—')+'</td>';
+    if(editReal && !row.fuera){
+      const k=eqKeyName(row.nombre), val=_eqRealDraft.real[k];
+      h+='<td><input type="text" inputmode="numeric" class="eq-real" data-k="'+esc(k)+'" value="'+(val>0?Math.round(val):'')+'" style="width:110px;text-align:right;border:1px solid var(--border);border-radius:6px;padding:5px 7px;font-size:13px" onclick="event.stopPropagation()"></td>';
+    } else {
+      h+='<td><b>'+(row.venta?objMoney(row.venta):'—')+'</b></td>';
+    }
+    if(metaVal) h+='<td>'+(row.venta&&row.meta?'<b style="color:'+pctCol(pct)+'">'+Math.round(pct*100)+'%</b>':'—')+'</td>';
+    h+='<td><div style="display:flex;align-items:center;gap:8px;justify-content:flex-end"><span style="font-variant-numeric:tabular-nums">'+wp+'%</span>'
+      +'<span style="display:inline-block;width:60px;height:6px;background:#eef0f7;border-radius:4px;overflow:hidden"><i style="display:block;height:100%;width:'+wp+'%;background:var(--red)"></i></span></div></td>';
     h+='</tr>';
+    const notaMin = (!row.fuera && metaVal && row.share)
+      ? 'Mínimo: <b>'+objMoney(row.min)+'</b> · Meta: <b>'+objMoney(row.meta)+'</b> · participa el '+(row.share*100).toFixed(1)+'% de la meta del equipo'
+      : (row.fuera?'No está en el equipo de esta semana — si corresponde, sumalo desde ✎ Equipo y horas.':null);
+    h+='<tr class="vedias" style="display:none"><td colspan="'+nCols+'" class="L" style="background:#f8f9fe;padding:10px 14px 12px">'
+      + eqDetalleHtml(row.nombre, cur, prevM(row.nombre), diasSet, notaMin) + '</td></tr>';
   });
   // total
   const totHs=equipo.reduce((a,p)=>a+eqHorasPersona(p),0), totSh=shares.reduce((a,x)=>a+x,0);
-  h+='<tr class="team" style="cursor:default"><td class="L">Total equipo</td><td>'+fmt2(totHs)+' h</td><td>'+(totSh*100).toFixed(0)+'%</td>';
-  if(metaVal) h+='<td>'+objMoney(minVal*totSh)+'</td><td>'+objMoney(metaVal*totSh)+'</td>';
+  h+='<tr class="team" style="cursor:default"><td class="L">Total equipo</td><td>'+fmt2(totHs)+' h</td>';
+  if(metaVal) h+='<td>'+objMoney(metaVal*totSh)+'</td>';
   h+='<td>'+(totReal?objMoney(totReal):'—')+'</td>';
   if(metaVal) h+='<td>'+(totReal&&totSh?'<b style="color:'+pctCol(totReal/(metaVal*totSh))+'">'+Math.round(totReal/(metaVal*totSh)*100)+'%</b>':'—')+'</td>';
+  h+='<td>'+(totReal?'100%':'—')+'</td>';
   h+='</tr></tbody></table></div>';
+  h+='<p class="hint" style="margin-top:8px">Clic en un vendedor para ver sus KPIs, la comparativa con la semana pasada y su día a día.</p>';
   if(editReal){
     h+='<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="eqRealSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">Guardar reales</button>'
       +'<button type="button" id="eqRealCancel" class="tb-btn">Cancelar</button></div>';
@@ -1943,11 +2047,14 @@ async function renderObjetivo(){
   // semana activa: la elegida (si sigue existiendo) o la última publicada
   const sem = (objSem && weeks.includes(objSem)) ? objSem : weeks[0];
   _objActiveSem = sem;
-  let v=null, ve=null, eqData=null, pesos=null;
-  try{ [v,ve,eqData,pesos] = await Promise.all([
+  // semana anterior (lunes - 7 días) para la comparativa de KPIs por vendedor
+  const prevSem = (iso=>{ const p=iso.split('-').map(Number);
+    const d=new Date(Date.UTC(p[0],p[1]-1,p[2]-7)); return d.toISOString().slice(0,10); })(sem);
+  let v=null, ve=null, eqData=null, pesos=null, prevVe=null;
+  try{ [v,ve,eqData,pesos,prevVe] = await Promise.all([
     fetchObjetivoData(slug, sem), fetchVentaEquipo(slug, sem),
-    fetchEquipo(slug, sem), fetchEqPesos(slug)
-  ]); }catch(e){ v=null; ve=null; eqData=null; pesos=null; }
+    fetchEquipo(slug, sem), fetchEqPesos(slug), fetchVentaEquipo(slug, prevSem)
+  ]); }catch(e){ v=null; ve=null; eqData=null; pesos=null; prevVe=null; }
   if(sucName!==target) return;
 
   // selector de semanas (arriba a la derecha)
@@ -2005,7 +2112,7 @@ async function renderObjetivo(){
       +'</div>';
     if(v.nota) html+='<p class="hint" style="margin-top:12px">📝 '+esc(v.nota)+'</p>';
   }
-  html += veSectionHtml(slug, sem, v, ve, eqData, pesos);
+  html += veSectionHtml(slug, sem, v, ve, eqData, pesos, prevVe);
   $('objetivoCard').innerHTML=html;
   const selEl=$('objSemSel'); if(selEl) selEl.onchange = e => { objSem = e.target.value; _eqEdit=null; _eqRealDraft=null; renderObjetivo(); };
   const up=$('veUpload'); if(up) up.onclick = ()=> $('veFile').click();
