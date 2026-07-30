@@ -1740,12 +1740,25 @@ const EQ_STOPWORDS=['full','cubre','cobertura','refuerzo','refuerzos','vend','ve
 function eqTokens(s){
   return eqNorm(s).split(' ').filter(t=>t.length>1 && !/^\d/.test(t) && !EQ_STOPWORDS.includes(t));
 }
+// dos tokens se consideran iguales si son idénticos o difieren en UNA letra
+// (typos reales del PMS: Bussmann/BUSSMAN, Benitez Brian/BRIANT, Johana/JOHANNA…)
+function eqTokSim(a,b){
+  if(a===b) return true;
+  if(a.length<4 || b.length<4 || Math.abs(a.length-b.length)>1) return false;
+  let i=0, j=0, dif=0;
+  while(i<a.length && j<b.length){
+    if(a[i]===b[j]){ i++; j++; continue; }
+    if(++dif>1) return false;
+    if(a.length>b.length) i++; else if(b.length>a.length) j++; else { i++; j++; }
+  }
+  return dif + (a.length-i) + (b.length-j) <= 1;
+}
 // puntaje: tokens en común; 2+ = match (1 solo apellido no alcanza — puede haber
 // hermanos/homónimos), salvo que alguno de los dos nombres tenga un único token
 function eqMatchScore(a,b){
   const ta=eqTokens(a), tb=eqTokens(b);
   if(!ta.length || !tb.length) return 0;
-  const comunes=ta.filter(t=>tb.includes(t)).length;
+  const comunes=ta.filter(t=>tb.some(u=>eqTokSim(t,u))).length;
   if(comunes>=2) return comunes + ((comunes===ta.length||comunes===tb.length)?1:0);
   if(comunes===1 && (ta.length===1||tb.length===1) && Math.max(...ta.map(t=>t.length))>=4) return 1;
   return 0;
