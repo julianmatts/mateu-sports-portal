@@ -38,24 +38,30 @@
   window.__msIconos = true;
 
   // ---- ¿este equipo dibuja emojis a color? ----
-  // Dibuja un 🟢 (círculo verde puro) en un canvas y revisa los píxeles:
-  // si aparece un canal de color bien distinto de los otros => hay fuente
-  // de emoji a color (Windows moderno, Chrome/Firefox al día) y NO tocamos
-  // nada. Si sale gris/negro (tofu □) o no se dibuja => Windows 7 sin emoji
-  // => reemplazamos por SVG. Ante cualquier duda/error => reemplazamos (la
+  // Dibuja un 😀 en un canvas y revisa los píxeles: si aparece un canal de
+  // color bien distinto de los otros (el 😀 es amarillo) => hay fuente de
+  // emoji a color (Windows moderno, Chrome/Firefox al día) y NO tocamos nada.
+  // Si sale gris/negro (tofu □) o no se dibuja => Windows 7 sin emoji =>
+  // reemplazamos por SVG. Ante cualquier duda/error => reemplazamos (la
   // opción segura para navegadores viejos).
+  //
+  // ⚠️ El emoji de prueba tiene que ser VIEJO (Unicode 6.1, 2012): un emoji
+  // nuevo como 🟢 (Unicode 12, 2019) sale como □ en Windows 10 con fuente de
+  // emoji anterior a 2019 aunque el resto sí se dibuje a color, y la prueba
+  // daría un falso negativo (caería a SVG de más). 😀 está en toda fuente de
+  // emoji a color desde el día uno.
   function soportaEmojiColor() {
     try {
       var size = 24;
       var canvas = document.createElement('canvas');
       canvas.width = size; canvas.height = size;
-      var ctx = canvas.getContext && canvas.getContext('2d');
+      var ctx = canvas.getContext && canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) return false;
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
       ctx.font = Math.round(size * 0.85) + 'px sans-serif';
       ctx.fillStyle = '#000';               // si NO hay emoji, el tofu sale negro
-      ctx.fillText('🟢', size / 2, size / 2);  // 🟢
+      ctx.fillText('😀', size / 2, size / 2);  // 😀 (Unicode 6.1, universal)
       var d = ctx.getImageData(0, 0, size, size).data;
       for (var i = 0; i < d.length; i += 4) {
         if (d[i + 3] < 24) continue;        // píxel transparente, lo ignoramos
