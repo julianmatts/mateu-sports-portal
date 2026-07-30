@@ -1170,6 +1170,7 @@ function ingOpenNuevo(){
   );
   try{ $('inFec').value = new Date().toISOString().slice(0,10); }catch(e){}
   const _img=$('inImg'); if(_img) _img.onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(f) ingOcrFile(f); };
+  ING_OCR_DESC={};
   let resolved=null;
   $('inResolver').onclick=async()=>{
     const btn=$('inResolver'); btn.disabled=true; btn.textContent='Resolviendo…';
@@ -1181,7 +1182,7 @@ function ingOpenNuevo(){
         const parts=ln.split(/[\s,;\t]+/); const sku=(parts[0]||'').toUpperCase(); const cant=num(parts[1]);
         if(!sku) continue;
         const info=skuInfo(sku);
-        if(info && cant>0){ ok++; out.push({sku:sku, talle:info.talle, material:info.material, desc:info.desc, ean:info.ean, cant:cant}); }
+        if(info && cant>0){ ok++; out.push({sku:sku, talle:info.talle, material:info.material, desc:(ING_OCR_DESC[info.material]||info.desc), ean:info.ean, cant:cant}); }
         else { bad++; out.push({sku:sku, cant:cant, error: !info?'no está en el maestro':'cantidad inválida'}); }
       }
       resolved=out;
@@ -1351,6 +1352,9 @@ async function ingViewConcil(){
 function ensureTesseract(){ return new Promise((res,rej)=>{ if(window.Tesseract) return res(); const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'; s.onload=()=>res(); s.onerror=()=>rej(new Error('no pude cargar el OCR')); document.head.appendChild(s); }); }
 /* confusiones típicas de OCR (letra ↔ dígito parecido) */
 const ING_CONF = { '0':['O','D','Q'],'O':['0'],'D':['0'],'Q':['0'],'1':['I','L'],'I':['1'],'L':['1'],'5':['S'],'S':['5'],'8':['B'],'B':['8'],'2':['Z'],'Z':['2'],'6':['G'],'G':['6'],'7':['T'],'T':['7'],'9':['Q'] };
+/* descripción del packing list (OCR) por material — para mostrar el texto TAL CUAL
+   viene en el packing (ej. "ONICLA/NEGRO"), no la del maestro (ej. "CLONIX/BLACK"). */
+let ING_OCR_DESC = {};
 function ingSkuVariants(s){
   let combos=[s];
   for(let i=0;i<s.length;i++){
@@ -1379,9 +1383,11 @@ function ingParsePacking(text){
     const toks=ln.split(/\s+/); const last=toks[toks.length-1];
     if(!/^\d{1,4}$/.test(last)) continue;
     const qty=parseInt(last,10); if(!qty) continue;
-    let sku=null;
-    for(const t of toks){ const c=t.toUpperCase(); if(c==='NOECOM'||c==='NOCOM'||c==='ECOM') continue; if(/[A-Z]/.test(c)&&/[0-9]/.test(c)&&c.length>=6&&c.length<=11&&/^[A-Z0-9-]+$/.test(c)){ sku=c; break; } }
-    if(sku) out.push({sku:sku, qty:qty});
+    let sku=null, si=-1;
+    for(let i=0;i<toks.length;i++){ const c=toks[i].toUpperCase(); if(c==='NOECOM'||c==='NOCOM'||c==='ECOM') continue; if(/[A-Z]/.test(c)&&/[0-9]/.test(c)&&c.length>=6&&c.length<=11&&/^[A-Z0-9-]+$/.test(c)){ sku=c; si=i; break; } }
+    if(!sku) continue;
+    const desc=toks.slice(si+1, toks.length-1).join(' ').trim(); // texto del packing tal cual (entre el SKU y la cantidad)
+    out.push({sku:sku, qty:qty, desc:desc});
   }
   return {pedido:pedido, bultos:bultos, totalCant:totalCant, lines:out};
 }
@@ -1391,8 +1397,8 @@ async function ingOcrFile(file){
     await Promise.all([ ensureTesseract(), loadMaestro() ]);
     const { data } = await Tesseract.recognize(file, 'eng', { logger:m=>{ if(m.status==='recognizing text' && st) st.textContent='Reconociendo texto… '+Math.round((m.progress||0)*100)+'%'; } });
     const p = ingParsePacking(data && data.text || '');
-    const agg={}; let okc=0, corr=0, dud=0;
-    p.lines.forEach(l=>{ const c=ingCorregirSku(l.sku); if(c.conf==='ok')okc++; else if(c.conf==='corregido')corr++; else dud++; agg[c.sku]=(agg[c.sku]||0)+l.qty; });
+    const agg={}; let okc=0, corr=0, dud=0; ING_OCR_DESC={};
+    p.lines.forEach(l=>{ const c=ingCorregirSku(l.sku); if(c.conf==='ok')okc++; else if(c.conf==='corregido')corr++; else dud++; agg[c.sku]=(agg[c.sku]||0)+l.qty; if(l.desc){ const inf=skuInfo(c.sku); const mat=inf?inf.material:c.sku; if(!ING_OCR_DESC[mat]) ING_OCR_DESC[mat]=l.desc; } });
     const skus=Object.keys(agg);
     if(!skus.length){ if(st) st.innerHTML='No pude detectar líneas. Probá con una foto más derecha y nítida, o cargá el detalle a mano.'; toast('OCR sin resultados','bad'); return; }
     $('inDet').value = skus.map(s=>s+' '+agg[s]).join('\n');
