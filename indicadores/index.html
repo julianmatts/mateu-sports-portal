@@ -1732,16 +1732,23 @@ function eqShares(equipo, pesos){
   return {shares, cobertura, totalPeso};
 }
 // match de nombres por tokens: tolera orden invertido ("NOBLE ANALIA" vs
-// "Analia Noble cubre") y sufijos de rol (full, cubre, refuerzo, 24hs…)
+// "Analia Noble cubre"), sufijos de rol (full, cajera, refuerzo, 24hs…) y
+// nombres extra de un lado ("Paris Isabella (Cajera Full)" vs "PARIS ISABELLA GALA")
+const EQ_STOPWORDS=['full','cubre','cobertura','refuerzo','refuerzos','vend','vendedor','vendedora',
+  'sub','enc','encargado','encargada','cajera','cajero','caja','deposito','pt','ft','hs','part',
+  'parttime','manana','tarde','noche','medio','jornada','franco','vac','licencia'];
 function eqTokens(s){
-  return eqNorm(s).split(' ').filter(t=>t.length>1 && !/^\d/.test(t)
-    && !['full','cubre','refuerzo','refuerzos','vend','vendedor','vendedora','sub','enc','encargado','encargada','pt','ft','hs'].includes(t));
+  return eqNorm(s).split(' ').filter(t=>t.length>1 && !/^\d/.test(t) && !EQ_STOPWORDS.includes(t));
 }
-function eqMatchName(a,b){
+// puntaje: tokens en común; 2+ = match (1 solo apellido no alcanza — puede haber
+// hermanos/homónimos), salvo que alguno de los dos nombres tenga un único token
+function eqMatchScore(a,b){
   const ta=eqTokens(a), tb=eqTokens(b);
-  if(!ta.length || !tb.length) return false;
-  const [s,l] = ta.length<=tb.length ? [ta,tb] : [tb,ta];
-  return s.every(t=>l.includes(t));
+  if(!ta.length || !tb.length) return 0;
+  const comunes=ta.filter(t=>tb.includes(t)).length;
+  if(comunes>=2) return comunes + ((comunes===ta.length||comunes===tb.length)?1:0);
+  if(comunes===1 && (ta.length===1||tb.length===1) && Math.max(...ta.map(t=>t.length))>=4) return 1;
+  return 0;
 }
 // real por persona: manual (payload.real) pisa el Excel subido (match por nombre).
 // `used` acumula los índices del Excel ya asignados (para listar los sobrantes).
@@ -1749,8 +1756,13 @@ function eqRealDe(p, eqData, ve, used){
   const k=eqKeyName(p.nombre);
   if(eqData && eqData.real && eqData.real[k]>0) return {monto:eqData.real[k], src:'manual'};
   if(ve && ve.vendedores){
-    const i=ve.vendedores.findIndex((x,ix)=>!(used&&used.has(ix)) && eqMatchName(p.nombre, x.nombre));
-    if(i>=0 && ve.vendedores[i].venta>0){ if(used) used.add(i); return {monto:ve.vendedores[i].venta, src:'excel'}; }
+    let best=-1, bestSc=0;
+    ve.vendedores.forEach((x,ix)=>{
+      if(used && used.has(ix)) return;
+      const sc=eqMatchScore(p.nombre, x.nombre);
+      if(sc>bestSc){ bestSc=sc; best=ix; }
+    });
+    if(best>=0 && ve.vendedores[best].venta>0){ if(used) used.add(best); return {monto:ve.vendedores[best].venta, src:'excel'}; }
   }
   return null;
 }
