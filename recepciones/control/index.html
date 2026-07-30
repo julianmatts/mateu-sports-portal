@@ -176,24 +176,24 @@ function render(){
   const tt=$('topTitle'), tg=$('topTag');
   if(!state.task){ tt.textContent='Tareas de Depósito'; tg.textContent='Kiosco'; return renderHome(); }
   if(state.task==='ingreso'){ tt.textContent='Control de Ingreso'; tg.textContent='A ciegas'; return (state.view==='control')?renderControl():renderIngLista(); }
-  if(state.task==='reposicion'){ tt.textContent='Reposición'; tg.textContent='Checklist'; return (state.view==='suc')?renderRepoSuc():renderRepoLista(); }
+  if(state.task==='picking'){ tt.textContent='Picking'; tg.textContent=(state.view==='op'?'Preparando':'Pedidos'); return renderPickView(); }
 }
 function renderHome(){
   $('view').innerHTML =
     '<div class="sec-head"><div><h2>¿Qué vas a hacer?</h2><div class="sub">Elegí la tarea.</div></div></div>'
     + '<div class="home">'
     + '<button class="task" id="tIng"><div class="ic">📦</div><div class="t">Control de Ingreso</div><div class="d">Controlar un remito que llegó al depósito, escaneando cada unidad.</div></button>'
-    + '<button class="task" id="tRep"><div class="ic">📋</div><div class="t">Reposición</div><div class="d">Preparar lo que hay que enviar a cada sucursal, tildando a medida que juntás.</div></button>'
+    + '<button class="task" id="tRep"><div class="ic">📋</div><div class="t">Picking</div><div class="d">Preparar los pedidos asignados: te guía ubicación → producto → cantidad, con scan.</div></button>'
     + '</div>';
   $('tIng').onclick=()=>enterTask('ingreso');
-  $('tRep').onclick=()=>enterTask('reposicion');
+  $('tRep').onclick=()=>enterTask('picking');
 }
 async function enterTask(task){
   state.task=task; state.view='lista'; state.remito=null; state.suc=null;
   $('view').innerHTML='<div class="state"><div class="spin"></div>Cargando…</div>';
   try{
     if(task==='ingreso') await cargarIngreso();
-    else await cargarBarrida();
+    else if(task==='picking') await cargarPicking();
     render();
   }catch(e){ $('view').innerHTML='<div class="state">No pude cargar. Revisá la conexión.<br><br><button class="btn btn-outline" onclick="location.reload()">↻ Reintentar</button></div>'; }
 }
@@ -438,6 +438,187 @@ function renderRepoResumen(slug){
     + (tild<totArt?'<div class="blind" style="margin-top:16px">Ojo: se tildaron '+tild+' de '+totArt+' artículos. Quedaron '+(totArt-tild)+' sin tildar.</div>':'')
     + '</div>';
   $('backR').onclick=()=>{ state.view='lista'; render(); };
+}
+
+/* ============================================================ PICKING ========= */
+/* El kiosco EJECUTA los picks creados en el módulo picking/. Datos en
+   recepciones-mateu/picking/. Valida el scan contra el EAN horneado en cada
+   variante (sin bajar el maestro); si no hay EAN (calzado/otras marcas) el
+   operario confirma manual. */
+DATA.pick = { pickings:{}, operarios:{} };
+async function cargarPicking(){
+  const [pk,ope]=await Promise.all([ fbGet('picking/pickings'), fbGet('picking/operarios') ]);
+  DATA.pick={ pickings:pk||{}, operarios:ope||{} };
+}
+function pkK(nro){ return String(nro).replace(/[.#$/\[\]]/g,'~'); }
+function pkGet(){ return DATA.pick.pickings[pkK(state.pickNro)]||null; }
+async function pkSaveItem(nro,iid,item){ try{ await fbPut('picking/pickings/'+pkK(nro)+'/items/'+iid, item); }catch(e){} }
+async function pkSaveField(nro,field,val){ try{ await fbPut('picking/pickings/'+pkK(nro)+'/'+field, val); }catch(e){} }
+function pkEvento(ev){ const k=nowISO().replace(/\D/g,'')+'_'+Math.floor((performance.now()*7)%100000); fbPut('picking/eventos/'+k, Object.assign({ts:nowISO()},ev)).catch(()=>{}); }
+function pkResumen(P){ let req=0,pk=0,lines=0,falt=0; Object.keys(P.items||{}).forEach(iid=>{ (P.items[iid].talles||[]).forEach(t=>{ lines++; req+=num(t.req); pk+=num(t.picked); if(t.faltante) falt+=Math.max(0,num(t.req)-num(t.picked)); }); }); return {req,pk,lines,falt}; }
+function pkLines(P){ const out=[]; Object.keys(P.items||{}).map(iid=>({iid,...P.items[iid]})).sort((a,b)=>num(a.sequence)-num(b.sequence))
+  .forEach(it=>{ (it.talles||[]).forEach((t,ti)=>{ out.push({iid:it.iid,ti,codigo:it.codigo,desc:it.desc,marca:it.marca,zona:it.zonaNombre||'Sin zona',talle:t.t,ean:t.ean||'',req:num(t.req),picked:num(t.picked),faltante:t.faltante||null}); }); }); return out; }
+function pkNext(P){ return pkLines(P).find(l=>!l.faltante && l.picked<l.req)||null; }
+function pkZonas(P){ return new Set(pkLines(P).map(l=>l.zona)).size; }
+
+/* beep (WebAudio) */
+let _ac=null; function beep(ok){ try{ _ac=_ac||new (window.AudioContext||window.webkitAudioContext)(); const o=_ac.createOscillator(),g=_ac.createGain(); o.connect(g); g.connect(_ac.destination); o.frequency.value=ok?880:200; o.type=ok?'sine':'square'; g.gain.value=.08; o.start(); setTimeout(()=>{o.stop();},ok?110:240); }catch(e){} }
+
+function pkInjectCss(){ if($('pkCss')) return; const css=''
+  +'.pk-op{max-width:580px;margin:0 auto}'
+  +'.pk-zona{background:var(--navy);color:#fff;border-radius:14px;padding:16px;text-align:center;margin-bottom:12px}'
+  +'.pk-zona .lbl{font-family:var(--font-c);font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#b0bcd4}'
+  +'.pk-zona .z{font-family:var(--font-d);font-size:38px;letter-spacing:1px;line-height:1.05}'
+  +'.pk-prod{background:#fff;border:1px solid var(--border);border-radius:14px;padding:18px;text-align:center}'
+  +'.pk-prod .desc{font-family:var(--font-c);font-weight:700;font-size:20px;overflow-wrap:anywhere}'
+  +'.pk-prod .cod{font-family:var(--font-c);color:var(--muted);font-size:13px;margin-top:2px}'
+  +'.pk-prod .talle{font-family:var(--font-d);font-size:54px;line-height:1;margin:8px 0 0}'
+  +'.pk-prod .talle small{font-family:var(--font-c);font-size:13px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;display:block}'
+  +'.pk-qty{font-family:var(--font-d);font-size:40px;color:var(--red);margin-top:8px}'
+  +'.pk-qty small{font-family:var(--font-c);font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}'
+  +'.pk-count{font-family:var(--font-c);font-weight:700;color:var(--muted);text-align:center;margin-top:6px}';
+  document.head.insertAdjacentHTML('beforeend','<style id="pkCss">'+css+'</style>'); }
+
+function renderPickView(){ pkInjectCss();
+  if(state.view==='op') return renderPickOperativo();
+  if(state.view==='fin') return renderPickFin();
+  if(state.view==='sum') return renderPickSummary();
+  return renderPickLista();
+}
+function renderPickLista(){
+  const exec={PENDIENTE:1,'EN PREPARACIÓN':1,'PAUSADO':1};
+  const list=Object.keys(DATA.pick.pickings).map(k=>DATA.pick.pickings[k]).filter(P=>exec[P.estado])
+    .sort((a,b)=>{ const pr={URGENTE:0,ALTA:1,NORMAL:2}; return (pr[a.prioridad]??2)-(pr[b.prioridad]??2) || cmp(a.created_at||'',b.created_at||''); });
+  let h='<div class="sec-head"><div><h2>Pedidos para preparar</h2><div class="sub">Elegí un picking. Los urgentes van primero.</div></div>'
+    +'<div style="display:flex;gap:8px"><button class="btn btn-outline" id="reloadP">↻ Actualizar</button><button class="btn btn-outline" id="home">← Tareas</button></div></div>';
+  if(!list.length){ $('view').innerHTML=h+'<div class="state">No hay pickings pendientes. El encargado los crea desde el módulo Picking.</div>'; bindPHead(); return; }
+  const cards=list.map(P=>{ const r=pkResumen(P); const est=P.estado;
+    const pill=est==='PENDIENTE'?'<span class="pill mut">Pendiente</span>':(est==='PAUSADO'?'<span class="pill info">Pausado</span>':'<span class="pill info">En preparación</span>');
+    const prio=(P.prioridad&&P.prioridad!=='NORMAL')?' · <b style="color:var(--red)">'+esc(P.prioridad)+'</b>':'';
+    return '<div class="card" data-nro="'+esc(P.nro)+'"><div class="nro">PICK #'+esc(P.nro)+'</div>'
+      +'<div class="sub">'+esc(nombreSuc(P.destino))+prio+'</div>'
+      +'<div class="foot">'+pill+'<div class="n">'+fmtInt(r.req)+'<small>unidades</small></div></div></div>';
+  }).join('');
+  $('view').innerHTML=h+'<div class="grid">'+cards+'</div>';
+  document.querySelectorAll('.card[data-nro]').forEach(c=>c.onclick=()=>{ state.pickNro=c.getAttribute('data-nro'); state.view='sum'; render(); });
+  bindPHead();
+}
+function bindPHead(){ const r=$('reloadP'); if(r) r.onclick=async()=>{ r.disabled=true; try{ await cargarPicking(); render(); toast('Actualizado','ok'); }catch(e){ r.disabled=false; toast('No pude actualizar','bad'); } }; const hm=$('home'); if(hm) hm.onclick=backHome; }
+
+function renderPickSummary(){
+  const P=pkGet(); if(!P){ state.view='lista'; return render(); }
+  const r=pkResumen(P); const iniciado=!!P.started_ms;
+  const activos=Object.keys(DATA.pick.operarios).map(id=>DATA.pick.operarios[id]).filter(o=>o.activo!==false).sort((a,b)=>cmp(a.nombre,b.nombre));
+  let h='<div class="sec-head"><div><h2>PICK #'+esc(P.nro)+'</h2><div class="sub">'+esc(nombreSuc(P.destino))+'</div></div><button class="btn btn-outline" id="backP">← Volver</button></div>';
+  h+='<div class="startbox"><div class="big">'+esc(nombreSuc(P.destino))+'</div>'
+    +'<div class="sumrow" style="margin:14px 0"><div class="s"><div class="v">'+fmtInt(r.req)+'</div><div class="k">Unidades</div></div>'
+    +'<div class="s"><div class="v">'+fmtInt(r.lines)+'</div><div class="k">SKUs</div></div>'
+    +'<div class="s"><div class="v">'+fmtInt(pkZonas(P))+'</div><div class="k">Zonas</div></div></div>';
+  if(iniciado && P.estado!=='PENDIENTE'){ h+='<div class="sub" style="font-family:var(--font-c);color:var(--muted)">'+(P.operario?('En preparación por '+esc(P.operario)):'En preparación')+'</div>'
+    +'<div style="margin-top:16px"><button class="btn btn-primary btn-lg" id="cont">▶ Continuar picking</button></div>'; }
+  else { h+='<div class="opname" style="justify-content:center"><label for="opP">Operario</label><select class="inp" id="opP" style="max-width:260px"><option value="">Elegí tu nombre…</option>'
+    + activos.map(o=>'<option>'+esc(o.nombre)+'</option>').join('')+'</select></div>'
+    +'<div style="margin-top:16px"><button class="btn btn-primary btn-lg" id="iniciar">▶ Iniciar picking</button></div>'; }
+  h+='</div>';
+  $('view').innerHTML=h;
+  $('backP').onclick=()=>{ state.view='lista'; render(); };
+  if($('cont')) $('cont').onclick=async()=>{ if(P.estado==='PAUSADO'){ P.estado='EN PREPARACIÓN'; await pkSaveField(P.nro,'estado','EN PREPARACIÓN'); pkEvento({event_type:'picking_resumed',picking_id:P.nro,operator_id:P.operario}); } state.view='op'; render(); };
+  if($('iniciar')) $('iniciar').onclick=async()=>{
+    const op=$('opP').value; if(!op){ toast('Elegí tu nombre','bad'); return; }
+    P.operario=op; P.started_at=nowISO(); P.started_ms=Date.now(); P.estado='EN PREPARACIÓN';
+    await Promise.all([ pkSaveField(P.nro,'operario',op), pkSaveField(P.nro,'started_at',P.started_at), pkSaveField(P.nro,'started_ms',P.started_ms), pkSaveField(P.nro,'estado','EN PREPARACIÓN') ]);
+    pkEvento({event_type:'picking_started',picking_id:P.nro,operator_id:op});
+    state.view='op'; render();
+  };
+}
+
+function renderPickOperativo(){
+  const P=pkGet(); if(!P){ state.view='lista'; return render(); }
+  const r=pkResumen(P); const line=pkNext(P);
+  if(!line){ state.view='fin'; return render(); }
+  const rest=line.req-line.picked;
+  let h='<div class="sec-head" style="margin-bottom:8px"><div><h2>PICK #'+esc(P.nro)+'</h2><div class="sub">'+esc(nombreSuc(P.destino))+' · '+fmtInt(r.pk)+' / '+fmtInt(r.req)+'</div></div>'
+    +'<button class="btn btn-outline" id="pausar">⏸ Pausar</button></div>';
+  h+='<div class="pk-op">'
+    +'<div class="pk-zona"><div class="lbl">Siguiente ubicación</div><div class="z">'+esc(line.zona)+'</div></div>'
+    +'<div class="pk-prod"><div class="desc">'+esc(line.desc||line.codigo)+'</div><div class="cod">'+esc(line.codigo)+(line.marca?(' · '+esc(line.marca)):'')+'</div>'
+    +'<div class="talle">'+esc(line.talle)+'<small>Talle</small></div>'
+    +'<div class="pk-qty">RETIRAR '+fmtInt(rest)+'<small> unidad'+(rest===1?'':'es')+'</small></div></div>'
+    +'<div class="scanbar" style="margin-top:14px"><input class="inp" id="pscan" inputmode="numeric" autocomplete="off" placeholder="Escaneá el producto…"><button class="btn btn-outline" id="pmanual">+1 manual</button></div>'
+    +'<div class="flash" id="pflash"><span class="ic">📷</span><div><div class="big">'+(line.ean?'Escaneá cada unidad':'Sin código para validar — contá y tocá +1')+'</div><div class="sub">'+esc((line.desc||'').slice(0,40))+'</div></div></div>'
+    +'<div class="pk-count">'+fmtInt(line.picked)+' / '+fmtInt(line.req)+' de este talle</div>'
+    +'<div class="row-actions" style="justify-content:center;margin-top:14px"><button class="btn btn-outline" id="nostock">No encuentro stock</button></div>'
+    +'</div>';
+  $('view').innerHTML=h;
+  const inp=$('pscan');
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); pkScan(inp.value); inp.value=''; inp.focus(); } });
+  $('pmanual').onclick=()=>{ pkContar(1,'manual'); };
+  $('pausar').onclick=pkPausar;
+  $('nostock').onclick=pkNoStock;
+  inp.focus();
+}
+function pflash(kind,ic,big,sub){ const f=$('pflash'); if(!f) return; f.className='flash '+(kind||''); f.innerHTML='<span class="ic">'+ic+'</span><div><div class="big">'+esc(big)+'</div><div class="sub">'+esc(sub||'')+'</div></div>'; }
+function pkScan(raw){
+  const P=pkGet(); const line=pkNext(P); if(!line) return;
+  const ean=String(raw||'').replace(/\D/g,''); if(!ean) return;
+  if(line.ean){
+    if(ean===line.ean){ pflash('ok','✓','Correcto','Talle '+line.talle); beep(true); pkContar(1,'scan'); }
+    else { pflash('bad','⚠','Artículo incorrecto','Esperado talle '+line.talle+' · escaneaste otro'); beep(false); pkEvento({event_type:'sku_error',picking_id:P.nro,operator_id:P.operario,ean:ean,value:{esperado:line.ean}}); }
+  } else { pflash('ok','✓','+1 (sin validación)','Talle '+line.talle); beep(true); pkContar(1,'scan'); }
+}
+async function pkContar(n,via){
+  const P=pkGet(); const line=pkNext(P); if(!line) return;
+  const item=P.items[line.iid]; const t=item.talles[line.ti];
+  t.picked=Math.min(num(t.req), num(t.picked)+n);
+  item.picked_qty=(item.talles||[]).reduce((s,x)=>s+num(x.picked),0);
+  await pkSaveItem(P.nro,line.iid,item);
+  pkEvento({event_type:'unit_picked',picking_id:P.nro,operator_id:P.operario,sku_id:line.codigo,ean:line.ean||null,value:{talle:line.talle,via:via}});
+  render(); // avanza solo a la próxima línea / o a finalización
+}
+function pkPausar(){ const P=pkGet(); P.estado='PAUSADO'; P.paused_at=nowISO(); pkSaveField(P.nro,'estado','PAUSADO'); pkSaveField(P.nro,'paused_at',P.paused_at); pkEvento({event_type:'picking_paused',picking_id:P.nro,operator_id:P.operario}); toast('Picking pausado — podés retomarlo después','ok'); state.view='lista'; render(); }
+function pkNoStock(){
+  const P=pkGet(); const line=pkNext(P); if(!line) return;
+  const opts=['SIN STOCK EN UBICACIÓN','MENOS CANTIDAD QUE LA INDICADA','PRODUCTO INCORRECTO EN UBICACIÓN','UBICACIÓN VACÍA','OTRO'];
+  $('view').insertAdjacentHTML('beforeend','<div class="cam" style="display:none"></div>');
+  const html='<div style="position:fixed;inset:0;background:rgba(11,21,39,.55);display:flex;align-items:center;justify-content:center;padding:20px;z-index:60" id="nsOv">'
+    +'<div style="background:#fff;border-radius:14px;max-width:460px;width:100%;padding:20px">'
+    +'<div style="font-family:var(--font-d);font-size:24px">No encuentro stock</div>'
+    +'<div class="sub" style="font-family:var(--font-c);color:var(--muted);margin-bottom:6px">'+esc(line.desc||line.codigo)+' · Talle '+esc(line.talle)+' · faltan '+(line.req-line.picked)+'</div>'
+    +opts.map((o,i)=>'<button class="btn btn-outline" data-ns="'+i+'" style="width:100%;justify-content:flex-start;margin-top:8px;text-align:left">'+esc(o)+'</button>').join('')
+    +'<div class="row-actions" style="margin-top:14px"><button class="btn btn-outline" id="nsCancel">Cancelar</button></div></div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+  const close=()=>{ const o=$('nsOv'); if(o) o.remove(); };
+  $('nsCancel').onclick=close;
+  document.querySelectorAll('[data-ns]').forEach(b=>b.onclick=async()=>{
+    const motivo=opts[+b.getAttribute('data-ns')]; const item=P.items[line.iid]; const t=item.talles[line.ti];
+    t.faltante={motivo, cant:Math.max(0,num(t.req)-num(t.picked))};
+    item.picked_qty=(item.talles||[]).reduce((s,x)=>s+num(x.picked),0);
+    P.con_diferencias=true;
+    await pkSaveItem(P.nro,line.iid,item); await pkSaveField(P.nro,'con_diferencias',true);
+    pkEvento({event_type:'shortage_reported',picking_id:P.nro,operator_id:P.operario,sku_id:line.codigo,value:{talle:line.talle,motivo,faltante:t.faltante.cant}});
+    close(); render();
+  });
+}
+function renderPickFin(){
+  const P=pkGet(); if(!P){ state.view='lista'; return render(); }
+  const r=pkResumen(P); const enc=r.pk, sol=r.req, falt=sol-enc;
+  const dur=P.started_ms?fmtDur(Date.now()-P.started_ms):'—';
+  $('view').innerHTML='<div class="sec-head"><div><h2>PICK #'+esc(P.nro)+'</h2><div class="sub">'+esc(nombreSuc(P.destino))+'</div></div></div>'
+    +'<div class="summary"><div class="chk-ic">✓</div><div style="font-family:var(--font-d);font-size:26px;margin-top:6px">Picking completado</div>'
+    +'<div class="sub" style="font-family:var(--font-c);color:var(--muted)">'+(P.operario?('Operario: '+esc(P.operario)):'')+'</div>'
+    +'<div class="sumrow"><div class="s"><div class="v">'+fmtInt(sol)+'</div><div class="k">Solicitadas</div></div>'
+    +'<div class="s"><div class="v">'+fmtInt(enc)+'</div><div class="k">Encontradas</div></div>'
+    +'<div class="s"><div class="v" style="color:'+(falt>0?'var(--bad)':'var(--ok)')+'">'+fmtInt(falt)+'</div><div class="k">Faltantes</div></div>'
+    +'<div class="s"><div class="v">'+dur+'</div><div class="k">Tiempo</div></div></div>'
+    +(falt>0?'<div class="blind" style="margin-top:14px">Quedan '+falt+' unidades sin encontrar — se registran como diferencia para el control.</div>':'')
+    +'<div class="row-actions" style="justify-content:center;margin-top:16px"><button class="btn btn-primary btn-lg" id="enviar">Enviar a control</button></div></div>';
+  $('enviar').onclick=async()=>{
+    const b=$('enviar'); b.disabled=true;
+    P.estado='LISTO PARA CONTROL'; P.completed_at=nowISO(); P.con_diferencias=falt>0;
+    await Promise.all([ pkSaveField(P.nro,'estado','LISTO PARA CONTROL'), pkSaveField(P.nro,'completed_at',P.completed_at), pkSaveField(P.nro,'con_diferencias',falt>0) ]);
+    pkEvento({event_type:'picking_completed',picking_id:P.nro,operator_id:P.operario,value:{solicitadas:sol,encontradas:enc,faltantes:falt}});
+    toast('Enviado a control','ok'); state.view='lista'; await cargarPicking(); render();
+  };
 }
 
 /* ============================================================ init ============ */

@@ -175,6 +175,16 @@ async function cargarCombos(){
   return DATA.bar.combos;
 }
 
+/* ---- maestro EAN de Adidas (para resolver el EAN esperado de cada variante al
+   crear el pick; el kiosco NO lo baja, valida contra el EAN horneado) ---- */
+let _maestro=null,_maestroP=null,_sku2ean=null;
+function loadMaestro(){ if(_maestro) return Promise.resolve(_maestro); if(_maestroP) return _maestroP;
+  _maestroP=fetch('../recepciones/maestro-adidas.json').then(r=>{ if(!r.ok) throw new Error('maestro '+r.status); return r.json(); }).then(j=>{ _maestro=j; return j; }); return _maestroP; }
+function eanDeVariante(codigo, talle){ // codigo barrida "ADI"+material ; devuelve EAN o ''
+  if(!_maestro) return ''; const c=String(codigo||''); if(!/^ADI/i.test(c)) return '';
+  if(!_sku2ean){ _sku2ean={}; const em=_maestro.ean; for(const e in em){ _sku2ean[em[e].replace('\t','')]=e; } }
+  const material=c.slice(3); return _sku2ean[material+String(talle||'')]||''; }
+
 function comboKey(marca,rubro){ return fbKey(marca)+'__'+fbKey(rubro); }
 function zonaDe(marca,rubro){ const zid=DATA.asignZona[comboKey(marca,rubro)]; return (zid&&DATA.zonas[zid])?{id:zid,...DATA.zonas[zid]}:null; }
 function zonaOrden(marca,rubro){ const z=zonaDe(marca,rubro); return z?num(z.orden):999; }
@@ -277,16 +287,20 @@ async function abrirNuevoPicking(){
   $('npCrear').onclick=async()=>{
     if(!items||!items.length) return;
     const dest=$('npDest').value, prio=$('npPrio').value, fm=$('npMarca').value, fr=$('npRubro').value;
+    const b=$('npCrear'); b.disabled=true; b.textContent='Resolviendo EAN…';
+    try{ await loadMaestro(); }catch(e){ /* sin maestro → variantes sin EAN, control manual */ }
+    b.textContent='Crear picking';
     // ordenar por zona (recorrido) y numerar sequence
     items.sort((a,b)=> zonaOrden(a.marca,a.rubro)-zonaOrden(b.marca,b.rubro) || cmp(a.marca,b.marca) || cmp(a.codigo,b.codigo));
     const itemsObj={};
     items.forEach((it,i)=>{ const z=zonaDe(it.marca,it.rubro); const iid='i'+String(i+1).padStart(4,'0');
-      itemsObj[iid]={ codigo:it.codigo, desc:it.desc, marca:it.marca, rubro:it.rubro, talles:it.talles,
+      const talles=(it.talles||[]).map(t=>({t:t.t, req:num(t.s), ean:eanDeVariante(it.codigo,t.t), picked:0}));
+      itemsObj[iid]={ codigo:it.codigo, desc:it.desc, marca:it.marca, rubro:it.rubro, talles:talles,
         zonaId:z?z.id:null, zonaNombre:z?z.nombre:'', requested_qty:it.requested_qty, picked_qty:0, controlled_qty:0, estado:'pendiente', sequence:i+1 }; });
     const nro=DATA.seq+1;
     const P={ nro, destino:dest, estado:'PENDIENTE', prioridad:prio, filtros:{marca:fm||'',rubro:fr||''},
       origen:{barrida:DATA.bar.ultima}, operario:'', created_at:nowISO(), creado_por:_mail, items:itemsObj };
-    const b=$('npCrear'); b.disabled=true;
+    b.disabled=true;
     try{
       await fbPut(ROOT+'/pickings/'+fbKey(nro), P);
       await fbPut(ROOT+'/seq', nro); DATA.seq=nro; DATA.pickings[fbKey(nro)]=P;
