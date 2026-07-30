@@ -291,9 +291,13 @@ La ve el rol `admin` o quien tenga la herramienta `objetivos`. Las sucursales NO
 entran acá: ven su objetivo en Indicadores.
 
 - **Valores por sucursal/semana**: **META** (el objetivo, el único que se carga),
-  **MÍNIMO** (= Meta ×0,8), **120** (= Meta ×1,2, superación) y **REAL** (venta de
-  la semana). Mínimo/120 se derivan solos; se guardan horneados. Los factores están
-  en `F_MIN`/`F_120` del módulo.
+  **MÍNIMO** (= Meta ÷ 1,2), **120** (= Meta × 1,2, superación) y **REAL** (venta de
+  la semana). Banda geométrica de razón 1,2 alrededor de la Meta (validado con el
+  Excel real de Juli: p.ej. Meta 108M → Mín 90M → 120 129,6M). Mínimo/120 se derivan
+  solos y se guardan horneados. Los factores están en `F_MIN`/`F_120` del módulo.
+  ⚠️ Los objetivos son montos grandes (decenas/cientos de millones de pesos): la venta
+  semanal de una sucursal grande ronda los 100M. Cuidado con hojas viejas del Excel que
+  vienen en otra escala (×40 menos).
 - **Carga (Etapa 1, dos caminos)**: (a) subir el Excel **"PMS Objetivos Semanal
   Locales"** (SheetJS por CDN, client-side, no se sube nada) → se elige la hoja de la
   semana ("SEMANA 3 AGO"…) y se parsea la grilla; o (b) cargar los montos a mano. Todo
@@ -310,10 +314,13 @@ entran acá: ven su objetivo en Indicadores.
   y `objetivos/ultima` (puntero al último lunes). Se guarda **agrupado por slug** para
   que cada sucursal baje solo lo suyo (seguridad blanda, como Indicadores/Barrida).
   Constante `FIREBASE_DB_URL` en `objetivos/`, `OBJETIVOS_URL` en `indicadores/`.
-- **Aviso a la sucursal**: vive en **`indicadores/`** (home de sucursal/outlet).
-  La sección `secObjetivo` lee `recepciones-mateu/objetivos/ultima` +
-  `.../porSlug/<slug>` y muestra "Objetivo de la semana" (Meta destacada, Mínimo/120
-  y barra de avance vs. Real). Sin dato → la sección no aparece. Usa `SUC2SLUG`.
+- **Aviso a la sucursal**: vive en **`indicadores/`**, **arriba de todo** (encima de
+  los KPIs — es lo primero que ve el encargado). La sección `secObjetivo` lista las
+  semanas publicadas (`objetivos/semanas.json?shallow=true` → solo las claves, sin bajar
+  datos de otras sucursales) en un **selector para ver semanas anteriores**, y por la
+  elegida lee `.../porSlug/<slug>` (Meta destacada, Mínimo/120 y barra de avance vs.
+  Real). Sin dato para esa semana → nota "aún sin cargar"; sin ninguna semana → la
+  sección no aparece. Usa `SUC2SLUG`.
   ⚠️ Diagonal 80 tiene objetivo pero no tiene datos de Indicadores todavía, así que
   su encargado aún no ve la sección (Indicadores lo manda a empty state antes). Se
   resuelve cuando Diagonal tenga datos de venta.

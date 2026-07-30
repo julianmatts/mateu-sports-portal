@@ -481,19 +481,19 @@ footer b{color:var(--navy)}
     <div class="print-ctx" id="printCtx"></div>
     <div class="filtro-banner" id="filtroBanner" style="display:none"></div>
 
+    <section class="sec" id="secObjetivo" style="display:none">
+      <div class="sec-label">Objetivo de venta</div>
+      <h2 class="sec-title">Objetivo de <em>venta</em></h2>
+      <p class="hint">La meta de venta que puso gerencia para tu sucursal, con el mínimo y el objetivo de superación (120). Elegí la semana para ver otras. A medida que se cargue la venta, vas viendo el avance.</p>
+      <div class="card pad" id="objetivoCard"></div>
+    </section>
+
     <section class="sec" id="secKpis">
       <div class="sec-label">Resumen</div>
       <h2 class="sec-title">Los cuatro <em>indicadores</em></h2>
       <div class="kpis" id="kpis"></div>
       <p class="cob-nota" id="cobNota"></p>
       <div class="diag" id="diagBox" style="display:none"></div>
-    </section>
-
-    <section class="sec" id="secObjetivo" style="display:none">
-      <div class="sec-label">Objetivo de venta</div>
-      <h2 class="sec-title">Objetivo de <em>la semana</em></h2>
-      <p class="hint">La meta de venta que puso gerencia para tu sucursal esta semana, con el mínimo y el objetivo de superación. A medida que se cargue la venta, vas viendo el avance.</p>
-      <div class="card pad" id="objetivoCard"></div>
     </section>
 
     <section class="sec" id="secBarrida" style="display:none">
@@ -1016,6 +1016,28 @@ function sparkSVG(serie, tgt){
     `<polyline points="${pts}" fill="none" stroke="var(--navy-mid)" stroke-width="1.6" stroke-linejoin="round"/>`+
     (lastI>=0?`<circle cx="${X(lastI).toFixed(1)}" cy="${Y(serie[lastI].val).toFixed(1)}" r="2.6" fill="var(--red)"/>`:'')+`</svg>`;
 }
+// Con pocos períodos una línea es una diagonal sin sentido. Mostramos una barra por
+// período (última en rojo) con la línea del objetivo punteada: se lee la comparación
+// directo. La base va apenas debajo del mínimo para que la diferencia se note sin exagerar.
+function sparkBars(serie, tgt){
+  const items = serie.filter(p=>isFinite(p.val));
+  if(items.length<2) return '';
+  const vals = items.map(p=>p.val);
+  let lo=Math.min(...vals), hi=Math.max(...vals);
+  if(isFinite(tgt)){ lo=Math.min(lo,tgt); hi=Math.max(hi,tgt); }
+  const pad = (hi-lo)*0.6 || Math.abs(hi)*0.1 || 1;
+  const base = lo-pad;
+  const W=120,H=26,P=2, y0=H-P;
+  const n=items.length, bw=Math.min(15,(W-2*P)/n*0.6), gap=((W-2*P)-bw*n)/(n+1);
+  const Y=v=>H-P-((v-base)/(hi-base))*(H-2*P);
+  let bars='';
+  items.forEach((p,i)=>{
+    const x=P+gap+(bw+gap)*i, y=Y(p.val), last=i===items.length-1;
+    bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0,y0-y).toFixed(1)}" rx="1.5" fill="${last?'var(--red)':'var(--muted-light)'}"/>`;
+  });
+  const tgtLine = isFinite(tgt)? `<line x1="${P}" y1="${Y(tgt).toFixed(1)}" x2="${W-P}" y2="${Y(tgt).toFixed(1)}" stroke="var(--navy-mid)" stroke-width="1" stroke-dasharray="3 2"/>`:'';
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Comparativo por período">${bars}${tgtLine}</svg>`;
+}
 
 /* --- diagnóstico accionable: traduce KPIs + mix + cobertura en qué hacer --- */
 function mixCajaShare(){
@@ -1179,13 +1201,13 @@ function renderKPIs(){
       // prioridad al ranking dentro del mismo tipo (formato); la cadena queda secundaria.
       rankHtml = `<span>${usarFmt&&rF?`Formato <b>${rF.pos}/${rF.total}</b> · `:''}Cadena <b>${r||'—'}</b></span>${isFinite(difF)?`<span class="${fCls}">${difF>0?'+':''}${fmt2(difF)}% vs. ${refLbl}</span>`:''}`;
     }
-    const spark = semSel ? '' : sparkSVG(serieKPI(d.key), d.tgt||NaN);
+    const spark = semSel ? '' : sparkBars(serieKPI(d.key), d.tgt||NaN);
     return `<div class="kpi ${semClass}">
       <div class="kpi-name">${d.name}</div>
       <div class="kpi-val">${d.val}</div>
       <div class="kpi-unit">${d.unit}</div>
       <div class="kpi-obj">${objHtml}</div>
-      ${spark?`<div class="kpi-spark">${spark}</div>`:(semSel?'':'<div class="kpi-spark-empty">Tendencia: con el 2º período</div>')}
+      ${spark?`<div class="kpi-spark">${spark}</div>`:(semSel?'':'<div class="kpi-spark-empty">Comparativo: con el 2º período</div>')}
       <div class="kpi-foot">
         <div class="kpi-delta">${deltaHtmlStr}</div>
         <div class="kpi-rank">${rankHtml}</div>
@@ -1216,10 +1238,10 @@ function renderKPIsEcom(){
   $('kpis').innerHTML = cards.map(c=>{
     const dp = prev? deltaHtml(c.cur, c.prev) : null;
     const deltaStr = dp? `${dp} vs. ${mesAnt}` : '<span class="muted">sin período anterior</span>';
-    const spark = sparkSVG(c.spark, NaN);
+    const spark = sparkBars(c.spark, NaN);
     return `<div class="kpi">
       <div class="kpi-name">${c.name}</div><div class="kpi-val">${c.val}</div><div class="kpi-unit">${c.unit}</div>
-      ${spark?`<div class="kpi-spark">${spark}</div>`:'<div class="kpi-spark-empty">Tendencia: con el 2º período</div>'}
+      ${spark?`<div class="kpi-spark">${spark}</div>`:'<div class="kpi-spark-empty">Comparativo: con el 2º período</div>'}
       <div class="kpi-foot"><div class="kpi-delta">${deltaStr}</div></div></div>`;
   }).join('');
   $('cobNota').innerHTML = `Ecommerce vende por canales, sin piso ni vendedores. No entra en el ranking ni en el promedio de la cadena porque su tickets/hora no es comparable.`;
@@ -1282,20 +1304,30 @@ function renderStockCard(){
     + (deltaStr?`<div class="kpi-delta">${deltaStr}</div>`:'');
 }
 
-/* --- objetivo de venta de la semana (módulo Objetivos) --- */
-const _objetivoCache = {};   // slug -> Promise<{v,semana}|null>
-function fetchObjetivo(slug){
-  if(_objetivoCache[slug]) return _objetivoCache[slug];
+/* --- objetivo de venta por semana (módulo Objetivos) --- */
+let objSem = null;                 // semana elegida en el selector (lunesISO); null = la última
+let _objWeeks = null;              // Promise<[lunesISO desc]> (lista de semanas publicadas)
+const _objDataCache = {};          // "slug|semana" -> Promise<v|null>
+function fetchObjetivoWeeks(){
+  if(_objWeeks) return _objWeeks;
   const base = OBJETIVOS_URL.replace(/\/+$/,'');
-  _objetivoCache[slug] = (async()=>{
-    const ultima = await fetch(base+'/objetivos/ultima.json').then(r=>r.ok?r.json():null).catch(()=>null);
-    if(!ultima) return null;
-    const v = await fetch(base+'/objetivos/semanas/'+encodeURIComponent(ultima)+'/porSlug/'+encodeURIComponent(slug)+'.json')
-      .then(r=>r.ok?r.json():null).catch(()=>null);
-    return (v && v.meta>0) ? {v, semana:ultima} : null;
-  })();
-  return _objetivoCache[slug];
+  // shallow=true trae solo las claves (semanas), sin bajar los datos de las demás sucursales
+  _objWeeks = fetch(base+'/objetivos/semanas.json?shallow=true')
+    .then(r=>r.ok?r.json():null).catch(()=>null)
+    .then(o=> o ? Object.keys(o).sort().reverse() : []);
+  return _objWeeks;
 }
+function fetchObjetivoData(slug, semana){
+  const key = slug+'|'+semana;
+  if(_objDataCache[key]) return _objDataCache[key];
+  const base = OBJETIVOS_URL.replace(/\/+$/,'');
+  _objDataCache[key] = fetch(base+'/objetivos/semanas/'+encodeURIComponent(semana)+'/porSlug/'+encodeURIComponent(slug)+'.json')
+    .then(r=>r.ok?r.json():null).catch(()=>null)
+    .then(v=> (v && v.meta>0) ? v : null);
+  return _objDataCache[key];
+}
+const objMoney = n => '$'+Math.round(n||0).toLocaleString('es-AR');
+const objSemLbl = iso => { const p=String(iso||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:iso; };
 async function renderObjetivo(){
   const sec=$('secObjetivo'); if(!sec) return;
   sec.style.display='none';
@@ -1303,35 +1335,49 @@ async function renderObjetivo(){
   const slug = SUC2SLUG[sucName];
   if(!slug) return;
   const target = sucName;
-  let data=null;
-  try{ data = await fetchObjetivo(slug); }catch(e){ return; }
+  let weeks;
+  try{ weeks = await fetchObjetivoWeeks(); }catch(e){ return; }
   if(sucName!==target) return;
-  if(!data){ sec.style.display='none'; return; }
-  const v=data.v;
-  const meta=v.meta||0, minimo=v.minimo||Math.round(meta*0.8), s120=v.s120||Math.round(meta*1.2), real=v.real||0;
-  const semLbl=(()=>{ const p=String(data.semana||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:data.semana; })();
-  const pct = (real&&meta)? real/meta : 0;
-  const w = Math.min(100, Math.round(pct*100));
-  const cls = !real ? 'na' : real>=meta ? 'ok' : real>=minimo ? 'warn' : 'bad';
-  const col = cls==='ok' ? 'var(--ok,#16a34a)' : cls==='warn' ? '#d97706' : cls==='bad' ? '#dc2626' : 'var(--mid)';
-  const money = n => '$'+Math.round(n||0).toLocaleString('es-AR');
-  let html='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
+  if(!weeks || !weeks.length){ sec.style.display='none'; return; }
+  // semana activa: la elegida (si sigue existiendo) o la última publicada
+  const sem = (objSem && weeks.includes(objSem)) ? objSem : weeks[0];
+  let v=null;
+  try{ v = await fetchObjetivoData(slug, sem); }catch(e){ v=null; }
+  if(sucName!==target) return;
+
+  // selector de semanas (arriba a la derecha)
+  const selHtml = '<select id="objSemSel" style="font-family:var(--font-b,inherit);font-size:13px;color:var(--navy,#0B1527);'
+    +'background:#fff;border:1px solid var(--line,#dce3f0);border-radius:7px;padding:6px 9px;cursor:pointer">'
+    + weeks.map(k=>'<option value="'+esc(k)+'"'+(k===sem?' selected':'')+'>Semana del '+esc(objSemLbl(k))+'</option>').join('')
+    +'</select>';
+
+  let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
     +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">Meta de la semana</div>'
-    +'<div class="hint" style="margin:0">Semana del '+esc(semLbl)+'</div></div>';
-  html+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">'
-    +'<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px">'+money(meta)+'</div>';
-  if(real) html+='<div style="font-size:14px;color:var(--mid);padding-bottom:5px">Real: <b style="color:'+col+'">'+money(real)+'</b> · '+Math.round(pct*100)+'%</div>';
-  html+='</div>';
-  // barra de avance
-  html+='<div style="position:relative;height:10px;background:#eef0f7;border-radius:6px;overflow:hidden;margin:10px 0 14px">'
-    +'<i style="position:absolute;left:0;top:0;bottom:0;border-radius:6px;width:'+w+'%;background:'+col+';display:block"></i></div>';
-  // mínimo / 120
-  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-    +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Mínimo</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+money(minimo)+'</div></div>'
-    +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Superación 120</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+money(s120)+'</div></div>'
-    +'</div>';
-  if(v.nota) html+='<p class="hint" style="margin-top:12px">📝 '+esc(v.nota)+'</p>';
+    +selHtml+'</div>';
+
+  if(!v){
+    html+='<p class="empty" style="margin:6px 0">Todavía no cargaron el objetivo de tu sucursal para esta semana. Probá con otra semana.</p>';
+  }else{
+    const meta=v.meta||0, minimo=v.minimo||Math.round(meta/1.2), s120=v.s120||Math.round(meta*1.2), real=v.real||0;
+    const pct = (real&&meta)? real/meta : 0;
+    const w = Math.min(100, Math.round(pct*100));
+    const cls = !real ? 'na' : real>=meta ? 'ok' : real>=minimo ? 'warn' : 'bad';
+    const col = cls==='ok' ? 'var(--ok,#16a34a)' : cls==='warn' ? '#d97706' : cls==='bad' ? '#dc2626' : 'var(--mid)';
+    html+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">'
+      +'<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px">'+objMoney(meta)+'</div>';
+    if(real) html+='<div style="font-size:14px;color:var(--mid);padding-bottom:5px">Real: <b style="color:'+col+'">'+objMoney(real)+'</b> · '+Math.round(pct*100)+'%</div>';
+    else html+='<div style="font-size:13px;color:var(--muted-light,#b0bcd4);padding-bottom:6px">Venta de la semana: aún sin cargar</div>';
+    html+='</div>';
+    html+='<div style="position:relative;height:10px;background:#eef0f7;border-radius:6px;overflow:hidden;margin:10px 0 14px">'
+      +'<i style="position:absolute;left:0;top:0;bottom:0;border-radius:6px;width:'+w+'%;background:'+col+';display:block"></i></div>';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+      +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Mínimo</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+objMoney(minimo)+'</div></div>'
+      +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Superación 120</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+objMoney(s120)+'</div></div>'
+      +'</div>';
+    if(v.nota) html+='<p class="hint" style="margin-top:12px">📝 '+esc(v.nota)+'</p>';
+  }
   $('objetivoCard').innerHTML=html;
+  const selEl=$('objSemSel'); if(selEl) selEl.onchange = e => { objSem = e.target.value; renderObjetivo(); };
   sec.style.display='';
 }
 
