@@ -1068,66 +1068,83 @@ function reposFiltradas(){
 async function exportRepXlsx(){
   const R=state.resultado; if(!R) return;
   if(typeof ExcelJS==='undefined'){ toast('ExcelJS no cargó; recargá la página','err'); return; }
+  const f=state.filtros;
   const rows=reposFiltradas();
   if(!rows.length){ toast('No hay filas para exportar','err'); return; }
   const faltaEn = r => Object.values(r.talles).some(d=>d.v>0 && d.v>d.r);
-  // columnas de talle: solo las que tienen SUGERIDO>0 en al menos un artículo de lo
-  // filtrado (no ensuciar con talles que quedaron vacíos según el filtro actual).
+  // columnas de talle: solo las que tienen SUGERIDO>0 en algún artículo de lo filtrado.
   const set=new Set(); rows.forEach(r=>Object.entries(r.talles).forEach(([t,d])=>{ if(d.s>0) set.add(t); }));
   const numT=t=>{ const n=parseFloat(String(t).replace(',','.')); return isFinite(n)?n:Infinity; };
   const talles=[...set].sort((a,b)=>(numT(a)-numT(b))||cmp(a,b));
 
-  const fixed=['Rubro','Marca','Artículo','Código','Sucursal','Vendido','Reserva','Sugerido','Falta'];
-  const headers=[...fixed, ...talles]; const nCols=headers.length; const FIX=fixed.length;
+  // Layout como la planilla del depósito: Código · Artículo · Descripción · Destino ·
+  // [talles con la cantidad a mandar] · Total ; y las analíticas (Vendido/Reserva/Falta) al final.
+  const izq=['Código','Artículo','Descripción','Destino'];
+  const der=['Total','Vendido','Reserva','Falta'];
+  const headers=[...izq, ...talles, ...der];
+  const nCols=headers.length; const LZ=izq.length;
   const wb=new ExcelJS.Workbook();
   const ws=wb.addWorksheet('Reposición', {views:[{showGridLines:false}]});
-  ws.columns=[{width:16},{width:16},{width:34},{width:14},{width:20},{width:9},{width:9},{width:9},{width:7}, ...talles.map(()=>({width:7}))];
+  ws.columns=[{width:16},{width:12},{width:36},{width:20}, ...talles.map(()=>({width:6.5})), {width:8},{width:8},{width:8},{width:7}];
+
+  const stripNN = s => String(s||'').replace(/^\d+\s*[-–]\s*/,'');
+  const rubroLbl = f.rubro ? stripNN(f.rubro).toUpperCase() : 'TODOS LOS RUBROS';
+  const marcaLbl = f.marca ? String(f.marca).toUpperCase() : 'TODAS LAS MARCAS';
 
   let r=1;
   ws.mergeCells(r,1,r,nCols);
   const tit=ws.getCell(r,1);
   tit.value={ richText:[
-    {font:{bold:true,size:14,name:'Calibri',color:{argb:BRAND.navy}},text:'ANÁLISIS DE RESERVA · Reposición\n'},
-    {font:{size:9,name:'Calibri',color:{argb:BRAND.muted}},text:'Depósito Central · Semana del '+lunesLabel(state.semana)} ]};
+    {font:{bold:true,size:15,name:'Calibri',color:{argb:BRAND.navy}},text:'REPOSICIÓN '+rubroLbl+'\n'},
+    {font:{bold:true,size:11,name:'Calibri',color:{argb:BRAND.red}},text:marcaLbl},
+    {font:{size:9,name:'Calibri',color:{argb:BRAND.muted}},text:'   ·  Depósito Central  ·  Semana del '+lunesLabel(state.semana)} ]};
   tit.alignment={horizontal:'left',vertical:'middle',wrapText:true,indent:1};
   for(let c=1;c<=nCols;c++){ ws.getCell(r,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.white}}; ws.getCell(r,c).border={bottom:{style:'medium',color:{argb:BRAND.red}}}; }
-  ws.getRow(r).height=34; r++;
+  ws.getRow(r).height=38; r++;
 
   ws.mergeCells(r,1,r,nCols);
   const sub=ws.getCell(r,1);
   const totU=rows.reduce((a,x)=>a+x.sugerido,0), nFalta=rows.filter(faltaEn).length;
-  sub.value=fmtInt(rows.length)+' líneas · '+fmtInt(totU)+' unidades sugeridas · '+fmtInt(nFalta)+' con faltante de talle (en rojo = la reserva no alcanza)';
+  sub.value=fmtInt(rows.length)+' líneas · '+fmtInt(totU)+' unidades a reponer · '+fmtInt(nFalta)+' con faltante de talle (en rojo = la reserva no alcanza)';
   sub.font={size:10,name:'Calibri',color:{argb:BRAND.navy}}; sub.alignment={horizontal:'left',vertical:'middle',indent:1};
   sub.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.band}};
-  ws.getRow(r).height=20; r+=2;   // deja una fila en blanco
+  ws.getRow(r).height=20; r+=2;
 
   const headerRowIdx=r;
   headers.forEach((h,i)=>{ const c=ws.getCell(r,i+1); c.value=h; c.font={bold:true,color:{argb:BRAND.white},size:10,name:'Calibri'};
-    c.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.navy}}; c.alignment={horizontal:i<5?'left':'center',vertical:'middle'}; c.border=thinBorder(BRAND.navy); });
+    c.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.navy}}; c.alignment={horizontal:i<LZ?'left':'center',vertical:'middle'}; c.border=thinBorder(BRAND.navy); });
   ws.getRow(r).height=18; r++;
 
   rows.forEach((row,i)=>{
     const falta=faltaEn(row); const bg=i%2===0?BRAND.white:BRAND.band;
-    const base=[row.rubro,row.marca,row.desc,(row.codigo||row.id),row.sucNombre,row.vendido,row.reservaTotal,row.sugerido, falta?'Sí':''];
-    base.forEach((v,idx)=>{ const c=ws.getCell(r,idx+1); c.value=v; c.font={size:10,name:'Calibri',color:{argb:BRAND.navy}};
-      c.alignment={horizontal:idx<5?'left':'center',vertical:'middle'}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}}; c.border=thinBorder(BRAND.border); });
-    if(falta){ const fc=ws.getCell(r,9); fc.font={size:10,bold:true,name:'Calibri',color:{argb:BRAND.faltaTxt}}; fc.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.faltaBg}}; }
-    talles.forEach((t,ti)=>{ const c=ws.getCell(r,FIX+ti+1); const d=row.talles[t];
+    // izquierda: Código (barras) · Artículo (ID ITEM) · Descripción · Destino
+    [row.codigo||'', row.id, row.desc, row.sucNombre].forEach((v,idx)=>{ const c=ws.getCell(r,idx+1); c.value=(v===''?null:v);
+      c.font={size:10,name:'Calibri',color:{argb:BRAND.navy}}; c.alignment={horizontal:'left',vertical:'middle'};
+      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}}; c.border=thinBorder(BRAND.border); });
+    // talles = cantidad a mandar (sugerido); rojo si la reserva no alcanza
+    talles.forEach((t,ti)=>{ const c=ws.getCell(r,LZ+ti+1); const d=row.talles[t];
       const sug=d?d.s:0; const esFalta=!!(d&&d.v>0&&d.v>d.r);
       c.value = sug>0 ? sug : (esFalta?0:null);
       c.alignment={horizontal:'center',vertical:'middle'}; c.border=thinBorder(BRAND.border);
       if(esFalta){ c.font={size:10,bold:true,name:'Calibri',color:{argb:BRAND.faltaTxt}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.faltaBg}}; }
       else { c.font={size:10,name:'Calibri',color:{argb:BRAND.navy}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}}; }
     });
+    // derecha: Total (sugerido) · Vendido · Reserva · Falta
+    [row.sugerido, row.vendido, row.reservaTotal, falta?'Sí':''].forEach((v,idx)=>{ const c=ws.getCell(r,LZ+talles.length+idx+1); c.value=(v===''?null:v);
+      c.alignment={horizontal:'center',vertical:'middle'}; c.border=thinBorder(BRAND.border);
+      const esFaltaCol=(idx===3 && falta), esTotal=(idx===0);
+      c.font={size:10,bold:esTotal||esFaltaCol,name:'Calibri',color:{argb:esFaltaCol?BRAND.faltaTxt:BRAND.navy}};
+      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:esFaltaCol?BRAND.faltaBg:bg}};
+    });
     r++;
   });
 
-  // autofiltro SOLO en las columnas fijas: si abarca los talles, la flecha del filtro
-  // tapa el número en las columnas angostas.
-  ws.autoFilter={ from:{row:headerRowIdx,column:1}, to:{row:headerRowIdx,column:FIX} };
-  ws.views=[{state:'frozen', xSplit:5, ySplit:headerRowIdx, showGridLines:false}];
+  // autofiltro en las columnas de identidad (Código..Destino); los talles quedan sin flecha.
+  ws.autoFilter={ from:{row:headerRowIdx,column:1}, to:{row:headerRowIdx,column:LZ} };
+  ws.views=[{state:'frozen', xSplit:LZ, ySplit:headerRowIdx, showGridLines:false}];
   ws.pageSetup={orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}};
-  await downloadWorkbook(wb, 'reposicion-'+state.semana+'.xlsx');
+  const part=(s)=> s? '-'+stripNN(s).replace(/[^A-Za-z0-9]+/g,'') : '';
+  await downloadWorkbook(wb, 'reposicion'+part(f.rubro)+part(f.marca)+'-'+state.semana+'.xlsx');
   toast('Excel generado ✓','ok');
 }
 async function exportParXlsx(){
