@@ -1,10 +1,21 @@
 /* ============================================================
-   iconos.js — Íconos SVG para reemplazar emojis
+   iconos.js — Íconos SVG para reemplazar emojis (solo si hace falta)
    ------------------------------------------------------------
    Windows 7 (y navegadores viejos) no traen fuente de emoji a
    color: dibujan 📈 🎯 🧑‍💼 … como recuadros □ (tofu). Este script
    reemplaza cada emoji del DOM por un SVG inline equivalente, así
-   los íconos se ven idénticos en cualquier navegador/SO.
+   los íconos se ven bien igual en cualquier navegador/SO.
+
+   IMPORTANTE — desde 30/07/2026 es adaptativo: primero DETECTA si el
+   equipo puede dibujar emojis a color (canvas: dibuja un 🟢 y mira si
+   salió verde). Si puede (Windows moderno, Chrome/Firefox al día), NO
+   reemplaza nada y se ven los emojis nativos a color (más lindos). Si
+   NO puede (Windows 7 sin fuente de emoji), recién ahí hace el reemplazo
+   a SVG. Cada equipo ve lo mejor que soporta, sin configurar nada.
+
+   Override manual para probar (o forzar): agregar ?iconos=emoji o
+   ?iconos=svg a la URL, o setear localStorage 'ms_iconos_modo' en
+   'emoji' | 'svg' | 'auto' (default 'auto' = detección).
 
    Self-contained, sin CDN, sin dependencias. Se incluye en cada
    página del portal con una sola línea:
@@ -25,6 +36,55 @@
   'use strict';
   if (window.__msIconos) return;        // no correr dos veces
   window.__msIconos = true;
+
+  // ---- ¿este equipo dibuja emojis a color? ----
+  // Dibuja un 🟢 (círculo verde puro) en un canvas y revisa los píxeles:
+  // si aparece un canal de color bien distinto de los otros => hay fuente
+  // de emoji a color (Windows moderno, Chrome/Firefox al día) y NO tocamos
+  // nada. Si sale gris/negro (tofu □) o no se dibuja => Windows 7 sin emoji
+  // => reemplazamos por SVG. Ante cualquier duda/error => reemplazamos (la
+  // opción segura para navegadores viejos).
+  function soportaEmojiColor() {
+    try {
+      var size = 24;
+      var canvas = document.createElement('canvas');
+      canvas.width = size; canvas.height = size;
+      var ctx = canvas.getContext && canvas.getContext('2d');
+      if (!ctx) return false;
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.font = Math.round(size * 0.85) + 'px sans-serif';
+      ctx.fillStyle = '#000';               // si NO hay emoji, el tofu sale negro
+      ctx.fillText('🟢', size / 2, size / 2);  // 🟢
+      var d = ctx.getImageData(0, 0, size, size).data;
+      for (var i = 0; i < d.length; i += 4) {
+        if (d[i + 3] < 24) continue;        // píxel transparente, lo ignoramos
+        var r = d[i], g = d[i + 1], b = d[i + 2];
+        // ¿algún canal se separa claramente de los otros? => color, no gris
+        if (Math.max(r, g, b) - Math.min(r, g, b) > 28) return true;
+      }
+      return false;
+    } catch (e) { return false; }
+  }
+
+  // Modo: 'auto' (detección), 'emoji' (forzar nativo) o 'svg' (forzar SVG).
+  var modo = 'auto';
+  try {
+    var q = (location.search.match(/[?&]iconos=(emoji|svg|auto)/) || [])[1];
+    modo = q || localStorage.getItem('ms_iconos_modo') || 'auto';
+  } catch (e) {}
+
+  var usarSVG = modo === 'svg' ? true
+              : modo === 'emoji' ? false
+              : !soportaEmojiColor();
+
+  // Si el equipo ya muestra emojis lindos, no reemplazamos: dejamos el
+  // emoji nativo a color. Igual exponemos msIconos para no romper a quien
+  // llame refresh().
+  if (!usarSVG) {
+    window.msIconos = { refresh: function () {}, icons: {}, modo: modo, activo: false };
+    return;
+  }
 
   // Atajos de estilo para no repetir en cada path.
   var S = 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
@@ -239,5 +299,5 @@
   else start();
 
   // por si alguien necesita reprocesar a mano
-  window.msIconos = { refresh: function (root) { walk(root || document.body); }, icons: ICONS };
+  window.msIconos = { refresh: function (root) { walk(root || document.body); }, icons: ICONS, modo: modo, activo: true };
 })();
