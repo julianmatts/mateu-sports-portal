@@ -215,7 +215,8 @@ table.grid .sub{font-family:var(--font-c);font-size:12px;color:var(--muted)}
 
 <div class="toast" id="toast"></div>
 
-<!-- ExcelJS para exportar la nómina con estilo (como el OC de Managment) -->
+<!-- SheetJS (leer el Registro Único) + ExcelJS (exportar la nómina con estilo) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script>
 /* ============================================================
@@ -448,6 +449,7 @@ function viewLegajos(){
     </select>
     <button class="btn btn-primary btn-sm" id="btnNuevo">+ Legajo</button>
     <button class="btn btn-outline btn-sm" id="btnImportar" title="Traer la dotación registrada en Indicadores">⇩ Importar dotación</button>
+    <button class="btn btn-navy btn-sm" id="btnActualizar" title="Subir el Excel Registro Único y actualizar los legajos">⟳ Actualizar (Excel)</button>
   </div>`;
 
   let body;
@@ -718,6 +720,7 @@ function wire(){
   bindSel('fSuc','fSuc'); bindSel('fPuesto','fPuesto'); bindSel('fEstado','fEstado');
   if($('btnNuevo')) $('btnNuevo').onclick=()=>formLegajo(null);
   if($('btnImportar')) $('btnImportar').onclick=importarDotacion;
+  if($('btnActualizar')) $('btnActualizar').onclick=abrirActualizar;
   document.querySelectorAll('[data-leg]').forEach(tr=> tr.onclick=e=>{ if(e.target.closest('.rowact')) return; detalleLegajo(tr.dataset.leg); });
   document.querySelectorAll('[data-edit]').forEach(b=> b.onclick=e=>{ e.stopPropagation(); formLegajo(b.dataset.edit); });
   document.querySelectorAll('[data-baja]').forEach(b=> b.onclick=e=>{ e.stopPropagation(); formBaja(b.dataset.baja); });
@@ -1034,6 +1037,193 @@ function puestoDe(v){
   if(v.grupo==='Caja') return 'Cajero/a';
   if(v.grupo==='Refuerzos') return 'Depósito';
   return 'Otro';
+}
+
+/* ============================================================
+   ACTUALIZAR desde el Excel "Registro Único de dotación"
+   Sube el .xlsx (SheetJS, client-side). Parsea las hojas ACTIVOS y
+   BAJAS; la sucursal no está en ACTIVOS → se cruza con la grilla de la
+   hoja "Estado actual" por nombre (exacto + subconjunto de tokens).
+   Hace MERGE por DNI/nombre: actualiza los existentes y agrega los
+   nuevos, sin borrar lo cargado ni pisar la sucursal puesta a mano.
+   ============================================================ */
+let REG_PARSED = null;
+const ruClean=s=>(s==null?'':String(s)).replace(/\s+/g,' ').trim();
+const ruNorm=s=>ruClean(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\([^)]*\)/g,'').replace(/\*+/g,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim();
+const ruCap=s=>ruClean(s).toLowerCase().replace(/(^|[\s'’.\-])([a-záéíóúñü])/g,(m,p,c)=>p+c.toUpperCase());
+const ruDni=c=>{const m=String(c||'').replace(/\D/g,'');return m.length===11?m.slice(2,10):'';};
+function ruSerialISO(v){
+  if(v==null||v==='') return null;
+  if(v instanceof Date){ if(isNaN(v))return null; const p=x=>String(x).padStart(2,'0'); return v.getFullYear()+'-'+p(v.getMonth()+1)+'-'+p(v.getDate()); }
+  const n=Number(v); if(!isFinite(n)||n<=0) return null;
+  const d=new Date(Date.UTC(1899,11,30)+Math.round(n)*86400000); const y=d.getUTCFullYear();
+  if(y<1950||y>2035) return null; const p=x=>String(x).padStart(2,'0');
+  return y+'-'+p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate());
+}
+function ruPuesto(cat){const c=ruNorm(cat);
+  if(/encargad/.test(c)&&/sub/.test(c))return 'Subencargado/a'; if(/^sub/.test(c))return 'Subencargado/a';
+  if(/encargad/.test(c))return 'Encargado/a'; if(/vendedor/.test(c))return 'Vendedor/a';
+  if(/cajer/.test(c))return 'Cajero/a'; if(/maestranza|deposito|repositor|chofer/.test(c))return 'Depósito';
+  if(/administrativ|administracion|contable|sistemas|rrhh|geren/.test(c))return 'Administrativo/a'; return 'Otro';}
+const ruRegimen=j=>{const n=Number(String(j).replace(',','.'));return isFinite(n)&&n>=48?'Full Time':(isFinite(n)&&n>0?'Part Time':'');};
+const RU_DIVISOR={'diagonal 80':'diagonal','plaza italia':'plaza','city bell':'city-bell','kids':'kids','8':'calle-47','12':'calle-12','47':'calle-47','outlet':'calle-55','ensenada':'ensenada','los hornos':'los-hornos','gonnet':'gonnet','berisso':'berisso','49':'calle-49','44':'av-44','adidas 7':'adidas','adidas 12':'adidas-12','adidas original':'originals','aurelius 10':'aurelius-10','aurelius 12':'aurelius-12','aurelius cb':'aurelius-cb','aurelius 5':'aurelius-5','e-commerce':'ecommerce','ecommerce':'ecommerce','deposito':'deposito','administracion':'administracion','externos':'externos'};
+const RU_GRIDLAB={'diagonal 80':'diagonal','suc. plaza italia':'plaza','suc. city bell':'city-bell','kids':'kids','suc. 12':'calle-12','suc. 47':'calle-47','suc outlet':'calle-55','ensenada':'ensenada','los hornos':'los-hornos','gonnet':'gonnet','berisso':'berisso','suc 49':'calle-49','suc 44':'av-44','adidas 7':'adidas','adidas 12':'adidas-12','adidas original':'originals','aurelius 10':'aurelius-10','aurelius 12':'aurelius-12','aurelius cb':'aurelius-cb','aurelius 5':'aurelius-5','e-commerce':'ecommerce','deposito':'deposito','administracion':'administracion','externos':'externos'};
+const RU_SEP=new Set(['sub','cajera','cajeras','cajero','choferes','chofer']);
+const ruNormDiv=s=>ruNorm(s).replace(/^suc\.? ?/,'').replace(/^sucursal ?/,'').trim();
+function ruRows(wb, hoja){
+  const name=Object.keys(wb.Sheets).find(n=>n.toLowerCase().trim()===hoja.toLowerCase().trim());
+  if(!name) return [];
+  return XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, raw:true, defval:''});
+}
+function parseRegistroUnico(wb){
+  // --- grilla persona -> sucursal (hoja "Estado actual") ---
+  const grid=ruRows(wb,'Estado actual'); const head=grid[0]||[]; const colSlug={};
+  for(let c=0;c<head.length;c++){ const lab=ruClean(head[c]).toLowerCase(); if(RU_GRIDLAB[lab]) colSlug[c]=RU_GRIDLAB[lab]; }
+  const sucMap={};
+  for(let r=1;r<grid.length;r++){ for(const c in colSlug){ const nm=ruClean(grid[r][c]); if(!nm)continue; const nn=ruNorm(nm); if(!nn||RU_SEP.has(nn))continue; if(!sucMap[nn])sucMap[nn]=colSlug[c]; } }
+  const gridKeys=Object.keys(sucMap);
+  const gridByPair={}; gridKeys.forEach(k=>{const t=k.split(' ');if(t.length>=2){const p=t[0]+' '+t[1];(gridByPair[p]=gridByPair[p]||new Set()).add(sucMap[k]);}});
+  const tokset=s=>new Set(s.split(' ').filter(x=>x.length>1));
+  const gridTok=gridKeys.map(k=>({slug:sucMap[k],toks:tokset(k)}));
+  const subset=(a,b)=>{for(const x of a)if(!b.has(x))return false;return true;};
+  const matchSuc=nn=>{
+    if(sucMap[nn])return sucMap[nn]; const at=tokset(nn); let hit=null,amb=false;
+    for(const g of gridTok){ if(g.toks.size<2||at.size<2)continue; if((subset(g.toks,at)||subset(at,g.toks))&&[...g.toks][0]===[...at][0]){ if(hit&&hit!==g.slug)amb=true; hit=g.slug; } }
+    if(hit&&!amb)return hit;
+    const t=nn.split(' '); if(t.length>=2){const s=gridByPair[t[0]+' '+t[1]]; if(s&&s.size===1)return [...s][0];}
+    return null;
+  };
+  // --- ACTIVOS (por secciones de sucursal) ---
+  const A=ruRows(wb,'ACTIVOS'); const activos=[]; let curSuc=null;
+  for(let r=2;r<A.length;r++){ const row=A[r]; const nombre=ruClean(row[2]); if(!nombre)continue;
+    if(nombre==='Empleado'||ruClean(row[4])==='Jornada')continue;
+    const dv=RU_DIVISOR[ruNormDiv(nombre)]; if(dv){ if(!row[6])curSuc=dv; continue; }
+    if(/^(mercado libre|ingresantes)$/.test(ruNorm(nombre)))continue;
+    if(!row[6]&&!row[5])continue;
+    const nn=ruNorm(nombre);
+    activos.push({ nombre:ruCap(nombre), cuil:ruClean(row[6]), sucursal:curSuc||matchSuc(nn),
+      puesto:ruPuesto(row[3]), regimen:ruRegimen(row[4]), ingreso:ruSerialISO(row[5]),
+      nacimiento:ruSerialISO(row[7]), categoria:ruClean(row[3]), telefono:ruClean(row[9])||ruClean(row[10]),
+      direccion:[ [ruClean(row[11]),ruClean(row[12]),ruClean(row[13])].filter(Boolean).join(' '), ruClean(row[14]) ].filter(Boolean).join(', '),
+      legajo:ruClean(row[8]) });
+  }
+  // --- BAJAS ---
+  const B=ruRows(wb,'BAJAS'); const bajas=[];
+  for(let r=2;r<B.length;r++){ const row=B[r]; const nombre=ruClean(row[2]); if(!nombre)continue;
+    const baja=ruSerialISO(row[15]), ing=ruSerialISO(row[4]); if(!baja&&!ing)continue;
+    bajas.push({ nombre:ruCap(nombre), cuil:ruClean(row[5]), categoria:ruClean(row[3]), puesto:ruPuesto(row[3]),
+      ingreso:ing, legajo:ruClean(row[7]), baja_fecha:baja, tipo:ruClean(row[16])||'Otro' });
+  }
+  return {activos, bajas};
+}
+function ruCorteCutoff(c){
+  if(c==='none') return null; if(c==='all') return '0000-00-00'; if(c==='2024') return '2024-01-01';
+  const d=new Date(); d.setMonth(d.getMonth()-(c==='12m'?12:3)); const p=x=>String(x).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+}
+// Arma el nodo resultante (merge o reemplazo) sin escribir. base = legajos actuales.
+function planActualizar(parsed, corte, modo, base){
+  const result = modo==='replace' ? {} : {...base};
+  const byDni={}, byNom={};
+  Object.entries(base).forEach(([k,l])=>{ if(l.dni) byDni[l.dni]=k; if(l.nombre) byNom[ruNorm(l.nombre)]=k; });
+  const keyDe=(dni,nombre)=>{ if(modo==='replace') return 'reg-'+(dni||('n'+ruNorm(nombre).replace(/ /g,'-'))); return (dni&&byDni[dni])||byNom[ruNorm(nombre)]||('reg-'+(dni||('n'+ruNorm(nombre).replace(/ /g,'-')))); };
+  let nuevos=0, actualizados=0, bajasN=0; const sinSuc=[];
+  parsed.activos.forEach(a=>{
+    const dni=ruDni(a.cuil); const key=keyDe(dni,a.nombre); const prev=result[key];
+    const m = prev?{...prev}:{creado:nowISO()};
+    m.nombre=a.nombre; m.dni=dni; m.cuil=a.cuil||''; m.puesto=a.puesto; m.regimen=a.regimen;
+    m.ingreso=a.ingreso||m.ingreso||null; m.nacimiento=a.nacimiento||m.nacimiento||null;
+    m.categoria=a.categoria||''; m.telefono=a.telefono||m.telefono||''; m.direccion=a.direccion||m.direccion||'';
+    m.legajo_nro=a.legajo||m.legajo_nro||''; m.sucursal=a.sucursal||m.sucursal||null;
+    m.estado='activo'; m.baja_fecha=null; m.baja_motivo=null; m.origen='registro-unico'; m.actualizado=nowISO();
+    if(prev&&base[key]) actualizados++; else nuevos++;
+    if(!m.sucursal) sinSuc.push(a.nombre);
+    result[key]=m;
+  });
+  const cutoff=ruCorteCutoff(corte);
+  if(cutoff!==null){
+    parsed.bajas.forEach(b=>{
+      if(!b.baja_fecha||b.baja_fecha<cutoff) return;
+      const dni=ruDni(b.cuil); const key=keyDe(dni,b.nombre); const prev=result[key];
+      const m = prev?{...prev}:{creado:nowISO()};
+      m.nombre=b.nombre; m.dni=dni; m.cuil=b.cuil||''; m.puesto=b.puesto; m.categoria=b.categoria||'';
+      m.ingreso=b.ingreso||m.ingreso||null; m.legajo_nro=b.legajo||m.legajo_nro||'';
+      m.estado='baja'; m.baja_fecha=b.baja_fecha; m.baja_motivo=b.tipo||'Otro'; m.sucursal=m.sucursal||null;
+      m.origen='registro-unico'; m.actualizado=nowISO(); bajasN++;
+      result[key]=m;
+    });
+  }
+  return {result, nuevos, actualizados, bajasN, sinSuc, total:Object.keys(result).length};
+}
+function abrirActualizar(){
+  if(typeof XLSX==='undefined'){ toast('Excel (SheetJS) no cargó todavía','err'); return; }
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='.xlsx,.xls';
+  inp.onchange=()=>{ const f=inp.files[0]; if(!f)return;
+    openModal('Actualizar desde Excel', `<div class="state"><div class="spinner"></div>Leyendo ${esc(f.name)}…</div>`, '');
+    const rd=new FileReader();
+    rd.onload=e=>{ try{
+        const wb=XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+        REG_PARSED=parseRegistroUnico(wb);
+        if(!REG_PARSED.activos.length){ throw new Error('sin activos'); }
+        previewActualizar(f.name);
+      }catch(err){ console.error(err);
+        openModal('Actualizar desde Excel', `<div class="empty"><div class="ic">⚠️</div><div class="t">No pude leer el Excel</div><div class="s">Revisá que tenga las hojas <b>ACTIVOS</b>, <b>BAJAS</b> y <b>Estado actual</b>.</div></div>`, `<button class="btn btn-primary" id="mCancel">Cerrar</button>`);
+        $('mCancel').onclick=closeModal;
+      } };
+    rd.readAsArrayBuffer(f);
+  };
+  inp.click();
+}
+function previewActualizar(fname){
+  const render1=()=>{
+    const corte=$('ruCorte')?$('ruCorte').value:'3m'; const modo=$('ruModo')?$('ruModo').value:'merge';
+    const plan=planActualizar(REG_PARSED, corte, modo, LEGAJOS);
+    const conSuc=REG_PARSED.activos.filter(a=>a.sucursal).length;
+    $('ruStats').innerHTML=`
+      <div class="kpis" style="margin-bottom:12px">
+        <div class="kpi info"><div class="k">Activos en el Excel</div><div class="v">${REG_PARSED.activos.length}</div><div class="s">${conSuc} con sucursal · ${REG_PARSED.activos.length-conSuc} sin asignar</div></div>
+        <div class="kpi ok"><div class="k">${modo==='replace'?'A crear':'Nuevos'}</div><div class="v">${plan.nuevos}</div></div>
+        <div class="kpi warn"><div class="k">${modo==='replace'?'—':'Se actualizan'}</div><div class="v">${modo==='replace'?'—':plan.actualizados}</div></div>
+        <div class="kpi bad"><div class="k">Bajas a cargar</div><div class="v">${plan.bajasN}</div></div>
+      </div>
+      <div class="hintline">Quedarán <b>${plan.total}</b> legajos en total tras aplicar.${plan.sinSuc.length?` <b>${plan.sinSuc.length}</b> activos sin sucursal (se completan a mano después).`:''}</div>`;
+  };
+  const body=`
+    <div class="hintline">Archivo: <b>${esc(fname)}</b> · ${REG_PARSED.activos.length} activos · ${REG_PARSED.bajas.length} bajas en el histórico.</div>
+    <div class="frow">
+      <div class="f"><label>Bajas a importar</label><select class="sel" id="ruCorte">
+        <option value="3m" selected>Últimos 3 meses</option>
+        <option value="12m">Últimos 12 meses</option>
+        <option value="2024">Desde 2024</option>
+        <option value="all">Todas</option>
+        <option value="none">Ninguna</option>
+      </select></div>
+      <div class="f"><label>Modo</label><select class="sel" id="ruModo">
+        <option value="merge" selected>Actualizar (no borra)</option>
+        <option value="replace">Reemplazar todo</option>
+      </select></div>
+    </div>
+    <div id="ruStats"></div>
+    <div class="banner info" id="ruModoNota" style="margin-top:4px"></div>`;
+  openModal('Actualizar desde Excel', body, `<button class="btn btn-outline" id="mCancel">Cancelar</button><button class="btn btn-primary" id="ruApply">Aplicar</button>`);
+  const nota=()=>{ const modo=$('ruModo').value; $('ruModoNota').innerHTML = modo==='replace'
+    ? '<b>Reemplazar todo</b>: borra los legajos actuales y deja solo lo del Excel. Perdés ediciones y asignaciones hechas a mano.'
+    : '<b>Actualizar</b>: cruza por DNI, refresca los datos de cada persona y agrega los nuevos. No borra a nadie ni pisa la sucursal puesta a mano.'; };
+  $('ruCorte').onchange=render1; $('ruModo').onchange=()=>{render1();nota();};
+  render1(); nota();
+  $('mCancel').onclick=closeModal;
+  $('ruApply').onclick=aplicarActualizar;
+}
+async function aplicarActualizar(){
+  const corte=$('ruCorte').value, modo=$('ruModo').value;
+  $('ruApply').disabled=true; $('ruApply').textContent='Aplicando…';
+  try{
+    const full = HAS_DB ? (await fbGet(ROOT+'/legajos')||{}) : {...LEGAJOS};
+    const plan = planActualizar(REG_PARSED, corte, modo, full);
+    if(HAS_DB) await fbPut(ROOT+'/legajos', plan.result);
+    await recargar(); closeModal(); state.tab='legajos'; syncTabs(); render();
+    toast(`Listo: ${plan.nuevos} nuevos · ${plan.actualizados} actualizados · ${plan.bajasN} bajas`,'ok');
+  }catch(e){ console.error(e); toast('No se pudo aplicar','err'); $('ruApply').disabled=false; $('ruApply').textContent='Aplicar'; }
 }
 
 /* ============================================================
