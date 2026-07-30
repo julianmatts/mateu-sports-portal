@@ -321,6 +321,14 @@ entran acá: ven su objetivo en Indicadores.
   elegida lee `.../porSlug/<slug>` (Meta destacada, Mínimo/120 y barra de avance vs.
   Real). Sin dato para esa semana → nota "aún sin cargar"; sin ninguna semana → la
   sección no aparece. Usa `SUC2SLUG`.
+- **Venta por vendedor que carga el encargado** (en `indicadores/`, dentro de la
+  sección Objetivo): panel desplegable "Cómo viene el equipo". El encargado sube el
+  Excel de venta **abierta por vendedor** (SheetJS lazy; autodetecta las columnas
+  vendedor/venta y, si vienen, tickets/unidades), **previsualiza** y guarda. Muestra
+  ranking por venta con barra de participación, avance del equipo **vs. la Meta de la
+  semana**, y UPT/ticket promedio por vendedor cuando el Excel trae tickets/unidades.
+  Firebase: reusa `recepciones-mateu`, nodo `ventaEquipo/<slug>/<semanaISO>` (agrupado
+  por slug → cada sucursal baja solo lo suyo, como Objetivos/Barrida).
   ⚠️ Diagonal 80 tiene objetivo pero no tiene datos de Indicadores todavía, así que
   su encargado aún no ve la sección (Indicadores lo manda a empty state antes). Se
   resuelve cuando Diagonal tenga datos de venta.
