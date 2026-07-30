@@ -187,6 +187,23 @@ tr:last-child td{border-bottom:none}
   border:1px solid var(--border);border-radius:4px;padding:1px 6px;margin-left:7px;white-space:nowrap}
 .tag.cover{color:var(--mid);border-color:#f0d0a0}
 .tag.baja{color:var(--bad);border-color:#f0bfbc}
+/* filtro por rubro + grupos desplegables de Reposición disponible */
+.brubros{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+.brubro{font-family:var(--font-c);font-size:12.5px;font-weight:600;letter-spacing:.5px;color:var(--navy);
+  background:#fff;border:1px solid var(--border);border-radius:999px;padding:6px 13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+.brubro:hover{border-color:var(--navy-mid)}
+.brubro.on{background:var(--red);color:#fff;border-color:var(--red)}
+.brubro span{font-size:11px;font-weight:700;background:rgba(11,21,39,.08);border-radius:999px;padding:1px 7px;min-width:18px;text-align:center}
+.brubro.on span{background:rgba(255,255,255,.24)}
+.bgrupo{border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--card)}
+.bgrupo>summary{font-family:var(--font-c);font-size:14px;font-weight:600;letter-spacing:.4px;color:var(--navy);
+  padding:12px 15px;cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;background:#f8f9fe}
+.bgrupo>summary::-webkit-details-marker{display:none}
+.bgrupo>summary::before{content:'▸';color:var(--red);font-size:12px;transition:transform .15s}
+.bgrupo[open]>summary::before{transform:rotate(90deg)}
+.bgrupo>summary b{font-family:var(--font-d);font-size:20px;font-weight:400;letter-spacing:.5px}
+.bgrupo .tbl-wrap{border:0;border-top:1px solid var(--border);border-radius:0}
+.bgrupo table{min-width:640px}
 /* tabla cadena: destacados */
 td.td-lead{background:rgba(224,164,0,.12)}
 td.td-lead .num{font-weight:700}
@@ -575,9 +592,15 @@ footer b{color:var(--navy)}
 
     <section class="sec" id="secHeat">
       <div class="sec-label">Tráfico</div>
-      <h2 class="sec-title">Tickets por <em>hora y día</em></h2>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap">
+        <h2 class="sec-title" id="heatTitle">Tickets por <em>hora y día</em></h2>
+        <div class="seg" id="heatSeg" style="margin-bottom:8px">
+          <button type="button" id="hmUni" aria-pressed="true">Tickets</button>
+          <button type="button" id="hmPct" aria-pressed="false">% del total</button>
+        </div>
+      </div>
       <div class="card pad" style="overflow-x:auto"><div class="heat" id="heat"></div>
-        <div class="legend"><span>▮ Menos tickets</span><span style="color:var(--red)">▮ Pico de demanda</span></div>
+        <div class="legend" id="heatLegend"><span>▮ Menos tickets</span><span style="color:var(--red)">▮ Pico de demanda</span></div>
       </div>
     </section>
 
@@ -744,6 +767,7 @@ const DIAS = ['Lu','Ma','Mi','Ju','Vi','Sá','Do'];
 
 let PERIODOS = [], OBJ = {}, STOCK = null;
 let per = null, sucName = null, hbase = 'horas_contr';
+let heatMode = 'uni';   // 'uni' = tickets | 'pct' = % de participación en el total de la semana
 let sort = {k:'venta', dir:-1}, open = new Set(), openPersons = new Set(), semSucOpen = false, vistaCadena = false, semSel = null;
 const cacheCadena = {}, cacheDet = {};
 
@@ -818,6 +842,8 @@ async function boot(){
   }
   $('bCon').onclick = ()=>{ hbase='horas_contr'; segToggle(); render(); };
   $('bAct').onclick = ()=>{ hbase='h_act'; segToggle(); render(); };
+  $('hmUni').onclick = ()=>{ heatMode='uni'; renderHeat(); };
+  $('hmPct').onclick = ()=>{ heatMode='pct'; renderHeat(); };
   $('btnPrint').onclick = ()=> window.print();
   $('btnCopiar').onclick = copiarResumen;
   $('selSuc').onchange = e => {
@@ -1383,6 +1409,16 @@ async function renderObjetivo(){
 
 /* --- reposición disponible en depósito (Barrida de Reserva) --- */
 const _barridaCache = {};   // slug -> Promise<{lista,semana}|null>
+let _barridaFiltro = '';    // '' = todos | 'Calzado' | 'Indumentaria' | 'Accesorios' | 'Otros'
+let _barridaLast = null;    // {top, semana} de la última carga (para re-render sin refetch)
+// macro-rubro: colapsa los rubros crudos del Excel a las 3 categorías comerciales
+function bMacro(r){
+  const s=(r||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  if(s.includes('CALZAD')) return 'Calzado';
+  if(s.includes('INDUMENT')) return 'Indumentaria';
+  if(s.includes('ACCESORI')) return 'Accesorios';
+  return 'Otros';
+}
 function fetchBarrida(slug){
   if(_barridaCache[slug]) return _barridaCache[slug];
   const base = BARRIDA_URL.replace(/\/+$/,'');
@@ -1407,22 +1443,48 @@ async function renderBarrida(){
   if(sucName!==target) return;       // el usuario cambió de sucursal mientras cargaba
   const top = (data && data.lista || []).filter(x=>x.sugerido>0).sort((a,b)=>b.sugerido-a.sugerido);
   if(!top.length){ sec.style.display='none'; return; }
-  const totalU = top.reduce((a,x)=>a+(x.sugerido||0),0);
-  const semLbl = (()=>{ const p=String(data.semana||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:data.semana; })();
+  _barridaLast = {top, semana:data.semana};
+  _barridaFiltro = '';
+  paintBarrida();
+}
+function paintBarrida(){
+  const sec=$('secBarrida'); if(!sec||!_barridaLast) return;
+  const {top, semana} = _barridaLast;
+  const semLbl = (()=>{ const p=String(semana||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:semana; })();
+  // agrupar por macro-rubro
+  const ORDEN=['Calzado','Indumentaria','Accesorios','Otros'];
+  const porRubro={}; top.forEach(x=>{ const m=bMacro(x.rubro); (porRubro[m]=porRubro[m]||[]).push(x); });
+  const presentes = ORDEN.filter(m=>porRubro[m] && porRubro[m].length);
+  if(_barridaFiltro && !porRubro[_barridaFiltro]) _barridaFiltro='';   // el filtro activo ya no aplica
+  const filtrados = _barridaFiltro ? porRubro[_barridaFiltro] : top;
+  const totalU = filtrados.reduce((a,x)=>a+(x.sugerido||0),0);
+  // encabezado
   let html='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
-    +'<div style="font-size:15px"><b>'+top.length+'</b> artículo'+(top.length===1?'':'s')+' con reposición posible · <b>'+fmtN(totalU)+'</b> unidades sugeridas</div>'
+    +'<div style="font-size:15px"><b>'+filtrados.length+'</b> artículo'+(filtrados.length===1?'':'s')+' con reposición posible · <b>'+fmtN(totalU)+'</b> unidades sugeridas</div>'
     +'<div class="hint" style="margin:0">Semana del '+esc(semLbl)+'</div></div>';
-  html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Artículo</th><th class="L">Marca</th><th>Vendido</th><th>Sugerido</th><th class="L">Talles</th></tr></thead><tbody>';
-  top.slice(0,25).forEach(x=>{
-    // talles viene como array [{t,v,r,s}] desde Firebase (las claves con punto no se permiten)
-    const tarr = Array.isArray(x.talles) ? x.talles : Object.entries(x.talles||{}).map(([t,d])=>({t,...d}));
-    const tt = tarr.filter(d=>d.s>0).map(d=>d.t+'×'+d.s).join('  ');
-    html+='<tr><td class="L">'+esc(x.desc||x.codigo||x.id)+'</td><td class="L">'+esc(x.marca||'')+'</td>'
-      +'<td>'+fmtN(x.vendido||0)+'</td><td><b>'+fmtN(x.sugerido)+'</b></td><td class="L">'+esc(tt||'—')+'</td></tr>';
+  // pills de rubro
+  const pill=(val,lbl,n)=>'<button type="button" class="brubro'+(_barridaFiltro===val?' on':'')+'" data-rub="'+esc(val)+'">'+esc(lbl)+' <span>'+fmtN(n)+'</span></button>';
+  html+='<div class="brubros">'+pill('','Todos',top.length)
+    +presentes.map(m=>pill(m,m,porRubro[m].length)).join('')+'</div>';
+  // grupos desplegables por rubro (colapsados salvo el primero, para no armar una tabla larga)
+  const grupos = _barridaFiltro ? [_barridaFiltro] : presentes;
+  grupos.forEach((m,gi)=>{
+    const items = porRubro[m].slice().sort((a,b)=>b.sugerido-a.sugerido);
+    const u = items.reduce((a,x)=>a+(x.sugerido||0),0);
+    const open = (grupos.length===1 || gi===0) ? ' open' : '';
+    html+='<details class="bgrupo"'+open+'><summary><b>'+esc(m)+'</b> · '+items.length+' art. · '+fmtN(u)+' u sugeridas</summary>';
+    html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Artículo</th><th class="L">Marca</th><th>Vendido</th><th>Sugerido</th><th class="L">Talles</th></tr></thead><tbody>';
+    items.forEach(x=>{
+      // talles viene como array [{t,v,r,s}] desde Firebase (las claves con punto no se permiten)
+      const tarr = Array.isArray(x.talles) ? x.talles : Object.entries(x.talles||{}).map(([t,d])=>({t,...d}));
+      const tt = tarr.filter(d=>d.s>0).map(d=>d.t+'×'+d.s).join('  ');
+      html+='<tr><td class="L">'+esc(x.desc||x.codigo||x.id)+'</td><td class="L">'+esc(x.marca||'')+'</td>'
+        +'<td>'+fmtN(x.vendido||0)+'</td><td><b>'+fmtN(x.sugerido)+'</b></td><td class="L">'+esc(tt||'—')+'</td></tr>';
+    });
+    html+='</tbody></table></div></details>';
   });
-  html+='</tbody></table></div>';
-  if(top.length>25) html+='<p class="hint" style="margin-top:8px">…y '+(top.length-25)+' artículos más.</p>';
   $('barridaCard').innerHTML=html;
+  $('barridaCard').querySelectorAll('.brubro').forEach(b=>b.onclick=()=>{ _barridaFiltro=b.dataset.rub; paintBarrida(); });
   sec.style.display='';
 }
 
@@ -1661,17 +1723,28 @@ function renderSem(){
 function renderHeat(){
   const ecom = sucName===ECOM;
   const h0 = ecom?0:9, h1 = ecom?23:19, n = h1-h0+1;
-  const h=DET.heatmap.filter(x=>x.hora>=h0 && x.hora<=h1), map={}; let max=0;
-  h.forEach(x=>{ map[x.dia_semana+'-'+x.hora]=x.tickets; if(x.tickets>max) max=x.tickets; });
+  const h=DET.heatmap.filter(x=>x.hora>=h0 && x.hora<=h1), map={}; let max=0, tot=0;
+  h.forEach(x=>{ map[x.dia_semana+'-'+x.hora]=x.tickets; tot+=x.tickets||0; if(x.tickets>max) max=x.tickets; });
+  const pctMode = heatMode==='pct';
+  // en % la intensidad usa el mismo ratio v/max, así el mapa de calor no cambia; solo cambia el número mostrado
+  const lbl = v => !v ? '' : pctMode ? (tot?(v/tot*100):0).toFixed(1)+'%' : String(v);
   let html='<div></div>'+Array.from({length:n},(_,i)=>`<div>${i+h0}h</div>`).join('');
   DIAS.forEach(d=>{ html+=`<div style="justify-content:flex-start">${d}</div>`;
     for(let hh=h0;hh<=h1;hh++){ const v=map[d+'-'+hh]||0, a=max?v/max:0;
       const bg=a===0?'#eef1f8':`rgba(204,0,0,${(0.14+a*0.86).toFixed(2)})`;
       const col=a>0.5?'#fff':'var(--navy)';
-      html+=`<div class="cell" style="background:${bg};color:${col}" title="${d} ${hh}h · ${v} tickets">${v||''}</div>`; } });
+      const tip = pctMode
+        ? `${d} ${hh}h · ${v} tickets · ${tot?(v/tot*100).toFixed(1):0}% de la semana`
+        : `${d} ${hh}h · ${v} tickets`;
+      html+=`<div class="cell" style="background:${bg};color:${col}" title="${tip}">${lbl(v)}</div>`; } });
   $('heat').style.gridTemplateColumns = `44px repeat(${n},1fr)`;
   $('heat').style.minWidth = ecom ? (44 + n*26)+'px' : '';
   $('heat').innerHTML=html;
+  const seg=$('heatSeg'); if(seg){ $('hmUni').setAttribute('aria-pressed', !pctMode); $('hmPct').setAttribute('aria-pressed', pctMode); }
+  const tt=$('heatTitle'); if(tt) tt.innerHTML = pctMode ? 'Participación por <em>hora y día</em>' : 'Tickets por <em>hora y día</em>';
+  const lg=$('heatLegend'); if(lg) lg.innerHTML = pctMode
+    ? '<span>▮ Menor participación</span><span style="color:var(--red)">▮ Pico de demanda</span>'
+    : '<span>▮ Menos tickets</span><span style="color:var(--red)">▮ Pico de demanda</span>';
 }
 function renderNotas(){
   $('fHoras').innerHTML = hbase==='horas_contr'
