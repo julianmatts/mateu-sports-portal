@@ -1403,10 +1403,17 @@ function veParsePMS(wb, X){
   const shName = wb.SheetNames.find(n=>/pms\s*\(?\s*h\s*\)?/i.test(n));
   if(!shName) return null;
   const m = X.utils.sheet_to_json(wb.Sheets[shName], {header:1, blankrows:false, defval:''});
-  // fila de encabezado: la que dice "Venta Semanal"
+  // fila de encabezado: la que dice "Venta Semanal" (algunas sucursales la
+  // renombraron a "ventas" a secas — se acepta si la fila también trae "Real")
   let hr=-1, vsCol=-1;
   for(let i=0;i<Math.min(m.length,12);i++){
-    const j=(m[i]||[]).findIndex(c=>/venta\s*semanal/i.test(veStr(c)));
+    const row=m[i]||[];
+    let j=row.findIndex(c=>/venta\s*semanal/i.test(veStr(c)));
+    if(j<0 && row.some(c=>/^real$/i.test(veStr(c)))){
+      j=row.findIndex(c=>/^ventas?$/i.test(veStr(c)));
+      // último recurso: celda de venta sin rótulo → es la columna anterior a "% Meta"
+      if(j<0){ const pc=row.findIndex(c=>/%\s*meta/i.test(veStr(c))); if(pc>0) j=pc-1; }
+    }
     if(j>=0){ hr=i; vsCol=j; break; }
   }
   if(hr<0) return null;
@@ -1439,7 +1446,9 @@ function veParsePMS(wb, X){
     if(!nombre || !isNaN(Number(nombre))) nombre='';
     if(!nombre) continue;
     const venta=veNum(row[vsCol]), horas=veNum(row[realCol]);
-    const nota=pctCol>=0?veStr(row[pctCol+1]):'';
+    // nota (VAC…): solo texto — algunas sucursales tienen números auxiliares en esa columna
+    let nota=pctCol>=0?veStr(row[pctCol+1]):'';
+    if(nota && !isNaN(Number(nota.replace(',','.')))) nota='';
     if(!venta && !horas && !nota) continue;   // fila vacía; con nota (VAC…) sí se muestra
     out.push({nombre, venta, horas,
       minimo: iMin>=0?veNum(row[iMin]):0,
