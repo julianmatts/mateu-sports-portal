@@ -934,7 +934,9 @@ async function abrirDash(sem){
   try{
     const ve=await fbGet('ventaEquipo');   // {slug:{sem:{total,…}}}
     const enc={};
-    if(ve) STORES.forEach(s=>{ const t=ve[s.slug]&&ve[s.slug][sem]&&ve[s.slug][sem].total; if(t>0) enc[s.slug]=r0(t); });
+    // total puede ser número (carga vieja) u objeto {venta,tickets,unidades}
+    if(ve) STORES.forEach(s=>{ const t=ve[s.slug]&&ve[s.slug][sem]&&ve[s.slug][sem].total;
+      const n = typeof t==='number' ? t : (t&&t.venta)||0; if(n>0) enc[s.slug]=r0(n); });
     state.dashEnc=enc;
   }catch(e){ state.dashEnc={}; }
   if(state.tab==='dashboard') render();
