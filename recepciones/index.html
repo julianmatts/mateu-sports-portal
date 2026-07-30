@@ -1158,6 +1158,9 @@ function ingOpenNuevo(){
     +   '<div class="field"><label>Fecha</label><input class="inp" id="inFec" type="date"></div>'
     +   '<div class="field"><label>Bultos</label><input class="inp num" id="inBul" type="number" min="1" step="1" placeholder="1"></div>'
     + '</div>'
+    + '<div class="field" style="margin-top:10px"><label>📷 Importar packing list (foto / scan)</label>'
+    +   '<input type="file" id="inImg" accept="image/*" class="inp" style="padding:7px;width:100%">'
+    +   '<div id="inOcr" class="msub" style="margin-top:6px">Sacá la foto lo más derecha y nítida posible. El OCR completa el detalle de abajo, corrigiendo los códigos contra el catálogo — <b>revisalo siempre</b> antes de guardar.</div></div>'
     + '<div class="field" style="margin-top:10px"><label>Detalle — una línea por SKU: <code>SKU cantidad</code></label>'
     +   '<textarea class="code" id="inDet" rows="7" placeholder="KY5654XS 1&#10;KY5654S 5&#10;KY5654M 5&#10;KY5654L 4&#10;KY5654XL 2"></textarea></div>'
     + '<div id="inPrev" class="ing-prev"></div>'
@@ -1166,6 +1169,7 @@ function ingOpenNuevo(){
     +   '<button class="btn btn-primary" id="inGuardar" disabled>Guardar remito</button></div>'
   );
   try{ $('inFec').value = new Date().toISOString().slice(0,10); }catch(e){}
+  const _img=$('inImg'); if(_img) _img.onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(f) ingOcrFile(f); };
   let resolved=null;
   $('inResolver').onclick=async()=>{
     const btn=$('inResolver'); btn.disabled=true; btn.textContent='Resolviendo…';
@@ -1338,6 +1342,68 @@ async function ingViewConcil(){
   $('view').innerHTML=html;
   $('ingBack2').onclick=()=>{ state.ing={view:'lista'}; render(); };
   const st=$('ingStock'); if(st) st.onclick=async()=>{ st.disabled=true; R.ingresado=true; R.ingresado_en=nowISO(); try{ await ingSaveRemito(R); toast('Ingresado a stock — remito listo para reparto','ok'); render(); }catch(e){ st.disabled=false; toast('No se pudo: '+e.message,'bad'); } };
+}
+
+/* ---- OCR del packing list (foto/scan) → detalle, con auto-corrección de códigos ----
+   Tesseract por CDN (lazy). Como TODO SKU tiene que existir en el maestro de Adidas,
+   corregimos lo que el OCR lee mal enganchándolo al SKU válido más parecido. Siempre
+   cae en el textarea para que Ariel/Luis revisen antes de guardar. */
+function ensureTesseract(){ return new Promise((res,rej)=>{ if(window.Tesseract) return res(); const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'; s.onload=()=>res(); s.onerror=()=>rej(new Error('no pude cargar el OCR')); document.head.appendChild(s); }); }
+/* confusiones típicas de OCR (letra ↔ dígito parecido) */
+const ING_CONF = { '0':['O','D','Q'],'O':['0'],'D':['0'],'Q':['0'],'1':['I','L'],'I':['1'],'L':['1'],'5':['S'],'S':['5'],'8':['B'],'B':['8'],'2':['Z'],'Z':['2'],'6':['G'],'G':['6'],'7':['T'],'T':['7'],'9':['Q'] };
+function ingSkuVariants(s){
+  let combos=[s];
+  for(let i=0;i<s.length;i++){
+    const alts=ING_CONF[s[i]]; if(!alts) continue;
+    const opts=[s[i]].concat(alts); const next=[];
+    for(const base of combos){ for(const o of opts){ next.push(base.slice(0,i)+o+base.slice(i+1)); if(next.length>600) break; } if(next.length>600) break; }
+    combos=next; if(combos.length>600) break;
+  }
+  return combos;
+}
+function ingCorregirSku(raw){
+  const s=String(raw||'').toUpperCase().replace(/[^A-Z0-9-]/g,'');
+  if(!s) return {sku:s, conf:'revisar'};
+  if(skuInfo(s)) return {sku:s, conf:'ok'};
+  for(const v of ingSkuVariants(s)){ if(v!==s && skuInfo(v)) return {sku:v, conf:'corregido'}; }
+  return {sku:s, conf:'revisar'};
+}
+function ingParsePacking(text){
+  const out=[]; let pedido='', bultos='', totalCant=null;
+  const lines=String(text||'').split(/\r?\n/);
+  for(const raw of lines){
+    const ln=raw.trim(); if(!ln) continue;
+    const mp=ln.match(/pedido\D*(\d{6,})/i); if(mp) pedido=mp[1];
+    const mt=ln.match(/totales?\D+(\d{1,4})\D+(\d{1,4})\D+(\d{1,5})/i); // Totales <bultos> <skus> <cant>
+    if(mt){ if(!bultos) bultos=mt[1]; totalCant=parseInt(mt[3],10); }
+    const toks=ln.split(/\s+/); const last=toks[toks.length-1];
+    if(!/^\d{1,4}$/.test(last)) continue;
+    const qty=parseInt(last,10); if(!qty) continue;
+    let sku=null;
+    for(const t of toks){ const c=t.toUpperCase(); if(c==='NOECOM'||c==='NOCOM'||c==='ECOM') continue; if(/[A-Z]/.test(c)&&/[0-9]/.test(c)&&c.length>=6&&c.length<=11&&/^[A-Z0-9-]+$/.test(c)){ sku=c; break; } }
+    if(sku) out.push({sku:sku, qty:qty});
+  }
+  return {pedido:pedido, bultos:bultos, totalCant:totalCant, lines:out};
+}
+async function ingOcrFile(file){
+  const st=$('inOcr'); if(st) st.textContent='Leyendo la imagen… (puede tardar unos segundos la primera vez)';
+  try{
+    await Promise.all([ ensureTesseract(), loadMaestro() ]);
+    const { data } = await Tesseract.recognize(file, 'eng', { logger:m=>{ if(m.status==='recognizing text' && st) st.textContent='Reconociendo texto… '+Math.round((m.progress||0)*100)+'%'; } });
+    const p = ingParsePacking(data && data.text || '');
+    const agg={}; let okc=0, corr=0, dud=0;
+    p.lines.forEach(l=>{ const c=ingCorregirSku(l.sku); if(c.conf==='ok')okc++; else if(c.conf==='corregido')corr++; else dud++; agg[c.sku]=(agg[c.sku]||0)+l.qty; });
+    const skus=Object.keys(agg);
+    if(!skus.length){ if(st) st.innerHTML='No pude detectar líneas. Probá con una foto más derecha y nítida, o cargá el detalle a mano.'; toast('OCR sin resultados','bad'); return; }
+    $('inDet').value = skus.map(s=>s+' '+agg[s]).join('\n');
+    if(p.pedido && !$('inPed').value) $('inPed').value=p.pedido;
+    if(p.bultos && !$('inBul').value) $('inBul').value=p.bultos;
+    let sumq=0; skus.forEach(s=>sumq+=agg[s]);
+    let msg='Detecté <b>'+skus.length+'</b> SKU · '+okc+' ok, '+corr+' corregidos, '+dud+' a revisar. Revisá el detalle y tocá “Resolver detalle”.';
+    if(p.totalCant!=null && p.totalCant!==sumq) msg+=' <b class="bad">⚠ El total leído ('+sumq+' u) no coincide con el “Totales” del packing ('+p.totalCant+' u) — revisá.</b>';
+    if(st) st.innerHTML=msg;
+    toast(dud>0?('OCR listo — '+dud+' SKU a revisar'):'OCR listo — revisá el detalle', dud>0?'':'ok');
+  }catch(e){ if(st) st.textContent='Error leyendo la imagen: '+e.message; toast('OCR: '+e.message,'bad'); }
 }
 
 /* ---- estilos del módulo (se inyectan una vez) ---- */
