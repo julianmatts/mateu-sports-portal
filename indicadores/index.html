@@ -503,6 +503,7 @@ footer b{color:var(--navy)}
       <h2 class="sec-title">Objetivo de <em>venta</em></h2>
       <p class="hint">La meta de venta que puso gerencia para tu sucursal, con el mínimo y el objetivo de superación (120). Elegí la semana para ver otras. A medida que se cargue la venta, vas viendo el avance.</p>
       <div class="card pad" id="objetivoCard"></div>
+      <input type="file" id="veFile" accept=".xlsx,.xls" style="display:none">
     </section>
 
     <section class="sec" id="secKpis">
@@ -844,6 +845,7 @@ async function boot(){
   $('bAct').onclick = ()=>{ hbase='h_act'; segToggle(); render(); };
   $('hmUni').onclick = ()=>{ heatMode='uni'; renderHeat(); };
   $('hmPct').onclick = ()=>{ heatMode='pct'; renderHeat(); };
+  $('veFile').onchange = e => { const f=e.target.files&&e.target.files[0]; e.target.value=''; veArchivo(f); };
   $('btnPrint').onclick = ()=> window.print();
   $('btnCopiar').onclick = copiarResumen;
   $('selSuc').onchange = e => {
@@ -1354,6 +1356,136 @@ function fetchObjetivoData(slug, semana){
 }
 const objMoney = n => '$'+Math.round(n||0).toLocaleString('es-AR');
 const objSemLbl = iso => { const p=String(iso||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:iso; };
+
+/* --- venta por vendedor que sube el encargado (Firebase: recepciones-mateu / ventaEquipo/<slug>/<semana>) --- */
+let _objActiveSem = null;          // semana activa del selector (para el uploader)
+let _vePreview = null;             // {slug, sem, data, fileName} pendiente de guardar
+let _veXlsxP = null;               // lazy-load de SheetJS
+const _veCache = {};               // "slug|sem" -> Promise<payload|null>
+function loadXLSX(){
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  if(_veXlsxP) return _veXlsxP;
+  _veXlsxP = new Promise((res,rej)=>{ const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload=()=>res(window.XLSX); s.onerror=()=>rej(new Error('No se pudo cargar el lector de Excel')); document.head.appendChild(s); });
+  return _veXlsxP;
+}
+function fetchVentaEquipo(slug, sem){
+  const key=slug+'|'+sem;
+  if(_veCache[key]) return _veCache[key];
+  const base=OBJETIVOS_URL.replace(/\/+$/,'');
+  _veCache[key]=fetch(base+'/ventaEquipo/'+encodeURIComponent(slug)+'/'+encodeURIComponent(sem)+'.json')
+    .then(r=>r.ok?r.json():null).catch(()=>null);
+  return _veCache[key];
+}
+async function saveVentaEquipo(slug, sem, data){
+  const base=OBJETIVOS_URL.replace(/\/+$/,'');
+  const payload={semana:sem, actualizado:new Date().toISOString(), por:(SESSION.email||''), vendedores:data.vendedores, total:data.total};
+  const r=await fetch(base+'/ventaEquipo/'+encodeURIComponent(slug)+'/'+encodeURIComponent(sem)+'.json',{method:'PUT',body:JSON.stringify(payload)});
+  if(!r.ok) throw new Error('No se pudo guardar');
+  delete _veCache[slug+'|'+sem];
+  return payload;
+}
+// número tolerante a formato AR ("1.234.567,89") y a celdas que ya vienen numéricas
+function veNum(v){ if(typeof v==='number') return v;
+  const s=String(v==null?'':v).replace(/[^\d.,-]/g,'').replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.');
+  const n=parseFloat(s); return isFinite(n)?n:0; }
+// parsea la matriz del Excel: autodetecta la fila de encabezado y las columnas
+function veParse(matrix){
+  const norm=s=>String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+  let hdr=-1, cols=null;
+  for(let i=0;i<Math.min(matrix.length,30);i++){
+    const row=(matrix[i]||[]).map(norm);
+    const cVend=row.findIndex(c=>/vendedor|empleado|apellido|nombre|cajero|usuario/.test(c));
+    const cVenta=row.findIndex(c=>/venta|importe|neto|facturac|monto/.test(c));
+    if(cVend>=0 && cVenta>=0){
+      hdr=i; cols={ vend:cVend, venta:cVenta,
+        tickets: row.findIndex(c=>/ticket|comprob|operac|transac|vtas|nro|cant\.?\s*t/.test(c)),
+        unidades: row.findIndex(c=>/unidad|cantidad|articul|prenda|pares|u\.$|uds/.test(c)) };
+      break;
+    }
+  }
+  if(hdr<0) return null;
+  const out=[];
+  for(let i=hdr+1;i<matrix.length;i++){
+    const row=matrix[i]; if(!row) continue;
+    const nombre=String(row[cols.vend]==null?'':row[cols.vend]).trim();
+    if(!nombre || /^(total|totales|general|suma|subtotal)/.test(norm(nombre))) continue;
+    const venta=veNum(row[cols.venta]);
+    const tickets=cols.tickets>=0?veNum(row[cols.tickets]):0;
+    const unidades=cols.unidades>=0?veNum(row[cols.unidades]):0;
+    if(!venta && !tickets && !unidades) continue;
+    out.push({nombre, venta, tickets, unidades});
+  }
+  if(!out.length) return null;
+  const total={ venta:out.reduce((a,x)=>a+x.venta,0), tickets:out.reduce((a,x)=>a+x.tickets,0), unidades:out.reduce((a,x)=>a+x.unidades,0) };
+  return {vendedores:out, total};
+}
+// HTML del detalle del equipo (ranking + avance vs meta + tickets/UPT/ticket prom si vienen)
+function veDetailHtml(ve, metaVal){
+  if(!ve || !ve.vendedores || !ve.vendedores.length)
+    return '<p class="empty" style="margin:4px 0 2px">Todavía no cargaste la venta por vendedor de esta semana.</p>';
+  const vs=ve.vendedores.slice().sort((a,b)=>(b.venta||0)-(a.venta||0));
+  const totV=(ve.total&&ve.total.venta)||vs.reduce((a,x)=>a+(x.venta||0),0);
+  const totT=(ve.total&&ve.total.tickets)||vs.reduce((a,x)=>a+(x.tickets||0),0);
+  const hayTk=vs.some(x=>x.tickets>0), hayUn=vs.some(x=>x.unidades>0);
+  let h='';
+  if(metaVal){ const pct=totV/metaVal, w=Math.min(100,Math.round(pct*100));
+    const col=pct>=1?'var(--ok,#16a34a)':pct>=1/1.2?'#d97706':'#dc2626';
+    h+='<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:2px 0 6px">'
+      +'<div style="font-size:13px;color:var(--mid)">Equipo esta semana: <b style="color:'+col+'">'+objMoney(totV)+'</b> · '+Math.round(pct*100)+'% de la meta</div></div>'
+      +'<div style="position:relative;height:8px;background:#eef0f7;border-radius:5px;overflow:hidden;margin:0 0 14px">'
+      +'<i style="position:absolute;left:0;top:0;bottom:0;border-radius:5px;width:'+w+'%;background:'+col+';display:block"></i></div>';
+  }
+  h+='<div class="tbl-wrap"><table><thead><tr><th class="L">Vendedor</th><th>Venta</th><th>Participación</th>';
+  if(hayTk) h+='<th>Tickets</th>';
+  if(hayTk&&hayUn) h+='<th>UPT</th>';
+  if(hayTk) h+='<th>Ticket prom.</th>';
+  h+='</tr></thead><tbody>';
+  vs.forEach(x=>{
+    const part=totV?x.venta/totV:0, w=Math.round(part*100);
+    const upt=x.tickets?x.unidades/x.tickets:null, tp=x.tickets?x.venta/x.tickets:null;
+    h+='<tr><td class="L">'+esc(x.nombre)+'</td><td>'+objMoney(x.venta)+'</td>'
+      +'<td><div style="display:flex;align-items:center;gap:8px;justify-content:flex-end"><span style="font-variant-numeric:tabular-nums">'+w+'%</span>'
+      +'<span style="display:inline-block;width:60px;height:6px;background:#eef0f7;border-radius:4px;overflow:hidden"><i style="display:block;height:100%;width:'+w+'%;background:var(--red)"></i></span></div></td>';
+    if(hayTk) h+='<td>'+fmtN(x.tickets||0)+'</td>';
+    if(hayTk&&hayUn) h+='<td>'+(upt!=null?fmt2(upt):'—')+'</td>';
+    if(hayTk) h+='<td>'+(tp!=null?objMoney(tp):'—')+'</td>';
+    h+='</tr>';
+  });
+  h+='<tr class="team"><td class="L">Total equipo</td><td>'+objMoney(totV)+'</td><td>100%</td>';
+  if(hayTk) h+='<td>'+fmtN(totT)+'</td>';
+  if(hayTk&&hayUn){ const u=vs.reduce((a,x)=>a+(x.unidades||0),0); h+='<td>'+(totT?fmt2(u/totT):'—')+'</td>'; }
+  if(hayTk) h+='<td>'+(totT?objMoney(totV/totT):'—')+'</td>';
+  h+='</tr></tbody></table></div>';
+  return h;
+}
+// bloque desplegable "cómo viene el equipo" dentro del card de Objetivo
+function veSectionHtml(slug, sem, metaVal, ve){
+  const prev = _vePreview && _vePreview.slug===slug && _vePreview.sem===sem ? _vePreview : null;
+  const hayDato = !!(ve && ve.vendedores && ve.vendedores.length);
+  const actu = ve && ve.actualizado ? new Date(ve.actualizado).toLocaleDateString('es-AR') : '';
+  const nV = ve && ve.vendedores ? ve.vendedores.length : 0;
+  let sum = 'Cómo viene el equipo';
+  if(prev) sum += ' · <span style="color:var(--red)">previsualización</span>';
+  else if(hayDato) sum += ' · '+nV+' vendedor'+(nV===1?'':'es')+(actu?' · '+actu:'');
+  let body;
+  if(prev){
+    body = '<div style="background:var(--mid-bg,#fdf3e3);border:1px solid #f0d8a8;border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:13px">'
+      + 'Revisá los datos leídos de <b>'+esc(prev.fileName)+'</b> ('+prev.data.vendedores.length+' vendedores). Si está bien, guardá.</div>'
+      + veDetailHtml(prev.data, metaVal)
+      + '<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="veSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">Guardar</button>'
+      + '<button type="button" id="veCancel" class="tb-btn">Cancelar</button></div>';
+  } else {
+    body = veDetailHtml(ve, metaVal)
+      + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">'
+      + '<button type="button" id="veUpload" class="tb-btn">⇧ '+(hayDato?'Actualizar':'Cargar')+' venta por vendedor (Excel)</button>'
+      + '<span class="hint" style="margin:0">Se cruza con la meta de la semana. Solo lo ve tu sucursal.</span></div>';
+  }
+  const open = (prev || hayDato) ? ' open' : '';
+  return '<details class="bgrupo" style="margin-top:16px"'+open+'><summary>'+sum+'</summary>'
+    + '<div style="padding:12px 14px">'+body+'</div></details>';
+}
 async function renderObjetivo(){
   const sec=$('secObjetivo'); if(!sec) return;
   sec.style.display='none';
@@ -1367,8 +1499,9 @@ async function renderObjetivo(){
   if(!weeks || !weeks.length){ sec.style.display='none'; return; }
   // semana activa: la elegida (si sigue existiendo) o la última publicada
   const sem = (objSem && weeks.includes(objSem)) ? objSem : weeks[0];
-  let v=null;
-  try{ v = await fetchObjetivoData(slug, sem); }catch(e){ v=null; }
+  _objActiveSem = sem;
+  let v=null, ve=null;
+  try{ [v,ve] = await Promise.all([fetchObjetivoData(slug, sem), fetchVentaEquipo(slug, sem)]); }catch(e){ v=null; ve=null; }
   if(sucName!==target) return;
 
   // selector de semanas (arriba a la derecha)
@@ -1402,9 +1535,43 @@ async function renderObjetivo(){
       +'</div>';
     if(v.nota) html+='<p class="hint" style="margin-top:12px">📝 '+esc(v.nota)+'</p>';
   }
+  html += veSectionHtml(slug, sem, (v&&v.meta)||0, ve);
   $('objetivoCard').innerHTML=html;
   const selEl=$('objSemSel'); if(selEl) selEl.onchange = e => { objSem = e.target.value; renderObjetivo(); };
+  const up=$('veUpload'); if(up) up.onclick = ()=> $('veFile').click();
+  const sv=$('veSave'); if(sv) sv.onclick = veGuardar;
+  const cn=$('veCancel'); if(cn) cn.onclick = ()=>{ _vePreview=null; renderObjetivo(); };
   sec.style.display='';
+}
+// leer el Excel elegido → previsualizar
+async function veArchivo(file){
+  if(!file) return;
+  const slug=SUC2SLUG[sucName], sem=_objActiveSem;
+  if(!slug || !sem){ alert('Elegí primero una semana.'); return; }
+  try{
+    const XLSX=await loadXLSX();
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array'});
+    // toma la primera hoja con datos reconocibles
+    let data=null;
+    for(const name of wb.SheetNames){
+      const m=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,defval:''});
+      data=veParse(m); if(data) break;
+    }
+    if(!data){ alert('No pude reconocer las columnas (vendedor y venta) en el Excel. Revisá que tenga esos encabezados.'); return; }
+    _vePreview={slug, sem, data, fileName:file.name};
+    renderObjetivo();
+  }catch(e){ alert('Error leyendo el Excel: '+(e.message||e)); }
+}
+// guardar la previsualización en Firebase
+async function veGuardar(){
+  if(!_vePreview) return;
+  const btn=$('veSave'); if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
+  try{
+    await saveVentaEquipo(_vePreview.slug, _vePreview.sem, _vePreview.data);
+    _vePreview=null;
+    renderObjetivo();
+  }catch(e){ alert('No se pudo guardar: '+(e.message||e)); if(btn){ btn.disabled=false; btn.textContent='Guardar'; } }
 }
 
 /* --- reposición disponible en depósito (Barrida de Reserva) --- */
