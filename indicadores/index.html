@@ -1618,12 +1618,14 @@ function paintBarrida(){
   const sec=$('secBarrida'); if(!sec||!_barridaLast) return;
   const {top, semana} = _barridaLast;
   const semLbl = (()=>{ const p=String(semana||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:semana; })();
-  // agrupar por macro-rubro
-  const ORDEN=['Calzado','Indumentaria','Accesorios','Otros'];
-  const porRubro={}; top.forEach(x=>{ const m=bMacro(x.rubro); (porRubro[m]=porRubro[m]||[]).push(x); });
+  // agrupar por macro-rubro; "Otros" (cupones, facturación, sin rubro) NO se muestra
+  const ORDEN=['Calzado','Indumentaria','Accesorios'];
+  const base = top.filter(x=>bMacro(x.rubro)!=='Otros');
+  const porRubro={}; base.forEach(x=>{ const m=bMacro(x.rubro); (porRubro[m]=porRubro[m]||[]).push(x); });
   const presentes = ORDEN.filter(m=>porRubro[m] && porRubro[m].length);
+  if(!base.length){ sec.style.display='none'; return; }
   if(_barridaFiltro && !porRubro[_barridaFiltro]) _barridaFiltro='';   // el filtro activo ya no aplica
-  const filtrados = _barridaFiltro ? porRubro[_barridaFiltro] : top;
+  const filtrados = _barridaFiltro ? porRubro[_barridaFiltro] : base;
   const totalU = filtrados.reduce((a,x)=>a+(x.sugerido||0),0);
   // encabezado
   let html='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
@@ -1631,7 +1633,7 @@ function paintBarrida(){
     +'<div class="hint" style="margin:0">Semana del '+esc(semLbl)+'</div></div>';
   // pills de rubro
   const pill=(val,lbl,n)=>'<button type="button" class="brubro'+(_barridaFiltro===val?' on':'')+'" data-rub="'+esc(val)+'">'+esc(lbl)+' <span>'+fmtN(n)+'</span></button>';
-  html+='<div class="brubros">'+pill('','Todos',top.length)
+  html+='<div class="brubros">'+pill('','Todos',base.length)
     +presentes.map(m=>pill(m,m,porRubro[m].length)).join('')+'</div>';
   // grupos desplegables por rubro (colapsados salvo el primero, para no armar una tabla larga)
   const grupos = _barridaFiltro ? [_barridaFiltro] : presentes;
