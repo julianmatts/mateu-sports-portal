@@ -329,6 +329,23 @@ entran acá: ven su objetivo en Indicadores.
   semana**, y UPT/ticket promedio por vendedor cuando el Excel trae tickets/unidades.
   Firebase: reusa `recepciones-mateu`, nodo `ventaEquipo/<slug>/<semanaISO>` (agrupado
   por slug → cada sucursal baja solo lo suyo, como Objetivos/Barrida).
+- **Objetivos por equipo SIN Excel (reemplaza el circuito PMS)** — el recorrido:
+  gerencia publica el objetivo semanal → el encargado **arma su equipo y asigna horas
+  de venta por turno×día** (editor en el panel "Cómo viene el equipo" de Indicadores:
+  agregar/quitar gente, importar de Plantilla, grilla 3 turnos × 7 días por persona,
+  cap 4/3/4 h; semana nueva copia la anterior) → el portal **reparte la Meta** entre
+  las personas. Turnos: T1 9-13 · T2 13-16 · T3 16-20. Fórmula (validada contra el
+  PMS real de Aurelius CB): el peso de un turno-día se divide entre las horas del
+  equipo en ese turno-día; `share persona = Σ horas×peso/horasEquipo`; su meta/mínimo
+  = share × Meta/Mínimo. **Matriz de pesos**: pestaña **"Pesos por turno"** de
+  `objetivos/` — Juli sube mensualmente la estadística de venta por sucursal×hora×día
+  (hoja tipo "Datos actualizados"; T1=filas 9-12, T2=13-16, T3=17-20) y se publica en
+  `objetivos/pesosTurnos` (porSlug); fallback horneado `indicadores/pesos-turnos.js`
+  (regenerable con `node scripts/gen-pesos-turnos.js "PESOS TURNOS….xlsx"`). Equipo en
+  `objetivos/equipos/<slug>/<lunesISO>` (equipo + real manual). La venta real
+  individual sale del Excel PMS subido (match por nombre) o de carga manual (pisa al
+  Excel). ⚠️ `num()` de objetivos come el punto decimal si hay exactamente 3
+  decimales: para celdas numéricas usar el valor directo (ver `numCell`).
   ⚠️ Diagonal 80 tiene objetivo pero no tiene datos de Indicadores todavía, así que
   su encargado aún no ve la sección (Indicadores lo manda a empty state antes). Se
   resuelve cuando Diagonal tenga datos de venta.
