@@ -234,6 +234,25 @@ const STORES = [
 ];
 const PREFIJO_SLUG = {}; const SLUG_STORE = {};
 STORES.forEach(s=>{ PREFIJO_SLUG[s.pfx]=s.slug; SLUG_STORE[s.slug]=s; });
+// Matcher de sucursal desde una celda: por código "NN-…" o por nombre.
+// Algunas filas del Excel no traen prefijo (p.ej. "Av 44", "Adidas calle 12").
+function normNom(s){ return String(s==null?'':s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+const NOMBRE_SLUG = {};
+STORES.forEach(s=>{ NOMBRE_SLUG[normNom(s.nombre)] = s.slug; });
+Object.assign(NOMBRE_SLUG, {
+  'av 44':'av-44', 'outlet av 44':'av-44', 'adidas calle 12':'adidas-12', 'adidas 12':'adidas-12',
+  'gonnet':'gonnet', 'outlet gonnet':'gonnet', 'outlet':'calle-55', 'outlet calle 55':'calle-55',
+  'plaza italia':'plaza', 'diagonal 80':'diagonal', 'adidas av 7':'adidas', 'adidas':'adidas',
+  'mateu kids':'kids', 'kids':'kids', 'adidas originals':'originals', 'aurelius cb':'aurelius-cb',
+});
+function slugDeCelda(txt){
+  const t = String(txt==null?'':txt).trim();
+  const m = t.match(/^\s*(\d{1,2})\s*-/); if(m){ const s=PREFIJO_SLUG[m[1].padStart(2,'0')]; if(s) return s; }
+  const n = normNom(t); if(!n) return null;
+  if(NOMBRE_SLUG[n]) return NOMBRE_SLUG[n];
+  for(const st of STORES){ const sn=normNom(st.nombre); if(sn && (n===sn || n.includes(sn) || sn.includes(n))) return st.slug; }
+  return null;
+}
 
 /* ---------- helpers ---------- */
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -269,6 +288,7 @@ const state = {
   archivo:null,                // {nombre}
   hojas:[],                    // [{name, matrix}] del Excel subido
   hojaSel:'',                  // hoja elegida
+  hist:{},                     // venta REAL histórica: slug -> {lunesISO: monto} (hoja HISTÓRICO)
   histKeys:[],                 // semanas guardadas (lunesISO)
   dashWeek:null,               // semana elegida en dashboard
   dashData:null,               // {meta, porSlug}
@@ -283,10 +303,67 @@ state.filas = filasVacias();
    ============================================================ */
 function leerLibro(buf){
   const wb = XLSX.read(buf, {type:'array'});
+  const vis = {};
+  ((wb.Workbook && wb.Workbook.Sheets) || []).forEach(s=>{ vis[s.name] = (s.Hidden||0); });
   return wb.SheetNames.map(name=>({
     name,
+    hidden: (vis[name]||0) > 0,   // 0=visible, 1=oculta, 2=muy oculta
     matrix: XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, blankrows:false, defval:''})
   }));
+}
+// Objetivo por columnas (hoja de trabajo actual, p.ej. "27JUL"): busca el encabezado
+// con "META" y lee la META de cada sucursal; MÍNIMO y 120 se derivan (razón 1,2) para
+// no depender de columnas que a veces son fórmulas. REAL y % salen de la hoja si están.
+function parseObjetivoHoja(matrix){
+  let hdr=-1, cMeta=-1, cReal=-1;
+  for(let i=0;i<Math.min(14,matrix.length);i++){
+    const row=(matrix[i]||[]).map(c=>String(c==null?'':c).trim().toUpperCase());
+    const im=row.findIndex(c=>c==='META');
+    if(im>=0){ hdr=i; cMeta=im; cReal=row.findIndex(c=>c==='REAL'); break; }
+  }
+  if(hdr<0) return null;
+  const out={};
+  for(let i=hdr+1;i<matrix.length;i++){
+    const row=matrix[i]; if(!row) continue;
+    const slug=slugDeCelda(row[0]); if(!slug) continue;
+    const meta=num(row[cMeta]); if(!(meta>0)) continue;
+    const real=cReal>=0 ? num(row[cReal]) : 0;
+    out[slug]={ meta:r0(meta), minimo:r0(meta*F_MIN), s120:r0(meta*F_120), real: real>0?r0(real):null, nota:'' };
+  }
+  return Object.keys(out).length ? out : null;
+}
+// HISTÓRICO: "Venta REAL semanal por sucursal" -> slug -> {lunesISO: monto}.
+// Encabezado: col0="Sucursal", resto = semanas ("05 ENE", "12 ENE"…) por su lunes.
+function lunesDesdeEtiqueta(lbl, anio){
+  const m=String(lbl==null?'':lbl).toLowerCase().match(/(\d{1,2})\s*([a-zé]{3,4})/);
+  if(!m) return null;
+  const mes=MESES[m[2].slice(0,3).replace('é','e')]; if(mes==null) return null;
+  return lunesDe(new Date(anio, mes, parseInt(m[1],10)));
+}
+function parseHistorico(matrix){
+  if(!matrix || !matrix.length) return null;
+  const anio = (String(matrix[0]&&matrix[0][0]||'').match(/(20\d{2})/)||[])[1] || String(new Date().getFullYear());
+  let hdr=-1;
+  for(let i=0;i<Math.min(6,matrix.length);i++){
+    if(String((matrix[i]||[])[0]||'').trim().toLowerCase().startsWith('sucursal')){ hdr=i; break; }
+  }
+  if(hdr<0) return null;
+  const cols=[];
+  for(let c=1;c<matrix[hdr].length;c++){ const iso=lunesDesdeEtiqueta(matrix[hdr][c], +anio); if(iso) cols.push({c,iso}); }
+  if(!cols.length) return null;
+  // Solo el PRIMER bloque (venta real). Debajo hay otras tablas (% cumplimiento,
+  // distribución por día) con los mismos nombres pero valores de ratio: cortar al
+  // toparse con "TOTAL" u otra fila que no sea sucursal, y quedarse con lo primero.
+  const out={}; let started=false;
+  for(let i=hdr+1;i<matrix.length;i++){
+    const row=matrix[i]||[];
+    const c0=String(row[0]==null?'':row[0]).trim();
+    const slug=slugDeCelda(c0);
+    if(!slug){ if(started && c0) break; continue; }
+    started=true;
+    cols.forEach(({c,iso})=>{ const v=num(row[c]); if(v>0){ const o=out[slug]||(out[slug]={}); if(o[iso]==null) o[iso]=r0(v); } });
+  }
+  return out;
 }
 // De una hoja (matriz) saca {slug:{meta,real,nota}}. Heurística: en cada fila busca
 // el token de sucursal ("NN-…"), toma los números a su derecha (el 1º = objetivo,
@@ -335,15 +412,16 @@ async function ingerirArchivo(file){
   const hojas = leerLibro(buf);
   state.hojas = hojas;
   state.archivo = {nombre:file.name};
-  // Elegir la hoja por defecto. Las hojas de planificación semanal se llaman
-  // "SEMANA <día> <mes>" (formato bloque, objetivo semanal limpio); el resto del
-  // libro son hojas históricas con otro layout. Preferimos las "SEMANA …": la de
-  // esta semana, si no la primera con datos.
-  const esSemana = h=>/^\s*semana\b/i.test(h.name);
-  let sel = hojas.find(h=>esSemana(h) && lunesDesdeHoja(h.name)===state.semana)
-    || hojas.find(h=>esSemana(h) && Object.keys(parseHoja(h.matrix)).length>=10)
-    || hojas.find(h=>lunesDesdeHoja(h.name)===state.semana)
-    || hojas.find(h=>Object.keys(parseHoja(h.matrix)).length>=3)
+  // HISTÓRICO: venta REAL semanal por sucursal (para autocompletar el real y el %).
+  const hHist = hojas.find(h=>/hist[oó]rico/i.test(h.name));
+  state.hist = hHist ? (parseHistorico(hHist.matrix) || {}) : {};
+  // Hoja de objetivo por defecto: preferir una VISIBLE con layout de objetivo
+  // (columna META). Las hojas de semanas están ocultas y muchas son viejas.
+  const conObj = h => parseObjetivoHoja(h.matrix);
+  let sel = hojas.find(h=>!h.hidden && conObj(h))
+    || hojas.find(h=>conObj(h))
+    || hojas.find(h=>!h.hidden && Object.keys(parseHoja(h.matrix)||{}).length>=5)
+    || hojas.find(h=>Object.keys(parseHoja(h.matrix)||{}).length>=3)
     || hojas[0];
   if(sel){ aplicarHoja(sel.name); }
 }
@@ -351,10 +429,20 @@ function aplicarHoja(name){
   const h = state.hojas.find(x=>x.name===name); if(!h) return;
   state.hojaSel = name;
   state.etiqueta = name;
-  const parsed = parseHoja(h.matrix);
+  const parsed = parseObjetivoHoja(h.matrix) || parseHoja(h.matrix) || {};
   state.filas = filasVacias();
   Object.entries(parsed).forEach(([slug,v])=>{ if(state.filas[slug]) state.filas[slug]={meta:v.meta, real:v.real, nota:v.nota||''}; });
   const ldh = lunesDesdeHoja(name); if(ldh) state.semana = ldh;
+  rellenarRealDesdeHist();   // completar la venta real de esa semana desde HISTÓRICO
+}
+// Completa el REAL de la semana elegida desde HISTÓRICO (si esa semana ya cerró).
+function rellenarRealDesdeHist(){
+  const iso=state.semana; if(!iso || !state.hist) return;
+  STORES.forEach(s=>{
+    const r = state.hist[s.slug] && state.hist[s.slug][iso];
+    const f = state.filas[s.slug];
+    if(f && r>0 && (f.real==null || f.real===0)) f.real=r;
+  });
 }
 
 /* ============================================================
@@ -383,7 +471,7 @@ function viewCargar(){
   // 1 · Excel opcional
   html+='<div class="card">'
     +'<div class="card-h">1 · Excel PMS Objetivos <span style="font-family:var(--font-b);font-size:12px;color:var(--muted);font-weight:400">(opcional)</span></div>'
-    +'<div class="card-hs">Leo el archivo en tu navegador, no se sube nada. Detecto las sucursales por su código (01, 02, …) y tomo el objetivo y la venta real de la hoja elegida.</div>'
+    +'<div class="card-hs">Leo el archivo en tu navegador, no se sube nada. Tomo el objetivo de la <b>hoja visible de la semana</b> (columna META) y la <b>venta real semanal por sucursal de la hoja HISTÓRICO</b>. Podés cambiar la hoja abajo si hace falta.</div>'
     +'<div class="drop" id="drop"><div class="ic">📄</div><div class="t">Arrastrá acá el Excel o hacé clic para elegir</div>'
     +'<div class="s">.xlsx — se procesa localmente</div></div>'
     +'<input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none">'
@@ -405,7 +493,7 @@ function viewCargar(){
   // 3 · Grilla editable
   html+='<div class="card">'
     +'<div class="card-h">3 · Objetivos por sucursal</div>'
-    +'<div class="card-hs">Editá la <b>Meta</b> (el objetivo) y la <b>Venta real</b> de cada sucursal. Mínimo (÷1,2) y 120 (×1,2) se calculan solos. <b>'+nCargadas()+'</b> de '+STORES.length+' con meta cargada.</div>'
+    +'<div class="card-hs">Editá la <b>Meta</b> (el objetivo) de cada sucursal; Mínimo (÷1,2) y 120 (×1,2) se calculan solos. La <b>Venta real</b> la completo solo desde la hoja <b>HISTÓRICO</b> del Excel cuando la semana cierra (al guardar, también actualizo el real de las semanas anteriores). <b>'+nCargadas()+'</b> de '+STORES.length+' con meta cargada.</div>'
     +'<div class="tbl-wrap"><table><thead><tr>'
     +'<th>Sucursal</th><th class="num">Meta</th><th class="num">Mínimo ÷1,2</th><th class="num">120 ×1,2</th><th class="num">Venta real</th><th>Nota</th>'
     +'</tr></thead><tbody id="gridBody">'+gridRows()+'</tbody></table></div>';
@@ -581,10 +669,32 @@ async function guardar(){
     await fbPut(ROOT+'/semanas/'+sem, payload);
     await fbPut(ROOT+'/ultima', sem);
     if(!state.histKeys.includes(sem)) state.histKeys.push(sem);
+    // Backfill: completar la venta REAL de las semanas YA publicadas desde HISTÓRICO
+    // (así el % de la semana que cerró aparece solo al subir el Excel actualizado).
+    let bf=0; try{ bf = await backfillRealPublicadas(); }catch(e){ console.warn('backfill', e); }
     state.dashWeek = sem; state.dashData = payload;
-    toast('Objetivos guardados y publicados ✓','ok');
+    toast('Objetivos publicados ✓'+(bf?(' · real completado en '+bf+' semana'+(bf===1?'':'s')):''),'ok');
     setTab('dashboard');
   }catch(err){ console.error(err); toast('No pude guardar: '+(err.message||''),'err'); }
+}
+// Recorre las semanas publicadas y, para cada una con venta en HISTÓRICO, escribe el
+// REAL de cada sucursal (mantiene la META). Devuelve cuántas semanas actualizó.
+async function backfillRealPublicadas(){
+  if(!state.hist || !Object.keys(state.hist).length) return 0;
+  const semanas = await fbGet(ROOT+'/semanas');
+  if(!semanas) return 0;
+  let tocadas=0;
+  for(const iso of Object.keys(semanas)){
+    const wk=semanas[iso]; if(!wk || !wk.porSlug) continue;
+    let changed=false;
+    STORES.forEach(s=>{
+      const r = state.hist[s.slug] && state.hist[s.slug][iso];
+      const ps = wk.porSlug[s.slug];
+      if(ps && ps.meta>0 && r>0 && ps.real!==r){ ps.real=r0(r); changed=true; }
+    });
+    if(changed){ await fbPut(ROOT+'/semanas/'+iso+'/porSlug', wk.porSlug); tocadas++; }
+  }
+  return tocadas;
 }
 
 function wireDashboard(){
