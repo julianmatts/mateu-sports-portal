@@ -280,7 +280,7 @@ const state = {
   resultado:null,                        // salida de computar()
   semana: lunesDe(new Date()),           // lunes de la barrida
   histKeys:[],                           // lunes con barrida guardada
-  filtros:{ suc:'', rubro:'', marca:'', q:'', soloSugerido:true, excluirVarios:true, soloFaltante:false },
+  filtros:{ suc:'', rubro:'', marca:'', subrubro:'', genero:'', q:'', soloSugerido:true, excluirVarios:true, soloFaltante:false },
   filtrosPar:{ rubro:'', marca:'', q:'', excluirVarios:true, soloCronica:false },
   filtrosCom:{ rubro:'', marca:'', q:'', excluirVarios:true, minVendido:3, topN:20, vista:'sin' },
   sortRep:{k:'sugerido',dir:-1}, sortPar:{k:'reserva',dir:-1}, sortCom:{k:'vendido',dir:-1},
@@ -430,7 +430,8 @@ function filasDeHoja(f){
       meta:{
         rubro:String(row[f.cols.rubro]||'').trim(),
         marca:String(row[f.cols.marca]||'').trim(),
-        tipo: f.cols.tipo>=0?String(row[f.cols.tipo]||'').trim():'',
+        tipo: f.cols.tipo>=0?String(row[f.cols.tipo]||'').trim():'',    // subrubro
+        genero: f.cols.gen>=0?String(row[f.cols.gen]||'').trim():'',
         desc: String(row[f.cols.desc]||'').trim(),
         cod:  f.cols.cod>=0?String(row[f.cols.cod]||'').trim():'',
       },
@@ -491,6 +492,7 @@ function computar(histPrev, histSnaps){
           id, slug, sucNombre:S.nombre,
           codigo:R.meta.cod||V.meta.cod||'', desc:R.meta.desc||V.meta.desc||'',
           marca:R.meta.marca||V.meta.marca||'', rubro:R.meta.rubro||V.meta.rubro||'', tipo:R.meta.tipo||V.meta.tipo||'',
+          genero:R.meta.genero||V.meta.genero||'',
           vendido:S.total, reservaTotal:R.total, sugerido, talles:detTalles, pisoMedias:media,
         });
       });
@@ -632,6 +634,8 @@ function viewReposicion(){
   if(f.suc) rows=rows.filter(r=>r.slug===f.suc);
   if(f.rubro) rows=rows.filter(r=>r.rubro===f.rubro);
   if(f.marca) rows=rows.filter(r=>r.marca===f.marca);
+  if(f.subrubro) rows=rows.filter(r=>r.tipo===f.subrubro);
+  if(f.genero) rows=rows.filter(r=>r.genero===f.genero);
   if(f.q){ const q=f.q.toLowerCase(); rows=rows.filter(r=>(r.desc+' '+r.codigo+' '+r.id+' '+r.marca).toLowerCase().includes(q)); }
   const s=state.sortRep; rows.sort((a,b)=>{ const va=a[s.k],vb=b[s.k]; return (typeof va==='number'? va-vb : cmp(va,vb))*s.dir; });
 
@@ -643,7 +647,9 @@ function viewReposicion(){
     +fsel('Sucursal', 'fSuc', '<option value="">Todas</option>'+sucList.map(n=>{ const slug=Object.keys(sucBySlug).find(k=>sucBySlug[k]===n); return '<option value="'+esc(slug)+'"'+(slug===f.suc?' selected':'')+'>'+esc(n)+'</option>'; }).join(''))
     +fsel('Rubro','fRubro',opts(uniq(R.reposicion.map(r=>r.rubro)),f.rubro))
     +fsel('Marca','fMarca',opts(uniq(R.reposicion.filter(r=>!f.rubro||r.rubro===f.rubro).map(r=>r.marca)),f.marca))
-    +'<div class="fgrp" style="flex:1;min-width:180px"><label for="fQ">Buscar</label><input class="inp" id="fQ" placeholder="artículo, código, ID…" value="'+esc(f.q)+'" style="width:100%"></div>'
+    +fsel('Subrubro','fSubrubro',opts(uniq(R.reposicion.filter(r=>(!f.rubro||r.rubro===f.rubro)&&(!f.marca||r.marca===f.marca)).map(r=>r.tipo)),f.subrubro))
+    +fsel('Género','fGenero',opts(uniq(R.reposicion.filter(r=>(!f.rubro||r.rubro===f.rubro)&&(!f.marca||r.marca===f.marca)).map(r=>r.genero)),f.genero))
+    +'<div class="fgrp" style="flex:1;min-width:150px"><label for="fQ">Buscar</label><input class="inp" id="fQ" placeholder="artículo, código, ID…" value="'+esc(f.q)+'" style="width:100%"></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fSug" '+(f.soloSugerido?'checked':'')+'> Solo con talle disponible</label></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fVarios" '+(f.excluirVarios?'checked':'')+'> Excluir Varios/Facturación</label></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fFalta" '+(f.soloFaltante?'checked':'')+'> Solo con faltante de talle</label></div>'
@@ -950,7 +956,7 @@ async function guardarBarrida(){
 function wireReposicion(){
   const f=state.filtros;
   const bind=(id,key)=>{ const el=$(id); if(el) el.onchange=e=>{ f[key]=e.target.value; if(key==='rubro') f.marca=''; render(); }; };
-  bind('fSuc','suc'); bind('fRubro','rubro'); bind('fMarca','marca');
+  bind('fSuc','suc'); bind('fRubro','rubro'); bind('fMarca','marca'); bind('fSubrubro','subrubro'); bind('fGenero','genero');
   const q=$('fQ'); if(q) q.oninput=e=>{ f.q=e.target.value; renderDebounce(); };
   const sug=$('fSug'); if(sug) sug.onchange=e=>{ f.soloSugerido=e.target.checked; render(); };
   const vr=$('fVarios'); if(vr) vr.onchange=e=>{ f.excluirVarios=e.target.checked; render(); };
@@ -1061,6 +1067,8 @@ function reposFiltradas(){
   if(f.suc) rows=rows.filter(r=>r.slug===f.suc);
   if(f.rubro) rows=rows.filter(r=>r.rubro===f.rubro);
   if(f.marca) rows=rows.filter(r=>r.marca===f.marca);
+  if(f.subrubro) rows=rows.filter(r=>r.tipo===f.subrubro);
+  if(f.genero) rows=rows.filter(r=>r.genero===f.genero);
   if(f.q){ const q=f.q.toLowerCase(); rows=rows.filter(r=>(r.desc+' '+r.codigo+' '+r.id+' '+r.marca).toLowerCase().includes(q)); }
   const s=state.sortRep; rows.sort((a,b)=>{ const va=a[s.k],vb=b[s.k]; return (typeof va==='number'?va-vb:cmp(va,vb))*s.dir; });
   return rows;
@@ -1089,7 +1097,8 @@ async function exportRepXlsx(){
 
   const stripNN = s => String(s||'').replace(/^\d+\s*[-–]\s*/,'');
   const rubroLbl = f.rubro ? stripNN(f.rubro).toUpperCase() : 'TODOS LOS RUBROS';
-  const marcaLbl = f.marca ? String(f.marca).toUpperCase() : 'TODAS LAS MARCAS';
+  const extra = [f.subrubro, f.genero].filter(Boolean).map(x=>stripNN(x).toUpperCase()).join(' · ');
+  const marcaLbl = (f.marca ? String(f.marca).toUpperCase() : 'TODAS LAS MARCAS') + (extra?'  ·  '+extra:'');
 
   let r=1;
   ws.mergeCells(r,1,r,nCols);
@@ -1153,7 +1162,7 @@ async function exportRepXlsx(){
   ws.views=[{state:'frozen', xSplit:LZ, ySplit:headerRowIdx, showGridLines:false}];
   ws.pageSetup={orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}};
   const part=(s)=> s? '-'+stripNN(s).replace(/[^A-Za-z0-9]+/g,'') : '';
-  await downloadWorkbook(wb, 'reposicion'+part(f.rubro)+part(f.marca)+'-'+state.semana+'.xlsx');
+  await downloadWorkbook(wb, 'reposicion'+part(f.rubro)+part(f.marca)+part(f.subrubro)+part(f.genero)+'-'+state.semana+'.xlsx');
   toast('Excel generado ✓','ok');
 }
 async function exportParXlsx(){
