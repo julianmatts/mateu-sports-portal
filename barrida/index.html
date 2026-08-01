@@ -1010,8 +1010,8 @@ async function abrirBarrida(sem){
    EXPORT CSV
    ============================================================ */
 /* ---- Export Excel estilizado (referencia: OC de Managment, ExcelJS) ---- */
-const BRAND = { navy:'FF0B1527', red:'FFCC0000', white:'FFFFFFFF', band:'FFF5F7FC',
-  border:'FFDCE3F0', totalBg:'FFF6F8FD', muted:'FF6B7A99', faltaBg:'FFFDE7E7', faltaTxt:'FFB91C1C' };
+const BRAND = { navy:'FF0B1527', navyMid:'FF1A2F55', red:'FFCC0000', white:'FFFFFFFF', band:'FFF5F7FC',
+  talleBand:'FFEAF0FB', border:'FFDCE3F0', sep:'FF9FB0CC', totalBg:'FFF6F8FD', muted:'FF6B7A99', faltaBg:'FFFDE7E7', faltaTxt:'FFB91C1C' };
 function thinBorder(color){ return {top:{style:'thin',color:{argb:color}},bottom:{style:'thin',color:{argb:color}},left:{style:'thin',color:{argb:color}},right:{style:'thin',color:{argb:color}}}; }
 async function downloadWorkbook(wb, filename){
   const buf=await wb.xlsx.writeBuffer();
@@ -1085,7 +1085,7 @@ async function exportRepXlsx(){
   const nCols=headers.length; const LZ=izq.length;
   const wb=new ExcelJS.Workbook();
   const ws=wb.addWorksheet('Reposición', {views:[{showGridLines:false}]});
-  ws.columns=[{width:16},{width:12},{width:36},{width:20}, ...talles.map(()=>({width:6.5})), {width:8},{width:8},{width:8},{width:7}];
+  ws.columns=[{width:16},{width:12},{width:36},{width:20}, ...talles.map(()=>({width:8})), {width:9},{width:9},{width:9},{width:7}];
 
   const stripNN = s => String(s||'').replace(/^\d+\s*[-–]\s*/,'');
   const rubroLbl = f.rubro ? stripNN(f.rubro).toUpperCase() : 'TODOS LOS RUBROS';
@@ -1111,9 +1111,13 @@ async function exportRepXlsx(){
   ws.getRow(r).height=20; r+=2;
 
   const headerRowIdx=r;
-  headers.forEach((h,i)=>{ const c=ws.getCell(r,i+1); c.value=h; c.font={bold:true,color:{argb:BRAND.white},size:10,name:'Calibri'};
-    c.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.navy}}; c.alignment={horizontal:i<LZ?'left':'center',vertical:'middle'}; c.border=thinBorder(BRAND.navy); });
-  ws.getRow(r).height=18; r++;
+  const esTalleCol = i => i>=LZ && i<LZ+talles.length;   // i base 0
+  headers.forEach((h,i)=>{ const c=ws.getCell(r,i+1); c.value=h; c.font={bold:true,color:{argb:BRAND.white},size:i<LZ?10:11,name:'Calibri'};
+    // header de talles con banda vertical alternada (para no confundir columnas)
+    const fill = esTalleCol(i) ? ((i-LZ)%2===0?BRAND.navy:BRAND.navyMid) : BRAND.navy;
+    c.fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; c.alignment={horizontal:i<LZ?'left':'center',vertical:'middle'};
+    const bd=thinBorder(BRAND.navy); if(i===LZ || i===LZ+talles.length) bd.left={style:'medium',color:{argb:BRAND.sep}}; c.border=bd; });
+  ws.getRow(r).height=20; r++;
 
   rows.forEach((row,i)=>{
     const falta=faltaEn(row); const bg=i%2===0?BRAND.white:BRAND.band;
@@ -1121,20 +1125,25 @@ async function exportRepXlsx(){
     [row.codigo||'', row.id, row.desc, row.sucNombre].forEach((v,idx)=>{ const c=ws.getCell(r,idx+1); c.value=(v===''?null:v);
       c.font={size:10,name:'Calibri',color:{argb:BRAND.navy}}; c.alignment={horizontal:'left',vertical:'middle'};
       c.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}}; c.border=thinBorder(BRAND.border); });
-    // talles = cantidad a mandar (sugerido); rojo si la reserva no alcanza
+    // talles = cantidad a mandar (sugerido); rojo si la reserva no alcanza.
+    // Banda VERTICAL alternada por columna (no por fila) para que no se confundan los talles.
     talles.forEach((t,ti)=>{ const c=ws.getCell(r,LZ+ti+1); const d=row.talles[t];
       const sug=d?d.s:0; const esFalta=!!(d&&d.v>0&&d.v>d.r);
       c.value = sug>0 ? sug : (esFalta?0:null);
-      c.alignment={horizontal:'center',vertical:'middle'}; c.border=thinBorder(BRAND.border);
-      if(esFalta){ c.font={size:10,bold:true,name:'Calibri',color:{argb:BRAND.faltaTxt}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.faltaBg}}; }
-      else { c.font={size:10,name:'Calibri',color:{argb:BRAND.navy}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}}; }
+      c.alignment={horizontal:'center',vertical:'middle'};
+      const bd=thinBorder(BRAND.border); if(ti===0) bd.left={style:'medium',color:{argb:BRAND.sep}};   // separa del bloque de identidad
+      c.border=bd;
+      if(esFalta){ c.font={size:11,bold:true,name:'Calibri',color:{argb:BRAND.faltaTxt}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.faltaBg}}; }
+      else { c.font={size:11,name:'Calibri',color:{argb:BRAND.navy}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb: ti%2===0?BRAND.white:BRAND.talleBand}}; }
     });
     // derecha: Total (sugerido) · Vendido · Reserva · Falta
     [row.sugerido, row.vendido, row.reservaTotal, falta?'Sí':''].forEach((v,idx)=>{ const c=ws.getCell(r,LZ+talles.length+idx+1); c.value=(v===''?null:v);
-      c.alignment={horizontal:'center',vertical:'middle'}; c.border=thinBorder(BRAND.border);
+      c.alignment={horizontal:'center',vertical:'middle'};
+      const bd=thinBorder(BRAND.border); if(idx===0) bd.left={style:'medium',color:{argb:BRAND.sep}};   // cierra el bloque de talles
+      c.border=bd;
       const esFaltaCol=(idx===3 && falta), esTotal=(idx===0);
       c.font={size:10,bold:esTotal||esFaltaCol,name:'Calibri',color:{argb:esFaltaCol?BRAND.faltaTxt:BRAND.navy}};
-      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:esFaltaCol?BRAND.faltaBg:bg}};
+      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:esFaltaCol?BRAND.faltaBg:(esTotal?BRAND.totalBg:bg)}};
     });
     r++;
   });
