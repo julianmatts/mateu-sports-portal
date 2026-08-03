@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+/* Sesion del Portal (seguridad blanda, igual que el resto de los modulos) */
+(function(){
+  var s=null; try{ var t=localStorage.getItem('mateu_portal_session'); s=t?JSON.parse(t):null; }catch(e){ s=window.__sess||null; }
+  if(!s || !s.rol || !(s.rol==='admin' || (s.herramientas||[]).indexOf('capacitaciones')>=0)) location.replace('../');
+})();
+</script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;1,700&amp;family=Barlow+Condensed:ital,wght@1,700;1,800&amp;display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; padding: 0; background: #17181a; font-family: 'Barlow', 'Helvetica Neue', sans-serif; }
+    a { color: #e4002b; }
+    a:hover { color: #ff2447; }
+    input::placeholder { color: #9aa0a8; opacity: 1; }
+    select:focus, input:focus, button:focus { outline: none; }
+  </style>
+</helmet>
+
+<div data-screen-label="Login" style="display: flex; width: 100vw; height: 100vh; overflow: hidden; background: #17181a;">
+
+  <!-- Sidebar -->
+  <div style="width: 440px; flex-shrink: 0; background: #ffffff; color: #1a1c1f; display: flex; flex-direction: column; padding: 36px; box-sizing: border-box; overflow-y: auto;">
+
+    <img src="assets/logo-mateu.png" alt="Mateu Sports" style="height: 52px; align-self: center; display: block;">
+
+    <div style="margin-top: 40px; font-size: 26px; font-weight: 700; color: #1a1c1f; text-align: center;">Ingreso de usuario</div>
+
+    <form onSubmit="{{ onLogin }}" style="display: flex; flex-direction: column; gap: 0; margin-top: 26px;">
+      <input type="email" placeholder="Correo electrónico" value="{{ email }}" onChange="{{ onEmail }}" style="width: 100%; box-sizing: border-box; background: #f2f3f5; border: 1px solid #e2e4e8; border-radius: 4px; color: #1a1c1f; padding: 14px; font-size: 15px; font-family: 'Barlow', sans-serif;" style-focus="border: 1px solid #6ea8d8; background: #ffffff;">
+
+      <div style="position: relative; margin-top: 14px;">
+        <input type="{{ pwType }}" placeholder="Contraseña" value="{{ password }}" onChange="{{ onPassword }}" style="width: 100%; box-sizing: border-box; background: #f2f3f5; border: 1px solid #e2e4e8; border-radius: 4px; color: #1a1c1f; padding: 14px 46px 14px 14px; font-size: 15px; font-family: 'Barlow', sans-serif; letter-spacing: 2px;" style-focus="border: 1px solid #6ea8d8; background: #ffffff;">
+        <button type="button" onClick="{{ togglePw }}" title="Mostrar contraseña" style="position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: 8px; display: flex; align-items: center; opacity: 0.75;" style-hover="opacity: 1;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <ellipse cx="12" cy="12" rx="9" ry="5.5" stroke="#6b7280" stroke-width="1.6"></ellipse>
+            <circle cx="12" cy="12" r="2.4" fill="#6b7280"></circle>
+          </svg>
+        </button>
+      </div>
+
+      <button type="submit" style="margin-top: 22px; width: 100%; background: #e4002b; color: #ffffff; border: none; border-radius: 3px; padding: 15px; font-size: 15px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase; cursor: pointer; font-family: 'Barlow', sans-serif;" style-hover="background: #b30022;">Ingresar</button>
+    </form>
+
+    <div style="margin-top: 22px; text-align: center;">
+      <a href="#" style="color: #1a1c1f; text-decoration: none; font-size: 15px; font-weight: 600;" style-hover="text-decoration: underline; color: #1a1c1f;">¿Olvidaste tu contraseña?</a>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 14px; margin-top: 26px;">
+      <div style="flex: 1; height: 1px; background: #d8dbe0;"></div>
+      <div style="font-size: 14px; color: #6b7280;">o</div>
+      <div style="flex: 1; height: 1px; background: #d8dbe0;"></div>
+    </div>
+
+    <button type="button" style="margin-top: 26px; width: 100%; background: transparent; color: #1a1c1f; border: 1px solid #1a1c1f; border-radius: 3px; padding: 14px; font-size: 14px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; font-family: 'Barlow', sans-serif;" style-hover="background: rgba(0,0,0,0.05);">Ingresar con cuenta Mateu</button>
+
+    <div style="margin-top: 26px; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+      <div style="font-size: 15px; font-weight: 600; color: #1a1c1f;">¿No tenés cuenta?</div>
+      <a href="#" style="color: {{ accent }}; font-size: 15px; font-weight: 700; text-decoration: underline;">Crear cuenta nueva</a>
+    </div>
+
+    <div style="flex: 1; min-height: 40px;"></div>
+
+    <div style="display: flex; align-items: center; gap: 8px; color: #6b7280; font-size: 14px; cursor: pointer;" style-hover="color: #1a1c1f;">
+      <span style="font-size: 16px; line-height: 1;">≡</span>
+      <span>Enlaces legales</span>
+    </div>
+
+    <div style="margin-top: 28px; display: flex; align-items: center; gap: 12px;">
+      <span style="color: #9aa0a8; font-size: 13px;">powered by</span>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <img src="assets/logo-mateu.png" alt="Mateu Sports" style="height: 22px; display: block;">
+        <div style="width: 1px; height: 26px; background: #d8dbe0;"></div>
+        <div style="display: flex; flex-direction: column; font-size: 9.5px; font-weight: 700; letter-spacing: 1px; color: #1a1c1f; line-height: 1.3;">
+          <span>ACADEMIA</span>
+          <span>DE VENTAS</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Foto -->
+  <div style="flex: 1; position: relative; overflow: hidden; background: #050505; filter: {{ fotoFiltro }};">
+    <img src="assets/fachada-mateu.png" alt="Local histórico de Mateu Sports" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top; transform: scale(1.15); transform-origin: 100% 40%; display: block;">
+    <div style="position: absolute; left: 0; right: 0; bottom: 0; height: 45%; background: linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.45) 45%, rgba(0,0,0,0) 100%); pointer-events: none;"></div>
+    <div style="position: absolute; left: 0; right: 0; bottom: 56px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; pointer-events: none; padding: 0 40px;">
+      <div style="font-family: 'Barlow Condensed', sans-serif; font-style: italic; font-weight: 800; font-size: 64px; line-height: 1; color: #ffffff; letter-spacing: 1px;">DESDE 1905</div>
+      <div style="font-family: 'Barlow Condensed', sans-serif; font-style: italic; font-weight: 700; font-size: 34px; line-height: 1.1; color: #ffffff; letter-spacing: 5px;">JUNTO AL DEPORTE</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;accentColor&quot;: { &quot;editor&quot;: &quot;color&quot;, &quot;default&quot;: &quot;#e4002b&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;#e4002b&quot;, &quot;#ff6900&quot;, &quot;#ffd200&quot;, &quot;#0057b8&quot;], &quot;section&quot;: &quot;Marca&quot; },
+  &quot;fotoBlancoYNegro&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Foto&quot; }
+}">
+class Component extends DCLogic {
+  state = { email: "", password: "", showPw: false };
+
+  renderVals() {
+    return {
+      accent: this.props.accentColor ?? "#e4002b",
+      fotoFiltro: (this.props.fotoBlancoYNegro ?? true) ? "grayscale(1)" : "none",
+      email: this.state.email,
+      password: this.state.password,
+      pwType: this.state.showPw ? "text" : "password",
+      onEmail: (e) => this.setState({ email: e.target.value }),
+      onPassword: (e) => this.setState({ password: e.target.value }),
+      togglePw: () => this.setState((s) => ({ showPw: !s.showPw })),
+      onLogin: (e) => { e.preventDefault(); window.location.href = "Inicio.dc.html"; },
+    };
+  }
+}
+</script>
+</body>
+</html>
