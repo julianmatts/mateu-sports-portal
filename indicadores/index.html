@@ -835,6 +835,7 @@ function rankDe(cad, metric, name){
 
 /* ============================ CARGA ============================ */
 async function boot(){
+  precalentarObjetivo();   // Firebase del Objetivo en paralelo con los estáticos
   try{
     [PERIODOS, OBJ] = await Promise.all([
       fetchJSON(DATA+'/periodos.json').then(d=>d.periodos),
@@ -876,8 +877,26 @@ async function boot(){
     open=new Set(); openPersons=new Set(); semSel=null; render();
   };
 
-  cargarStock(); // en segundo plano
-  render();
+  // el dataset de Meses de Stock pesa ~3 MB: se carga recién DESPUÉS del primer
+  // render para que no compita en la red con los JSON críticos de los KPIs
+  render().finally(cargarStock);
+}
+
+/* Precalienta las lecturas de Firebase de la sección Objetivo (semanas publicadas
+   y, para las cuentas de sucursal, los datos de la última semana). Los fetchers
+   cachean la promesa, así que renderObjetivo() las encuentra ya resueltas o en
+   vuelo — la sección deja de arrancar de cero al final de la cadena de render. */
+function precalentarObjetivo(){
+  if(!OBJETIVOS_URL) return;
+  fetchObjetivoWeeks().then(weeks=>{
+    const slug = !esGerencia && miSucursal ? SUC2SLUG[miSucursal] : null;
+    if(!slug || !weeks || !weeks.length) return;
+    const sem = weeks[0];
+    const p = sem.split('-').map(Number);
+    const prevSem = new Date(Date.UTC(p[0],p[1]-1,p[2]-7)).toISOString().slice(0,10);
+    fetchObjetivoData(slug, sem); fetchVentaEquipo(slug, sem);
+    fetchEquipo(slug, sem); fetchEqPesos(slug); fetchVentaEquipo(slug, prevSem);
+  }).catch(()=>{});
 }
 
 /* carga diferida del dataset de Meses de Stock (se reutiliza el del módulo Gestión de Stock) */
@@ -889,17 +908,21 @@ function cargarStock(){
   document.head.appendChild(s);
 }
 
-async function cadenaDe(id){
-  if(cacheCadena[id]!==undefined) return cacheCadena[id];
-  try{ cacheCadena[id] = await fetchJSON(DATA+'/'+id+'/cadena.json'); }
-  catch(e){ cacheCadena[id] = null; }
+/* Se cachea la PROMESA (no el resultado): dos pedidos concurrentes del mismo
+   archivo comparten un solo fetch, y se puede prefetchear sin esperar.
+   CADENAS guarda el valor ya resuelto para los lectores sincrónicos (serieDe):
+   cuando renderKPIs corre, render() ya esperó todas las cadenas. */
+const CADENAS = {};
+function cadenaDe(id){
+  if(cacheCadena[id]===undefined)
+    cacheCadena[id] = fetchJSON(DATA+'/'+id+'/cadena.json').catch(()=>null)
+      .then(d=>{ CADENAS[id]=d; return d; });
   return cacheCadena[id];
 }
-async function detalleDe(id, name){
+function detalleDe(id, name){
   const key = id+'|'+name;
-  if(cacheDet[key]!==undefined) return cacheDet[key];
-  try{ cacheDet[key] = await fetchJSON(DATA+'/'+id+'/'+archivoDe(name)+'.json'); }
-  catch(e){ cacheDet[key] = null; }
+  if(cacheDet[key]===undefined)
+    cacheDet[key] = fetchJSON(DATA+'/'+id+'/'+archivoDe(name)+'.json').catch(()=>null);
   return cacheDet[key];
 }
 
@@ -937,9 +960,14 @@ async function render(){
   $('tbDias').textContent = (p&&p.dias)?'días '+p.dias:'';
   segToggle();
 
+  // disparar TODO junto (las promesas quedan cacheadas): las cadenas de todos los
+  // períodos y el detalle de la sucursal en foco. Antes iban en serie y los KPIs
+  // esperaban ~4 viajes encadenados antes de pintarse.
+  const pCadenas = Promise.all(PERIODOS.map(p=>cadenaDe(p.id)));   // todas, para la tendencia (sparkline)
+  if(!vistaCadena && sucName) detalleDe(per, sucName);             // prefetch en paralelo
   CAD = await cadenaDe(per);
   CAD_PREV = prevPerId()? await cadenaDe(prevPerId()) : null;
-  await Promise.all(PERIODOS.map(p=>cadenaDe(p.id)));   // todas, para la tendencia (sparkline)
+  await pCadenas;
   // base "Horas asignadas": pisar h_act con las horas del equipo semanal donde exista.
   // Solo gerencia: una sucursal no baja los equipos de las demás (seguridad blanda).
   if(hbase==='h_act' && esGerencia){
@@ -1043,7 +1071,7 @@ function avgFormato(cad, metric, fmt){ const peers=peersFormato(cad,fmt); return
 /* --- serie a lo largo de los períodos (para el sparkline) --- */
 function serieDe(getter){
   return PERIODOS.slice().sort((a,b)=>a.id.localeCompare(b.id)).map(p=>{
-    const cad = cacheCadena[p.id];
+    const cad = CADENAS[p.id];
     const s = cad && cad.sucursales.find(x=>x.sucursal===sucName);
     return {per:p.id, val: s? getter(s) : null};
   });
@@ -2296,15 +2324,19 @@ function eqEditorHtml(){
 }
 async function renderObjetivo(){
   const sec=$('secObjetivo'); if(!sec) return;
-  sec.style.display='none';
-  if(!OBJETIVOS_URL) return;
+  if(!OBJETIVOS_URL){ sec.style.display='none'; return; }
   const slug = SUC2SLUG[sucName];
-  if(!slug) return;
+  if(!slug){ sec.style.display='none'; return; }
+  // primera carga: mostrar la sección con un aviso en vez de aparecer de golpe al final
+  if(!$('objetivoCard').innerHTML){
+    $('objetivoCard').innerHTML = '<p class="empty" style="margin:6px 0">Cargando objetivo…</p>';
+    sec.style.display='';
+  }
   const target = sucName;
   let weeks;
-  try{ weeks = await fetchObjetivoWeeks(); }catch(e){ return; }
+  try{ weeks = await fetchObjetivoWeeks(); }catch(e){ sec.style.display='none'; return; }
   if(sucName!==target) return;
-  if(!weeks || !weeks.length){ sec.style.display='none'; return; }
+  if(!weeks || !weeks.length){ $('objetivoCard').innerHTML=''; sec.style.display='none'; return; }
   // semana activa: la elegida (si sigue existiendo) o la última publicada
   const sem = (objSem && weeks.includes(objSem)) ? objSem : weeks[0];
   _objActiveSem = sem;
