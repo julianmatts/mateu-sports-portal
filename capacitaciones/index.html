@@ -229,6 +229,34 @@ async function fbPost(path, data){ const r = await fetch(FIREBASE_DB_URL+'/'+ROO
 async function fbDel(path){ const r = await fetch(FIREBASE_DB_URL+'/'+ROOT+'/'+path+'.json',{method:'DELETE'}); if(!r.ok) throw new Error('HTTP '+r.status); }
 async function getJSON(url){ const r = await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
 function nuevoId(pref){ return pref+'-'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+
+/* Archivos (PDF/PPT/etc.) subidos por el capacitador: se guardan en Firebase
+   como base64 EN PARTES (RTDB limita ~10 MB por escritura), nodo archivos/<fid>.
+   El alumno los reconstruye en un Blob al descargar. Tope 20 MB por archivo;
+   si la Academia acumula muchos pesados, migrar a Firebase Storage. */
+const ARCHIVO_MAX_MB = 20;
+const ARCHIVO_CHUNK = 4000000;   // caracteres base64 por parte (~3 MB reales)
+async function subirArchivo(file, onProgreso){
+  const fid = nuevoId('f');
+  const dataUrl = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('no se pudo leer el archivo')); r.readAsDataURL(file); });
+  const b64 = dataUrl.slice(dataUrl.indexOf(',')+1);
+  const n = Math.ceil(b64.length/ARCHIVO_CHUNK);
+  await fbPut('archivos/'+fid+'/meta', { nombre:file.name, mime:file.type||'application/octet-stream', size:file.size, n, ts:Date.now(), por:SESSION.email });
+  for(let i=0;i<n;i++){
+    if(onProgreso) onProgreso(i+1,n);
+    await fbPut('archivos/'+fid+'/c/'+i, b64.slice(i*ARCHIVO_CHUNK,(i+1)*ARCHIVO_CHUNK));
+  }
+  return fid;
+}
+async function bajarArchivo(fid){
+  const meta = await fbGet('archivos/'+fid+'/meta');
+  if(!meta) throw new Error('archivo no encontrado');
+  let b64 = '';
+  for(let i=0;i<meta.n;i++) b64 += await fbGet('archivos/'+fid+'/c/'+i);
+  const bin = atob(b64); const arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+  return { blob:new Blob([arr],{type:meta.mime}), meta };
+}
 function hoyISO(){ return new Date().toISOString().slice(0,10); }
 function fechaLarga(ts){ try{ return new Date(ts).toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'}); }catch(e){ return ''; } }
 function titleNombre(s){ return (s||'').toLowerCase().replace(/(^|[\s'’-])([a-záéíóúñü])/g,(m,p,c)=>p+c.toUpperCase()); }
@@ -460,6 +488,8 @@ function renderCursoAlumno(cid){
       const yt = esUrlYoutube(m.contenido);
       cuerpo = yt ? '<div class="video-marco"><iframe src="https://www.youtube.com/embed/'+yt+'" allowfullscreen loading="lazy"></iframe></div>'
                   : '<a class="btn" target="_blank" rel="noopener" href="'+esc(m.contenido)+'">▶ Ver video</a>';
+    } else if(m.tipo==='archivo'){
+      cuerpo = '<button class="btn" data-arch="'+esc(m.contenido)+'">📥 Descargar '+esc(m.archivoNombre||'material')+'</button>';
     } else if(m.tipo==='enlace'){
       cuerpo = '<a class="btn" target="_blank" rel="noopener" href="'+esc(m.contenido)+'">📄 Abrir material</a>';
     } else {
@@ -517,6 +547,17 @@ function renderCursoAlumno(cid){
     b.disabled=true;
     try{ await guardarAvanceYo(cid, nuevo); }catch(err){ alert('No se pudo guardar: '+err.message); }
     render();
+  }));
+  // Descarga de archivos subidos por el capacitador (se reconstruyen desde Firebase).
+  app.querySelectorAll('[data-arch]').forEach(b=>b.addEventListener('click', async ()=>{
+    const orig = b.textContent; b.disabled=true; b.textContent='Descargando…';
+    try{
+      const {blob, meta} = await bajarArchivo(b.dataset.arch);
+      const url = URL.createObjectURL(blob);
+      if((meta.mime||'').indexOf('pdf')>=0){ window.open(url,'_blank'); }
+      else{ const a=document.createElement('a'); a.href=url; a.download=meta.nombre||'material'; document.body.appendChild(a); a.click(); a.remove(); }
+    }catch(err){ alert('No se pudo descargar el material: '+err.message); }
+    b.disabled=false; b.textContent=orig;
   }));
   const qf = $('quizForm');
   if(qf) qf.addEventListener('submit', async e=>{
@@ -634,11 +675,16 @@ function renderEditorCurso(){
     html.push('<div class="card" style="margin-bottom:10px"><div class="fila">'+
       '<div style="flex:2;min-width:220px"><label class="fl">Título del módulo '+(i+1)+'</label><input type="text" data-mt="'+i+'" value="'+esc(m.titulo||'')+'"></div>'+
       '<div><label class="fl">Tipo</label><select data-mtipo="'+i+'">'+
-        ['texto','video','enlace'].map(t=>'<option value="'+t+'"'+(m.tipo===t?' selected':'')+'>'+({texto:'Texto / lectura',video:'Video (YouTube)',enlace:'Material (link/PDF)'}[t])+'</option>').join('')+'</select></div>'+
+        ['texto','video','archivo','enlace'].map(t=>'<option value="'+t+'"'+(m.tipo===t?' selected':'')+'>'+({texto:'Texto / lectura',video:'Video (YouTube)',archivo:'Archivo (PDF / PowerPoint)',enlace:'Material (link externo)'}[t])+'</option>').join('')+'</select></div>'+
       '<div style="align-self:flex-end"><button class="btn mini peligro" data-mdel="'+i+'">🗑 Quitar</button></div></div>'+
-      '<div style="margin-top:10px"><label class="fl">'+(m.tipo==='texto'?'Contenido':'URL')+'</label>'+
-      (m.tipo==='texto' ? '<textarea data-mc="'+i+'" placeholder="El texto que lee el vendedor. Doble enter = párrafo nuevo.">'+esc(m.contenido||'')+'</textarea>'
-        : '<input type="url" data-mc="'+i+'" value="'+esc(m.contenido||'')+'" placeholder="https://…">')+'</div></div>');
+      '<div style="margin-top:10px">'+
+      (m.tipo==='texto' ? '<label class="fl">Contenido</label><textarea data-mc="'+i+'" placeholder="El texto que lee el vendedor. Doble enter = párrafo nuevo.">'+esc(m.contenido||'')+'</textarea>'
+        : m.tipo==='archivo' ? '<label class="fl">Archivo</label>'+
+          (m.contenido ? '<p style="margin:0 0 8px;font-size:14px">Subido: <b>'+esc(m.archivoNombre||m.contenido)+'</b> ✓ — elegir otro archivo lo reemplaza.</p>' : '')+
+          '<input type="file" data-mf="'+i+'" accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx"> '+
+          '<span class="muted" data-mfst="'+i+'" style="font-size:13px"></span>'+
+          '<p class="muted" style="font-size:12.5px;margin:7px 0 0">Máx. '+ARCHIVO_MAX_MB+' MB. Si el PPT pesa mucho por las fotos, conviene exportarlo a PDF.</p>'
+        : '<label class="fl">URL</label><input type="url" data-mc="'+i+'" value="'+esc(m.contenido||'')+'" placeholder="https://…">')+'</div></div>');
   });
   html.push('</div><p><button class="btn" id="addMod">＋ Agregar módulo</button></p>');
 
@@ -677,6 +723,29 @@ function renderEditorCurso(){
   $('addPreg').addEventListener('click',()=>{ leerForm(); c.quiz.preguntas.push({q:'',ops:[],ok:0}); render(); });
   app.querySelectorAll('[data-mdel]').forEach(b=>b.addEventListener('click',()=>{ leerForm(); c.modulos.splice(+b.dataset.mdel,1); render(); }));
   app.querySelectorAll('[data-qdel]').forEach(b=>b.addEventListener('click',()=>{ leerForm(); c.quiz.preguntas.splice(+b.dataset.qdel,1); render(); }));
+  // Cambiar el tipo re-dibuja el campo de contenido (texto/URL/archivo).
+  app.querySelectorAll('[data-mtipo]').forEach(sel=>sel.addEventListener('change',()=>{ leerForm(); render(); }));
+  // Subida de archivo: se sube a Firebase apenas se elige, en partes.
+  app.querySelectorAll('[data-mf]').forEach(inp=>inp.addEventListener('change', async ()=>{
+    const f = inp.files && inp.files[0]; if(!f) return;
+    if(f.size > ARCHIVO_MAX_MB*1048576){
+      alert('«'+f.name+'» pesa '+(f.size/1048576).toFixed(1)+' MB y el máximo es '+ARCHIVO_MAX_MB+' MB.\nSi es un PowerPoint con muchas fotos, exportalo a PDF y subí ese.');
+      inp.value=''; return;
+    }
+    leerForm();
+    const st = app.querySelector('[data-mfst="'+inp.dataset.mf+'"]');
+    inp.disabled = true;
+    try{
+      const fid = await subirArchivo(f, (i,n)=>{ if(st) st.textContent = 'Subiendo… parte '+i+' de '+n; });
+      const m = c.modulos[+inp.dataset.mf];
+      m.contenido = fid; m.archivoNombre = f.name;
+      if(!m.titulo) m.titulo = f.name.replace(/\.[^.]+$/,'');
+      render();
+    }catch(err){
+      alert('No se pudo subir el archivo: '+err.message);
+      inp.disabled=false; if(st) st.textContent='';
+    }
+  }));
   $('guardarCurso').addEventListener('click', async ()=>{
     leerForm();
     if(!c.titulo){ alert('Poné un título al curso.'); return; }
