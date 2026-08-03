@@ -393,8 +393,10 @@ crear ninguna base.**
 (Cristian Campion) con acceso total; **alumno** = cuentas `sucursal`/`outlet` con la
 herramienta `capacitaciones`.
 
-- **Staff**: pestañas Cursos (CRUD: módulos de texto/video YouTube/material por link
-  + quiz opción múltiple con % de aprobación), Programas (junta cursos y los asigna
+- **Staff**: pestañas Cursos (CRUD: módulos de texto / video YouTube / **archivo
+  PDF-PPT subido desde la PC** (se guarda en Firebase en partes base64, nodo
+  `archivos/<fid>`, tope 20 MB; el alumno lo descarga reconstruido) / material por
+  link + quiz opción múltiple con % de aprobación), Programas (junta cursos y los asigna
   por puesto y/o sucursal con fecha límite; botón «📣 Avisar» publica la notificación
   en la Bandeja del Portal vía `mensajes-mateu/avisos`), Equipo (avance persona por
   persona de una sucursal), Ranking (cumplimiento promedio por sucursal) y Encuestas
