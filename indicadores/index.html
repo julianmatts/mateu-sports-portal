@@ -463,6 +463,10 @@ footer b{color:var(--navy)}
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
 <script src="../shared/iconos.js" defer></script>
+<!-- Calendario retail del shell: en el Portal lo ve el admin; acá lo ven sucursal/outlet (esta es su home) -->
+<link rel="stylesheet" href="../shared/components/calendario-retail/calendario.css">
+<script>window.CALENDARIO_RETAIL_CONFIG = { mount: '.top-spacer' };</script>
+<script src="../shared/components/calendario-retail/calendario.js" defer></script>
 <!-- matriz de pesos por turno de arranque (fallback si no hay publicada en Firebase) -->
 <script src="pesos-turnos.js" defer></script>
 </head>
@@ -1360,6 +1364,13 @@ function fetchObjetivoData(slug, semana){
 }
 const objMoney = n => '$'+Math.round(n||0).toLocaleString('es-AR');
 const objSemLbl = iso => { const p=String(iso||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:iso; };
+// n° de semana retail = semana ISO 8601 (lun→dom), mismo criterio que el calendario del shell
+const objSemNum = iso => { const p=String(iso||'').split('-').map(Number); if(p.length!==3||!p[0]) return null;
+  const d=new Date(Date.UTC(p[0],p[1]-1,p[2])); const dn=(d.getUTCDay()+6)%7; d.setUTCDate(d.getUTCDate()-dn+3);
+  const e4=new Date(Date.UTC(d.getUTCFullYear(),0,4)); const dn4=(e4.getUTCDay()+6)%7;
+  const j1=new Date(e4); j1.setUTCDate(e4.getUTCDate()-dn4+3);
+  return 1+Math.round((d-j1)/(7*86400000)); };
+const objSemTag = iso => { const n=objSemNum(iso); return n!=null ? 'Semana '+n : 'Semana del '+objSemLbl(iso); };
 
 /* --- venta por vendedor que sube el encargado (Firebase: recepciones-mateu / ventaEquipo/<slug>/<semana>) --- */
 let _objActiveSem = null;          // semana activa del selector (para el uploader)
@@ -1799,7 +1810,7 @@ function veSectionHtml(slug, sem, v, ve, eqData, pesos, prevVe){
     const otraSemana = prev.data.semArchivo && prev.data.semArchivo!==sem;
     body = '<div style="background:var(--mid-bg,#fdf3e3);border:1px solid #f0d8a8;border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:13px">'
       + 'Revisá los datos leídos de <b>'+esc(prev.fileName)+'</b> ('+prev.data.vendedores.length+' vendedores). Si está bien, guardá.'
-      + (otraSemana?'<br>⚠️ <b>Ojo:</b> el archivo es de la semana del <b>'+esc(objSemLbl(prev.data.semArchivo))+'</b> y estás guardando en la del <b>'+esc(objSemLbl(sem))+'</b>.':'')
+      + (otraSemana?'<br>⚠️ <b>Ojo:</b> el archivo es de la <b>'+esc(objSemTag(prev.data.semArchivo))+'</b> ('+esc(objSemLbl(prev.data.semArchivo))+') y estás guardando en la <b>'+esc(objSemTag(sem))+'</b> ('+esc(objSemLbl(sem))+').':'')
       + '</div>'
       + veDetailHtml(prev.data, metaVal, prevVe)
       + '<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="veSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">Guardar</button>'
@@ -2003,7 +2014,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
 function eqEditorHtml(){
   const E=_eqEdit;
   let h='';
-  if(E.copiadaDe) h+='<div style="background:#f8f9fe;border:1px solid var(--border);border-radius:9px;padding:8px 12px;margin-bottom:12px;font-size:12.5px">Arranqué con el equipo de la <b>semana del '+esc(objSemLbl(E.copiadaDe))+'</b> — ajustá lo que cambió y guardá.</div>';
+  if(E.copiadaDe) h+='<div style="background:#f8f9fe;border:1px solid var(--border);border-radius:9px;padding:8px 12px;margin-bottom:12px;font-size:12.5px">Arranqué con el equipo de la <b>'+esc(objSemTag(E.copiadaDe))+'</b> — ajustá lo que cambió y guardá.</div>';
   h+='<p class="hint" style="margin:0 0 10px">Horas de venta por turno y día de cada persona (T1 9-13 · T2 13-16 · T3 16-20). El botón <b>⇉</b> repite el lunes en Ma-Sá. Sin horas = no reparte meta (vacaciones, licencia).</p>';
   h+='<div class="tbl-wrap"><table style="min-width:720px"><thead><tr><th class="L" style="min-width:150px">Persona</th><th class="L">Turno</th>'
     +EQ_DIAS.map(d=>'<th>'+d+'</th>').join('')+'<th></th><th>Total</th><th></th></tr></thead><tbody>';
@@ -2060,7 +2071,7 @@ async function renderObjetivo(){
   // selector de semanas (arriba a la derecha)
   const selHtml = '<select id="objSemSel" style="font-family:var(--font-b,inherit);font-size:13px;color:var(--navy,#0B1527);'
     +'background:#fff;border:1px solid var(--line,#dce3f0);border-radius:7px;padding:6px 9px;cursor:pointer">'
-    + weeks.map(k=>'<option value="'+esc(k)+'"'+(k===sem?' selected':'')+'>Semana del '+esc(objSemLbl(k))+'</option>').join('')
+    + weeks.map(k=>'<option value="'+esc(k)+'"'+(k===sem?' selected':'')+'>'+esc(objSemTag(k))+'</option>').join('')
     +'</select>';
 
   // con el real ya cargado el protagonista es la venta: real en grande, meta en chico
