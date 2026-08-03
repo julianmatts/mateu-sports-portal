@@ -30,6 +30,7 @@ mateu-sports-portal/
 ├── evaluaciones/       # Evaluaciones de Supervisor: carga semanal operativa+actitudinal por sucursal, ranking, gráficos y vista de encargado. Escribe a Firebase (base evaluaciones-mateu). Ver "Evaluaciones de Supervisor" abajo.
 ├── barrida/            # Análisis de Reserva Depósito Central: cruce semanal (subir Excel) de la reserva del depósito central con las ventas por sucursal → alertas de reposición posible y de reserva parada. Firebase: reusa recepciones-mateu (nodo barrida/). Ver "Análisis de Reserva Depósito Central" abajo.
 ├── objetivos/          # Objetivos de Venta Semanal: gerencia carga el objetivo (Meta) de venta por sucursal por semana (subiendo el Excel "PMS Objetivos" o a mano) → dashboard vs. real; cada sucursal ve su objetivo en Indicadores. Firebase: reusa recepciones-mateu (nodo objetivos/). Ver "Objetivos de Venta Semanal" abajo.
+├── capacitaciones/     # Academia de Ventas: PROTOTIPO navegable exportado de Design (pantallas .dc.html + runtime support.js, datos de demo). Gate de sesión del Portal en cada pantalla. La versión funcional es una etapa futura.
 ├── lib/                # código JS común versionado y testeable (hoy: evaluacion.js = cálculo puro de Evaluaciones + tests con node --test)
 └── shared/             # código común del shell (calendario retail, etc.)
 ```
