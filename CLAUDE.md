@@ -365,6 +365,19 @@ entran acá: ven su objetivo en Indicadores.
   ⚠️ Diagonal 80 tiene objetivo pero no tiene datos de Indicadores todavía, así que
   su encargado aún no ve la sección (Indicadores lo manda a empty state antes). Se
   resuelve cuando Diagonal tenga datos de venta.
+- **Base «Horas asignadas» + justificaciones (03/08/2026)**: el toggle de KPIs de
+  Indicadores pasó de "Horas con venta" a **"Horas asignadas"**: usa las horas que el
+  encargado asignó a la venta en la grilla del equipo (de las contratadas, solo las de
+  venta — un full suele tener 7 de 9 hs; el resto es limpieza/armados). Por semana del
+  período: horas del equipo guardado, fallback al `h_act` del sistema; la nota al pie
+  dice cuántas semanas cubre. En vista cadena solo gerencia baja los equipos de todas
+  (seguridad blanda). Y dos alertas con modal de justificación: (1) al **guardar el
+  equipo**, personas con días sin horas o de la dotación fuera del equipo → motivo
+  obligatorio; (2) con venta cargada, personas con **horas asignadas y cero venta** →
+  popup automático al encargado. Ambas se guardan en el payload del equipo
+  (`justif.sinHoras` / `justif.sinVenta`) y el resumen les llega por **directo de la
+  Bandeja** a `ALERTA_ADMINS` (rrhh@ / cristian.campion@ / capacitacion@, constante en
+  `indicadores/`).
 - **Etapa 2 pendiente (pedida por Juli)**: armar los objetivos directo en el portal
   (sin Excel) y, al confirmar, **enviar una notificación interna** a cada usuario de
   sucursal. Enganchar con la Bandeja de mensajes (`mensajes-mateu`) del Portal.

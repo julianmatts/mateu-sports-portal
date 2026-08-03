@@ -490,7 +490,7 @@ footer b{color:var(--navy)}
   <span class="tb-dias" id="tbDias"></span>
   <div class="seg" role="group" aria-label="Base de horas">
     <button id="bCon" aria-pressed="true">Horas contratadas</button>
-    <button id="bAct" aria-pressed="false">Horas con venta</button>
+    <button id="bAct" aria-pressed="false">Horas asignadas</button>
   </div>
   <span class="tb-actions">
     <button class="tb-btn" id="btnCopiar" title="Copiar resumen para compartir">⧉ Copiar</button>
@@ -891,6 +891,7 @@ async function detalleDe(id, name){
 
 /* ============================ RENDER ============================ */
 let CAD=null, CAD_PREV=null, DET=null, DET_FULL=null;
+let DET_ASIG=null;   // horas asignadas del período para la sucursal en foco (null = sin equipo guardado)
 
 // Clona el detalle de la sucursal quedándose SOLO con la semana n (venta + horas).
 // Cobertura, heatmap y summary.semanas se conservan (mes completo) para las secciones
@@ -925,6 +926,14 @@ async function render(){
   CAD = await cadenaDe(per);
   CAD_PREV = prevPerId()? await cadenaDe(prevPerId()) : null;
   await Promise.all(PERIODOS.map(p=>cadenaDe(p.id)));   // todas, para la tendencia (sparkline)
+  // base "Horas asignadas": pisar h_act con las horas del equipo semanal donde exista.
+  // Solo gerencia: una sucursal no baja los equipos de las demás (seguridad blanda).
+  if(hbase==='h_act' && esGerencia){
+    try{
+      CAD = (await cadAsignadas(per)) || CAD;
+      if(prevPerId()) CAD_PREV = (await cadAsignadas(prevPerId())) || CAD_PREV;
+    }catch(e){ /* sin Firebase se queda con el dato del sistema */ }
+  }
 
   // completar selector de sucursales (gerencia) una vez que hay cadena
   if(esGerencia && CAD){
@@ -963,7 +972,14 @@ async function render(){
   }
   // la semana elegida tiene que existir en esta sucursal/período
   if(semSel && !(DET_FULL.summary.semanas||[]).some(w=>w.n===semSel)) semSel=null;
-  DET = semSel ? cloneSemana(DET_FULL, semSel) : DET_FULL;
+  // base "Horas asignadas": el detalle usa las horas del equipo semanal donde exista
+  DET_ASIG=null;
+  let detBase=DET_FULL;
+  if(hbase==='h_act' && sucName!==ECOM){
+    try{ DET_ASIG = await horasAsignadasPeriodo(SUC2SLUG[sucName], per); }catch(e){ DET_ASIG=null; }
+    if(DET_ASIG) detBase = conHorasAsignadas(DET_FULL, DET_ASIG);
+  }
+  DET = semSel ? cloneSemana(detBase, semSel) : detBase;
   ocultarEmpty();
   actualizarFiltroBanner();
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
@@ -1716,6 +1732,7 @@ async function saveEquipo(slug, sem, payload){
     {method:'PUT',body:JSON.stringify(payload)});
   if(!r.ok) throw new Error('No se pudo guardar');
   delete _eqCache[slug+'|'+sem]; delete _eqSemCache[slug];
+  limpiarAsigCache(slug);   // las horas asignadas cambiaron: rehacer la base de KPIs
   return payload;
 }
 const eqNuevaPersona = nombre => ({nombre:nombre||'', h:[[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]]});
@@ -1790,6 +1807,196 @@ function eqRealDe(p, eqData, ve, used){
   const k=eqKeyName(p.nombre);
   if(eqData && eqData.real && eqData.real[k]>0){ monto=eqData.real[k]; src='manual'; }
   return src ? {monto, src, ix} : (ix>=0 ? {monto:0, src:null, ix} : null);
+}
+
+/* ============================================================
+   HORAS ASIGNADAS COMO BASE DE KPIs — el toggle "Horas asignadas"
+   usa las horas que el encargado asignó a la venta en la grilla del
+   equipo semanal (objetivos/equipos), no las "horas con venta" del
+   sistema: de las horas contratadas, solo las dedicadas a vender
+   (sin limpieza, armados de exhibición, etc.). Las semanas del
+   período sin equipo guardado caen al dato del sistema.
+   ============================================================ */
+// lunes ISO de cada semana retail del período (desde periodos.json: "dias" = "29/06–26/07")
+function perLunesISO(perId){
+  const p=PERIODOS.find(x=>x.id===perId); if(!p||!p.dias) return [];
+  const m=String(p.dias).match(/(\d{2})\/(\d{2})\D+(\d{2})\/(\d{2})/); if(!m) return [];
+  const [y,mm]=perId.split('-').map(Number);
+  const y0=(+m[2]>mm)?y-1:y;   // período de enero que arranca en diciembre
+  const ini=new Date(Date.UTC(y0,+m[2]-1,+m[1]));
+  const fin=new Date(Date.UTC((+m[4]<+m[2])?y0+1:y0,+m[4]-1,+m[3]));
+  const n=Math.max(1,Math.round((fin-ini+86400000)/(7*86400000)));
+  return Array.from({length:n},(_,i)=>{ const d=new Date(ini); d.setUTCDate(ini.getUTCDate()+7*i); return d.toISOString().slice(0,10); });
+}
+const eqHorasEquipo = eq => eqSanea((eq&&eq.equipo)||[]).reduce((a,p)=>a+eqHorasPersona(p),0);
+// horas asignadas por semana del período para una sucursal: {porN:{n:horas}, semanasCon, total} | null
+const _asigCache={};
+function horasAsignadasPeriodo(slug, perId){
+  const key=slug+'|'+perId;
+  if(_asigCache[key]) return _asigCache[key];
+  _asigCache[key]=(async()=>{
+    if(!slug) return null;
+    const lunes=perLunesISO(perId); if(!lunes.length) return null;
+    const guardadas=await fetchEqSemanas(slug);
+    const porN={}; let semanasCon=0, total=0;
+    await Promise.all(lunes.map(async(iso,i)=>{
+      if(!guardadas.includes(iso)) return;
+      const eq=await fetchEquipo(slug, iso);
+      const h=eqHorasEquipo(eq);
+      if(h>0){ porN[i+1]=h; semanasCon++; total+=h; }
+    }));
+    return semanasCon ? {porN, semanasCon, total, semanasPer:lunes.length} : null;
+  })();
+  return _asigCache[key];
+}
+// clona el detalle de sucursal con h_act = horas asignadas (fallback por semana: dato del sistema)
+function conHorasAsignadas(det, asig){
+  if(!det || !asig) return det;
+  const sem=det.summary.semanas||[], nsem=sem.length||1;
+  const val=w=> asig.porN[w.n]!=null ? asig.porN[w.n] : (w.h_act!=null ? w.h_act : (det.summary.h_act||0)/nsem);
+  const semanas=sem.map(w=>({...w, h_act:val(w)}));
+  const total=semanas.length ? semanas.reduce((a,w)=>a+(w.h_act||0),0) : (asig.total||det.summary.h_act);
+  return {...det, summary:{...det.summary, h_act:total||det.summary.h_act, semanas}};
+}
+// ídem para una fila plana de cadena.json
+function sucConAsignadas(s, asig){
+  if(!asig) return s;
+  const sem=s.semanas||[], nsem=sem.length||1;
+  const val=w=> asig.porN[w.n]!=null ? asig.porN[w.n] : (w.h_act!=null ? w.h_act : (s.h_act||0)/nsem);
+  const total=sem.length ? sem.reduce((a,w)=>a+val(w),0) : (asig.total||s.h_act);
+  return {...s, h_act: total||s.h_act};
+}
+// cadena con las horas asignadas aplicadas a cada sucursal que tenga equipo guardado
+const _cadAsigCache={};
+function cadAsignadas(perId){
+  if(_cadAsigCache[perId]) return _cadAsigCache[perId];
+  _cadAsigCache[perId]=(async()=>{
+    const cad=await cadenaDe(perId); if(!cad) return cad;
+    const sucs=await Promise.all(cad.sucursales.map(async s=>{
+      const slug=SUC2SLUG[s.sucursal];
+      if(!slug || s.sucursal===ECOM) return s;
+      const asig=await horasAsignadasPeriodo(slug, perId).catch(()=>null);
+      return asig ? sucConAsignadas(s, asig) : s;
+    }));
+    return {...cad, sucursales:sucs};
+  })();
+  return _cadAsigCache[perId];
+}
+
+/* ============================================================
+   JUSTIFICACIONES DEL EQUIPO — dos alertas al encargado:
+   (1) al guardar el equipo, personas con días sin horas asignadas
+       (o de la dotación y fuera del equipo) → modal con motivo;
+   (2) con venta cargada, personas con horas asignadas y CERO venta
+       → modal con motivo. En ambos casos el resumen les llega como
+   directo de la Bandeja a los admins (RRHH / supervisor / capacitaciones).
+   Se guardan en el payload del equipo: justif.sinHoras / justif.sinVenta.
+   ============================================================ */
+// A quién le llegan las alertas (directos de la Bandeja del Portal).
+const ALERTA_ADMINS=['rrhh@mateu.com.ar','cristian.campion@mateu.com.ar','capacitacion@mateu.com.ar'];
+const MOTIVOS_SIN_HORAS=['Franco','Vacaciones','Licencia / enfermedad','No hace venta (caja / depósito / otras tareas)','Ya no trabaja en la sucursal','Otro (comentar)'];
+const MOTIVOS_SIN_VENTA=['Licencia / enfermedad','Estuvo en otras tareas (depósito, limpieza, armados)','Cambio de franco','Falta cargar su venta','Otro (comentar)'];
+const _jvDismissed=new Set();   // slug|sem ya pospuestos en esta visita ("Más tarde")
+let _jvState=null;              // {slug, sem, eqData, casos, pend} de la vista de distribución actual
+
+// wiring del aviso "horas asignadas sin venta": botón + popup automático al encargado
+function jvWire(){
+  const st=_jvState; if(!st) return;
+  const btn=$('jvBtn'); if(btn) btn.onclick=()=>jvAbrir();
+  if(!esGerencia && st.pend.length && !_jvDismissed.has(st.slug+'|'+st.sem) && !_eqEdit && !_eqRealDraft && !_vePreview){
+    _jvDismissed.add(st.slug+'|'+st.sem);   // salta una sola vez por visita
+    jvAbrir();
+  }
+}
+async function jvAbrir(){
+  const st=_jvState; if(!st || !st.casos.length) return;
+  const casos = st.pend.length ? st.pend : st.casos;
+  const prev=(st.eqData.justif&&st.eqData.justif.sinVenta)||{};
+  const resp=await justifModal({
+    titulo:'Horas asignadas sin venta',
+    intro:'Estas personas tienen <b>horas de venta asignadas</b> esta semana pero todavía <b>no registran venta</b>. Contá el motivo de cada una.',
+    casos, motivos:MOTIVOS_SIN_VENTA, prev,
+    okLabel:'Guardar justificación', cancelLabel:'Más tarde'});
+  if(resp===null) return;
+  try{
+    const justif={...(st.eqData.justif||{}), sinVenta:{...prev, ...resp}};
+    await saveEquipo(st.slug, st.sem, {...st.eqData, justif, actualizado:new Date().toISOString(), por:(SESSION.email||'')});
+    avisarAdmins(justifTexto('Horas asignadas sin venta', st.sem, resp)).catch(()=>{});
+    renderObjetivo();
+  }catch(e){ alert('No se pudo guardar la justificación: '+(e.message||e)); }
+}
+
+function convKeyDe(a,b){ return [firebaseKeyFromEmail(a),firebaseKeyFromEmail(b)].sort().join('__'); }
+async function avisarAdmins(texto){
+  if(!MENSAJES_OK || !SESSION || !SESSION.email) return;
+  const de=SESSION.email, ts=Date.now();
+  await Promise.all(ALERTA_ADMINS
+    .filter(a=>a.toLowerCase()!==de.toLowerCase())
+    .map(a=>postJSON(MENSAJES_DB_URL+'/directos/'+convKeyDe(de,a)+'.json',{de,texto,ts}).catch(()=>null)));
+}
+// casos "sin horas": días en 0 dentro del equipo + gente de la dotación fuera del equipo
+function eqCasosSinHoras(equipo){
+  const casos=[];
+  equipo.forEach(p=>{
+    if(!p.nombre.trim()) return;
+    const dias=[]; p.h.forEach((day,d)=>{ if(((day[0]||0)+(day[1]||0)+(day[2]||0))<=0) dias.push(d); });
+    if(dias.length) casos.push({key:eqKeyName(p.nombre), nombre:p.nombre,
+      detalle: dias.length===7 ? 'sin horas toda la semana' : 'sin horas: '+dias.map(d=>EQ_DIAS[d]).join(', ')});
+  });
+  const enEq=n=>equipo.some(p=>eqMatchScore(p.nombre,n)>0);
+  ((DET_FULL&&DET_FULL.vendedores)||[]).filter(x=>x.horas_contr>0 && !x.cubre).forEach(x=>{
+    if(!enEq(x.vendedor)) casos.push({key:eqKeyName(x.vendedor), nombre:titleCase(x.vendedor), detalle:'no está en el equipo de la semana'});
+  });
+  return casos;
+}
+// modal genérico de justificación → Promise<{key:{nombre,detalle,motivo,comentario}} | null>
+function justifModal(cfg){
+  return new Promise(res=>{
+    const prev=cfg.prev||{};
+    const ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;background:rgba(11,21,39,.55);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px';
+    const opts=m=>cfg.motivos.map(x=>'<option'+(x===m?' selected':'')+'>'+esc(x)+'</option>').join('');
+    const rows=cfg.casos.map((c,i)=>{
+      const p=prev[c.key]||{};
+      return '<tr><td class="L" style="padding:7px 8px;border-bottom:1px solid var(--line,#e6ebf5)"><b>'+esc(titleCase(c.nombre))+'</b><br><span style="font-size:11.5px;color:var(--muted,#6B7A99)">'+esc(c.detalle)+'</span></td>'
+        +'<td style="padding:7px 8px;border-bottom:1px solid var(--line,#e6ebf5)"><select class="jf-mot" data-i="'+i+'" style="font-size:12.5px;border:1px solid var(--border,#dce3f0);border-radius:6px;padding:5px 6px;max-width:210px">'+opts(p.motivo||cfg.motivos[0])+'</select><br>'
+        +'<input type="text" class="jf-com" data-i="'+i+'" value="'+esc(p.comentario||'')+'" placeholder="Comentario (opcional)" style="margin-top:5px;width:100%;box-sizing:border-box;font-size:12.5px;border:1px solid var(--border,#dce3f0);border-radius:6px;padding:5px 7px"></td></tr>';
+    }).join('');
+    ov.innerHTML='<div style="background:#fff;border-radius:12px;max-width:620px;width:100%;max-height:85vh;overflow:auto;padding:18px 20px;box-shadow:0 18px 50px rgba(11,21,39,.35)">'
+      +'<div style="font-family:var(--font-d,inherit);font-size:24px;letter-spacing:.5px">⚠️ '+esc(cfg.titulo)+'</div>'
+      +'<p style="font-size:13px;color:var(--mid,#44506a);margin:8px 0 12px">'+cfg.intro+'</p>'
+      +'<div class="tbl-wrap"><table style="width:100%;border-collapse:collapse"><thead><tr>'
+      +'<th class="L" style="text-align:left;font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted,#6B7A99);padding:4px 8px">Persona</th>'
+      +'<th class="L" style="text-align:left;font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted,#6B7A99);padding:4px 8px">Motivo</th></tr></thead>'
+      +'<tbody>'+rows+'</tbody></table></div>'
+      +'<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">'
+      +'<button type="button" id="jfOk" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">'+esc(cfg.okLabel||'Guardar y avisar')+'</button>'
+      +'<button type="button" id="jfCancel" class="tb-btn">'+esc(cfg.cancelLabel||'Cancelar')+'</button>'
+      +'<span class="hint" style="margin:4px 0 0;font-size:11.5px">El resumen les llega a RRHH, al supervisor y a Capacitaciones por la Bandeja.</span></div></div>';
+    document.body.appendChild(ov);
+    const fin=v=>{ ov.remove(); res(v); };
+    ov.querySelector('#jfCancel').onclick=()=>fin(null);
+    ov.querySelector('#jfOk').onclick=()=>{
+      const out={};
+      cfg.casos.forEach((c,i)=>{
+        const motivo=ov.querySelector('.jf-mot[data-i="'+i+'"]').value;
+        const comentario=(ov.querySelector('.jf-com[data-i="'+i+'"]').value||'').trim();
+        out[c.key]={nombre:c.nombre, detalle:c.detalle, motivo, comentario};
+      });
+      const sinDetalle=cfg.casos.filter((c,i)=> /^Otro/.test(out[c.key].motivo) && !out[c.key].comentario);
+      if(sinDetalle.length){ alert('Completá el comentario de: '+sinDetalle.map(c=>titleCase(c.nombre)).join(', ')); return; }
+      fin(out);
+    };
+  });
+}
+const justifTexto=(tipo, sem, justif)=>{
+  const lista=Object.values(justif).map(j=>titleCase(j.nombre)+' ('+j.detalle+'): '+j.motivo+(j.comentario?' — '+j.comentario:'')).join(' · ');
+  return '⚠ '+tipo+' · '+(sucName||'')+' · '+objSemTag(sem)+' (lunes '+objSemLbl(sem)+'): '+lista;
+};
+// limpiar los caches de horas asignadas cuando se guarda un equipo
+function limpiarAsigCache(slug){
+  Object.keys(_asigCache).forEach(k=>{ if(k.indexOf(slug+'|')===0) delete _asigCache[k]; });
+  Object.keys(_cadAsigCache).forEach(k=>delete _cadAsigCache[k]);
 }
 
 // bloque desplegable "cómo viene el equipo" dentro del card de Objetivo
@@ -1956,6 +2163,18 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
   });
   sueltos.forEach(x=>rows.push({nombre:x.nombre, horas:0, share:0, meta:0, min:0, venta:x.venta, src:'excel', veRow:x, fuera:true}));
   rows.sort((a,b)=> (b.venta-a.venta) || (b.share-a.share));
+  // alerta: horas asignadas y CERO venta (solo cuando ya hay venta cargada esta semana)
+  const jvPrev=(eqData.justif&&eqData.justif.sinVenta)||{};
+  const jvCasos = totReal>0 ? rows.filter(r=>!r.fuera && r.horas>0 && !(r.venta>0))
+    .map(r=>({key:eqKeyName(r.nombre), nombre:r.nombre, detalle:fmt2(r.horas)+' h asignadas y sin venta'})) : [];
+  _jvState={slug, sem, eqData, casos:jvCasos, pend:jvCasos.filter(c=>!jvPrev[c.key])};
+  if(jvCasos.length){
+    h+='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:9px;padding:8px 12px;margin-bottom:12px;font-size:12.5px">⚠️ <b>'
+      +jvCasos.length+(jvCasos.length===1?' persona':' personas')+' con horas asignadas y sin venta</b> esta semana: '
+      +jvCasos.map(c=>esc(titleCase(c.nombre))+(jvPrev[c.key]?' <span style="color:var(--muted,#6B7A99)">('+esc(jvPrev[c.key].motivo)+(jvPrev[c.key].comentario?' — '+esc(jvPrev[c.key].comentario):'')+')</span>':'')).join(' · ')
+      +(_jvState.pend.length?' <button type="button" id="jvBtn" class="tb-btn" style="margin-left:6px;padding:3px 10px;font-size:11.5px">Justificar</button>':'')
+      +'</div>';
+  }
   h+='<div class="tbl-wrap"><table><thead><tr><th class="L">Vendedor</th><th>Horas venta</th>'
     +(metaVal?'<th>Su meta</th>':'')
     +'<th>Venta</th>'+(metaVal?'<th>% de su meta</th>':'')+'<th>Participación</th></tr></thead><tbody>';
@@ -2130,6 +2349,7 @@ async function renderObjetivo(){
       +'</div>';
     if(v.nota) html+='<p class="hint" style="margin-top:12px">📝 '+esc(v.nota)+'</p>';
   }
+  _jvState=null;   // lo repuebla eqDistribHtml si corresponde
   html += veSectionHtml(slug, sem, v, ve, eqData, pesos, prevVe);
   $('objetivoCard').innerHTML=html;
   const selEl=$('objSemSel'); if(selEl) selEl.onchange = e => { objSem = e.target.value; _eqEdit=null; _eqRealDraft=null; renderObjetivo(); };
@@ -2144,6 +2364,7 @@ async function renderObjetivo(){
     const c=tr.querySelector('.caret'); if(c) c.textContent=abierto?'▸':'▾';
   });
   eqWire(slug, sem, eqData);
+  jvWire();
   sec.style.display='';
 }
 
@@ -2178,7 +2399,7 @@ function eqWire(slug, sem, eqData){
       }
     }catch(e){}
     if(!equipo){
-      const gente=(window.DET && DET.vendedores || []).filter(x=>x.horas_contr>0 && !x.cobertura).map(x=>x.nombre);
+      const gente=((DET && DET.vendedores) || []).filter(x=>x.horas_contr>0 && !x.cubre).map(x=>titleCase(x.vendedor));
       equipo = gente.length ? gente.map(eqNuevaPersona) : [eqNuevaPersona('')];
     }
     _eqEdit={slug, sem, equipo, copiadaDe};
@@ -2208,19 +2429,36 @@ function eqWire(slug, sem, eqData){
     const ipms=$('eqImportPMS'); if(ipms) ipms.onclick=()=>$('eqFile').click();
     const imp=$('eqImportar'); if(imp) imp.onclick=()=>{
       const ya=new Set(_eqEdit.equipo.map(p=>eqNorm(p.nombre)).filter(Boolean));
-      const gente=(window.DET && DET.vendedores || []).filter(x=>x.horas_contr>0 && !x.cobertura && !ya.has(eqNorm(x.nombre)));
+      const gente=((DET && DET.vendedores) || []).filter(x=>x.horas_contr>0 && !x.cubre && !ya.has(eqNorm(x.vendedor)));
       if(!gente.length){ alert('No hay nadie más para importar de la Plantilla del período.'); return; }
-      gente.forEach(x=>_eqEdit.equipo.push(eqNuevaPersona(x.nombre)));
+      gente.forEach(x=>_eqEdit.equipo.push(eqNuevaPersona(titleCase(x.vendedor))));
       _eqEdit.equipo=_eqEdit.equipo.filter(p=>p.nombre.trim()||eqHorasPersona(p)>0);
       renderObjetivo();
     };
     const g=$('eqGuardar'); if(g) g.onclick=async ()=>{
       const equipo=_eqEdit.equipo.filter(p=>p.nombre.trim());
       if(!equipo.length){ alert('Cargá al menos una persona con nombre.'); return; }
+      // alerta: gente con días sin horas asignadas (o de la dotación fuera del equipo) → justificar
+      const casos=eqCasosSinHoras(eqSanea(equipo));
+      const justifPrev=(eqData&&eqData.justif)||{};
+      let sinHoras={};
+      if(casos.length){
+        const resp=await justifModal({
+          titulo:'Días sin horas asignadas',
+          intro:'Estas personas quedaron <b>sin horas de venta</b> en algún día de la semana (o fuera del equipo). Indicá el motivo de cada una antes de guardar.',
+          casos, motivos:MOTIVOS_SIN_HORAS, prev:justifPrev.sinHoras||{},
+          okLabel:'Guardar equipo y avisar'});
+        if(resp===null) return;   // sigue editando
+        sinHoras=resp;
+      }
       g.disabled=true; g.textContent='Guardando…';
       try{
         const prevReal=(eqData&&eqData.real)||{};
-        await saveEquipo(slug, sem, {semana:sem, actualizado:new Date().toISOString(), por:(SESSION.email||''), equipo, real:prevReal});
+        const justif={...justifPrev, sinHoras};
+        await saveEquipo(slug, sem, {semana:sem, actualizado:new Date().toISOString(), por:(SESSION.email||''), equipo, real:prevReal, justif});
+        // aviso a los admins solo si las justificaciones cambiaron (evita duplicados al re-guardar)
+        if(casos.length && JSON.stringify(sinHoras)!==JSON.stringify(justifPrev.sinHoras||{}))
+          avisarAdmins(justifTexto('Sin horas asignadas', sem, sinHoras)).catch(()=>{});
         _eqEdit=null;
         renderObjetivo();
       }catch(e){ alert('No se pudo guardar: '+(e.message||e)); g.disabled=false; g.textContent='Guardar equipo'; }
@@ -2631,8 +2869,10 @@ function renderHeat(){
 }
 function renderNotas(){
   $('fHoras').innerHTML = hbase==='horas_contr'
-    ? `<b>Base actual: horas contratadas.</b> Es la medición de productividad correcta: tickets sobre horas pagadas. El período retail va de lunes a domingo, así que un full time no siempre son las mismas horas.`
-    : `<b>Base actual: horas con venta.</b> Cuenta solo las horas en que la persona registró al menos un ticket: sirve para ver intensidad mientras atiende, no productividad.`;
+    ? `<b>Base actual: horas contratadas.</b> Es la hora oficial: tickets sobre horas pagadas. El período retail va de lunes a domingo, así que un full time no siempre son las mismas horas.`
+    : (DET_ASIG
+      ? `<b>Base actual: horas asignadas.</b> Usa las horas que el encargado asignó a la venta en el equipo semanal del Objetivo: de las contratadas, solo las dedicadas a vender (sin limpieza, armados, etc.). Cubre <b>${DET_ASIG.semanasCon} de ${DET_ASIG.semanasPer}</b> semanas del período; las semanas sin equipo guardado usan las horas con venta del sistema.`
+      : `<b>Base actual: horas asignadas.</b> Todavía no hay equipo semanal con horas guardado para este período (se arma en el panel del Objetivo, «Cómo viene el equipo»). Mientras tanto se usan las horas con venta del sistema: las horas en que la persona registró al menos un ticket.`);
 }
 
 /* --- vista cadena (gerencia) --- */
