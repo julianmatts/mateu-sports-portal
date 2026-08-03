@@ -358,10 +358,7 @@
         '<span class="cr-sw" style="background:'+color+'"></span>'+TIPO_LBL[t]+
       '</button>';
     }).join('');
-    var nota = esRetail()
-      ? '<div class="cr-retail-note">Semanas ISO (lun–dom). Cada mes agrupa sus semanas completas: la semana del día 1 ya cuenta para ese mes.</div>'
-      : '';
-    return '<div class="cr-foot"><span class="cr-foot-lbl">Filtrar</span>'+btns+'</div>'+nota;
+    return '<div class="cr-foot"><span class="cr-foot-lbl">Filtrar</span>'+btns+'</div>';
   }
 
   // ---- cableado (por contenedor) ----
