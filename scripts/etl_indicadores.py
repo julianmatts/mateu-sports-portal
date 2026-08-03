@@ -15,13 +15,27 @@ Salida:
 """
 import pandas as pd, numpy as np, json, datetime as dt, unicodedata, os
 
-STAFF = '/mnt/user-data/uploads/Sucursales_staff.xlsx'
+# El staff se busca en la primera ruta que exista (sandbox de Juli o su máquina Windows)
+STAFF = next((p for p in [
+  '/mnt/user-data/uploads/Sucursales_staff.xlsx',
+  r'C:\Users\julia\Downloads\Sucursales staff.xlsx',
+] if os.path.exists(p)), None)
 # Períodos RETAIL: lunes a domingo. Mayo = 5 semanas (27/4 al 31/5) · Junio = 4 semanas (1/6 al 28/6)
+# · Julio = 4 semanas (29/6 al 26/7). Los períodos cuyo archivo no exista se saltean con aviso,
+# así el script corre en cualquier máquina que tenga solo el Excel del mes nuevo.
+# formato='consolidado' = Excel "Estadistica de venta consolidad": 6 columnas base
+# (Sucursal/Día semana/Día/Vendedor/Hora/Comprobante) + un par Cantidad/Importe por
+# mes CALENDARIO (mayo/junio/julio). El par 'mes' es el principal del período; los
+# días de meses vecinos que caen dentro del período retail (p.ej. 29-30/6 para julio)
+# entran solos porque se cargan todos los pares y el índice día+día-semana filtra.
 PERIODOS = {
   '2026-05': dict(archivo='/mnt/user-data/uploads/Ventas_por_sucursal_y_vendedores_mayo_26.xlsx',
                   desde=dt.date(2026,4,27), hasta=dt.date(2026,5,31)),
   '2026-06': dict(archivo='/mnt/user-data/uploads/Venta_por_vendedores_y_sucursales.xlsx',
                   desde=dt.date(2026,6,1),  hasta=dt.date(2026,6,28)),
+  '2026-07': dict(archivo=r'C:\Users\julia\Downloads\Estadistica de venta  consolidad (mayo,junio y julio).xlsx',
+                  desde=dt.date(2026,6,29), hasta=dt.date(2026,7,26),
+                  formato='consolidado'),
 }
 DOW = ['Lu','Ma','Mi','Ju','Vi','Sá','Do']
 
@@ -33,7 +47,8 @@ def semana_retail(f, desde):
     lun_f = f - dt.timedelta(days=f.weekday())          # lunes de la semana de f
     lun_0 = desde - dt.timedelta(days=desde.weekday())  # lunes de la semana del inicio del período
     return (lun_f - lun_0).days // 7 + 1
-OUT = '/home/claude/out'
+# Salida: out/ junto al repo (o /home/claude/out en el sandbox, que también resuelve acá)
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'out')
 
 # Objetivos por formato (los define Producto). El cumplimiento de cada sucursal se
 # mide SIEMPRE contra el objetivo de SU formato, nunca contra el promedio de la cadena.
@@ -112,9 +127,33 @@ def fechas_del_periodo(cfg):
         f += dt.timedelta(days=1)
     return idx
 
-def cargar_ventas(cfg):
-    v = pd.read_excel(cfg['archivo'])
+def cargar_consolidado(cfg):
+    """Pasa el Excel consolidado (un par Cantidad/Importe por mes calendario) al
+    formato largo de 8 columnas. Carga TODOS los pares: las filas de meses vecinos
+    que no caen en el período retail las descarta después el índice día+día-semana
+    (no hay colisiones: el mismo día del mes cae en distinto día de semana en cada
+    mes calendario, salvo justo los días compartidos, que son los que queremos)."""
+    raw = pd.read_excel(cfg['archivo'], sheet_name=0, header=2)
+    base = raw.iloc[:, :6]
+    frames = []
+    for i in range(3):                    # pares: (G,H)=mayo · (I,J)=junio · (K,L)=julio
+        cant = pd.to_numeric(raw.iloc[:, 6 + i*2], errors='coerce').fillna(0)
+        imp  = pd.to_numeric(raw.iloc[:, 7 + i*2], errors='coerce').fillna(0)
+        sel = (cant != 0) | (imp != 0)
+        f = base[sel].copy()
+        f['cantidad'] = cant[sel]
+        f['importe']  = imp[sel]
+        frames.append(f)
+    v = pd.concat(frames, ignore_index=True)
     v.columns = ['sucursal','dia_semana','dia','vendedor','hora','comprobante','cantidad','importe']
+    return v[v.sucursal.notna()]
+
+def cargar_ventas(cfg):
+    if cfg.get('formato') == 'consolidado':
+        v = cargar_consolidado(cfg)
+    else:
+        v = pd.read_excel(cfg['archivo'])
+        v.columns = ['sucursal','dia_semana','dia','vendedor','hora','comprobante','cantidad','importe']
     v = v[(v.sucursal != 'Total') & (v.dia != 'Total') & (v.sucursal != '05-Depósito')].copy()
     v['dia'] = v.dia.astype(int); v['hora'] = v.hora.astype(int)
     v['vendedor'] = v.vendedor.fillna('SIN ASIGNAR')
@@ -122,7 +161,10 @@ def cargar_ventas(cfg):
     v['fecha'] = [idx.get((d, ds)) for d, ds in zip(v.dia, v.dia_semana)]
     huerfanas = v.fecha.isna().sum()
     if huerfanas:
-        print(f'  ⚠ {huerfanas} filas con día/día-semana fuera del período: se descartan')
+        if cfg.get('formato') == 'consolidado':   # esperado: los otros meses del archivo
+            print(f'  · consolidado: {len(v) - huerfanas} filas dentro del período, {huerfanas} de otros meses')
+        else:
+            print(f'  ⚠ {huerfanas} filas con día/día-semana fuera del período: se descartan')
         v = v[v.fecha.notna()]
     v['es_nc'] = v.comprobante.str.startswith('Nc')
     return v
@@ -284,7 +326,7 @@ def emitir_particionado(data, dest):
     navegador de una sucursal solo pide su propio <NN-Nombre>.json."""
     root = os.path.join(dest, 'indicadores')
     os.makedirs(root, exist_ok=True)
-    dump = lambda o, p: json.dump(o, open(p, 'w'), ensure_ascii=False, separators=(',', ':'))
+    dump = lambda o, p: json.dump(o, open(p, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
 
     dump(OBJETIVOS, os.path.join(root, 'objetivos.json'))
 
@@ -331,18 +373,24 @@ def emitir_particionado(data, dest):
           'semanas': d['meta'].get('semanas'), 'mesStock': MES_STOCK.get(mm)})
 
     periodos_meta.sort(key=lambda p: p['id'], reverse=True)   # más nuevo primero
-    json.dump({'periodos': periodos_meta}, open(os.path.join(root, 'periodos.json'), 'w'),
+    json.dump({'periodos': periodos_meta}, open(os.path.join(root, 'periodos.json'), 'w', encoding='utf-8'),
               ensure_ascii=False, indent=2)
 
+if STAFF is None:
+    raise SystemExit('No encuentro el Excel de staff (Sucursales staff.xlsx) en ninguna ruta conocida.')
 st = cargar_staff()
 os.makedirs(OUT, exist_ok=True)
 data = {}
 for per, cfg in PERIODOS.items():
+    if not os.path.exists(cfg['archivo']):
+        print(f'{per}: sin archivo ({cfg["archivo"]}) — se saltea')
+        continue
+    print(f'{per}: procesando…')
     data[per] = procesar(per, cfg, st)
-    json.dump(data[per], open(f'{OUT}/indicadores-{per}.json','w'), ensure_ascii=False, separators=(',',':'))
+    json.dump(data[per], open(f'{OUT}/indicadores-{per}.json','w',encoding='utf-8'), ensure_ascii=False, separators=(',',':'))
 
 # bajas/altas: quien no vendió en el período no aparece
-json.dump(data, open('/home/claude/indicadores-multi.json','w'), ensure_ascii=False, separators=(',',':'))
+json.dump(data, open(f'{OUT}/indicadores-multi.json','w',encoding='utf-8'), ensure_ascii=False, separators=(',',':'))
 
 # salida particionada para el Portal (copiar out/indicadores/ a data/indicadores/ del repo)
 emitir_particionado(data, OUT)

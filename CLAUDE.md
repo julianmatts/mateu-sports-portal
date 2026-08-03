@@ -168,9 +168,16 @@ no es auth real — un usuario decidido podría pedir otro archivo por URL.
 `scripts/etl_indicadores.py`, que lee los Excel de ventas + staff y ya emite tanto
 el JSON combinado por período como la **salida particionada** (`out/indicadores/…`):
 `objetivos.json`, `periodos.json`, `<periodo>/cadena.json` y un `<periodo>/<NN-Nombre>.json`
-por sucursal. Se corre en el sandbox de Juli (necesita pandas + los Excel); después se
-copia `out/indicadores/` a `data/indicadores/` del repo. Los objetivos por formato y la
-regla nombre→formato viven fijos en ese script — NO tocar el cálculo salvo pedido.
+por sucursal. Corre en la máquina de Juli (Python 3.12 + pandas instalados 03/08/2026;
+también sirve el sandbox); después se copia `out/indicadores/2026-NN/` a `data/indicadores/`
+del repo y se agrega el período a mano en `periodos.json` (el ETL solo escribe los períodos
+que procesó — los que no tienen archivo se saltean con aviso). Desde julio 2026 el export
+de ventas es el Excel **consolidado** ("Estadistica de venta consolidad": 6 columnas base +
+un par Cantidad/Importe por mes calendario; `formato='consolidado'` en `PERIODOS`): se cargan
+todos los pares y el índice día+día-de-semana deja solo el período retail (así el 29-30/6
+del par de junio entran a julio retail). Staff: `Sucursales staff.xlsx` en Descargas.
+Los objetivos por formato y la regla nombre→formato viven fijos en ese script — NO tocar
+el cálculo salvo pedido.
 
 Alternativa sin Python (cuando solo se tiene el JSON del ETL, no los Excel):
 `node scripts/gen-indicadores.mjs indicadores-2026-05.json indicadores-2026-06.json`
