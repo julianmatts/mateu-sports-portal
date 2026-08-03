@@ -2955,7 +2955,7 @@ function rkRow(r, i, kpi, avg, best){
   let momHtml='';
   if(CAD_PREV){ const ps=CAD_PREV.sucursales.find(x=>x.sucursal===r.s.sucursal), pv=ps?kpis(ps)[kpi.k]:NaN;
     if(isFinite(pv)&&pv){ const m=(v/pv-1)*100, mc=m>1.5?'up':m<-1.5?'down':'flat'; momHtml=`<span class="rk-mom ${mc}">${m>0?'+':''}${fmt2(m)}% vs ${esc(mesCorto(prevPerId()))}</span>`; } }
-  return `<div class="rk-row${i===0?' lead':''}" data-suc="${esc(r.s.sucursal)}" tabindex="0" role="button" aria-expanded="false" title="Ver desglose de horas y tickets">
+  return `<div class="rk-row${i===0?' lead':''}" data-suc="${esc(r.s.sucursal)}" data-kpi="${kpi.k}" tabindex="0" role="button" aria-expanded="false" title="${kpi.k==='upt'?'Ver unidades y tickets por persona':'Ver desglose de horas y tickets'}">
     <div class="rk-pos">${i+1}</div>
     <div><div class="rk-nm">${esc(r.s.sucursal.replace(/^\d+-\s*/,''))}<span class="rk-chev">▸</span>${detail}</div>
       <span class="bar" style="width:100%;max-width:200px;margin-left:0;margin-top:5px"><i style="width:${barPct.toFixed(0)}%;background:${barCol}"></i></span></div>
@@ -2963,25 +2963,38 @@ function rkRow(r, i, kpi, avg, best){
     <div class="rk-cmp"><span class="cum-${sem}">${isFinite(dif)?(dif>0?'+':'')+fmt2(dif)+'%':'—'}</span><span class="base">vs. línea</span>${momHtml}</div>
   </div>`;
 }
-// Panel desplegable: de dónde sale el total (horas y tickets por grupo y por persona).
-function rkPanelHTML(det){
+// Panel desplegable: de dónde sale el total. Para tickets/hora (y default) muestra
+// horas y tickets; para UPT muestra unidades vendidas y tickets por persona (sin horas).
+function rkPanelHTML(det, kpiK){
   if(!det){ return '<div class="rk-panel-load">No se pudo cargar el detalle de esta sucursal.</div>'; }
   const vs = (det.vendedores||[]).filter(v=>v.horas_contr>0 && GRUPOS_PISO.includes(v.grupo));
   if(!vs.length){ return '<div class="rk-panel-load">Sin horas de piso registradas.</div>'; }
   const byG = {};
-  vs.forEach(v=>{ const g=byG[v.grupo]=byG[v.grupo]||{h:0,t:0,people:[]}; g.h+=v.horas_contr; g.t+=v.tickets; g.people.push(v); });
-  const totH=vs.reduce((a,v)=>a+v.horas_contr,0), totT=vs.reduce((a,v)=>a+v.tickets,0);
+  vs.forEach(v=>{ const g=byG[v.grupo]=byG[v.grupo]||{h:0,t:0,u:0,people:[]}; g.h+=v.horas_contr; g.t+=v.tickets; g.u+=(v.unidades_netas||0); g.people.push(v); });
+  const totH=vs.reduce((a,v)=>a+v.horas_contr,0), totT=vs.reduce((a,v)=>a+v.tickets,0), totU=vs.reduce((a,v)=>a+(v.unidades_netas||0),0);
+  const modoUPT = kpiK==='upt';
   const grupos = ['Ventas','Caja','Jefatura','Refuerzos'].filter(g=>byG[g]).map(g=>{
-    const gg=byG[g], tph=gg.h?gg.t/gg.h:0;
-    const people = gg.people.slice().sort((a,b)=>b.tickets-a.tickets).map(v=>{
+    const gg=byG[g], tph=gg.h?gg.t/gg.h:0, gupt=gg.t?gg.u/gg.t:0;
+    const people = gg.people.slice().sort((a,b)=>modoUPT?(b.unidades_netas||0)-(a.unidades_netas||0):b.tickets-a.tickets).map(v=>{
+      if(modoUPT){
+        const u=v.unidades_netas||0, upt=v.tickets?u/v.tickets:0;
+        return `<div class="rk-pp"><span class="rk-pp-n">${esc(titleCase(v.vendedor))}</span><span class="rk-pp-s">${esc(v.sector||'')}</span>`+
+          `<span class="rk-pp-h">${fmtN(u)} u</span><span class="rk-pp-t">${fmtN(v.tickets)} tk</span><span class="rk-pp-r">${fmt2(upt)}</span></div>`;
+      }
       const vt=v.horas_contr?v.tickets/v.horas_contr:0;
       return `<div class="rk-pp"><span class="rk-pp-n">${esc(titleCase(v.vendedor))}</span><span class="rk-pp-s">${esc(v.sector||'')}</span>`+
         `<span class="rk-pp-h">${fmtN(v.horas_contr)} h</span><span class="rk-pp-t">${fmtN(v.tickets)} tk</span><span class="rk-pp-r">${fmt2(vt)}</span></div>`;
     }).join('');
+    const sum = modoUPT
+      ? `${fmtN(gg.u)} u · ${fmtN(gg.t)} tk · <b>${fmt2(gupt)}</b> UPT`
+      : `${fmtN(gg.h)} h · ${fmtN(gg.t)} tk · <b>${fmt2(tph)}</b> tk/h`;
     return `<div class="rk-g"><div class="rk-g-h"><span class="dotc" style="background:${COL[g]}"></span>${esc(grupoLabel(g))}`+
-      `<span class="rk-g-sum">${fmtN(gg.h)} h · ${fmtN(gg.t)} tk · <b>${fmt2(tph)}</b> tk/h</span></div>${people}</div>`;
+      `<span class="rk-g-sum">${sum}</span></div>${people}</div>`;
   }).join('');
-  return `<div class="rk-panel-tot"><b>${fmtN(totH)} h</b> de piso en <b>${vs.length}</b> personas · <b>${fmtN(totT)}</b> tickets acreditados <span style="color:var(--muted-light)">(un comprobante puede sumar a más de un vendedor, por eso difiere del total de la sucursal)</span></div>${grupos}`;
+  const tot = modoUPT
+    ? `<b>${fmtN(totU)}</b> unidades vendidas por <b>${vs.length}</b> personas · <b>${fmtN(totT)}</b> tickets acreditados`
+    : `<b>${fmtN(totH)} h</b> de piso en <b>${vs.length}</b> personas · <b>${fmtN(totT)}</b> tickets acreditados`;
+  return `<div class="rk-panel-tot">${tot} <span style="color:var(--muted-light)">(un comprobante puede sumar a más de un vendedor, por eso difiere del total de la sucursal)</span></div>${grupos}`;
 }
 async function rkTogglePanel(row){
   const nxt = row.nextElementSibling;
@@ -2991,7 +3004,7 @@ async function rkTogglePanel(row){
   panel.innerHTML='<div class="rk-panel-load">Cargando detalle…</div>';
   row.after(panel);
   const det = await detalleDe(per, row.dataset.suc);
-  panel.innerHTML = rkPanelHTML(det);
+  panel.innerHTML = rkPanelHTML(det, row.dataset.kpi);
 }
 // #2 lectura automática: quién se despega y quién arrastra en su propia línea.
 function rkInsight(rowsD){

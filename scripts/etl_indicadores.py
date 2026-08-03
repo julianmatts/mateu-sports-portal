@@ -28,16 +28,20 @@ STAFF = next((p for p in [
 # mes CALENDARIO (mayo/junio/julio). El par 'mes' es el principal del período; los
 # días de meses vecinos que caen dentro del período retail (p.ej. 29-30/6 para julio)
 # entran solos porque se cargan todos los pares y el índice día+día-semana filtra.
+# formato='detallado' = Excel con detalle por LINEA (Articulo+Rubro): aplica los
+# criterios de Juli por linea y agrega por comprobante. Reemplaza al 'consolidado'
+# (que venia por comprobante pero SOLO con los articulos, sin promos/conceptos).
+# 'extra' = dias del periodo retail que el detallado no cubre (es por mes CALENDARIO):
+# se completan desde el export viejo por comprobante, filtrado a ese rango de fechas.
+DETALLE = r'C:\Users\julia\Downloads\Estadistica de venta - Mayo Junio Julio.xlsx'
 PERIODOS = {
-  '2026-05': dict(archivo='/mnt/user-data/uploads/Ventas_por_sucursal_y_vendedores_mayo_26.xlsx',
-                  desde=dt.date(2026,4,27), hasta=dt.date(2026,5,31)),
-  '2026-06': dict(archivo='/mnt/user-data/uploads/Venta_por_vendedores_y_sucursales.xlsx',
-                  desde=dt.date(2026,6,1),  hasta=dt.date(2026,6,28)),
-  # formato='detallado' = Excel con detalle por LINEA (Articulo+Rubro): aplica los
-  # criterios de Juli por linea y agrega por comprobante. Reemplaza al 'consolidado'
-  # (que venia por comprobante pero SOLO con los articulos, sin promos/conceptos).
-  '2026-07': dict(archivo=r'C:\Users\julia\Downloads\Estadistica de venta - Mayo Junio Julio.xlsx',
-                  desde=dt.date(2026,6,29), hasta=dt.date(2026,7,26),
+  '2026-05': dict(archivo=DETALLE, desde=dt.date(2026,4,27), hasta=dt.date(2026,5,31),
+                  formato='detallado',
+                  extra=dict(archivo=r'C:\Users\julia\Downloads\Ventas por sucursal y vendedores mayo 26.xlsx',
+                             desde=dt.date(2026,4,27), hasta=dt.date(2026,4,30))),
+  '2026-06': dict(archivo=DETALLE, desde=dt.date(2026,6,1),  hasta=dt.date(2026,6,28),
+                  formato='detallado'),
+  '2026-07': dict(archivo=DETALLE, desde=dt.date(2026,6,29), hasta=dt.date(2026,7,26),
                   formato='detallado'),
 }
 DOW = ['Lu','Ma','Mi','Ju','Vi','Sá','Do']
@@ -166,6 +170,12 @@ def criterio_linea(rubro, articulo):
             return (True, True)       # cuenta en ambos
         if a.startswith('INGRESO CUPON') or 'LLAVERO COMPRA GRANDE' in a:
             return (False, False)     # no tener en cuenta
+        if a.startswith('CONCEPTOS VARIOS'):
+            # refacturaciones administrativas: SIEMPRE vienen en par Fc+Nc que
+            # netea $0 (sin vendedor). Si contaran solo el importe, la Fc pierde
+            # su cantidad y el ETL la descarta como ticket pero la Nc gemela si
+            # resta → distorsiona la sucursal (City Bell 06/26: -$10,8M). Afuera.
+            return (False, False)
         # PROMO*, cupones, descuentos, ENVIO (criterio propio: plata real pero no
         # es un item — revisar con Juli si el envio deberia salir del importe)
         return (False, True)
@@ -184,8 +194,18 @@ def cargar_detallado(cfg):
     flags = [criterio_linea(r, a) for r, a in zip(raw[7].map(norm), raw[6].map(norm))]
     cant_ok = pd.Series([f[0] for f in flags], index=raw.index)
     imp_ok  = pd.Series([f[1] for f in flags], index=raw.index)
+    # Solo los pares de los meses calendario que el período toca. NO cargar los
+    # demás: a 13 semanas justas (91 días) el par día+día-de-semana SE REPITE
+    # (27-30/4 = 27-30/7), así que un período que cruza mes (mayo retail) se
+    # contaminaría con el mes homónimo de otro par si se cargaran todos.
+    meses_periodo = set()
+    f_ = cfg['desde']
+    while f_ <= cfg['hasta']:
+        meses_periodo.add(f_.month); f_ += dt.timedelta(days=1)
     frames = []
     for i in range(3):                # pares (I,J)(K,L)(M,N) = mayo · junio · julio
+        if (5 + i) not in meses_periodo:
+            continue
         cant = pd.to_numeric(raw[8 + i*2], errors='coerce').fillna(0)
         imp  = pd.to_numeric(raw[9 + i*2], errors='coerce').fillna(0)
         sel = ((cant != 0) | (imp != 0)) & raw[0].notna()
@@ -217,6 +237,17 @@ def cargar_ventas(cfg):
     else:
         v = pd.read_excel(cfg['archivo'])
         v.columns = ['sucursal','dia_semana','dia','vendedor','hora','comprobante','cantidad','importe']
+    ex = cfg.get('extra')
+    if ex:  # dias faltantes desde el export viejo (por comprobante, SIN lineas de promo)
+        v2 = pd.read_excel(ex['archivo'])
+        v2.columns = ['sucursal','dia_semana','dia','vendedor','hora','comprobante','cantidad','importe']
+        keep, f = set(), ex['desde']
+        while f <= ex['hasta']:
+            keep.add((f.day, DOW[f.weekday()])); f += dt.timedelta(days=1)
+        dn = pd.to_numeric(v2.dia, errors='coerce')
+        v2 = v2[[pd.notna(d) and (int(d), ds) in keep for d, ds in zip(dn, v2.dia_semana)]]
+        print(f"  · extra: {len(v2)} filas de {ex['desde'].strftime('%d/%m')}–{ex['hasta'].strftime('%d/%m')} desde {os.path.basename(ex['archivo'])}")
+        v = pd.concat([v, v2], ignore_index=True)
     v = v[(v.sucursal != 'Total') & (v.dia != 'Total') & (v.sucursal != '05-Depósito')].copy()
     v['dia'] = v.dia.astype(int); v['hora'] = v.hora.astype(int)
     v['vendedor'] = v.vendedor.fillna('SIN ASIGNAR')
