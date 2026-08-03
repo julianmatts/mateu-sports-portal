@@ -104,6 +104,22 @@ main{max-width:1200px;margin:0 auto;padding:22px 22px 80px}
 .filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px}
 .fgrp{display:flex;flex-direction:column;gap:4px;min-width:120px}
 .fgrp label{font-family:var(--font-c);font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)}
+/* filtro de selección múltiple (Subrubro/género) */
+.msel{position:relative}
+.msel>summary{list-style:none;cursor:pointer;background:#fff;border:1px solid var(--border);border-radius:7px;
+  padding:9px 28px 9px 11px;font-size:14px;color:var(--navy);min-width:120px;white-space:nowrap;position:relative;font-family:var(--font-b)}
+.msel>summary::-webkit-details-marker{display:none}
+.msel>summary::after{content:'▾';position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px}
+.msel[open]>summary{border-color:var(--navy-mid)}
+.msel-pop{position:absolute;z-index:40;top:calc(100% + 4px);left:0;background:#fff;border:1px solid var(--border);
+  border-radius:10px;box-shadow:0 10px 26px rgba(11,21,39,.16);padding:8px;min-width:200px;max-height:280px;overflow:auto}
+.msel-it{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:13.5px;cursor:pointer;white-space:nowrap}
+.msel-it:hover{background:#f2f5fb}
+.msel-acc{display:flex;gap:6px;border-top:1px solid var(--border);margin-top:6px;padding-top:8px}
+.msel-acc button{flex:1;background:#fff;border:1px solid var(--border);border-radius:7px;padding:5px 8px;
+  font-family:var(--font-c);font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;cursor:pointer;color:var(--navy)}
+.msel-acc button:hover{border-color:var(--navy-mid)}
+.msel-empty{font-size:12.5px;color:var(--muted);padding:6px 8px;max-width:230px;white-space:normal;line-height:1.4}
 .chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--navy-mid);cursor:pointer;user-select:none}
 
 /* ===== TABLAS ===== */
@@ -280,7 +296,8 @@ const state = {
   resultado:null,                        // salida de computar()
   semana: lunesDe(new Date()),           // lunes de la barrida
   histKeys:[],                           // lunes con barrida guardada
-  filtros:{ suc:'', rubro:'', marca:'', subrubro:'', tipoprod:'', q:'', soloSugerido:true, excluirVarios:true, soloFaltante:false },
+  filtros:{ suc:'', rubro:'', marca:'', subrubros:[], tipoprod:'', q:'', soloSugerido:true, excluirVarios:true, soloFaltante:false },
+  mselOpen:null,   // panel multi-select abierto (se conserva entre renders)
   filtrosPar:{ rubro:'', marca:'', q:'', excluirVarios:true, soloCronica:false },
   filtrosCom:{ rubro:'', marca:'', q:'', excluirVarios:true, minVendido:3, topN:20, vista:'sin' },
   sortRep:{k:'sugerido',dir:-1}, sortPar:{k:'reserva',dir:-1}, sortCom:{k:'vendido',dir:-1},
@@ -634,7 +651,7 @@ function viewReposicion(){
   if(f.suc) rows=rows.filter(r=>r.slug===f.suc);
   if(f.rubro) rows=rows.filter(r=>r.rubro===f.rubro);
   if(f.marca) rows=rows.filter(r=>r.marca===f.marca);
-  if(f.subrubro) rows=rows.filter(r=>r.genero===f.subrubro);
+  if(f.subrubros.length) rows=rows.filter(r=>f.subrubros.includes(r.genero||''));
   if(f.tipoprod) rows=rows.filter(r=>r.tipo===f.tipoprod);
   if(f.q){ const q=f.q.toLowerCase(); rows=rows.filter(r=>(r.desc+' '+r.codigo+' '+r.id+' '+r.marca).toLowerCase().includes(q)); }
   const s=state.sortRep; rows.sort((a,b)=>{ const va=a[s.k],vb=b[s.k]; return (typeof va==='number'? va-vb : cmp(va,vb))*s.dir; });
@@ -647,7 +664,7 @@ function viewReposicion(){
     +fsel('Sucursal', 'fSuc', '<option value="">Todas</option>'+sucList.map(n=>{ const slug=Object.keys(sucBySlug).find(k=>sucBySlug[k]===n); return '<option value="'+esc(slug)+'"'+(slug===f.suc?' selected':'')+'>'+esc(n)+'</option>'; }).join(''))
     +fsel('Rubro','fRubro',opts(uniq(R.reposicion.map(r=>r.rubro)),f.rubro))
     +fsel('Marca','fMarca',opts(uniq(R.reposicion.filter(r=>!f.rubro||r.rubro===f.rubro).map(r=>r.marca)),f.marca))
-    +fsel('Subrubro','fSubrubro',opts(uniq(R.reposicion.filter(r=>(!f.rubro||r.rubro===f.rubro)&&(!f.marca||r.marca===f.marca)).map(r=>r.genero)),f.subrubro))
+    +fmulti('Subrubro','fSubrubro',uniq(R.reposicion.filter(r=>(!f.rubro||r.rubro===f.rubro)&&(!f.marca||r.marca===f.marca)).map(r=>r.genero)),f.subrubros)
     +fsel('Tipo de producto','fTipoProd',opts(uniq(R.reposicion.filter(r=>(!f.rubro||r.rubro===f.rubro)&&(!f.marca||r.marca===f.marca)).map(r=>r.tipo)),f.tipoprod))
     +'<div class="fgrp" style="flex:1;min-width:150px"><label for="fQ">Buscar</label><input class="inp" id="fQ" placeholder="artículo, código, ID…" value="'+esc(f.q)+'" style="width:100%"></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fSug" '+(f.soloSugerido?'checked':'')+'> Solo con talle disponible</label></div>'
@@ -839,6 +856,21 @@ function sortActivo(){ return state.tab==='parada'?state.sortPar : state.tab==='
 function th(label,key){ const s=sortActivo(); const on=s.k===key; return '<th data-sort="'+key+'">'+esc(label)+(on?(s.dir<0?' ▾':' ▴'):'')+'</th>'; }
 function thNum(label,key){ const s=sortActivo(); const on=s.k===key; return '<th class="num" data-sort="'+key+'">'+esc(label)+(on?(s.dir<0?' ▾':' ▴'):'')+'</th>'; }
 function fsel(label,id,inner){ return '<div class="fgrp"><label for="'+id+'">'+esc(label)+'</label><select class="sel" id="'+id+'">'+inner+'</select></div>'; }
+// filtro de selección múltiple: sin nada tildado = todas; el caso de uso típico
+// es "Todas" y destildar una (p.ej. sacar NIÑO para achicar la lista de talles)
+function fmulti(label, id, opciones, sel){
+  const n=sel.length;
+  const txt = !n ? 'Todas' : (n===1 ? sel[0] : n+' de '+opciones.length);
+  let pop;
+  if(!opciones.length){
+    pop='<div class="msel-empty">Esta barrida se guardó sin el dato de género. Se completa solo con la <b>próxima barrida</b> que cargues (el cruce nuevo ya lo trae).</div>';
+  } else {
+    pop=opciones.map(o=>'<label class="msel-it"><input type="checkbox" value="'+esc(o)+'"'+(sel.includes(o)?' checked':'')+'> '+esc(o)+'</label>').join('')
+      +'<div class="msel-acc"><button type="button" data-acc="todas">Marcar todas</button><button type="button" data-acc="limpiar">Limpiar</button></div>';
+  }
+  return '<div class="fgrp"><label>'+esc(label)+'</label><details class="msel" id="'+id+'"'+(state.mselOpen===id?' open':'')+'>'
+    +'<summary>'+esc(txt)+'</summary><div class="msel-pop">'+pop+'</div></details></div>';
+}
 
 /* ============================================================
    WIRING
@@ -956,13 +988,41 @@ async function guardarBarrida(){
 function wireReposicion(){
   const f=state.filtros;
   const bind=(id,key)=>{ const el=$(id); if(el) el.onchange=e=>{ f[key]=e.target.value; if(key==='rubro') f.marca=''; render(); }; };
-  bind('fSuc','suc'); bind('fRubro','rubro'); bind('fMarca','marca'); bind('fSubrubro','subrubro'); bind('fTipoProd','tipoprod');
+  bind('fSuc','suc'); bind('fRubro','rubro'); bind('fMarca','marca'); bind('fTipoProd','tipoprod');
+  wireMulti('fSubrubro','subrubros');
   const q=$('fQ'); if(q) q.oninput=e=>{ f.q=e.target.value; renderDebounce(); };
   const sug=$('fSug'); if(sug) sug.onchange=e=>{ f.soloSugerido=e.target.checked; render(); };
   const vr=$('fVarios'); if(vr) vr.onchange=e=>{ f.excluirVarios=e.target.checked; render(); };
   const fa=$('fFalta'); if(fa) fa.onchange=e=>{ f.soloFaltante=e.target.checked; render(); };
   const csv=$('btnCsvRep'); if(csv) csv.onclick=exportRepXlsx;
   wireSort('sortRep');
+}
+// wiring del filtro multi-select: los cambios aplican al instante y el panel
+// queda abierto entre renders (state.mselOpen); clic afuera lo cierra
+function wireMulti(id, key){
+  const f=state.filtros, ms=$(id);
+  if(!ms) return;
+  ms.ontoggle=()=>{ state.mselOpen = ms.open ? id : (state.mselOpen===id ? null : state.mselOpen); };
+  ms.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.onchange=()=>{
+    f[key]=[...ms.querySelectorAll('input[type=checkbox]:checked')].map(x=>x.value);
+    render();
+  });
+  ms.querySelectorAll('[data-acc]').forEach(b=>b.onclick=e=>{
+    e.preventDefault();
+    f[key] = b.dataset.acc==='todas' ? [...ms.querySelectorAll('input[type=checkbox]')].map(x=>x.value) : [];
+    render();
+  });
+  if(!window.__mselDoc){
+    window.__mselDoc=true;
+    document.addEventListener('click', e=>{
+      // si el clic fue sobre un nodo que un re-render acaba de sacar del DOM
+      // (checkbox/botón del propio panel), no es un "clic afuera": ignorar
+      if(!document.contains(e.target)) return;
+      document.querySelectorAll('details.msel[open]').forEach(el=>{
+        if(!el.contains(e.target)){ el.open=false; if(state.mselOpen===el.id) state.mselOpen=null; }
+      });
+    });
+  }
 }
 function wireParada(){
   const f=state.filtrosPar;
@@ -1067,7 +1127,7 @@ function reposFiltradas(){
   if(f.suc) rows=rows.filter(r=>r.slug===f.suc);
   if(f.rubro) rows=rows.filter(r=>r.rubro===f.rubro);
   if(f.marca) rows=rows.filter(r=>r.marca===f.marca);
-  if(f.subrubro) rows=rows.filter(r=>r.genero===f.subrubro);
+  if(f.subrubros.length) rows=rows.filter(r=>f.subrubros.includes(r.genero||''));
   if(f.tipoprod) rows=rows.filter(r=>r.tipo===f.tipoprod);
   if(f.q){ const q=f.q.toLowerCase(); rows=rows.filter(r=>(r.desc+' '+r.codigo+' '+r.id+' '+r.marca).toLowerCase().includes(q)); }
   const s=state.sortRep; rows.sort((a,b)=>{ const va=a[s.k],vb=b[s.k]; return (typeof va==='number'?va-vb:cmp(va,vb))*s.dir; });
@@ -1097,7 +1157,8 @@ async function exportRepXlsx(){
 
   const stripNN = s => String(s||'').replace(/^\d+\s*[-–]\s*/,'');
   const rubroLbl = f.rubro ? stripNN(f.rubro).toUpperCase() : 'TODOS LOS RUBROS';
-  const extra = [f.subrubro, f.tipoprod].filter(Boolean).map(x=>stripNN(x).toUpperCase()).join(' · ');
+  const subLbl = f.subrubros.length ? (f.subrubros.length===1 ? f.subrubros[0] : f.subrubros.join('+')) : '';
+  const extra = [subLbl, f.tipoprod].filter(Boolean).map(x=>stripNN(x).toUpperCase()).join(' · ');
   const marcaLbl = (f.marca ? String(f.marca).toUpperCase() : 'TODAS LAS MARCAS') + (extra?'  ·  '+extra:'');
 
   let r=1;
@@ -1162,7 +1223,7 @@ async function exportRepXlsx(){
   ws.views=[{state:'frozen', xSplit:LZ, ySplit:headerRowIdx, showGridLines:false}];
   ws.pageSetup={orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}};
   const part=(s)=> s? '-'+stripNN(s).replace(/[^A-Za-z0-9]+/g,'') : '';
-  await downloadWorkbook(wb, 'reposicion'+part(f.rubro)+part(f.marca)+part(f.subrubro)+part(f.tipoprod)+'-'+state.semana+'.xlsx');
+  await downloadWorkbook(wb, 'reposicion'+part(f.rubro)+part(f.marca)+part(f.subrubros.join('+'))+part(f.tipoprod)+'-'+state.semana+'.xlsx');
   toast('Excel generado ✓','ok');
 }
 async function exportParXlsx(){
