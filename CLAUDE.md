@@ -30,7 +30,7 @@ mateu-sports-portal/
 ├── evaluaciones/       # Evaluaciones de Supervisor: carga semanal operativa+actitudinal por sucursal, ranking, gráficos y vista de encargado. Escribe a Firebase (base evaluaciones-mateu). Ver "Evaluaciones de Supervisor" abajo.
 ├── barrida/            # Análisis de Reserva Depósito Central: cruce semanal (subir Excel) de la reserva del depósito central con las ventas por sucursal → alertas de reposición posible y de reserva parada. Firebase: reusa recepciones-mateu (nodo barrida/). Ver "Análisis de Reserva Depósito Central" abajo.
 ├── objetivos/          # Objetivos de Venta Semanal: gerencia carga el objetivo (Meta) de venta por sucursal por semana (subiendo el Excel "PMS Objetivos" o a mano) → dashboard vs. real; cada sucursal ve su objetivo en Indicadores. Firebase: reusa recepciones-mateu (nodo objetivos/). Ver "Objetivos de Venta Semanal" abajo.
-├── capacitaciones/     # Academia de Ventas: PROTOTIPO navegable exportado de Design (pantallas .dc.html + runtime support.js, datos de demo). Gate de sesión del Portal en cada pantalla; entran admin, capacitador, supervisor o quien tenga la herramienta. sesion.js personaliza la identidad demo con el usuario logueado (capacitacion@ = Iván Nicoloff, capacitador; cristian.campion@ = supervisor). Rol nuevo `capacitador` en el Portal. La versión funcional es una etapa futura.
+├── capacitaciones/     # Academia de Ventas FUNCIONAL: cursos y programas del capacitador, avance por persona con quiz, certificados, equipo/ranking y encuestas. Ver "Academia de Ventas" abajo. (Las pantallas .dc.html son el prototipo original de Design; quedan de referencia.)
 ├── lib/                # código JS común versionado y testeable (hoy: evaluacion.js = cálculo puro de Evaluaciones + tests con node --test)
 └── shared/             # código común del shell (calendario retail, etc.)
 ```
@@ -358,6 +358,33 @@ entran acá: ven su objetivo en Indicadores.
 
 **Puesta en marcha: ya funciona (usa `recepciones-mateu`, en vivo). No hace falta
 crear ninguna base.**
+
+## Academia de Ventas (`capacitaciones/`)
+
+`capacitaciones/index.html` es la versión FUNCIONAL, self-contained como el resto
+(lee la sesión del Portal, sin login propio). Roles: **staff** = `admin` /
+`capacitador` (Iván Nicoloff, `capacitacion@mateu.com.ar`) / `supervisor`
+(Cristian Campion) con acceso total; **alumno** = cuentas `sucursal`/`outlet` con la
+herramienta `capacitaciones`.
+
+- **Staff**: pestañas Cursos (CRUD: módulos de texto/video YouTube/material por link
+  + quiz opción múltiple con % de aprobación), Programas (junta cursos y los asigna
+  por puesto y/o sucursal con fecha límite; botón «📣 Avisar» publica la notificación
+  en la Bandeja del Portal vía `mensajes-mateu/avisos`), Equipo (avance persona por
+  persona de una sucursal), Ranking (cumplimiento promedio por sucursal) y Encuestas
+  (promedios + comentarios por curso).
+- **Alumno**: la cuenta de sucursal elige QUIÉN es (picker con la dotación de
+  Indicadores del último período, mismo mapa `SLUG_SUC_IND` que Buscador/RRHH; se
+  recuerda en localStorage `cap_yo_<slug>`). Ve sus cursos asignados (por su puesto:
+  encargado/vendedor/cajera/depósito), marca módulos vistos, rinde el quiz (se
+  habilita con todos los módulos vistos), y al aprobar gana badge + **certificado
+  imprimible** (firmas: Iván capacitador / Cristian supervisor) + encuesta post-curso.
+- **Firebase**: reusa **`recepciones-mateu`**, nodo aparte `capacitaciones/` (no toca
+  recepciones/, barrida/, objetivos/, ingreso/): `cursos/<id>`, `programas/<id>`,
+  `avances/<slug>/<personaId>/<cursoId>` (agrupado por slug → cada sucursal baja solo
+  lo suyo, seguridad blanda) y `encuestas/<cursoId>/<pushId>`.
+- Las pantallas `.dc.html` + `support.js` + `sesion.js` son el **prototipo de Design**
+  que originó el módulo; quedan como referencia visual (siguen gateadas).
 
 ## Ingreso de Mercadería (pestaña en `recepciones/`)
 
