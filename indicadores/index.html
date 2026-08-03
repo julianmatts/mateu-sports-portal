@@ -623,6 +623,25 @@ footer b{color:var(--navy)}
 
   <!-- Vista CADENA (solo gerencia) -->
   <div id="cadenaView" style="display:none">
+    <!-- Objetivo de la semana: total cadena + por sucursal. Gerencia baja la semana
+         completa de Firebase (objetivos/semanas/<sem>), a diferencia de las sucursales
+         que solo piden su slug. -->
+    <section class="sec" id="secObjCadena" style="display:none">
+      <div class="sec-label">Objetivo de venta</div>
+      <h2 class="sec-title">Objetivo de venta <em>de la semana</em></h2>
+      <p class="hint">La meta semanal de cada sucursal y el avance contra la venta real. Verde = llegó a la meta, ámbar = pasó el mínimo, rojo = abajo del mínimo. Para cargar o corregir metas, entrá al módulo Objetivos.</p>
+      <div class="card pad" id="objCadCard"></div>
+    </section>
+
+    <!-- KPIs generales: los mismos cuatro indicadores de la vista sucursal pero
+         agregados a toda la cadena (numeradores y denominadores sumados). -->
+    <section class="sec" id="secKpiCadena">
+      <div class="sec-label">Resumen</div>
+      <h2 class="sec-title">KPIs generales <em>de la cadena</em></h2>
+      <p class="hint">Los cuatro indicadores de toda la cadena juntos (sin Ecommerce): se suman numerador y denominador, nunca se promedian ratios. Meses de stock suma el stock y las ventas de todas las sucursales.</p>
+      <div class="kpis" id="kpisCad"></div>
+    </section>
+
     <section class="sec" id="secRanking">
       <div class="sec-label">Gerencia</div>
       <h2 class="sec-title">Ranking comparativo <em>por línea</em></h2>
@@ -903,8 +922,8 @@ function precalentarObjetivo(){
 function cargarStock(){
   const s = document.createElement('script');
   s.src = '../gestion-stock/datos-meses-stock.js';
-  s.onload = ()=>{ STOCK = window.STOCK_DATA || null; if($('content').style.display!=='none') renderStockCard(); };
-  s.onerror = ()=>{ STOCK = false; renderStockCard(); };
+  s.onload = ()=>{ STOCK = window.STOCK_DATA || null; if($('content').style.display!=='none') renderStockCard(); renderStockCadCard(); };
+  s.onerror = ()=>{ STOCK = false; renderStockCard(); renderStockCadCard(); };
   document.head.appendChild(s);
 }
 
@@ -995,6 +1014,8 @@ async function render(){
     $('content').style.display='none';
     $('cadenaView').style.display='block';
     const top=document.querySelector('.top'); if(top) document.documentElement.style.setProperty('--rk-top', top.offsetHeight+'px');
+    renderObjCadena();   // async: Firebase; pinta cuando llega
+    renderKpisCadena();
     renderRanking();
     renderCadenaTabla();
     return;
@@ -1445,6 +1466,156 @@ const objSemNum = iso => { const p=String(iso||'').split('-').map(Number); if(p.
   const j1=new Date(e4); j1.setUTCDate(e4.getUTCDate()-dn4+3);
   return 1+Math.round((d-j1)/(7*86400000)); };
 const objSemTag = iso => { const n=objSemNum(iso); return n!=null ? 'Semana '+n : 'Semana del '+objSemLbl(iso); };
+
+/* ============================================================
+   VISTA CADENA (gerencia): objetivo de la semana + KPIs generales
+   ============================================================ */
+/* Gerencia baja la semana COMPLETA (objetivos/semanas/<sem>, todas las
+   sucursales); las cuentas de sucursal siguen pidiendo solo su slug. */
+const _objSemFullCache = {};       // semana -> Promise<{meta,porSlug}|null>
+function fetchObjetivoSemana(sem){
+  if(_objSemFullCache[sem]) return _objSemFullCache[sem];
+  const base = OBJETIVOS_URL.replace(/\/+$/,'');
+  _objSemFullCache[sem] = fetch(base+'/objetivos/semanas/'+encodeURIComponent(sem)+'.json')
+    .then(r=>r.ok?r.json():null).catch(()=>null);
+  return _objSemFullCache[sem];
+}
+
+let objCadSem = null;              // semana elegida en la vista cadena (lunesISO); null = la última
+async function renderObjCadena(){
+  const sec=$('secObjCadena'); if(!sec) return;
+  if(!OBJETIVOS_URL || !esGerencia){ sec.style.display='none'; return; }
+  if(!$('objCadCard').innerHTML){
+    $('objCadCard').innerHTML='<p class="empty" style="margin:6px 0">Cargando objetivo…</p>';
+    sec.style.display='';
+  }
+  let weeks;
+  try{ weeks = await fetchObjetivoWeeks(); }catch(e){ weeks=null; }
+  if(!weeks || !weeks.length){ sec.style.display='none'; return; }
+  const sem = (objCadSem && weeks.includes(objCadSem)) ? objCadSem : weeks[0];
+  const data = await fetchObjetivoSemana(sem);
+  if(!vistaCadena) return;         // el usuario ya bajó a una sucursal puntual
+
+  const por=(data&&data.porSlug)||{};
+  const rows=Object.keys(por).map(slug=>{
+    const v=por[slug]||{}, meta=+v.meta||0;
+    if(!meta) return null;
+    const nombre=(SLUG_SUC[slug]||OUTLET_SUC[slug]||slug).replace(/^\d+-\s*/,'');
+    return {nombre, meta, minimo:+v.minimo||Math.round(meta/1.2), s120:+v.s120||Math.round(meta*1.2), real:+v.real||0};
+  }).filter(Boolean);
+
+  const selHtml='<select id="objCadSemSel" style="font-family:var(--font-b,inherit);font-size:13px;color:var(--navy,#0B1527);'
+    +'background:#fff;border:1px solid var(--line,#dce3f0);border-radius:7px;padding:6px 9px;cursor:pointer">'
+    + weeks.map(k=>'<option value="'+esc(k)+'"'+(k===sem?' selected':'')+'>'+esc(objSemTag(k))+'</option>').join('')
+    +'</select>';
+  const hayReal = rows.some(r=>r.real>0);
+  let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
+    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana · cadena':'Meta de la semana · cadena')+'</div>'
+    +selHtml+'</div>';
+
+  if(!rows.length){
+    html+='<p class="empty" style="margin:6px 0">El objetivo de esta semana aún no está cargado. Probá con otra semana.</p>';
+  }else{
+    const T=rows.reduce((a,r)=>({meta:a.meta+r.meta, minimo:a.minimo+r.minimo, s120:a.s120+r.s120, real:a.real+r.real}),{meta:0,minimo:0,s120:0,real:0});
+    const pct=T.meta?T.real/T.meta:0, w=Math.min(100,Math.round(pct*100));
+    const col = !T.real ? 'var(--mid)' : T.real>=T.meta ? 'var(--ok,#16a34a)' : T.real>=T.minimo ? '#d97706' : '#dc2626';
+    html+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">';
+    if(T.real){
+      html+='<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px;color:'+col+'">'+objMoney(T.real)+'</div>'
+        +'<div style="font-size:14px;color:var(--mid);padding-bottom:5px">Meta cadena: <b style="color:var(--navy,#0B1527)">'+objMoney(T.meta)+'</b> · '+Math.round(pct*100)+'%</div>';
+    }else{
+      html+='<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px">'+objMoney(T.meta)+'</div>'
+        +'<div style="font-size:13px;color:var(--muted-light,#b0bcd4);padding-bottom:6px">Venta de la semana: aún sin cargar</div>';
+    }
+    html+='</div>';
+    html+='<div style="position:relative;height:10px;background:#eef0f7;border-radius:6px;overflow:hidden;margin:10px 0 14px">'
+      +'<i style="position:absolute;left:0;top:0;bottom:0;border-radius:6px;width:'+w+'%;background:'+col+';display:block"></i></div>';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'
+      +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Mínimo cadena</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+objMoney(T.minimo)+'</div></div>'
+      +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Superación 120 cadena</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+objMoney(T.s120)+'</div></div>'
+      +'</div>';
+    // por sucursal: con venta primero (ordenadas por % de cumplimiento), sin venta al final
+    rows.sort((a,b)=> (b.real?b.real/b.meta:-1)-(a.real?a.real/a.meta:-1) || a.nombre.localeCompare(b.nombre));
+    const trs=rows.map(r=>{
+      const p=r.meta?r.real/r.meta:0;
+      const c = !r.real ? 'var(--mid)' : r.real>=r.meta ? 'var(--ok,#16a34a)' : r.real>=r.minimo ? '#d97706' : '#dc2626';
+      return '<tr><td class="L">'+esc(r.nombre)+'</td>'
+        +'<td><span class="num">'+objMoney(r.meta)+'</span></td>'
+        +'<td><span class="num">'+(r.real?objMoney(r.real):'—')+'</span></td>'
+        +'<td><b style="color:'+c+'">'+(r.real?Math.round(p*100)+'%':'—')+'</b></td></tr>';
+    }).join('');
+    html+='<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L">Sucursal</th><th>Meta</th><th>Real</th><th>%</th></tr></thead><tbody>'+trs+'</tbody></table></div>';
+  }
+  html+='<p class="hint" style="margin-top:12px"><a href="../objetivos/" style="color:var(--red,#CC0000);font-weight:600;text-decoration:none">Abrir Objetivos de Venta →</a> para cargar o corregir las metas de la semana.</p>';
+  $('objCadCard').innerHTML=html;
+  const sel=$('objCadSemSel'); if(sel) sel.onchange=e=>{ objCadSem=e.target.value; renderObjCadena(); };
+  sec.style.display='';
+}
+
+/* --- KPIs generales de la cadena: mismos cuatro indicadores, agregados --- */
+function serieCadena(metric){
+  return PERIODOS.slice().sort((a,b)=>a.id.localeCompare(b.id)).map(p=>{
+    const cad=CADENAS[p.id];
+    return {per:p.id, val: cad? cadenaAgg(cad)[metric] : null};
+  });
+}
+function renderKpisCadena(){
+  const box=$('kpisCad'); if(!box || !CAD) return;
+  const k=cadenaAgg(CAD), kp=CAD_PREV?cadenaAgg(CAD_PREV):null;
+  const mesAnt=prevPerId()?mesCorto(prevPerId()):null;
+  const defs=[
+    {key:'upt', name:'UPT',              val:fmt2(k.upt), unit:'unidades por ticket'},
+    {key:'tph', name:'Tickets por hora', val:fmt2(k.tph), unit:'por hora de piso'},
+    {key:'tp',  name:'Ticket promedio',  val:fmtM(k.tp),  unit:'venta neta por ticket'},
+  ];
+  box.innerHTML = defs.map(d=>{
+    const dp = kp? deltaHtml(k[d.key], kp[d.key]) : null;
+    const deltaStr = dp? dp+' vs. '+mesAnt : '<span class="muted">sin período anterior</span>';
+    const spark = sparkBars(serieCadena(d.key), NaN);
+    return '<div class="kpi"><div class="kpi-name">'+d.name+'</div>'
+      +'<div class="kpi-val">'+d.val+'</div><div class="kpi-unit">'+d.unit+'</div>'
+      +(spark?'<div class="kpi-spark">'+spark+'</div>':'<div class="kpi-spark-empty">Comparativo: con el 2º período</div>')
+      +'<div class="kpi-foot"><div class="kpi-delta">'+deltaStr+'</div></div></div>';
+  }).join('')
+  + '<div class="kpi" id="stockCadCard"><div class="kpi-name">Meses de stock</div>'
+  + '<div class="kpi-val" id="stockCadVal">…</div><div class="kpi-unit">stock ÷ ventas del mes · toda la cadena</div>'
+  + '<div class="kpi-foot"><div class="kpi-empty" id="stockCadFoot">Cargando stock…</div></div></div>';
+  renderStockCadCard();
+}
+// suma stock y ventas de TODAS las sucursales (mismas exclusiones que stockRatio)
+function stockAggCadena(SD, mes){
+  if(!SD || !SD.sucursales || !mes) return null;
+  let stock=0, ventas=0, hay=false;
+  for(const name of Object.keys(SD.sucursales)){
+    const sd=SD.sucursales[name];
+    for(const [rub,rd] of Object.entries(sd.rubros||{})){
+      if(rub==='PRODUCTO') continue; // excluido de los KPIs
+      const pt=rd.serie && rd.serie[mes];
+      if(pt){ stock+=pt.stock||0; ventas+=pt.ventas||0; hay=true; }
+    }
+  }
+  if(!hay || ventas<=0) return null;
+  return stock/ventas;
+}
+function renderStockCadCard(){
+  const card=$('stockCadCard'); if(!card) return;
+  const val=$('stockCadVal'), foot=$('stockCadFoot');
+  if(STOCK===null) return; // todavía cargando
+  const p=PERIODOS.find(x=>x.id===per), mes=p&&p.mesStock;
+  if(STOCK===false){ val.textContent='—'; foot.textContent='No se pudo cargar el stock.'; return; }
+  const r=stockAggCadena(STOCK, mes);
+  if(r===null){ val.textContent='—'; foot.innerHTML='<span class="kpi-empty">Sin dato de stock para este período.</span>'; return; }
+  const sem = r>=3 && r<=6 ? 'ok' : 'mid';
+  const estado = r<3?'stock ajustado':(r>6?'stock excedido':'nivel saludable');
+  card.className='kpi s-'+sem;
+  val.textContent=fmt2(r);
+  let deltaStr='';
+  const pp=prevPerId();
+  if(pp){ const r0=stockAggCadena(STOCK, PERIODOS.find(x=>x.id===pp).mesStock);
+    const d=deltaHtml(r, r0); if(d) deltaStr=d+' vs. '+mesCorto(pp); }
+  foot.innerHTML='<div class="kpi-obj"><span class="dot"></span><span class="cum-'+sem+'">'+estado+'</span></div>'
+    +(deltaStr?'<div class="kpi-delta">'+deltaStr+'</div>':'');
+}
 
 /* --- venta por vendedor que sube el encargado (Firebase: recepciones-mateu / ventaEquipo/<slug>/<semana>) --- */
 let _objActiveSem = null;          // semana activa del selector (para el uploader)
