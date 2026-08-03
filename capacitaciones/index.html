@@ -295,7 +295,7 @@ const TABS_ALUMNO = [ ['mio','🎓 Mi programa'] ];
 function pintarTabs(){
   const lista = ES_STAFF ? TABS_STAFF : TABS_ALUMNO;
   $('tabs').innerHTML = lista.map(([id,lbl])=>'<span class="tab'+(TAB===id?' act':'')+'" data-tab="'+id+'">'+lbl+'</span>').join('');
-  $('tabs').querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{ TAB=t.dataset.tab; pintarTabs(); render(); }));
+  $('tabs').querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{ TAB=t.dataset.tab; PREVIEW_CURSO=null; pintarTabs(); render(); }));
 }
 
 /* ---------- dotación desde Indicadores ---------- */
@@ -339,6 +339,30 @@ function cursosDe(slug, rolPersona){
   }));
   return out;
 }
+/* Cuerpo de un módulo (compartido entre la vista del alumno y la vista previa del staff). */
+function cuerpoModulo(m){
+  if(m.tipo==='video'){
+    const yt = esUrlYoutube(m.contenido);
+    return yt ? '<div class="video-marco"><iframe src="https://www.youtube.com/embed/'+yt+'" allowfullscreen loading="lazy"></iframe></div>'
+              : '<a class="btn" target="_blank" rel="noopener" href="'+esc(m.contenido)+'">▶ Ver video</a>';
+  }
+  if(m.tipo==='archivo') return '<button class="btn" data-arch="'+esc(m.contenido)+'">📥 Descargar '+esc(m.archivoNombre||'material')+'</button>';
+  if(m.tipo==='enlace') return '<a class="btn" target="_blank" rel="noopener" href="'+esc(m.contenido)+'">📄 Abrir material</a>';
+  return esc(m.contenido||'').split(/\n{2,}/).map(p=>'<p>'+p.replace(/\n/g,'<br>')+'</p>').join('');
+}
+function bindArchivos(app){
+  app.querySelectorAll('[data-arch]').forEach(b=>b.addEventListener('click', async ()=>{
+    const orig = b.textContent; b.disabled=true; b.textContent='Descargando…';
+    try{
+      const {blob, meta} = await bajarArchivo(b.dataset.arch);
+      const url = URL.createObjectURL(blob);
+      if((meta.mime||'').indexOf('pdf')>=0){ window.open(url,'_blank'); }
+      else{ const a=document.createElement('a'); a.href=url; a.download=meta.nombre||'material'; document.body.appendChild(a); a.click(); a.remove(); }
+    }catch(err){ alert('No se pudo descargar el material: '+err.message); }
+    b.disabled=false; b.textContent=orig;
+  }));
+}
+
 function estadoCurso(av, curso){
   const a = av||{};
   const nm = (curso.modulos||[]).length;
@@ -483,18 +507,7 @@ function renderCursoAlumno(cid){
 
   (c.modulos||[]).forEach((m,i)=>{
     const ok = !!(av.mods&&av.mods[i]);
-    let cuerpo = '';
-    if(m.tipo==='video'){
-      const yt = esUrlYoutube(m.contenido);
-      cuerpo = yt ? '<div class="video-marco"><iframe src="https://www.youtube.com/embed/'+yt+'" allowfullscreen loading="lazy"></iframe></div>'
-                  : '<a class="btn" target="_blank" rel="noopener" href="'+esc(m.contenido)+'">▶ Ver video</a>';
-    } else if(m.tipo==='archivo'){
-      cuerpo = '<button class="btn" data-arch="'+esc(m.contenido)+'">📥 Descargar '+esc(m.archivoNombre||'material')+'</button>';
-    } else if(m.tipo==='enlace'){
-      cuerpo = '<a class="btn" target="_blank" rel="noopener" href="'+esc(m.contenido)+'">📄 Abrir material</a>';
-    } else {
-      cuerpo = esc(m.contenido||'').split(/\n{2,}/).map(p=>'<p>'+p.replace(/\n/g,'<br>')+'</p>').join('');
-    }
+    const cuerpo = cuerpoModulo(m);
     html.push('<div class="mod'+(ok?' ok':'')+'"><div class="m-cab"><span class="m-num">'+(ok?'✓':(i+1))+'</span>'+
       '<span class="m-tit">'+esc(m.titulo||('Módulo '+(i+1)))+'</span>'+
       '<button class="btn mini'+(ok?'':' pri')+'" data-mod="'+i+'">'+(ok?'Visto ✓':'Marcar visto')+'</button></div>'+
@@ -548,17 +561,7 @@ function renderCursoAlumno(cid){
     try{ await guardarAvanceYo(cid, nuevo); }catch(err){ alert('No se pudo guardar: '+err.message); }
     render();
   }));
-  // Descarga de archivos subidos por el capacitador (se reconstruyen desde Firebase).
-  app.querySelectorAll('[data-arch]').forEach(b=>b.addEventListener('click', async ()=>{
-    const orig = b.textContent; b.disabled=true; b.textContent='Descargando…';
-    try{
-      const {blob, meta} = await bajarArchivo(b.dataset.arch);
-      const url = URL.createObjectURL(blob);
-      if((meta.mime||'').indexOf('pdf')>=0){ window.open(url,'_blank'); }
-      else{ const a=document.createElement('a'); a.href=url; a.download=meta.nombre||'material'; document.body.appendChild(a); a.click(); a.remove(); }
-    }catch(err){ alert('No se pudo descargar el material: '+err.message); }
-    b.disabled=false; b.textContent=orig;
-  }));
+  bindArchivos(app);
   const qf = $('quizForm');
   if(qf) qf.addEventListener('submit', async e=>{
     e.preventDefault();
@@ -620,9 +623,11 @@ function verCertificado(cid, nombre){
    ============================================================ */
 let EDIT_CURSO = null;    // curso en edición (objeto) o null
 let EDIT_PROG = null;
+let PREVIEW_CURSO = null; // staff: curso abierto en vista previa (como lo ve el alumno)
 let EQ_SLUG = lsGet('cap_eq_slug') || 'calle-49';
 
 function renderStaff(){
+  if(TAB==='cursos' && PREVIEW_CURSO) return renderPreviewCurso();
   if(TAB==='cursos') return renderCursosStaff();
   if(TAB==='programas') return renderProgramasStaff();
   if(TAB==='equipo') return renderEquipo();
@@ -644,19 +649,52 @@ function renderCursosStaff(){
       html.push('<tr><td><b>'+esc(c.titulo)+'</b></td><td>'+esc(c.competencia||'—')+'</td><td>'+esc(c.dur||'—')+'</td>'+
         '<td>'+((c.modulos||[]).length)+'</td><td>'+((c.quiz&&(c.quiz.preguntas||[]).length)||0)+' preg.</td>'+
         '<td>'+(c.activo===false?'<span class="chip">borrador</span>':'<span class="chip ok">publicado</span>')+'</td>'+
-        '<td style="white-space:nowrap"><button class="btn mini" data-ed="'+esc(c.id)+'">✏ Editar</button> '+
+        '<td style="white-space:nowrap"><button class="btn mini" data-ver="'+esc(c.id)+'">👁 Ver</button> '+
+        '<button class="btn mini" data-ed="'+esc(c.id)+'">✏ Editar</button> '+
         '<button class="btn mini peligro" data-del="'+esc(c.id)+'">🗑</button></td></tr>');
     });
     html.push('</tbody></table></div>');
   }
   app.innerHTML = html.join('');
   $('nuevoCurso').addEventListener('click',()=>{ EDIT_CURSO = { id:nuevoId('c'), titulo:'', desc:'', dur:'30min', competencia:COMPETENCIAS[0], color:COLORES_CURSO[Object.keys(CURSOS).length%COLORES_CURSO.length], modulos:[], quiz:{aprueba:70,preguntas:[]}, activo:true, ts:Date.now(), por:SESSION.email }; render(); });
+  app.querySelectorAll('[data-ver]').forEach(b=>b.addEventListener('click',()=>{ PREVIEW_CURSO = b.dataset.ver; render(); }));
   app.querySelectorAll('[data-ed]').forEach(b=>b.addEventListener('click',()=>{ EDIT_CURSO = JSON.parse(JSON.stringify(CURSOS[b.dataset.ed])); render(); }));
   app.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', async ()=>{
     const c = CURSOS[b.dataset.del];
     if(!confirm('¿Eliminar el curso «'+c.titulo+'»?\nEl avance ya registrado no se borra, pero el curso deja de verse.')) return;
     await fbDel('cursos/'+c.id); delete CURSOS[c.id]; render();
   }));
+}
+
+/* Vista previa para staff: el curso tal cual lo ve el alumno, sin guardar avance,
+   con la respuesta correcta de cada pregunta marcada. */
+function renderPreviewCurso(){
+  const app = $('app');
+  const c = CURSOS[PREVIEW_CURSO];
+  if(!c){ PREVIEW_CURSO=null; return renderCursosStaff(); }
+  const html = [];
+  html.push('<p style="margin:0 0 14px"><a href="#" id="volver">← Volver a cursos</a></p>');
+  html.push('<h1>'+esc(c.titulo)+' <span class="chip azul" style="vertical-align:middle">Vista previa — así lo ve el equipo</span></h1>');
+  html.push('<p class="sub">'+esc(c.competencia||'')+(c.dur?' · '+esc(c.dur):'')+'</p>');
+  if(c.desc) html.push('<div class="card" style="margin-bottom:18px;line-height:1.55">'+esc(c.desc).replace(/\n/g,'<br>')+'</div>');
+  (c.modulos||[]).forEach((m,i)=>{
+    html.push('<div class="mod"><div class="m-cab"><span class="m-num">'+(i+1)+'</span>'+
+      '<span class="m-tit">'+esc(m.titulo||('Módulo '+(i+1)))+'</span></div>'+
+      '<div class="m-cuerpo">'+cuerpoModulo(m)+'</div></div>');
+  });
+  const q = c.quiz;
+  if(q && (q.preguntas||[]).length){
+    html.push('<div class="sec-t">Evaluación <span class="muted" style="text-transform:none;letter-spacing:0">— se aprueba con '+(q.aprueba||70)+'%; la correcta va marcada solo en esta vista</span></div>');
+    (q.preguntas||[]).forEach((p,pi)=>{
+      html.push('<div class="preg"><div class="q">'+(pi+1)+'. '+esc(p.q)+'</div>'+
+        (p.ops||[]).map((op,oi)=>'<label class="op" style="cursor:default">'+
+          (oi===+p.ok?'<span style="color:var(--verde);font-weight:800">✓</span>':'<span style="width:12px;display:inline-block"></span>')+
+          ' <span'+(oi===+p.ok?' style="font-weight:700;color:var(--verde)"':'')+'>'+esc(op)+'</span></label>').join('')+'</div>');
+    });
+  }
+  app.innerHTML = html.join('');
+  $('volver').addEventListener('click',e=>{ e.preventDefault(); PREVIEW_CURSO=null; render(); });
+  bindArchivos(app);
 }
 
 function renderEditorCurso(){
