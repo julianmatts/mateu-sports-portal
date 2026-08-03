@@ -183,7 +183,7 @@ table.grid tr.total td.num{ color:#fff; }
     </summary>
     <div class="step-bd">
       <div class="banner info"><span class="ic">📄</span><span>El módulo lee el <b>export de ventas del mes</b> (crudo, una fila por artículo), <b>no</b> la liquidación ya armada. Detecta las columnas por el nombre del encabezado (en cualquier orden); si no reconoce alguna, te la pide a mano. Acepta <b>.xlsx / .xls</b> y toma la <b>primera hoja</b>. Todos los importes van <b>sin IVA</b>, tal cual vienen.</span></div>
-      <div class="banner info" style="margin-top:8px"><span class="ic">🏉</span><span><b>Ruge Deportes Amateur (RDA)</b> es una liquidación aparte al <b>5%</b>. Vienen en el <b>mismo archivo de ventas minorista</b> (se reconocen por el Grupo 2 <i>“Ruge Deportes Amateur”</i>): el módulo los separa solo y te los muestra abajo del consolidado, con su propio Excel anual (⑥).</span></div>
+      <div class="banner info" style="margin-top:8px"><span class="ic">🏉</span><span><b>Ruge Deportes Amateur (RDA)</b> es una liquidación aparte al <b>5%</b>. Vienen en el <b>mismo archivo de ventas minorista</b> (se reconocen por el Grupo 2 <i>“Ruge Deportes Amateur”</i> o porque el nombre del artículo dice <b>AMATEUR</b> o <b>EDLP PERT</b> — línea pertenencia): el módulo los separa solo y te los muestra abajo del consolidado, con su propio Excel anual (⑥). Además, un artículo con <b>&amp;&amp;&amp;</b> en el nombre es <b>sin cambio</b> → va siempre a <b>2da</b> (vigente, anteriores o amateur; nunca a la escala minorista) y en los dudosos podés mandarlo a la liquidación de <b>amateur/pertenencia</b> desde el selector de Solapa.</span></div>
 
       <div class="acc-grid" style="margin-top:12px">
         <div class="acc-card">
@@ -649,6 +649,10 @@ function construirLineasMay(aoa, hRow, mapa){
    CLASIFICACIÓN
    ============================================================ */
 function esEDLPtxt(art){ const A=up(art); return KEYWORDS.some(k=>A.includes(up(k))); }
+// AMATEUR o "EDLP PERT" (línea pertenencia) en el nombre -> liquidación Ruge Deportes Amateur
+function esRDAtxt(art){ const A=up(art); return A.includes('AMATEUR') || A.includes('EDLP PERT'); }
+// &&& en el nombre = artículo sin cambio -> va siempre a 2da (nunca a escala minorista)
+function esSinCambio(art){ return String(art==null?'':art).includes('&&&'); }
 function esVigenteG3(g3){
   const G=up(g3), t=CONFIG.temporadaVigente;
   if(G.includes(String(t))) return true;
@@ -664,9 +668,11 @@ const OUTLET_G2 = ['ARTICULOS SIN CAMBIO','DISCONTINUOS OUTLET F8','DISCONTINUOS
 // Devuelve { tab, sub, rate|null (null = escala), sumaEDLP, sumaRugeSE, revisar, motivo }
 function clasificarMateu(l){
   const RUBRO=up(l.rubro), G2=up(l.g2), LP=up(l.lista);
-  // Paso 0 — Ruge Deportes Amateur: liquidación aparte (5%), se reconoce por el Grupo 2.
-  if(G2.includes(up(CONFIG.g2RugeAmateur))) return { tab:'RDA', rate:CONFIG.tasas.rdaAmateur };
+  // Paso 0 — Ruge Deportes Amateur: liquidación aparte (5%). Se reconoce por el
+  // Grupo 2 o por el nombre del artículo (AMATEUR / "EDLP PERT" = pertenencia).
+  if(G2.includes(up(CONFIG.g2RugeAmateur)) || esRDAtxt(l.articulo)) return { tab:'RDA', rate:CONFIG.tasas.rdaAmateur };
   const esVig=esVigenteG3(l.g3), esMin=LP.includes('MINORISTA'), esEDLP=esEDLPtxt(l.articulo);
+  const sinCambio=esSinCambio(l.articulo);   // &&& -> artículo sin cambio, siempre 2da
   const g2_notiene=G2.includes('NO TIENE');
   const g2_linea=G2.includes('LINEA ESTUDIANTES')||G2.includes('LINEA EDLP');
   const g2_outlet=OUTLET_G2.some(x=>G2.includes(x));
@@ -675,16 +681,19 @@ function clasificarMateu(l){
     return { tab:'ACC_CALZ', rate:CONFIG.tasas.accCalz };
 
   if(g2_linea){
-    if(esVig && esMin) return { tab:'EDLP_VIG_MIN', rate:null, sumaEDLP:true };
+    // sin cambio (&&&): nunca entra a la escala minorista, va directo a 2da
+    if(esVig && esMin && !sinCambio) return { tab:'EDLP_VIG_MIN', rate:null, sumaEDLP:true };
     if(esVig)          return { tab:'EDLP_VIG_2DA', rate:CONFIG.tasas.edlp_2da };
     return { tab:'EDLP_ANT', rate:CONFIG.tasas.edlpAnterior };
   }
-  if(g2_outlet){
+  if(g2_outlet || sinCambio){
     const tab = esVig ? (esEDLP?'EDLP_VIG_2DA':'RUGE_SE_2DA')
                       : (esEDLP?'EDLP_ANT':'RUGE_SE_2DA');
     const rate = tab==='RUGE_SE_2DA'?CONFIG.tasas.rugeSE_liq2da
                : tab==='EDLP_VIG_2DA'?CONFIG.tasas.edlp_2da:CONFIG.tasas.edlpAnterior;
-    return { tab, rate, revisar:true, motivo:'Outlet/2da — confirmar si es EDLP' };
+    return { tab, rate, revisar:true, out2da:true,
+      motivo: sinCambio ? 'Sin cambio (&&&) → 2da — confirmar si es EDLP o amateur/pertenencia'
+                        : 'Outlet/2da — confirmar si es EDLP' };
   }
   if(g2_notiene){
     if(esMin) return { tab:'RUGE_SE', rate:null, sumaRugeSE:true };
@@ -706,7 +715,7 @@ function clasificarMay(l){
 // Clasificación efectiva (aplica overrides del usuario)
 function clsMateu(l){
   const base=clasificarMateu(l);
-  if(l.ovrEDLP!==null && base.motivo && base.motivo.startsWith('Outlet')){
+  if(l.ovrEDLP!==null && base.out2da){
     // el toggle EDLP sí/no reclasifica la rama outlet
     const RUBRO=up(l.rubro), esVig=esVigenteG3(l.g3);
     const esEDLP=l.ovrEDLP;
@@ -732,6 +741,7 @@ function rateDeTab(tab){
     case 'RUGE_SE_2DA': return CONFIG.tasas.rugeSE_liq2da;
     case 'ACC_CALZ': return CONFIG.tasas.accCalz;
     case 'EDLP_VIG_MIN': case 'RUGE_SE': return null;
+    case 'RDA': return CONFIG.tasas.rdaAmateur;
     default: return 0;
   }
 }
@@ -960,14 +970,17 @@ function renderRevision(){
   const total=dudososM.length + rugeMay.length;
   if(!total){ cont.innerHTML='<div class="empty">Nada para revisar. La clasificación quedó limpia. ✔</div>'; return; }
 
-  const optTabs=TAB_ORDER.filter(t=>t!=='SIN_CLAS').map(t=>`<option value="${t}">${esc(TABS[t].label())}</option>`).join('');
+  const tabLbl = t => TABS[t] ? TABS[t].label() : (t==='RDA' ? 'DEPORTES AMATEUR (pertenencia)' : t);
+  // la opción RDA manda la línea a la liquidación aparte de Ruge Deportes Amateur (5%)
+  const optTabs = l => TAB_ORDER.filter(t=>t!=='SIN_CLAS').concat('RDA')
+    .map(t=>`<option value="${t}"${l.ovrTab===t?' selected':''}>${esc(tabLbl(t))}</option>`).join('');
   const esLanz = mesKey===CONFIG.fechaLanzamiento.slice(0,7);
   let h='';
   dudososM.forEach(({l,c})=>{
-    const cur=clsMateu(l);
+    const cur=clsMateu({...l, ovrTab:null});  // la opción "(auto)" muestra la clasificación sin el override de solapa
     h+=`<div class="rev-row" data-midx="${l.idx}">
       <div class="art">${esc(l.articulo||'(sin artículo)')}<div class="meta">${esc(l.g2)} · ${esc(l.lista)} · ${units(l.cant)} u · $${money(l.importe)} · ${esc(c.motivo||'')}</div></div>`;
-    if(c.motivo && c.motivo.startsWith('Outlet')){
+    if(c.out2da){
       h+=`<label class="toggle">EDLP:
         <select data-edlp="${l.idx}">
           <option value="auto"${l.ovrEDLP===null?' selected':''}>auto (${esEDLPtxt(l.articulo)?'sí':'no'})</option>
@@ -976,7 +989,7 @@ function renderRevision(){
         </select></label>`;
     }
     h+=`<label class="toggle">Solapa:
-      <select data-tab="${l.idx}"><option value="">${esc(TABS[cur.tab]?TABS[cur.tab].label():cur.tab)} (auto)</option>${optTabs}</select></label>`;
+      <select data-tab="${l.idx}"><option value="">${esc(tabLbl(cur.tab))} (auto)</option>${optTabs(l)}</select></label>`;
     if(esLanz){
       h+=`<label class="toggle"><input type="checkbox" data-pre="${l.idx}" ${l.preLanz?'checked':''}> pre-lanzamiento (20%)</label>`;
     }
