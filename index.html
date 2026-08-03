@@ -531,8 +531,17 @@ function render(session){
   // Los usuarios de sucursal/outlet aterrizan en Indicadores de Sucursal (su home),
   // no en la grilla de tiles. Excepción: si vienen a ver la bandeja desde la campana
   // del módulo (?ver=bandeja) no se los redirige, así pueden leer/responder mensajes.
-  const verBandeja = new URLSearchParams(location.search).get('ver')==='bandeja';
+  const ver = new URLSearchParams(location.search).get('ver');
+  const verBandeja = ver==='bandeja';
   if(session && (session.rol==='sucursal' || session.rol==='outlet') && !verBandeja){
+    location.replace('./indicadores/');
+    return;
+  }
+  // Gerencia usa el mismo modelo de pantalla inicial que las sucursales: aterriza
+  // en Indicadores (que para admin abre en "Cadena (comparar todas)") y navega con
+  // el menú lateral. La grilla completa de tiles queda accesible desde el ítem
+  // "Portal (todas las herramientas)" del drawer, que vuelve con ?ver=portal.
+  if(session && session.rol==='admin' && !verBandeja && ver!=='portal'){
     location.replace('./indicadores/');
     return;
   }
