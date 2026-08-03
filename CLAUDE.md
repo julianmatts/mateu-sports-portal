@@ -393,24 +393,37 @@ crear ninguna base.**
 (Cristian Campion) con acceso total; **alumno** = cuentas `sucursal`/`outlet` con la
 herramienta `capacitaciones`.
 
-- **Staff**: pestañas Cursos (CRUD: módulos de texto / video YouTube / **archivo
-  PDF-PPT subido desde la PC** (se guarda en Firebase en partes base64, nodo
-  `archivos/<fid>`, tope 20 MB; el alumno lo descarga reconstruido) / material por
-  link + quiz opción múltiple con % de aprobación), Programas (junta cursos y los asigna
-  por puesto y/o sucursal con fecha límite; botón «📣 Avisar» publica la notificación
-  en la Bandeja del Portal vía `mensajes-mateu/avisos`), Equipo (avance persona por
-  persona de una sucursal), Ranking (cumplimiento promedio por sucursal) y Encuestas
-  (promedios + comentarios por curso).
+**La app ES el prototipo de Design hecho funcional** (decisión de Juli 03/08/2026):
+mismas pantallas y estética, con datos reales.
+
+- **Pestañas** (SPA, sin recargar): alumno = Inicio (progreso, competencias, badges,
+  carrusel "Continuá tu programa") · Catálogo (tabs de programas por nivel + carrusel
+  de tarjetas con portada) · Novedades (feed) · Historial (certificado por programa
+  completo o candado con progreso) · Ranking (podio por persona). Staff (admin /
+  capacitador Iván / supervisor Cristian) = Catálogo (+ ✏ en cada tarjeta) · Novedades
+  (+ publicar) · Mi equipo (dotación real de TODAS las sucursales con niveles y
+  progreso por persona) · Ranking (toggle empresa/sucursal) · Gestión (CRUD de cursos
+  y programas + encuestas).
+- **Player de curso**: hero oscuro con barra de progreso, índice lateral (lecciones +
+  quiz final), contenido en tarjetas; en módulos de texto, un bloque que arranca con
+  `[[dato]]`/`[[tip]]`/`[[evitar]]`/`[[ejemplo]] Título` se destaca con color, y
+  `Título:` al inicio de bloque hace tarjeta con título. Módulos tipo texto / video
+  YouTube / **archivo PDF-PPT subido desde la PC** (Firebase en partes base64, nodo
+  `archivos/<fid>`, tope 20 MB) / link. Quiz con opciones botón y banner de resultado
+  (staff ve la correcta marcada). Al aprobar: badge + certificado imprimible (firmas
+  Iván/Cristian) + encuesta + novedad automática en el feed.
 - **Alumno**: la cuenta de sucursal elige QUIÉN es (picker con la dotación de
-  Indicadores del último período, mismo mapa `SLUG_SUC_IND` que Buscador/RRHH; se
-  recuerda en localStorage `cap_yo_<slug>`). Ve sus cursos asignados (por su puesto:
-  encargado/vendedor/cajera/depósito), marca módulos vistos, rinde el quiz (se
-  habilita con todos los módulos vistos), y al aprobar gana badge + **certificado
-  imprimible** (firmas: Iván capacitador / Cristian supervisor) + encuesta post-curso.
-- **Firebase**: reusa **`recepciones-mateu`**, nodo aparte `capacitaciones/` (no toca
-  recepciones/, barrida/, objetivos/, ingreso/): `cursos/<id>`, `programas/<id>`,
-  `avances/<slug>/<personaId>/<cursoId>` (agrupado por slug → cada sucursal baja solo
-  lo suyo, seguridad blanda) y `encuestas/<cursoId>/<pushId>`.
+  Indicadores, mapa `SLUG_SUC_IND`; se recuerda en `cap_yo_<slug>`; "Cambiar persona"
+  en el header). Programas filtran por puesto (encargado/vendedor/cajera/depósito)
+  y/o sucursal, con fecha límite.
+- **Firebase**: reusa **`recepciones-mateu`**, nodo aparte `capacitaciones/`:
+  `cursos/`, `programas/`, `avances/<slug>/<personaId>/<cursoId>` (agrupado por slug,
+  seguridad blanda), `novedades/` (feed; no-leídas por localStorage),
+  `encuestas/<cursoId>/` y `archivos/<fid>`. «📣 Avisar» de un programa publica en la
+  Bandeja del Portal (`mensajes-mateu/avisos`) y en Novedades.
+- **Contenido cargado**: «Atención al Cliente» (10 lecciones + quiz, contenido real
+  del prototipo, programa «Introducción» para toda la cadena) y «Wilson: Tennis &
+  Padel 2026» (del PPT de Iván; falta asignarlo a un programa).
 - Las pantallas `.dc.html` + `support.js` + `sesion.js` son el **prototipo de Design**
   que originó el módulo; quedan como referencia visual (siguen gateadas).
 
