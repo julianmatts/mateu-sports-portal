@@ -33,9 +33,12 @@ PERIODOS = {
                   desde=dt.date(2026,4,27), hasta=dt.date(2026,5,31)),
   '2026-06': dict(archivo='/mnt/user-data/uploads/Venta_por_vendedores_y_sucursales.xlsx',
                   desde=dt.date(2026,6,1),  hasta=dt.date(2026,6,28)),
-  '2026-07': dict(archivo=r'C:\Users\julia\Downloads\Estadistica de venta  consolidad (mayo,junio y julio).xlsx',
+  # formato='detallado' = Excel con detalle por LINEA (Articulo+Rubro): aplica los
+  # criterios de Juli por linea y agrega por comprobante. Reemplaza al 'consolidado'
+  # (que venia por comprobante pero SOLO con los articulos, sin promos/conceptos).
+  '2026-07': dict(archivo=r'C:\Users\julia\Downloads\Estadistica de venta - Mayo Junio Julio.xlsx',
                   desde=dt.date(2026,6,29), hasta=dt.date(2026,7,26),
-                  formato='consolidado'),
+                  formato='detallado'),
 }
 DOW = ['Lu','Ma','Mi','Ju','Vi','Sá','Do']
 
@@ -148,8 +151,68 @@ def cargar_consolidado(cfg):
     v.columns = ['sucursal','dia_semana','dia','vendedor','hora','comprobante','cantidad','importe']
     return v[v.sucursal.notna()]
 
+# ── Criterios por linea (Juli, 03/08/2026) para el formato 'detallado' ──────
+# Devuelve (cuenta_unidades, cuenta_importe) segun rubro + articulo.
+def criterio_linea(rubro, articulo):
+    r, a = rubro, articulo            # ya vienen normalizados (sin tildes, UPPER)
+    if r == 'OTROS':                  # bolsas, stickers, cupones de dto., alarmas, perchas
+        return (False, False)
+    if r == '01-VARIOS':              # gift cards y packs nombre+numero cuentan todo
+        if a == 'REDONDEO':
+            return (False, False)
+        return (True, True)
+    if r == 'CONCEPTOS':
+        if a.startswith('CREDITO A FAVOR'):
+            return (True, True)       # cuenta en ambos
+        if a.startswith('INGRESO CUPON') or 'LLAVERO COMPRA GRANDE' in a:
+            return (False, False)     # no tener en cuenta
+        # PROMO*, cupones, descuentos, ENVIO (criterio propio: plata real pero no
+        # es un item — revisar con Juli si el envio deberia salir del importe)
+        return (False, True)
+    return (True, True)               # 02-CALZADO / 03-INDUMENTARIA / 04-ACCESORIOS
+
+def cargar_detallado(cfg):
+    """Excel "Estadistica de venta - …": una fila por LINEA de comprobante con
+    Articulo (col G) y Rubro (col H) + un par Cantidad/Importe por mes calendario
+    (I..N = mayo/junio/julio). Aplica criterio_linea() y agrega por comprobante,
+    devolviendo el mismo formato de 8 columnas del resto de los loaders. El indice
+    dia+dia-de-semana de cargar_ventas() filtra despues el periodo retail."""
+    raw = pd.read_excel(cfg['archivo'], sheet_name=0, header=None, skiprows=2)
+    def norm(s):
+        s = unicodedata.normalize('NFD', str(s if s is not None else '')).encode('ascii', 'ignore').decode()
+        return ' '.join(s.upper().split())
+    flags = [criterio_linea(r, a) for r, a in zip(raw[7].map(norm), raw[6].map(norm))]
+    cant_ok = pd.Series([f[0] for f in flags], index=raw.index)
+    imp_ok  = pd.Series([f[1] for f in flags], index=raw.index)
+    frames = []
+    for i in range(3):                # pares (I,J)(K,L)(M,N) = mayo · junio · julio
+        cant = pd.to_numeric(raw[8 + i*2], errors='coerce').fillna(0)
+        imp  = pd.to_numeric(raw[9 + i*2], errors='coerce').fillna(0)
+        sel = ((cant != 0) | (imp != 0)) & raw[0].notna()
+        f = raw.loc[sel, [0, 1, 2, 3, 4, 5]].copy()
+        f.columns = ['sucursal', 'dia_semana', 'dia', 'vendedor', 'hora', 'comprobante']
+        f['cantidad'] = cant[sel].where(cant_ok[sel], 0)
+        f['importe']  = imp[sel].where(imp_ok[sel], 0)
+        f = f[(f.cantidad != 0) | (f.importe != 0)]     # lineas que no cuentan nada, afuera
+        f['vendedor'] = f.vendedor.fillna('SIN ASIGNAR')
+        # Un comprobante = UNA fila (atomico): se suman sus lineas y la metadata
+        # (dia/hora/vendedor) la define la linea de mayor |importe| — la del articulo
+        # principal, no la del cupon: ~5% de los tickets traen lineas con otro
+        # vendedor/hora (cupones cruzados) y partirlos inflaria el importe al
+        # descartarse sola la mitad negativa de los cambios de producto.
+        f['_abs'] = f.importe.abs()
+        tot = f.groupby(['sucursal', 'comprobante'], as_index=False)[['cantidad', 'importe']].sum()
+        meta_f = (f.sort_values('_abs', ascending=False)
+                    .drop_duplicates(['sucursal', 'comprobante'])
+                 )[['sucursal', 'dia_semana', 'dia', 'vendedor', 'hora', 'comprobante']]
+        frames.append(meta_f.merge(tot, on=['sucursal', 'comprobante']))
+    v = pd.concat(frames, ignore_index=True)
+    return v
+
 def cargar_ventas(cfg):
-    if cfg.get('formato') == 'consolidado':
+    if cfg.get('formato') == 'detallado':
+        v = cargar_detallado(cfg)
+    elif cfg.get('formato') == 'consolidado':
         v = cargar_consolidado(cfg)
     else:
         v = pd.read_excel(cfg['archivo'])
@@ -161,7 +224,7 @@ def cargar_ventas(cfg):
     v['fecha'] = [idx.get((d, ds)) for d, ds in zip(v.dia, v.dia_semana)]
     huerfanas = v.fecha.isna().sum()
     if huerfanas:
-        if cfg.get('formato') == 'consolidado':   # esperado: los otros meses del archivo
+        if cfg.get('formato') in ('consolidado', 'detallado'):   # esperado: los otros meses del archivo
             print(f'  · consolidado: {len(v) - huerfanas} filas dentro del período, {huerfanas} de otros meses')
         else:
             print(f'  ⚠ {huerfanas} filas con día/día-semana fuera del período: se descartan')
