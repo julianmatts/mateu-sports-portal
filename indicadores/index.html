@@ -2063,8 +2063,11 @@ async function renderObjetivo(){
     + weeks.map(k=>'<option value="'+esc(k)+'"'+(k===sem?' selected':'')+'>Semana del '+esc(objSemLbl(k))+'</option>').join('')
     +'</select>';
 
+  // con el real ya cargado el protagonista es la venta: real en grande, meta en chico
+  const realEncTot = (()=>{ const t=ve&&ve.total; return typeof t==='number' ? t : (t&&t.venta)||0; })();
+  const hayReal = !!v && ((v.real||0)>0 || realEncTot>0);
   let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
-    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">Meta de la semana</div>'
+    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana':'Meta de la semana')+'</div>'
     +selHtml+'</div>';
 
   if(!v){
@@ -2074,7 +2077,7 @@ async function renderObjetivo(){
     const meta=v.meta||0, minimo=v.minimo||Math.round(meta/1.2), s120=v.s120||Math.round(meta*1.2);
     const realOf  = v.real||0;                         // oficial (HISTÓRICO / a mano por gerencia)
     // provisorio (carga del encargado en la semana); total puede ser número o {venta,…}
-    const realEnc = (()=>{ const t=ve&&ve.total; return typeof t==='number' ? t : (t&&t.venta)||0; })();
+    const realEnc = realEncTot;
     const usaOf   = realOf>0;
     const real    = usaOf ? realOf : realEnc;          // el que se muestra
     const provisorio = !usaOf && realEnc>0;
@@ -2082,12 +2085,16 @@ async function renderObjetivo(){
     const w = Math.min(100, Math.round(pct*100));
     const cls = !real ? 'na' : real>=meta ? 'ok' : real>=minimo ? 'warn' : 'bad';
     const col = cls==='ok' ? 'var(--ok,#16a34a)' : cls==='warn' ? '#d97706' : cls==='bad' ? '#dc2626' : 'var(--mid)';
-    html+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">'
-      +'<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px">'+objMoney(meta)+'</div>';
-    if(real) html+='<div style="font-size:14px;color:var(--mid);padding-bottom:5px">Real: <b style="color:'+col+'">'+objMoney(real)+'</b> · '+Math.round(pct*100)+'%'
-      +(provisorio?' <span style="font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#d97706;background:#fff7ed;border:1px solid #fed7aa;border-radius:20px;padding:1px 7px;margin-left:4px">provisorio · encargado</span>':'')
-      +'</div>';
-    else html+='<div style="font-size:13px;color:var(--muted-light,#b0bcd4);padding-bottom:6px">Venta de la semana: aún sin cargar</div>';
+    html+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">';
+    if(real){
+      html+='<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px;color:'+col+'">'+objMoney(real)+'</div>'
+        +'<div style="font-size:14px;color:var(--mid);padding-bottom:5px">Meta: <b style="color:var(--navy,#0B1527)">'+objMoney(meta)+'</b> · '+Math.round(pct*100)+'%'
+        +(provisorio?' <span style="font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#d97706;background:#fff7ed;border:1px solid #fed7aa;border-radius:20px;padding:1px 7px;margin-left:4px">provisorio · encargado</span>':'')
+        +'</div>';
+    }else{
+      html+='<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px">'+objMoney(meta)+'</div>'
+        +'<div style="font-size:13px;color:var(--muted-light,#b0bcd4);padding-bottom:6px">Venta de la semana: aún sin cargar</div>';
+    }
     html+='</div>';
     // barra: llena si es oficial, rayada si es provisoria (carga del encargado)
     const barFill = provisorio
