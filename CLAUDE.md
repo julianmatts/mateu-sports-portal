@@ -172,10 +172,16 @@ por sucursal. Corre en la máquina de Juli (Python 3.12 + pandas instalados 03/0
 también sirve el sandbox); después se copia `out/indicadores/2026-NN/` a `data/indicadores/`
 del repo y se agrega el período a mano en `periodos.json` (el ETL solo escribe los períodos
 que procesó — los que no tienen archivo se saltean con aviso). Desde julio 2026 el export
-de ventas es el Excel **consolidado** ("Estadistica de venta consolidad": 6 columnas base +
-un par Cantidad/Importe por mes calendario; `formato='consolidado'` en `PERIODOS`): se cargan
-todos los pares y el índice día+día-de-semana deja solo el período retail (así el 29-30/6
-del par de junio entran a julio retail). Staff: `Sucursales staff.xlsx` en Descargas.
+de ventas es el Excel **detallado por línea** ("Estadistica de venta - …": 6 columnas base +
+Artículo + Rubro + un par Cantidad/Importe por mes calendario; `formato='detallado'` en
+`PERIODOS`): se cargan todos los pares y el índice día+día-de-semana deja solo el período
+retail (así el 29-30/6 del par de junio entran a julio retail). Aplica los **criterios de
+Juli por línea** (`criterio_linea()`: Otros no suma; REDONDEO no; PROMOS/descuentos solo
+importe; CREDITO A FAVOR ambos; INGRESO CUPON y LLAVERO COMPRA GRANDE afuera; ENVIO solo
+importe) y agrega por comprobante atómico (metadata = línea de mayor importe). ⚠️ El export
+consolidado viejo (por comprobante) venía SIN las líneas de promo → importes sin descontar;
+`formato='consolidado'` queda soportado pero no usarlo si está el detallado. Staff:
+`Sucursales staff.xlsx` en Descargas.
 Los objetivos por formato y la regla nombre→formato viven fijos en ese script — NO tocar
 el cálculo salvo pedido.
 
