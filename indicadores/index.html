@@ -136,6 +136,12 @@ a{color:inherit}
   border-radius:12px;padding:20px;box-shadow:var(--shadow);display:flex;flex-direction:column}
 .kpi.s-ok{border-top-color:var(--ok)} .kpi.s-mid{border-top-color:var(--mid)} .kpi.s-bad{border-top-color:var(--bad)}
 .kpi-name{font-family:var(--font-c);font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);font-weight:600}
+.kpi-ast{color:var(--bad);font-weight:700;margin-left:2px}
+.kpi-criterios{margin-top:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 16px;font-size:12.5px;color:var(--muted);line-height:1.55}
+.kpi-criterios summary{cursor:pointer;font-family:var(--font-c);font-weight:600;letter-spacing:.5px;color:var(--navy);font-size:12.5px}
+.kpi-criterios[open] summary{margin-bottom:6px}
+.kpi-criterios b{color:var(--navy)}
+.kpi-criterios li{margin:3px 0 3px 16px}
 .kpi-val{font-family:var(--font-d);font-size:52px;line-height:1;margin:6px 0 1px}
 .kpi-unit{font-family:var(--font-c);font-size:12px;color:var(--muted);letter-spacing:.5px}
 .kpi-obj{display:flex;align-items:center;gap:7px;margin-top:14px;font-family:var(--font-c);font-size:13px;font-weight:600;letter-spacing:.3px}
@@ -518,6 +524,7 @@ footer b{color:var(--navy)}
       <h2 class="sec-title">Los cuatro <em>indicadores</em></h2>
       <div class="kpis" id="kpis"></div>
       <p class="cob-nota" id="cobNota"></p>
+      <div id="kpiCrit"></div>
       <div class="diag" id="diagBox" style="display:none"></div>
     </section>
 
@@ -1200,6 +1207,20 @@ function copiarResumen(){
   else prompt('Copiá el resumen:', txt);
 }
 
+/* Leyenda de criterios de medición (el * de cada KPI apunta acá). Mantener en
+   sintonía con criterio_linea() del ETL: si cambia un criterio, cambiar los dos. */
+function renderKpiCrit(){
+  const el=$('kpiCrit'); if(!el) return;
+  el.innerHTML = `<details class="kpi-criterios"><summary>* Criterios de medición — qué cuenta y qué no</summary>
+    <ul>
+      <li><b>Ticket</b>: comprobante que termina con unidades netas positivas. Los cambios que quedan en 0 unidades y las devoluciones no cuentan como ticket.</li>
+      <li><b>UPT</b>: unidades netas ÷ tickets. Suman artículos, gift cards y packs nombre+número; restan devoluciones y notas de crédito. No suman unidades: promos y regalos, envío, bolsas, redondeo ni cupones.</li>
+      <li><b>Tickets por hora</b>: tickets ÷ horas de piso (contratadas u horas asignadas, según el selector de arriba).</li>
+      <li><b>Ticket promedio</b>: venta neta ÷ tickets. La venta descuenta promos, devoluciones y notas de crédito; suma gift cards, créditos a favor y envío. Bolsas, redondeo, cupones y ajustes administrativos quedan afuera.</li>
+      <li><b>Meses de stock</b>: stock ÷ ventas del mes (dato del módulo Meses de Stock).</li>
+      <li><b>Período</b>: mes retail de semanas completas de lunes a domingo (p. ej., julio = 29/06–26/07). Los últimos días del mes calendario que caen en la semana siguiente cuentan para el mes retail que arranca.</li>
+    </ul></details>`;
+}
 function renderKPIs(){
   if(sucName===ECOM) return renderKPIsEcom();
   const s = DET.summary, k = kpis(s), c = cadenaAgg(CAD), fmt = DET.formato || formatoDe(sucName);
@@ -1216,7 +1237,7 @@ function renderKPIs(){
   ];
   const cards = defs.map(d=>{
     if(d.ecom){
-      return `<div class="kpi"><div class="kpi-name">${d.name}</div><div class="kpi-val">—</div>
+      return `<div class="kpi"><div class="kpi-name">${d.name}<span class="kpi-ast">*</span></div><div class="kpi-val">—</div>
         <div class="kpi-unit">sin horas de piso</div>
         <div class="kpi-foot"><div class="kpi-empty">No aplica a Ecommerce.</div></div></div>`;
     }
@@ -1255,7 +1276,7 @@ function renderKPIs(){
     }
     const spark = semSel ? '' : sparkBars(serieKPI(d.key), d.tgt||NaN);
     return `<div class="kpi ${semClass}">
-      <div class="kpi-name">${d.name}</div>
+      <div class="kpi-name">${d.name}<span class="kpi-ast">*</span></div>
       <div class="kpi-val">${d.val}</div>
       <div class="kpi-unit">${d.unit}</div>
       <div class="kpi-obj">${objHtml}</div>
@@ -1266,9 +1287,10 @@ function renderKPIs(){
       </div></div>`;
   }).join('');
 
-  $('kpis').innerHTML = cards + `<div class="kpi" id="stockCard"><div class="kpi-name">Meses de stock</div>
+  $('kpis').innerHTML = cards + `<div class="kpi" id="stockCard"><div class="kpi-name">Meses de stock<span class="kpi-ast">*</span></div>
     <div class="kpi-val" id="stockVal">…</div><div class="kpi-unit">stock ÷ ventas del mes</div>
     <div class="kpi-foot"><div class="kpi-empty" id="stockFoot">Cargando stock…</div></div></div>`;
+  renderKpiCrit();
 
   $('cobNota').innerHTML = s.cobertura < 100
     ? `Se miden <b>${fmtN(s.tickets)}</b> de los <b>${fmtN(s.tickets_todos)}</b> tickets de la sucursal (${fmt2(s.cobertura)}%). El resto lo cerró gente que no figura en el staff.`
@@ -1292,11 +1314,12 @@ function renderKPIsEcom(){
     const deltaStr = dp? `${dp} vs. ${mesAnt}` : '<span class="muted">sin período anterior</span>';
     const spark = sparkBars(c.spark, NaN);
     return `<div class="kpi">
-      <div class="kpi-name">${c.name}</div><div class="kpi-val">${c.val}</div><div class="kpi-unit">${c.unit}</div>
+      <div class="kpi-name">${c.name}<span class="kpi-ast">*</span></div><div class="kpi-val">${c.val}</div><div class="kpi-unit">${c.unit}</div>
       ${spark?`<div class="kpi-spark">${spark}</div>`:'<div class="kpi-spark-empty">Comparativo: con el 2º período</div>'}
       <div class="kpi-foot"><div class="kpi-delta">${deltaStr}</div></div></div>`;
   }).join('');
   $('cobNota').innerHTML = `Ecommerce vende por canales, sin piso ni vendedores. No entra en el ranking ni en el promedio de la cadena porque su tickets/hora no es comparable.`;
+  renderKpiCrit();
 }
 
 /* --- Canales de venta del Ecommerce --- */
