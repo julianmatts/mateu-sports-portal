@@ -376,8 +376,8 @@ entran acá: ven su objetivo en Indicadores.
   obligatorio; (2) con venta cargada, personas con **horas asignadas y cero venta** →
   popup automático al encargado. Ambas se guardan en el payload del equipo
   (`justif.sinHoras` / `justif.sinVenta`) y el resumen les llega por **directo de la
-  Bandeja** a `ALERTA_ADMINS` (rrhh@ / cristian.campion@ / capacitacion@, constante en
-  `indicadores/`).
+  Bandeja** a `ALERTA_ADMINS` (capacitaciones@ —cubre RRHH, confirmado por Juli— /
+  cristian.campion@ / capacitacion@, constante en `indicadores/`).
 - **Etapa 2 pendiente (pedida por Juli)**: armar los objetivos directo en el portal
   (sin Excel) y, al confirmar, **enviar una notificación interna** a cada usuario de
   sucursal. Enganchar con la Bandeja de mensajes (`mensajes-mateu`) del Portal.
