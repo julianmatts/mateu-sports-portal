@@ -4144,7 +4144,7 @@ function msCargaHtml(){
     '<div style="font-size:13px;color:#5A6072;line-height:1.6;margin-bottom:14px">'+
       '1. Subí el <b>export mensual de RATIO tal cual sale del sistema</b> (p.ej. «RATIO JULIO.xls», con sus filas de totales y la columna Vtas.cant.): se detecta solo y el mes se <b>suma a los ya publicados</b> (ene–jun + JULIO). También sirve un Excel <b>plano</b> con columnas <b>MES · SUCURSAL · RUBRO · MARCA · SEGMENTO · STOCK · VENTAS</b> (opcional: <b>COMENTARIO</b>), una fila por mes × sucursal × rubro × marca × segmento.<br>'+
       '2. Revisá el resumen de validación.<br>'+
-      '3. Descargá <b>datos-meses-stock.js</b>, reemplazalo en <b>gestion-stock/</b> del repo y pusheá (Cloudflare republica solo). Con «Probar en esta sesión» lo ves acá sin publicar nada.<br>'+
+      '3. Apretá <b>«Publicar al portal»</b>: sube el archivo al repo y Cloudflare republica solo (~1 min). Plan B: descargá <b>datos-meses-stock.js</b> y reemplazalo a mano en <b>gestion-stock/</b>. Con «Probar en esta sesión» lo ves acá sin publicar nada.<br>'+
       '<span style="color:#8A8FA3">Opcional: una hoja llamada «UMBRALES» con columnas RUBRO · MIN · MAX para cambiar los rangos sanos.</span>'+
     '</div>'+
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px">Año del dataset:'+
@@ -4164,9 +4164,13 @@ function msCargaHtml(){
     if(c.errores.length) html += '<div class="nota-regla" style="margin-top:10px">'+
       c.errores.slice(0,25).map(esc).join('<br>')+(c.errores.length>25?'<br>… y '+(c.errores.length-25)+' más':'')+'</div>';
     html += '<div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">'+
-      '<button class="ms-send" id="msCargaDescargar" style="padding:10px 18px">Descargar datos-meses-stock.js</button>'+
+      '<button class="ms-send" id="msCargaPublicar" style="padding:10px 18px">Publicar al portal (commit + deploy)</button>'+
+      '<button class="ms-open" id="msCargaDescargar" style="padding:10px 18px">Descargar datos-meses-stock.js</button>'+
       '<button class="ms-open" id="msCargaProbar" style="padding:10px 18px">Probar en esta sesión</button>'+
-    '</div>';
+    '</div>'+
+    '<div id="msPubEstado" style="margin-top:10px;font-size:13px;color:#5A6072"></div>'+
+    '<div style="margin-top:6px;font-size:12px;color:#8A8FA3">«Publicar» commitea directo a <b>main</b> con tu token de GitHub, que queda guardado solo en este navegador. '+
+      '<a href="#" id="msPubToken" style="color:#8A8FA3">Cambiar token…</a></div>';
   }
   html += '</div>';
   return html;
@@ -4461,7 +4465,79 @@ function msCargaProbar(){
   MS._marcaIndex = null; MS._kpiCache = {};
   MS.suc = null; MS.rubro = null; MS.marca = null; MS.tab = 'panel';
   msRender();
-  alert('Dataset de prueba aplicado a esta sesión (no publicado). Para publicarlo: descargá el .js, reemplazá gestion-stock/datos-meses-stock.js en el repo y pusheá.');
+  alert('Dataset de prueba aplicado a esta sesión (no publicado). Para publicarlo usá el botón «Publicar al portal» (o descargá el .js y reemplazalo en el repo).');
+}
+
+/* ---------- Publicar directo al repo (API de GitHub) ----------
+   Commitea gestion-stock/datos-meses-stock.js a main; Cloudflare Pages
+   republica solo. El token (fine-grained, solo este repo, Contents RW)
+   lo pega Juli una vez y queda en localStorage de SU navegador. */
+const MS_REPO = {owner:'julianmatts', repo:'mateu-sports-portal', branch:'main', path:'gestion-stock/datos-meses-stock.js'};
+
+function msGhToken(forzar){
+  let t = null;
+  try{ t = localStorage.getItem('gs_github_token'); }catch(e){}
+  if(!t || forzar){
+    t = prompt('Pegá tu token de GitHub para publicar.\n\nSe crea una sola vez en github.com → Settings → Developer settings → Fine-grained tokens: acceso SOLO al repo mateu-sports-portal, permiso «Contents: Read and write».\n\nQueda guardado únicamente en este navegador.');
+    if(t){ t = t.trim(); try{ localStorage.setItem('gs_github_token', t); }catch(e){} }
+  }
+  return t;
+}
+
+function msB64Utf8(str){
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  for(let i=0;i<bytes.length;i+=0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i+0x8000));
+  return btoa(bin);
+}
+
+async function msCargaPublicar(){
+  const c = MS._carga;
+  if(!c || !c.data) return;
+  const btn = document.getElementById('msCargaPublicar'), est = document.getElementById('msPubEstado');
+  const decir = (msg, err)=>{ if(est){ est.textContent = msg; est.style.color = err ? '#CC0000' : '#5A6072'; } };
+  const token = msGhToken(false);
+  if(!token){ decir('Publicación cancelada: falta el token de GitHub.', true); return; }
+  c.data.anio = c.anio;
+  const txt = 'window.STOCK_DATA = '+JSON.stringify(c.data)+';\nwindow.STOCK_COMMENTS = '+JSON.stringify(c.comments)+';\n';
+  const api = 'https://api.github.com/repos/'+MS_REPO.owner+'/'+MS_REPO.repo;
+  const H = {'Authorization':'Bearer '+token, 'Accept':'application/vnd.github+json'};
+  const tokenMalo = ()=>{ try{ localStorage.removeItem('gs_github_token'); }catch(e){}
+    decir('Token inválido, vencido o sin permiso de escritura. Volvé a apretar «Publicar» y pegá uno nuevo.', true); };
+  if(btn) btn.disabled = true;
+  try{
+    for(let intento = 0; intento < 2; intento++){
+      decir('Publicando… (buscando la versión actual en GitHub)');
+      // sha del archivo vigente vía listado del directorio (el GET directo no devuelve archivos >1 MB)
+      const dir = await fetch(api+'/contents/gestion-stock?ref='+MS_REPO.branch, {headers:H});
+      if(dir.status===401 || dir.status===403){ tokenMalo(); return; }
+      if(!dir.ok) throw new Error('GitHub respondió '+dir.status+' al buscar el archivo actual');
+      const list = await dir.json();
+      const actual = (Array.isArray(list)?list:[]).find(f=> f.name==='datos-meses-stock.js');
+      decir('Publicando… (subiendo '+(Math.round(txt.length/1048576*10)/10)+' MB a GitHub)');
+      const res = await fetch(api+'/contents/'+MS_REPO.path, {
+        method:'PUT', headers:H,
+        body: JSON.stringify({
+          message: 'Meses de Stock: datos RATIO '+(c.data.anio||'')+' ('+c.data.meses.map(m=>MS_MLAB[m]).join(', ')+') — publicado desde el portal',
+          content: msB64Utf8(txt),
+          sha: actual ? actual.sha : undefined,
+          branch: MS_REPO.branch
+        })
+      });
+      if(res.status===401 || res.status===403){ tokenMalo(); return; }
+      if((res.status===409 || res.status===422) && intento===0) continue; // cambió el sha (otro push en el medio): reintentar
+      if(!res.ok){ const e = await res.json().catch(()=>({})); throw new Error('GitHub respondió '+res.status+(e.message ? ': '+e.message : '')); }
+      const out = await res.json();
+      const sha7 = out.commit && out.commit.sha ? out.commit.sha.slice(0,7) : 'ok';
+      decir('✅ Publicado (commit '+sha7+'). Cloudflare actualiza el sitio en ~1 minuto.');
+      return;
+    }
+    throw new Error('conflicto de versión persistente — probá de nuevo en un rato');
+  }catch(err){
+    decir('No se pudo publicar: '+err.message+'. Plan B: «Descargar datos-meses-stock.js» y reemplazarlo a mano.', true);
+  }finally{
+    if(btn) btn.disabled = false;
+  }
 }
 
 function msWireCarga(root){
@@ -4484,6 +4560,13 @@ function msWireCarga(root){
   if(dl) dl.addEventListener('click', msCargaDescargar);
   const pr = root.querySelector('#msCargaProbar');
   if(pr) pr.addEventListener('click', msCargaProbar);
+  const pub = root.querySelector('#msCargaPublicar');
+  if(pub) pub.addEventListener('click', ()=>{ msCargaPublicar(); });
+  const tk = root.querySelector('#msPubToken');
+  if(tk) tk.addEventListener('click', e=>{
+    e.preventDefault();
+    if(msGhToken(true)){ const est = root.querySelector('#msPubEstado'); if(est){ est.textContent = 'Token actualizado.'; est.style.color = '#5A6072'; } }
+  });
 }
 
 /* ---------- Carga diferida del dataset + respuestas + comentarios ---------- */

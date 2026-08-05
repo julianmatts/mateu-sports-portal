@@ -120,8 +120,11 @@ Año/Mes/Sucursal/Rubro/Marca/Segmento/Stock/Ventas/Ratio + Comentarios Encargad
 sistema tal cual (p.ej. `RATIO JULIO.xls`, formato jerárquico con filas de
 totales y columna `Vtas.cant.`) en la pantalla «Actualizar datos» del módulo:
 el uploader lo detecta solo, lo parsea con las reglas del generador y **fusiona**
-el mes nuevo con los ya publicados (no los pisa). Después descarga el `.js`,
-reemplaza y push, como siempre.
+el mes nuevo con los ya publicados (no los pisa). Publica con el botón
+**«Publicar al portal»**: commitea `datos-meses-stock.js` a `main` vía la API de
+GitHub (token fine-grained de Juli, solo ese repo, Contents RW, guardado en
+localStorage `gs_github_token` de su navegador) y Cloudflare deploya solo.
+Plan B: descargar el `.js`, reemplazar y push a mano.
 
 **Forma correcta de regenerar el año completo — usar el generador:**
 
