@@ -3969,7 +3969,7 @@ function msCargaHtml(){
   let html = '<div class="ms-card" style="padding:18px 20px;max-width:920px;margin:0 auto">'+
     '<div style="font-weight:600;font-size:15px;margin-bottom:8px">Actualizar datos de RATIO</div>'+
     '<div style="font-size:13px;color:#5A6072;line-height:1.6;margin-bottom:14px">'+
-      '1. Subí un Excel <b>plano</b> con estas columnas en la primera hoja: <b>MES · SUCURSAL · RUBRO · MARCA · SEGMENTO · STOCK · VENTAS</b> (opcional: <b>COMENTARIO</b>). El mes puede ser nombre (ENERO…) o número (1–12); una fila por mes × sucursal × rubro × marca × segmento.<br>'+
+      '1. Subí el <b>export mensual de RATIO tal cual sale del sistema</b> (p.ej. «RATIO JULIO.xls», con sus filas de totales y la columna Vtas.cant.): se detecta solo y el mes se <b>suma a los ya publicados</b> (ene–jun + JULIO). También sirve un Excel <b>plano</b> con columnas <b>MES · SUCURSAL · RUBRO · MARCA · SEGMENTO · STOCK · VENTAS</b> (opcional: <b>COMENTARIO</b>), una fila por mes × sucursal × rubro × marca × segmento.<br>'+
       '2. Revisá el resumen de validación.<br>'+
       '3. Descargá <b>datos-meses-stock.js</b>, reemplazalo en <b>gestion-stock/</b> del repo y pusheá (Cloudflare republica solo). Con «Probar en esta sesión» lo ves acá sin publicar nada.<br>'+
       '<span style="color:#8A8FA3">Opcional: una hoja llamada «UMBRALES» con columnas RUBRO · MIN · MAX para cambiar los rangos sanos.</span>'+
@@ -3983,6 +3983,8 @@ function msCargaHtml(){
     const D2 = c.data;
     html += '<div style="margin-top:16px;font-size:13px;line-height:1.6">'+
       '<b>Archivo:</b> '+esc(c.fileName)+'<br>'+
+      (c.fusion ? '<b>Fusión:</b> el archivo trae '+c.fusion.nuevos.map(m=>MS_MLAB[m]).join(', ')+
+        ' y se combinó con los meses ya cargados ('+c.fusion.previos.map(m=>MS_MLAB[m]).join(', ')+'). El .js descargado incluye todo.<br>' : '')+
       '<b>Meses:</b> '+D2.meses.map(m=>MS_MLAB[m]).join(', ')+' · <b>Sucursales:</b> '+Object.keys(D2.sucursales).length+
       ' · <b>Puntos suc×rubro×marca:</b> '+fmtNum(c.nMarcas)+' · <b>Filas leídas:</b> '+fmtNum(c.nFilas)+
       ' · <b>Comentarios:</b> '+c.comments.length+'</div>';
@@ -4088,6 +4090,164 @@ function msParseRatioFlat(wb, anio){
     cm.ratio = n ? n.ratio : null;
   }
   return {data:{anio, meses, thresholds, sucursales}, comments, errores, nFilas, nMarcas};
+}
+
+/* Export jerárquico de RATIO (el reporte mensual tal cual sale del sistema,
+   p.ej. "RATIO JULIO.xls"): trae filas de totales y la columna "Vtas.cant.".
+   Mismas reglas que gestion-stock/generar-datos-meses-stock.js — NO dividir:
+     rubro.serie[mes] = fila Marca="Total" + Segmento="Total"
+     marca.serie[mes] = fila Marca=<marca> + Segmento="Total" (tal cual)
+     segmentos        = filas Segmento≠"Total" (solo marcas con fila Total)
+     suc.serie[mes]   = Σ rubro.serie
+   Si el archivo no cubre los meses ya publicados (típico: un solo mes), se
+   FUSIONA con window.STOCK_DATA en vez de reemplazarlo. */
+function msParseRatioJer(wb, rows, hIdx, map, anio, errores){
+  const recs = [];
+  for(let i=hIdx+1;i<rows.length;i++){
+    const row = rows[i]||[];
+    if(row.every(v=> v===null||v===undefined||v==='')) continue;
+    let mes = null;
+    const mesN = normStr(row[map.mes]);
+    if(MS_MES_ORDEN.indexOf(mesN)>=0) mes = mesN;
+    else{ const num = toNumber(row[map.mes]); if(num>=1 && num<=12) mes = MS_MES_NUM[num]; }
+    const str = j=> String(row[j]===undefined||row[j]===null?'':row[j]).trim();
+    const suc = str(map.suc), rubro = str(map.rubro), marca = str(map.marca), seg = str(map.seg);
+    if(!mes || !suc || !rubro || !marca || !seg){ continue; }
+    const sucN = normStr(suc);
+    if(sucN==='TOTAL' || sucN==='SUCURSAL' || normStr(rubro)==='TOTAL') continue; // filas basura
+    const stock = toNumber(row[map.stock])||0, ventas = toNumber(row[map.ventas])||0;
+    let ratio = map.ratio!==undefined ? toNumber(row[map.ratio]) : null;
+    if(ratio===null) ratio = ventas>0 ? stock/ventas : null;
+    recs.push({mes, suc, rubro, marca, seg, stock, ventas,
+      ratio: ratio===null ? null : Math.round(ratio*100)/100,
+      com: map.com!==undefined ? str(map.com) : ''});
+  }
+  if(!recs.length) return {errorFatal:'No pude leer ninguna fila de datos válida.', errores, comments:[], nFilas:0, nMarcas:0};
+  const mesesArchivo = MS_MES_ORDEN.filter(m=> recs.some(r=> r.mes===m));
+
+  // Pass 1: totales — una marca SOLO existe si tiene fila Segmento="Total"
+  // (así PRODUCTO, cuyos tipos no traen fila Total, queda sin marcas fantasma).
+  const sucursales = {};
+  const ensure = (o,k,v)=> o[k]||(o[k]=v);
+  for(const r of recs){
+    if(normStr(r.seg)!=='TOTAL') continue;
+    const S = ensure(sucursales, r.suc, {rubros:{}, serie:{}});
+    const rn = ensure(S.rubros, r.rubro, {serie:{}, marcas:{}, status:null});
+    const e = {stock:r.stock, ventas:r.ventas, ratio:r.ratio};
+    if(normStr(r.marca)==='TOTAL') rn.serie[r.mes] = e;                                    // total real del rubro
+    else ensure(rn.marcas, r.marca, {serie:{}, segmentos:{}, status:null}).serie[r.mes] = e; // marca, sin dividir
+  }
+  // Pass 2: desglose por segmento
+  for(const r of recs){
+    if(normStr(r.seg)==='TOTAL' || normStr(r.marca)==='TOTAL') continue;
+    const rn = sucursales[r.suc] && sucursales[r.suc].rubros[r.rubro];
+    const mc = rn && rn.marcas[r.marca];
+    if(!mc) continue;
+    ensure(mc.segmentos, r.seg, {stock:null, ventas:null, ratio:null, serie:{}})
+      .serie[r.mes] = {stock:r.stock, ventas:r.ventas, ratio:r.ratio};
+  }
+
+  // Umbrales: los vigentes + hoja UMBRALES opcional
+  const thresholds = Object.assign({CALZADO:[4,6], INDUMENTARIA:[3,5], ACCESORIOS:[3,5], PRODUCTO:[4,6]},
+    (window.STOCK_DATA && window.STOCK_DATA.thresholds)||{});
+  const thName = wb.SheetNames.find(n=> normStr(n)==='UMBRALES');
+  if(thName){
+    const thr = XLSX.utils.sheet_to_json(wb.Sheets[thName], {header:1, raw:true});
+    for(let i=1;i<thr.length;i++){
+      const rr = thr[i]||[];
+      const rb = normStr(rr[0]), lo = toNumber(rr[1]), hi = toNumber(rr[2]);
+      if(rb && lo!==null && hi!==null) thresholds[rb] = [lo, hi];
+    }
+  }
+
+  // Fusión con el dataset ya cargado si el archivo no cubre todos sus meses
+  let data = {meses: mesesArchivo, thresholds, sucursales};
+  let fusion = null, comments = [];
+  const prev = window.STOCK_DATA;
+  const prevCom = window.STOCK_COMMENTS||[];
+  if(prev && prev.sucursales && (!prev.anio || !anio || prev.anio===anio)){
+    const previos = (prev.meses||[]).filter(m=> mesesArchivo.indexOf(m)<0);
+    if(previos.length){
+      const base = JSON.parse(JSON.stringify(prev));
+      base.thresholds = thresholds;
+      for(const s in sucursales){
+        const bS = ensure(base.sucursales, s, {rubros:{}, serie:{}});
+        for(const rb in sucursales[s].rubros){
+          const nu = sucursales[s].rubros[rb];
+          const bR = ensure(bS.rubros, rb, {serie:{}, marcas:{}, status:null});
+          for(const m of mesesArchivo) if(nu.serie[m]) bR.serie[m] = nu.serie[m];
+          for(const mk in nu.marcas){
+            const bM = ensure(bR.marcas, mk, {serie:{}, segmentos:{}, status:null});
+            for(const m of mesesArchivo) if(nu.marcas[mk].serie[m]) bM.serie[m] = nu.marcas[mk].serie[m];
+            for(const sk in nu.marcas[mk].segmentos){
+              const bG = ensure(bM.segmentos, sk, {stock:null, ventas:null, ratio:null, serie:{}});
+              for(const m of mesesArchivo) if(nu.marcas[mk].segmentos[sk].serie[m]) bG.serie[m] = nu.marcas[mk].segmentos[sk].serie[m];
+            }
+          }
+        }
+      }
+      base.meses = MS_MES_ORDEN.filter(m=> previos.indexOf(m)>=0 || mesesArchivo.indexOf(m)>=0);
+      data = base;
+      fusion = {previos, nuevos: mesesArchivo};
+      // comentarios previos se conservan (con sus ids, por las respuestas de
+      // Firebase); los de un mes re-subido se reemplazan por los del archivo
+      comments = prevCom.filter(c=> mesesArchivo.indexOf(c.mes)<0);
+    }
+  }
+  let nextId = comments.reduce((mx,c)=> Math.max(mx, (c.id||0)+1), 0);
+  for(const r of recs){
+    if(!r.com) continue;
+    if(normStr(r.marca)==='TOTAL') continue;
+    comments.push({mes:r.mes, suc:r.suc, rubro:r.rubro, marca:r.marca, seg:r.seg,
+      ratio:r.ratio, texto:r.com, id:nextId++, estado:'pendiente', respuesta:null});
+  }
+
+  msDerivadosStock(data);
+  let nMarcas = 0;
+  for(const s in data.sucursales) for(const rb in data.sucursales[s].rubros)
+    nMarcas += Object.keys(data.sucursales[s].rubros[rb].marcas).length;
+  return {data, comments, errores, nFilas:recs.length, nMarcas, fusion};
+}
+
+// Derivados del dataset: status por marca/rubro, top-level de cada segmento
+// (= su serie del último mes) y suc.serie = Σ rubro.serie. Igual que el generador.
+function msDerivadosStock(D){
+  const last = D.meses[D.meses.length-1];
+  const r2 = x=> Math.round(x*100)/100;
+  const statusOf = (rub, e)=>{
+    if(!e) return 'sindato';
+    const th = (D.thresholds && D.thresholds[rub])||[4,6];
+    if(e.ventas===null || e.ventas<=0) return (e.stock && e.stock>0) ? 'muerto' : 'sindato';
+    if(e.ratio===null || e.ratio<0) return 'sindato';
+    if(e.ratio<th[0]) return 'faltante';
+    if(e.ratio<=th[1]) return 'sano';
+    return 'exceso';
+  };
+  for(const s in D.sucursales){
+    const S = D.sucursales[s];
+    for(const rb in S.rubros){
+      const rn = S.rubros[rb];
+      for(const mk in rn.marcas){
+        const mc = rn.marcas[mk];
+        for(const sk in mc.segmentos){
+          const sg = mc.segmentos[sk];
+          const le = sg.serie[last];
+          if(le){ sg.stock = le.stock; sg.ventas = le.ventas; sg.ratio = le.ratio; }
+          else  { sg.stock = 0; sg.ventas = 0; sg.ratio = null; }
+        }
+        mc.status = statusOf(rb, mc.serie[last]);
+      }
+      rn.status = statusOf(rb, rn.serie[last]);
+    }
+    const serie = {};
+    for(const mo of D.meses) serie[mo] = {stock:0, ventas:0, ratio:null};
+    for(const rb in S.rubros){
+      const rn = S.rubros[rb];
+      for(const mo of D.meses){ const e = rn.serie[mo]; if(!e) continue; serie[mo].stock += e.stock||0; serie[mo].ventas += e.ventas||0; }
+    }
+    for(const mo of D.meses){ const o = serie[mo]; o.ratio = o.ventas>0 ? r2(o.stock/o.ventas) : null; }
+    S.serie = serie;
+  }
 }
 
 function msCargaLeer(f){
