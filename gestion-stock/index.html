@@ -157,6 +157,7 @@ main{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
 .btn-block{width:100%;justify-content:center;padding:16px;font-size:15px}
 .btn:disabled{opacity:.5;cursor:default}
 .btn-sm{padding:6px 12px;font-size:11px}
+a.btn{text-decoration:none;cursor:pointer}
 
 .toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .search-box{flex:1;min-width:180px;padding:9px 13px;border:1px solid var(--border);border-radius:6px;font-size:14px}
@@ -2046,12 +2047,17 @@ async function renderGestionStockPanel(container){
   const data = await gsGetMonthData(ym);
   const miSlug = SESSION.sucursal || SESSION.outlet_id || null;
   const mesesOptions = meses.map(m=>'<option value="'+m+'"'+(m===ym?' selected':'')+'>'+ymToLabel(m)+'</option>').join('');
+  // Link a la presentación del mes (deck one-page hosteado aparte, p.ej. Netlify).
+  // Se guarda por mes en gestionStock/<ym>/presentacionUrl; lo carga el admin con el botón 🔗.
+  const presUrl = data.presentacionUrl || (data.meta && data.meta.presentacionUrl) || '';
 
   let html = '<div class="gs-hero">'+
       '<div class="gs-hero-top">'+
         '<div class="gs-hero-badge">Mateu Sports · '+ymToLabel(ym)+'</div>'+
         '<div class="gs-hero-controls">'+
           '<select class="sel" id="gsMesSel">'+mesesOptions+'</select>'+
+          (presUrl ? '<a class="btn btn-ghost btn-sm" href="'+esc(presUrl)+'" target="_blank" rel="noopener">🎞 Ver presentación</a>' : '')+
+          (SESSION.rol==='admin' ? '<button class="btn btn-ghost btn-sm" id="gsBtnPresLink" title="'+(presUrl?'Cambiar':'Cargar')+' el link de la presentación de '+esc(ymToLabel(ym))+'">🔗</button>' : '')+
           '<button class="btn btn-ghost btn-sm" id="gsBtnExportar">📤 Exportar</button>'+
         '</div>'+
       '</div>'+
@@ -2070,6 +2076,16 @@ async function renderGestionStockPanel(container){
   container.innerHTML = html;
   container.querySelector('#gsMesSel').addEventListener('change', e=>{ container.dataset.mes = e.target.value; renderGestionStockPanel(container); });
   container.querySelector('#gsBtnExportar').addEventListener('click', ()=> gsExportarXlsx(ym, data));
+  const btnPresLink = container.querySelector('#gsBtnPresLink');
+  if(btnPresLink) btnPresLink.addEventListener('click', async ()=>{
+    const url = prompt('Link de la presentación de '+ymToLabel(ym)+' (vacío para quitarlo):', presUrl);
+    if(url===null) return;
+    const limpio = url.trim();
+    if(limpio && !/^https?:\/\//i.test(limpio)){ alert('El link tiene que empezar con http:// o https://'); return; }
+    await patchJSON(FB+'/gestionStock/'+ym+'.json', {presentacionUrl: limpio || null});
+    delete GS_MONTH_CACHE[ym];
+    renderGestionStockPanel(container);
+  });
   if(container.dataset.showCarga==='1' && SESSION.rol==='admin') wireGsCarga(container);
   gsAnimateBars(container);
 }
