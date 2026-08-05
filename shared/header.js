@@ -43,7 +43,6 @@
     marcas:             { name:'Asignación de Marcas',       icon:'🏷️' },
     equipo:             { name:'Área de Producto',           icon:'📦' },
     condiciones:        { name:'Condiciones Comerciales',    icon:'📄' },
-    recepcion:          { name:'Recepción Adidas SS27',      icon:'🚚' },
     'gestion-stock':    { name:'Gestión de Stock',           icon:'📊' },
     managment:          { name:'Managment',                  icon:'🧾' },
     recepciones:        { name:'Control de Recepciones',     icon:'📥' },
@@ -105,7 +104,10 @@
   +'.msh-drole{font-family:\'Barlow Condensed\',sans-serif;font-size:10.5px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#ff3b3b;margin-top:2px}'
   +'.msh-dclose{background:transparent;border:none;color:rgba(255,255,255,.75);font-size:26px;line-height:1;cursor:pointer;padding:0 4px;flex:0 0 auto}'
   +'.msh-dclose:hover{color:#fff}'
-  +'.msh-dnav{flex:1;overflow-y:auto;padding:10px}'
+  /* blindado contra módulos que estilan el elemento nav a secas (equipo,
+     gestion-stock, pedidos, recepcion definen nav{display:flex;height;sticky;…}) */
+  +'.msh-dnav{flex:1 1 auto;display:block;position:static;top:auto;height:auto;min-height:0;'
+  +'overflow-y:auto;overflow-x:hidden;padding:10px;background:transparent;border:0;box-shadow:none}'
   +'.msh-ditem{display:flex;align-items:center;gap:13px;padding:11px 12px;border-radius:12px;text-decoration:none;color:#0B1527;transition:background .14s}'
   +'.msh-ditem:hover{background:#f0f3fa}'
   +'.msh-ditem .msh-ic{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;flex:0 0 auto;background:#eef1f8;transition:background .14s}'

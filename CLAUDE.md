@@ -21,7 +21,6 @@ mateu-sports-portal/
 ├── gestion-stock/      # Discontinuos por sucursal + Reporte Mensual + Meses de Stock
 ├── pedidos-semanales/  # Reposición semanal por sucursal y aprobaciones de Producto
 ├── managment/          # Desarrollo, OC y seguimiento de ingresos por proveedor
-├── recepcion/          # Tablero de recepción preventa Adidas SS27
 ├── diagonal80/         # Apertura Diagonal 80 (propuesta vs. capacidad)
 ├── ubicaciones/        # "Buscador de Artículos": ubicaciones de depósito por sucursal
 ├── indicadores/        # Indicadores de Sucursal: UPT, tickets/hora, ticket promedio + meses de stock, por sucursal y persona. Es la HOME de los roles sucursal/outlet.
