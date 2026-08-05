@@ -626,9 +626,18 @@ footer b{color:var(--navy)}
     <!-- Objetivo de la semana: total cadena + por sucursal. Gerencia baja la semana
          completa de Firebase (objetivos/semanas/<sem>), a diferencia de las sucursales
          que solo piden su slug. -->
+    <!-- Filtro por línea/tipo de sucursal: aplica a TODA la vista cadena
+         (objetivo, KPIs generales, ranking y tabla comparativa). -->
+    <div class="rk-bar" id="rkBar">
+      <span class="rk-bar-lbl">Línea</span>
+      <div class="rk-chips" id="rkChips"></div>
+      <span class="rk-bar-lbl rk-bar-sep">KPI</span>
+      <div class="rk-chips" id="rkKpiChips"></div>
+    </div>
+
     <section class="sec" id="secObjCadena" style="display:none">
       <div class="sec-label">Objetivo de venta</div>
-      <h2 class="sec-title">Objetivo de venta <em>de la semana</em></h2>
+      <h2 class="sec-title" id="objCadTitle">Objetivo de venta <em>de la semana</em></h2>
       <p class="hint">La meta semanal de cada sucursal y el avance contra la venta real. Verde = llegó a la meta, ámbar = pasó el mínimo, rojo = abajo del mínimo. Para cargar o corregir metas, entrá al módulo Objetivos.</p>
       <div class="card pad" id="objCadCard"></div>
     </section>
@@ -637,7 +646,7 @@ footer b{color:var(--navy)}
          agregados a toda la cadena (numeradores y denominadores sumados). -->
     <section class="sec" id="secKpiCadena">
       <div class="sec-label">Resumen</div>
-      <h2 class="sec-title">KPIs generales <em>de la cadena</em></h2>
+      <h2 class="sec-title" id="kpiCadTitle">KPIs generales <em>de la cadena</em></h2>
       <p class="hint">Los cuatro indicadores de toda la cadena juntos (sin Ecommerce): se suman numerador y denominador, nunca se promedian ratios. Meses de stock suma el stock y las ventas de todas las sucursales.</p>
       <div class="kpis" id="kpisCad"></div>
     </section>
@@ -645,13 +654,7 @@ footer b{color:var(--navy)}
     <section class="sec" id="secRanking">
       <div class="sec-label">Gerencia</div>
       <h2 class="sec-title">Ranking comparativo <em>por línea</em></h2>
-      <p class="hint">Cada sucursal se mide contra las de <b>su misma línea</b> (Mateu vs Mateu, Aurelius vs Aurelius, Adidas vs Adidas, Outlets vs Outlets), nunca contra un formato distinto. La palanca principal es <b>tickets por hora</b>: cuántos tickets rinde el stock de horas contratadas. Elegí una línea para enfocar el análisis.</p>
-      <div class="rk-bar" id="rkBar">
-        <span class="rk-bar-lbl">Línea</span>
-        <div class="rk-chips" id="rkChips"></div>
-        <span class="rk-bar-lbl rk-bar-sep">KPI</span>
-        <div class="rk-chips" id="rkKpiChips"></div>
-      </div>
+      <p class="hint">Cada sucursal se mide contra las de <b>su misma línea</b> (Mateu vs Mateu, Aurelius vs Aurelius, Adidas vs Adidas, Outlets vs Outlets), nunca contra un formato distinto. La palanca principal es <b>tickets por hora</b>: cuántos tickets rinde el stock de horas contratadas. Elegí una línea en la barra de arriba para enfocar el análisis.</p>
       <div id="rkBody"></div>
     </section>
 
@@ -1497,12 +1500,19 @@ async function renderObjCadena(){
   if(!vistaCadena) return;         // el usuario ya bajó a una sucursal puntual
 
   const por=(data&&data.porSlug)||{};
-  const rows=Object.keys(por).map(slug=>{
+  const todas=Object.keys(por).map(slug=>{
     const v=por[slug]||{}, meta=+v.meta||0;
     if(!meta) return null;
-    const nombre=(SLUG_SUC[slug]||OUTLET_SUC[slug]||slug).replace(/^\d+-\s*/,'');
-    return {nombre, meta, minimo:+v.minimo||Math.round(meta/1.2), s120:+v.s120||Math.round(meta*1.2), real:+v.real||0};
+    const full=SLUG_SUC[slug]||OUTLET_SUC[slug]||slug;
+    return {nombre:full.replace(/^\d+-\s*/,''), fmt:formatoDe(full), meta,
+      minimo:+v.minimo||Math.round(meta/1.2), s120:+v.s120||Math.round(meta*1.2), real:+v.real||0};
   }).filter(Boolean);
+  // filtro por línea (mismos chips que el ranking)
+  const rows = rkTipo ? todas.filter(r=>r.fmt===rkTipo) : todas;
+  const lblLinea = rkTipo ? fmtLabel(rkTipo) : 'cadena';
+  const tit=$('objCadTitle'); if(tit) tit.innerHTML = rkTipo
+    ? 'Objetivo de venta · <em>'+esc(fmtLabel(rkTipo))+'</em>'
+    : 'Objetivo de venta <em>de la semana</em>';
 
   const selHtml='<select id="objCadSemSel" style="font-family:var(--font-b,inherit);font-size:13px;color:var(--navy,#0B1527);'
     +'background:#fff;border:1px solid var(--line,#dce3f0);border-radius:7px;padding:6px 9px;cursor:pointer">'
@@ -1510,11 +1520,13 @@ async function renderObjCadena(){
     +'</select>';
   const hayReal = rows.some(r=>r.real>0);
   let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
-    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana · cadena':'Meta de la semana · cadena')+'</div>'
+    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana · ':'Meta de la semana · ')+esc(lblLinea)+'</div>'
     +selHtml+'</div>';
 
-  if(!rows.length){
+  if(!todas.length){
     html+='<p class="empty" style="margin:6px 0">El objetivo de esta semana aún no está cargado. Probá con otra semana.</p>';
+  }else if(!rows.length){
+    html+='<p class="empty" style="margin:6px 0">Sin metas cargadas para la línea '+esc(fmtLabel(rkTipo))+' esta semana.</p>';
   }else{
     const T=rows.reduce((a,r)=>({meta:a.meta+r.meta, minimo:a.minimo+r.minimo, s120:a.s120+r.s120, real:a.real+r.real}),{meta:0,minimo:0,s120:0,real:0});
     const pct=T.meta?T.real/T.meta:0, w=Math.min(100,Math.round(pct*100));
@@ -1522,7 +1534,7 @@ async function renderObjCadena(){
     html+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">';
     if(T.real){
       html+='<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px;color:'+col+'">'+objMoney(T.real)+'</div>'
-        +'<div style="font-size:14px;color:var(--mid);padding-bottom:5px">Meta cadena: <b style="color:var(--navy,#0B1527)">'+objMoney(T.meta)+'</b> · '+Math.round(pct*100)+'%</div>';
+        +'<div style="font-size:14px;color:var(--mid);padding-bottom:5px">Meta '+esc(lblLinea)+': <b style="color:var(--navy,#0B1527)">'+objMoney(T.meta)+'</b> · '+Math.round(pct*100)+'%</div>';
     }else{
       html+='<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px">'+objMoney(T.meta)+'</div>'
         +'<div style="font-size:13px;color:var(--muted-light,#b0bcd4);padding-bottom:6px">Venta de la semana: aún sin cargar</div>';
@@ -1531,8 +1543,8 @@ async function renderObjCadena(){
     html+='<div style="position:relative;height:10px;background:#eef0f7;border-radius:6px;overflow:hidden;margin:10px 0 14px">'
       +'<i style="position:absolute;left:0;top:0;bottom:0;border-radius:6px;width:'+w+'%;background:'+col+';display:block"></i></div>';
     html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'
-      +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Mínimo cadena</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+objMoney(T.minimo)+'</div></div>'
-      +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Superación 120 cadena</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+objMoney(T.s120)+'</div></div>'
+      +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Mínimo '+esc(lblLinea)+'</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+objMoney(T.minimo)+'</div></div>'
+      +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Superación 120 '+esc(lblLinea)+'</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+objMoney(T.s120)+'</div></div>'
       +'</div>';
     // por sucursal: con venta primero (ordenadas por % de cumplimiento), sin venta al final
     rows.sort((a,b)=> (b.real?b.real/b.meta:-1)-(a.real?a.real/a.meta:-1) || a.nombre.localeCompare(b.nombre));
@@ -1552,16 +1564,25 @@ async function renderObjCadena(){
   sec.style.display='';
 }
 
-/* --- KPIs generales de la cadena: mismos cuatro indicadores, agregados --- */
+/* --- KPIs generales de la cadena: mismos cuatro indicadores, agregados.
+       Respetan el filtro por línea (rkTipo) de la barra de chips. --- */
+function cadAggFiltrada(cad){
+  const l=(cad.sucursales||[]).filter(s=>s.sucursal!==ECOM && (!rkTipo || (s.formato||formatoDe(s.sucursal))===rkTipo));
+  return l.length ? kpis(suma(l)) : null;
+}
 function serieCadena(metric){
   return PERIODOS.slice().sort((a,b)=>a.id.localeCompare(b.id)).map(p=>{
-    const cad=CADENAS[p.id];
-    return {per:p.id, val: cad? cadenaAgg(cad)[metric] : null};
+    const cad=CADENAS[p.id], a=cad?cadAggFiltrada(cad):null;
+    return {per:p.id, val: a? a[metric] : null};
   });
 }
 function renderKpisCadena(){
   const box=$('kpisCad'); if(!box || !CAD) return;
-  const k=cadenaAgg(CAD), kp=CAD_PREV?cadenaAgg(CAD_PREV):null;
+  const tit=$('kpiCadTitle'); if(tit) tit.innerHTML = rkTipo
+    ? 'KPIs generales · <em>'+esc(fmtLabel(rkTipo))+'</em>'
+    : 'KPIs generales <em>de la cadena</em>';
+  const k=cadAggFiltrada(CAD), kp=CAD_PREV?cadAggFiltrada(CAD_PREV):null;
+  if(!k){ box.innerHTML='<div class="empty" style="grid-column:1/-1">Sin sucursales de la línea '+esc(fmtLabel(rkTipo))+' en este período.</div>'; return; }
   const mesAnt=prevPerId()?mesCorto(prevPerId()):null;
   const defs=[
     {key:'upt', name:'UPT',              val:fmt2(k.upt), unit:'unidades por ticket'},
@@ -1578,15 +1599,17 @@ function renderKpisCadena(){
       +'<div class="kpi-foot"><div class="kpi-delta">'+deltaStr+'</div></div></div>';
   }).join('')
   + '<div class="kpi" id="stockCadCard"><div class="kpi-name">Meses de stock</div>'
-  + '<div class="kpi-val" id="stockCadVal">…</div><div class="kpi-unit">stock ÷ ventas del mes · toda la cadena</div>'
+  + '<div class="kpi-val" id="stockCadVal">…</div><div class="kpi-unit">stock ÷ ventas del mes · '+(rkTipo?esc(fmtLabel(rkTipo)):'toda la cadena')+'</div>'
   + '<div class="kpi-foot"><div class="kpi-empty" id="stockCadFoot">Cargando stock…</div></div></div>';
   renderStockCadCard();
 }
-// suma stock y ventas de TODAS las sucursales (mismas exclusiones que stockRatio)
+// suma stock y ventas de las sucursales (mismas exclusiones que stockRatio),
+// respetando el filtro por línea de la barra de chips
 function stockAggCadena(SD, mes){
   if(!SD || !SD.sucursales || !mes) return null;
   let stock=0, ventas=0, hay=false;
   for(const name of Object.keys(SD.sucursales)){
+    if(rkTipo && formatoDe(name)!==rkTipo) continue;
     const sd=SD.sucursales[name];
     for(const [rub,rd] of Object.entries(sd.rubros||{})){
       if(rub==='PRODUCTO') continue; // excluido de los KPIs
@@ -3169,7 +3192,7 @@ function renderRankChips(){
   const presentes = new Set((CAD.sucursales||[]).filter(s=>s.sucursal!==ECOM && s.horas_contr>0).map(s=>s.formato||formatoDe(s.sucursal)));
   const chips = [''].concat(RK_LINEAS.filter(f=>presentes.has(f)));
   $('rkChips').innerHTML = chips.map(f=>`<button class="rk-chip${rkTipo===f?' on':''}" data-f="${esc(f)}">${f===''?'Todas':esc(fmtLabel(f))}</button>`).join('');
-  $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderRanking(); renderCadenaTabla(); });
+  $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderObjCadena(); renderKpisCadena(); renderRanking(); renderCadenaTabla(); });
   const kchips = RK_KPIS.map(k=>`<button class="rk-chip${rkKpiSel===k.k?' on':''}" data-k="${k.k}">${esc(k.short)}</button>`).join('')
     + `<button class="rk-chip${rkKpiSel==='todos'?' on':''}" data-k="todos">Todos</button>`;
   $('rkKpiChips').innerHTML = kchips;
