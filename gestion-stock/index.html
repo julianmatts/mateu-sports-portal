@@ -2506,11 +2506,32 @@ async function confirmarCarga(parsed){
     }
     await putJSON(FB+'/discontinuos/'+ym+'/meta.json', {mes, cargadoPor:SESSION.email, fecha:Date.now()});
 
-    if(parsed.periodoAnual){
+    // Serie histórica del gráfico "Evolución mensual": el mes que se carga se
+    // hornea SIEMPRE desde los totales parseados del archivo (la fuente real).
+    // La hoja "Periodo Anual" del Excel solo completa otros meses, y sin pisar
+    // con ceros lo ya acumulado (antes reemplazaba el objeto entero por slug y
+    // una hoja vacía/desactualizada dejaba el gráfico clavado en un solo mes).
+    {
       const ciclo = cicloFromYearMonth(anio, mes);
+      const mesNombre = MS_MES_NUM[mes];
       let existente = {};
       try{ existente = await fetchJSON(FB+'/periodoAnual/'+ciclo+'.json') || {}; }catch(e){}
-      const merged = Object.assign({}, existente, parsed.periodoAnual.data);
+      const merged = Object.assign({}, existente);
+      if(parsed.periodoAnual){
+        Object.keys(parsed.periodoAnual.data).forEach(slug=>{
+          const out = Object.assign({}, merged[slug] || {});
+          CICLO_MESES.forEach(m=>{
+            const v = parsed.periodoAnual.data[slug][m];
+            if(v) out[m] = v;
+            else if(out[m]===undefined) out[m] = 0;
+          });
+          merged[slug] = out;
+        });
+      }
+      Object.keys(parsed.sucursales).forEach(slug=>{
+        if(!merged[slug]) merged[slug] = {};
+        merged[slug][mesNombre] = parsed.sucursales[slug].total || 0;
+      });
       await putJSON(FB+'/periodoAnual/'+ciclo+'.json', merged);
     }
 
@@ -3980,8 +4001,8 @@ function msParseRatioFlat(wb, anio){
   const errores = [];
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:true});
   const ALIAS = {mes:['MES'], suc:['SUCURSAL','SUC','TIENDA','LOCAL'], rubro:['RUBRO'], marca:['MARCA'],
-    seg:['SEGMENTO','SEG'], stock:['STOCK'], ventas:['VENTAS','VENTA'],
-    com:['COMENTARIO','COMENTARIOS','OBSERVACION','OBSERVACIONES']};
+    seg:['SEGMENTO','SEG'], stock:['STOCK'], ventas:['VENTAS','VENTA','VTAS.CANT.','VTAS.CANT','VTAS CANT.','VTAS'],
+    ratio:['RATIO'], com:['COMENTARIO','COMENTARIOS','OBSERVACION','OBSERVACIONES']};
   let hIdx = -1, map = null;
   for(let i=0;i<Math.min(rows.length,10);i++){
     const cells = (rows[i]||[]).map(v=>normStr(v));
@@ -3990,6 +4011,14 @@ function msParseRatioFlat(wb, anio){
     if(m.mes!==undefined && m.suc!==undefined && m.rubro!==undefined && m.marca!==undefined && m.stock!==undefined && m.ventas!==undefined){ hIdx=i; map=m; break; }
   }
   if(!map) return {errorFatal:'No encontré la fila de encabezados. La primera hoja necesita las columnas MES, SUCURSAL, RUBRO, MARCA, STOCK y VENTAS.', errores, comments:[], nFilas:0, nMarcas:0};
+  // ¿Es el export jerárquico de RATIO (trae filas de totales Marca/Segmento="Total")?
+  if(map.seg!==undefined){
+    for(let i=hIdx+1;i<rows.length;i++){
+      const r = rows[i]||[];
+      if(normStr(r[map.marca])==='TOTAL' && normStr(r[map.seg])==='TOTAL')
+        return msParseRatioJer(wb, rows, hIdx, map, anio, errores);
+    }
+  }
   const mesesSet = new Set(), sucursales = {}, comments = [];
   let nFilas = 0;
   for(let i=hIdx+1;i<rows.length;i++){
