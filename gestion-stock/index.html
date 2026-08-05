@@ -976,12 +976,18 @@ function compararArticulosMes(currItems, prevItems){
   const pct = currKeys.length ? (repetidos.length/currKeys.length)*100 : null;
   return {actual:currKeys.length, anterior:prevKeys.length, repetidos, nuevos:nuevos.length, resueltos:resueltos.length, pct};
 }
-async function prevKeysParaSucursal(slug, ym){
+async function prevMesParaSucursal(slug, ym){
   const meses = await monthsForSucursal(slug);
   const idx = meses.indexOf(ym);
-  if(idx < 0 || idx >= meses.length-1) return {};
-  const prevData = await getMonthData(meses[idx+1]);
-  return articuloKeySet(((prevData[slug]||{}).items)||[]);
+  if(idx < 0 || idx >= meses.length-1) return {prevYm:null, items:[], total:0};
+  const prevYm = meses[idx+1];
+  const prevData = await getMonthData(prevYm);
+  const prevSuc = prevData[slug] || {};
+  return {prevYm, items: prevSuc.items||[], total: prevSuc.total||0};
+}
+async function prevKeysParaSucursal(slug, ym){
+  const prev = await prevMesParaSucursal(slug, ym);
+  return articuloKeySet(prev.items);
 }
 function repetidosNegativoHtml(cmp){
   return '<span class="kpi-sub worse" style="display:inline;font-weight:800;color:var(--bad)">'+fmtNum(cmp.repetidos.length)+'</span>';
@@ -1055,6 +1061,69 @@ async function downloadWorkbook(wb, filename){
 
 function thinBorder(color){
   return {top:{style:'thin',color:{argb:color}}, bottom:{style:'thin',color:{argb:color}}, left:{style:'thin',color:{argb:color}}, right:{style:'thin',color:{argb:color}}};
+}
+
+/* ===== Bloques de KPIs para los exports (mismos números que las vistas) ===== */
+const XLSX_VAR_GRIS = 'FF5A6B85';
+function xlsxVarArgb(v){
+  if(!v || v.dir==='eq') return XLSX_VAR_GRIS;
+  return v.dir==='up' ? 'FF8B0000' : 'FF2E7D32';
+}
+// Título en banda roja + filas [label | valor | nota]. Devuelve la próxima fila libre.
+function xlsxKpiBlock(ws, r, nCols, titulo, filas){
+  const labelEnd = nCols > 3 ? 2 : 1;
+  const valCol = labelEnd + 1;
+  ws.mergeCells(r,1,r,nCols);
+  const t = ws.getCell(r,1);
+  t.value = titulo;
+  t.font = {bold:true, color:{argb:BRAND.white}, size:11, name:'Calibri'};
+  t.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.red}};
+  t.alignment = {horizontal:'left', vertical:'middle', indent:1};
+  ws.getRow(r).height = 18; r++;
+  filas.forEach((f,i)=>{
+    if(labelEnd > 1) ws.mergeCells(r,1,r,labelEnd);
+    if(nCols > valCol+1) ws.mergeCells(r,valCol+1,r,nCols);
+    const lc = ws.getCell(r,1);
+    lc.value = f.label;
+    lc.font = {bold:true, size:10.5, name:'Calibri', color:{argb:BRAND.navy}};
+    lc.alignment = {horizontal:'left', vertical:'middle', indent:1};
+    const vc = ws.getCell(r,valCol);
+    vc.value = f.val;
+    vc.font = {bold:true, size:10.5, name:'Calibri', color:{argb:f.valColor||BRAND.navy}};
+    vc.alignment = {horizontal:'right', vertical:'middle'};
+    if(valCol < nCols){
+      const ec = ws.getCell(r,valCol+1);
+      ec.value = f.extra || '';
+      ec.font = {size:10, name:'Calibri', color:{argb:f.extraColor||XLSX_VAR_GRIS}};
+      ec.alignment = {horizontal:'left', vertical:'middle', indent:1};
+    }
+    for(let c=1;c<=nCols;c++){
+      const cell = ws.getCell(r,c);
+      cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb: i%2===1 ? BRAND.band : BRAND.white}};
+      cell.border = thinBorder(BRAND.border);
+    }
+    ws.getRow(r).height = 17;
+    r++;
+  });
+  return r;
+}
+function xlsxKpiFilas(total, calzado, indumentaria, accesorios, v){
+  const fila = (label, val, vv)=>({label, val, extra: vv ? varBadgeText(vv) : '', extraColor: xlsxVarArgb(vv)});
+  v = v || {};
+  return [
+    fila('TOTAL', total, v.vTotal),
+    fila('CALZADO', calzado, v.vCalzado),
+    fila('INDUMENTARIA', indumentaria, v.vIndumentaria),
+    fila('ACCESORIOS', accesorios, v.vAccesorios),
+  ];
+}
+function xlsxControlFilas(cmp){
+  return [
+    {label:'REPETIDOS', val:cmp.repetidos.length, valColor:'FF8B0000', extra:'No trabajados mes a mes', extraColor:'FF8B0000'},
+    {label:'ARTÍCULOS ACTUALES', val:cmp.actual},
+    {label:'NUEVOS', val:cmp.nuevos},
+    {label:'RESUELTOS', val:cmp.resueltos},
+  ];
 }
 
 async function exportSucursalXlsx(slug, ym, items){
@@ -1535,11 +1604,66 @@ function drillInto(tipo, id){
 
 async function exportTodoXlsx(ym, monthData){
   const wb = new ExcelJS.Workbook();
+  const sumRubro = (arr, rubro)=> (arr||[]).filter(i=>normStr(i.rubro)===rubro).reduce((a,i)=>a+(Number(i.cantidad)||0),0);
+
+  // Hoja General: KPIs de toda la empresa (mismos números que el dashboard)
+  const mesesGlobal = await getMonthsList();
+  const idxYm = mesesGlobal.indexOf(ym);
+  const prevYmGlobal = (idxYm >= 0 && idxYm < mesesGlobal.length-1) ? mesesGlobal[idxYm+1] : null;
+  const prevDataGlobal = prevYmGlobal ? await getMonthData(prevYmGlobal) : null;
+  const allItems = [], prevAllItems = [];
+  SUCURSALES.forEach(s=>{
+    (((monthData[s.slug]||{}).items)||[]).forEach(i=> allItems.push(i));
+    if(prevDataGlobal) (((prevDataGlobal[s.slug]||{}).items)||[]).forEach(i=> prevAllItems.push(i));
+  });
+  const totalEmpresa = SUCURSALES.reduce((a,s)=>a+((monthData[s.slug]||{}).total||0),0);
+  const calzadoE = sumRubro(allItems,'CALZADO');
+  const indumentariaE = sumRubro(allItems,'INDUMENTARIA');
+  const accesoriosE = sumRubro(allItems,'ACCESORIOS');
+  let varsE = null, cmpAgg = null;
+  if(prevDataGlobal){
+    const prevTotalEmpresa = SUCURSALES.reduce((a,s)=>a+((prevDataGlobal[s.slug]||{}).total||0),0);
+    varsE = {
+      vTotal: diffInfo(totalEmpresa, prevTotalEmpresa),
+      vCalzado: diffInfo(calzadoE, sumRubro(prevAllItems,'CALZADO')),
+      vIndumentaria: diffInfo(indumentariaE, sumRubro(prevAllItems,'INDUMENTARIA')),
+      vAccesorios: diffInfo(accesoriosE, sumRubro(prevAllItems,'ACCESORIOS')),
+    };
+    // repetido/nuevo/resuelto se compara dentro de cada sucursal y se suma (igual que el dashboard)
+    cmpAgg = {actual:0, nuevos:0, resueltos:0, repetidos:[]};
+    SUCURSALES.forEach(s=>{
+      const cmp = compararArticulosMes(((monthData[s.slug]||{}).items)||[], ((prevDataGlobal[s.slug]||{}).items)||[]);
+      cmpAgg.actual += cmp.actual; cmpAgg.nuevos += cmp.nuevos; cmpAgg.resueltos += cmp.resueltos;
+      cmpAgg.repetidos = cmpAgg.repetidos.concat(cmp.repetidos);
+    });
+  }
+  const wsG = wb.addWorksheet('General', {views:[{showGridLines:false}]});
+  wsG.columns = [{width:26},{width:12},{width:38}];
+  let rg = 1;
+  wsG.mergeCells(rg,1,rg,3);
+  const titleG = wsG.getCell(rg,1);
+  titleG.value = 'MATEU SPORTS - DISCONTINUOS EMPRESA - '+ymToLabel(ym).toUpperCase();
+  titleG.font = {bold:true, color:{argb:BRAND.white}, size:13, name:'Calibri'};
+  titleG.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.navy}};
+  titleG.alignment = {horizontal:'center', vertical:'middle'};
+  wsG.getRow(rg).height = 24; rg += 2;
+  rg = xlsxKpiBlock(wsG, rg, 3, 'KPIS DEL MES — EMPRESA', xlsxKpiFilas(totalEmpresa, calzadoE, indumentariaE, accesoriosE, varsE));
+  rg++;
+  if(cmpAgg){
+    rg = xlsxKpiBlock(wsG, rg, 3, 'CONTROL POR ARTÍCULO DISCONTINUO (VS '+ymToLabel(prevYmGlobal).toUpperCase()+')', xlsxControlFilas(cmpAgg));
+  } else {
+    wsG.mergeCells(rg,1,rg,3);
+    const nota = wsG.getCell(rg,1);
+    nota.value = 'Control por artículo: hace falta tener cargado el mes anterior.';
+    nota.font = {italic:true, size:10, name:'Calibri', color:{argb:XLSX_VAR_GRIS}};
+  }
+
   for(const s of SUCURSALES){
     const suc = monthData[s.slug] || {items:[], total:0};
     const items = suc.items || [];
-    const prevKeys = await prevKeysParaSucursal(s.slug, ym);
-    const ws = wb.addWorksheet(s.nombre.substring(0,31), {views:[{showGridLines:false, state:'frozen', ySplit:3}]});
+    const prevSuc = await prevMesParaSucursal(s.slug, ym);
+    const prevKeys = articuloKeySet(prevSuc.items);
+    const ws = wb.addWorksheet(s.nombre.substring(0,31), {views:[{showGridLines:false}]});
     ws.columns = [{width:14},{width:26},{width:14},{width:12},{width:16},{width:38},{width:8},{width:16}];
     let r = 1;
     ws.mergeCells(r,1,r,8);
@@ -1549,6 +1673,28 @@ async function exportTodoXlsx(ym, monthData){
     titleCell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.navy}};
     titleCell.alignment = {horizontal:'center', vertical:'middle'};
     ws.getRow(r).height = 24; r += 2;
+
+    // Bloque de KPIs de la sucursal (mismos números que su vista)
+    const calzado = sumRubro(items,'CALZADO');
+    const indumentaria = sumRubro(items,'INDUMENTARIA');
+    const accesorios = sumRubro(items,'ACCESORIOS');
+    let vars = null, cmp = null;
+    if(prevSuc.prevYm){
+      vars = {
+        vTotal: diffInfo(suc.total||0, prevSuc.total),
+        vCalzado: diffInfo(calzado, sumRubro(prevSuc.items,'CALZADO')),
+        vIndumentaria: diffInfo(indumentaria, sumRubro(prevSuc.items,'INDUMENTARIA')),
+        vAccesorios: diffInfo(accesorios, sumRubro(prevSuc.items,'ACCESORIOS')),
+      };
+      cmp = compararArticulosMes(items, prevSuc.items);
+    }
+    r = xlsxKpiBlock(ws, r, 8, 'KPIS DEL MES', xlsxKpiFilas(suc.total||0, calzado, indumentaria, accesorios, vars));
+    r++;
+    if(cmp){
+      r = xlsxKpiBlock(ws, r, 8, 'CONTROL POR ARTÍCULO DISCONTINUO (VS '+ymToLabel(prevSuc.prevYm).toUpperCase()+')', xlsxControlFilas(cmp));
+      r++;
+    }
+    const headerRowIdx = r;
     ['RUBRO','GRUPO 2','MARCA','CODIGO','ARTICULO','DESCRIPCION','CANT.','DESTINO'].forEach((h,idx)=>{
       const c = ws.getCell(r, idx+1);
       c.value = h;
@@ -1557,6 +1703,7 @@ async function exportTodoXlsx(ym, monthData){
       c.alignment = {horizontal: idx===6?'right':'left', vertical:'middle'};
       c.border = thinBorder(BRAND.navy);
     });
+    ws.views = [{state:'frozen', ySplit: headerRowIdx, showGridLines:false}];
     r++;
     items.forEach((it, i)=>{
       const destino = it.destino ? (OUTLET_BY_ID[it.destino]?OUTLET_BY_ID[it.destino].nombre:it.destino) : 'Sin envio';
