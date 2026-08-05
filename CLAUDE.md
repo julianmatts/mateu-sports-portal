@@ -116,7 +116,14 @@ El dashboard de Meses de Stock (`gestion-stock/`) no lee el Excel: lee
 Año/Mes/Sucursal/Rubro/Marca/Segmento/Stock/Ventas/Ratio + Comentarios Encargados
 + Comentarios Área de Producto).
 
-**Forma correcta de regenerarlo — usar el generador:**
+**Carga mensual (lo habitual desde 08/2026):** Juli sube el export mensual del
+sistema tal cual (p.ej. `RATIO JULIO.xls`, formato jerárquico con filas de
+totales y columna `Vtas.cant.`) en la pantalla «Actualizar datos» del módulo:
+el uploader lo detecta solo, lo parsea con las reglas del generador y **fusiona**
+el mes nuevo con los ya publicados (no los pisa). Después descarga el `.js`,
+reemplaza y push, como siempre.
+
+**Forma correcta de regenerar el año completo — usar el generador:**
 
 ```
 node gestion-stock/generar-datos-meses-stock.js "ruta/RATIO 2026 ok.xlsx" 2026
