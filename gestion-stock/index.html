@@ -2047,17 +2047,18 @@ async function renderGestionStockPanel(container){
   const data = await gsGetMonthData(ym);
   const miSlug = SESSION.sucursal || SESSION.outlet_id || null;
   const mesesOptions = meses.map(m=>'<option value="'+m+'"'+(m===ym?' selected':'')+'>'+ymToLabel(m)+'</option>').join('');
-  // Link a la presentación del mes (deck one-page hosteado aparte, p.ej. Netlify).
-  // Se guarda por mes en gestionStock/<ym>/presentacionUrl; lo carga el admin con el botón 🔗.
+  // Presentación del mes: se genera acá mismo (?pres=YYYY-MM). Si el admin cargó
+  // un link externo con el botón 🔗 (p.ej. un deck viejo en Netlify), ese gana.
   const presUrl = data.presentacionUrl || (data.meta && data.meta.presentacionUrl) || '';
+  const presHref = presUrl || ('?pres='+ym);
 
   let html = '<div class="gs-hero">'+
       '<div class="gs-hero-top">'+
         '<div class="gs-hero-badge">Mateu Sports · '+ymToLabel(ym)+'</div>'+
         '<div class="gs-hero-controls">'+
           '<select class="sel" id="gsMesSel">'+mesesOptions+'</select>'+
-          (presUrl ? '<a class="btn btn-ghost btn-sm" href="'+esc(presUrl)+'" target="_blank" rel="noopener">🎞 Ver presentación</a>' : '')+
-          (SESSION.rol==='admin' ? '<button class="btn btn-ghost btn-sm" id="gsBtnPresLink" title="'+(presUrl?'Cambiar':'Cargar')+' el link de la presentación de '+esc(ymToLabel(ym))+'">🔗</button>' : '')+
+          '<a class="btn btn-ghost btn-sm" href="'+esc(presHref)+'" target="_blank" rel="noopener">🎞 Ver presentación</a>'+
+          (SESSION.rol==='admin' ? '<button class="btn btn-ghost btn-sm" id="gsBtnPresLink" title="Usar un link externo para la presentación de '+esc(ymToLabel(ym))+' en lugar de la generada (vacío = generada)">🔗</button>' : '')+
           '<button class="btn btn-ghost btn-sm" id="gsBtnExportar">📤 Exportar</button>'+
         '</div>'+
       '</div>'+
@@ -2078,7 +2079,7 @@ async function renderGestionStockPanel(container){
   container.querySelector('#gsBtnExportar').addEventListener('click', ()=> gsExportarXlsx(ym, data));
   const btnPresLink = container.querySelector('#gsBtnPresLink');
   if(btnPresLink) btnPresLink.addEventListener('click', async ()=>{
-    const url = prompt('Link de la presentación de '+ymToLabel(ym)+' (vacío para quitarlo):', presUrl);
+    const url = prompt('Link externo de la presentación de '+ymToLabel(ym)+' (vacío = usar la generada por el portal):', presUrl);
     if(url===null) return;
     const limpio = url.trim();
     if(limpio && !/^https?:\/\//i.test(limpio)){ alert('El link tiene que empezar con http:// o https://'); return; }
@@ -2219,6 +2220,247 @@ async function gsExportarXlsx(ym, data){
     email: SESSION.email, sucursal_o_outlet: SESSION.sucursal || SESSION.outlet_id || '-',
     tipoExport: 'reporte', mesExportado: ym, seccion: 'gestion-stock', timestamp: Date.now()
   });
+}
+
+/* ============================================================
+   PRESENTACIÓN DEL MES (deck one-page generado desde los datos)
+   Misma estética que las presentaciones que se armaban a mano en
+   Netlify (p.ej. gestion-stock-jun26.netlify.app), pero renderizada
+   acá con los datos del mes en Firebase. Se abre con ?pres=YYYY-MM.
+   Si el mes tiene presentacionUrl cargada (link externo), esa gana.
+   ============================================================ */
+function gsPresHtml(ym, data, logoSrc){
+  const label = ymToLabel(ym);
+  const alm = data.almacenes||{}, res = data.resumen||{};
+  const at = data.almacenesTotal||{}, rt = data.resumenTotal||{};
+  const ms = data.mesesStock||{};
+  const slugs = gsSlugsOrdenados();
+
+  // Nombre con código NN cuando lo tenemos (horas/meses lo traen del Excel)
+  const codMap = {};
+  (data.horas||[]).forEach(h=>{ if(h.codigo) codMap[h.slug] = h.codigo; });
+  ['calzado','indumentaria','accesorios'].forEach(r=> (ms[r]||[]).forEach(x=>{ if(x.codigo && !codMap[x.slug]) codMap[x.slug] = x.codigo; }));
+  const nom = s => esc(codMap[s] || nombreDeSlug(s));
+
+  const n = v => (v===null||v===undefined) ? '—' : fmtNum(v);
+  const nr = v => (v===null||v===undefined) ? '—' : v.toLocaleString('es-AR',{maximumFractionDigits:2});
+  // Totales que falten en la carga → se suman acá desde las filas por sucursal
+  const sum = (obj, campo) => {
+    let t = 0, any = false;
+    Object.values(obj||{}).forEach(d=>{ if(d[campo]!==null && d[campo]!==undefined){ t += d[campo]; any = true; } });
+    return any ? t : null;
+  };
+  ['faltaUno','garantias','diferencias','auditoria'].forEach(c=>{ if(at[c]===null||at[c]===undefined) at[c] = sum(alm,c); });
+  ['discontinuos','negativos'].forEach(c=>{ if(rt[c]===null||rt[c]===undefined) rt[c] = sum(res,c); });
+  // Var. de las notas del informe: más = peor (rojo), menos = mejor (verde)
+  const varTd = nota => {
+    const d = gsNotaDelta(nota);
+    if(d===null || d===0) return '<td class="vz">—</td>';
+    return d>0 ? '<td class="vn">+'+fmtNum(d)+'</td>' : '<td class="vp">−'+fmtNum(-d)+'</td>';
+  };
+
+  const kpiCard = (lbl, val, delta) => {
+    const cls = (delta===null||delta===0) ? 'dz' : (delta>0 ? 'dn' : 'dp');
+    const dtxt = (delta===null||delta===0) ? '—' : (delta>0?'+':'−')+fmtNum(Math.abs(delta))+' vs informe anterior';
+    return '<div class="kpi-card"><div class="kpi-val">'+val+'</div><div class="kpi-label">'+lbl+'</div><div class="kpi-delta '+cls+'">'+dtxt+'</div></div>';
+  };
+  const kpisHtml =
+    kpiCard('Falta Uno', n(at.faltaUno), gsSumDeltas(alm,'faltaUnoNota'))+
+    kpiCard('Garantías', n(at.garantias), gsSumDeltas(alm,'garantiasNota'))+
+    kpiCard('Diferencias', n(at.diferencias), gsSumDeltas(alm,'diferenciasNota'))+
+    kpiCard('Auditoría', n(at.auditoria), gsSumDeltas(alm,'auditoriaNota'))+
+    kpiCard('Negativos', n(rt.negativos), gsSumDeltas(res,'negativosNota'));
+
+  const almRows = slugs.filter(s=>alm[s]).map(s=>{
+    const d = alm[s];
+    return '<tr><td class="L">'+nom(s)+'</td>'+
+      '<td>'+n(d.faltaUno)+'</td>'+varTd(d.faltaUnoNota)+
+      '<td>'+n(d.garantias)+'</td>'+varTd(d.garantiasNota)+
+      '<td>'+n(d.diferencias)+'</td>'+varTd(d.diferenciasNota)+
+      '<td>'+n(d.auditoria)+'</td>'+varTd(d.auditoriaNota)+'</tr>';
+  }).join('')+
+  (Object.keys(alm).length ? '<tr class="tot"><td class="L">TOTAL</td><td>'+n(at.faltaUno)+'</td><td>—</td><td>'+n(at.garantias)+'</td><td>—</td><td>'+n(at.diferencias)+'</td><td>—</td><td>'+n(at.auditoria)+'</td><td>—</td></tr>' : '');
+
+  const indRows = slugs.filter(s=>res[s]).map(s=>{
+    const d = res[s];
+    return '<tr><td class="L">'+nom(s)+'</td>'+
+      '<td>'+n(d.discontinuos)+'</td>'+varTd(d.discontinuosNota)+
+      '<td>'+n(d.stock1a3Calzado)+'</td><td>'+n(d.stock1a3Ind)+'</td>'+
+      '<td>'+n(d.negativos)+'</td>'+varTd(d.negativosNota)+'</tr>';
+  }).join('')+
+  (Object.keys(res).length ? '<tr class="tot"><td class="L">TOTAL</td><td>'+n(rt.discontinuos)+'</td>'+varTd(rt.discontinuosNota)+'<td>—</td><td>—</td><td>'+n(rt.negativos)+'</td>'+varTd(rt.negativosNota)+'</tr>' : '');
+
+  // 0 horas = centinela de "sin dato" en el origen (igual que en el parser)
+  const horas = (data.horas||[]).slice().sort((a,b)=>{
+    const an = !a.horas, bn = !b.horas;
+    if(an && bn) return 0;
+    if(an) return 1; if(bn) return -1;
+    return a.horas-b.horas;
+  });
+  const maxH = Math.max(1, ...horas.map(h=>h.horas||0));
+  const hrsHtml = horas.map(h=>{
+    const sinDato = !h.horas;
+    const pct = sinDato ? 0 : (h.horas/maxH*100).toFixed(1);
+    const fc = sinDato ? 'fn' : (h.horas<55 ? 'fg' : (h.horas<80 ? 'fo' : 'fr'));
+    return '<div class="bar-row"><div class="bar-name">'+nom(h.slug)+'</div>'+
+      '<div class="bar-track"><div class="bar-fill '+fc+'" data-pct="'+pct+'"></div></div>'+
+      '<div class="bar-val">'+(sinDato?'S/D':fmtNum(h.horas)+' hs')+'</div></div>';
+  }).join('');
+
+  // Meses de cobertura: mismos umbrales que el módulo (<3 riesgo · 3-5 saludable · ≥6 exceso)
+  const msCls = v => (v===null||v===undefined) ? '' : (v<3 ? 'ms-low' : (v<6 ? 'ms-mid' : 'ms-high'));
+  const rubroBlock = (titulo, lista) => {
+    const ordenada = (lista||[]).slice().sort((a,b)=>a.ratio-b.ratio);
+    if(!ordenada.length) return '';
+    const rows = ordenada.map(x=>'<tr><td class="L">'+nom(x.slug)+'</td><td>'+n(x.stock)+'</td><td>'+n(x.ventas)+'</td>'+
+      '<td><span class="'+msCls(x.ratio)+'">'+nr(x.ratio)+'</span></td></tr>').join('');
+    const totStock = ordenada.reduce((a,x)=>a+(x.stock||0),0);
+    const totVentas = ordenada.reduce((a,x)=>a+(x.ventas||0),0);
+    const totRow = '<tr class="tot"><td class="L">TOTAL</td><td>'+n(totStock)+'</td><td>'+n(totVentas)+'</td><td>'+(totVentas>0?nr(totStock/totVentas):'—')+'</td></tr>';
+    return '<div class="rubro-block"><div class="rubro-title">'+titulo+'</div>'+
+      '<div class="tbl-wrap"><table><thead><tr><th class="L">Sucursal</th><th>Stock</th><th>Ventas / mes</th><th>Meses</th></tr></thead>'+
+      '<tbody>'+rows+totRow+'</tbody></table></div>'+
+      '<div class="ms-legend"><span><span class="ms-low">▮</span> &lt; 3 — Riesgo de faltante</span>'+
+      '<span><span class="ms-mid">▮</span> 3–5 — Saludable</span>'+
+      '<span><span class="ms-high">▮</span> ≥ 6 — Exceso</span></div></div>';
+  };
+  const mesesHtml = rubroBlock('Calzado', ms.calzado) + rubroBlock('Indumentaria', ms.indumentaria) + rubroBlock('Accesorios', ms.accesorios);
+
+  const logoImg = logoSrc ? '<img class="LOGO" src="'+logoSrc+'" alt="Mateu Sports">' : '';
+  return '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'+
+'<meta name="viewport" content="width=device-width, initial-scale=1.0">'+
+'<title>Gestión de Stock Mensual — Mateu Sports · '+esc(label)+'</title>'+
+'<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">'+
+'<style>'+
+':root{--rojo:#D32F2F;--rojo-light:#EF5350;--blanco:#F0EDE8;--azul:#0B1527;--azul-dark:#070E1B;--azul-mid:#0F1E38;--azul-card:#132042;--azul-hover:#172850;--texto-dim:rgba(240,237,232,.48);--texto-mid:rgba(240,237,232,.72)}'+
+'*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}html{scroll-behavior:smooth}'+
+'body{background:var(--azul);color:var(--blanco);font-family:Barlow,sans-serif;overflow-x:hidden}'+
+'nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:14px 48px;background:linear-gradient(to bottom,rgba(7,14,27,.98) 0%,transparent 100%);transition:background .4s}'+
+'nav.scrolled{background:rgba(7,14,27,.99);border-bottom:1px solid rgba(211,47,47,.18)}'+
+'.nav-logo{height:30px;display:block;filter:brightness(0) invert(1)}'+
+'.nav-links{display:flex;gap:28px;list-style:none;flex-wrap:wrap}'+
+'.nav-links a{font-family:"Barlow Condensed",sans-serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--texto-dim);text-decoration:none;transition:color .3s}'+
+'.nav-links a:hover{color:var(--rojo-light)}'+
+'#hero{min-height:100vh;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:120px 48px 160px}'+
+'.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse 80% 65% at 50% 28%,rgba(211,47,47,.13) 0%,transparent 65%),radial-gradient(ellipse 50% 50% at 15% 85%,rgba(211,47,47,.06) 0%,transparent 55%)}'+
+'.hero-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px);background-size:60px 60px}'+
+'.hero-stripe{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent 0%,var(--rojo) 30%,var(--rojo-light) 50%,var(--rojo) 70%,transparent 100%)}'+
+'.hero-badge{font-family:"Barlow Condensed",sans-serif;font-size:10px;letter-spacing:5px;text-transform:uppercase;color:var(--rojo-light);border:1px solid rgba(211,47,47,.45);padding:6px 24px;margin-bottom:36px;position:relative;opacity:0;animation:fadeUp .6s .3s forwards}'+
+'.hero-title{font-family:"Bebas Neue",sans-serif;font-size:clamp(58px,10.5vw,148px);line-height:.88;text-align:center;letter-spacing:2px;position:relative;opacity:0;animation:fadeUp .8s .5s forwards}'+
+'.hero-title em{color:var(--rojo);font-style:normal}'+
+'.hero-sub{margin-top:24px;position:relative;font-family:"Barlow Condensed",sans-serif;font-size:clamp(14px,2.2vw,21px);letter-spacing:6px;text-transform:uppercase;color:var(--texto-dim);opacity:0;animation:fadeUp .7s .7s forwards}'+
+'.hero-logo{margin-top:56px;position:relative;height:60px;display:block;filter:brightness(0) invert(1);opacity:0;animation:fadeUp .7s .9s forwards}'+
+'.hero-scroll{position:absolute;bottom:36px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;opacity:0;animation:fadeUp .7s 1.5s forwards}'+
+'.hero-scroll span{font-size:9px;letter-spacing:4px;text-transform:uppercase;color:var(--texto-dim)}'+
+'.scroll-line{width:1px;height:40px;background:linear-gradient(to bottom,var(--rojo),transparent);animation:scrollPulse 2s infinite}'+
+'@keyframes scrollPulse{0%,100%{opacity:.3}50%{opacity:1}}'+
+'@keyframes fadeUp{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:translateY(0)}}'+
+'section{padding:100px 48px;position:relative}section.s-alt{background:var(--azul-mid)}'+
+'.section-label{font-family:"Barlow Condensed",sans-serif;font-size:10px;letter-spacing:5px;text-transform:uppercase;color:var(--rojo-light);margin-bottom:16px;display:flex;align-items:center;gap:12px}'+
+'.section-label::before{content:"";width:32px;height:1px;background:var(--rojo)}'+
+'.section-title{font-family:"Bebas Neue",sans-serif;font-size:clamp(44px,6vw,80px);line-height:1;color:var(--blanco);margin-bottom:40px}'+
+'.section-title em{color:var(--rojo);font-style:normal}'+
+'.container{max-width:1220px;margin:0 auto}'+
+'.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px;margin-top:48px;background:rgba(211,47,47,.1);border:1px solid rgba(211,47,47,.18)}'+
+'.kpi-card{background:var(--azul-card);padding:36px 28px;position:relative;overflow:hidden;transition:background .3s}'+
+'.kpi-card:hover{background:var(--azul-hover)}'+
+'.kpi-card::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:var(--rojo)}'+
+'.kpi-val{font-family:"Bebas Neue",sans-serif;font-size:50px;line-height:1;color:var(--blanco)}'+
+'.kpi-label{font-family:"Barlow Condensed",sans-serif;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--texto-dim);margin-top:8px}'+
+'.kpi-delta{font-family:"Barlow Condensed",sans-serif;font-size:13px;margin-top:6px;letter-spacing:1px}'+
+'.dp{color:#4ade80}.dn{color:var(--rojo-light)}.dz{color:var(--texto-dim)}'+
+'.tbl-wrap{margin-top:48px;overflow-x:auto}'+
+'table{width:100%;border-collapse:collapse;font-size:13px}'+
+'thead tr{background:var(--azul-card);border-bottom:2px solid var(--rojo)}'+
+'th{padding:12px 14px;font-family:"Barlow Condensed",sans-serif;font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--texto-dim);text-align:center;white-space:nowrap}'+
+'th.L{text-align:left}'+
+'td{padding:9px 14px;color:var(--texto-mid);text-align:center;border-bottom:1px solid rgba(255,255,255,.05)}'+
+'td.L{text-align:left;font-family:"Barlow Condensed",sans-serif;font-size:13px;letter-spacing:1px;text-transform:uppercase;color:var(--blanco)}'+
+'tbody tr:hover td{background:rgba(211,47,47,.06)}'+
+'tr.tot td{background:var(--rojo);color:#fff;font-family:"Barlow Condensed",sans-serif;font-weight:700;letter-spacing:2px;border:none}'+
+'.vp{color:#4ade80;font-weight:600}.vn{color:var(--rojo-light);font-weight:600}.vz{color:var(--texto-dim)}'+
+'.chart-wrap{margin-top:48px}'+
+'.chart-title{font-family:"Barlow Condensed",sans-serif;font-size:11px;letter-spacing:4px;text-transform:uppercase;color:var(--rojo-light);margin-bottom:20px}'+
+'.bar-row{display:flex;align-items:center;gap:14px;margin-bottom:6px;opacity:0;transform:translateX(-20px);transition:opacity .5s,transform .5s}'+
+'.bar-row.vis{opacity:1;transform:translateX(0)}'+
+'.bar-name{font-family:"Barlow Condensed",sans-serif;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--texto-dim);width:200px;text-align:right;flex-shrink:0}'+
+'.bar-track{flex:1;height:22px;background:rgba(255,255,255,.04);overflow:hidden}'+
+'.bar-fill{height:100%;width:0;transition:width 1.2s ease}'+
+'.fg{background:#16a34a}.fo{background:#fb923c}.fr{background:var(--rojo)}.fn{background:rgba(255,255,255,.08)}'+
+'.bar-val{font-family:"Barlow Condensed",sans-serif;font-size:13px;color:var(--blanco);width:55px;flex-shrink:0}'+
+'.rubro-block{margin-bottom:56px}'+
+'.rubro-title{font-family:"Bebas Neue",sans-serif;font-size:36px;color:var(--blanco);border-left:3px solid var(--rojo);padding-left:16px;margin-bottom:20px}'+
+'.ms-low{color:#fb923c;font-family:"Bebas Neue",sans-serif;font-size:20px}'+
+'.ms-mid{color:#4ade80;font-family:"Bebas Neue",sans-serif;font-size:20px}'+
+'.ms-high{color:var(--rojo-light);font-family:"Bebas Neue",sans-serif;font-size:20px}'+
+'.ms-legend{display:flex;gap:24px;margin-top:16px;font-family:"Barlow Condensed",sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--texto-dim);flex-wrap:wrap}'+
+'footer{background:var(--azul-dark);color:var(--texto-dim);text-align:center;padding:32px 24px;font-family:"Barlow Condensed",sans-serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;border-top:1px solid rgba(211,47,47,.15)}'+
+'</style></head><body>'+
+'<nav id="mainNav">'+logoImg.replace('LOGO','nav-logo')+
+'<ul class="nav-links">'+
+'<li><a href="#portada">Inicio</a></li><li><a href="#almacenes">Almacenes</a></li>'+
+'<li><a href="#indicadores">Indicadores</a></li><li><a href="#horas">Descarga</a></li>'+
+'<li><a href="#meses">Meses de Stock</a></li><li><a href="./">← Volver al módulo</a></li>'+
+'</ul></nav>'+
+'<section id="portada" style="padding:0">'+
+'<div id="hero"><div class="hero-bg"></div><div class="hero-grid"></div><div class="hero-stripe"></div>'+
+'<div class="hero-badge">Mateu Sports · '+esc(label)+'</div>'+
+'<h1 class="hero-title">Gestión de<br>Stock <em>Mensual</em></h1>'+
+'<p class="hero-sub">Almacenes · Indicadores · Meses de Stock</p>'+
+logoImg.replace('LOGO','hero-logo')+
+'<div class="hero-scroll"><span>Scroll</span><div class="scroll-line"></div></div></div>'+
+'<div class="s-alt" style="padding:80px 48px"><div class="container">'+
+'<div class="section-label">Resumen ejecutivo</div><h2 class="section-title">KPIs <em>Clave</em></h2>'+
+'<div class="kpi-grid">'+kpisHtml+'</div></div></div></section>'+
+'<section id="almacenes"><div class="container">'+
+'<div class="section-label">Bloque 1</div><h2 class="section-title">Almacenes por <em>Sucursal</em></h2>'+
+'<div class="tbl-wrap"><table><thead><tr><th class="L">Sucursal</th>'+
+'<th>Falta Uno</th><th>Var.</th><th>Garantías</th><th>Var.</th><th>Diferencias</th><th>Var.</th><th>Auditoría</th><th>Var.</th>'+
+'</tr></thead><tbody>'+almRows+'</tbody></table></div></div></section>'+
+'<section id="indicadores" class="s-alt"><div class="container">'+
+'<div class="section-label">Bloque 2</div><h2 class="section-title">Indicadores por <em>Sucursal</em></h2>'+
+'<div class="tbl-wrap"><table><thead><tr><th class="L">Sucursal</th>'+
+'<th>Discontinuos</th><th>Var.</th><th>Stock 1-3 Calz.</th><th>Stock 1-3 Ind.</th><th>Negativos</th><th>Var.</th>'+
+'</tr></thead><tbody>'+indRows+'</tbody></table></div></div></section>'+
+'<section id="horas"><div class="container">'+
+'<div class="section-label">Eficiencia Operativa</div><h2 class="section-title">Horas de <em>Descarga</em></h2>'+
+'<div class="chart-wrap"><div class="chart-title">Promedio por sucursal — ordenado de menor a mayor</div>'+
+'<div id="hrsChart">'+hrsHtml+'</div>'+
+'<div style="display:flex;gap:28px;margin-top:20px;font-family:\'Barlow Condensed\',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--texto-dim);flex-wrap:wrap">'+
+'<span style="color:#4ade80">▮ &lt; 55 hs — Óptimo</span><span style="color:#fb923c">▮ 55–79 hs — Moderado</span>'+
+'<span style="color:var(--rojo-light)">▮ ≥ 80 hs — Crítico</span><span>▮ S/D — Sin dato</span>'+
+'</div></div></div></section>'+
+'<section id="meses" class="s-alt"><div class="container">'+
+'<div class="section-label">Bloque 3</div><h2 class="section-title">Meses de <em>Stock</em></h2>'+
+'<p style="font-family:Barlow,sans-serif;font-size:14px;color:var(--texto-dim);margin-bottom:48px;max-width:620px;line-height:1.75">'+
+'Ratio stock / ventas expresado en meses de cobertura. Indica cuántos meses puede sostenerse el nivel actual de stock al ritmo de venta vigente.</p>'+
+mesesHtml+'</div></section>'+
+'<footer><p>Mateu Sports S.A. — Gestión de Stock Mensual · '+esc(label)+' — Documento Comercial Confidencial</p></footer>'+
+'<script>'+
+'window.addEventListener("scroll",function(){document.getElementById("mainNav").classList.toggle("scrolled",window.scrollY>50)});'+
+'function gsEach(sel,ctx,fn){var l=(ctx||document).querySelectorAll(sel);for(var i=0;i<l.length;i++)fn(l[i],i);}'+
+'function gsReveal(row){row.classList.add("vis");var f=row.querySelector(".bar-fill");if(f)f.style.width=f.dataset.pct+"%";}'+
+'if(window.IntersectionObserver){'+
+'var obs=new IntersectionObserver(function(entries){entries.forEach(function(e){if(!e.isIntersecting)return;'+
+'gsEach(".bar-row",e.target,function(row,i){setTimeout(function(){gsReveal(row);},i*55);});});},{threshold:0.05});'+
+'gsEach("section,.chart-wrap",null,function(el){obs.observe(el);});'+
+'}else{'+
+// Navegadores viejos sin IntersectionObserver (Win7): mostrar todo de una
+'gsEach(".bar-row",null,gsReveal);'+
+'}'+
+'<\/script></body></html>';
+}
+
+async function gsRenderPresentacion(ym){
+  let data = null;
+  try{ data = await gsGetMonthData(ym); }catch(e){}
+  if(!data || (!data.almacenes && !data.resumen)){
+    document.body.innerHTML = '<div style="padding:40px;font-family:sans-serif">No hay datos cargados para '+esc(ymToLabel(ym))+'. <a href="./">Volver</a></div>';
+    return;
+  }
+  const logoEl = document.querySelector('.top-center img');
+  const html = gsPresHtml(ym, data, logoEl ? logoEl.src : '');
+  document.open(); document.write(html); document.close();
 }
 
 function renderValidacion(parsed){
@@ -3921,6 +4163,9 @@ $('logoutBtn').addEventListener('click', logout);
 (function init(){
   const s = readSession();
   if(!s || !(s.herramientas||[]).includes('gestion-stock')){ location.href='../'; return; }
+  // Modo presentación: ?pres=YYYY-MM renderiza el deck del mes en lugar de la app
+  const pres = new URLSearchParams(location.search).get('pres');
+  if(pres && /^\d{4}-\d{2}$/.test(pres)){ SESSION = s; gsRenderPresentacion(pres); return; }
   boot(s);
 })();
 </script>
