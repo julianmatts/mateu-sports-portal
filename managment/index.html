@@ -270,6 +270,16 @@ table input:disabled,table select:disabled{opacity:.5;background:#f1f3f8;cursor:
   </div>
 </div>
 
+<div class="modal" id="importModal">
+  <div class="modal-card maximized">
+    <div class="modal-head">
+      <h3 id="importTitle">Importar planilla</h3>
+      <button class="xbtn" type="button" onclick="closeModal('importModal')">×</button>
+    </div>
+    <div class="modal-body" id="importBody"></div>
+  </div>
+</div>
+
 <script>
 const _sess = (()=>{ try{ return JSON.parse(localStorage.getItem('mateu_portal_session')||'null'); }catch(e){ return null; } })();
 if(!_sess || !(_sess.herramientas||[]).includes('managment')){ location.href = '../'; }
@@ -1026,6 +1036,8 @@ function renderDesarrollo(){
         <p>Gestion directa de colecciones y aprobaciones de prototipos.</p>
       </div>
       <div class="btn-row" style="gap:8px">
+        <button class="btn secondary" type="button" onclick="descargarPlanillaModelo('desarrollo')">⇩ Planilla modelo</button>
+        <label class="btn secondary" style="cursor:pointer;display:inline-flex;align-items:center">⇪ Importar planilla<input type="file" accept=".xlsx,.xlsm" style="display:none" onchange="importarPlanilla('desarrollo', this)"></label>
         <button class="btn secondary" type="button" onclick="openExportProvModal()">⇩ Exportar para proveedor</button>
         <button class="btn" type="button" onclick="nuevoDesarrollo()">+ Nuevo Desarrollo</button>
       </div>
@@ -1652,8 +1664,17 @@ function saveNewLinea(ev){
 
 function renderOC(){
   $('view').innerHTML = `
-    <div class="section-title">Ordenes de compra</div>
-    <div class="notice">Una OC se envia por proveedor. Dentro de cada proveedor esta agrupada por linea y coleccion - usa la <b>lupa</b> 🔍 para cargar talles, costos, etc., o el <b>tacho</b> 🗑️ para eliminar toda esa OC. Usa <b>Confirmar y enviar OC</b> una sola vez.</div>
+    <div class="module-head">
+      <div>
+        <h2>Ordenes de compra</h2>
+        <p>Armado del pedido por proveedor, con curva de talles y costos.</p>
+      </div>
+      <div class="btn-row" style="gap:8px">
+        <button class="btn secondary" type="button" onclick="descargarPlanillaModelo('oc')">⇩ Planilla modelo</button>
+        <label class="btn secondary" style="cursor:pointer;display:inline-flex;align-items:center">⇪ Importar planilla<input type="file" accept=".xlsx,.xlsm" style="display:none" onchange="importarPlanilla('oc', this)"></label>
+      </div>
+    </div>
+    <div class="notice">Una OC se envia por proveedor. Dentro de cada proveedor esta agrupada por linea y coleccion - usa la <b>lupa</b> 🔍 para cargar talles, costos, etc., o el <b>tacho</b> 🗑️ para eliminar toda esa OC. Usa <b>Confirmar y enviar OC</b> una sola vez. Con <b>⇩ Planilla modelo</b> bajas el Excel para armar el pedido afuera y despues lo subis con <b>⇪ Importar planilla</b>.</div>
     ${ocTable()}
   `;
 }
@@ -2293,6 +2314,387 @@ async function descargarExcelOC(key){
   const { wb, ocNumero } = buildExcelOCWorkbook(group);
   const nombreArchivo = 'OC_' + ocNumero.replace(/[^A-Za-z0-9-]+/g,'_') + '_' + providerKey(group.proveedor).replace(/\s+/g,'_') + '.xlsx';
   await downloadWorkbook(wb, nombreArchivo);
+}
+
+// --- Planilla de carga masiva (Paso 1 y Paso 2) ---------------------------
+// Un solo modelo de Excel (misma estetica que el export de OC) para armar el
+// pedido afuera y subirlo: en Paso 1 crea prendas de desarrollo (sin curva
+// obligatoria), en Paso 2 crea ordenes de compra en Borrador con curva y costo.
+
+const PLANILLA_HEADERS = ['Marca','Codigo','Articulo','Color','Genero','Linea','Coleccion','Proveedor','Costo unit. ARS','PVP objetivo ARS', ...TALLES, 'Notas','Link referencia'];
+
+async function descargarPlanillaModelo(kind){
+  const esOC = kind === 'oc';
+  const titulo = esOC ? 'Planilla de carga - Orden de compra (Paso 2)' : 'Planilla de carga - Desarrollo (Paso 1)';
+  const leyenda = esOC
+    ? 'Una fila por articulo + color, con curva de talles y costo. Marca: Mateu, Ruge o Aurelius. Codigo vacio = se genera automatico (MAT/RUG/AUR). Las ordenes entran como BORRADOR: despues se confirman y envian desde el modulo. Borra la fila de EJEMPLO antes de importar.'
+    : 'Una fila por articulo + color. Marca: Mateu, Ruge o Aurelius. En esta etapa costo, codigo y talles son opcionales (la curva oficial se carga en la OC del Paso 2). Si la Coleccion ya existe con ese nombre, las prendas se suman ahi. Borra la fila de EJEMPLO antes de importar.';
+
+  const nCols = PLANILLA_HEADERS.length;
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Pedido', { views:[{showGridLines:false}] });
+  ws.columns = [{width:10},{width:11},{width:28},{width:13},{width:11},{width:16},{width:16},{width:16},{width:14},{width:15}, ...TALLES.map(()=>({width:6})), {width:34},{width:26}];
+
+  // Membrete (mismo estilo que el Excel de OC)
+  let r = 1;
+  ws.mergeCells(r,1,r,nCols);
+  const brandCell = ws.getCell(r,1);
+  if(LOGO_PNG){
+    const logoH = 42, logoW = Math.round(logoH * LOGO_PNG.width / LOGO_PNG.height);
+    const imgId = wb.addImage({ base64: LOGO_PNG.dataUri, extension:'png' });
+    ws.addImage(imgId, { tl:{col:0.15, row:0.12}, ext:{width:logoW, height:logoH}, editAs:'oneCell' });
+    brandCell.value = { richText:[{ font:{size:9, name:'Calibri', color:{argb:BRAND.muted}}, text:titulo }] };
+    brandCell.alignment = {horizontal:'center', vertical:'middle'};
+  }else{
+    brandCell.value = { richText:[
+      { font:{bold:true, size:16, name:'Calibri', color:{argb:BRAND.navy}}, text:'MATEU SPORTS\n' },
+      { font:{size:9, name:'Calibri', color:{argb:BRAND.muted}}, text:titulo }
+    ]};
+    brandCell.alignment = {horizontal:'left', vertical:'middle', wrapText:true, indent:1};
+  }
+  for(let c=1;c<=nCols;c++){
+    ws.getCell(r,c).fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.white}};
+    ws.getCell(r,c).border = {bottom:{style:'medium', color:{argb:BRAND.red}}};
+  }
+  ws.getRow(r).height = 38;
+  r++;
+
+  // Leyenda de uso
+  ws.mergeCells(r,1,r,nCols);
+  const legCell = ws.getCell(r,1);
+  legCell.value = 'COMO USAR: ' + leyenda;
+  legCell.font = {size:9, name:'Calibri', color:{argb:BRAND.muted}};
+  legCell.alignment = {horizontal:'left', vertical:'middle', wrapText:true, indent:1};
+  legCell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.band}};
+  ws.getRow(r).height = 40;
+  r++;
+
+  // Header de tabla
+  const headerRowIdx = r;
+  PLANILLA_HEADERS.forEach((h,idx)=>{
+    const c = ws.getCell(r, idx+1);
+    c.value = h;
+    c.font = {bold:true, color:{argb:BRAND.white}, size:10, name:'Calibri'};
+    c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.navy}};
+    c.alignment = {horizontal:'center', vertical:'middle'};
+    c.border = thinBorder(BRAND.navy);
+  });
+  ws.getRow(r).height = 18;
+  ws.views = [{state:'frozen', ySplit:headerRowIdx, showGridLines:false}];
+  ws.autoFilter = { from:{row:headerRowIdx, column:1}, to:{row:headerRowIdx, column:nCols} };
+  r++;
+
+  // Fila de ejemplo (el importador la saltea porque el articulo empieza con EJEMPLO)
+  const ejemplo = esOC
+    ? ['Mateu','','EJEMPLO Remera Motion','Negro','Hombre','Motion','Temporada 2027','Willder',12500,34999, 10,20,20,10,0,0,0,'Curva base. Borrar esta fila.','https://...']
+    : ['Mateu','','EJEMPLO Remera Motion','Negro','Hombre','Motion','Temporada 2027','Willder','','', '','','','','','','','Referencia de diseño. Borrar esta fila.','https://...'];
+  ejemplo.forEach((v,idx)=>{
+    const c = ws.getCell(r, idx+1);
+    c.value = v;
+    c.font = {size:10, name:'Calibri', italic:true, color:{argb:BRAND.muted}};
+    c.alignment = {horizontal: idx < 8 ? 'left' : 'center', vertical:'middle'};
+    c.border = thinBorder(BRAND.border);
+  });
+  // Filas vacias con borde para que quede prolijo al completar
+  for(let extra = 0; extra < 30; extra++){
+    r++;
+    for(let c=1;c<=nCols;c++){ ws.getCell(r,c).border = thinBorder(BRAND.border); }
+  }
+
+  await downloadWorkbook(wb, (esOC ? 'Planilla_OC_' : 'Planilla_Desarrollo_') + today() + '.xlsx');
+}
+
+// --- Import: parseo del Excel ---------------------------------------------
+
+// Normaliza un encabezado: sin acentos (rango unicode de diacriticos), sin
+// espacios ni simbolos, en minusculas. "Costo unit. ARS" -> "costounitars".
+function normPlanillaKey(s){
+  return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+}
+
+function celdaTexto(cell){
+  let v = cell ? cell.value : null;
+  if(v === null || v === undefined) return '';
+  if(typeof v === 'object'){
+    if(v.richText) v = v.richText.map(t=>t.text).join('');
+    else if(v.result !== undefined) v = v.result;
+    else if(v.text !== undefined) v = v.text;
+    else if(v instanceof Date) v = v.toISOString().slice(0,10);
+    if(v === null || v === undefined) return '';
+  }
+  return String(v).trim();
+}
+
+// Celdas numericas llegan como number (sin problema). Para texto se interpreta
+// formato es-AR: "7.900" = 7900 (miles), "7,5" = 7.5, "1.234,56" = 1234.56.
+// (Mismo bug que mordio en Objetivos: el punto de miles comido como decimal.)
+function celdaNumero(cell){
+  const raw = cell ? cell.value : null;
+  if(typeof raw === 'number') return raw;
+  let t = celdaTexto(cell);
+  if(t === '') return 0;
+  t = t.replace(/[$\s]/g,'');
+  if(/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) t = t.replace(/\./g,'').replace(',', '.');
+  else t = t.replace(',', '.');
+  const n = Number(t);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+const MARCAS_IMPORT = (()=>{
+  const m = {};
+  Object.keys(MARCAS).forEach(k => { m[normPlanillaKey(k)] = k; m[normPlanillaKey(MARCAS[k])] = k; });
+  return m;
+})();
+
+let importPending = null; // { kind, filas:[...], errores:[...], archivo }
+
+async function importarPlanilla(kind, input){
+  const file = input.files && input.files[0];
+  input.value = '';
+  if(!file) return;
+  let ws;
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf);
+    ws = wb.worksheets[0];
+    if(!ws) throw new Error('sin hojas');
+  }catch(e){
+    showToast('No se pudo leer el Excel. ¿Es el archivo correcto (.xlsx)?');
+    return;
+  }
+
+  // Buscar la fila de encabezados (tiene "Marca" y "Articulo")
+  let headerRow = 0; const colIdx = {};
+  for(let ri = 1; ri <= Math.min(ws.rowCount, 15) && !headerRow; ri++){
+    const row = ws.getRow(ri);
+    const claves = {};
+    row.eachCell({includeEmpty:false}, (cell, ci) => { claves[normPlanillaKey(celdaTexto(cell))] = ci; });
+    if(claves['marca'] && claves['articulo']){
+      headerRow = ri;
+      Object.entries(claves).forEach(([k, ci]) => {
+        if(k === 'marca') colIdx.marca = ci;
+        else if(k.startsWith('codigo')) colIdx.codigo = ci;
+        else if(k === 'articulo' || k === 'nombre') colIdx.articulo = ci;
+        else if(k === 'color') colIdx.color = ci;
+        else if(k === 'genero') colIdx.genero = ci;
+        else if(k === 'linea') colIdx.linea = ci;
+        else if(k === 'coleccion') colIdx.coleccion = ci;
+        else if(k.startsWith('proveedor')) colIdx.proveedor = ci;
+        else if(k.startsWith('costo')) colIdx.costo = ci;
+        else if(k.startsWith('pvp')) colIdx.pvp = ci;
+        else if(k.startsWith('nota')) colIdx.notas = ci;
+        else if(k.startsWith('link') || k.startsWith('referencia')) colIdx.link = ci;
+        else{
+          const talle = TALLES.find(t => normPlanillaKey(t) === k || (t === 'U' && k === 'un'));
+          if(talle){ colIdx.talles = colIdx.talles || {}; colIdx.talles[talle] = ci; }
+        }
+      });
+    }
+  }
+  if(!headerRow){
+    showToast('No encontre los encabezados (columnas "Marca" y "Articulo"). Usa la planilla modelo.');
+    return;
+  }
+
+  const filas = [], errores = [];
+  const codigosEnArchivo = new Set();
+  for(let ri = headerRow + 1; ri <= ws.rowCount; ri++){
+    const row = ws.getRow(ri);
+    const get = c => c ? celdaTexto(row.getCell(c)) : '';
+    const marcaTxt = get(colIdx.marca);
+    const articulo = get(colIdx.articulo);
+    if(!marcaTxt && !articulo) continue;                        // fila vacia
+    if(/^ejemplo/i.test(articulo)) continue;                    // fila de ejemplo del modelo
+    const marca = MARCAS_IMPORT[normPlanillaKey(marcaTxt)];
+    const err = [];
+    if(!marca) err.push('Marca "' + marcaTxt + '" invalida (Mateu / Ruge / Aurelius)');
+    if(!articulo) err.push('Falta el articulo');
+    const codigo = get(colIdx.codigo).toUpperCase();
+    if(codigo){
+      if(codigoExiste(codigo)) err.push('El codigo ' + codigo + ' ya existe en el sistema');
+      if(codigosEnArchivo.has(codigo)) err.push('Codigo ' + codigo + ' repetido en la planilla');
+      codigosEnArchivo.add(codigo);
+    }
+    const proveedor = get(colIdx.proveedor);
+    if(kind === 'oc' && !proveedor) err.push('Falta el proveedor');
+    const costo = colIdx.costo ? celdaNumero(row.getCell(colIdx.costo)) : 0;
+    if(Number.isNaN(costo)) err.push('Costo no numerico');
+    const pvp = colIdx.pvp ? celdaNumero(row.getCell(colIdx.pvp)) : 0;
+    if(Number.isNaN(pvp)) err.push('PVP no numerico');
+    const talles = {};
+    let tallesNaN = false;
+    Object.entries(colIdx.talles || {}).forEach(([t, ci]) => {
+      const n = celdaNumero(row.getCell(ci));
+      if(Number.isNaN(n)) tallesNaN = true;
+      else if(n > 0) talles[t] = Math.round(n);
+    });
+    if(tallesNaN) err.push('Talles con valores no numericos');
+    const fila = {
+      fila: ri, marca, marcaTxt, codigo, articulo,
+      color: get(colIdx.color), genero: get(colIdx.genero),
+      linea: get(colIdx.linea), coleccion: get(colIdx.coleccion),
+      proveedor, costo: Number.isNaN(costo) ? 0 : costo, pvp: Number.isNaN(pvp) ? 0 : pvp,
+      talles, notas: get(colIdx.notas), link: get(colIdx.link)
+    };
+    if(err.length) errores.push({...fila, motivos:err});
+    else filas.push(fila);
+  }
+
+  importPending = { kind, filas, errores, archivo:file.name };
+  renderImportPreview();
+  openModal('importModal');
+}
+
+function renderImportPreview(){
+  if(!importPending) return;
+  const { kind, filas, errores, archivo } = importPending;
+  const esOC = kind === 'oc';
+  $('importTitle').textContent = esOC ? 'Importar ordenes de compra (Paso 2)' : 'Importar desarrollos (Paso 1)';
+  const totUnid = filas.reduce((s,f)=>s + Object.values(f.talles).reduce((a,b)=>a+b,0), 0);
+  const filaRow = f => {
+    const unid = Object.values(f.talles).reduce((a,b)=>a+b,0);
+    const curva = TALLES.filter(t=>f.talles[t]).map(t=>talleLabel(t)+':'+f.talles[t]).join(' ');
+    return `<tr>
+      <td>${marcaLogo(f.marca,13)}</td>
+      <td>${escapeHtml(f.codigo || '(auto)')}</td>
+      <td><b>${escapeHtml(f.articulo)}</b>${f.color ? ' · ' + escapeHtml(f.color) : ''}</td>
+      <td>${escapeHtml(f.linea || '-')}</td>
+      <td>${escapeHtml(f.coleccion || '-')}</td>
+      <td>${escapeHtml(f.proveedor || '-')}</td>
+      <td style="text-align:right">${f.costo ? money(f.costo) : '-'}</td>
+      <td>${unid ? `<b>${unid}</b> <span class="muted" style="font-size:11px">${curva}</span>` : '-'}</td>
+    </tr>`;
+  };
+  $('importBody').innerHTML = `
+    <div class="collection-note" style="margin-bottom:10px"><b>${escapeHtml(archivo)}</b> · ${filas.length} fila${filas.length===1?'':'s'} lista${filas.length===1?'':'s'} para importar${totUnid ? ' · ' + totUnid + ' unidades' : ''}${errores.length ? ' · <b style="color:var(--bad)">' + errores.length + ' con errores (no se importan)</b>' : ''}</div>
+    ${errores.length ? `
+      <div class="notice" style="border-color:var(--bad);margin-bottom:12px"><b>Filas con error:</b><br>${errores.map(e=>`Fila ${e.fila}: ${escapeHtml(e.motivos.join(' · '))}`).join('<br>')}</div>` : ''}
+    ${filas.length ? `
+    <div class="table-wrap"><table class="tbl-compacta">
+      <thead><tr><th>Marca</th><th>Codigo</th><th>Articulo</th><th>Linea</th><th>Coleccion</th><th>Proveedor</th><th>Costo</th><th>Unidades / curva</th></tr></thead>
+      <tbody>${filas.map(filaRow).join('')}</tbody>
+    </table></div>
+    <div class="notice" style="margin-top:12px">${esOC
+      ? 'Las ordenes entran en estado <b>Borrador</b>, agrupadas por proveedor. Los codigos vacios se generan automaticos. Despues las revisas y usas "Confirmar y enviar OC".'
+      : 'Las prendas entran en <b>1. Diseño</b>. Si la coleccion indicada ya existe, se suman ahi; si no, se crea. Los proveedores nuevos se dan de alta solos.'}</div>` : '<div class="empty">Ninguna fila valida para importar.</div>'}
+    <div class="btn-row" style="margin-top:14px;justify-content:flex-end">
+      <button class="btn secondary" type="button" onclick="closeModal('importModal')">Cancelar</button>
+      <button class="btn" type="button" id="importConfirmBtn" onclick="confirmarImportacion()" ${filas.length ? '' : 'disabled'}>Importar ${filas.length} fila${filas.length===1?'':'s'}</button>
+    </div>`;
+}
+
+// Reserva un bloque de codigos correlativos por marca (version en bloque de
+// nextCodigo, para no ir a Firebase una vez por fila).
+async function reservarCodigos(marca, cantidad){
+  if(!cantidad) return [];
+  if(!isFirebaseMode()){
+    const out = [];
+    while(out.length < cantidad){
+      state.contadores[marca] = Number(state.contadores[marca] || 0) + 1;
+      const cand = PREFIJOS[marca] + state.contadores[marca];
+      if(!codigoExiste(cand)) out.push(cand);
+    }
+    return out;
+  }
+  for(let intento = 0; intento < 6; intento++){
+    const crudo = await fbGet('contadoresCodigos/' + marca);
+    const base = (crudo !== null && crudo !== undefined && Number.isFinite(Number(crudo)))
+      ? Number(crudo)
+      : Number(state.contadores[marca] || CONTADORES_INICIALES[marca] || 0);
+    const codes = [];
+    let n = base;
+    while(codes.length < cantidad){
+      n++;
+      const cand = PREFIJOS[marca] + n;
+      if(!codigoExiste(cand)) codes.push(cand);
+    }
+    await fbPut('contadoresCodigos/' + marca, n);
+    const verificacion = Number(await fbGet('contadoresCodigos/' + marca));
+    if(verificacion === n){
+      state.contadores[marca] = n;
+      return codes;
+    }
+  }
+  throw new Error('No se pudieron reservar codigos para ' + marca + '. Intenta de nuevo.');
+}
+
+async function confirmarImportacion(){
+  if(!importPending || !importPending.filas.length) return;
+  const { kind, filas } = importPending;
+  const btn = $('importConfirmBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Importando...'; }
+
+  try{
+    // Alta automatica de proveedores que no existen
+    const provKeys = new Set(state.proveedores.map(p => providerKey(p.nombre)));
+    filas.forEach(f => {
+      const nombre = String(f.proveedor || '').trim();
+      if(nombre && !provKeys.has(providerKey(nombre))){
+        state.proveedores.push({ id:uid('prov'), nombre, cuit:'', direccion:'', contacto:'', email:'', telefono:'' });
+        provKeys.add(providerKey(nombre));
+      }
+    });
+
+    if(kind === 'desarrollo'){
+      const porColeccion = new Map();
+      filas.forEach(f => {
+        const nombre = String(f.coleccion || '').trim() || ('Importado ' + today());
+        if(!porColeccion.has(nombre.toLowerCase())) porColeccion.set(nombre.toLowerCase(), { nombre, filas:[] });
+        porColeccion.get(nombre.toLowerCase()).filas.push(f);
+      });
+      porColeccion.forEach(grupo => {
+        let col = state.colecciones.find(c => String(c.nombre||'').trim().toLowerCase() === grupo.nombre.toLowerCase());
+        if(!col){
+          col = { id:uid('col'), tipo:'', nombre:grupo.nombre, creado:today(), prendas:[] };
+          state.colecciones.unshift(col);
+        }
+        grupo.filas.forEach(f => {
+          const curva = TALLES.filter(t=>f.talles[t]).map(t=>talleLabel(t)+':'+f.talles[t]).join(' ');
+          col.prendas.push({
+            id:uid('pr'), marca:f.marca, tipo:f.linea, nombre:f.articulo, color:f.color,
+            genero:f.genero, codigoManual:f.codigo, proveedor:f.proveedor,
+            costo:f.costo, pvpObjetivo:f.pvp, referenciaLink:f.link,
+            paso:'1. Diseño', version:'1',
+            notas:(f.notas || '') + (curva ? (f.notas ? ' | ' : '') + 'Curva planilla: ' + curva : ''),
+            estadoDesde:today(), fotoReferencia:null, fotoPrototipo:null, historial:[]
+          });
+        });
+      });
+      showToast('Se importaron ' + filas.length + ' prendas de desarrollo.');
+    }else{
+      // Codigos automaticos: se reserva un bloque por marca de una sola vez
+      const sinCodigo = {};
+      filas.forEach(f => { if(!f.codigo) sinCodigo[f.marca] = (sinCodigo[f.marca] || 0) + 1; });
+      const bloques = {};
+      for(const marca of Object.keys(sinCodigo)){
+        bloques[marca] = await reservarCodigos(marca, sinCodigo[marca]);
+      }
+      filas.forEach(f => {
+        const codigo = f.codigo || bloques[f.marca].shift();
+        state.ordenes.unshift({
+          id:uid('oc'), desarrolloId:null, coleccionId:null, prendaId:null,
+          codigo, marca:f.marca, articulo:f.articulo, linea:f.linea, coleccion:f.coleccion,
+          color:f.color, genero:f.genero, proveedor:f.proveedor,
+          costo:f.costo, costoIngreso:f.costo,
+          aviosResponsable:AVIOS_RESP[0], aviosNotas:'',
+          estado:'Borrador',
+          talles:{...emptySizes(), ...f.talles}, recibido:emptySizes(),
+          fecha:today(), notas:f.notas, fichaLink:f.link,
+          entregaEstimada:'', seguimiento:''
+        });
+      });
+      showToast('Se importaron ' + filas.length + ' ordenes en Borrador.');
+    }
+
+    saveState();
+    importPending = null;
+    closeModal('importModal');
+    render();
+  }catch(e){
+    showToast('Error al importar: ' + (e.message || e));
+    if(btn){ btn.disabled = false; btn.textContent = 'Importar'; }
+  }
 }
 
 // --- Exportar Desarrollo para el proveedor -------------------------------
