@@ -55,6 +55,20 @@ incluirlo** con una línea en el `<head>`: `<script src="../shared/iconos.js" de
 en el código como hasta ahora: el script los convierte. Si falta un ícono nuevo,
 sumar la entrada al mapa `ICONS` de ese archivo.
 
+**Header unificado del shell (`shared/header.js`).** Todos los módulos usan el
+mismo header que Indicadores: botón **Menú** rojo (abre el drawer lateral con
+las herramientas de la sesión), logo centrado que vuelve al Portal y el
+calendario retail a la derecha. Se incluye con una línea en el `<head>`:
+`<script src="../shared/header.js" defer></script>` (después de `iconos.js`).
+El script inyecta header + drawer + calendario solo; clases con prefijo `msh-`
+y publica la variable CSS `--msh-h` (alto real del header) para que las barras
+sticky del módulo cuelguen de `top:var(--msh-h,67px)`. Los controles que antes
+vivían en el header propio van en una barra secundaria `.msh-subbar`; los nodos
+que el JS del módulo sigue escribiendo (whoName, salir, etc.) quedan como stubs
+ocultos. Herramienta nueva → sumar la entrada al mapa `TOOLS` de `header.js`
+(y del Portal e Indicadores). **Indicadores y el Portal raíz tienen su header
+propio: ahí NO se incluye.**
+
 ## Stack — quién hace qué
 
 - **GitHub** → guarda el código y el historial.
