@@ -341,6 +341,7 @@ table.grid tr.total td.num{ color:#fff; }
 <input type="file" id="fileRDA" accept=".xlsx,.xls" style="display:none">
 <div class="toast" id="toast"></div>
 
+<script src="siembra-2026.js"></script>
 <script>
 /* ============================================================
    PARÁMETROS — constantes editables (salen de la liquidación de
@@ -516,29 +517,35 @@ function temporadaLedger(){
 }
 
 /* ============================================================
-   SIEMBRA DE MESES PREVIOS — ene–may 2026 (sacados del CONSOLIDADO
-   de la liquidación de junio). Deja el acumulador correcto sin cargar
-   los meses a mano: EDLP ene–may = 27.835 u (→20%), RUGE SE = 2.501 u (→15%).
+   SIEMBRA DE MESES PREVIOS — ene–jun 2026 con los números OFICIALES de las
+   liquidaciones a mano de Juli (regalía + importe por mes, y detalle RDA).
+   Acumulado ene–jun: EDLP = 32.468 u (→20%), RUGE SE = 3.063 u (→15%).
    edlpUnidades = EDLP vig minorista (MATEU) + EDLP mayorista · rugeUnidades = RUGE SE minorista.
-   Solo siembra una vez por temporada y no pisa meses que cargues/liquides.
+   Siembra una vez por versión (SIEMBRA_V) y no pisa meses que cargues/liquides en la app.
    ============================================================ */
+// Los datos viven en siembra-2026.js (generado desde las liquidaciones reales de
+// Juli, ene–jun 2026, con regalía e importe oficiales + detalle RDA por mes).
 const SIEMBRA_MESES = {
-  2026: {
-    '2026-01': { edlpUnidades:7954, rugeUnidades:393, retail:6469, mayor:4208, unidades:10677 },
-    '2026-02': { edlpUnidades:4537, rugeUnidades:614, retail:6053, mayor:799,  unidades:6852  },
-    '2026-03': { edlpUnidades:4618, rugeUnidades:557, retail:5142, mayor:1952, unidades:7094  },
-    '2026-04': { edlpUnidades:6351, rugeUnidades:307, retail:5414, mayor:2498, unidades:7912  },
-    '2026-05': { edlpUnidades:4375, rugeUnidades:630, retail:5959, mayor:658,  unidades:6617  },
-  }
+  2026: (window.SIEMBRA_2026 && window.SIEMBRA_2026.meses) || {}
 };
+const SIEMBRA_V = 2;   // subir cuando cambie el contenido de siembra-2026.js
 function sembrarMesesPrevios(){
-  const seed=SIEMBRA_MESES[CONFIG.temporadaVigente]; if(!seed) return false;
+  const seed=SIEMBRA_MESES[CONFIG.temporadaVigente]; if(!Object.keys(seed).length) return false;
   const led=temporadaLedger();
-  if(led.sembradoPrevios) return false;          // ya sembrado (respeta borrados posteriores)
+  const desactualizado = (led.siembraV||1) < SIEMBRA_V;
+  let cambio=false;
   led.meses=led.meses||{};
-  Object.keys(seed).forEach(k=>{ if(!led.meses[k]) led.meses[k]={ ...seed[k], seed:true, ts:'(sembrado)' }; });
-  led.sembradoPrevios=true;
-  return true;
+  // completa meses faltantes en cada carga y actualiza los sembrados cuando sube
+  // SIEMBRA_V; lo que guardaste/liquidaste desde la app NO se pisa (sin flag seed).
+  // Si borrás un mes oficial del ledger, vuelve a entrar en la próxima carga.
+  Object.keys(seed).forEach(k=>{ const m=led.meses[k];
+    if(!m || (m.seed && desactualizado)){ led.meses[k]={ ...seed[k], seed:true, ts:'(liquidación real)' }; cambio=true; } });
+  const rdaSeed=(window.SIEMBRA_2026 && window.SIEMBRA_2026.rda) || {};
+  led.rda=led.rda||{meses:{}};
+  Object.keys(rdaSeed).forEach(k=>{ const m=led.rda.meses[k];
+    if(!m || (m.seed && desactualizado)){ led.rda.meses[k]={ ...rdaSeed[k], seed:true }; cambio=true; } });
+  if(cambio){ led.sembradoPrevios=true; led.siembraV=SIEMBRA_V; }
+  return cambio;
 }
 
 /* ============================================================
@@ -1042,7 +1049,7 @@ function renderLedger(){
   if(!keys.length){ h+='<div class="muted">Todavía no guardaste ningún mes.</div>'; $('ledgerBox').innerHTML=h; return; }
   h+='<div class="tbl-wrap"><table class="grid"><thead><tr><th>Mes</th><th class="num">EDLP u</th><th class="num">RUGE SE u</th><th class="num">Regalía</th><th></th></tr></thead><tbody>';
   keys.forEach(k=>{ const m=meses[k];
-    h+=`<tr><td>${k}${m.seed?' <span class="muted" style="font-size:11px">· sembrado</span>':''}</td><td class="num">${units(m.edlpUnidades||0)}</td><td class="num">${units(m.rugeUnidades||0)}</td><td class="num">${m.seed?'—':money(m.regalia||0)}</td>`+
+    h+=`<tr><td>${k}${m.seed?' <span class="muted" style="font-size:11px">· liquidación real</span>':''}</td><td class="num">${units(m.edlpUnidades||0)}</td><td class="num">${units(m.rugeUnidades||0)}</td><td class="num">${m.regalia!=null?money(m.regalia):'—'}</td>`+
        `<td class="num"><button class="btn sm ghost" data-delmes="${k}">Borrar</button></td></tr>`; });
   h+='</tbody></table></div>';
   $('ledgerBox').innerHTML=h;
