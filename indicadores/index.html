@@ -978,7 +978,9 @@ function actualizarFiltroBanner(){
 }
 async function render(){
   const p = PERIODOS.find(x=>x.id===per);
-  $('tbDias').textContent = (p&&p.dias)?'días '+p.dias:'';
+  // dejar claro que los KPIs son del último MES CERRADO: el objetivo semanal y
+  // el del mes (más abajo) sí corren con la semana/mes vigente.
+  $('tbDias').textContent = (p&&p.dias)?'días '+p.dias+' · mes cerrado':'';
   segToggle();
 
   // disparar TODO junto (las promesas quedan cacheadas): las cadenas de todos los
@@ -1482,7 +1484,14 @@ const objSemNum = iso => { const p=String(iso||'').split('-').map(Number); if(p.
   const e4=new Date(Date.UTC(d.getUTCFullYear(),0,4)); const dn4=(e4.getUTCDay()+6)%7;
   const j1=new Date(e4); j1.setUTCDate(e4.getUTCDate()-dn4+3);
   return 1+Math.round((d-j1)/(7*86400000)); };
-const objSemTag = iso => { const n=objSemNum(iso); return n!=null ? 'Semana '+n : 'Semana del '+objSemLbl(iso); };
+// "Semana 34 · 17/08–23/08": con las fechas se ve de una que la semana es la
+// vigente (agosto) aunque los KPIs de arriba sean del último mes cerrado.
+const objSemRango = iso => { const p=String(iso||'').split('-').map(Number); if(p.length!==3||!p[0]) return '';
+  const l=new Date(Date.UTC(p[0],p[1]-1,p[2])), d=new Date(Date.UTC(p[0],p[1]-1,p[2]+6));
+  const f=x=>String(x.getUTCDate()).padStart(2,'0')+'/'+String(x.getUTCMonth()+1).padStart(2,'0');
+  return f(l)+'–'+f(d); };
+const objSemTag = iso => { const n=objSemNum(iso); const r=objSemRango(iso);
+  return n!=null ? 'Semana '+n+(r?' · '+r:'') : 'Semana del '+objSemLbl(iso); };
 
 /* ============================================================
    VISTA CADENA (gerencia): objetivo de la semana + KPIs generales
