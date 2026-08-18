@@ -1459,6 +1459,21 @@ function fetchObjetivoData(slug, semana){
     .then(v=> (v && v.meta>0) ? v : null);
   return _objDataCache[key];
 }
+/* --- objetivo MENSUAL (módulo Objetivos, nodo objetivos/meses) ---
+   Cada sucursal pide solo su slug (…/meses/<per>/porSlug/<slug>), igual que
+   el semanal: seguridad blanda, no baja los datos de las demás. */
+const _objMesCache = {};           // "slug|per" -> Promise<v|null>
+function fetchObjetivoMes(slug, per){
+  const key = slug+'|'+per;
+  if(_objMesCache[key]) return _objMesCache[key];
+  const base = OBJETIVOS_URL.replace(/\/+$/,'');
+  _objMesCache[key] = fetch(base+'/objetivos/meses/'+encodeURIComponent(per)+'/porSlug/'+encodeURIComponent(slug)+'.json')
+    .then(r=>r.ok?r.json():null).catch(()=>null)
+    .then(v=> (v && v.meta>0) ? v : null);
+  return _objMesCache[key];
+}
+const OBJ_MESES_N = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const objMesLbl = per => { const p=String(per||'').split('-'); return (p.length===2 && OBJ_MESES_N[+p[1]-1]) ? OBJ_MESES_N[+p[1]-1]+' '+p[0] : String(per||''); };
 const objMoney = n => '$'+Math.round(n||0).toLocaleString('es-AR');
 const objSemLbl = iso => { const p=String(iso||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:iso; };
 // n° de semana retail = semana ISO 8601 (lun→dom), mismo criterio que el calendario del shell
@@ -2515,6 +2530,63 @@ function eqEditorHtml(){
     +'<button type="button" id="eqCancelar" class="tb-btn">Cancelar</button></div>';
   return h;
 }
+/* Bloque "Objetivo del mes" dentro de la sección Objetivo: meta mensual de la
+   sucursal + avance. El avance suma la venta real de las semanas del mes ya
+   publicadas (y lo del encargado de la semana activa como provisorio); cuando
+   gerencia sube el Excel mensual con el real oficial, manda ese. */
+async function objetivoMesHtml(slug, sem, weeks, ve){
+  const per = String(sem||'').slice(0,7);
+  const m = await fetchObjetivoMes(slug, per);
+  if(!m) return '';
+  const meta=m.meta||0, minimo=m.minimo||Math.round(meta/1.2), s120=m.s120||Math.round(meta*1.2);
+  let real=m.real||0, provisorio=false;
+  if(!real){
+    // sumar las semanas del mes (cada fetch es por slug y queda cacheado)
+    const delMes=(weeks||[]).filter(w=>String(w).slice(0,7)===per);
+    const vs=await Promise.all(delMes.map(w=>fetchObjetivoData(slug,w)));
+    let sum=0, hay=false;
+    vs.forEach((v,i)=>{
+      if(v && v.real>0){ sum+=v.real; hay=true; }
+      else if(delMes[i]===sem){       // semana activa sin real oficial: lo del encargado
+        const t=ve&&ve.total; const n=typeof t==='number'?t:(t&&t.venta)||0;
+        if(n>0){ sum+=n; hay=true; provisorio=true; }
+      }
+    });
+    if(hay){ real=Math.round(sum); provisorio=true; }
+  }
+  const pct=(real&&meta)?real/meta:0;
+  const w=Math.min(100, Math.round(pct*100));
+  const cls=!real?'na':real>=meta?'ok':real>=minimo?'warn':'bad';
+  const col=cls==='ok'?'var(--ok,#16a34a)':cls==='warn'?'#d97706':cls==='bad'?'#dc2626':'var(--mid)';
+  let h='<div style="border-top:1px solid var(--line,#e6ebf5);margin-top:16px;padding-top:14px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
+    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">Objetivo del mes — '+esc(objMesLbl(per))+'</div>'
+    +(provisorio?'<span style="font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#d97706;background:#fff7ed;border:1px solid #fed7aa;border-radius:20px;padding:1px 7px">avance parcial · suma de semanas</span>':'')
+    +'</div>';
+  h+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">';
+  if(real){
+    h+='<div style="font-family:var(--font-d,inherit);font-size:32px;line-height:.9;letter-spacing:.5px;color:'+col+'">'+objMoney(real)+'</div>'
+      +'<div style="font-size:13.5px;color:var(--mid);padding-bottom:4px">Meta del mes: <b style="color:var(--navy,#0B1527)">'+objMoney(meta)+'</b> · '+Math.round(pct*100)+'%</div>';
+  }else{
+    h+='<div style="font-family:var(--font-d,inherit);font-size:32px;line-height:.9;letter-spacing:.5px">'+objMoney(meta)+'</div>'
+      +'<div style="font-size:13px;color:var(--muted-light,#b0bcd4);padding-bottom:5px">Venta del mes: aún sin cargar</div>';
+  }
+  h+='</div>';
+  const barFill = provisorio
+    ? 'background:repeating-linear-gradient(45deg,'+col+','+col+' 6px,rgba(255,255,255,.45) 6px,rgba(255,255,255,.45) 12px)'
+    : 'background:'+col;
+  h+='<div style="position:relative;height:8px;background:#eef0f7;border-radius:6px;overflow:hidden;margin:8px 0 12px">'
+    +'<i style="position:absolute;left:0;top:0;bottom:0;border-radius:6px;width:'+w+'%;'+barFill+';display:block"></i></div>';
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">'
+    +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:8px 11px"><div style="font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Mínimo</div><div style="font-size:16px;font-weight:700;margin-top:2px">'+objMoney(minimo)+'</div></div>'
+    +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:8px 11px"><div style="font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Superación 120</div><div style="font-size:16px;font-weight:700;margin-top:2px">'+objMoney(s120)+'</div></div>'
+    +(m.semanal>0?'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:8px 11px"><div style="font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Ritmo semanal</div><div style="font-size:16px;font-weight:700;margin-top:2px">'+objMoney(m.semanal)+'</div></div>':'')
+    +'</div>';
+  if(m.nota) h+='<p class="hint" style="margin-top:10px">📝 '+esc(m.nota)+'</p>';
+  h+='</div>';
+  return h;
+}
+
 async function renderObjetivo(){
   const sec=$('secObjetivo'); if(!sec) return;
   if(!OBJETIVOS_URL){ sec.style.display='none'; return; }
@@ -2605,6 +2677,9 @@ async function renderObjetivo(){
       +'</div>';
     if(v.nota) html+='<p class="hint" style="margin-top:12px">📝 '+esc(v.nota)+'</p>';
   }
+  // objetivo del mes (si gerencia lo publicó); no bloquea la sección si falla
+  try{ html += await objetivoMesHtml(slug, sem, weeks, ve); }catch(e){}
+  if(sucName!==target) return;
   _jvState=null;   // lo repuebla eqDistribHtml si corresponde
   html += veSectionHtml(slug, sem, v, ve, eqData, pesos, prevVe);
   $('objetivoCard').innerHTML=html;

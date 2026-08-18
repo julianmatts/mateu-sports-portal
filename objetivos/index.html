@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Objetivos de Venta — Semanal · Mateu Sports</title>
+<title>Objetivos de Venta — Semanal y Mensual · Mateu Sports</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -157,8 +157,10 @@ tfoot .gtot td:first-child{font-family:var(--font-c);letter-spacing:1px}
 <div hidden aria-hidden="true"><span id="whoName"></span><span id="whoRole"></span><button id="salir"></button></div>
 
 <nav class="tabs" id="tabs">
-  <button class="tab on" data-tab="cargar">Cargar objetivos</button>
-  <button class="tab" data-tab="dashboard">Dashboard</button>
+  <button class="tab on" data-tab="cargar">Semanal · cargar</button>
+  <button class="tab" data-tab="dashboard">Semanal · dashboard</button>
+  <button class="tab" data-tab="mescargar">Mensual · cargar</button>
+  <button class="tab" data-tab="mesdash">Mensual · dashboard</button>
   <button class="tab" data-tab="historico">Histórico</button>
   <button class="tab" data-tab="pesos">Pesos por turno</button>
 </nav>
@@ -174,13 +176,14 @@ tfoot .gtot td:first-child{font-family:var(--font-c);letter-spacing:1px}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 /* ============================================================
-   Objetivos de Venta Semanal — módulo self-contained del Portal.
-   La gerencia carga el objetivo de venta de la semana por sucursal
-   (subiendo el Excel "PMS Objetivos Semanal Locales" o a mano) y lo
-   guarda en Firebase. Cada sucursal ve su objetivo en Indicadores.
-   Valores por sucursal: META (el objetivo), MÍNIMO (=META×0.8),
-   120 (=META×1.2) y REAL (venta de la semana). Lee la sesión del
-   Portal (localStorage), sin login propio.
+   Objetivos de Venta — módulo self-contained del Portal.
+   La gerencia carga el objetivo de venta por sucursal, en dos niveles:
+   · SEMANAL: Excel "PMS Objetivos Semanal Locales" (o a mano).
+   · MENSUAL: Excel "Objetivos Ventas Mensual - Al MM-YYYY" (o a mano).
+   Todo se guarda en Firebase y cada sucursal ve lo suyo en Indicadores.
+   Valores por sucursal: META (el objetivo), MÍNIMO (=META÷1,2),
+   120 (=META×1,2) y REAL (la venta). Lee la sesión del Portal
+   (localStorage), sin login propio.
    ============================================================ */
 'use strict';
 const $ = id => document.getElementById(id);
@@ -275,6 +278,9 @@ function estadoCumpl(meta, real){
 function fbUrl(path){ return FIREBASE_DB_URL.replace(/\/+$/,'') + '/' + path.split('/').map(encodeURIComponent).join('/') + '.json'; }
 async function fbGet(path){ const r=await fetch(fbUrl(path)); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
 async function fbPut(path, data){ const r=await fetch(fbUrl(path),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
+// PATCH mergea al nivel de hijo: reemplaza solo las claves que van en el body
+// (lo usa la publicación del histórico mensual: 60 meses en un solo request).
+async function fbPatch(path, data){ const r=await fetch(fbUrl(path),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
 
 /* ============================================================
    ESTADO
@@ -293,6 +299,20 @@ const state = {
   dashData:null,               // {meta, porSlug}
   dashSort:{k:'cumpl', dir:-1},
   pesos:{ archivo:null, porSlug:null, actual:null, actualLoaded:false },  // tab Pesos por turno
+  // ---- objetivo MENSUAL (tabs "Mensual · cargar" y "Mensual · dashboard") ----
+  mes:{
+    periodo:'',            // YYYY-MM que se está cargando
+    etiqueta:'',           // hoja del Excel elegida ("AGO26")
+    filas:{},              // slug -> {meta, semanal, real, nota}
+    archivo:null,          // nombre del Excel
+    hojas:[],              // hojas con layout mensual [{name, matrix}]
+    hojaSel:'',
+    historia:null,         // {'YYYY-MM': {slug:{objetivo, real}}} — todo el Excel
+    fuenteMeta:'',         // 'lateral' (objetivo redondeado) | 'bloque'
+    impHist:true,          // publicar también el histórico
+    keys:[],               // meses ya publicados
+    dash:{ periodo:null, data:null, prev:null, semanal:null, sort:{k:'cumpl',dir:-1} },
+  },
 };
 // arranca con filas vacías para todas las sucursales
 function filasVacias(){ const o={}; STORES.forEach(s=>o[s.slug]={meta:null, real:null, nota:''}); return o; }
@@ -454,6 +474,8 @@ function render(){
   const v=$('view');
   if(state.tab==='cargar')          v.innerHTML=viewCargar();
   else if(state.tab==='dashboard')  v.innerHTML=viewDashboard();
+  else if(state.tab==='mescargar')  v.innerHTML=viewMesCargar();
+  else if(state.tab==='mesdash')    v.innerHTML=viewMesDash();
   else if(state.tab==='historico')  v.innerHTML=viewHistorico();
   else if(state.tab==='pesos')      v.innerHTML=viewPesos();
   wire();
@@ -627,12 +649,518 @@ function viewDashboard(){
 
 function viewHistorico(){
   const semanas = state.histKeys.slice().sort().reverse();
-  let html='<div class="sec-head"><div><h1>Histórico</h1><div class="sub">Semanas con objetivos guardados.</div></div></div>';
-  if(!semanas.length) return html+'<div class="state"><div class="big-ic">🗂️</div>Todavía no guardaste ninguna semana.</div>';
-  html+=semanas.map(k=>'<div class="histrow"><div><div class="hl">Semana del '+esc(lunesLabel(k))+'</div><div class="hs">'+esc(k)+'</div></div>'
-    +'<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" data-open="'+esc(k)+'">Ver en dashboard</button>'
-    +'<button class="btn btn-outline btn-sm" data-edit="'+esc(k)+'">Editar</button></div></div>').join('');
+  const meses = state.mes.keys.slice().sort().reverse();
+  let html='<div class="sec-head"><div><h1>Histórico</h1><div class="sub">Semanas y meses con objetivos guardados.</div></div></div>';
+  if(!semanas.length && !meses.length) return html+'<div class="state"><div class="big-ic">🗂️</div>Todavía no guardaste nada.</div>';
+  if(meses.length){
+    html+='<div class="card-h" style="margin:4px 0 10px">Meses</div>';
+    html+=meses.map(k=>'<div class="histrow"><div><div class="hl">'+esc(mesLabel(k))+'</div><div class="hs">'+esc(k)+'</div></div>'
+      +'<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" data-mopen="'+esc(k)+'">Ver en dashboard</button>'
+      +'<button class="btn btn-outline btn-sm" data-medit="'+esc(k)+'">Editar</button></div></div>').join('');
+  }
+  if(semanas.length){
+    html+='<div class="card-h" style="margin:'+(meses.length?'18px':'4px')+' 0 10px">Semanas</div>';
+    html+=semanas.map(k=>'<div class="histrow"><div><div class="hl">Semana del '+esc(lunesLabel(k))+'</div><div class="hs">'+esc(k)+'</div></div>'
+      +'<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" data-open="'+esc(k)+'">Ver en dashboard</button>'
+      +'<button class="btn btn-outline btn-sm" data-edit="'+esc(k)+'">Editar</button></div></div>').join('');
+  }
   return html;
+}
+
+/* ============================================================
+   OBJETIVO MENSUAL
+   ------------------------------------------------------------
+   Gerencia sube el Excel "Objetivos Ventas Mensual - Al MM-YYYY.xlsx".
+   Es un libro ACUMULATIVO: una hoja por mes ("AGO26") y cada hoja trae
+   TODOS los meses en bloques de 4 columnas desde agosto 2021
+   (OBJETIVO · ALCANZADO · %REAL · %ESTIMADO), más una tabla lateral con
+   el objetivo REDONDEADO del mes de la hoja —lo que efectivamente se
+   comunica— y su división semanal. Se publica el mes de la hoja en
+   `objetivos/meses/<YYYY-MM>` y, si se pide, todo el histórico de una
+   sola vez (un PATCH). El mes en curso viene sin ALCANZADO: el real
+   llega con el Excel del mes siguiente (backfill, como el semanal).
+   ============================================================ */
+const MES_NOM = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const pad2 = n => String(n).padStart(2,'0');
+const mesLabel = per => { const p=String(per||'').split('-'); return (p.length===2 && MES_NOM[+p[1]-1]) ? MES_NOM[+p[1]-1]+' '+p[0] : String(per||''); };
+const mesHoy = () => { const d=new Date(); return d.getFullYear()+'-'+pad2(d.getMonth()+1); };
+const mesAnioAnt = per => { const p=String(per||'').split('-'); return p.length===2 ? (+p[0]-1)+'-'+p[1] : ''; };
+const fmtMM = n => '$'+fmtInt(Math.round((n||0)/1e6))+' M';
+// ⚠️ las celdas del Excel ya vienen numéricas y num() come el punto decimal
+// cuando hay exactamente 3 decimales (misma nota que parsePesosStat).
+const numCellM = v => typeof v==='number' ? v : num(v);
+
+// nombre de hoja "AGO26" / "DIC25 " / "JUN 21" -> {anio, mes} (mes 1-12)
+function mesDeHoja(name){
+  const m = String(name==null?'':name).trim().match(/^([A-Za-zÉé]{3,4})\s*(\d{2})$/);
+  if(!m) return null;
+  const mi = MESES[m[1].slice(0,3).toLowerCase().replace('é','e')];
+  if(mi==null) return null;
+  return {anio:2000+parseInt(m[2],10), mes:mi+1};
+}
+
+/* Parsea una hoja mensual. Devuelve null si no tiene el layout esperado.
+   {mes, etiqueta, porSlug:{slug:{meta,semanal,real}}, historia:{'YYYY-MM':{slug:{objetivo,real}}}, fuenteMeta} */
+function parseMensualHoja(matrix, sheetName){
+  const ma = mesDeHoja(sheetName); if(!ma) return null;
+  const up = v => String(v==null?'':v).trim().toUpperCase();
+  // 1 · fila de encabezado: "OBJETIVO"/"A PASAR" con "ALCANZADO" al lado
+  let hdr=-1;
+  for(let i=0;i<Math.min(20,matrix.length) && hdr<0;i++){
+    const row=matrix[i]||[];
+    for(let c=0;c<Math.min(row.length,30);c++){
+      const v=up(row[c]);
+      if((v==='OBJETIVO'||v==='A PASAR') && up(row[c+1])==='ALCANZADO'){ hdr=i; break; }
+    }
+  }
+  if(hdr<0) return null;
+  const H = matrix[hdr]||[];
+  // 2 · bloques de 4 columnas desde la columna C (índice 2), mientras sigan
+  const bloques=[];
+  for(let c=2;c<H.length;c+=4){
+    const v=up(H[c]);
+    if((v!=='OBJETIVO' && v!=='A PASAR') || up(H[c+1])!=='ALCANZADO') break;
+    bloques.push(c);
+  }
+  if(!bloques.length) return null;
+  // 3 · período de cada bloque: el último es el mes de la hoja y se cuenta hacia
+  //     atrás uno por mes (los rótulos solo traen el mes, no el año)
+  const per=[]; let y=ma.anio, m=ma.mes;
+  for(let i=bloques.length-1;i>=0;i--){ per[i]=pad2(m)&&(y+'-'+pad2(m)); m--; if(m===0){ m=12; y--; } }
+  // 4 · filas de sucursal: contiguas desde hdr+1, cortando en TOTAL / fuera de bloque
+  const filas=[];
+  for(let r=hdr+1;r<matrix.length;r++){
+    const row=matrix[r]||[];
+    const txt = String(row[0]==null?'':row[0]).trim() || String(row[1]==null?'':row[1]).trim();
+    if(!txt){ if(filas.length) break; continue; }
+    if(/^total/i.test(txt)) break;
+    const slug=slugDeCelda(txt);
+    if(slug){ if(!filas.some(f=>f.slug===slug)) filas.push({r, slug}); }
+    else if(filas.length) break;
+  }
+  if(filas.length<5) return null;
+  // 5 · histórico: objetivo + alcanzado de cada mes
+  const historia={};
+  bloques.forEach((c,i)=>{
+    const key=per[i]; const mesObj={};
+    filas.forEach(f=>{
+      const row=matrix[f.r]||[];
+      const o=numCellM(row[c]), a=numCellM(row[c+1]);
+      if(o>0 || a>0) mesObj[f.slug]={ objetivo:o>0?r0(o):0, real:a>0?r0(a):null };
+    });
+    if(Object.keys(mesObj).length) historia[key]=mesObj;
+  });
+  // 6 · tabla lateral del mes de la hoja: objetivo REDONDEADO + división semanal.
+  //     Se busca a la derecha del último bloque la primera columna que tenga
+  //     nombres de sucursal en esas filas; el monto está en la columna de al lado.
+  //     Se lee el slug de la propia columna, así no importa si está ordenada.
+  const ancho = matrix.reduce((a,r)=>Math.max(a,(r||[]).length),0);
+  const lateral={}; let fuenteMeta='bloque', cSem=-1;
+  for(let c=bloques[bloques.length-1]+4;c<ancho;c++){
+    let hits=0; filas.forEach(f=>{ if(slugDeCelda((matrix[f.r]||[])[c])) hits++; });
+    if(hits < Math.max(5, filas.length-4)) continue;
+    // columna de montos: la primera a la derecha con montos en la mayoría de las filas
+    let cVal=-1;
+    for(let k=c+1;k<=c+3 && k<ancho;k++){
+      let ok=0; filas.forEach(f=>{ if(numCellM((matrix[f.r]||[])[k])>1e5) ok++; });
+      if(ok >= Math.max(5, filas.length-4)){ cVal=k; break; }
+    }
+    if(cVal<0) continue;
+    for(let k=cVal+1;k<=cVal+6 && k<ancho;k++){ if(up(H[k])==='SEMANAL'){ cSem=k; break; } }
+    filas.forEach(f=>{
+      const row=matrix[f.r]||[];
+      const sl=slugDeCelda(row[c]); if(!sl) return;
+      const v=numCellM(row[cVal]); if(!(v>0)) return;
+      lateral[sl]={ meta:r0(v), semanal: cSem>=0 ? r0(numCellM(row[cSem])) : 0 };
+    });
+    if(Object.keys(lateral).length){ fuenteMeta='lateral'; }
+    break;
+  }
+  // 7 · el mes de la hoja: meta de la lateral (redondeada) o del bloque
+  const mesKey = per[bloques.length-1];
+  const delMes = historia[mesKey]||{};
+  const porSlug={};
+  filas.forEach(f=>{
+    const lat=lateral[f.slug], h=delMes[f.slug];
+    const meta = (lat && lat.meta>0) ? lat.meta : (h && h.objetivo>0 ? h.objetivo : 0);
+    if(!(meta>0)) return;
+    porSlug[f.slug]={ meta, semanal:(lat&&lat.semanal>0)?lat.semanal:r0(meta/4), real:(h&&h.real!=null)?h.real:null };
+  });
+  if(!Object.keys(porSlug).length) return null;
+  return { mes:mesKey, etiqueta:sheetName, porSlug, historia, fuenteMeta };
+}
+
+function filasVaciasMes(){ const o={}; STORES.forEach(s=>o[s.slug]={meta:null, semanal:null, real:null, nota:''}); return o; }
+state.mes.filas = filasVaciasMes();
+state.mes.periodo = mesHoy();
+
+async function ingerirArchivoMes(file){
+  const buf = await file.arrayBuffer();
+  const hojas = leerLibro(buf);
+  // solo las hojas con nombre de mes ("AGO26") y layout mensual válido
+  const utiles = hojas.map(h=>({h, p:mesDeHoja(h.name) ? parseMensualHoja(h.matrix, h.name) : null}))
+                      .filter(x=>x.p);
+  if(!utiles.length) throw new Error('No encontré ninguna hoja mensual (formato "AGO26" con columnas OBJETIVO / ALCANZADO)');
+  const M=state.mes;
+  M.hojas = utiles.map(x=>({name:x.h.name, matrix:x.h.matrix, parsed:x.p}));
+  M.archivo = {nombre:file.name};
+  // por defecto, la hoja del mes MÁS RECIENTE (es la que trae todo el histórico)
+  const ult = M.hojas.slice().sort((a,b)=> a.parsed.mes<b.parsed.mes ? -1 : a.parsed.mes>b.parsed.mes ? 1 : 0).pop();
+  aplicarHojaMes(ult.name);
+}
+function aplicarHojaMes(name){
+  const M=state.mes;
+  const h=M.hojas.find(x=>x.name===name); if(!h) return;
+  const p=h.parsed;
+  M.hojaSel=name; M.etiqueta=name; M.periodo=p.mes; M.historia=p.historia; M.fuenteMeta=p.fuenteMeta;
+  M.filas=filasVaciasMes();
+  Object.entries(p.porSlug).forEach(([slug,v])=>{
+    if(M.filas[slug]) M.filas[slug]={meta:v.meta, semanal:v.semanal, real:v.real, nota:''};
+  });
+}
+
+/* ---------- vista: cargar mensual ---------- */
+function nCargadasMes(){ return STORES.filter(s=>state.mes.filas[s.slug] && state.mes.filas[s.slug].meta>0).length; }
+function totalesMes(){
+  let m=0, sem=0, r=0;
+  STORES.forEach(x=>{
+    const f=state.mes.filas[x.slug]; if(!f) return;
+    if(f.meta>0){ m+=f.meta; sem += f.semanal>0 ? f.semanal : r0(f.meta/4); }
+    if(f.real>0) r+=f.real;
+  });
+  return {m, sem, r};
+}
+function viewMesCargar(){
+  const M=state.mes;
+  let html='<div class="sec-head"><div><h1>Cargar objetivo mensual</h1>'
+    +'<div class="sub">Subí el Excel «Objetivos Ventas Mensual» y elegí el mes, o cargá los montos a mano. Revisá antes de publicar.</div></div></div>';
+
+  // 1 · Excel
+  html+='<div class="card">'
+    +'<div class="card-h">1 · Excel «Objetivos Ventas Mensual» <span style="font-family:var(--font-b);font-size:12px;color:var(--muted);font-weight:400">(opcional)</span></div>'
+    +'<div class="card-hs">Leo el archivo en tu navegador, no se sube nada. Uso la <b>hoja del mes</b> (p.ej. «AGO26»): de ahí saco el <b>objetivo redondeado</b> de cada sucursal, su división semanal y —como el libro es acumulativo— el <b>histórico completo</b> de objetivo y venta real mes a mes.</div>'
+    +'<div class="drop" id="mesDrop"><div class="ic">📅</div><div class="t">Arrastrá acá el Excel o hacé clic para elegir</div>'
+    +'<div class="s">.xlsx — se procesa localmente</div></div>'
+    +'<input type="file" id="mesFile" accept=".xlsx,.xls" style="display:none">'
+    +'<div style="margin-top:12px">'
+    + (M.archivo
+        ? '<span class="filechip"><span class="ok">✓</span> '+esc(M.archivo.nombre)+' · hoja "'+esc(M.hojaSel)+'"</span>'
+          + (M.fuenteMeta==='lateral' ? '<span class="filechip"><span class="ok">✓</span> objetivo redondeado (tabla del mes)</span>'
+                                      : '<span class="filechip"><span class="no">○</span> objetivo del bloque del mes (sin redondear)</span>')
+        : '<span class="filechip"><span class="no">○</span> Sin Excel cargado — podés cargar a mano abajo</span>')
+    +'</div>';
+  if(M.hojas.length){
+    html+='<div class="fgrp" style="margin-top:12px;max-width:320px"><label for="mesHojaSel" style="font-family:var(--font-c);font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)">Hoja del mes</label>'
+      +'<select class="sel" id="mesHojaSel">'
+      + M.hojas.slice().sort((a,b)=> a.parsed.mes<b.parsed.mes?1:-1)
+          .map(h=>'<option value="'+esc(h.name)+'"'+(h.name===M.hojaSel?' selected':'')+'>'+esc(h.name)+' — '+esc(mesLabel(h.parsed.mes))+'</option>').join('')
+      +'</select></div>';
+  }
+  html+='</div>';
+
+  // 2 · Mes
+  html+='<div class="card">'
+    +'<div class="card-h">2 · Mes</div>'
+    +'<div class="card-hs">Se guarda por mes calendario. Si cargaste el Excel, lo deduzco del nombre de la hoja.</div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+    +'<div class="fgrp" style="display:flex;flex-direction:column;gap:4px"><label for="mesInput" style="font-family:var(--font-c);font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)">Mes</label>'
+    +'<input type="month" class="inp" id="mesInput" value="'+esc(M.periodo)+'"></div>'
+    +'<div style="font-size:13px;color:var(--muted);padding-bottom:10px">'+esc(mesLabel(M.periodo))+'</div>'
+    +'</div></div>';
+
+  // 3 · Grilla
+  html+='<div class="card">'
+    +'<div class="card-h">3 · Objetivos por sucursal</div>'
+    +'<div class="card-hs">Editá la <b>Meta del mes</b>; Mínimo (÷1,2) y 120 (×1,2) se calculan solos, igual que en el semanal. El <b>Semanal</b> viene del Excel (por defecto Meta÷4) y es editable. La <b>Venta real</b> del mes la completo solo con el Excel del mes siguiente. <b>'+nCargadasMes()+'</b> de '+STORES.length+' con meta cargada.</div>'
+    +'<div class="tbl-wrap"><table><thead><tr>'
+    +'<th>Sucursal</th><th class="num">Meta del mes</th><th class="num">Mínimo ÷1,2</th><th class="num">120 ×1,2</th><th class="num">Semanal</th><th class="num">Venta real</th><th>Nota</th>'
+    +'</tr></thead><tbody id="mesGridBody">'+mesGridRows()+'</tbody>'
+    +'<tfoot>'+mesGridTotales()+'</tfoot></table></div>';
+
+  // 4 · Histórico detectado
+  if(M.historia){
+    const keys=Object.keys(M.historia).sort();
+    const conReal=keys.filter(k=>Object.values(M.historia[k]).some(v=>v.real>0)).length;
+    html+='<div class="banner info" style="margin-top:16px">'
+      +'📚 El Excel trae <b>'+keys.length+' meses</b> de histórico ('+esc(mesLabel(keys[0]))+' → '+esc(mesLabel(keys[keys.length-1]))+'), '
+      +'<b>'+conReal+'</b> con venta real. '
+      +'<label style="display:inline-flex;align-items:center;gap:7px;margin-left:6px;cursor:pointer">'
+      +'<input type="checkbox" id="mesImpHist"'+(M.impHist?' checked':'')+'> Publicar también el histórico'
+      +'</label>'
+      +'<div style="margin-top:5px;font-size:12.5px">Habilita la comparación <b>vs. el mismo mes del año anterior</b> en el dashboard. Se publica todo en un solo request; las notas que ya hubieras cargado se conservan.</div>'
+      +'</div>';
+  }
+  html+='<div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">'
+    +'<button class="btn btn-primary" id="mesBtnGuardar">💾 Guardar y publicar</button>'
+    +'<button class="btn btn-outline" id="mesBtnLimpiar">Limpiar grilla</button>'
+    +'<button class="btn btn-outline" id="mesBtnVerDash">Ver dashboard →</button>'
+    +'</div>';
+  html+='</div>';
+  return html;
+}
+function mesGridTotales(){
+  const t=totalesMes();
+  return '<tr class="gtot">'
+    +'<td>TOTAL</td>'
+    +'<td class="num" id="mtotMeta">'+fmtMoney(t.m)+'</td>'
+    +'<td class="num" id="mtotMin">'+fmtMoney(r0(t.m*F_MIN))+'</td>'
+    +'<td class="num" id="mtotS120">'+fmtMoney(r0(t.m*F_120))+'</td>'
+    +'<td class="num" id="mtotSem">'+fmtMoney(t.sem)+'</td>'
+    +'<td class="num" id="mtotReal">'+(t.r?fmtMoney(t.r):'—')+'</td>'
+    +'<td></td></tr>';
+}
+function refrescarTotalesMes(){
+  const t=totalesMes();
+  const set=(id,v)=>{ const el=$(id); if(el) el.textContent=v; };
+  set('mtotMeta', fmtMoney(t.m)); set('mtotMin', fmtMoney(r0(t.m*F_MIN)));
+  set('mtotS120', fmtMoney(r0(t.m*F_120))); set('mtotSem', fmtMoney(t.sem));
+  set('mtotReal', t.r?fmtMoney(t.r):'—');
+}
+function mesGridRows(){
+  return STORES.map(s=>{
+    const f=state.mes.filas[s.slug] || {meta:null,semanal:null,real:null,nota:''};
+    const meta=f.meta||0;
+    return '<tr data-slug="'+s.slug+'">'
+      +'<td class="sucn"><span class="pfx">'+s.pfx+'</span>'+esc(s.nombre)+'</td>'
+      +'<td class="num"><input class="gi" data-k="meta" type="text" inputmode="numeric" value="'+(f.meta!=null?fmtInt(f.meta):'')+'"></td>'
+      +'<td class="num der" data-der="min">'+(meta?fmtMoney(r0(meta*F_MIN)):'—')+'</td>'
+      +'<td class="num der" data-der="s120">'+(meta?fmtMoney(r0(meta*F_120)):'—')+'</td>'
+      +'<td class="num"><input class="gi" data-k="semanal" type="text" inputmode="numeric" value="'+(f.semanal!=null&&f.semanal>0?fmtInt(f.semanal):'')+'" placeholder="'+(meta?fmtInt(r0(meta/4)):'—')+'"></td>'
+      +'<td class="num"><input class="gi" data-k="real" type="text" inputmode="numeric" value="'+(f.real!=null?fmtInt(f.real):'')+'"></td>'
+      +'<td><input class="gn" data-k="nota" type="text" value="'+esc(f.nota||'')+'" placeholder="—"></td>'
+      +'</tr>';
+  }).join('');
+}
+
+/* ---------- vista: dashboard mensual ---------- */
+function viewMesDash(){
+  const M=state.mes, D=M.dash;
+  const meses = M.keys.slice().sort().reverse();
+  let html='<div class="sec-head"><div><h1>Dashboard mensual</h1>'
+    +'<div class="sub">Objetivo del mes vs. venta real por sucursal, con el crecimiento contra el mismo mes del año anterior.</div></div>'
+    +'<div class="fgrp" style="min-width:190px"><label style="font-family:var(--font-c);font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)">Mes</label>'
+    +'<select class="sel" id="mesDashSel">'+(meses.length?meses.map(k=>'<option value="'+esc(k)+'"'+(k===D.periodo?' selected':'')+'>'+esc(mesLabel(k))+'</option>').join(''):'<option>Sin datos</option>')+'</select></div>'
+    +'</div>';
+  if(!meses.length) return html+'<div class="state"><div class="big-ic">📊</div>Todavía no hay objetivos mensuales guardados. Cargá el primero en <b>Mensual · cargar</b>.</div>';
+  const d=D.data;
+  if(!d) return html+'<div class="state"><div class="spinner"></div>Cargando mes…</div>';
+
+  const prev=(D.prev&&D.prev.porSlug)||{};
+  const acum=(D.semanal&&D.semanal.porSlug)||{};
+  const rows = STORES.map(s=>{
+    const v=(d.porSlug&&d.porSlug[s.slug])||null;
+    if(!v || !(v.meta>0)) return null;
+    const realOf=v.real||0, realSem=acum[s.slug]||0;
+    const usaOf=realOf>0, real=usaOf?realOf:realSem, provisorio=!usaOf&&realSem>0;
+    const ant=(prev[s.slug]&&prev[s.slug].real)||0;
+    // crecimiento: real vs real del año anterior; si el mes está abierto, meta vs real anterior
+    const crecBase = usaOf ? realOf : v.meta;
+    const crec = ant>0 ? (crecBase/ant - 1) : null;
+    const crecEsMeta = ant>0 && !usaOf;
+    return {s, meta:v.meta, minimo:v.minimo||r0(v.meta*F_MIN), s120:v.s120||r0(v.meta*F_120),
+      semanal:v.semanal||r0(v.meta/4), real, provisorio, ant, crec, crecBase, crecEsMeta,
+      nota:v.nota||'', est:estadoCumpl(v.meta, real)};
+  }).filter(Boolean);
+
+  const totMeta=rows.reduce((a,r)=>a+r.meta,0);
+  const totReal=rows.reduce((a,r)=>a+r.real,0);
+  const totAnt=rows.reduce((a,r)=>a+r.ant,0);
+  const hayProv=rows.some(r=>r.provisorio);
+  const cumplen=rows.filter(r=>r.real>=r.meta).length;
+  const totEst=estadoCumpl(totMeta, totReal);
+  // total vs año anterior: mismo criterio que las filas (real si está, meta si no),
+  // solo sobre las sucursales con dato del año anterior
+  const totCrecBase=rows.reduce((a,r)=>a+(r.ant>0?r.crecBase:0),0);
+  const crecTot = totAnt>0 ? totCrecBase/totAnt-1 : null;
+
+  html+='<div class="kpis">'
+    +'<div class="kpi meta"><div class="k">Meta cadena</div><div class="v">'+fmtMM(totMeta)+'<small> '+fmtMoney(totMeta)+'</small></div></div>'
+    +'<div class="kpi real"><div class="k">Venta'+(hayProv?' (parcial)':'')+'</div><div class="v">'+(totReal?fmtMM(totReal):'<small>sin cargar</small>')+'</div></div>'
+    +'<div class="kpi cum"><div class="k">Cumplimiento</div><div class="v">'+(totReal?totEst.label:'—')+'</div></div>'
+    +'<div class="kpi"><div class="k">Sucursales que llegan</div><div class="v">'+cumplen+' <small>/ '+rows.length+'</small></div></div>'
+    +'<div class="kpi"><div class="k">vs '+esc(mesLabel(mesAnioAnt(D.periodo)))+'</div><div class="v">'+(crecTot!=null?(crecTot>=0?'+':'−')+Math.abs(crecTot*100).toFixed(1)+'%':'—')+'</div></div>'
+    +'</div>';
+  if(hayProv) html+='<div class="banner info" style="margin-bottom:14px">La venta marcada <b>«x sem»</b> es la <b>suma de las semanas ya cargadas</b> de este mes ('+((D.semanal&&D.semanal.semanas)||0)+'), no el real oficial del mes. Al subir el Excel del mes siguiente se reemplaza por el real.</div>';
+
+  const sk=D.sort;
+  const val=r=>({suc:r.s.pfx, meta:r.meta, real:r.real, cumpl:(r.real&&r.meta?r.real/r.meta:-1), crec:(r.crec!=null?r.crec:-99)}[sk.k]);
+  rows.sort((a,b)=>{ const x=val(a),y=val(b); if(x<y)return -sk.dir; if(x>y)return sk.dir; return 0; });
+  const arrow=k=> sk.k===k ? (sk.dir<0?' ▾':' ▴') : '';
+
+  html+='<div class="tbl-wrap"><table><thead><tr>'
+    +'<th data-msort="suc" style="cursor:pointer">Sucursal'+arrow('suc')+'</th>'
+    +'<th class="num" data-msort="meta" style="cursor:pointer">Meta'+arrow('meta')+'</th>'
+    +'<th class="num">Mínimo</th><th class="num">120</th><th class="num">Semanal</th>'
+    +'<th class="num" data-msort="real" style="cursor:pointer">Real'+arrow('real')+'</th>'
+    +'<th class="num" data-msort="cumpl" style="cursor:pointer">Cumpl.'+arrow('cumpl')+'</th>'
+    +'<th class="num" data-msort="crec" style="cursor:pointer" title="Crecimiento contra el mismo mes del año anterior">vs año ant.'+arrow('crec')+'</th>'
+    +'<th>Avance</th></tr></thead><tbody>';
+  rows.forEach(r=>{
+    const w=Math.min(100, Math.round(r.est.pct*100));
+    const realCell = r.real
+      ? fmtMoney(r.real)+(r.provisorio?' <span class="pill warn" title="Suma de las semanas cargadas de este mes, no el real oficial">x sem</span>':'')
+      : '—';
+    let crecCell='—';
+    if(r.crec!=null){
+      const col = r.crec>=0 ? 'var(--ok)' : 'var(--bad)';
+      crecCell='<span style="color:'+col+'" title="'+esc(mesLabel(mesAnioAnt(D.periodo)))+': '+esc(fmtMoney(r.ant))+(r.crecEsMeta?' · compara la META (mes abierto)':'')+'">'
+        +(r.crec>=0?'+':'−')+Math.abs(r.crec*100).toFixed(1)+'%'+(r.crecEsMeta?'<span style="color:var(--muted-light)"> ·m</span>':'')+'</span>';
+    }
+    html+='<tr><td class="sucn"><span class="pfx">'+r.s.pfx+'</span>'+esc(r.s.nombre)+(r.nota?' <span class="pill na" title="'+esc(r.nota)+'">nota</span>':'')+'</td>'
+      +'<td class="num mono">'+fmtMoney(r.meta)+'</td>'
+      +'<td class="num mono der">'+fmtMoney(r.minimo)+'</td>'
+      +'<td class="num mono der">'+fmtMoney(r.s120)+'</td>'
+      +'<td class="num mono der">'+fmtMoney(r.semanal)+'</td>'
+      +'<td class="num mono">'+realCell+'</td>'
+      +'<td class="num"><span class="pill '+r.est.cls+'">'+r.est.label+'</span></td>'
+      +'<td class="num mono">'+crecCell+'</td>'
+      +'<td><div class="bar '+(r.est.cls==='ok'?'':r.est.cls)+'"><i style="width:'+w+'%"></i></div></td></tr>';
+  });
+  html+='<tr class="grp-total"><td>TOTAL CADENA</td><td class="num mono">'+fmtMoney(totMeta)+'</td><td></td><td></td><td></td>'
+    +'<td class="num mono">'+(totReal?fmtMoney(totReal):'—')+'</td>'
+    +'<td class="num">'+(totReal?'<span class="pill '+totEst.cls+'">'+totEst.label+'</span>':'—')+'</td>'
+    +'<td class="num mono">'+(crecTot!=null?((crecTot>=0?'+':'−')+Math.abs(crecTot*100).toFixed(1)+'%'):'—')+'</td><td></td></tr>';
+  html+='</tbody></table></div>';
+  html+='<p style="font-size:12.5px;color:var(--muted);margin-top:10px">El <b>·m</b> en «vs año ant.» marca las filas donde todavía no hay real del mes: ahí se compara la <b>meta</b> contra la venta del año anterior (el crecimiento que se está pidiendo).</p>';
+  return html;
+}
+
+/* ---------- wiring mensual ---------- */
+function wireMesCargar(){
+  const M=state.mes;
+  const drop=$('mesDrop'), input=$('mesFile');
+  const leer=async files=>{
+    const f=[...files].filter(x=>/\.xlsx?$/i.test(x.name))[0];
+    if(!f){ toast('Subí un archivo .xlsx','err'); return; }
+    try{
+      toast('Leyendo Excel…');
+      await ingerirArchivoMes(f);
+      render();
+      toast('Excel cargado — revisá la grilla','ok');
+    }catch(err){ console.error(err); toast(err.message||'No pude leer el archivo','err'); }
+  };
+  if(drop){
+    drop.onclick=()=>input.click();
+    drop.ondragover=e=>{e.preventDefault();drop.classList.add('over');};
+    drop.ondragleave=()=>drop.classList.remove('over');
+    drop.ondrop=async e=>{ e.preventDefault();drop.classList.remove('over'); await leer(e.dataTransfer.files); };
+  }
+  if(input) input.onchange=async e=>{ await leer(e.target.files); input.value=''; };
+  const hs=$('mesHojaSel'); if(hs) hs.onchange=e=>{ aplicarHojaMes(e.target.value); render(); };
+  const mi=$('mesInput'); if(mi) mi.onchange=e=>{ M.periodo=e.target.value; render(); };
+  const ih=$('mesImpHist'); if(ih) ih.onchange=e=>{ M.impHist=e.target.checked; };
+  const body=$('mesGridBody');
+  if(body){
+    body.addEventListener('input', e=>{
+      const inp=e.target; if(!inp.classList.contains('gi')&&!inp.classList.contains('gn')) return;
+      const tr=inp.closest('tr'); const slug=tr.dataset.slug; const k=inp.dataset.k;
+      const f=M.filas[slug]||(M.filas[slug]={meta:null,semanal:null,real:null,nota:''});
+      if(k==='nota'){ f.nota=inp.value; return; }
+      const v = inp.value.trim()==='' ? null : num(inp.value);
+      f[k]=v;
+      if(k==='meta'){
+        tr.querySelector('[data-der="min"]').textContent = v?fmtMoney(r0(v*F_MIN)):'—';
+        tr.querySelector('[data-der="s120"]').textContent = v?fmtMoney(r0(v*F_120)):'—';
+        const sem=tr.querySelector('[data-k="semanal"]'); if(sem) sem.placeholder = v?fmtInt(r0(v/4)):'—';
+      }
+      refrescarTotalesMes();
+    });
+  }
+  const bg=$('mesBtnGuardar'); if(bg) bg.onclick=guardarMes;
+  const bl=$('mesBtnLimpiar'); if(bl) bl.onclick=()=>{ if(confirm('¿Limpiar todos los montos de la grilla mensual?')){ M.filas=filasVaciasMes(); M.archivo=null; M.hojas=[]; M.hojaSel=''; M.historia=null; M.fuenteMeta=''; render(); } };
+  const bd=$('mesBtnVerDash'); if(bd) bd.onclick=()=>setTab('mesdash');
+}
+
+// arma el registro de una sucursal para el mes
+function paqueteMes(s, meta, semanal, real, nota){
+  return { nombre:s.nombre, pfx:s.pfx,
+    meta:r0(meta), minimo:r0(meta*F_MIN), s120:r0(meta*F_120),
+    semanal: semanal>0 ? r0(semanal) : r0(meta/4),
+    real: (real!=null && real>0) ? r0(real) : null,
+    nota: nota||'' };
+}
+async function guardarMes(){
+  const M=state.mes;
+  const per = ($('mesInput')&&$('mesInput').value) || M.periodo;
+  if(!/^\d{4}-\d{2}$/.test(per)){ toast('Elegí el mes','err'); return; }
+  M.periodo=per;
+  const porSlug={}; let n=0;
+  STORES.forEach(s=>{
+    const f=M.filas[s.slug]; if(!f || !(f.meta>0)) return;
+    porSlug[s.slug]=paqueteMes(s, f.meta, f.semanal, f.real, f.nota);
+    n++;
+  });
+  if(!n){ toast('Cargá al menos una sucursal con meta','err'); return; }
+  if(!FIREBASE_DB_URL){ toast('Sin base configurada','err'); return; }
+  try{
+    toast('Guardando…');
+    const patch={}; let nHist=0;
+    // histórico del Excel: un PATCH con todos los meses (preserva notas ya cargadas)
+    if(M.impHist && M.historia){
+      let previos=null;
+      try{ previos = await fbGet(ROOT+'/meses'); }catch(e){ previos=null; }
+      Object.keys(M.historia).forEach(k=>{
+        if(k===per) return;                     // el mes en edición sale de la grilla
+        const mh=M.historia[k], ps={};
+        STORES.forEach(s=>{
+          const h=mh[s.slug]; if(!h || !(h.objetivo>0)) return;
+          const ant = previos && previos[k] && previos[k].porSlug && previos[k].porSlug[s.slug];
+          ps[s.slug]=paqueteMes(s, h.objetivo, (ant&&ant.semanal)||0,
+            h.real!=null ? h.real : (ant&&ant.real)||null, (ant&&ant.nota)||'');
+        });
+        if(Object.keys(ps).length){
+          patch[k]={ meta:{ generado_en:nowISO(), generado_por:SESSION.email||'', mes:k,
+            etiqueta:M.etiqueta||'', fuente:(M.archivo&&M.archivo.nombre)||'',
+            origen:'excel-historico', sucursales:Object.keys(ps).length }, porSlug:ps };
+          nHist++;
+        }
+      });
+    }
+    patch[per]={ meta:{ generado_en:nowISO(), generado_por:SESSION.email||'', mes:per,
+      etiqueta:M.etiqueta||'', fuente:(M.archivo&&M.archivo.nombre)||'',
+      origen:M.archivo?'excel':'manual', sucursales:n }, porSlug };
+    await fbPatch(ROOT+'/meses', patch);
+    M.keys = Array.from(new Set(M.keys.concat(Object.keys(patch)))).sort();
+    await fbPut(ROOT+'/ultimoMes', M.keys[M.keys.length-1]);
+    toast('Objetivo mensual publicado ✓'+(nHist?(' · '+nHist+' meses de histórico'):''),'ok');
+    setTab('mesdash');
+    abrirMesDash(per);
+  }catch(err){ console.error(err); toast('No pude guardar: '+(err.message||''),'err'); }
+}
+
+function wireMesDash(){
+  const sel=$('mesDashSel'); if(sel) sel.onchange=e=>abrirMesDash(e.target.value);
+  document.querySelectorAll('th[data-msort]').forEach(th=>th.onclick=()=>{
+    const k=th.dataset.msort; const D=state.mes.dash;
+    if(D.sort.k===k) D.sort.dir*=-1; else D.sort={k, dir:-1};
+    render();
+  });
+  if(!state.mes.dash.periodo && state.mes.keys.length) abrirMesDash(state.mes.keys.slice().sort().reverse()[0]);
+}
+async function abrirMesDash(per){
+  const D=state.mes.dash;
+  D.periodo=per; D.data=null; D.prev=null; D.semanal=null;
+  if(state.tab==='mesdash') render();
+  try{ D.data = (await fbGet(ROOT+'/meses/'+per)) || {porSlug:{}}; }
+  catch(e){ D.data={porSlug:{}}; toast('No pude leer el mes','err'); }
+  try{ D.prev = await fbGet(ROOT+'/meses/'+mesAnioAnt(per)); }catch(e){ D.prev=null; }
+  try{ D.semanal = await acumuladoSemanal(per); }catch(e){ D.semanal=null; }
+  if(state.tab==='mesdash') render();
+}
+/* Avance del mes en curso: suma la venta REAL de las semanas publicadas cuyo
+   lunes cae en el mes. Es provisorio — el real oficial del mes llega con el
+   Excel del mes siguiente. Solo lo usa gerencia (baja todas las semanas). */
+async function acumuladoSemanal(per){
+  const semanas = await fbGet(ROOT+'/semanas'); if(!semanas) return null;
+  const out={}; let nSem=0;
+  Object.keys(semanas).forEach(iso=>{
+    if(String(iso).slice(0,7)!==per) return;
+    const wk=semanas[iso]; if(!wk || !wk.porSlug) return;
+    let hay=false;
+    STORES.forEach(s=>{ const v=wk.porSlug[s.slug]; if(v && v.real>0){ out[s.slug]=(out[s.slug]||0)+r0(v.real); hay=true; } });
+    if(hay) nSem++;
+  });
+  return nSem ? {porSlug:out, semanas:nSem} : null;
 }
 
 /* ============================================================
@@ -814,6 +1342,8 @@ function wire(){
   document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
   if(state.tab==='cargar')     wireCargar();
   if(state.tab==='dashboard')  wireDashboard();
+  if(state.tab==='mescargar')  wireMesCargar();
+  if(state.tab==='mesdash')    wireMesDash();
   if(state.tab==='historico')  wireHistorico();
   if(state.tab==='pesos')      wirePesos();
 }
@@ -940,6 +1470,20 @@ async function abrirDash(sem){
 function wireHistorico(){
   document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{ setTab('dashboard'); abrirDash(b.dataset.open); });
   document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>cargarParaEditar(b.dataset.edit));
+  document.querySelectorAll('[data-mopen]').forEach(b=>b.onclick=()=>{ setTab('mesdash'); abrirMesDash(b.dataset.mopen); });
+  document.querySelectorAll('[data-medit]').forEach(b=>b.onclick=()=>cargarMesParaEditar(b.dataset.medit));
+}
+async function cargarMesParaEditar(per){
+  try{
+    toast('Cargando mes…');
+    const d=await fbGet(ROOT+'/meses/'+per);
+    const M=state.mes;
+    M.filas=filasVaciasMes();
+    if(d&&d.porSlug) Object.entries(d.porSlug).forEach(([slug,v])=>{ if(M.filas[slug]) M.filas[slug]={meta:v.meta, semanal:v.semanal||null, real:v.real, nota:v.nota||''}; });
+    M.periodo=per; M.etiqueta=(d&&d.meta&&d.meta.etiqueta)||''; M.archivo=null; M.hojas=[]; M.hojaSel=''; M.historia=null; M.fuenteMeta='';
+    setTab('mescargar');
+    toast('Mes cargado para editar','ok');
+  }catch(e){ toast('No pude cargar el mes','err'); }
 }
 async function cargarParaEditar(sem){
   try{
@@ -963,6 +1507,11 @@ async function init(){
       const semanas = await fbGet(ROOT+'/semanas');
       state.histKeys = semanas ? Object.keys(semanas) : [];
     }catch(e){ /* base vacía o sin red: seguimos en modo carga */ }
+    try{
+      // shallow: solo las claves de los meses publicados, sin bajar los datos
+      const meses = await fetch(fbUrl(ROOT+'/meses')+'?shallow=true').then(r=>r.ok?r.json():null);
+      state.mes.keys = meses ? Object.keys(meses).sort() : [];
+    }catch(e){ /* ídem */ }
   }
   render();
 }
