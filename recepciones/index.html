@@ -1312,7 +1312,8 @@ function renderMdTbl(){
 }
 
 /* ============================================================
-   IMPORTACIÓN MASIVA de ingresos — reporte "Estadistica de remitos"
+   IMPORTACIÓN MASIVA de ingresos — reportes "Remitos de ingreso" (export crudo
+   del sistema, tal cual sale) o "Estadistica de remitos" (pivot MM-YY viejo).
    El depósito sube el Excel matriz por mes; se reforma en el navegador (una fila
    por artículo-en-remito, con cantidad/valorizado por mes), se previsualiza y se
    SUMA a lo ya cargado (PATCH/merge en Firebase; no pisa lo existente).
@@ -1320,26 +1321,55 @@ function renderMdTbl(){
    ============================================================ */
 function convEstadistica(wb){
   const sheet = wb.SheetNames[0];
-  const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheet], {defval:''});
-  if(!rows.length) throw new Error('El Excel no tiene filas.');
-  const MESES = Object.keys(rows[0]).map(h=>{ const m=h.match(/^(\d{2})-(\d{2}) Cantidad$/); return m?h.replace(/ Cantidad$/,''):null; }).filter(Boolean);
-  if(!MESES.length) throw new Error('No parece el reporte "Estadistica de remitos" (faltan columnas "MM-YY Cantidad").');
+  const raw = XLSX.utils.sheet_to_json(wb.Sheets[sheet], {header:1, defval:''});
+  if(!raw.length) throw new Error('El Excel no tiene filas.');
+  /* normaliza encabezados: espacios, mayúsculas, acentos y caracteres rotos */
+  const estN = s => String(s==null?'':s).replace(/\s+/g,' ').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/�/g,'?');
+  /* la fila de encabezados es la que trae "Nro.remito": en el pivot viejo es la
+     primera; en el export crudo "Remitos de ingreso" viene en la fila 4 */
+  let hdrRow=-1;
+  for(let r=0;r<Math.min(raw.length,12);r++){ if((raw[r]||[]).some(c=>/^nro\.?\s*remito$/.test(estN(c)))){ hdrRow=r; break; } }
+  if(hdrRow<0) throw new Error('No parece el reporte de remitos: no encuentro la columna "Nro.remito".');
+  const H = raw[hdrRow]||[];
+  const iOf = re => H.findIndex(c=>re.test(estN(c)));
+  const cMarca=iOf(/^marca$/), cProv=iOf(/^proveedor$/), cRubro=iOf(/^rubro$/), cDisc=iOf(/^disciplina$/), cGrp=iOf(/^grupo 1$/), cNro=iOf(/^nro\.?\s*remito$/), cArt=iOf(/^art.?culo$/), cCod=iOf(/barras/);
+  /* pares (cantidad, valorizado) por mes, en cualquiera de los dos formatos:
+     - pivot viejo: columnas "MM-YY Cantidad" / "MM-YY Valorizado";
+     - export crudo: pares "Cant.recibido" / "Costo" (Costo = valorizado TOTAL de
+       la fila) con el número de mes en la fila de arriba, sin año → se infiere
+       contra la fecha actual (un mes "futuro" es del año pasado) */
+  const pares=[];
+  H.forEach((h,j)=>{
+    const m=estN(h).match(/^(\d{2})-(\d{2}) cantidad$/);
+    if(m){ const jv=H.findIndex(x=>estN(x)===m[1]+'-'+m[2]+' valorizado'); pares.push({mes:m[1]+'-'+m[2], jc:j, jv}); return; }
+    if(estN(h)==='cant.recibido'){
+      const mesN=parseInt((raw[hdrRow-1]||[])[j],10); if(!mesN) return;
+      const hoy=new Date(); let y=hoy.getFullYear(); if(mesN>hoy.getMonth()+2) y--;
+      const jv=(estN(H[j+1])==='costo')?j+1:-1;
+      pares.push({mes:('0'+mesN).slice(-2)+'-'+String(y).slice(-2), jc:j, jv});
+    }
+  });
+  if(!pares.length) throw new Error('No parece el reporte de remitos (faltan las columnas de cantidad por mes).');
+  const cel=(row,j)=> j>=0 ? row[j] : '';
+  /* filas de datos: con nº de remito y sin los subtotales por marca ("Total") */
+  const dataRows = raw.slice(hdrRow+1).filter(r=>{ const n=String(cel(r,cNro)||'').trim(); return n && estN(n)!=='total'; });
   const marcasPorRemito = {};
-  rows.forEach(r=>{ const n=r['Nro.remito']; if(n){ (marcasPorRemito[n]=marcasPorRemito[n]||new Set()).add(r['Marca']); } });
+  dataRows.forEach(r=>{ const n=String(cel(r,cNro)).trim(); (marcasPorRemito[n]=marcasPorRemito[n]||new Set()).add(String(cel(r,cMarca)||'').trim()); });
   const docs = {};
-  rows.forEach(r=>{
-    const nro=r['Nro.remito']; if(!nro) return;
-    const marca=String(r['Marca']||'Desconocida').trim();
-    const mes=MESES.find(m=>num(r[m+' Cantidad'])>0); if(!mes) return;
-    const cant=num(r[mes+' Cantidad']), val=num(r[mes+' Valorizado']);
+  dataRows.forEach(r=>{
+    const nro=String(cel(r,cNro)).trim();
+    const marca=String(cel(r,cMarca)||'Desconocida').trim();
+    const par=pares.find(p=>num(cel(r,p.jc))>0); if(!par) return;
+    const cant=num(cel(r,par.jc)), val=num(cel(r,par.jv));
     const multi=(marcasPorRemito[nro]||new Set()).size>1;
     const docNro = multi ? (nro+' · '+marca) : nro;
     const key = fbKey(docNro);
     let d = docs[key];
-    if(!d){ const parts=mes.split('-'); const fecha='20'+parts[1]+'-'+parts[0]+'-01'; d = docs[key] = { nro:docNro, fecha, proveedor:String(r['Proveedor']||'').trim(), marca, pedido_nro:'', semana:semanaISO(fecha), creado_en:nowISO(), origen:'import-estadistica', _lin:{} }; }
-    const cod=String(r['Código barras']||'').trim(), art=String(r['Artículo']||'').trim();
-    const lk = cod+'|'+art+'|'+(r['Rubro']||'')+'|'+(r['Disciplina']||'')+'|'+(r['Grupo 1']||'');
-    const L = d._lin[lk] || (d._lin[lk]={ modelo:cod, descripcion:art, rubro:String(r['Rubro']||'').trim(), disciplina:String(r['Disciplina']||'').trim(), tipo:String(r['Grupo 1']||'').trim(), _c:0, _v:0 });
+    if(!d){ const parts=par.mes.split('-'); const fecha='20'+parts[1]+'-'+parts[0]+'-01'; d = docs[key] = { nro:docNro, fecha, proveedor:String(cel(r,cProv)||'').trim(), marca, pedido_nro:'', semana:semanaISO(fecha), creado_en:nowISO(), origen:'import-estadistica', _lin:{} }; }
+    const cod=String(cel(r,cCod)||'').trim(), art=String(cel(r,cArt)||'').trim();
+    const rub=String(cel(r,cRubro)||'').trim(), dis=String(cel(r,cDisc)||'').trim(), tip=String(cel(r,cGrp)||'').trim();
+    const lk = cod+'|'+art+'|'+rub+'|'+dis+'|'+tip;
+    const L = d._lin[lk] || (d._lin[lk]={ modelo:cod, descripcion:art, rubro:rub, disciplina:dis, tipo:tip, _c:0, _v:0 });
     L._c+=cant; L._v+=val;
   });
   const out = Object.keys(docs).map(k=>docs[k]);
@@ -1352,7 +1382,7 @@ function openImportEstadistica(){
   estCtx = null;
   openModal(
     '<button class="close" onclick="closeModal()">×</button><h2>Importar ingresos (masivo)</h2>'
-    +'<div class="msub">Subí el reporte <b>"Estadistica de remitos"</b> que exporta el sistema de stock. Se reforma acá, se previsualiza y se <b>suma</b> a los remitos ya cargados (no pisa lo existente). Para un remito suelto usá "Alta manual".</div>'
+    +'<div class="msub">Subí el reporte de remitos que exporta el sistema de stock (<b>"Remitos de ingreso"</b> o <b>"Estadistica de remitos"</b>, tal cual sale). Se reforma acá, se previsualiza y se <b>suma</b> a los remitos ya cargados (no pisa lo existente). Para un remito suelto usá "Alta manual".</div>'
     +'<div class="field"><label>Excel del reporte (.xlsx / .xls)</label><input class="inp" type="file" id="estFile" accept=".xlsx,.xls" style="width:100%"></div>'
     +'<div id="estPreview"></div>'
     +'<div class="modal-actions" id="estActions"><button class="btn btn-outline" onclick="closeModal()">Cerrar</button></div>'
