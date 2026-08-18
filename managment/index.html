@@ -46,6 +46,12 @@ main{max-width:1320px;margin:0 auto;padding:24px 20px 46px}
 .size-grid{display:grid;grid-template-columns:repeat(6,64px);gap:7px;align-items:end}.size-grid input{padding:8px;text-align:center}.small-input{width:64px;border:1px solid var(--line);border-radius:6px;padding:7px;text-align:center}.size-copy{cursor:cell}.size-copy.selected{outline:2px solid var(--red);border-color:var(--red);background:#fff5f5}
 table input:disabled,table select:disabled{opacity:.5;background:#f1f3f8;cursor:not-allowed}
 .empty{border:1px dashed var(--line);border-radius:8px;padding:22px;text-align:center;color:var(--muted);font-size:14px;background:#fff}
+/* Variantes de color agrupadas por nombre de articulo (vista Desarrollo) */
+.grp-row{cursor:pointer}.grp-row:hover td{background:#f5f7fc}
+.grp-caret{display:inline-block;width:15px;color:var(--red);font-size:11px}
+.color-pill{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;background:#fbfcff;padding:2px 8px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--navy)}
+tr.grp-var td{background:#fbfcff}
+tr.grp-var td:first-child{border-left:3px solid var(--line);padding-left:16px}
 .foto-slot{display:flex;flex-direction:column;align-items:center;gap:5px}.foto-slot .thumb{cursor:pointer}
 .file-btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:6px;padding:5px 9px;font-family:var(--font-c);font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;cursor:pointer;white-space:nowrap}.file-btn:hover{background:#f5f7fc}.file-btn input{display:none}
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(12px);background:var(--navy);color:#fff;border-bottom:3px solid var(--red);border-radius:8px;padding:12px 20px;font-family:var(--font-b);font-size:13.5px;font-weight:500;line-height:1.4;max-width:min(520px,90vw);text-align:center;box-shadow:0 10px 30px rgba(11,21,39,.28);opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease;z-index:40}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -353,7 +359,9 @@ function colorBloque(clave){
 }
 
 const $ = id => document.getElementById(id);
-const money = n => '$ ' + (Number(n || 0)).toLocaleString('es-AR');
+// Espacio no separable entre el simbolo y el numero: si la celda es angosta,
+// el precio baja de linea entero ("$ 12.992,4") y el $ nunca queda suelto.
+const money = n => '$ ' + (Number(n || 0)).toLocaleString('es-AR');
 const uid = prefix => prefix + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,7);
 
 function isFirebaseMode(){ return !!FIREBASE_URL; }
@@ -1291,15 +1299,108 @@ function margenPill(p){
   return pill(m.toFixed(2) + 'x', m >= margenObjetivo() ? 'ok' : 'bad');
 }
 
+// Variantes de color acumulables: dentro de una linea, las prendas con el mismo
+// nombre y la misma marca se muestran como UNA fila resumen con los colores
+// acumulados; se expande para ver/editar cada color. Simplifica la vista cuando
+// un articulo viene en 3-4 colores. Clave del grupo = linea|marca|nombre.
+let gruposPrendasAbiertos = new Set();
+
+function grupoKey(linea, p){
+  return linea + '|' + (p.marca || '') + '|' + String(p.nombre || '').trim().toLowerCase();
+}
+
+function groupedByNombre(linea, items){
+  const map = new Map();
+  items.forEach(p => {
+    const k = grupoKey(linea, p);
+    if(!map.has(k)) map.set(k, []);
+    map.get(k).push(p);
+  });
+  return [...map.entries()].map(([key, its]) => ({ key, items: its }));
+}
+
+function toggleGrupoPrendas(keyEnc){
+  const key = decodeURIComponent(keyEnc);
+  if(gruposPrendasAbiertos.has(key)) gruposPrendasAbiertos.delete(key);
+  else gruposPrendasAbiertos.add(key);
+  renderItemsModal();
+}
+
+// Fila resumen del articulo con varias variantes de color.
+function grupoRow(c, g){
+  const abierto = gruposPrendasAbiertos.has(g.key);
+  const keyEnc = encodeURIComponent(g.key);
+  const p0 = g.items[0];
+  const provs = [...new Set(g.items.map(p => String(p.proveedor || '').trim()).filter(Boolean))];
+  const pvps = [...new Set(g.items.map(p => Number(p.pvpObjetivo || 0)))];
+  const costos = [...new Set(g.items.map(p => Number(p.costo || 0)))];
+  const margenes = [...new Set(g.items.map(p => { const m = margenPrenda(p); return m === null ? '-' : m.toFixed(2); }))];
+  const pasos = [...new Set(g.items.map(p => p.paso))];
+  const pasoPill = pasos.length === 1
+    ? pill(pasos[0], pasos[0] === '4. Aprobado Comercial' ? 'ok' : pasos[0] === '5. Desaprobado' ? 'bad' : 'warn')
+    : pill('Pasos mixtos','warn');
+  return `
+    <tr class="grp-row" onclick="toggleGrupoPrendas('${keyEnc}')" title="${abierto ? 'Ocultar' : 'Ver'} los colores de este articulo">
+      <td><span class="grp-caret">${abierto ? '▾' : '▸'}</span><b>${escapeHtml(p0.nombre)}</b><div class="muted">${MARCAS[p0.marca] || ''} · ${g.items.length} colores${(()=>{ const tot = g.items.reduce((s,p)=>{ const t = tallesDePrenda(p); return s + (t ? totalTalles(t) : 0); }, 0); return tot ? ' · ' + tot + ' u' : ''; })()}</div></td>
+      <td>${provs.length === 1 ? escapeHtml(provs[0]) : (provs.length ? 'Varios' : '-')}</td>
+      <td>${pvps.length === 1 ? money(pvps[0]) : 'Varios'}${costos.length === 1 ? `<div class="muted" style="font-size:11px">Costo ${money(costos[0])}</div>` : ''}</td>
+      <td>${margenes.length === 1 ? margenPill(p0) : '<span class="muted">Varios</span>'}</td>
+      <td colspan="4"><div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">${g.items.map(p => { const t = tallesDePrenda(p); return `<span class="color-pill">${escapeHtml(p.color || 'Sin color')}${t ? ' · ' + totalTalles(t) : ''}</span>`; }).join('')} ${pasoPill}</div></td>
+      <td colspan="2"><button class="action" type="button" onclick="event.stopPropagation();toggleGrupoPrendas('${keyEnc}')">${abierto ? 'Ocultar' : 'Ver colores'}</button></td>
+    </tr>`;
+}
+
 function lineaPanel(c, group){
+  const grupos = groupedByNombre(group.linea, group.items);
+  const nArt = grupos.length;
   return `
     <div style="margin-bottom:16px">
-      <div class="section-title" style="margin-bottom:6px">Linea: ${escapeHtml(group.linea)} <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px">(${group.items.length} prenda${group.items.length === 1 ? '' : 's'})</span></div>
+      <div class="section-title" style="margin-bottom:6px">Linea: ${escapeHtml(group.linea)} <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px">(${group.items.length} prenda${group.items.length === 1 ? '' : 's'}${nArt !== group.items.length ? ` · ${nArt} articulo${nArt === 1 ? '' : 's'}` : ''})</span></div>
       <div class="table-wrap"><table>
         <thead><tr><th>Nombre</th><th>Proveedor</th><th>PVP Obj.</th><th>Margen</th><th>Referencia</th><th>Paso actual</th><th>Version</th><th>Fotos</th><th>OC</th><th>Acciones</th></tr></thead>
-        <tbody>${group.items.map(p=>`
-        <tr>
-          <td><b>${escapeHtml(p.nombre)}</b><div class="muted">${MARCAS[p.marca] || ''} / ${escapeHtml(p.color || '-')}</div>
+        <tbody>${grupos.map(g => g.items.length === 1
+          ? prendaRow(c, g.items[0], false)
+          : grupoRow(c, g) + (gruposPrendasAbiertos.has(g.key) ? g.items.map(p => prendaRow(c, p, true)).join('') : '')
+        ).join('')}</tbody>
+      </table></div>
+    </div>`;
+}
+
+// Talles declarados en Desarrollo: campo estructurado p.talles (viene del
+// import de planilla) con fallback a la nota "Curva planilla: ..." que dejaban
+// los imports anteriores a que existiera el campo.
+function tallesDePrenda(p){
+  const t = p.talles || {};
+  if(TALLES.some(k => Number(t[k]) > 0)) return t;
+  const m = /Curva planilla:\s*([^|]+)/i.exec(String(p.notas || ''));
+  if(!m) return null;
+  const out = {};
+  m[1].trim().split(/\s+/).forEach(tok => {
+    const [lab, n] = tok.split(':');
+    const talle = TALLES.find(x => talleLabel(x).toUpperCase() === String(lab || '').toUpperCase());
+    if(talle && Number(n) > 0) out[talle] = Math.round(Number(n));
+  });
+  return Object.keys(out).length ? out : null;
+}
+
+function curvaLabel(t){ return TALLES.filter(k => Number(t[k]) > 0).map(k => talleLabel(k) + ':' + t[k]).join(' '); }
+function totalTalles(t){ return TALLES.reduce((s,k) => s + (Number(t[k]) || 0), 0); }
+
+// Linea "150 u · S:10 M:20 ..." para la celda Nombre (o '' si no hay curva).
+function unidadesPrendaHTML(p){
+  const t = tallesDePrenda(p);
+  if(!t) return '';
+  return `<div class="muted" style="font-size:11px;margin-top:2px"><b>${totalTalles(t)} u</b> · ${escapeHtml(curvaLabel(t))}</div>`;
+}
+
+// esVariante: fila dentro de un grupo expandido → el color pasa a ser el titulo.
+function prendaRow(c, p, esVariante){
+  return `
+        <tr${esVariante ? ' class="grp-var"' : ''}>
+          <td>${esVariante
+            ? `<b>${escapeHtml(p.color || 'Sin color')}</b><div class="muted">${escapeHtml(p.nombre)}</div>`
+            : `<b>${escapeHtml(p.nombre)}</b><div class="muted">${MARCAS[p.marca] || ''} / ${escapeHtml(p.color || '-')}</div>`}
+            ${unidadesPrendaHTML(p)}
             <input class="small-input" style="width:120px;margin-top:4px" value="${escapeAttr(p.codigoManual || '')}" placeholder="Codigo (auto)" title="Vacio = codigo automatico al crear la OC" onchange="setCodigoManualPrenda('${c.id}','${p.id}',this.value)"></td>
           <td>${escapeHtml(p.proveedor || '-')}</td>
           <td>${money(p.pvpObjetivo)}<div class="muted" style="font-size:11px">Costo ${money(p.costo)}</div></td>
@@ -1329,10 +1430,7 @@ function lineaPanel(c, group){
           </td>
           <td>${p.paso === '4. Aprobado Comercial' ? `<button class="action primary" onclick="crearOCDesdePrenda('${c.id}','${p.id}')">Crear OC</button>` : '<span class="muted">Requiere aprobado comercial</span>'}</td>
           <td><button class="action danger" onclick="borrarPrenda('${c.id}','${p.id}')">Borrar</button></td>
-        </tr>
-      `).join('')}</tbody>
-      </table></div>
-    </div>`;
+        </tr>`;
 }
 
 function createItem(ev){
@@ -1568,7 +1666,9 @@ async function crearOCDesdePrenda(colId, prendaId, silent){
     aviosResponsable:AVIOS_RESP[0],
     aviosNotas:'',
     estado:'Borrador',
-    talles:emptySizes(),
+    // Si la prenda trae curva de talles desde Desarrollo (import de planilla),
+    // la OC arranca con esas unidades ya cargadas.
+    talles:(()=>{ const t = tallesDePrenda(d); return t ? {...emptySizes(), ...t} : emptySizes(); })(),
     recibido:emptySizes(),
     fecha:today(),
     notas:'',
@@ -2328,7 +2428,7 @@ async function descargarPlanillaModelo(kind){
   const titulo = esOC ? 'Planilla de carga - Orden de compra (Paso 2)' : 'Planilla de carga - Desarrollo (Paso 1)';
   const leyenda = esOC
     ? 'Una fila por articulo + color, con curva de talles y costo. Marca: Mateu, Ruge o Aurelius. Codigo vacio = se genera automatico (MAT/RUG/AUR). Las ordenes entran como BORRADOR: despues se confirman y envian desde el modulo. Borra la fila de EJEMPLO antes de importar.'
-    : 'Una fila por articulo + color. Marca: Mateu, Ruge o Aurelius. En esta etapa costo, codigo y talles son opcionales (la curva oficial se carga en la OC del Paso 2). Si la Coleccion ya existe con ese nombre, las prendas se suman ahi. Borra la fila de EJEMPLO antes de importar.';
+    : 'Una fila por articulo + color. Marca: Mateu, Ruge o Aurelius. En esta etapa costo, codigo y talles son opcionales; si cargas unidades por talle, quedan visibles en Desarrollo y pasan solas a la OC cuando el articulo se aprueba. Si la Coleccion ya existe con ese nombre, las prendas se suman ahi. Borra la fila de EJEMPLO antes de importar.';
 
   const nCols = PLANILLA_HEADERS.length;
   const wb = new ExcelJS.Workbook();
@@ -2577,7 +2677,7 @@ function renderImportPreview(){
     </table></div>
     <div class="notice" style="margin-top:12px">${esOC
       ? 'Las ordenes entran en estado <b>Borrador</b>, agrupadas por proveedor. Los codigos vacios se generan automaticos. Despues las revisas y usas "Confirmar y enviar OC".'
-      : 'Las prendas entran en <b>1. Diseño</b>. Si la coleccion indicada ya existe, se suman ahi; si no, se crea. Los proveedores nuevos se dan de alta solos.'}</div>` : '<div class="empty">Ninguna fila valida para importar.</div>'}
+      : 'Las prendas entran en <b>1. Diseño</b>. Si la coleccion indicada ya existe, se suman ahi; si no, se crea. Los proveedores nuevos se dan de alta solos. Las unidades por talle quedan en la prenda y pasan solas a la OC al aprobar.'}</div>` : '<div class="empty">Ninguna fila valida para importar.</div>'}
     <div class="btn-row" style="margin-top:14px;justify-content:flex-end">
       <button class="btn secondary" type="button" onclick="closeModal('importModal')">Cancelar</button>
       <button class="btn" type="button" id="importConfirmBtn" onclick="confirmarImportacion()" ${filas.length ? '' : 'disabled'}>Importar ${filas.length} fila${filas.length===1?'':'s'}</button>
@@ -2650,13 +2750,15 @@ async function confirmarImportacion(){
           state.colecciones.unshift(col);
         }
         grupo.filas.forEach(f => {
-          const curva = TALLES.filter(t=>f.talles[t]).map(t=>talleLabel(t)+':'+f.talles[t]).join(' ');
+          // La curva de talles va estructurada en p.talles: se ve en Desarrollo
+          // y se traslada sola a la OC cuando la prenda se aprueba (Paso 2).
           col.prendas.push({
             id:uid('pr'), marca:f.marca, tipo:f.linea, nombre:f.articulo, color:f.color,
             genero:f.genero, codigoManual:f.codigo, proveedor:f.proveedor,
             costo:f.costo, pvpObjetivo:f.pvp, referenciaLink:f.link,
             paso:'1. Diseño', version:'1',
-            notas:(f.notas || '') + (curva ? (f.notas ? ' | ' : '') + 'Curva planilla: ' + curva : ''),
+            notas:f.notas || '',
+            talles:{...f.talles},
             estadoDesde:today(), fotoReferencia:null, fotoPrototipo:null, historial:[]
           });
         });
