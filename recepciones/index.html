@@ -815,6 +815,31 @@ function ocTalleCols(H, usadas){
   const out=[]; H.forEach((h,j)=>{ if((usadas||[]).indexOf(j)>-1) return; if(ocEsTalle(h)) out.push([j,String(h).trim()]); });
   return out;
 }
+/* Familia = la línea de producto, para que las variantes queden juntas:
+   "SAMBA OG" y "SAMBA CLASSIC" → SAMBA · "W 3S TR TS" e "I 3S T-SET" → 3S.
+   Se saltean los prefijos de género/edad de una letra (W/M/I/J/K…). */
+const OC_FAM_SKIP = /^(w|m|i|j|k|u|y|b|g|jr|yt|inf|kid|kids|men|women|unisex|the|de|la|el)$/;
+function ocFamilia(desc){
+  const toks=String(desc||'').toUpperCase().replace(/[^A-Z0-9ÁÉÍÓÚÜÑ.\- ]/g,' ').split(/\s+/).filter(Boolean);
+  for(const t of toks){ if(t.length>1 && !OC_FAM_SKIP.test(t.toLowerCase())) return t; }
+  return toks[0]||'';
+}
+/* orden predeterminado de la OC: rubro → familia → modelo */
+function ocOrdenarArts(arts){
+  return (arts||[]).slice().sort((a,b)=>
+    cmp(a.rubro||'ZZZ', b.rubro||'ZZZ') || cmp(a.familia||'', b.familia||'') ||
+    cmp(a.descripcion||'', b.descripcion||'') || cmp(a.modelo||'', b.modelo||''));
+}
+/* "4, 4-, 5, 5-, 6" = curva (varios talles en una celda) · "9,5" = un talle */
+function ocEsCurva(s){
+  const p=String(s).split(/\s*[,;|\/]\s*/).filter(x=>x!=='');
+  return p.length>1 && !/^\d+[.,]5$/.test(String(s).trim());
+}
+const ocCurvaLista = s => String(s||'').split(/\s*[,;|\/]\s*/).map(x=>x.trim()).filter(Boolean);
+function ocUnirCurva(a, b){
+  const out=ocCurvaLista(a); ocCurvaLista(b).forEach(t=>{ if(out.indexOf(t)<0) out.push(t); });
+  return out.join(', ');
+}
 function ocCandidatos(nh, campo, prefer){
   const al=(prefer||[]).concat(OC_ALIAS[campo]||[]); const out=[];
   al.forEach(a=>{ nh.forEach((h,j)=>{ if(h===a && out.indexOf(j)<0) out.push(j); }); });
@@ -936,11 +961,15 @@ function ocArmarArts(t){
     const desc = c.desc>=0 ? String(r[c.desc]==null?'':r[c.desc]).trim() : '';
     if(!cod && !desc) return;
     if(/^total/i.test(cod) || /^total/i.test(desc)) return;
-    const talles=[]; let cant=0;
-    if(c.talle>=0){                                  // una fila por talle
+    const talles=[]; let cant=0, curva='';
+    if(c.talle>=0){
       cant = c.cant>=0 ? ocN(r[c.cant]) : 0;
       const tl=String(r[c.talle]==null?'':r[c.talle]).trim();
-      if(cant>0 && tl) talles.push({talle:tl, cant});
+      /* la celda puede traer UN talle (una fila por talle) o la CURVA entera
+         ("4, 4-, 5, 5-, 6…", como el confirmado de franquicias de adidas): en ese
+         caso la marca no abre las unidades por talle, así que se guarda la curva
+         como referencia y el confirmado queda a nivel artículo */
+      if(cant>0 && tl){ if(ocEsCurva(tl)) curva=tl; else talles.push({talle:tl, cant}); }
     } else if(t.talleCols.length){                   // una columna por talle
       t.talleCols.forEach(([j,lbl])=>{ const q=ocN(r[j]); if(q>0) talles.push({talle:lbl,cant:q}); });
       cant = talles.reduce((a,x)=>a+x.cant,0);
@@ -958,11 +987,12 @@ function ocArmarArts(t){
       const genero=ocGenero(c.gen>=0?r[c.gen]:'');
       a=arts[key]={ modelo:cod, descripcion:desc, genero, rubro,
         disciplina:OC_DISC_MAP[disc]||disc||'SIN DISCIPLINA', tipo:ocTipo(rubro,genero)||OC_TIPO_MAP[genero]||'',
-        talles:[], cantidad:0, costo_unitario:costo };
+        talles:[], curva:'', cantidad:0, costo_unitario:costo };
       orden.push(key);
     }
     a.cantidad+=cant;
     talles.forEach(x=>{ const e=a.talles.filter(y=>y.talle===x.talle)[0]; if(e) e.cant+=x.cant; else a.talles.push({talle:x.talle,cant:x.cant}); });
+    if(curva) a.curva=ocUnirCurva(a.curva, curva);
   });
   return orden.map(k=>arts[k]);
 }
@@ -991,7 +1021,8 @@ const OC_CONVERTERS = { 'Nike': convNike };   // lectores propios; el resto va p
 /* convCtx = la OC unificada · ocCtx = la tabla cruda + mapeo (para re-armar) */
 let convCtx=null, ocCtx=null, ocMapOpen=false;
 function ocTotales(oc){
-  let unid=0, imp=0; (oc.articulos||[]).forEach(a=>{ unid+=a.cantidad; imp+=a.cantidad*a.costo_unitario; });
+  let unid=0, imp=0;
+  (oc.articulos||[]).forEach(a=>{ if(a.familia==null) a.familia=ocFamilia(a.descripcion); unid+=a.cantidad; imp+=a.cantidad*a.costo_unitario; });
   oc.total_unidades=unid; oc.total_importe=imp; return oc;
 }
 function convertirOC(marca, wb, filename){
@@ -1110,7 +1141,12 @@ function renderConvPreview(){
     }
   }
   html+='<div class="tbl-wrap" style="max-height:320px;overflow:auto"><table style="min-width:640px"><thead><tr><th>Modelo</th><th>Descripción</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Talles</th><th class="num">Confirmado</th><th class="num">Costo</th><th class="num">Importe</th></tr></thead><tbody>'
-    + oc.articulos.slice(0,300).map(a=>'<tr><td class="mono">'+esc(a.modelo)+'</td><td>'+esc(a.descripcion)+'</td><td>'+esc(a.rubro)+'</td><td>'+esc(a.disciplina)+'</td><td>'+esc(a.tipo)+'</td><td class="num">'+(a.talles.length||'—')+'</td><td class="num big">'+fmtInt(a.cantidad)+'</td><td class="num mono">'+fmtMoney(a.costo_unitario)+'</td><td class="num mono">'+fmtMoney(a.cantidad*a.costo_unitario)+'</td></tr>').join('')
+    + oc.articulos.slice(0,300).map(a=>{
+        const curvaT=ocCurvaLista(a.curva), abierto=a.talles.length;
+        const celdaT = abierto ? ('<span title="'+esc(a.talles.map(t=>t.talle+':'+t.cant).join('  '))+'">'+abierto+'</span>')
+                     : (curvaT.length ? ('<span class="mono" style="font-size:11px" title="'+esc(a.curva)+'">'+esc(curvaT.slice(0,6).join(', '))+(curvaT.length>6?'…':'')+'</span>') : '—');
+        return '<tr><td class="mono">'+esc(a.modelo)+'</td><td>'+esc(a.descripcion)+'</td><td>'+esc(a.rubro)+'</td><td>'+esc(a.disciplina)+'</td><td>'+esc(a.tipo)+'</td><td class="num">'+celdaT+'</td><td class="num big">'+fmtInt(a.cantidad)+'</td><td class="num mono">'+fmtMoney(a.costo_unitario)+'</td><td class="num mono">'+fmtMoney(a.cantidad*a.costo_unitario)+'</td></tr>';
+      }).join('')
     +'</tbody></table></div>'
     +(oc.articulos.length>300?('<div class="card-hs">… y '+(oc.articulos.length-300)+' artículos más (se guardan todos).</div>'):'');
   if(!oc.fecha) html+='<div class="warn">Falta la fecha de la OC: cargala arriba (no pude leerla del nombre del archivo).</div>';
@@ -1146,22 +1182,92 @@ function exportOCExcel(oc){
     A.push(['Fecha',oc.fecha,'','Proveedor',oc.proveedor]);
     A.push(['Total unidades',oc.total_unidades,'','Total $',Math.round(oc.total_importe)]);
     A.push([]);
-    A.push(['Modelo','Descripción','Rubro','Disciplina','Tipo','Género',...talles,'Total','Costo Unit.','Importe']);
-    oc.articulos.forEach(a=>{ const m={}; a.talles.forEach(t=>m[t.talle]=t.cant); A.push([a.modelo,a.descripcion,a.rubro,a.disciplina,a.tipo,a.genero,...talles.map(t=>m[t]||''),a.cantidad,Math.round(a.costo_unitario),Math.round(a.cantidad*a.costo_unitario)]); });
+    const hayCurva=oc.articulos.some(a=>a.curva);
+    A.push(['Modelo','Descripción','Rubro','Disciplina','Tipo','Género',...(hayCurva?['Curva de talles']:[]),...talles,'Total','Costo Unit.','Importe']);
+    oc.articulos.forEach(a=>{ const m={}; a.talles.forEach(t=>m[t.talle]=t.cant); A.push([a.modelo,a.descripcion,a.rubro,a.disciplina,a.tipo,a.genero,...(hayCurva?[a.curva||'']:[]),...talles.map(t=>m[t]||''),a.cantidad,Math.round(a.costo_unitario),Math.round(a.cantidad*a.costo_unitario)]); });
     const ws=XLSX.utils.aoa_to_sheet(A); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'OC Mateu');
     XLSX.writeFile(wb,'OC-Mateu-'+oc.marca+'-'+(oc.fecha||'')+'.xlsx'); toast('Excel generado','ok');
   }catch(e){ toast('No se pudo generar el Excel: '+e.message,'bad'); }
 }
-function exportOCPdf(oc){
+/* el logo del shell es WebP y jsPDF solo come PNG/JPG → lo pasamos por canvas */
+async function ocLogoPNG(){
+  try{
+    const img=document.querySelector('.msh-logo img, .msh-header img, header img') || document.querySelector('img[src^="data:image"]');
+    if(!img || !img.src) return null;
+    const el=new Image(); el.crossOrigin='anonymous'; el.src=img.src;
+    if(el.decode) await el.decode(); else await new Promise(r=>{ el.onload=r; el.onerror=r; });
+    const w=el.naturalWidth||el.width, h=el.naturalHeight||el.height; if(!w||!h) return null;
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    c.getContext('2d').drawImage(el,0,0);
+    return { data:c.toDataURL('image/png'), w, h };
+  }catch(e){ return null; }
+}
+async function exportOCPdf(oc){
   try{
     if(!window.jspdf) { toast('No cargó la librería de PDF','bad'); return; }
     const { jsPDF }=window.jspdf; const doc=new jsPDF({orientation:'landscape',unit:'pt',format:'a4'});
-    doc.setFontSize(16); doc.text('OC Mateu Sports — '+oc.marca,40,40);
-    doc.setFontSize(10);
-    doc.text('OC: '+oc.nro+'     Fecha: '+(oc.fecha||'-')+'     Proveedor: '+oc.proveedor,40,58);
-    doc.text('Total: '+fmtInt(oc.total_unidades)+' u     '+fmtMoney(oc.total_importe),40,72);
-    const body=oc.articulos.map(a=>{ const curva=a.talles.map(t=>t.talle+':'+t.cant).join('  '); return [a.modelo,a.descripcion,a.disciplina,a.tipo,curva,fmtInt(a.cantidad),fmtMoney(a.costo_unitario),fmtMoney(a.cantidad*a.costo_unitario)]; });
-    doc.autoTable({ startY:88, head:[['Modelo','Descripción','Disciplina','Tipo','Curva de talles','Total','Costo','Importe']], body, styles:{fontSize:7,cellPadding:2,overflow:'linebreak'}, headStyles:{fillColor:[11,21,39]}, columnStyles:{1:{cellWidth:120},4:{cellWidth:230}} });
+    const W=doc.internal.pageSize.getWidth(), NAVY=[11,21,39], ROJO=[204,0,0], GRIS=[240,242,248];
+    const hayCurva=oc.articulos.some(a=>a.curva||a.talles.length);
+
+    /* ---- membrete: banda navy con el logo + borde rojo (branding Mateu) ---- */
+    doc.setFillColor.apply(doc,NAVY); doc.rect(0,0,W,64,'F');
+    doc.setFillColor.apply(doc,ROJO); doc.rect(0,64,W,3,'F');
+    const logo=await ocLogoPNG();
+    if(logo){ const h=26, w=Math.round(logo.w*(h/logo.h)); doc.addImage(logo.data,'PNG',40,19,w,h); }
+    else { doc.setTextColor(255); doc.setFontSize(18); doc.setFont(undefined,'bold'); doc.text('MATEU SPORTS',40,40); }
+    doc.setTextColor(255); doc.setFont(undefined,'bold'); doc.setFontSize(15);
+    doc.text('ORDEN DE COMPRA · '+String(oc.marca||'').toUpperCase(), W-40, 32, {align:'right'});
+    doc.setFont(undefined,'normal'); doc.setFontSize(9);
+    doc.text('OC '+oc.nro, W-40, 48, {align:'right'});
+
+    /* ---- datos de la OC + resumen por rubro ---- */
+    doc.setTextColor(60); doc.setFontSize(9);
+    doc.text('Fecha: '+(oc.fecha||'—')+'     Proveedor: '+(oc.proveedor||'—')+'     Moneda: '+(oc.moneda||'ARS'), 40, 84);
+    doc.setTextColor.apply(doc,NAVY); doc.setFont(undefined,'bold'); doc.setFontSize(11);
+    doc.text(fmtInt(oc.total_unidades)+' unidades   ·   '+fmtMoney(oc.total_importe)+'   ·   '+oc.articulos.length+' artículos', 40, 100);
+    doc.setFont(undefined,'normal'); doc.setFontSize(8); doc.setTextColor(100);
+    const porRubro={}; oc.articulos.forEach(a=>{ const k=a.rubro||'SIN RUBRO'; const p=porRubro[k]||(porRubro[k]={u:0,i:0}); p.u+=a.cantidad; p.i+=a.cantidad*a.costo_unitario; });
+    doc.text(Object.keys(porRubro).map(k=>k+': '+fmtInt(porRubro[k].u)+' u ('+fmtMoney(porRubro[k].i)+')').join('     ·     '), 40, 114);
+
+    /* ---- detalle: agrupado por rubro, y adentro por familia de producto ---- */
+    const head=['Modelo','Descripción','Familia','Disciplina','Tipo'].concat(hayCurva?['Curva de talles']:[]).concat(['Unid.','Costo','Importe']);
+    const nCol=head.length, body=[];
+    const grupos={}; ocOrdenarArts(oc.articulos).forEach(a=>{ const k=a.rubro||'SIN RUBRO'; (grupos[k]=grupos[k]||[]).push(a); });
+    Object.keys(grupos).forEach(rub=>{
+      const arts=grupos[rub]; let u=0, imp=0;
+      body.push([{content:rub, colSpan:nCol, styles:{fillColor:GRIS, textColor:NAVY, fontStyle:'bold', fontSize:8}}]);
+      arts.forEach(a=>{
+        const curva=a.talles.length?a.talles.map(t=>t.talle+':'+t.cant).join('  '):(a.curva||'');
+        u+=a.cantidad; imp+=a.cantidad*a.costo_unitario;
+        body.push([a.modelo,a.descripcion,a.familia||'',a.disciplina,a.tipo].concat(hayCurva?[curva]:[])
+          .concat([fmtInt(a.cantidad),fmtMoney(a.costo_unitario),fmtMoney(a.cantidad*a.costo_unitario)]));
+      });
+      body.push([{content:'Subtotal '+rub+' ('+arts.length+' art.)', colSpan:nCol-3, styles:{fontStyle:'bold',halign:'right'}},
+                 {content:fmtInt(u), styles:{fontStyle:'bold'}}, {content:'', styles:{}}, {content:fmtMoney(imp), styles:{fontStyle:'bold'}}]);
+    });
+    const colStyles={1:{cellWidth:130},2:{cellWidth:56}}; if(hayCurva) colStyles[5]={cellWidth:150};
+    const nNum=nCol-3; colStyles[nNum]={halign:'right'}; colStyles[nNum+1]={halign:'right'}; colStyles[nNum+2]={halign:'right'};
+    doc.autoTable({
+      startY:126, head:[head], body,
+      styles:{fontSize:7,cellPadding:2.5,overflow:'linebreak'},
+      headStyles:{fillColor:NAVY,fontSize:7.5},
+      alternateRowStyles:{fillColor:[250,251,253]},
+      columnStyles:colStyles,
+      margin:{left:40,right:40,bottom:44},
+      didDrawPage:()=>{
+        const H=doc.internal.pageSize.getHeight(), p=doc.internal.getCurrentPageInfo().pageNumber;
+        doc.setDrawColor(220); doc.line(40,H-38,W-40,H-38);
+        doc.setFontSize(7.5); doc.setTextColor(130);
+        doc.text('Mateu Sports · OC '+oc.nro+' · generado el '+new Date().toLocaleDateString('es-AR'), 40, H-26);
+        doc.text('Firma y aclaración: ______________________________', W/2-60, H-26);
+        doc.text('Página '+p, W-40, H-26, {align:'right'});
+      }
+    });
+    const y=doc.lastAutoTable.finalY+16;
+    if(y < doc.internal.pageSize.getHeight()-60){
+      doc.setFontSize(9); doc.setTextColor.apply(doc,NAVY); doc.setFont(undefined,'bold');
+      doc.text('TOTAL OC: '+fmtInt(oc.total_unidades)+' unidades   ·   '+fmtMoney(oc.total_importe), W-40, y, {align:'right'});
+    }
     doc.save('OC-Mateu-'+oc.marca+'-'+(oc.fecha||'')+'.pdf'); toast('PDF generado','ok');
   }catch(e){ toast('No se pudo generar el PDF: '+e.message,'bad'); }
 }
