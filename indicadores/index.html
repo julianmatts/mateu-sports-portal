@@ -857,6 +857,9 @@ function rankDe(cad, metric, name){
 /* ============================ CARGA ============================ */
 async function boot(){
   precalentarObjetivo();   // Firebase del Objetivo en paralelo con los estáticos
+  // precalentar los fetch de Objetivos (semanas + puntero del mes): las promesas
+  // quedan cacheadas y la sección Objetivo no arranca de cero después del render
+  if(OBJETIVOS_URL){ try{ fetchObjetivoWeeks(); fetchUltimoMes(); }catch(e){} }
   try{
     [PERIODOS, OBJ] = await Promise.all([
       fetchJSON(DATA+'/periodos.json').then(d=>d.periodos),
@@ -1529,11 +1532,9 @@ function fetchObjetivoMesFull(per){
    las semanas del mes ya publicadas con venta real («x sem»). */
 async function objMesCadenaHtml(sem, weeks){
   let per = String(sem||'').slice(0,7);
-  let data = await fetchObjetivoMesFull(per);
-  if(!data || !data.porSlug){
-    const um = await fetchUltimoMes();
-    if(um && um!==per){ per=um; data=await fetchObjetivoMesFull(um); }
-  }
+  // mes + puntero al último publicado en paralelo (una ida y vuelta menos)
+  let [data, um] = await Promise.all([fetchObjetivoMesFull(per), fetchUltimoMes()]);
+  if((!data || !data.porSlug) && um && um!==per){ per=um; data=await fetchObjetivoMesFull(um); }
   if(!data || !data.porSlug) return '';
   const filas = Object.keys(data.porSlug).map(slug=>{
     const v=data.porSlug[slug]||{}, meta=+v.meta||0;
@@ -1599,7 +1600,11 @@ async function renderObjCadena(){
   try{ weeks = await fetchObjetivoWeeks(); }catch(e){ weeks=null; }
   if(!weeks || !weeks.length){ sec.style.display='none'; return; }
   const sem = (objCadSem && weeks.includes(objCadSem)) ? objCadSem : weeks[0];
-  const data = await fetchObjetivoSemana(sem);
+  // semana + bloque del mes en paralelo (los fetch se cachean por promesa)
+  const [data, mesHtml] = await Promise.all([
+    fetchObjetivoSemana(sem),
+    objMesCadenaHtml(sem, weeks).catch(()=>'')
+  ]);
   if(!vistaCadena) return;         // el usuario ya bajó a una sucursal puntual
 
   const por=(data&&data.porSlug)||{};
@@ -1616,11 +1621,6 @@ async function renderObjCadena(){
   const tit=$('objCadTitle'); if(tit) tit.innerHTML = rkTipo
     ? 'Objetivo de venta · <em>'+esc(fmtLabel(rkTipo))+'</em>'
     : 'Objetivo de venta <em>de la semana</em>';
-
-  // objetivo del MES arriba; abajo el semanal con el detalle por sucursal
-  let mesHtml='';
-  try{ mesHtml = await objMesCadenaHtml(sem, weeks); }catch(e){ mesHtml=''; }
-  if(!vistaCadena) return;
 
   const selHtml='<select id="objCadSemSel" style="font-family:var(--font-b,inherit);font-size:13px;color:var(--navy,#0B1527);'
     +'background:#fff;border:1px solid var(--line,#dce3f0);border-radius:7px;padding:6px 9px;cursor:pointer">'
@@ -2631,13 +2631,11 @@ function eqEditorHtml(){
    gerencia sube el Excel mensual con el real oficial, manda ese. */
 async function objetivoMesHtml(slug, sem, weeks, ve){
   let per = String(sem||'').slice(0,7);
-  let m = await fetchObjetivoMes(slug, per);
-  if(!m){
-    // sin objetivo para el mes de la semana elegida: caer al último mes publicado
-    const um = await fetchUltimoMes();
-    if(um && um!==per){ per=um; m=await fetchObjetivoMes(slug, um); }
-  }
+  // mes + puntero al último publicado en paralelo (una ida y vuelta menos)
+  let [m, um] = await Promise.all([fetchObjetivoMes(slug, per), fetchUltimoMes()]);
+  if(!m && um && um!==per){ per=um; m=await fetchObjetivoMes(slug, um); }
   if(!m) return '';
+  ve = await ve;   // acepta el valor o la promesa (para arrancar en paralelo)
   const meta=m.meta||0, minimo=m.minimo||Math.round(meta/1.2), s120=m.s120||Math.round(meta*1.2);
   let real=m.real||0, provisorio=false;
   if(!real){
@@ -2707,6 +2705,9 @@ async function renderObjetivo(){
   // semana anterior (lunes - 7 días) para la comparativa de KPIs por vendedor
   const prevSem = (iso=>{ const p=iso.split('-').map(Number);
     const d=new Date(Date.UTC(p[0],p[1]-1,p[2]-7)); return d.toISOString().slice(0,10); })(sem);
+  // objetivo del MES: arranca ya, en paralelo con los fetch de la semana
+  // (fetchVentaEquipo cachea por promesa, no duplica el request)
+  const pMes = objetivoMesHtml(slug, sem, weeks, fetchVentaEquipo(slug, sem)).catch(()=>'');
   let v=null, ve=null, eqData=null, pesos=null, prevVe=null;
   try{ [v,ve,eqData,pesos,prevVe] = await Promise.all([
     fetchObjetivoData(slug, sem), fetchVentaEquipo(slug, sem),
@@ -2721,8 +2722,7 @@ async function renderObjetivo(){
     +'</select>';
 
   // objetivo del MES arriba de todo; abajo el semanal con su detalle
-  let mesHtml='';
-  try{ mesHtml = await objetivoMesHtml(slug, sem, weeks, ve); }catch(e){ mesHtml=''; }
+  const mesHtml = await pMes;
   if(sucName!==target) return;
 
   // con el real ya cargado el protagonista es la venta: real en grande, meta en chico
