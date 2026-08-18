@@ -277,6 +277,8 @@ function estadoCumpl(meta, real){
 /* ---------- Firebase REST ---------- */
 function fbUrl(path){ return FIREBASE_DB_URL.replace(/\/+$/,'') + '/' + path.split('/').map(encodeURIComponent).join('/') + '.json'; }
 async function fbGet(path){ const r=await fetch(fbUrl(path)); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
+// Solo las claves de un nodo (shallow=true: no baja los datos)
+async function fbKeys(path){ const r=await fetch(fbUrl(path)+'?shallow=true'); if(!r.ok) throw new Error('Firebase HTTP '+r.status); const o=await r.json(); return o ? Object.keys(o) : []; }
 async function fbPut(path, data){ const r=await fetch(fbUrl(path),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
 // PATCH mergea al nivel de hijo: reemplaza solo las claves que van en el body
 // (lo usa la publicación del histórico mensual: 60 meses en un solo request).
@@ -468,7 +470,34 @@ function rellenarRealDesdeHist(){
 /* ============================================================
    VISTAS
    ============================================================ */
-function setTab(t){ state.tab=t; document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t)); render(); }
+function setTab(t){ state.tab=t; document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t)); render(); refrescarListas(t); }
+
+// Al entrar a Dashboard / Histórico / Mensual·dashboard refresca las listas de
+// semanas/meses publicados desde Firebase (shallow: solo claves, no baja datos).
+// Cubre el caso en que el fetch de init() falló (o otra sesión publicó después):
+// sin esto, el selector solo mostraba lo guardado en esta misma sesión.
+// Sin red → se queda con lo que hay, en silencio (mismo criterio que init).
+async function refrescarListas(t){
+  if(!FIREBASE_DB_URL) return;
+  if(t==='dashboard' || t==='historico'){
+    try{
+      const ks = await fbKeys(ROOT+'/semanas');
+      if(ks.slice().sort().join('|') !== state.histKeys.slice().sort().join('|')){
+        state.histKeys = ks;
+        if(state.tab===t) render();
+      }
+    }catch(e){ /* sin red: seguimos con la lista que tengamos */ }
+  }
+  if(t==='mesdash' || t==='historico'){
+    try{
+      const ks = (await fbKeys(ROOT+'/meses')).sort();
+      if(ks.join('|') !== state.mes.keys.join('|')){
+        state.mes.keys = ks;
+        if(state.tab===t) render();
+      }
+    }catch(e){ /* ídem */ }
+  }
+}
 
 function render(){
   const v=$('view');
@@ -1504,13 +1533,10 @@ async function init(){
   render();
   if(FIREBASE_DB_URL){
     try{
-      const semanas = await fbGet(ROOT+'/semanas');
-      state.histKeys = semanas ? Object.keys(semanas) : [];
+      state.histKeys = await fbKeys(ROOT+'/semanas');
     }catch(e){ /* base vacía o sin red: seguimos en modo carga */ }
     try{
-      // shallow: solo las claves de los meses publicados, sin bajar los datos
-      const meses = await fetch(fbUrl(ROOT+'/meses')+'?shallow=true').then(r=>r.ok?r.json():null);
-      state.mes.keys = meses ? Object.keys(meses).sort() : [];
+      state.mes.keys = (await fbKeys(ROOT+'/meses')).sort();
     }catch(e){ /* ídem */ }
   }
   render();
