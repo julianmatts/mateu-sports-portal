@@ -49,6 +49,7 @@
   var MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   var MESES_L = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   var DOW = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  var DOW_L = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
   function soloDia(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
   function hoy(){ return soloDia(new Date()); }
   function parseYMD(s){ var p=String(s).split('-'); return new Date(+p[0], +p[1]-1, +p[2]); }
@@ -154,7 +155,6 @@
   // ---- refs de DOM ----
   var elTrigger, elPop, elDot, elModal, elPanel;
 
-  function fmtHoyCorto(){ return DOW[hoyD.getDay()]+' '+hoyD.getDate()+' '+MESES[hoyD.getMonth()]; }
 
   function hayProximo(){
     var win = ocurrencias([hoyD.getFullYear(), hoyD.getFullYear()+1]);
@@ -174,8 +174,15 @@
     elTrigger.setAttribute('aria-haspopup','dialog');
     elTrigger.setAttribute('aria-expanded','false');
     elTrigger.setAttribute('aria-label','Calendario retail');
-    elTrigger.innerHTML = '<span class="cr-cal-ico">📅</span>'+
-      '<span class="cr-today-lbl">'+fmtHoyCorto()+'</span>'+
+    elTrigger.innerHTML =
+      '<span class="cr-leaf" aria-hidden="true">'+
+        '<span class="cr-leaf-top"></span>'+
+        '<span class="cr-leaf-num">'+hoyD.getDate()+'</span>'+
+      '</span>'+
+      '<span class="cr-today-lbl">'+
+        '<span class="cr-today-dow">'+DOW_L[hoyD.getDay()]+'</span>'+
+        '<span class="cr-today-date">'+hoyD.getDate()+' '+MESES[hoyD.getMonth()]+'</span>'+
+      '</span>'+
       '<span class="cr-dot" hidden></span>';
     elDot = elTrigger.querySelector('.cr-dot');
 
