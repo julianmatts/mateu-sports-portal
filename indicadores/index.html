@@ -1474,6 +1474,15 @@ function fetchObjetivoMes(slug, per){
     .then(v=> (v && v.meta>0) ? v : null);
   return _objMesCache[key];
 }
+let _objUltimoMes = null;          // Promise<'YYYY-MM'|null> (puntero objetivos/ultimoMes)
+function fetchUltimoMes(){
+  if(_objUltimoMes) return _objUltimoMes;
+  const base = OBJETIVOS_URL.replace(/\/+$/,'');
+  _objUltimoMes = fetch(base+'/objetivos/ultimoMes.json')
+    .then(r=>r.ok?r.json():null).catch(()=>null)
+    .then(v=> (typeof v==='string' && /^\d{4}-\d{2}$/.test(v)) ? v : null);
+  return _objUltimoMes;
+}
 const OBJ_MESES_N = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const objMesLbl = per => { const p=String(per||'').split('-'); return (p.length===2 && OBJ_MESES_N[+p[1]-1]) ? OBJ_MESES_N[+p[1]-1]+' '+p[0] : String(per||''); };
 const objMoney = n => '$'+Math.round(n||0).toLocaleString('es-AR');
@@ -1506,6 +1515,79 @@ function fetchObjetivoSemana(sem){
     .then(r=>r.ok?r.json():null).catch(()=>null);
   return _objSemFullCache[sem];
 }
+const _objMesFullCache = {};       // per -> Promise<{meta,porSlug}|null> (mes completo, solo gerencia)
+function fetchObjetivoMesFull(per){
+  if(_objMesFullCache[per]) return _objMesFullCache[per];
+  const base = OBJETIVOS_URL.replace(/\/+$/,'');
+  _objMesFullCache[per] = fetch(base+'/objetivos/meses/'+encodeURIComponent(per)+'.json')
+    .then(r=>r.ok?r.json():null).catch(()=>null);
+  return _objMesFullCache[per];
+}
+
+/* Bloque "Objetivo del mes" de la vista cadena: agregado de todas las
+   sucursales (respeta el filtro por línea). Avance del mes abierto = suma de
+   las semanas del mes ya publicadas con venta real («x sem»). */
+async function objMesCadenaHtml(sem, weeks){
+  let per = String(sem||'').slice(0,7);
+  let data = await fetchObjetivoMesFull(per);
+  if(!data || !data.porSlug){
+    const um = await fetchUltimoMes();
+    if(um && um!==per){ per=um; data=await fetchObjetivoMesFull(um); }
+  }
+  if(!data || !data.porSlug) return '';
+  const filas = Object.keys(data.porSlug).map(slug=>{
+    const v=data.porSlug[slug]||{}, meta=+v.meta||0;
+    if(!meta) return null;
+    const full=SLUG_SUC[slug]||OUTLET_SUC[slug]||slug;
+    return {slug, fmt:formatoDe(full), meta,
+      minimo:+v.minimo||Math.round(meta/1.2), s120:+v.s120||Math.round(meta*1.2), real:+v.real||0};
+  }).filter(Boolean).filter(r=>!rkTipo || r.fmt===rkTipo);
+  if(!filas.length) return '';
+  const lblLinea = rkTipo ? fmtLabel(rkTipo) : 'cadena';
+  const T=filas.reduce((a,r)=>({meta:a.meta+r.meta, minimo:a.minimo+r.minimo, s120:a.s120+r.s120, real:a.real+r.real}),{meta:0,minimo:0,s120:0,real:0});
+  // mes abierto (sin real oficial): sumar las semanas publicadas del mes
+  let provisorio=false, nSem=0;
+  if(!T.real){
+    const delMes=(weeks||[]).filter(w=>String(w).slice(0,7)===per);
+    const sems=await Promise.all(delMes.map(fetchObjetivoSemana));
+    const slugsOk=new Set(filas.map(r=>r.slug));
+    let sum=0;
+    sems.forEach(sd=>{
+      if(!sd || !sd.porSlug) return;
+      let hay=false;
+      Object.keys(sd.porSlug).forEach(sl=>{ const v=sd.porSlug[sl]; if(slugsOk.has(sl) && v && +v.real>0){ sum+=+v.real; hay=true; } });
+      if(hay) nSem++;
+    });
+    if(sum>0){ T.real=Math.round(sum); provisorio=true; }
+  }
+  const pct=T.meta?T.real/T.meta:0, w=Math.min(100,Math.round(pct*100));
+  const col = !T.real ? 'var(--mid)' : T.real>=T.meta ? 'var(--ok,#16a34a)' : T.real>=T.minimo ? '#d97706' : '#dc2626';
+  let h='<div style="border-bottom:1px solid var(--line,#e6ebf5);margin-bottom:16px;padding-bottom:14px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
+    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">Objetivo del mes — '+esc(objMesLbl(per))+' · '+esc(lblLinea)+'</div>'
+    +(provisorio?'<span style="font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#d97706;background:#fff7ed;border:1px solid #fed7aa;border-radius:20px;padding:1px 7px">avance parcial · '+nSem+' sem</span>':'')
+    +'</div>';
+  h+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">';
+  if(T.real){
+    h+='<div style="font-family:var(--font-d,inherit);font-size:32px;line-height:.9;letter-spacing:.5px;color:'+col+'">'+objMoney(T.real)+'</div>'
+      +'<div style="font-size:13.5px;color:var(--mid);padding-bottom:4px">Meta del mes: <b style="color:var(--navy,#0B1527)">'+objMoney(T.meta)+'</b> · '+Math.round(pct*100)+'%</div>';
+  }else{
+    h+='<div style="font-family:var(--font-d,inherit);font-size:32px;line-height:.9;letter-spacing:.5px">'+objMoney(T.meta)+'</div>'
+      +'<div style="font-size:13px;color:var(--muted-light,#b0bcd4);padding-bottom:5px">Venta del mes: aún sin cargar</div>';
+  }
+  h+='</div>';
+  const barFill = provisorio
+    ? 'background:repeating-linear-gradient(45deg,'+col+','+col+' 6px,rgba(255,255,255,.45) 6px,rgba(255,255,255,.45) 12px)'
+    : 'background:'+col;
+  h+='<div style="position:relative;height:8px;background:#eef0f7;border-radius:6px;overflow:hidden;margin:8px 0 12px">'
+    +'<i style="position:absolute;left:0;top:0;bottom:0;border-radius:6px;width:'+w+'%;'+barFill+';display:block"></i></div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+    +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:8px 11px"><div style="font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Mínimo '+esc(lblLinea)+'</div><div style="font-size:16px;font-weight:700;margin-top:2px">'+objMoney(T.minimo)+'</div></div>'
+    +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:8px 11px"><div style="font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Superación 120 '+esc(lblLinea)+'</div><div style="font-size:16px;font-weight:700;margin-top:2px">'+objMoney(T.s120)+'</div></div>'
+    +'</div>';
+  h+='</div>';
+  return h;
+}
 
 let objCadSem = null;              // semana elegida en la vista cadena (lunesISO); null = la última
 async function renderObjCadena(){
@@ -1537,12 +1619,18 @@ async function renderObjCadena(){
     ? 'Objetivo de venta · <em>'+esc(fmtLabel(rkTipo))+'</em>'
     : 'Objetivo de venta <em>de la semana</em>';
 
+  // objetivo del MES arriba; abajo el semanal con el detalle por sucursal
+  let mesHtml='';
+  try{ mesHtml = await objMesCadenaHtml(sem, weeks); }catch(e){ mesHtml=''; }
+  if(!vistaCadena) return;
+
   const selHtml='<select id="objCadSemSel" style="font-family:var(--font-b,inherit);font-size:13px;color:var(--navy,#0B1527);'
     +'background:#fff;border:1px solid var(--line,#dce3f0);border-radius:7px;padding:6px 9px;cursor:pointer">'
     + weeks.map(k=>'<option value="'+esc(k)+'"'+(k===sem?' selected':'')+'>'+esc(objSemTag(k))+'</option>').join('')
     +'</select>';
   const hayReal = rows.some(r=>r.real>0);
-  let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
+  let html=mesHtml
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
     +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana · ':'Meta de la semana · ')+esc(lblLinea)+'</div>'
     +selHtml+'</div>';
 
@@ -2544,8 +2632,13 @@ function eqEditorHtml(){
    publicadas (y lo del encargado de la semana activa como provisorio); cuando
    gerencia sube el Excel mensual con el real oficial, manda ese. */
 async function objetivoMesHtml(slug, sem, weeks, ve){
-  const per = String(sem||'').slice(0,7);
-  const m = await fetchObjetivoMes(slug, per);
+  let per = String(sem||'').slice(0,7);
+  let m = await fetchObjetivoMes(slug, per);
+  if(!m){
+    // sin objetivo para el mes de la semana elegida: caer al último mes publicado
+    const um = await fetchUltimoMes();
+    if(um && um!==per){ per=um; m=await fetchObjetivoMes(slug, um); }
+  }
   if(!m) return '';
   const meta=m.meta||0, minimo=m.minimo||Math.round(meta/1.2), s120=m.s120||Math.round(meta*1.2);
   let real=m.real||0, provisorio=false;
@@ -2567,7 +2660,8 @@ async function objetivoMesHtml(slug, sem, weeks, ve){
   const w=Math.min(100, Math.round(pct*100));
   const cls=!real?'na':real>=meta?'ok':real>=minimo?'warn':'bad';
   const col=cls==='ok'?'var(--ok,#16a34a)':cls==='warn'?'#d97706':cls==='bad'?'#dc2626':'var(--mid)';
-  let h='<div style="border-top:1px solid var(--line,#e6ebf5);margin-top:16px;padding-top:14px">'
+  // va ARRIBA del objetivo semanal: separa con borde inferior
+  let h='<div style="border-bottom:1px solid var(--line,#e6ebf5);margin-bottom:16px;padding-bottom:14px">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
     +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">Objetivo del mes — '+esc(objMesLbl(per))+'</div>'
     +(provisorio?'<span style="font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#d97706;background:#fff7ed;border:1px solid #fed7aa;border-radius:20px;padding:1px 7px">avance parcial · suma de semanas</span>':'')
@@ -2630,10 +2724,16 @@ async function renderObjetivo(){
     + weeks.map(k=>'<option value="'+esc(k)+'"'+(k===sem?' selected':'')+'>'+esc(objSemTag(k))+'</option>').join('')
     +'</select>';
 
+  // objetivo del MES arriba de todo; abajo el semanal con su detalle
+  let mesHtml='';
+  try{ mesHtml = await objetivoMesHtml(slug, sem, weeks, ve); }catch(e){ mesHtml=''; }
+  if(sucName!==target) return;
+
   // con el real ya cargado el protagonista es la venta: real en grande, meta en chico
   const realEncTot = (()=>{ const t=ve&&ve.total; return typeof t==='number' ? t : (t&&t.venta)||0; })();
   const hayReal = !!v && ((v.real||0)>0 || realEncTot>0);
-  let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
+  let html=mesHtml
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
     +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana':'Meta de la semana')+'</div>'
     +selHtml+'</div>';
 
@@ -2686,9 +2786,6 @@ async function renderObjetivo(){
       +'</div>';
     if(v.nota) html+='<p class="hint" style="margin-top:12px">📝 '+esc(v.nota)+'</p>';
   }
-  // objetivo del mes (si gerencia lo publicó); no bloquea la sección si falla
-  try{ html += await objetivoMesHtml(slug, sem, weeks, ve); }catch(e){}
-  if(sucName!==target) return;
   _jvState=null;   // lo repuebla eqDistribHtml si corresponde
   html += veSectionHtml(slug, sem, v, ve, eqData, pesos, prevVe);
   $('objetivoCard').innerHTML=html;
