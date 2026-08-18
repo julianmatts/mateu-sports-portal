@@ -268,6 +268,9 @@ textarea.code{width:100%;min-height:150px;font-family:ui-monospace,Menlo,Consola
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <!-- Datos de prueba para el modo demo (mientras no esté pegada FIREBASE_DB_URL) -->
 <script src="./mock-data.js" onerror="window.RECEP_MOCK=null"></script>
+<!-- Modelos de pedido por marca (mapeo de columnas aprendido del último pedido
+     de cada carpeta). Se regenera con scripts/gen-modelos-oc.js -->
+<script src="./modelos-oc.js" onerror="window.OC_MODELOS_SEED=null"></script>
 <script>
 /* ============================================================
    Control de Recepciones — módulo self-contained del Portal.
@@ -716,25 +719,255 @@ async function guardarAlta(tipoDoc){
    ============================================================ */
 /* ============================================================
    CONVERSOR de OC de marca -> OC unificada Mateu Sports
-   Importa la planilla que manda la marca, la convierte al modelo unificado Mateu
-   (detalle por artículo con curva de talles), permite descargar Excel/PDF y
-   guardar la OC al sistema (alimenta Pedidos y el control). El envío por mail se
-   suma más adelante reusando functions/enviar-oc.js.
+   Importa la planilla que manda CUALQUIER marca y la convierte al modelo
+   unificado Mateu (detalle por artículo con curva de talles), permite descargar
+   el Excel/PDF y guardar la OC al sistema (alimenta Pedidos y el control).
+
+   Cómo funciona: un motor genérico elige la hoja, encuentra la fila de
+   encabezados y mapea las columnas por nombre (con "pistas" por marca). Si algo
+   sale mal, el usuario reasigna las columnas a mano desde el mismo modal — así
+   entra una marca nueva sin tocar el código. Nike tiene además su lector propio
+   (hoja "Resumen Pedido"), que se usa primero y cae al genérico si no aplica.
+   El envío por mail se suma más adelante reusando functions/enviar-oc.js.
    ============================================================ */
-const OC_DISC_MAP = { 'RUNNING':'RUNNING','FOOTBALL/SOCCER':'FUTBOL 11','NIKE BASKETBALL':'BASQUET','MEN TRAINING':'TRAINING','SPORTSWEAR':'CASUAL','TENNIS':'TENIS','JORDAN BRAND':'JORDAN','YOUNG ATHLETES':'CASUAL' };
+const OC_DISC_MAP = { 'RUNNING':'RUNNING','FOOTBALL/SOCCER':'FUTBOL 11','NIKE BASKETBALL':'BASQUET','BASKETBALL':'BASQUET','MEN TRAINING':'TRAINING','SPORTSWEAR':'CASUAL','TENNIS':'TENIS','PADEL':'PADEL','JORDAN BRAND':'JORDAN','YOUNG ATHLETES':'CASUAL','ORIGINALS':'CASUAL','NOT SPORTS SPECIFIC':'CASUAL','FIELD HOCKEY':'HOCKEY','OUTDOOR':'OUTDOOR','MOTORSPORT':'CASUAL','SWIM':'NATACION' };
 const OC_TIPO_MAP = { 'MEN':'CALZADO ADULTO','WOMEN':'CALZADO ADULTO','UNISEX':'CALZADO ADULTO','KIDS':'CALZADO NIÑO' };
 const OC_MESES = { enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,setiembre:9,octubre:10,noviembre:11,diciembre:12 };
+
+/* Marcas del conversor. Se completa con las marcas que ya están en los datos. */
+const OC_MARCAS = ['Nike','adidas','Puma','Under Armour','Asics','New Balance','Fila','Topper','Umbro','Champion','Columbia','Wilson','Mizuno','Reef','Vans','Converse','Penalty','Olympikus','Diadora','Joma','Head','Babolat','Dunlop','Gantos','Malik','No Brand'];
 
 function ocFromFilename(name, marcaDefault){
   const base=name.replace(/\.[^.]+$/,''); const low=base.toLowerCase(); let mes=0,anio=0;
   for(const k in OC_MESES){ if(low.includes(k)){ mes=OC_MESES[k]; const m=low.slice(low.indexOf(k)).match(/(\d{2,4})/); if(m) anio=m[1].length===2?2000+ +m[1]:+m[1]; break; } }
-  const fecha=(mes&&anio)?anio+'-'+String(mes).padStart(2,'0')+'-01':'';
+  let fecha=(mes&&anio)?anio+'-'+String(mes).padStart(2,'0')+'-01':'';
+  if(!fecha){ // dd-mm-yy / dd.mm.yyyy en el nombre (ej. "… 18-08-26 …")
+    const m=low.match(/\b(\d{1,2})[-.\/](\d{1,2})[-.\/](\d{2,4})\b/);
+    if(m && +m[2]>=1 && +m[2]<=12){ const y=m[3].length===2?2000+ +m[3]:+m[3]; fecha=y+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0'); }
+  }
   const marca=/adidas/i.test(low)?'adidas':(/nike/i.test(low)?'Nike':(marcaDefault||base.split(/\s+/)[0]));
   const nro=base.replace(/^\s*copia de\s*/i,'').replace(/\s+/g,' ').trim();
   return { nro, fecha, marca };
 }
 
-/* Conversor Nike — hoja "Resumen Pedido" (modelo x talles) */
+/* ---------- motor genérico: normalización, números y alias de columnas ---- */
+const ocNorm = s => String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+/* número tolerante: acepta "48298,27" (coma decimal) y "1.234,56"; NaN si no es número */
+function ocNum(v){
+  if(v==null||v==='') return NaN;
+  if(typeof v==='number') return isFinite(v)?v:NaN;
+  let s=String(v).trim().replace(/[\s$]/g,'');
+  if(!/^-?[\d.,]+$/.test(s)) return NaN;
+  if(s.indexOf(',')>-1 && s.indexOf('.')>-1) s = s.lastIndexOf(',')>s.lastIndexOf('.') ? s.replace(/\./g,'').replace(',','.') : s.replace(/,/g,'');
+  else if(s.indexOf(',')>-1) s=s.replace(',','.');
+  const n=parseFloat(s); return isFinite(n)?n:NaN;
+}
+const ocN = v => { const n=ocNum(v); return isFinite(n)?n:0; };
+
+const OC_ALIAS = {
+  cod:   ['material','modelo','codigo','codigo articulo','cod articulo','codigo art','cod articulo','sku','style','style name','style number','article number','product code','referencia interna','referencia','articulo','articulo emp','articulo n','art','item','cod'],
+  desc:  ['descripcion','material description','descripcion nike','descripcion articulo','descripcion de producto','articulo descripcion','description','colorway description','model name','nombre del articulo','nombre articulo','producto','nombre','detalle'],
+  cant:  ['confirmado','unidades confirmadas','confirmadas','total unidades','cantidad pedida','cantidad pedido','cantidad ok cliente','cantidad de curvas','cant curvas','cant curv','pedido x curva','pedido curvas','pedido mod','st pedido','cantidades ingreso','order quantity','grand total','total general','unidades','cantidad','quantity','qty','cant','curvas','pedido','total'],
+  costo: ['whs price','wholesale price','wsl price','precio whsl','zlst price','precio b2b','precio fab','precio mayorista','precio may sin iva','costo s iva','costo unitario','precio unitario','precio lista','precio conf','precio tarifa','precio venta','precio publico','precio minorista','retail price','unit price','costo','precio','price'],
+  disc:  ['sport description','disciplina','categoria','category','deporte','division'],
+  rubro: ['product group','rubro','grupo producto','tipo de producto','product type','categoria producto'],
+  gen:   ['target grp','genero','gender','publico'],
+  talle: ['talle','size','talles','sizes'],
+  emp:   ['banner','empresa','sold to name','ship to name 2','grupo cliente','razon social']
+};
+/* columnas que NUNCA son unidades / nunca son costo (evita confundir importe con unidades) */
+const OC_NO_CANT  = /precio|costo|importe|valor|price|net value|descuento|iva/;
+const OC_NO_COSTO = /cantidad|unidades|\bcant\b|\bqty\b|curva|confirmado|pedido/;
+/* Pistas por marca: qué columna manda para cada campo (gana sobre los alias) */
+const OC_HINTS = {
+  'adidas': { cant:['confirmado'], costo:['whs price','zlst price'], cod:['material'], desc:['descripcion','material description'], disc:['sport description'], rubro:['product group'], gen:['target grp'], emp:['banner'] },
+  'Nike':   { cant:['total unidades'], costo:['precio whsl'], cod:['material nike'], desc:['descripcion nike'], disc:['categoria'], gen:['genero'] }
+};
+
+/* Product group / rubro de la marca -> rubro Mateu */
+const OC_RUBRO_PAT = [
+  [/shoe|calzado|footwear|sandal|slipper|ftw|botin|zapat|sneaker|cleat/,'CALZADO'],
+  [/t shirt|tshirt|remera|short|top|tight|jacket|campera|suit|pant|jersey|bra|shirt|sweat|polo|skirt|dress|apparel|indument|clothing|buzo|calza|malla|app\b/,'INDUMENTARIA'],
+  [/accessor|hardware|ball|pelota|bag|bolso|mochila|sock|media|headwear|gorr|cap\b|guante|glove|acces|hw\b/,'ACCESORIOS']
+];
+function ocRubro(txt, disc, desc){
+  const s=ocNorm(txt)+' '+ocNorm(disc)+' '+ocNorm(desc);
+  for(const [re,r] of OC_RUBRO_PAT) if(re.test(s)) return r;
+  return String(txt||'').trim().toUpperCase();
+}
+const OC_GEN_MAP = { 'ME':'HOMBRE','MEN':'HOMBRE','M':'HOMBRE','WO':'MUJER','WOMEN':'MUJER','W':'MUJER','UN':'UNISEX','UNISEX':'UNISEX','KI':'NIÑO','KIDS':'NIÑO','BO':'NIÑO','GI':'NIÑA','IN':'BEBE','YT':'JUVENIL','JR':'NIÑO' };
+function ocGenero(g){ const k=String(g||'').trim().toUpperCase(); return OC_GEN_MAP[k]||k; }
+function ocTipo(rubro, genero){
+  if(!rubro) return '';
+  const chico=/NIÑ|BEBE|JUVENIL|KID/.test(genero||'');
+  return rubro+(chico?' NIÑO':' ADULTO');
+}
+
+/* ---------- detección de hoja / encabezados / columnas ------------------- */
+const OC_TALLE_TXT = /^(xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|[2-6]xl|unico)$/;
+function ocEsTalle(h){
+  const n=ocNorm(h); if(!n) return false;
+  if(OC_TALLE_TXT.test(n)) return true;
+  const m=n.match(/^t?(\d{1,2})( 5)?$/); if(m){ const v=+m[1]; return v>=1 && v<=60; }
+  return false;
+}
+function ocTalleCols(H, usadas){
+  const out=[]; H.forEach((h,j)=>{ if((usadas||[]).indexOf(j)>-1) return; if(ocEsTalle(h)) out.push([j,String(h).trim()]); });
+  return out;
+}
+function ocCandidatos(nh, campo, prefer){
+  const al=(prefer||[]).concat(OC_ALIAS[campo]||[]); const out=[];
+  al.forEach(a=>{ nh.forEach((h,j)=>{ if(h===a && out.indexOf(j)<0) out.push(j); }); });
+  al.forEach(a=>{ nh.forEach((h,j)=>{ if(h && h.indexOf(a)>-1 && out.indexOf(j)<0) out.push(j); }); });
+  return out;
+}
+/* perfil numérico de una columna: sirve para elegir entre columnas homónimas
+   (adidas trae un "Confirmado" numérico y otro de texto) y para no confundir
+   una columna de importe con una de unidades (unidades ≈ enteros positivos) */
+function ocPerfil(rows, j){
+  let ok=0, tot=0, ent=0, pos=0, suma=0;
+  for(let i=0;i<Math.min(rows.length,400);i++){
+    const v=(rows[i]||[])[j]; if(v===''||v==null) continue; tot++;
+    const n=ocNum(v); if(!isFinite(n)) continue;
+    ok++; if(Math.abs(n-Math.round(n))<1e-9) ent++; if(n>0){ pos++; suma+=n; }
+  }
+  return { num: tot?ok/tot:0, ent: ok?ent/ok:0, pos, suma };
+}
+function ocElegir(nh, rows, campo, prefer, numerica){
+  const cand=ocCandidatos(nh, campo, prefer);
+  if(!cand.length) return -1;
+  if(!numerica) return cand[0];
+  const forz=(prefer||[]).length ? cand.filter(j=>(prefer||[]).indexOf(nh[j])>-1) : [];
+  const lista=forz.length?forz:cand;
+  const veto = campo==='cant' ? OC_NO_CANT : (campo==='costo' ? OC_NO_COSTO : null);
+  let fallback=-1;
+  for(const j of lista){
+    if(veto && veto.test(nh[j]) && !forz.length) continue;
+    const p=ocPerfil(rows,j);
+    if(p.num<0.6 || !p.pos) continue;
+    if(campo==='cant' && p.ent<0.7 && !forz.length){ if(fallback<0) fallback=j; continue; }  // importes: decimales
+    return j;
+  }
+  return fallback>=0?fallback:(lista[0]!=null?lista[0]:-1);
+}
+/* Modelo de pedido de la marca: el mapeo que ya funcionó una vez (hoja +
+   nombres de columna). Sale de modelos-oc.js (semilla, aprendida del último
+   pedido guardado de cada marca) y de Firebase (lo que Juli guarda desde el
+   modal). Se prioriza por nombre de columna, así aguanta que cambien de lugar. */
+function ocModelo(marca){
+  const k=ocNorm(marca); if(!k) return null;
+  const fb=(window.OC_MODELOS||{})[k], seed=(window.OC_MODELOS_SEED||{})[k];
+  return fb||seed||null;
+}
+function ocPrefer(marca, campo){
+  const mod=ocModelo(marca), hint=OC_HINTS[marca]||OC_HINTS[ocNorm(marca)]||{}, out=[];
+  if(mod && mod.cols && mod.cols[campo]) out.push(ocNorm(mod.cols[campo]));
+  (hint[campo]||[]).forEach(x=>{ if(out.indexOf(x)<0) out.push(x); });
+  return out;
+}
+function ocDetectarCols(headers, rows, marca){
+  const nh=headers.map(ocNorm), c={};
+  c.cod   = ocElegir(nh, rows, 'cod',   ocPrefer(marca,'cod'));
+  c.desc  = ocElegir(nh, rows, 'desc',  ocPrefer(marca,'desc'));
+  c.cant  = ocElegir(nh, rows, 'cant',  ocPrefer(marca,'cant'), true);
+  c.costo = ocElegir(nh, rows, 'costo', ocPrefer(marca,'costo'), true);
+  c.disc  = ocElegir(nh, rows, 'disc',  ocPrefer(marca,'disc'));
+  c.rubro = ocElegir(nh, rows, 'rubro', ocPrefer(marca,'rubro'));
+  c.gen   = ocElegir(nh, rows, 'gen',   ocPrefer(marca,'gen'));
+  c.talle = ocElegir(nh, rows, 'talle', ocPrefer(marca,'talle'));
+  c.emp   = ocElegir(nh, rows, 'emp',   ocPrefer(marca,'emp'));
+  if(c.desc===c.cod) c.desc=-1;
+  if(c.costo===c.cant) c.costo=-1;
+  return c;
+}
+function ocPreparar(t, marca){
+  t.cols = t.cols || ocDetectarCols(t.headers, t.rows, marca);
+  t.talleCols = ocTalleCols(t.headers, [t.cols.cod,t.cols.desc,t.cols.cant,t.cols.costo,t.cols.disc,t.cols.rubro,t.cols.gen,t.cols.emp]);
+  t.empresas = [];
+  if(t.cols.emp>=0){ const set={}; t.rows.forEach(r=>{ const v=String((r||[])[t.cols.emp]||'').trim(); if(v) set[v]=1; }); t.empresas=Object.keys(set).sort(cmp); }
+  if(t.empresas.length>12) { t.cols.emp=-1; t.empresas=[]; }   // no es un banner, es otra cosa
+  t.empresa='';
+  const mod=ocModelo(marca);
+  if(t.rubroDefault==null) t.rubroDefault=(mod&&mod.rubro)||'';   // rubro cuando la planilla no lo trae
+  return t;
+}
+/* Elige hoja + fila de encabezados. Primero puntúa por columnas mapeadas y
+   después — lo que de verdad decide — por cuántos artículos con unidades sale:
+   una lista de precios sin pedido puntúa parecido pero no produce artículos. */
+function ocLeerTabla(wb, marca){
+  const mod=ocModelo(marca), hojaMod=mod&&mod.hoja?ocNorm(mod.hoja):'';
+  const cands=[];
+  wb.SheetNames.forEach(nm=>{
+    const raw=XLSX.utils.sheet_to_json(wb.Sheets[nm],{header:1,defval:'',blankrows:false});
+    if(raw.length<2) return;
+    for(let i=0;i<Math.min(raw.length-1,25);i++){
+      const H=(raw[i]||[]).map(x=>String(x==null?'':x).trim());
+      if(H.filter(x=>x!=='').length<3) continue;
+      const rows=raw.slice(i+1);
+      const c=ocDetectarCols(H, rows, marca); let s=0;
+      ['cod','desc','cant','costo'].forEach(f=>{ if(c[f]>=0) s++; });
+      if(ocTalleCols(H,[c.cod,c.desc,c.cant,c.costo]).length) s++;
+      if(s<2 || (c.cod<0 && c.desc<0)) continue;
+      if(hojaMod && ocNorm(nm)===hojaMod) s+=3;
+      cands.push({ hoja:nm, headers:H, rows, hdrRow:i+1, cols:c, score:s });
+    }
+  });
+  if(!cands.length) throw new Error('No pude encontrar la tabla de artículos en la planilla. Abrí "⚙ Cambiar columnas" para asignarlas a mano o revisá que la hoja tenga una fila de encabezados.');
+  /* manda el mapeo (columnas bien nombradas); que produzca artículos es el
+     desempate: descarta hojas de lista de precios sin pedido, pero no deja que
+     una fila del medio de la planilla le gane a la fila de encabezados real */
+  cands.sort((a,b)=> b.score-a.score || b.rows.length-a.rows.length);
+  let best=null;
+  for(const c of cands.slice(0,14)){
+    ocPreparar(c, marca);
+    let arts=[]; try{ arts=ocArmarArts(c); }catch(e){ arts=[]; }
+    if(!best) best=c;
+    if(arts.length){ best=c; break; }
+  }
+  return best;
+}
+/* arma el detalle por artículo a partir de la tabla + el mapeo de columnas */
+function ocArmarArts(t){
+  const c=t.cols, arts={}, orden=[];
+  (t.rows||[]).forEach(r=>{
+    if(!r) return;
+    if(t.empresa && c.emp>=0 && String(r[c.emp]||'').trim()!==t.empresa) return;
+    const cod  = c.cod>=0  ? String(r[c.cod]==null?'':r[c.cod]).trim()  : '';
+    const desc = c.desc>=0 ? String(r[c.desc]==null?'':r[c.desc]).trim() : '';
+    if(!cod && !desc) return;
+    if(/^total/i.test(cod) || /^total/i.test(desc)) return;
+    const talles=[]; let cant=0;
+    if(c.talle>=0){                                  // una fila por talle
+      cant = c.cant>=0 ? ocN(r[c.cant]) : 0;
+      const tl=String(r[c.talle]==null?'':r[c.talle]).trim();
+      if(cant>0 && tl) talles.push({talle:tl, cant});
+    } else if(t.talleCols.length){                   // una columna por talle
+      t.talleCols.forEach(([j,lbl])=>{ const q=ocN(r[j]); if(q>0) talles.push({talle:lbl,cant:q}); });
+      cant = talles.reduce((a,x)=>a+x.cant,0);
+      if(!cant && c.cant>=0) cant=ocN(r[c.cant]);
+    } else {
+      cant = c.cant>=0 ? ocN(r[c.cant]) : 0;
+    }
+    if(cant<=0) return;                              // sin unidades confirmadas → fuera
+    const costo = c.costo>=0 ? ocN(r[c.costo]) : 0;
+    const disc  = c.disc>=0  ? String(r[c.disc]||'').trim().toUpperCase() : '';
+    const key = (cod||desc)+'|'+Math.round(costo);
+    let a=arts[key];
+    if(!a){
+      const rubro=ocRubro(c.rubro>=0?r[c.rubro]:'', disc, desc) || t.rubroDefault || '';
+      const genero=ocGenero(c.gen>=0?r[c.gen]:'');
+      a=arts[key]={ modelo:cod, descripcion:desc, genero, rubro,
+        disciplina:OC_DISC_MAP[disc]||disc||'SIN DISCIPLINA', tipo:ocTipo(rubro,genero)||OC_TIPO_MAP[genero]||'',
+        talles:[], cantidad:0, costo_unitario:costo };
+      orden.push(key);
+    }
+    a.cantidad+=cant;
+    talles.forEach(x=>{ const e=a.talles.filter(y=>y.talle===x.talle)[0]; if(e) e.cant+=x.cant; else a.talles.push({talle:x.talle,cant:x.cant}); });
+  });
+  return orden.map(k=>arts[k]);
+}
+
+/* Lector propio de Nike — hoja "Resumen Pedido" (modelo x talles) */
 function convNike(wb){
   const sheet = wb.SheetNames.includes('Resumen Pedido')?'Resumen Pedido':wb.SheetNames[0];
   const raw = XLSX.utils.sheet_to_json(wb.Sheets[sheet],{header:1,defval:''});
@@ -753,53 +986,155 @@ function convNike(wb){
   }
   return arts;
 }
+const OC_CONVERTERS = { 'Nike': convNike };   // lectores propios; el resto va por el motor genérico
 
-const OC_CONVERTERS = { 'Nike': convNike };   // agregar 'adidas': convAdidas cuando haya una muestra
-
+/* convCtx = la OC unificada · ocCtx = la tabla cruda + mapeo (para re-armar) */
+let convCtx=null, ocCtx=null, ocMapOpen=false;
+function ocTotales(oc){
+  let unid=0, imp=0; (oc.articulos||[]).forEach(a=>{ unid+=a.cantidad; imp+=a.cantidad*a.costo_unitario; });
+  oc.total_unidades=unid; oc.total_importe=imp; return oc;
+}
 function convertirOC(marca, wb, filename){
-  const conv = OC_CONVERTERS[marca]; if(!conv) throw new Error('Todavía no hay conversor para '+marca+'.');
   const meta = ocFromFilename(filename, marca);
-  const arts = conv(wb);
-  if(!arts.length) throw new Error('No se detectaron artículos con cantidad en la planilla.');
-  let unid=0, imp=0; arts.forEach(a=>{ unid+=a.cantidad; imp+=a.cantidad*a.costo_unitario; });
-  return { nro:meta.nro, fecha:meta.fecha, marca:meta.marca, proveedor:meta.marca+' Argentina', comprador:'', moneda:'ARS', total_unidades:unid, total_importe:imp, articulos:arts };
+  let arts=null, motor='';
+  if(OC_CONVERTERS[marca]){ try{ arts=OC_CONVERTERS[marca](wb); motor=marca; ocCtx=null; }catch(e){ arts=null; } }
+  if(!arts || !arts.length){
+    ocCtx = ocLeerTabla(wb, marca);
+    arts = ocArmarArts(ocCtx);
+    motor = 'auto';
+  }
+  if(!arts.length) throw new Error('No se detectaron artículos con unidades en la planilla.');
+  return ocTotales({ nro:meta.nro, fecha:meta.fecha, marca, proveedor:marca+' Argentina', comprador:'', moneda:'ARS', motor, articulos:arts });
+}
+function ocRearmar(){
+  if(!ocCtx) return;
+  convCtx.articulos = ocArmarArts(ocCtx);
+  ocTotales(convCtx);
+  renderConvPreview();
 }
 
-let convCtx=null;
 function openConvertir(){
-  const marcas=Object.keys(OC_CONVERTERS); convCtx=null;
+  convCtx=null; ocCtx=null; ocMapOpen=false; ocCargarModelos();
+  const dataM=(state.dims&&state.dims.marcas)||[];
+  const marcas=OC_MARCAS.slice();
+  dataM.forEach(m=>{ if(m && !marcas.some(x=>ocNorm(x)===ocNorm(m))) marcas.push(m); });
+  marcas.sort(cmp);
   openModal(
     '<button class="close" onclick="closeModal()">×</button><h2>Convertir OC de marca</h2>'
-    +'<div class="msub">Importá la planilla que manda la marca y la convertimos al modelo unificado Mateu Sports (detalle por artículo con curva de talles). Después descargás el Excel/PDF o la guardás al sistema.</div>'
-    +'<div class="field"><label>Marca</label><select class="sel" id="convMarca">'+marcas.map(m=>'<option>'+esc(m)+'</option>').join('')+'</select></div>'
+    +'<div class="msub">Importá la planilla que manda la marca y la convertimos al modelo unificado Mateu Sports (detalle por artículo con curva de talles). Detectamos las columnas solas — si no acierta, las reasignás a mano. Después descargás el Excel/PDF o la guardás al sistema.</div>'
+    +'<div class="field"><label>Marca</label><select class="sel" id="convMarca">'+marcas.map(m=>'<option'+(m==='adidas'?' selected':'')+'>'+esc(m)+'</option>').join('')+'<option value="__otra">Otra marca…</option></select></div>'
+    +'<div class="field" id="convOtraWrap" style="display:none"><label>Nombre de la marca</label><input class="inp" id="convOtra" placeholder="Ej. Sergio Tacchini" style="width:100%"></div>'
     +'<div class="field"><label>Planilla de la marca (.xlsx / .xls)</label><input class="inp" type="file" id="convFile" accept=".xlsx,.xls" style="width:100%"></div>'
     +'<div id="convPreview"></div>'
     +'<div class="modal-actions" id="convActions"><button class="btn btn-outline" onclick="closeModal()">Cerrar</button></div>'
   );
+  $('convMarca').onchange=()=>{ const otra=$('convMarca').value==='__otra'; $('convOtraWrap').style.display=otra?'':'none'; if(otra&&$('convOtra')) $('convOtra').focus(); };
   $('convFile').onchange=onConvFile;
+}
+/* modelos guardados por Juli (Firebase) — pisan a la semilla de modelos-oc.js */
+async function ocCargarModelos(){
+  if(window.OC_MODELOS) return;
+  if(DEMO){ window.OC_MODELOS={}; return; }
+  try{ window.OC_MODELOS = (await fbGet(ROOT+'/ocModelos')) || {}; }catch(e){ window.OC_MODELOS={}; }
+}
+async function ocGuardarModelo(){
+  if(!ocCtx || !convCtx) return;
+  const marca=convCtx.marca, k=ocNorm(marca); if(!k) return;
+  const nom=j=>(j>=0 && ocCtx.headers[j]) ? String(ocCtx.headers[j]).replace(/\s+/g,' ').trim() : '';
+  const cols={}; ['cod','desc','cant','costo','rubro','disc','gen','talle','emp'].forEach(f=>{ const v=nom(ocCtx.cols[f]); if(v) cols[f]=v; });
+  const mod={ marca, hoja:ocCtx.hoja, hdr:ocCtx.hdrRow, cols, rubro:ocCtx.rubroDefault||'', guardado:nowISO(), por:(SESSION&&SESSION.email)||'' };
+  const btn=$('convModelo'); if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
+  try{
+    if(!DEMO) await fbPut(ROOT+'/ocModelos/'+fbKey(k), mod);
+    window.OC_MODELOS=window.OC_MODELOS||{}; window.OC_MODELOS[k]=mod;
+    toast('Listo: la próxima planilla de '+marca+' entra con este mapeo','ok');
+  }catch(e){ toast('No se pudo guardar el modelo: '+e.message,'bad'); }
+  if(btn){ btn.disabled=false; btn.textContent='★ Guardar como modelo de la marca'; }
+}
+function convMarcaSel(){
+  const v=$('convMarca')?$('convMarca').value:'';
+  if(v!=='__otra') return v;
+  return (($('convOtra')||{}).value||'').trim()||'Sin marca';
 }
 async function onConvFile(e){
   const file=e.target.files[0]; if(!file) return;
+  $('convPreview').innerHTML='<div class="hint">Procesando '+esc(file.name)+'…</div>';
   try{
+    await ocCargarModelos();
     const buf=await file.arrayBuffer(); const wb=XLSX.read(buf,{type:'array'});
-    convCtx=convertirOC($('convMarca').value, wb, file.name);
+    convCtx=convertirOC(convMarcaSel(), wb, file.name);
     renderConvPreview();
-  }catch(err){ $('convPreview').innerHTML='<div class="warn">'+esc(err.message)+'</div>'; $('convActions').innerHTML='<button class="btn btn-outline" onclick="closeModal()">Cerrar</button>'; }
+  }catch(err){ convCtx=null; ocCtx=null; $('convPreview').innerHTML='<div class="warn">'+esc(err.message)+'</div>'; $('convActions').innerHTML='<button class="btn btn-outline" onclick="closeModal()">Cerrar</button>'; }
+}
+/* fila de mapeo: qué columna de la planilla alimenta cada campo del modelo Mateu */
+function ocSelCols(campo, label, sel){
+  const H=ocCtx.headers;
+  return '<label style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">'+esc(label)
+    +'<select class="sel" data-oc-col="'+campo+'" style="min-width:150px;font-size:12px"><option value="-1">— sin columna —</option>'
+    + H.map((h,j)=>'<option value="'+j+'"'+(j===sel?' selected':'')+'>'+esc(h||('col '+(j+1)))+'</option>').join('')
+    +'</select></label>';
 }
 function renderConvPreview(){
   const oc=convCtx;
-  let html='<div class="hint">OC <b>'+esc(oc.nro)+'</b> · '+esc(oc.marca)+' · '+esc(oc.fecha||'sin fecha')+' · '+oc.articulos.length+' artículos · <b>'+fmtInt(oc.total_unidades)+' u</b> · '+fmtMoney(oc.total_importe)+'</div>';
-  html+='<div class="tbl-wrap" style="max-height:320px;overflow:auto"><table style="min-width:640px"><thead><tr><th>Modelo</th><th>Descripción</th><th>Disciplina</th><th>Tipo</th><th class="num">Talles</th><th class="num">Total</th><th class="num">Costo</th><th class="num">Importe</th></tr></thead><tbody>'
-    + oc.articulos.map(a=>'<tr><td class="mono">'+esc(a.modelo)+'</td><td>'+esc(a.descripcion)+'</td><td>'+esc(a.disciplina)+'</td><td>'+esc(a.tipo)+'</td><td class="num">'+a.talles.length+'</td><td class="num big">'+fmtInt(a.cantidad)+'</td><td class="num mono">'+fmtMoney(a.costo_unitario)+'</td><td class="num mono">'+fmtMoney(a.cantidad*a.costo_unitario)+'</td></tr>').join('')
-    +'</tbody></table></div>';
-  if(!oc.fecha) html+='<div class="warn">No pude leer la fecha del nombre del archivo. Renombralo con el mes (ej. "… julio 26").</div>';
+  let html='';
+  /* cabecera editable: nº de OC, fecha y proveedor */
+  html+='<div class="row" style="gap:8px;flex-wrap:wrap;margin:8px 0">'
+    +'<label style="flex:2;min-width:200px;display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">OC nº<input class="inp" id="convNro" value="'+esc(oc.nro)+'"></label>'
+    +'<label style="flex:1;min-width:130px;display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Fecha<input class="inp" id="convFecha" type="date" value="'+esc(oc.fecha||'')+'"></label>'
+    +'<label style="flex:1;min-width:150px;display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Proveedor<input class="inp" id="convProv" value="'+esc(oc.proveedor||'')+'"></label>'
+    +'</div>';
+  html+='<div class="hint">'+esc(oc.marca)+' · <b>'+oc.articulos.length+' artículos</b> · <b>'+fmtInt(oc.total_unidades)+' u confirmadas</b> · '+fmtMoney(oc.total_importe)
+    + (ocCtx?(' · hoja "'+esc(ocCtx.hoja)+'" (encabezados en la fila '+ocCtx.hdrRow+')'):' · lector propio de '+esc(oc.motor))+'</div>';
+  if(ocCtx){
+    const H=ocCtx.headers, c=ocCtx.cols, nom=j=>(j>=0&&H[j])?H[j]:'—';
+    html+='<div class="hint">Columnas detectadas: código <b>'+esc(nom(c.cod))+'</b> · descripción <b>'+esc(nom(c.desc))+'</b> · unidades <b>'+esc(nom(c.cant))+'</b> · costo <b>'+esc(nom(c.costo))+'</b>'
+      + (ocCtx.talleCols.length?(' · '+ocCtx.talleCols.length+' columnas de talle'):'')
+      + ' <button class="btn btn-outline btn-sm" id="convMap" style="margin-left:6px">⚙ Cambiar columnas</button></div>';
+    const mod=ocModelo(oc.marca);
+    if(mod) html+='<div class="card-hs">Se aplicó el modelo de '+esc(mod.marca||oc.marca)+(mod.hoja?(' (hoja "'+esc(mod.hoja)+'")'):'')+(mod.ref&&mod.ref.archivo?(' · aprendido de "'+esc(mod.ref.archivo)+'"'):'')+'.</div>';
+    const RUB=['','CALZADO','INDUMENTARIA','ACCESORIOS'];
+    html+='<div id="convMapBox" style="display:'+(ocMapOpen?'block':'none')+';background:#f5f7fc;border:1px solid var(--line);border-radius:8px;padding:10px;margin:6px 0">'
+      +'<div class="row" style="gap:10px;flex-wrap:wrap">'
+      + ocSelCols('cod','Código',c.cod)+ocSelCols('desc','Descripción',c.desc)+ocSelCols('cant','Unidades (confirmado)',c.cant)+ocSelCols('costo','Costo unitario',c.costo)
+      + ocSelCols('talle','Talle (si hay una fila por talle)',c.talle)+ocSelCols('rubro','Rubro',c.rubro)+ocSelCols('disc','Disciplina',c.disc)+ocSelCols('gen','Género',c.gen)+ocSelCols('emp','Empresa / banner',c.emp)
+      +'<label style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Rubro si la planilla no lo trae'
+        +'<select class="sel" id="convRubroDef" style="min-width:150px;font-size:12px">'+RUB.map(r=>'<option value="'+esc(r)+'"'+(r===(ocCtx.rubroDefault||'')?' selected':'')+'>'+esc(r||'— ninguno —')+'</option>').join('')+'</select></label>'
+      +'</div>'
+      +'<div class="row" style="gap:8px;margin-top:10px;align-items:center"><button class="btn btn-outline btn-sm" id="convModelo">★ Guardar como modelo de la marca</button>'
+      +'<span class="card-hs">Queda guardado para '+esc(oc.marca)+': la próxima planilla de esta marca entra ya mapeada.</span></div></div>';
+    if(ocCtx.empresas.length>1){
+      html+='<div class="row" style="gap:8px;align-items:center;margin:6px 0"><span class="card-hs">Empresa / banner:</span>'
+        +'<select class="sel" id="convEmp" style="max-width:220px"><option value="">Todas ('+ocCtx.empresas.length+')</option>'
+        + ocCtx.empresas.map(e=>'<option'+(e===ocCtx.empresa?' selected':'')+'>'+esc(e)+'</option>').join('')+'</select>'
+        +'<span class="card-hs">La planilla mezcla más de una empresa: podés convertir una OC por cada una.</span></div>';
+    }
+  }
+  html+='<div class="tbl-wrap" style="max-height:320px;overflow:auto"><table style="min-width:640px"><thead><tr><th>Modelo</th><th>Descripción</th><th>Rubro</th><th>Disciplina</th><th>Tipo</th><th class="num">Talles</th><th class="num">Confirmado</th><th class="num">Costo</th><th class="num">Importe</th></tr></thead><tbody>'
+    + oc.articulos.slice(0,300).map(a=>'<tr><td class="mono">'+esc(a.modelo)+'</td><td>'+esc(a.descripcion)+'</td><td>'+esc(a.rubro)+'</td><td>'+esc(a.disciplina)+'</td><td>'+esc(a.tipo)+'</td><td class="num">'+(a.talles.length||'—')+'</td><td class="num big">'+fmtInt(a.cantidad)+'</td><td class="num mono">'+fmtMoney(a.costo_unitario)+'</td><td class="num mono">'+fmtMoney(a.cantidad*a.costo_unitario)+'</td></tr>').join('')
+    +'</tbody></table></div>'
+    +(oc.articulos.length>300?('<div class="card-hs">… y '+(oc.articulos.length-300)+' artículos más (se guardan todos).</div>'):'');
+  if(!oc.fecha) html+='<div class="warn">Falta la fecha de la OC: cargala arriba (no pude leerla del nombre del archivo).</div>';
   $('convPreview').innerHTML=html;
+  $('convNro').oninput=()=>{ convCtx.nro=$('convNro').value.trim(); };
+  $('convFecha').onchange=()=>{ convCtx.fecha=$('convFecha').value; };
+  $('convProv').oninput=()=>{ convCtx.proveedor=$('convProv').value.trim(); };
+  if(ocCtx){
+    $('convMap').onclick=()=>{ ocMapOpen=!ocMapOpen; $('convMapBox').style.display=ocMapOpen?'block':'none'; };
+    document.querySelectorAll('#convMapBox [data-oc-col]').forEach(s=>s.onchange=()=>{
+      ocCtx.cols[s.getAttribute('data-oc-col')]=parseInt(s.value,10);
+      ocCtx.talleCols=ocTalleCols(ocCtx.headers,[ocCtx.cols.cod,ocCtx.cols.desc,ocCtx.cols.cant,ocCtx.cols.costo,ocCtx.cols.disc,ocCtx.cols.rubro,ocCtx.cols.gen,ocCtx.cols.emp]);
+      ocRearmar();
+    });
+    if($('convEmp')) $('convEmp').onchange=()=>{ ocCtx.empresa=$('convEmp').value; ocRearmar(); };
+    if($('convRubroDef')) $('convRubroDef').onchange=()=>{ ocCtx.rubroDefault=$('convRubroDef').value; ocRearmar(); };
+    if($('convModelo')) $('convModelo').onclick=ocGuardarModelo;
+  }
   $('convActions').innerHTML='<button class="btn btn-outline" onclick="closeModal()">Cancelar</button>'
     +'<button class="btn btn-outline" id="convXls">⇩ Excel Mateu</button>'
     +'<button class="btn btn-outline" id="convPdf">⇩ PDF</button>'
     +'<button class="btn btn-primary" id="convSave">Guardar al sistema</button>';
-  $('convXls').onclick=()=>exportOCExcel(oc);
-  $('convPdf').onclick=()=>exportOCPdf(oc);
+  $('convXls').onclick=()=>exportOCExcel(convCtx);
+  $('convPdf').onclick=()=>exportOCPdf(convCtx);
   $('convSave').onclick=guardarConvertida;
 }
 function tallesUnion(oc){ const seen=[], set={}; oc.articulos.forEach(a=>a.talles.forEach(t=>{ if(!set[t.talle]){set[t.talle]=1;seen.push(t.talle);} })); return seen; }

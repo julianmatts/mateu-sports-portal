@@ -450,6 +450,37 @@ mismas pantallas y estética, con datos reales.
 - Las pantallas `.dc.html` + `support.js` + `sesion.js` son el **prototipo de Design**
   que originó el módulo; quedan como referencia visual (siguen gateadas).
 
+## Conversor de OC de marca (pestaña "Pedidos de compra" de `recepciones/`)
+
+Botón **⇆ Convertir OC de marca**: Juli sube la planilla que manda **cualquier**
+marca y sale la **OC unificada Mateu Sports** (detalle por artículo con curva de
+talles) → Excel/PDF o "Guardar al sistema" (queda como pedido y alimenta el
+control de ingresos vs pedido).
+
+- **Motor genérico** (no hay un parser por marca): elige la hoja, encuentra la
+  fila de encabezados y mapea las columnas por nombre (alias + pistas por marca).
+  Entre varias combinaciones gana la que mapea más campos; que produzca artículos
+  con unidades es el desempate (así descarta hojas de lista de precios). Nike
+  conserva su lector propio ("Resumen Pedido") como atajo, con caída al genérico.
+- **Unidades = la columna de confirmado**. En adidas es literalmente `Confirmado`
+  (ojo: el export trae **dos** columnas con ese nombre, una numérica y otra de
+  texto tipo "0-STOCK" → se elige por perfil numérico). Las filas con 0 quedan
+  afuera. Los importes no se confunden con unidades porque se exige que la
+  columna sea mayormente entera.
+- **Empresa / banner**: si la planilla mezcla empresas (el multimarcas de adidas
+  trae **MATEU SPORTS y AURELIUS**; los exclusivos de franquicias vienen en otro
+  archivo), aparece un selector para convertir una OC por cada una.
+- **Si la detección falla**: "⚙ Cambiar columnas" reasigna a mano cada campo (+
+  rubro por defecto cuando la planilla no lo trae) y **★ Guardar como modelo de
+  la marca** deja ese mapeo para la próxima vez (Firebase `recepciones/ocModelos/`).
+- **Modelos por marca** (`recepciones/modelos-oc.js` → `window.OC_MODELOS_SEED`):
+  semilla con el mapeo aprendido del **último pedido guardado de cada marca** en
+  `G:\Soporte\Julian Mateu\Mateu sports\Pedidos de compras\<Marca>\…`. Regenerar con:
+  `node scripts/gen-modelos-oc.js "G:/…/Pedidos de compras"` (self-contained, lee
+  el motor del propio `recepciones/index.html` para no desincronizarse). Hoy 49 de
+  80 marcas tienen modelo; el resto entra por detección + mapeo a mano. Los `.xls`
+  viejos (BIFF) los lee el navegador con SheetJS pero no el generador.
+
 ## Ingreso de Mercadería (pestaña en `recepciones/`)
 
 Circuito **físico** de recepción del depósito central, distinto de "Control de
