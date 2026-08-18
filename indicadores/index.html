@@ -510,9 +510,16 @@ footer b{color:var(--navy)}
     <div class="print-ctx" id="printCtx"></div>
     <div class="filtro-banner" id="filtroBanner" style="display:none"></div>
 
+    <section class="sec" id="secObjetivoMes" style="display:none">
+      <div class="sec-label">Objetivo de venta</div>
+      <h2 class="sec-title">Objetivo <em>del mes</em></h2>
+      <p class="hint">La meta mensual de tu sucursal. Mientras el mes está abierto, el avance suma la venta de las semanas ya publicadas.</p>
+      <div class="card pad" id="objetivoMesCard"></div>
+    </section>
+
     <section class="sec" id="secObjetivo" style="display:none">
       <div class="sec-label">Objetivo de venta</div>
-      <h2 class="sec-title">Objetivo de <em>venta</em></h2>
+      <h2 class="sec-title">Objetivo <em>de la semana</em></h2>
       <p class="hint">La meta de venta que puso gerencia para tu sucursal, con el mínimo y el objetivo de superación (120). Elegí la semana para ver otras. A medida que se cargue la venta, vas viendo el avance.</p>
       <div class="card pad" id="objetivoCard"></div>
       <input type="file" id="veFile" accept=".xlsx,.xls" style="display:none">
@@ -635,9 +642,16 @@ footer b{color:var(--navy)}
       <div class="rk-chips" id="rkKpiChips"></div>
     </div>
 
+    <section class="sec" id="secObjMesCadena" style="display:none">
+      <div class="sec-label">Objetivo de venta</div>
+      <h2 class="sec-title" id="objMesCadTitle">Objetivo <em>del mes</em></h2>
+      <p class="hint">La meta mensual agregada de la cadena (respeta el filtro por línea). Mientras el mes está abierto, el avance suma las semanas ya publicadas.</p>
+      <div class="card pad" id="objMesCadCard"></div>
+    </section>
+
     <section class="sec" id="secObjCadena" style="display:none">
       <div class="sec-label">Objetivo de venta</div>
-      <h2 class="sec-title" id="objCadTitle">Objetivo de venta <em>de la semana</em></h2>
+      <h2 class="sec-title" id="objCadTitle">Objetivo <em>de la semana</em></h2>
       <p class="hint">La meta semanal de cada sucursal y el avance contra la venta real. Verde = llegó a la meta, ámbar = pasó el mínimo, rojo = abajo del mínimo. Para cargar o corregir metas, entrá al módulo Objetivos.</p>
       <div class="card pad" id="objCadCard"></div>
     </section>
@@ -1055,7 +1069,7 @@ async function render(){
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
   $('secCanales').style.display = ecom?'':'none';
-  if(ecom) ['secEq','secMix','secPlantilla','secTbl','secSem','secBarrida','secObjetivo'].forEach(id=>$(id).style.display='none');
+  if(ecom) ['secEq','secMix','secPlantilla','secTbl','secSem','secBarrida','secObjetivo','secObjetivoMes'].forEach(id=>$(id).style.display='none');
   const seg=document.querySelector('.seg'); if(seg) seg.style.display = ecom?'none':'flex';
   renderKPIs();
   renderDiagnostico();
@@ -1068,7 +1082,7 @@ async function render(){
 }
 
 function mostrarEmpty(msg){
-  ['secEq','secMix','secCov','secPlantilla','secTbl','secSem','secHeat','secBarrida','secObjetivo'].forEach(id=>$(id).style.display='none');
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secSem','secHeat','secBarrida','secObjetivo','secObjetivoMes'].forEach(id=>$(id).style.display='none');
   $('cobNota').style.display='none';
   $('diagBox').style.display='none';
   $('kpis').innerHTML = '<div class="empty" style="grid-column:1/-1">'+msg+'</div>';
@@ -1563,7 +1577,7 @@ async function objMesCadenaHtml(sem, weeks){
   }
   const pct=T.meta?T.real/T.meta:0, w=Math.min(100,Math.round(pct*100));
   const col = !T.real ? 'var(--mid)' : T.real>=T.meta ? 'var(--ok,#16a34a)' : T.real>=T.minimo ? '#d97706' : '#dc2626';
-  let h='<div style="border-bottom:1px solid var(--line,#e6ebf5);margin-bottom:16px;padding-bottom:14px">'
+  let h='<div>'
     +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
     +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">Objetivo del mes — '+esc(objMesLbl(per))+' · '+esc(lblLinea)+'</div>'
     +(provisorio?'<span style="font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#d97706;background:#fff7ed;border:1px solid #fed7aa;border-radius:20px;padding:1px 7px">avance parcial · '+nSem+' sem</span>':'')
@@ -1590,15 +1604,16 @@ async function objMesCadenaHtml(sem, weeks){
 
 let objCadSem = null;              // semana elegida en la vista cadena (lunesISO); null = la última
 async function renderObjCadena(){
-  const sec=$('secObjCadena'); if(!sec) return;
-  if(!OBJETIVOS_URL || !esGerencia){ sec.style.display='none'; return; }
+  const sec=$('secObjCadena'), secMes=$('secObjMesCadena'); if(!sec) return;
+  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; };
+  if(!OBJETIVOS_URL || !esGerencia){ ocultar(); return; }
   if(!$('objCadCard').innerHTML){
     $('objCadCard').innerHTML='<p class="empty" style="margin:6px 0">Cargando objetivo…</p>';
     sec.style.display='';
   }
   let weeks;
   try{ weeks = await fetchObjetivoWeeks(); }catch(e){ weeks=null; }
-  if(!weeks || !weeks.length){ sec.style.display='none'; return; }
+  if(!weeks || !weeks.length){ ocultar(); return; }
   const sem = (objCadSem && weeks.includes(objCadSem)) ? objCadSem : weeks[0];
   // semana + bloque del mes en paralelo (los fetch se cachean por promesa)
   const [data, mesHtml] = await Promise.all([
@@ -1619,16 +1634,22 @@ async function renderObjCadena(){
   const rows = rkTipo ? todas.filter(r=>r.fmt===rkTipo) : todas;
   const lblLinea = rkTipo ? fmtLabel(rkTipo) : 'cadena';
   const tit=$('objCadTitle'); if(tit) tit.innerHTML = rkTipo
-    ? 'Objetivo de venta · <em>'+esc(fmtLabel(rkTipo))+'</em>'
-    : 'Objetivo de venta <em>de la semana</em>';
+    ? 'Objetivo de la semana · <em>'+esc(fmtLabel(rkTipo))+'</em>'
+    : 'Objetivo <em>de la semana</em>';
+  const titM=$('objMesCadTitle'); if(titM) titM.innerHTML = rkTipo
+    ? 'Objetivo del mes · <em>'+esc(fmtLabel(rkTipo))+'</em>'
+    : 'Objetivo <em>del mes</em>';
+  // el bloque mensual va en su propia sección, con su título
+  const cardMes=$('objMesCadCard');
+  if(cardMes){ cardMes.innerHTML=mesHtml||''; }
+  if(secMes) secMes.style.display = mesHtml ? '' : 'none';
 
   const selHtml='<select id="objCadSemSel" style="font-family:var(--font-b,inherit);font-size:13px;color:var(--navy,#0B1527);'
     +'background:#fff;border:1px solid var(--line,#dce3f0);border-radius:7px;padding:6px 9px;cursor:pointer">'
     + weeks.map(k=>'<option value="'+esc(k)+'"'+(k===sem?' selected':'')+'>'+esc(objSemTag(k))+'</option>').join('')
     +'</select>';
   const hayReal = rows.some(r=>r.real>0);
-  let html=mesHtml
-    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
+  let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
     +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana · ':'Meta de la semana · ')+esc(lblLinea)+'</div>'
     +selHtml+'</div>';
 
@@ -2656,8 +2677,8 @@ async function objetivoMesHtml(slug, sem, weeks, ve){
   const w=Math.min(100, Math.round(pct*100));
   const cls=!real?'na':real>=meta?'ok':real>=minimo?'warn':'bad';
   const col=cls==='ok'?'var(--ok,#16a34a)':cls==='warn'?'#d97706':cls==='bad'?'#dc2626':'var(--mid)';
-  // va ARRIBA del objetivo semanal: separa con borde inferior
-  let h='<div style="border-bottom:1px solid var(--line,#e6ebf5);margin-bottom:16px;padding-bottom:14px">'
+  // va en su propia sección "Objetivo del mes", arriba de la semanal
+  let h='<div>'
     +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
     +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">Objetivo del mes — '+esc(objMesLbl(per))+'</div>'
     +(provisorio?'<span style="font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#d97706;background:#fff7ed;border:1px solid #fed7aa;border-radius:20px;padding:1px 7px">avance parcial · suma de semanas</span>':'')
@@ -2685,10 +2706,11 @@ async function objetivoMesHtml(slug, sem, weeks, ve){
 }
 
 async function renderObjetivo(){
-  const sec=$('secObjetivo'); if(!sec) return;
-  if(!OBJETIVOS_URL){ sec.style.display='none'; return; }
+  const sec=$('secObjetivo'), secMes=$('secObjetivoMes'); if(!sec) return;
+  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; };
+  if(!OBJETIVOS_URL){ ocultar(); return; }
   const slug = SUC2SLUG[sucName];
-  if(!slug){ sec.style.display='none'; return; }
+  if(!slug){ ocultar(); return; }
   // primera carga: mostrar la sección con un aviso en vez de aparecer de golpe al final
   if(!$('objetivoCard').innerHTML){
     $('objetivoCard').innerHTML = '<p class="empty" style="margin:6px 0">Cargando objetivo…</p>';
@@ -2696,9 +2718,9 @@ async function renderObjetivo(){
   }
   const target = sucName;
   let weeks;
-  try{ weeks = await fetchObjetivoWeeks(); }catch(e){ sec.style.display='none'; return; }
+  try{ weeks = await fetchObjetivoWeeks(); }catch(e){ ocultar(); return; }
   if(sucName!==target) return;
-  if(!weeks || !weeks.length){ $('objetivoCard').innerHTML=''; sec.style.display='none'; return; }
+  if(!weeks || !weeks.length){ $('objetivoCard').innerHTML=''; ocultar(); return; }
   // semana activa: la elegida (si sigue existiendo) o la última publicada
   const sem = (objSem && weeks.includes(objSem)) ? objSem : weeks[0];
   _objActiveSem = sem;
@@ -2721,15 +2743,17 @@ async function renderObjetivo(){
     + weeks.map(k=>'<option value="'+esc(k)+'"'+(k===sem?' selected':'')+'>'+esc(objSemTag(k))+'</option>').join('')
     +'</select>';
 
-  // objetivo del MES arriba de todo; abajo el semanal con su detalle
+  // objetivo del MES en su propia sección, arriba; abajo el semanal con su detalle
   const mesHtml = await pMes;
   if(sucName!==target) return;
+  const cardMes=$('objetivoMesCard');
+  if(cardMes) cardMes.innerHTML=mesHtml||'';
+  if(secMes) secMes.style.display = mesHtml ? '' : 'none';
 
   // con el real ya cargado el protagonista es la venta: real en grande, meta en chico
   const realEncTot = (()=>{ const t=ve&&ve.total; return typeof t==='number' ? t : (t&&t.venta)||0; })();
   const hayReal = !!v && ((v.real||0)>0 || realEncTot>0);
-  let html=mesHtml
-    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
+  let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
     +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana':'Meta de la semana')+'</div>'
     +selHtml+'</div>';
 
