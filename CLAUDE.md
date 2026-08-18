@@ -322,12 +322,29 @@ Indicadores, ver abajo).
 **Puesta en marcha: ya funciona (usa `recepciones-mateu`, que está en vivo). No hace
 falta crear ninguna base.**
 
-## Objetivos de Venta Semanal
+## Objetivos de Venta Semanal (y Mensual)
 
 `objetivos/` es un `index.html` self-contained (lee la sesión del Portal, sin login
-propio). Lo carga **gerencia** semana a semana: el objetivo de venta por sucursal.
+propio). Lo carga **gerencia**: el objetivo de venta por sucursal, semanal y mensual.
 La ve el rol `admin` o quien tenga la herramienta `objetivos`. Las sucursales NO
 entran acá: ven su objetivo en Indicadores.
+
+- **Objetivo MENSUAL (18/08/2026)**: pestañas «Mensual · cargar» y «Mensual ·
+  dashboard». Se sube el Excel **"Objetivos Ventas Mensual - Al MM-YYYY.xlsx"**
+  (`Desktop/PMS/MENSUAL/`): libro ACUMULATIVO, una hoja por mes ("AGO26") y cada
+  hoja trae todos los meses en bloques de 4 columnas (OBJETIVO · ALCANZADO ·
+  %REAL · %ESTIMADO) desde ago-2021 — el año de cada bloque se deduce contando
+  hacia atrás desde el mes de la hoja. La META publicada sale de la **tabla
+  lateral** del mes (objetivo REDONDEADO, el que se comunica, con su división
+  **Semanal**); fallback al bloque sin redondear. El mes en curso viene sin
+  ALCANZADO: el real llega con el Excel del mes siguiente. Checkbox «Publicar
+  también el histórico» → PATCH con todos los meses (habilita el **vs. mismo mes
+  del año anterior** del dashboard; `·m` = compara la meta porque el mes está
+  abierto). Avance del mes abierto = suma de las semanas ya cargadas («x sem»).
+  Firebase: `objetivos/meses/<YYYY-MM>` (mismo formato porSlug que las semanas,
+  + campo `semanal`) y `objetivos/ultimoMes`. En **Indicadores**, bloque
+  «Objetivo del mes» dentro de la sección Objetivo (cada sucursal baja solo su
+  slug; suma semanas publicadas + lo provisorio del encargado).
 
 - **Valores por sucursal/semana**: **META** (el objetivo, el único que se carga),
   **MÍNIMO** (= Meta ÷ 1,2), **120** (= Meta × 1,2, superación) y **REAL** (venta de
