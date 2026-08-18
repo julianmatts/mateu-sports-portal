@@ -45,6 +45,15 @@ img,svg{max-width:100%}
   color:var(--navy-mid);font-family:var(--font-b);font-size:11px;font-weight:700;line-height:18px;text-align:center}
 .tab.on .badge{background:var(--red);color:#fff}
 
+/* sub-pestañas Cargar / Dashboard dentro de Semanal y Mensual */
+.subtabs{display:inline-flex;gap:0;border:1.5px solid var(--border);border-radius:9px;overflow:hidden;margin-bottom:18px;background:#fff}
+.subtab{border:0;background:none;cursor:pointer;padding:9px 18px;font-family:var(--font-c);font-size:13px;font-weight:700;
+  letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+.subtab + .subtab{border-left:1.5px solid var(--border)}
+.subtab.on{background:var(--navy);color:#fff}
+.subtab:not(.on):hover{color:var(--navy)}
+.subtab:focus-visible{outline:2px solid var(--red);outline-offset:-2px}
+
 main{max-width:1200px;margin:0 auto;padding:22px 22px 80px}
 
 .banner{border-radius:9px;padding:10px 14px;font-size:13px;margin-bottom:16px}
@@ -157,10 +166,8 @@ tfoot .gtot td:first-child{font-family:var(--font-c);letter-spacing:1px}
 <div hidden aria-hidden="true"><span id="whoName"></span><span id="whoRole"></span><button id="salir"></button></div>
 
 <nav class="tabs" id="tabs">
-  <button class="tab on" data-tab="cargar">Semanal · cargar</button>
-  <button class="tab" data-tab="dashboard">Semanal · dashboard</button>
-  <button class="tab" data-tab="mescargar">Mensual · cargar</button>
-  <button class="tab" data-tab="mesdash">Mensual · dashboard</button>
+  <button class="tab on" data-tab="sem">Semanal</button>
+  <button class="tab" data-tab="mes">Mensual</button>
   <button class="tab" data-tab="historico">Histórico</button>
   <button class="tab" data-tab="pesos">Pesos por turno</button>
 </nav>
@@ -470,7 +477,32 @@ function rellenarRealDesdeHist(){
 /* ============================================================
    VISTAS
    ============================================================ */
-function setTab(t){ state.tab=t; document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t)); render(); refrescarListas(t); }
+/* Navegación en dos niveles: pestañas Semanal / Mensual (+ Histórico, Pesos)
+   y adentro el selector Cargar · Dashboard. state.tab sigue siendo la vista
+   hoja (cargar/dashboard/mescargar/mesdash/historico/pesos); setTab acepta
+   tanto la hoja como el grupo ("sem"/"mes" caen en la última vista usada). */
+const TAB_GRUPO = {cargar:'sem', dashboard:'sem', mescargar:'mes', mesdash:'mes', historico:'historico', pesos:'pesos'};
+function setTab(t){
+  if(t==='sem') t = state.ultimaSem || 'cargar';
+  else if(t==='mes') t = state.ultimaMes || 'mescargar';
+  state.tab=t;
+  if(TAB_GRUPO[t]==='sem') state.ultimaSem=t;
+  if(TAB_GRUPO[t]==='mes') state.ultimaMes=t;
+  const g=TAB_GRUPO[t];
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===g));
+  render();
+  refrescarListas(t);
+}
+function subTabsHtml(){
+  const g=TAB_GRUPO[state.tab];
+  const defs = g==='sem' ? [['cargar','Cargar objetivos'],['dashboard','Dashboard']]
+             : g==='mes' ? [['mescargar','Cargar objetivos'],['mesdash','Dashboard']]
+             : null;
+  if(!defs) return '';
+  return '<div class="subtabs" role="tablist">'
+    + defs.map(([t,lbl])=>'<button class="subtab'+(state.tab===t?' on':'')+'" data-subtab="'+t+'">'+lbl+'</button>').join('')
+    + '</div>';
+}
 
 // Al entrar a Dashboard / Histórico / Mensual·dashboard refresca las listas de
 // semanas/meses publicados desde Firebase (shallow: solo claves, no baja datos).
@@ -501,10 +533,10 @@ async function refrescarListas(t){
 
 function render(){
   const v=$('view');
-  if(state.tab==='cargar')          v.innerHTML=viewCargar();
-  else if(state.tab==='dashboard')  v.innerHTML=viewDashboard();
-  else if(state.tab==='mescargar')  v.innerHTML=viewMesCargar();
-  else if(state.tab==='mesdash')    v.innerHTML=viewMesDash();
+  if(state.tab==='cargar')          v.innerHTML=subTabsHtml()+viewCargar();
+  else if(state.tab==='dashboard')  v.innerHTML=subTabsHtml()+viewDashboard();
+  else if(state.tab==='mescargar')  v.innerHTML=subTabsHtml()+viewMesCargar();
+  else if(state.tab==='mesdash')    v.innerHTML=subTabsHtml()+viewMesDash();
   else if(state.tab==='historico')  v.innerHTML=viewHistorico();
   else if(state.tab==='pesos')      v.innerHTML=viewPesos();
   wire();
@@ -1369,6 +1401,7 @@ function wire(){
   $('whoRole').textContent = SESSION.rol||'';
   const salir=$('salir'); if(salir) salir.onclick=()=>{ try{localStorage.removeItem(SESSION_KEY);}catch(e){} location.replace('../'); };
   document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
+  document.querySelectorAll('.subtab').forEach(b=>b.onclick=()=>setTab(b.dataset.subtab));
   if(state.tab==='cargar')     wireCargar();
   if(state.tab==='dashboard')  wireDashboard();
   if(state.tab==='mescargar')  wireMesCargar();
