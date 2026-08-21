@@ -187,6 +187,26 @@ img,svg{ max-width:100%; } /* ningún medio empuja el ancho en pantallas chicas 
   text-transform:uppercase; color:var(--red); background:var(--red-bg);
   border-radius:3px; padding:3px 8px;
 }
+/* artículos nuevos sin ubicar: prioridad para el depósito */
+.nuevo-tag{
+  font-family:var(--font-c); font-size:11px; font-weight:700; letter-spacing:1px;
+  text-transform:uppercase; color:var(--amber); background:var(--amber-bg);
+  border-radius:3px; padding:3px 8px;
+}
+.art-card.nuevo{ border-left-color:var(--amber); background:#fffdf6; }
+.nuevos-banner{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  background:var(--amber-bg); border:1px solid #f0dfa8; border-left:4px solid var(--amber);
+  border-radius:6px; padding:10px 12px; margin-bottom:12px; font-size:14px; color:var(--navy);
+}
+.nuevos-banner b{ font-family:var(--font-d); font-size:22px; color:var(--amber); letter-spacing:.5px; }
+.nuevos-banner .btn{ margin-left:auto; }
+.su-filter{
+  font-family:var(--font-c); font-size:12px; font-weight:700; letter-spacing:1px; text-transform:uppercase;
+  background:transparent; border:1px solid var(--amber); color:var(--amber); border-radius:12px;
+  padding:2px 10px; cursor:pointer; margin-left:6px;
+}
+.su-filter.on{ background:var(--amber); color:#fff; }
 
 /* ============ ESTANTERÍAS ============ */
 .est-card{ background:#fff; border:1px solid var(--gray-200); border-radius:6px; margin-bottom:10px; overflow:hidden; }
@@ -570,9 +590,11 @@ table.prev th{ background:var(--bg); font-family:var(--font-c); letter-spacing:.
     <!-- VISTA: buscar -->
     <div class="view" id="view-buscar">
       <div id="cargaBox"></div>
+      <div id="nuevosBanner"></div>
       <div class="su-head" id="suHead">
         <span class="tt">Sin ubicar</span>
         <span class="badge" id="suBadge">0</span>
+        <button class="su-filter" id="suNuevos" style="display:none" title="Mostrar solo los artículos nuevos (entraron en las últimas cargas)">⚡ Nuevos <span id="suNuevosN">0</span></button>
         <button class="icon-btn" id="suPrint" title="Imprimir lista de sin ubicar" style="margin-left:auto">🖨</button>
         <span class="arrow" style="margin-left:0">▾</span>
       </div>
@@ -889,6 +911,7 @@ let pollTimer = null;
 let tabActiva = 'buscar';
 let searchQuery = '';
 let suAbierto = false;     // sección SIN UBICAR expandida
+let suSoloNuevos = false;  // filtro "⚡ Nuevos" de la sección SIN UBICAR
 let moduloVista = null;    // {estId, modId} para el filtro inverso
 let AUDIT = null;          // auditoría en curso {estId, marcas} (se declara acá
                            // porque setTab la resetea ya durante el arranque)
@@ -1094,6 +1117,7 @@ function setTab(id){
 function wireStatic(){
   $('perfilChip').addEventListener('click', cambiarPerfil);
   $('suHead').addEventListener('click', ()=>{ suAbierto=!suAbierto; aplicarSuAbierto(); });
+  $('suNuevos').addEventListener('click', e=>{ e.stopPropagation(); suSoloNuevos=!suSoloNuevos; suAbierto=true; aplicarSuAbierto(); actualizarBadges(); });
   $('searchInput').addEventListener('input', ()=>{
     searchQuery = $('searchInput').value;
     $('searchClear').style.display = searchQuery ? 'block' : 'none';
@@ -1219,7 +1243,30 @@ function articulosLista(){
 function sinUbicarLista(){
   return articulosLista()
     .filter(a=>!a.ubicaciones || !Object.keys(a.ubicaciones).length)
-    .sort((a,b)=>(b.fechaAlta||0)-(a.fechaAlta||0));
+    .sort((a,b)=>(b.fechaAlta||0)-(a.fechaAlta||0));  // más nuevos primero
+}
+
+/* ---- Artículos NUEVOS sin ubicar (prioridad para el depósito) ----
+   "Nuevo" = entró en una carga POSTERIOR a la carga inicial de la sucursal
+   (así el día 1, con todo el stock recién importado, no se marca todo) y
+   hace como máximo NUEVO_DIAS. Deja de ser "nuevo" al ubicarlo. */
+const NUEVO_DIAS = 7;
+function primeraCargaTs(){
+  let min = Infinity;
+  for(const k in (DATA.articulos||{})){ const f = DATA.articulos[k].fechaAlta; if(f && f<min) min=f; }
+  return min===Infinity ? 0 : min;
+}
+function esNuevo(a, primera){
+  if(a.ubicaciones && Object.keys(a.ubicaciones).length) return false;
+  const f = a.fechaAlta||0; if(!f) return false;
+  if(primera===undefined) primera = primeraCargaTs();
+  // cada carga graba un único timestamp: "posterior a la primera" = entró en otra carga
+  return f > primera && (Date.now()-f) <= NUEVO_DIAS*86400000;
+}
+function nuevosLista(){ const p = primeraCargaTs(); return sinUbicarLista().filter(a=>esNuevo(a,p)); }
+function edadAlta(ts){
+  const d = Math.floor((Date.now()-(ts||0))/86400000);
+  return d<=0 ? 'ingresó hoy' : d===1 ? 'ingresó ayer' : 'ingresó hace '+d+' días';
 }
 function nombreUbicacion(u){
   const est = (DATA.estanterias||{})[u.estanteriaId];
@@ -1250,6 +1297,25 @@ function actualizarBadges(){
   $('suBadge').textContent = n;
   const tb = $('tabBadgeSU');
   if(tb){ tb.textContent=n; tb.style.display = n>0 ? 'inline-block' : 'none'; }
+  // nuevos sin ubicar: filtro en la cabecera + banner arriba de Buscar
+  const nn = nuevosLista().length;
+  const fb = $('suNuevos');
+  if(fb){
+    fb.style.display = nn>0 ? 'inline-block' : 'none';
+    $('suNuevosN').textContent = nn;
+    if(!nn) suSoloNuevos = false;
+    fb.classList.toggle('on', suSoloNuevos);
+  }
+  const bn = $('nuevosBanner');
+  if(bn){
+    bn.innerHTML = nn>0
+      ? '<div class="nuevos-banner">⚡ <b>'+nn+'</b> artículo'+(nn===1?'':'s')+' nuevo'+(nn===1?'':'s')+' sin ubicar — '+
+        (canAssign()?'ubicalo'+(nn===1?'':'s')+' primero para que el salón lo'+(nn===1?'':'s')+' encuentre.':'todavía sin lugar en el depósito.')+
+        '<button class="btn btn-sm btn-navy" id="btnVerNuevos">Ver nuevos</button></div>'
+      : '';
+    const b = $('btnVerNuevos');
+    if(b) b.addEventListener('click', ()=>{ suSoloNuevos=true; suAbierto=true; aplicarSuAbierto(); actualizarBadges(); $('suHead').scrollIntoView({block:'start', behavior:'smooth'}); });
+  }
 }
 
 // Mantiene el contador denormalizado de meta (para el resumen global)
@@ -1285,16 +1351,24 @@ function aplicarSuAbierto(){
 }
 
 function renderSinUbicar(){
-  const lista = sinUbicarLista();
+  // nuevos primero (la lista ya viene por fecha de alta desc); con el filtro, solo nuevos
+  const primera = primeraCargaTs();
+  const todos = sinUbicarLista();
+  const nuevos = todos.filter(a=>esNuevo(a,primera));
+  if(!nuevos.length) suSoloNuevos = false;
+  const lista = suSoloNuevos ? nuevos : nuevos.concat(todos.filter(a=>!esNuevo(a,primera)));
   aplicarBodySU(lista);
   function aplicarBodySU(lista){
     $('suHead').classList.toggle('open', suAbierto);
     $('suBody').classList.toggle('open', suAbierto);
     if(!suAbierto) return;
     $('suBody').innerHTML = lista.length
-      ? lista.slice(0,200).map(a=>artCardHtml(a)).join('') + (lista.length>200?'<div class="hint" style="text-align:center">Mostrando 200 de '+lista.length+'.</div>':'')
+      ? (suSoloNuevos ? '<div class="hint" style="margin:4px 0 8px">Mostrando solo '+(nuevos.length===1?'el artículo nuevo':'los '+nuevos.length+' nuevos')+'. <a href="#" id="suVerTodos">Ver todos los sin ubicar ('+todos.length+')</a></div>' : '')+
+        lista.slice(0,200).map(a=>artCardHtml(a)).join('') + (lista.length>200?'<div class="hint" style="text-align:center">Mostrando 200 de '+lista.length+'.</div>':'')
       : '<div class="empty">🎉 No hay artículos sin ubicar.</div>';
     wireArtCards($('suBody'));
+    const vt = $('suVerTodos');
+    if(vt) vt.addEventListener('click', e=>{ e.preventDefault(); suSoloNuevos=false; renderSinUbicar(); actualizarBadges(); });
   }
 }
 
@@ -1322,14 +1396,19 @@ function exportarExcel(){
 
 // Imprime la lista de pendientes para repartir el trabajo de ubicar
 function imprimirSinUbicar(){
-  const lista = sinUbicarLista();
+  const primera = primeraCargaTs();
+  const todos = sinUbicarLista();
+  const nuevos = todos.filter(a=>esNuevo(a,primera));
+  // con el filtro "Nuevos" activo se imprime solo eso; si no, nuevos arriba y marcados
+  const lista = suSoloNuevos && nuevos.length ? nuevos : nuevos.concat(todos.filter(a=>!esNuevo(a,primera)));
   if(!lista.length){ toast('No hay artículos sin ubicar 🎉'); return; }
   const info = SUCURSAL_BY_SLUG[SUC];
   $('printArea').innerHTML =
-    '<h1>Artículos SIN UBICAR — '+esc(info?info.nombre:SUC)+'</h1>'+
-    '<div class="sub">'+fmtFecha(Date.now())+' · '+lista.length+' artículos · anotar la ubicación elegida y volcarla después en el Buscador</div>'+
-    '<table><tr><th>Código</th><th>Descripción</th><th>Stock</th><th style="width:140px">Ubicación (anotar)</th></tr>'+
-    lista.map(a=>'<tr><td>'+esc(a.codigo)+'</td><td>'+esc(a.descripcion||'')+'</td><td>'+esc(a.stock)+'</td><td></td></tr>').join('')+
+    '<h1>Artículos SIN UBICAR — '+esc(info?info.nombre:SUC)+(suSoloNuevos&&nuevos.length?' (solo nuevos)':'')+'</h1>'+
+    '<div class="sub">'+fmtFecha(Date.now())+' · '+lista.length+' artículos'+(nuevos.length?' · <b>'+nuevos.length+' nuevo'+(nuevos.length===1?'':'s')+'</b> ('+(nuevos.length===1?'primero en la lista, marcado':'primeros en la lista, marcados')+' con ⚡)':'')+
+      ' · anotar la ubicación elegida y volcarla después en el Buscador</div>'+
+    '<table><tr><th style="width:30px"></th><th>Código</th><th>Descripción</th><th>Stock</th><th style="width:140px">Ubicación (anotar)</th></tr>'+
+    lista.map(a=>'<tr><td>'+(esNuevo(a,primera)?'⚡':'')+'</td><td>'+esc(a.codigo)+'</td><td>'+esc(a.descripcion||'')+'</td><td>'+esc(a.stock)+'</td><td></td></tr>').join('')+
     '</table>';
   window.print();
 }
@@ -1658,9 +1737,11 @@ function artCardHtml(a){
   const fbRow = (fbChips || puede)
     ? '<div class="fb-row">'+fbChips+(puede?'<button class="fb-add" data-fb="1">💬 Comentar</button>':'')+'</div>'
     : '';
-  return '<div class="art-card'+(sinUbi?' sin-ubicar':'')+'" data-art="'+esc(a.key)+'">'+
+  const nuevo = sinUbi && esNuevo(a);
+  return '<div class="art-card'+(sinUbi?' sin-ubicar':'')+(nuevo?' nuevo':'')+'" data-art="'+esc(a.key)+'">'+
     '<div class="art-top"><button class="art-cod" data-histart="'+esc(a.key)+'" title="Ver historial de movimientos">'+esc(a.codigo)+'</button>'+
       (a.articulo?'<span class="hint" title="Id.item">#'+esc(a.articulo)+'</span>':'')+
+      (nuevo?'<span class="nuevo-tag" title="Entró en una carga reciente y todavía no tiene lugar">⚡ Nuevo · '+edadAlta(a.fechaAlta)+'</span>':'')+
       (sinUbi?'<span class="sin-ubi-tag">Sin ubicar</span>':'')+
       '<span class="art-stock">Stock: '+esc(a.stock)+'</span></div>'+
     '<div class="art-desc">'+esc(a.descripcion||'')+'</div>'+
@@ -2298,7 +2379,12 @@ function mostrarResumenCarga(nuevos, actualizados, eliminados, ubicacionesImport
     '<div class="res-lista" id="resElim">'+eliminados.map(a=>'<div>'+esc(a.codigo)+' — '+esc(a.descripcion||'')+'</div>').join('')+'</div>'+
     '<div class="modal-footer"><button class="btn btn-navy" id="resCerrar">Listo</button></div>';
   $('modalBody').querySelectorAll('.res-toggle').forEach(b=> b.addEventListener('click', ()=> $(b.dataset.t).classList.toggle('open')));
-  $('resCerrar').addEventListener('click', ()=>{ cerrarModal(); if(sinUbicarLista().length){ suAbierto=true; } renderBuscar(); });
+  $('resCerrar').addEventListener('click', ()=>{
+    cerrarModal();
+    if(sinUbicarLista().length){ suAbierto=true; }
+    if(nuevosLista().length){ suSoloNuevos=true; }   // tras la carga, arrancar por los nuevos
+    renderBuscar();
+  });
 }
 
 function cerrarModal(){ $('modalOverlay').classList.remove('show'); }

@@ -255,6 +255,14 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   la tarjeta lo muestra como `#233282` y el export lo lleva en su columna.
 - Validado 21/08/2026 con el archivo real de Diagonal 80: 4.191 artículos, 2.175
   ubicados, 30 estanterías, re-importación idempotente.
+- **Artículos nuevos sin ubicar** (prioridad del depósito): «nuevo» = `fechaAlta`
+  posterior a la **primera carga** de la sucursal (cada carga graba un único
+  timestamp; así el día 1 no se marca todo) y ≤ `NUEVO_DIAS` (7). Se destacan con
+  banner ámbar arriba de Buscar («⚡ N artículos nuevos sin ubicar» + «Ver nuevos»),
+  filtro «⚡ Nuevos» en la cabecera de SIN UBICAR (se activa solo al cerrar el
+  resumen de una carga con nuevos), etiqueta «⚡ Nuevo · ingresó hoy/ayer/hace N
+  días» en la tarjeta (borde ámbar), siempre primeros en la lista y marcados con ⚡
+  en la impresión. Dejan de ser "nuevos" al ubicarlos (`esNuevo`, `nuevosLista`).
 
 ## Evaluaciones de Supervisor
 
