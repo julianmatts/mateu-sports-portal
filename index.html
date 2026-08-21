@@ -405,7 +405,7 @@ const OUTLETS_LIST = [
 
 // Las herramientas. La url es la carpeta dentro del monorepo.
 const TOOLS = {
-  indicadores:   { name:'Indicadores de Sucursal',desc:'UPT, tickets/hora, ticket promedio y meses de stock por sucursal y persona.', icon:'📈', url:'./indicadores/', red:true },
+  indicadores:   { name:'Panel General',desc:'UPT, tickets/hora, ticket promedio y meses de stock por sucursal y persona.', icon:'📈', url:'./indicadores/', red:true },
   turnero:       { name:'Turnero Depósito',      desc:'Agenda de turnos de proveedores.',                 icon:'📅', url:'./turnero/',       red:false },
   marcas:        { name:'Asignación de Marcas',   desc:'Qué marcas lleva cada canal de venta.',            icon:'🏷️', url:'./marcas/',        red:true  },
   equipo:        { name:'Área de Producto',       desc:'Transferencias entre sucursales y performance.',   icon:'📦', url:'./equipo/',        red:false },
@@ -459,6 +459,13 @@ function esSettingsAdmin(session){
 
 // Sucursales y outlets siempre ven Asignación de Marcas (dentro del módulo
 // cada una ve solo SU asignación), sin depender de cargarlo usuario por usuario.
+// Nombre visible de una herramienta según el rol: el módulo de indicadores se
+// llama «Mi Sucursal» para sucursal/outlet y «Panel General» para gerencia.
+function nombreTool(k, rol){
+  if(k==='indicadores' && (rol==='sucursal' || rol==='outlet')) return 'Mi Sucursal';
+  return TOOLS[k] ? TOOLS[k].name : k;
+}
+
 function herramientasEfectivas(rol, herramientas){
   const h = (herramientas||[]).slice();
   // El admin (Juli) ve TODAS las herramientas sin cargarlas una por una: los
@@ -569,7 +576,7 @@ function render(session){
         '<div class="go">→</div>'+
         '<div class="tile-body">'+
           '<div class="ico">'+t.icon+'</div>'+
-          '<div class="name">'+t.name+'</div>'+
+          '<div class="name">'+nombreTool(k, session.rol)+'</div>'+
           '<div class="desc">'+t.desc+'</div>'+
         '</div>';
       grid.appendChild(a);

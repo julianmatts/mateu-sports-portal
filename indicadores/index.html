@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Indicadores de Sucursal — Mateu Sports</title>
+<title>Panel General — Mateu Sports</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -755,11 +755,14 @@ const SESSION_KEY = 'mateu_portal_session';
 /* --- sesión (try/catch como el resto del portal) --- */
 function readSession(){ try{ const s=localStorage.getItem(SESSION_KEY); return s?JSON.parse(s):null; }catch(e){ return window.__sess||null; } }
 const SESSION = readSession();
+// Nombre del módulo según quién lo mira: «Mi Sucursal» (sucursal/outlet) o «Panel General» (gerencia)
+function nombreModulo(){ return (SESSION && (SESSION.rol==='sucursal' || SESSION.rol==='outlet')) ? 'Mi Sucursal' : 'Panel General'; }
+document.title = nombreModulo()+' — Mateu Sports';
 if(!SESSION || !SESSION.rol){ location.replace('../'); }
 
 /* --- registro de herramientas (para el menú desplegable). URLs relativas a /indicadores/ --- */
 const TOOLS = {
-  indicadores:        { name:'Indicadores de Sucursal', icon:'📈', url:'./' },
+  indicadores:        { name:'Panel General', icon:'📈', url:'./' }, // «Mi Sucursal» para sucursal/outlet
   turnero:            { name:'Turnero Depósito',        icon:'📅', url:'../turnero/' },
   marcas:             { name:'Asignación de Marcas',    icon:'🏷️', url:'../marcas/' },
   equipo:             { name:'Área de Producto',        icon:'📦', url:'../equipo/' },
@@ -3510,8 +3513,9 @@ function construirMenu(){
   const herr = (SESSION.herramientas||[]).filter(h=>TOOLS[h]);
   $('drawerNav').innerHTML = herr.map(h=>{
     const t=TOOLS[h], cur = (h==='indicadores');
+    const nm = cur ? nombreModulo() : t.name;
     return `<a class="drawer-item${cur?' cur':''}" href="${cur?'./':t.url}"${cur?' aria-current="page"':''}>`+
-      `<span class="ic">${t.icon}</span><span><span class="nm">${esc(t.name)}</span></span></a>`;
+      `<span class="ic">${t.icon}</span><span><span class="nm">${esc(nm)}</span></span></a>`;
   }).join('') || '<div style="padding:14px;color:var(--muted);font-size:13px">Sin herramientas asignadas.</div>';
 
   // Para gerencia, la home es la grilla del Portal; para sucursal/outlet ESTA es la home.

@@ -39,7 +39,7 @@
       { ic:'❓', t:'Este tutorial', d:'Cada herramienta tiene su propio recorrido: aparece la primera vez que entrás y queda siempre disponible en el botón «?» de abajo a la derecha.' }
     ]},
 
-    indicadores: { icono:'📈', nombre:'Indicadores de Sucursal', pasos:[
+    indicadores: { icono:'📈', nombre:'Panel General', pasos:[   // «Mi Sucursal» para sucursal/outlet (ver render)
       { ic:'📈', t:'Tus indicadores', d:'UPT, tickets por hora y ticket promedio de la sucursal, por período y por persona. Elegí el período con el selector de arriba.' },
       { ic:'🎯', t:'Objetivo de la semana y del mes', d:'Arriba de todo: la Meta de la semana con su Mínimo y su 120, la barra de avance contra la venta real y el objetivo del mes. Con el selector podés rever semanas anteriores.' },
       { ic:'👥', t:'Cómo viene el equipo', d:'Panel para el encargado: armá tu equipo, asigná las horas de venta por turno y día (el portal reparte la Meta entre las personas) y subí el Excel de venta por vendedor para ver el ranking del equipo.' },
@@ -241,6 +241,8 @@
 
     var pasos = tut.pasos.filter(function(p){ return !p.roles || p.roles.indexOf(S.rol)>=0; });
     if(!pasos.length) return;
+    // el módulo de indicadores se llama distinto según el rol
+    var nombreTut = (slug==='indicadores' && (S.rol==='sucursal'||S.rol==='outlet')) ? 'Mi Sucursal' : TUT[slug].nombre;
 
     var VISTO_KEY = 'mtu_visto_'+slug;
 
@@ -262,10 +264,10 @@
     scrim.className = 'mtu-scrim';
     scrim.setAttribute('role','dialog');
     scrim.setAttribute('aria-modal','true');
-    scrim.setAttribute('aria-label','Tutorial: '+tut.nombre);
+    scrim.setAttribute('aria-label','Tutorial: '+nombreTut);
     scrim.innerHTML = '<div class="mtu-card">'
       +'<div class="mtu-head"><span class="mtu-hic">'+tut.icono+'</span>'
-      +'<div class="mtu-ht"><div class="mtu-k">Cómo se usa</div><div class="mtu-n">'+esc(tut.nombre)+'</div></div>'
+      +'<div class="mtu-ht"><div class="mtu-k">Cómo se usa</div><div class="mtu-n">'+esc(nombreTut)+'</div></div>'
       +'<button class="mtu-x" title="Cerrar" aria-label="Cerrar tutorial">×</button></div>'
       +'<div class="mtu-body"><div class="mtu-bic"></div><div class="mtu-bt"></div><p class="mtu-bd"></p></div>'
       +'<div class="mtu-foot"><button class="mtu-btn" data-mtu="prev">‹ Anterior</button>'

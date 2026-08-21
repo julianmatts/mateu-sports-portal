@@ -174,6 +174,12 @@ siguiendo lo de arriba, no hace falta que actúe. Ver memoria
 
 ## Indicadores de Sucursal — datos y seguridad
 
+**Nombre visible (21/08/2026):** el módulo se llama **«Mi Sucursal»** para los roles
+`sucursal`/`outlet` y **«Panel General»** para gerencia (admin/supervisor). El nombre se
+resuelve en el render según `session.rol` en los cuatro lugares: `nombreTool()` del Portal,
+el drawer de `shared/header.js`, `nombreModulo()` en `indicadores/` (drawer + `<title>`) y
+`shared/tutorial.js`. En el código y en este archivo se sigue hablando de "Indicadores".
+
 `indicadores/` es un `index.html` self-contained que **lee la sesión del Portal**
 (no tiene login propio) y es la **pantalla de inicio de los roles `sucursal` y
 `outlet`**: el Portal los redirige a `./indicadores/` al entrar (ver

@@ -38,7 +38,7 @@
   // Mismo mapa que el Portal / Indicadores (nombre e ícono por herramienta).
   // El slug coincide con la carpeta del módulo.
   var TOOLS = {
-    indicadores:        { name:'Indicadores de Sucursal',    icon:'📈' },
+    indicadores:        { name:'Panel General',             icon:'📈' }, // «Mi Sucursal» para sucursal/outlet (ver drawer)
     turnero:            { name:'Turnero Depósito',           icon:'📅' },
     marcas:             { name:'Asignación de Marcas',       icon:'🏷️' },
     equipo:             { name:'Área de Producto',           icon:'📦' },
@@ -172,8 +172,9 @@
     var herr = (S.herramientas||[]).filter(function(h){ return TOOLS[h]; });
     document.getElementById('mshDnav').innerHTML = herr.map(function(h){
       var t = TOOLS[h], on = (h===cur);
+      var nm = (h==='indicadores' && (S.rol==='sucursal'||S.rol==='outlet')) ? 'Mi Sucursal' : t.name;
       return '<a class="msh-ditem'+(on?' cur':'')+'" href="'+(on?'./':ROOT+h+'/')+'"'+(on?' aria-current="page"':'')+'>'
-        +'<span class="msh-ic">'+t.icon+'</span><span><span class="msh-nm">'+esc(t.name)+'</span></span></a>';
+        +'<span class="msh-ic">'+t.icon+'</span><span><span class="msh-nm">'+esc(nm)+'</span></span></a>';
     }).join('') || '<div style="padding:14px;color:#6B7A99;font-size:13px">Sin herramientas asignadas.</div>';
 
     // Para sucursal/outlet la home es Indicadores (ya está en su lista): el link al Portal es de gerencia.
