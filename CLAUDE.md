@@ -185,6 +185,11 @@ el drawer de `shared/header.js`, `nombreModulo()` en `indicadores/` (drawer + `<
 tienen un ítem fijo **«📬 Bandeja de mensajes»** → `../?ver=bandeja` (es la única vía de
 las sucursales a la Bandeja, porque no ven la grilla del Portal). El botón «?» del tutorial
 se corre a `bottom:92px` cuando la pantalla tiene la campana `#notifWidget`, para no taparla.
+El toast de un aviso/mensaje nuevo (`.notif-toast`, Portal e Indicadores) sale de la campana
+**hacia la izquierda**, a su altura (con puntita), no hacia arriba. En el Portal, «← Volver» de
+la Bandeja y el clic en el logo del header (`#topLogo`) llevan a `./indicadores/` (Mi Sucursal /
+Panel General) para sucursal/outlet y siempre que se llegó con `?ver=bandeja`; para admin en
+la grilla, vuelven a la grilla (`volverAlInicio()`).
 
 `indicadores/` es un `index.html` self-contained que **lee la sesión del Portal**
 (no tiene login propio) y es la **pantalla de inicio de los roles `sucursal` y
