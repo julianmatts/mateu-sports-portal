@@ -132,6 +132,7 @@
 
     // — documentos / oficina —
     '📄': '<path ' + S + ' d="M6 3h8l4 4v14H6z"/><path ' + S + ' d="M14 3v4h4M9 12h6M9 16h6"/>',
+    '📎': '<path ' + S + ' d="M20.5 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l9-9a3.3 3.3 0 0 1 4.7 4.7l-9 9a1.7 1.7 0 0 1-2.4-2.4l8.1-8.1"/>',
     '📝': '<path ' + S + ' d="M5 4h9l5 5v11H5z"/><path ' + S + ' d="M14 4v5h5M8 13h6M8 16h4"/>',
     '📋': '<rect x="5" y="4" width="14" height="17" rx="2" ' + S + '/><rect x="9" y="2.5" width="6" height="3.5" rx="1" ' + S + '/><path ' + S + ' d="M8 11h8M8 15h8"/>',
     '🧾': '<path ' + S + ' d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path ' + S + ' d="M9 8h6M9 12h6"/>',

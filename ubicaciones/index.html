@@ -75,7 +75,9 @@ img,svg{ max-width:100%; } /* ningún medio empuja el ancho en pantallas chicas 
   padding:7px 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
   font-size:12px; color:var(--gray-600);
 }
-.statusbar .sync{ margin-left:auto; font-size:11px; color:var(--gray-400); white-space:nowrap; }
+.statusbar .st-right{ margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; gap:5px; }
+.statusbar .sync{ font-size:11px; color:var(--gray-400); white-space:nowrap; }
+.statusbar #btnCargarStock{ white-space:nowrap; }
 .carga-warn{ color:var(--red); font-weight:600; }
 .carga-ok{ color:var(--green); }
 
@@ -578,7 +580,11 @@ table.prev th{ background:var(--bg); font-family:var(--font-c); letter-spacing:.
 
   <div class="statusbar" id="statusbar">
     <span id="stCarga">—</span>
-    <span class="sync" id="stSync"></span>
+    <div class="st-right">
+      <span class="sync" id="stSync"></span>
+      <!-- carga del stock del día (solo encargado/admin): debajo del "Actualizado hace…" -->
+      <button class="btn btn-primary btn-sm" id="btnCargarStock" style="display:none" title="Subir el Excel de stock del día (export plano o planilla de ubicaciones)">📎 Cargar stock del día</button>
+    </div>
   </div>
 
   <div class="tabs" id="tabs"></div>
@@ -937,6 +943,7 @@ const sucPath = ()=> FB + '/sucursales/' + SUC;
   $('btnSalir').addEventListener('click', ()=>{ location.href='../'; });
   $('btnMostrador').addEventListener('click', entrarModoMostrador);
   $('btnPerfiles').addEventListener('click', ()=> setTab('perfiles'));
+  $('btnCargarStock').addEventListener('click', ()=> $('fileStock').click());
   $('pssSalir').addEventListener('click', ()=>{ location.href='../'; });
   wireStatic();
 
@@ -1219,6 +1226,7 @@ function renderVistaActiva(){
 }
 
 function renderStatusbar(){
+  $('btnCargarStock').style.display = (SUC && canManage()) ? 'inline-flex' : 'none';
   if(!SUC){ $('stCarga').innerHTML=''; renderSyncLabel(); return; }
   const m = DATA.meta || {};
   if(!m.ultimaCargaStock){
@@ -1338,12 +1346,11 @@ function bumpRev(){ patchJSON(sucPath()+'/meta.json', {rev:Date.now()}).catch(()
    VISTA BUSCAR
    ============================================================ */
 function renderBuscar(){
-  // carga (solo encargado/admin) + exportación a Excel (todos)
-  $('cargaBox').innerHTML = '<div style="display:flex;gap:8px;margin-bottom:12px">'+
-    (canManage()?'<button class="btn btn-primary" id="btnCargarStock" style="flex:1">📄 Cargar stock del día</button>':'')+
-    '<button class="btn btn-outline" id="btnExportar" '+(canManage()?'':'style="flex:1"')+' title="Descargar la planilla completa">⬇ Excel</button></div>';
-  if(canManage()) $('btnCargarStock').addEventListener('click', ()=> $('fileStock').click());
+  // exportación a Excel (todos); la carga del stock vive en la barra de estado (#btnCargarStock)
+  $('cargaBox').innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">'+
+    '<button class="btn btn-outline btn-sm" id="btnExportar" title="Descargar la planilla completa">⬇ Excel</button></div>';
   $('btnExportar').addEventListener('click', exportarExcel);
+  $('btnCargarStock').style.display = (SUC && canManage()) ? 'inline-flex' : 'none';
 
   renderSinUbicar();
   renderResultados();
