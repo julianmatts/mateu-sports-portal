@@ -126,15 +126,19 @@ img,svg{ max-width:100%; } /* ningún medio empuja el ancho en pantallas chicas 
 
 /* ============ BUSCADOR ============ */
 .search-wrap{ position:relative; margin-bottom:12px; }
+/* buscador protagonista: alto, letra grande, borde navy y sombra; en rojo al enfocar */
 .search-input{
-  width:100%; padding:14px 44px 14px 16px; border:2px solid var(--gray-200); border-radius:8px;
-  outline:none; background:#fff;
+  width:100%; height:100%; min-height:64px; padding:16px 56px 16px 22px;
+  border:2px solid var(--navy); border-radius:10px; outline:none; background:#fff;
+  font-size:20px; font-weight:500; color:var(--navy); box-shadow:0 4px 14px rgba(11,21,39,.10);
 }
+.search-input::placeholder{ color:var(--gray-400); font-weight:400; }
+.search-input:focus{ border-color:var(--red); box-shadow:0 4px 18px rgba(204,0,0,.16); }
 .search-input:focus{ border-color:var(--navy); }
 .search-clear{
   position:absolute; right:8px; top:50%; transform:translateY(-50%);
-  border:none; background:transparent; font-size:20px; color:var(--gray-400); cursor:pointer;
-  padding:6px 10px; display:none;
+  border:none; background:transparent; font-size:24px; color:var(--gray-400); cursor:pointer;
+  padding:6px 12px; display:none;
 }
 
 /* sección SIN UBICAR */
@@ -384,12 +388,24 @@ table.prev th{ background:var(--bg); font-family:var(--font-c); letter-spacing:.
 .fb-item .quien{ font-size:11px; color:var(--gray-400); }
 
 /* ============ HISTORIAL DE CONSULTAS ============ */
-.search-row{ display:flex; gap:8px; margin-bottom:12px; }
-.search-row .search-wrap{ flex:1; margin-bottom:0; }
+.search-row{ display:flex; gap:10px; margin-bottom:12px; align-items:stretch; flex-wrap:wrap; }
+.search-row .search-wrap{ flex:1 1 320px; margin-bottom:0; }
 .hist-btn{
-  width:52px; flex-shrink:0; border:2px solid var(--gray-200); border-radius:8px;
-  background:#fff; font-size:20px; cursor:pointer; line-height:1; position:relative;
+  width:60px; flex-shrink:0; border:2px solid var(--gray-200); border-radius:10px;
+  background:#fff; font-size:22px; cursor:pointer; line-height:1; position:relative;
 }
+.hist-btn:hover{ border-color:var(--navy); }
+/* píldora SIN UBICAR dentro de la fila: compacta, pero con la cantidad bien grande */
+.search-row .su-head{
+  margin:0; padding:0 16px; border-radius:10px; gap:10px; flex-shrink:0; align-items:center;
+}
+.search-row .su-head .tt{ font-size:13px; letter-spacing:1.2px; }
+.search-row .su-head .badge{ font-family:var(--font-d); font-size:20px; letter-spacing:.5px; padding:2px 12px; border-radius:12px; line-height:1.25; }
+.search-row .su-head .arrow{ margin-left:2px; font-size:12px; }
+.su-tools{ display:none; align-items:center; gap:8px; margin:2px 0 8px; }
+.su-tools.open{ display:flex; }
+.su-tools .tt{ font-family:var(--font-c); font-size:13px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:var(--gray-600); }
+@media (max-width:560px){ .search-row .search-wrap{ flex-basis:100%; } }
 .hist-btn:hover{ border-color:var(--navy); }
 .pick-badge{
   position:absolute; top:-7px; right:-7px; background:var(--red); color:#fff;
@@ -599,22 +615,27 @@ table.prev th{ background:var(--bg); font-family:var(--font-c); letter-spacing:.
     <div class="view" id="view-buscar">
       <div id="cargaBox"></div>
       <div id="nuevosBanner"></div>
-      <div class="su-head" id="suHead">
-        <span class="tt">Sin ubicar</span>
-        <span class="badge" id="suBadge">0</span>
-        <button class="su-filter" id="suNuevos" style="display:none" title="Mostrar solo los artículos nuevos (entraron en las últimas cargas)">⚡ Nuevos <span id="suNuevosN">0</span></button>
-        <button class="icon-btn" id="suPrint" title="Imprimir lista de sin ubicar" style="margin-left:auto">🖨</button>
-        <span class="arrow" style="margin-left:0">▾</span>
-      </div>
-      <div class="su-body" id="suBody"></div>
+      <!-- fila principal: buscador grande · píldora SIN UBICAR (con la cantidad) · historial · lista de retiro -->
       <div class="search-row">
         <div class="search-wrap">
           <input type="text" class="search-input" id="searchInput" placeholder="Buscar por código o descripción…" autocomplete="off">
           <button class="search-clear" id="searchClear">✕</button>
         </div>
+        <div class="su-head" id="suHead" title="Artículos sin ubicación asignada">
+          <span class="tt">Sin ubicar</span>
+          <span class="badge" id="suBadge">0</span>
+          <span class="arrow">▾</span>
+        </div>
         <button class="hist-btn" id="btnHistorial" title="Historial de consultas de hoy">🕘</button>
         <button class="hist-btn" id="btnPicking" title="Lista de retiro (recorrido por el depósito)">📝<span class="pick-badge" id="pickBadge">0</span></button>
       </div>
+      <!-- herramientas de la lista SIN UBICAR (se ven cuando la lista está abierta) -->
+      <div class="su-tools" id="suTools">
+        <span class="tt">Sin ubicar</span>
+        <button class="su-filter" id="suNuevos" style="display:none" title="Mostrar solo los artículos nuevos (entraron en las últimas cargas)">⚡ Nuevos <span id="suNuevosN">0</span></button>
+        <button class="icon-btn lite" id="suPrint" title="Imprimir lista de sin ubicar" style="margin-left:auto">🖨</button>
+      </div>
+      <div class="su-body" id="suBody"></div>
       <div id="searchResults"></div>
     </div>
 
@@ -1359,6 +1380,7 @@ function renderBuscar(){
 
 function aplicarSuAbierto(){
   $('suHead').classList.toggle('open', suAbierto);
+  $('suTools').classList.toggle('open', suAbierto);
   $('suBody').classList.toggle('open', suAbierto);
   if(suAbierto) renderSinUbicar();
 }
@@ -1373,6 +1395,7 @@ function renderSinUbicar(){
   aplicarBodySU(lista);
   function aplicarBodySU(lista){
     $('suHead').classList.toggle('open', suAbierto);
+    $('suTools').classList.toggle('open', suAbierto);
     $('suBody').classList.toggle('open', suAbierto);
     if(!suAbierto) return;
     $('suBody').innerHTML = lista.length
@@ -2801,13 +2824,19 @@ async function renderActividad(){
   let consultas = {};
   try{ consultas = await fetchJSON(sucPath()+'/consultas.json') || {}; }catch(e){}
   // aplanar los días retenidos (7) y agrupar por artículo
-  const porArt = {};
+  const porArt = {}, porPersona = {};
   Object.values(consultas).forEach(dia=> Object.values(dia||{}).forEach(c=>{
     if(!c || !c.key) return;
     if(!porArt[c.key]) porArt[c.key] = {key:c.key, codigo:c.codigo, descripcion:c.descripcion||'', n:0};
     porArt[c.key].n++;
+    // ranking de quién busca más (consultas registradas por persona, mismos 7 días)
+    if(c.por){
+      if(!porPersona[c.por]) porPersona[c.por] = {por:c.por, avatar:c.avatar||null, n:0, arts:new Set()};
+      porPersona[c.por].n++; porPersona[c.por].arts.add(c.key);
+    }
   }));
   const top = Object.values(porArt).sort((a,b)=>b.n-a.n).slice(0,15);
+  const buscadores = Object.values(porPersona).sort((a,b)=>b.n-a.n).slice(0,10);
 
   // ranking: asignaciones vigentes de los últimos 7 días, por perfil
   // (se excluye lo importado de planillas)
@@ -2840,7 +2869,17 @@ async function renderActividad(){
           return '<div class="act-row"><span class="act-pos">'+(i+1)+'</span>'+avatarHtml(perfil||{nombre:por})+
             '<div class="info"><b>'+esc(por)+'</b></div><span class="act-n">'+n+' ubicado'+(n===1?'':'s')+'</span></div>';
         }).join('')
-      : '<div class="empty">Sin ubicaciones asignadas esta semana.</div>')+'</div>';
+      : '<div class="empty">Sin ubicaciones asignadas esta semana.</div>')+'</div>'+
+    '<div class="card"><div class="card-title">🔎 Buscadores de la semana</div>'+
+    (buscadores.length
+      ? buscadores.map((b,i)=>{
+          const perfil = perfiles.find(p=>p.nombre===b.por) || {nombre:b.por, avatar:b.avatar};
+          return '<div class="act-row"><span class="act-pos">'+(i+1)+'</span>'+avatarHtml(perfil)+
+            '<div class="info"><b>'+esc(b.por)+'</b><div class="hint">'+b.arts.size+' artículo'+(b.arts.size===1?'':'s')+' distinto'+(b.arts.size===1?'':'s')+'</div></div>'+
+            '<span class="act-n">'+b.n+' búsqueda'+(b.n===1?'':'s')+'</span></div>';
+        }).join('')+
+        '<div class="hint" style="margin-top:8px">Cuenta las consultas registradas en el Buscador (código escaneado o resultado único) en los últimos 7 días.</div>'
+      : '<div class="empty">Sin búsquedas registradas en los últimos 7 días.</div>')+'</div>';
 }
 
 /* ============================================================
