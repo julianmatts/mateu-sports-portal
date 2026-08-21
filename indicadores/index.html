@@ -718,6 +718,8 @@ footer b{color:var(--navy)}
   </div>
   <nav class="drawer-nav" id="drawerNav"></nav>
   <div class="drawer-foot">
+    <!-- Bandeja de mensajes del Portal (tablero + directos); ?ver=bandeja evita el redirect -->
+    <a class="drawer-home" id="drawerBandeja" href="../?ver=bandeja">📬 <span>Bandeja de mensajes</span></a>
     <!-- ?ver=portal: evita que el Portal rebote a gerencia de vuelta a Indicadores -->
     <a class="drawer-home" id="drawerHome" href="../?ver=portal">🏠 <span>Portal (todas las herramientas)</span></a>
     <button class="drawer-salir" id="drawerSalir">⎋ Cerrar sesión</button>
@@ -755,6 +757,11 @@ const SESSION_KEY = 'mateu_portal_session';
 /* --- sesión (try/catch como el resto del portal) --- */
 function readSession(){ try{ const s=localStorage.getItem(SESSION_KEY); return s?JSON.parse(s):null; }catch(e){ return window.__sess||null; } }
 const SESSION = readSession();
+// Slug del Portal -> nombre legible cuando la sucursal no tiene datos todavía ("diagonal" -> "Diagonal")
+function nombreBonito(slug){
+  if(!slug) return '';
+  return String(slug).split('-').map(p=>p ? p.charAt(0).toUpperCase()+p.slice(1) : p).join(' ');
+}
 // Nombre del módulo según quién lo mira: «Mi Sucursal» (sucursal/outlet) o «Panel General» (gerencia)
 function nombreModulo(){ return (SESSION && (SESSION.rol==='sucursal' || SESSION.rol==='outlet')) ? 'Mi Sucursal' : 'Panel General'; }
 document.title = nombreModulo()+' — Mateu Sports';
@@ -762,7 +769,7 @@ if(!SESSION || !SESSION.rol){ location.replace('../'); }
 
 /* --- registro de herramientas (para el menú desplegable). URLs relativas a /indicadores/ --- */
 const TOOLS = {
-  indicadores:        { name:'Panel General', icon:'📈', url:'./' }, // «Mi Sucursal» para sucursal/outlet
+  indicadores:        { name:'Panel General', icon:'🏪', url:'./' }, // «Mi Sucursal» para sucursal/outlet
   turnero:            { name:'Turnero Depósito',        icon:'📅', url:'../turnero/' },
   marcas:             { name:'Asignación de Marcas',    icon:'🏷️', url:'../marcas/' },
   equipo:             { name:'Área de Producto',        icon:'📦', url:'../equipo/' },
@@ -1030,7 +1037,7 @@ async function render(){
     $('selSuc').value = vistaCadena ? '__cadena' : sucName;
   }
 
-  if(!esGerencia) $('sucFix').textContent = sucName || (SESSION.sucursal||SESSION.outlet_id||'—');
+  if(!esGerencia) $('sucFix').textContent = sucName || nombreBonito(SESSION.sucursal||SESSION.outlet_id) || '—';
 
   $('loading').style.display='none';
   $('footer').style.display='block';
@@ -3504,7 +3511,7 @@ function renderRanking(){
 /* --- menú de herramientas --- */
 function construirMenu(){
   const ROLE={admin:'Administrador',sucursal:'Sucursal',outlet:'Outlet'};
-  const raw = esGerencia ? nombreCorto(SESSION.email) : (miSucursal || SESSION.sucursal || SESSION.outlet_id || nombreCorto(SESSION.email));
+  const raw = esGerencia ? nombreCorto(SESSION.email) : (miSucursal || nombreBonito(SESSION.sucursal || SESSION.outlet_id) || nombreCorto(SESSION.email));
   const nombre = (raw||'').replace(/^\d+-\s*/,'');   // "01-MS Plaza Italia" -> "MS Plaza Italia"
   $('drawerName').textContent = nombre || '—';
   $('drawerRole').textContent = ROLE[SESSION.rol] || SESSION.rol || '';

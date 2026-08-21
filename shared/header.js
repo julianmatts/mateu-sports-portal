@@ -38,7 +38,7 @@
   // Mismo mapa que el Portal / Indicadores (nombre e ícono por herramienta).
   // El slug coincide con la carpeta del módulo.
   var TOOLS = {
-    indicadores:        { name:'Panel General',             icon:'📈' }, // «Mi Sucursal» para sucursal/outlet (ver drawer)
+    indicadores:        { name:'Panel General',             icon:'🏪' }, // «Mi Sucursal» para sucursal/outlet (ver drawer)
     turnero:            { name:'Turnero Depósito',           icon:'📅' },
     marcas:             { name:'Asignación de Marcas',       icon:'🏷️' },
     equipo:             { name:'Área de Producto',           icon:'📦' },
@@ -152,6 +152,8 @@
       +'<button class="msh-dclose" id="mshDclose" title="Cerrar" aria-label="Cerrar menú">×</button></div>'
       +'<nav class="msh-dnav" id="mshDnav"></nav>'
       +'<div class="msh-dfoot">'
+      // Bandeja de mensajes del Portal (tablero + directos); ?ver=bandeja evita el redirect a Indicadores
+      +'<a class="msh-dhome" id="mshDbandeja" href="'+ROOT+'?ver=bandeja">📬 <span>Bandeja de mensajes</span></a>'
       // ?ver=portal: evita que el Portal rebote a sucursal/outlet de vuelta a Indicadores
       +'<a class="msh-dhome" id="mshDhome" href="'+ROOT+'?ver=portal">🏠 <span>Portal (todas las herramientas)</span></a>'
       +'<button class="msh-dsalir" id="mshDsalir">⎋ Cerrar sesión</button></div>';
@@ -162,7 +164,9 @@
     var S = leerSesion() || {};
     var ROLE = {admin:'Administrador',sucursal:'Sucursal',outlet:'Outlet',supervisor:'Supervisor'};
     var esGerencia = S.rol==='admin' || S.rol==='supervisor';
-    var raw = esGerencia ? nombreCorto(S.email) : (S.sucursal || S.outlet_id || nombreCorto(S.email));
+    // slug del Portal -> legible ("diagonal" -> "Diagonal", "calle-49" -> "Calle 49")
+    var bonito = function(s){ return s ? String(s).split('-').map(function(p){ return p ? p.charAt(0).toUpperCase()+p.slice(1) : p; }).join(' ') : ''; };
+    var raw = esGerencia ? nombreCorto(S.email) : (bonito(S.sucursal || S.outlet_id) || nombreCorto(S.email));
     var nombre = (raw||'').replace(/^\d+-\s*/,'');   // "01-MS Plaza Italia" -> "MS Plaza Italia"
     document.getElementById('mshDname').textContent = nombre || '—';
     document.getElementById('mshDrole').textContent = ROLE[S.rol] || S.rol || 'Sin sesión';

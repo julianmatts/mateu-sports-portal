@@ -179,6 +179,12 @@ siguiendo lo de arriba, no hace falta que actúe. Ver memoria
 resuelve en el render según `session.rol` en los cuatro lugares: `nombreTool()` del Portal,
 el drawer de `shared/header.js`, `nombreModulo()` en `indicadores/` (drawer + `<title>`) y
 `shared/tutorial.js`. En el código y en este archivo se sigue hablando de "Indicadores".
+Ícono del módulo: `🏪` (frente de local). Si la sucursal no tiene datos (sin entrada en
+`SLUG_SUC`), el chip y el drawer muestran el slug embellecido (`nombreBonito`: "diagonal"
+→ "Diagonal"; lo mismo hace `header.js`). Los dos drawers (Indicadores y `header.js`)
+tienen un ítem fijo **«📬 Bandeja de mensajes»** → `../?ver=bandeja` (es la única vía de
+las sucursales a la Bandeja, porque no ven la grilla del Portal). El botón «?» del tutorial
+se corre a `bottom:92px` cuando la pantalla tiene la campana `#notifWidget`, para no taparla.
 
 `indicadores/` es un `index.html` self-contained que **lee la sesión del Portal**
 (no tiene login propio) y es la **pantalla de inicio de los roles `sucursal` y
