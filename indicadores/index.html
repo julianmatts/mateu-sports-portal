@@ -2111,7 +2111,18 @@ const eqKeyName = s => (eqNorm(s).replace(/ /g,'-').slice(0,60)) || 'p';
 function fetchEqPesos(slug){
   if(_eqPesosCache[slug]) return _eqPesosCache[slug];
   const base=OBJETIVOS_URL.replace(/\/+$/,'');
-  const horneado = () => (window.PESOS_TURNOS && window.PESOS_TURNOS.pesos && window.PESOS_TURNOS.pesos[sucName]) || null;
+  const horneado = () => {
+    const P = window.PESOS_TURNOS && window.PESOS_TURNOS.pesos; if(!P) return null;
+    if(sucName && P[sucName]) return P[sucName];
+    // sucursal sin matriz propia (p.ej. Diagonal 80, que no estaba en el Excel de
+    // pesos): promedio de la cadena normalizado a 100, marcado `promedio` para avisar.
+    const ms = Object.values(P).filter(m=>m && m.t1); if(!ms.length) return null;
+    const avg={t1:[],t2:[],t3:[]}; let tot=0;
+    ['t1','t2','t3'].forEach(t=>{ for(let d=0;d<7;d++){ const v=ms.reduce((a,m)=>a+(+m[t][d]||0),0)/ms.length; avg[t][d]=v; tot+=v; } });
+    if(tot>0) ['t1','t2','t3'].forEach(t=>{ avg[t]=avg[t].map(v=>+(v/tot*100).toFixed(4)); });
+    avg.promedio=true;
+    return avg;
+  };
   _eqPesosCache[slug]=fetch(base+'/objetivos/pesosTurnos/porSlug/'+encodeURIComponent(slug)+'.json')
     .then(r=>r.ok?r.json():null).catch(()=>null)
     .then(p=> (p && p.t1) ? p : horneado());
@@ -2541,6 +2552,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
     h+='<p class="empty" style="margin:4px 0 8px">No hay matriz de pesos para esta sucursal — pedile a gerencia que la publique desde Objetivos → Pesos por turno.</p>';
     return h;
   }
+  if(pesos.promedio) h+='<p class="hint" style="margin:0 0 10px">Tu sucursal todavía no tiene matriz de pesos propia: la meta se reparte con el <b>promedio de la cadena</b> hasta que gerencia la publique desde Objetivos → Pesos por turno.</p>';
   const {shares, cobertura, totalPeso}=eqShares(equipo, pesos);
   const editReal = _eqRealDraft && _eqRealDraft.slug===slug && _eqRealDraft.sem===sem;
   if(totalPeso>0 && cobertura < totalPeso-0.5){
