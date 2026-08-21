@@ -1299,20 +1299,21 @@ function renderSinUbicar(){
 }
 
 function matchArticulo(a, q){
-  return (a.codigo||'').toLowerCase().includes(q) || (a.descripcion||'').toLowerCase().includes(q);
+  return (a.codigo||'').toLowerCase().includes(q) || (a.descripcion||'').toLowerCase().includes(q)
+    || (a.articulo ? String(a.articulo).includes(q) : false); // Id.item (planilla de Drive)
 }
 
 // Exporta la planilla completa (respaldo / reemplazo de la vieja planilla de Drive)
 function exportarExcel(){
   const arts = articulosLista().sort((a,b)=>(a.codigo||'').localeCompare(b.codigo||''));
   if(!arts.length){ toast('No hay artículos para exportar.'); return; }
-  const filas = [['Código','Descripción','Stock','Ubicaciones','Sin ubicar','Última carga']];
+  const filas = [['Código','Id.item','Descripción','Stock','Ubicaciones','Sin ubicar','Última carga']];
   arts.forEach(a=>{
     const ubis = Object.values(a.ubicaciones||{}).map(u=>nombreUbicacion(u)).join(' / ');
-    filas.push([a.codigo, a.descripcion||'', a.stock, ubis, ubis?'':'SÍ', fmtFecha(a.ultimaCarga)]);
+    filas.push([a.codigo, a.articulo||'', a.descripcion||'', a.stock, ubis, ubis?'':'SÍ', fmtFecha(a.ultimaCarga)]);
   });
   const ws = XLSX.utils.aoa_to_sheet(filas);
-  ws['!cols'] = [{wch:20},{wch:42},{wch:8},{wch:42},{wch:9},{wch:16}];
+  ws['!cols'] = [{wch:20},{wch:10},{wch:42},{wch:8},{wch:42},{wch:9},{wch:16}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Ubicaciones');
   const info = SUCURSAL_BY_SLUG[SUC];
@@ -1659,6 +1660,7 @@ function artCardHtml(a){
     : '';
   return '<div class="art-card'+(sinUbi?' sin-ubicar':'')+'" data-art="'+esc(a.key)+'">'+
     '<div class="art-top"><button class="art-cod" data-histart="'+esc(a.key)+'" title="Ver historial de movimientos">'+esc(a.codigo)+'</button>'+
+      (a.articulo?'<span class="hint" title="Id.item">#'+esc(a.articulo)+'</span>':'')+
       (sinUbi?'<span class="sin-ubi-tag">Sin ubicar</span>':'')+
       '<span class="art-stock">Stock: '+esc(a.stock)+'</span></div>'+
     '<div class="art-desc">'+esc(a.descripcion||'')+'</div>'+
@@ -1907,7 +1909,9 @@ function onFileStock(e){
   reader.onload = ev=>{
     try{
       const wb = XLSX.read(ev.target.result, {type:'array'});
-      abrirModalMapeo(wb);
+      // dos modelos: la planilla de Drive de la sucursal (varias hojas
+      // "UBICACION …") o el export plano de una hoja (mapeo de columnas)
+      if(esPlanillaDrive(wb)) abrirModalDrive(wb); else abrirModalMapeo(wb);
     }catch(err){
       toast('No se pudo leer el archivo. ¿Es un .xlsx válido?');
     }
@@ -1942,12 +1946,146 @@ function detectarEncabezado(rows){
 // irregulares y "MOD 3y4" (dos módulos). Devuelve [{est, mod|null}].
 function parseUbicacionTexto(txt){
   const t = String(txt||'').toUpperCase();
-  const est = t.match(/EST\s*\.?\s*(\d+)/);
+  // "EST 2 - MOD 1" (export plano) o "E2-M1" (planilla de Drive de la sucursal)
+  const est = t.match(/EST\s*\.?\s*(\d+)/) || t.match(/(?:^|[^A-Z])E\s*(\d+)/);
   if(!est) return [];
   const myn = t.match(/MOD\s*\.?\s*(\d+)\s*Y\s*(\d+)/);
   if(myn) return [{est:+est[1], mod:+myn[1]}, {est:+est[1], mod:+myn[2]}];
-  const mod = t.match(/MOD\s*\.?\s*(\d+)/);
+  const mod = t.match(/MOD\s*\.?\s*(\d+)/) || t.match(/(?:^|[^A-Z])M\s*(\d+)/);
   return [{est:+est[1], mod: mod ? +mod[1] : null}];
+}
+
+/* ------------------------------------------------------------
+   PLANILLA DE DRIVE DE LA SUCURSAL (modelo "UBICACION DEPOSITO")
+   Además del export plano (una hoja: Código · Descripción · Stock ·
+   Ubicación), se acepta la planilla que la sucursal usa en Drive:
+   - Hojas "UBICACION CALZADO / INDUMENTARIA / ACCESORIOS": grilla por
+     casillero con columnas UBICACIÓN (E#-M#) · Contador · Articulo
+     (Id.item) · Codigo (SKU de marca) · Descripcion · Stock. Los
+     casilleros vacíos vienen con #N/A. Un artículo en dos módulos
+     aparece en dos filas con el MISMO stock total → NO se suma.
+   - Hoja "Base de Datos": stock completo del día (Id.item · Código de
+     barras (= SKU) · Artículo · Stock). Opcional: agrega los artículos
+     que no están ubicados (quedan en SIN UBICAR).
+   Clave del artículo = SKU (como Calle 49); el Id.item se guarda en
+   `articulo` y también se busca por él.
+   ------------------------------------------------------------ */
+const RX_HOJA_UBI = /^\s*UBICACI[OÓ]N\s+/i;
+const RX_HOJA_BD  = /base\s*de\s*datos/i;
+
+function filasDe(wb, nombre){
+  const c = wb.__rowsCache = wb.__rowsCache || {};
+  return c[nombre] || (c[nombre] = XLSX.utils.sheet_to_json(wb.Sheets[nombre], {header:1, defval:''}));
+}
+function idxCol(hdr, rx){ return (hdr||[]).findIndex(c=>rx.test(String(c||'').trim())); }
+function esNA(v){ const s=String(v==null?'':v).trim(); return !s || s==='#N/A' || s==='#REF!' || s==='#VALUE!'; }
+function limpiarId(v){ const s=String(v==null?'':v).trim(); return /^\d+(\.0+)?$/.test(s) ? String(parseInt(s,10)) : s; }
+function numStock(v){ const n=parseFloat(String(v).replace(',','.')); return isNaN(n)?0:n; }
+
+function hojasDrive(wb){
+  return wb.SheetNames.filter(n=>{
+    if(!RX_HOJA_UBI.test(n)) return false;
+    const hdr = filasDe(wb,n)[0]||[];
+    return idxCol(hdr,/^ubicaci/i)>=0 && idxCol(hdr,/^c[oó]digo$/i)>=0 && idxCol(hdr,/^art[ií]culo$/i)>=0;
+  });
+}
+function esPlanillaDrive(wb){ return hojasDrive(wb).length>0; }
+
+function parsearPlanillaDrive(wb, incluirBD){
+  const porCod = {}; const hojas = [];
+  const getArt = codigo => porCod[codigo] || (porCod[codigo] = {codigo, articulo:'', descripcion:'', stock:0, ubis:[]});
+  for(const n of hojasDrive(wb)){
+    const rows = filasDe(wb,n); const hdr = rows[0]||[];
+    const iUbi=idxCol(hdr,/^ubicaci/i), iArt=idxCol(hdr,/^art[ií]culo$/i), iCod=idxCol(hdr,/^c[oó]digo$/i), iDesc=idxCol(hdr,/^descrip/i);
+    let iStk=idxCol(hdr,/stock/i); if(iStk<0) iStk=Math.max(iDesc,iCod)+1; // INDUMENTARIA trae el dato sin encabezado
+    let arts=0, ubis=0, omit=0; const vistos=new Set();
+    for(let i=1;i<rows.length;i++){
+      const r=rows[i]||[];
+      const articulo=limpiarId(r[iArt]), codigo=String(r[iCod]==null?'':r[iCod]).trim();
+      if(esNA(articulo) && esNA(codigo)) continue;   // casillero vacío de la grilla
+      if(esNA(codigo)){ omit++; continue; }           // Id.item sin SKU (#N/A): no se puede cargar
+      const a = getArt(codigo);
+      if(!a.articulo && !esNA(articulo)) a.articulo = articulo;
+      const d = String(r[iDesc]==null?'':r[iDesc]).trim(); if(!a.descripcion && !esNA(d)) a.descripcion = d;
+      const s = r[iStk]; if(!esNA(s)) a.stock = Math.max(a.stock, numStock(s)); // mismo total en cada fila: no se suma
+      for(const u of parseUbicacionTexto(r[iUbi])){
+        if(!a.ubis.some(x=>x.est===u.est && x.mod===u.mod)){ a.ubis.push(u); ubis++; }
+      }
+      if(!vistos.has(codigo)){ vistos.add(codigo); arts++; }
+    }
+    hojas.push({nombre:n, arts, ubis, omit});
+  }
+  let bd = null;
+  const nBD = wb.SheetNames.find(n=>RX_HOJA_BD.test(n));
+  if(incluirBD && nBD){
+    const rows = filasDe(wb,nBD);
+    const f = rows.findIndex(r=>(r||[]).some(c=>/id\.?\s*item/i.test(String(c))));
+    if(f>=0){
+      const hdr=rows[f]; const iId=idxCol(hdr,/id\.?\s*item/i), iCod=idxCol(hdr,/c[oó]digo/i), iDesc=idxCol(hdr,/^art[ií]culo/i), iStk=idxCol(hdr,/stock/i);
+      let total=0, nuevos=0;
+      for(let i=f+1;i<rows.length;i++){
+        const r=rows[i]||[]; const codigo=String(r[iCod]==null?'':r[iCod]).trim(); const articulo=limpiarId(r[iId]);
+        if(esNA(codigo) || !/^\d+$/.test(articulo)) continue; // filas de texto libre ("contencion", "Caja")
+        total++;
+        if(!porCod[codigo]) nuevos++;
+        const a = getArt(codigo);
+        if(!a.articulo) a.articulo = articulo;
+        const d = String(r[iDesc]==null?'':r[iDesc]).trim(); if(!a.descripcion && !esNA(d)) a.descripcion = d;
+        const s = r[iStk]; if(!esNA(s)) a.stock = numStock(s); // el stock del día manda
+      }
+      bd = {nombre:nBD, total, nuevos};
+    }
+  }
+  return {lista:Object.values(porCod), hojas, bd, nBD};
+}
+
+function abrirModalDrive(wb){
+  const nBD = wb.SheetNames.find(n=>RX_HOJA_BD.test(n));
+  $('modalBody').innerHTML =
+    '<div class="modal-title">Cargar stock — planilla de ubicaciones del depósito</div>'+
+    '<div class="hint" style="margin-bottom:10px">Se reconoció el modelo de planilla de la sucursal (hojas «UBICACION …» con casilleros E#-M#). '+
+      'Se leen todas las hojas de ubicación juntas; un artículo en varios módulos suma ubicaciones, no stock.</div>'+
+    (nBD ? '<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:6px 0 10px;cursor:pointer">'+
+             '<input type="checkbox" id="drvBD" checked style="margin-top:2px;accent-color:var(--navy)">'+
+             'Incluir también el stock completo de la hoja «'+esc(nBD)+'» (los artículos que no están en las hojas de ubicación quedan en SIN UBICAR)</label>' : '')+
+    '<div id="drvPreview"></div>'+
+    '<div class="hint" style="margin-top:10px">¿Es un export plano de una sola hoja? <a href="#" id="drvManual">Usar el mapeo manual por hoja</a></div>'+
+    '<div class="modal-footer">'+
+      '<button class="btn btn-outline" id="mapCancelar">Cancelar</button>'+
+      '<button class="btn btn-primary" id="mapConfirmar">Sincronizar</button></div>';
+  $('modalOverlay').classList.add('show');
+
+  let parsed = null;
+  function preview(){
+    parsed = parsearPlanillaDrive(wb, !!($('drvBD') && $('drvBD').checked));
+    const {lista, hojas, bd} = parsed;
+    const ubicados = lista.filter(a=>a.ubis.length).length;
+    const ests = new Set(); lista.forEach(a=>a.ubis.forEach(u=>ests.add(u.est)));
+    $('drvPreview').innerHTML =
+      hojas.map(h=>'<div class="res-row"><div class="num">'+h.arts+'</div><div class="lbl">'+esc(h.nombre)+
+        '<div class="hint" style="text-transform:none;letter-spacing:0;font-weight:400">'+h.ubis+' ubicaciones'+
+        (h.omit?' · '+h.omit+' fila'+(h.omit===1?'':'s')+' sin SKU omitida'+(h.omit===1?'':'s'):'')+'</div></div></div>').join('')+
+      (bd ? '<div class="res-row"><div class="num">'+bd.nuevos+'</div><div class="lbl">Solo en «'+esc(bd.nombre)+'» (sin ubicar)'+
+        '<div class="hint" style="text-transform:none;letter-spacing:0;font-weight:400">'+bd.total+' artículos con stock en la hoja</div></div></div>' : '')+
+      (lista.length
+        ? '<div class="hint" style="margin:8px 0"><b>'+lista.length+' artículos</b> en total · <b>'+ubicados+'</b> con ubicación'+
+            (ests.size?' · estanterías E1–E'+Math.max(...ests):'')+'</div>'+
+          '<div class="table-wrap"><table class="prev"><tr><th>SKU</th><th>Id.item</th><th>Descripción</th><th>Stock</th><th>Ubicación</th></tr>'+
+          lista.filter(a=>a.ubis.length).slice(0,5).map(a=>'<tr><td>'+esc(a.codigo)+'</td><td>'+esc(a.articulo)+'</td><td>'+esc(a.descripcion.slice(0,45))+'</td><td>'+a.stock+'</td>'+
+            '<td>'+esc(a.ubis.map(u=>'Est '+u.est+(u.mod!==null?' · Mod '+u.mod:'')).join(' / '))+'</td></tr>').join('')+
+          '</table></div>'
+        : '<div class="hint" style="color:var(--red)">No se leyó ningún artículo.</div>');
+  }
+  preview();
+  if($('drvBD')) $('drvBD').addEventListener('change', preview);
+  $('drvManual').addEventListener('click', e=>{ e.preventDefault(); abrirModalMapeo(wb); });
+  $('mapCancelar').addEventListener('click', cerrarModal);
+  $('mapConfirmar').addEventListener('click', async ()=>{
+    if(!parsed || !parsed.lista.length){ toast('No hay artículos para sincronizar.'); return; }
+    $('mapConfirmar').disabled = true; $('mapConfirmar').textContent = 'Sincronizando…';
+    try{ await sincronizarStock(parsed.lista); }
+    catch(e){ toast('Error al sincronizar. Probá de nuevo.'); cerrarModal(); }
+  });
 }
 
 function abrirModalMapeo(wb, hojaElegida){
@@ -1973,7 +2111,8 @@ function abrirModalMapeo(wb, hojaElegida){
   $('modalBody').innerHTML =
     '<div class="modal-title">Cargar stock — mapeo de columnas</div>'+
     '<div class="hint" style="margin-bottom:10px">'+rows.length+' filas. '+
-      (det.iCod>=0?'Se detectaron las columnas automáticamente; revisá y confirmá.':'⚠ No se pudieron detectar las columnas: elegilas a mano.')+'</div>'+
+      (det.iCod>=0?'Se detectaron las columnas automáticamente; revisá y confirmá.':'⚠ No se pudieron detectar las columnas: elegilas a mano.')+
+      (esPlanillaDrive(wb)?' <a href="#" id="mapDrive">Volver al modo planilla de ubicaciones</a>':'')+'</div>'+
     (hojas.length>1
       ? '<div class="fld"><label>Hoja del archivo</label><select id="mapHoja">'+
           hojas.map(n=>'<option value="'+esc(n)+'"'+(n===hoja?' selected':'')+'>'+esc(n)+'</option>').join('')+'</select></div>'
@@ -1994,6 +2133,7 @@ function abrirModalMapeo(wb, hojaElegida){
 
   const selHoja = $('mapHoja');
   if(selHoja) selHoja.addEventListener('change', ()=> abrirModalMapeo(wb, selHoja.value));
+  if($('mapDrive')) $('mapDrive').addEventListener('click', e=>{ e.preventDefault(); abrirModalDrive(wb); });
 
   function refrescarSelects(iCod,iDesc,iStk,iUbi){
     $('wrapCod').innerHTML  = selCol('mapCod',  iCod);
@@ -2077,6 +2217,8 @@ async function sincronizarStock(lista){
       fechaAlta: p && p.fechaAlta ? p.fechaAlta : now,
     };
     if(p && p.ubicaciones) rec.ubicaciones = p.ubicaciones;
+    // Id.item del sistema (lo trae la planilla de Drive); se conserva si ya estaba
+    if(art.articulo) rec.articulo = String(art.articulo); else if(p && p.articulo) rec.articulo = p.articulo;
     if(p) actualizados++; else nuevos.push(rec);
     out[key] = rec;
   }

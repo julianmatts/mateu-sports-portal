@@ -229,6 +229,27 @@ que lee `data/indicadores/<último-periodo>/<SUC>.json`, mapea grupo→rol de pe
 coberturas (cada persona en su sucursal fija) y **REEMPLAZA** `perfiles` de esa
 sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica el dato.
 
+## Buscador de Artículos (`ubicaciones/`) — carga de stock
+
+«📄 Cargar stock del día» (encargado) acepta **dos modelos de Excel**, autodetectados:
+
+- **Export plano** (una hoja: Código · Descripción · Stock · Ubicación opcional
+  «EST n - MOD n» o «En-Mn»): modal de mapeo de columnas (`abrirModalMapeo`).
+- **Planilla de Drive de la sucursal** (modelo «UBICACION DEPOSITO», el que usa
+  Diagonal 80): hojas `UBICACION CALZADO / INDUMENTARIA / ACCESORIOS` (grilla por
+  casillero `E#-M#` con columnas UBICACIÓN · Contador · Articulo (Id.item) · Codigo
+  (SKU) · Descripcion · Stock) + hoja `Base de Datos` (stock completo del día).
+  `abrirModalDrive` lee **todas** las hojas de ubicación juntas (cargar una por vez
+  borraría las otras: lo que no viene en el Excel cuenta como eliminado), ignora los
+  casilleros `#N/A`, y **NO suma** el stock de un artículo repetido en varios módulos
+  (cada fila trae el total). Checkbox para incluir `Base de Datos` (los no ubicados
+  quedan en SIN UBICAR). Un link permite forzar el otro modo.
+- **Clave del artículo = SKU de marca** (columna «Codigo»), igual que Calle 49. El
+  **Id.item** se guarda en `articulo` y se busca por él (búsqueda, escáner, picking);
+  la tarjeta lo muestra como `#233282` y el export lo lleva en su columna.
+- Validado 21/08/2026 con el archivo real de Diagonal 80: 4.191 artículos, 2.175
+  ubicados, 30 estanterías, re-importación idempotente.
+
 ## Evaluaciones de Supervisor
 
 `evaluaciones/` es un `index.html` self-contained **igual que el resto**: lee/escribe
