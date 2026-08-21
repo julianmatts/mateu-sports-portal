@@ -448,9 +448,17 @@ entran acá: ven su objetivo en Indicadores.
   individual sale del Excel PMS subido (match por nombre) o de carga manual (pisa al
   Excel). ⚠️ `num()` de objetivos come el punto decimal si hay exactamente 3
   decimales: para celdas numéricas usar el valor directo (ver `numCell`).
-  ⚠️ Diagonal 80 tiene objetivo pero no tiene datos de Indicadores todavía, así que
-  su encargado aún no ve la sección (Indicadores lo manda a empty state antes). Se
-  resuelve cuando Diagonal tenga datos de venta.
+  Diagonal 80 tiene objetivo pero no datos de Indicadores: desde el 21/08/2026 la
+  sección Objetivo (mes + semana + equipo) y la Reposición se muestran igual, porque
+  resuelven el slug con `slugActual()` (sesión) y no con `SUC2SLUG[sucName]`; solo
+  los KPIs quedan en empty state hasta que Diagonal tenga datos de venta.
+- **Venta de la semana en curso (real provisorio)**: Juli baja del sistema la
+  estadística detallada por línea de la semana ("Semana DD-MM-AA.xls") y corre
+  `python scripts/cargar-venta-semana.py "<xls>" <lunesISO> --publicar` → escribe
+  `ventaEquipo/<slug>/<lunesISO>` (venta · tickets · unidades · día a día por vendedor)
+  para las 21 sucursales con los criterios por línea del ETL. Sin `--publicar` solo
+  muestra el resumen vs. meta. Se puede re-correr con el archivo actualizado (pisa).
+  NO escribe el `real` de `objetivos/semanas` (ese es el oficial del HISTÓRICO).
 - **Base «Horas asignadas» + justificaciones (03/08/2026)**: el toggle de KPIs de
   Indicadores pasó de "Horas con venta" a **"Horas asignadas"**: usa las horas que el
   encargado asignó a la venta en la grilla del equipo (de las contratadas, solo las de

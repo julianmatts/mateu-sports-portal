@@ -824,6 +824,14 @@ if(!esGerencia){
     ? (OUTLET_SUC[SESSION.outlet_id] || null)
     : (SLUG_SUC[SESSION.sucursal] || null);
 }
+// Slug del Portal de la sucursal en foco. Para las cuentas de sucursal/outlet sale
+// de la sesión aunque la sucursal no tenga datos de indicadores (p.ej. Diagonal 80):
+// así Objetivo / equipo / Reposición funcionan igual, que viven en Firebase por slug.
+function slugActual(){
+  if(sucName && SUC2SLUG[sucName]) return SUC2SLUG[sucName];
+  if(!esGerencia) return (SESSION.rol==='outlet' ? SESSION.outlet_id : SESSION.sucursal) || null;
+  return null;
+}
 
 /* --- estado --- */
 const ECOM = '99-Ecommerce';
@@ -940,7 +948,7 @@ async function boot(){
 function precalentarObjetivo(){
   if(!OBJETIVOS_URL) return;
   fetchObjetivoWeeks().then(weeks=>{
-    const slug = !esGerencia && miSucursal ? SUC2SLUG[miSucursal] : null;
+    const slug = !esGerencia ? slugActual() : null;
     if(!slug || !weeks || !weeks.length) return;
     const sem = weeks[0];
     const p = sem.split('-').map(Number);
@@ -1057,14 +1065,18 @@ async function render(){
   $('cadenaView').style.display='none';
   $('content').style.display='block';
 
-  // sin sucursal mapeada (p.ej. Diagonal / Depósito) o sin dato en el período
+  // sin sucursal mapeada (p.ej. Diagonal / Depósito) o sin dato en el período.
+  // El objetivo de la semana, el equipo y la reposición no dependen de los
+  // indicadores (viven en Firebase por slug): se muestran igual.
   if(!sucName){
     mostrarEmpty('Tu sucursal todavía no tiene datos de indicadores cargados.');
+    if(slugActual()){ renderObjetivo(); renderBarrida(); }
     return;
   }
   DET_FULL = await detalleDe(per, sucName);
   if(!DET_FULL || !CAD){
     mostrarEmpty('No hay datos de <b>'+esc(sucName)+'</b> para '+esc(perLabel(per))+'.');
+    if(slugActual()){ renderObjetivo(); renderBarrida(); }
     return;
   }
   // la semana elegida tiene que existir en esta sucursal/período
@@ -2722,7 +2734,7 @@ async function renderObjetivo(){
   const sec=$('secObjetivo'), secMes=$('secObjetivoMes'); if(!sec) return;
   const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; };
   if(!OBJETIVOS_URL){ ocultar(); return; }
-  const slug = SUC2SLUG[sucName];
+  const slug = slugActual();
   if(!slug){ ocultar(); return; }
   // primera carga: mostrar la sección con un aviso en vez de aparecer de golpe al final
   if(!$('objetivoCard').innerHTML){
@@ -2819,6 +2831,7 @@ async function renderObjetivo(){
   _jvState=null;   // lo repuebla eqDistribHtml si corresponde
   html += veSectionHtml(slug, sem, v, ve, eqData, pesos, prevVe);
   $('objetivoCard').innerHTML=html;
+  sec.style.display='';   // puede venir oculta por mostrarEmpty() (sucursal sin indicadores)
   const selEl=$('objSemSel'); if(selEl) selEl.onchange = e => { objSem = e.target.value; _eqEdit=null; _eqRealDraft=null; renderObjetivo(); };
   const up=$('veUpload'); if(up) up.onclick = ()=> $('veFile').click();
   const sv=$('veSave'); if(sv) sv.onclick = veGuardar;
@@ -2958,7 +2971,7 @@ function eqWire(slug, sem, eqData){
 // leer el Excel elegido → previsualizar
 async function veArchivo(file){
   if(!file) return;
-  const slug=SUC2SLUG[sucName], sem=_objActiveSem;
+  const slug=slugActual(), sem=_objActiveSem;
   if(!slug || !sem){ alert('Elegí primero una semana.'); return; }
   try{
     const XLSX=await loadXLSX();
@@ -3020,8 +3033,8 @@ async function renderBarrida(){
   const sec=$('secBarrida'); if(!sec) return;
   sec.style.display='none';
   if(!BARRIDA_URL) return;
-  const slug = SUC2SLUG[sucName];
-  if(!slug) return;                 // Depósito / Diagonal / Ecommerce sin reposición dirigida
+  const slug = slugActual();
+  if(!slug) return;                 // Depósito / Ecommerce sin reposición dirigida
   const target = sucName;
   let data=null;
   try{ data = await fetchBarrida(slug); }catch(e){ return; }
