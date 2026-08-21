@@ -938,7 +938,7 @@ async function boot(){
 
   // el dataset de Meses de Stock pesa ~3 MB: se carga recién DESPUÉS del primer
   // render para que no compita en la red con los JSON críticos de los KPIs
-  render().finally(cargarStock);
+  render().finally(()=>{ if($('stockFoot')||$('stockCadFoot')) cargarStock(); });   // solo si hay tarjeta de stock que lo use
 }
 
 /* Precalienta las lecturas de Firebase de la sección Objetivo (semanas publicadas
@@ -955,11 +955,25 @@ function precalentarObjetivo(){
     const prevSem = new Date(Date.UTC(p[0],p[1]-1,p[2]-7)).toISOString().slice(0,10);
     fetchObjetivoData(slug, sem); fetchVentaEquipo(slug, sem);
     fetchEquipo(slug, sem); fetchEqPesos(slug); fetchVentaEquipo(slug, prevSem);
+    // y lo del bloque "Objetivo del mes" (meta del mes + semanas del mes para el
+    // avance): así la sección se arma en UNA ida y vuelta en vez de tres.
+    const per = sem.slice(0,7);
+    fetchObjetivoMes(slug, per);
+    weeks.filter(w=>String(w).slice(0,7)===per).forEach(w=>fetchObjetivoData(slug, w));
   }).catch(()=>{});
 }
 
 /* carga diferida del dataset de Meses de Stock (se reutiliza el del módulo Gestión de Stock) */
+/* Dataset de Meses de Stock (~3 MB): se pide UNA vez, recién cuando una tarjeta
+   de stock lo necesita, y después de que pintó el Objetivo (tope 2,5 s) para no
+   pisar con la descarga los pedidos chicos a Firebase en la conexión de la sucursal. */
+let _stockPedido = false;
+let _objPintado = null; const _objPintadoP = new Promise(r=>{ _objPintado=r; });
 function cargarStock(){
+  if(_stockPedido) return; _stockPedido = true;
+  Promise.race([_objPintadoP, new Promise(r=>setTimeout(r, 2500))]).then(_cargarStockAhora);
+}
+function _cargarStockAhora(){
   const s = document.createElement('script');
   s.src = '../gestion-stock/datos-meses-stock.js';
   s.onload = ()=>{ STOCK = window.STOCK_DATA || null; if($('content').style.display!=='none') renderStockCard(); renderStockCadCard(); };
@@ -1021,6 +1035,20 @@ async function render(){
   $('tbDias').textContent = (p&&p.dias)?'días '+p.dias+' · mes cerrado':'';
   segToggle();
 
+  // sucursal sin datos de indicadores (p.ej. Diagonal 80): no hay nada que esperar
+  // de los estáticos de la cadena — pintar ya el empty state y el Objetivo, que
+  // vive en Firebase por slug. Antes esperaba los 3 cadena.json para nada.
+  if(!vistaCadena && !sucName){
+    $('loading').style.display='none';
+    $('footer').style.display='block';
+    if(!esGerencia) $('sucFix').textContent = nombreBonito(SESSION.sucursal||SESSION.outlet_id) || '—';
+    $('cadenaView').style.display='none';
+    $('content').style.display='block';
+    mostrarEmpty('Tu sucursal todavía no tiene datos de indicadores cargados.');
+    if(slugActual()){ renderObjetivo(); renderBarrida(); }
+    return;
+  }
+
   // disparar TODO junto (las promesas quedan cacheadas): las cadenas de todos los
   // períodos y el detalle de la sucursal en foco. Antes iban en serie y los KPIs
   // esperaban ~4 viajes encadenados antes de pintarse.
@@ -1068,11 +1096,6 @@ async function render(){
   // sin sucursal mapeada (p.ej. Diagonal / Depósito) o sin dato en el período.
   // El objetivo de la semana, el equipo y la reposición no dependen de los
   // indicadores (viven en Firebase por slug): se muestran igual.
-  if(!sucName){
-    mostrarEmpty('Tu sucursal todavía no tiene datos de indicadores cargados.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); }
-    return;
-  }
   DET_FULL = await detalleDe(per, sucName);
   if(!DET_FULL || !CAD){
     mostrarEmpty('No hay datos de <b>'+esc(sucName)+'</b> para '+esc(perLabel(per))+'.');
@@ -1107,7 +1130,10 @@ async function render(){
 }
 
 function mostrarEmpty(msg){
-  ['secEq','secMix','secCov','secPlantilla','secTbl','secSem','secHeat','secBarrida','secObjetivo','secObjetivoMes'].forEach(id=>$(id).style.display='none');
+  // Objetivo / Reposición se muestran igual si hay slug (las pinta su propio render)
+  const conSlug = !!slugActual();
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secSem','secHeat','secBarrida','secObjetivo','secObjetivoMes']
+    .filter(id=>!(conSlug && /^sec(Barrida|Objetivo)/.test(id))).forEach(id=>$(id).style.display='none');
   $('cobNota').style.display='none';
   $('diagBox').style.display='none';
   $('kpis').innerHTML = '<div class="empty" style="grid-column:1/-1">'+msg+'</div>';
@@ -1462,7 +1488,7 @@ function stockRatio(SD, name, mes){
 function renderStockCard(){
   const card=$('stockCard'); if(!card) return;
   const val=$('stockVal'), foot=$('stockFoot');
-  if(STOCK===null){ return; } // todavía cargando
+  if(STOCK===null){ cargarStock(); return; } // todavía cargando (o aún no pedido)
   const p = PERIODOS.find(x=>x.id===per), mes = p&&p.mesStock;
   if(STOCK===false){ val.textContent='—'; foot.textContent='No se pudo cargar el stock.'; card.className='kpi'; return; }
   const r = stockRatio(STOCK, sucName, mes);
@@ -1778,7 +1804,7 @@ function stockAggCadena(SD, mes){
 function renderStockCadCard(){
   const card=$('stockCadCard'); if(!card) return;
   const val=$('stockCadVal'), foot=$('stockCadFoot');
-  if(STOCK===null) return; // todavía cargando
+  if(STOCK===null){ cargarStock(); return; } // todavía cargando (o aún no pedido)
   const p=PERIODOS.find(x=>x.id===per), mes=p&&p.mesStock;
   if(STOCK===false){ val.textContent='—'; foot.textContent='No se pudo cargar el stock.'; return; }
   const r=stockAggCadena(STOCK, mes);
@@ -2844,6 +2870,7 @@ async function renderObjetivo(){
   html += veSectionHtml(slug, sem, v, ve, eqData, pesos, prevVe);
   $('objetivoCard').innerHTML=html;
   sec.style.display='';   // puede venir oculta por mostrarEmpty() (sucursal sin indicadores)
+  if(_objPintado){ _objPintado(); _objPintado=null; }   // libera la descarga del stock
   const selEl=$('objSemSel'); if(selEl) selEl.onchange = e => { objSem = e.target.value; _eqEdit=null; _eqRealDraft=null; renderObjetivo(); };
   const up=$('veUpload'); if(up) up.onclick = ()=> $('veFile').click();
   const sv=$('veSave'); if(sv) sv.onclick = veGuardar;
