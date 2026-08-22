@@ -3097,22 +3097,29 @@ function veFechaISO(v){
   let y=+m[3]; if(y<100) y+=2000;
   const d=new Date(Date.UTC(y,+m[2]-1,+m[1])); return isNaN(d)?null:d.toISOString().slice(0,10);
 }
-function veLunesDe(iso){ const d=new Date(iso+'T00:00:00Z'); const k=(d.getUTCDay()+6)%7; d.setUTCDate(d.getUTCDate()-k); return d.toISOString().slice(0,10); }
-// matriz (header:1) del export detallado -> {porSlug:{slug:{sucursal,vendedores,total}}, saltadas, etiqueta, lunes:[...]} | null
+const VE_MESES = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
+function veSumarDias(iso, n){ const d=new Date(iso+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); }
+/* matriz (header:1) del export detallado -> comprobantes atómicos + contexto del archivo.
+   El export puede ser de una semana o del mes entero ("Venta Agosto Portal.xlsx"): acá NO
+   se filtra, solo se agrupa por comprobante; veAgregarSemana() se queda con la semana
+   elegida. Filas 0-1 traen año y mes → fecha completa de cada comprobante (la columna
+   "Día" es solo el número del día). */
 function veParseDetallado(matrix){
-  let hr=-1, c=null;
+  let hr=-1, c=null, anio=0, mes=0;
   for(let i=0;i<Math.min(matrix.length,15);i++){
     const row=(matrix[i]||[]).map(veNormU);
-    const suc=row.indexOf('SUCURSAL'), nro=row.findIndex(x=>/^NRO/.test(x)), cant=row.indexOf('CANTIDAD'), imp=row.indexOf('IMPORTE');
+    const suc=row.indexOf('SUCURSAL'), nro=row.findIndex(x=>/^(NRO|NUMERO|NUM|N°)/.test(x)), cant=row.indexOf('CANTIDAD'), imp=row.indexOf('IMPORTE');
     if(suc>=0 && nro>=0 && cant>=0 && imp>=0){
       hr=i; c={suc, nro, cant, imp,
         dow: row.findIndex(x=>/^DIA SEMANA/.test(x)), dia: row.findIndex(x=>x==='DIA'||x==='FECHA'),
-        vend: row.findIndex(x=>/VENDEDOR/.test(x)), art: row.findIndex(x=>/^ARTICULO/.test(x)), rubro: row.indexOf('RUBRO')};
+        vend: row.findIndex(x=>/VENDEDOR/.test(x)), art: row.findIndex(x=>/^(ARTICULO|DESCRIPCION)/.test(x)), rubro: row.indexOf('RUBRO')};
       break;
     }
+    // filas previas al encabezado: "2026" y "Agosto"
+    row.forEach(x=>{ if(/^20\d\d$/.test(x)) anio=+x; const mi=VE_MESES.indexOf(x); if(mi>=0) mes=mi+1; });
   }
   if(hr<0) return null;
-  // 1) por comprobante (atómico): Σ cant/importe según criterio; metadata = línea de mayor |importe|
+  // por comprobante (atómico): Σ cant/importe según criterio; metadata = línea de mayor |importe|
   const comp=new Map();
   for(let i=hr+1;i<matrix.length;i++){
     const row=matrix[i]; if(!row) continue;
@@ -3121,28 +3128,41 @@ function veParseDetallado(matrix){
     const cant=veNum(row[c.cant]), imp=veNum(row[c.imp]);
     const ok=veCriterioLinea(c.rubro>=0?veNormU(row[c.rubro]):'', c.art>=0?veNormU(row[c.art]):'');
     const k=suc+'|'+nro;
-    let x=comp.get(k); if(!x){ x={suc, nro, cant:0, imp:0, abs:-1, vend:'', dow:'', dia:null}; comp.set(k,x); }
+    let x=comp.get(k); if(!x){ x={suc, nro, cant:0, imp:0, abs:-1, vend:'', dow:'', dia:0, fecha:null}; comp.set(k,x); }
     if(ok[0]) x.cant+=cant;
     if(ok[1]) x.imp+=imp;
     if(Math.abs(imp)>x.abs){ x.abs=Math.abs(imp); x.vend=(c.vend>=0?veStr(row[c.vend]):'')||'SIN ASIGNAR';
-      x.dow=c.dow>=0?veStr(row[c.dow]):''; x.dia=c.dia>=0?row[c.dia]:null; }
+      // día de semana sin tilde (Sá → Sa) para que coincida con VE_DOW
+      x.dow=c.dow>=0?veNormU(row[c.dow]).charAt(0)+veNormU(row[c.dow]).slice(1).toLowerCase():'';
+      const raw=c.dia>=0?row[c.dia]:null;
+      x.fecha=veFechaISO(raw);
+      const dn=parseInt(veStr(raw),10); x.dia=(dn>=1 && dn<=31)?dn:0;
+      if(!x.fecha && anio && mes && x.dia) x.fecha=new Date(Date.UTC(anio,mes-1,x.dia)).toISOString().slice(0,10);
+    }
   }
   if(!comp.size) return null;
-  // 2) por sucursal -> vendedor -> día (ticket = comprobante no-Nc con unidades > 0)
-  const sucV=new Map(), lunes=new Set(), dowSet=new Set(), pares=new Set(); let ncPos=0;
-  comp.forEach(x=>{
-    // "Día" suele venir como número de día del mes (17, 18…) sin mes: se guarda el par
-    // (Lu, 17) para chequear contra la semana elegida en la previsualización
-    const dn=parseInt(veStr(x.dia),10); if(x.dow && dn>=1 && dn<=31 && String(dn)===veStr(x.dia).replace(/\.0+$/,'')) pares.add(x.dow+'|'+dn);
+  const comps=Array.from(comp.values());
+  const fechas=comps.map(x=>x.fecha).filter(Boolean).sort();
+  return {comps, anio, mes, nComp:comps.length, desde:fechas[0]||null, hasta:fechas[fechas.length-1]||null};
+}
+/* se queda con los comprobantes de la semana [sem, sem+6] y arma los payloads por slug
+   (mismo formato que guarda el encargado / el script). Sin fecha completa, compara el par
+   (día de semana, día del mes) con el que corresponde a esa semana. */
+function veAgregarSemana(res, sem){
+  const hasta=veSumarDias(sem,6), esperado={};
+  VE_DOW.forEach((d,i)=>{ esperado[d]=+veSumarDias(sem,i).slice(8,10); });
+  const enSemana = x => x.fecha ? (x.fecha>=sem && x.fecha<=hasta) : (x.dow && x.dia ? esperado[x.dow]===x.dia : true);
+  const sucV=new Map(), dowSet=new Set(); let ncPos=0, nIn=0, nOut=0;
+  res.comps.forEach(x=>{
+    if(!enSemana(x)){ nOut++; return; }
+    nIn++;
     const esNc=/^Nc/.test(x.nro); if(esNc && x.imp>0) ncPos++;
     let vs=sucV.get(x.suc); if(!vs){ vs=new Map(); sucV.set(x.suc,vs); }
     let v=vs.get(x.vend); if(!v){ v={venta:0,tickets:0,unidades:0,dias:{}}; vs.set(x.vend,v); }
     v.venta+=x.imp; v.unidades+=x.cant; if(!esNc && x.cant>0) v.tickets++;
     if(x.imp){ v.dias[x.dow]=(v.dias[x.dow]||0)+x.imp; }
-    if(x.dow) dowSet.add(x.dow);
-    const f=veFechaISO(x.dia); if(f) lunes.add(veLunesDe(f));
+    if(x.dow) dowSet.add(x.dow+'|'+x.dia);
   });
-  // 3) payloads por slug (mismo formato que guarda el encargado / el script)
   const ord={}; VE_DOW.forEach((d,i)=>ord[d]=i);
   const oi=d=>(ord[d]!=null?ord[d]:9);
   const porSlug={}, saltadas=[];
@@ -3160,11 +3180,10 @@ function veParseDetallado(matrix){
     const total={ venta:lista.reduce((a,x)=>a+x.venta,0), tickets:lista.reduce((a,x)=>a+x.tickets,0), unidades:lista.reduce((a,x)=>a+x.unidades,0) };
     porSlug[slug]={sucursal:suc, vendedores:lista, total};
   });
-  if(!Object.keys(porSlug).length) return null;
-  const dows=Array.from(dowSet).sort((a,b)=>oi(a)-oi(b));
+  const pares=Array.from(dowSet).map(k=>{ const q=k.split('|'); return {dow:q[0], dia:+q[1]}; }).sort((a,b)=>oi(a.dow)-oi(b.dow));
+  const dows=pares.map(p=>p.dow);
   const etiqueta = dows.length ? 'estadística '+dows[0]+'-'+dows[dows.length-1] : 'estadística';
-  const paresL=Array.from(pares).map(k=>{ const q=k.split('|'); return {dow:q[0], dia:+q[1]}; }).sort((a,b)=>oi(a.dow)-oi(b.dow));
-  return {porSlug, saltadas, etiqueta, dias:dows, pares:paresL, lunes:Array.from(lunes).sort(), ncPos, nComp:comp.size};
+  return {porSlug, saltadas, etiqueta, pares, ncPos, nIn, nOut};
 }
 // leer el Excel elegido por gerencia -> previsualizar en la vista Cadena
 async function veCadArchivo(file){
@@ -3179,24 +3198,27 @@ async function veCadArchivo(file){
     }
     if(!res){ alert('No reconocí el formato. Esperaba la estadística de venta detallada del sistema, con las columnas Sucursal · Día semana · Día · Vendedor · Nro.comprobante · Artículo · Rubro · Cantidad · Importe (todas las sucursales juntas).'); return; }
     _veCadPreview={sem:null, res, fileName:file.name};
-    // si el archivo trae fechas de una sola semana y esa semana está publicada, la selecciono
-    if(res.lunes.length===1){ const w=await fetchObjetivoWeeks().catch(()=>null); if(w && w.includes(res.lunes[0])) objCadSem=res.lunes[0]; }
+    // si el archivo tiene fechas, voy a la última semana publicada que contenga alguna
+    if(res.hasta){ const w=await fetchObjetivoWeeks().catch(()=>null);
+      const k=(w||[]).find(sem=> sem<=res.hasta && veSumarDias(sem,6)>=res.desde); if(k) objCadSem=k; }
     renderObjCadena();
   }catch(e){ alert('Error leyendo el Excel: '+(e.message||e)); }
 }
 // publicar la previsualización: un PATCH multi-path a ventaEquipo (21 sucursales de una)
 async function veCadPublicar(){
   const p=_veCadPreview; if(!p || !p.sem) return;
+  const agg=veAgregarSemana(p.res, p.sem);
+  if(!agg.nIn || !Object.keys(agg.porSlug).length){ alert('Ninguna venta del archivo cae en la semana elegida.'); return; }
   const btn=$('veCadSave'); if(btn){ btn.disabled=true; btn.textContent='Publicando…'; }
   const base=OBJETIVOS_URL.replace(/\/+$/,'');
-  const ahora=new Date().toISOString(), por=(SESSION.email||'')+' ('+p.res.etiqueta+')';
+  const ahora=new Date().toISOString(), por=(SESSION.email||'')+' ('+agg.etiqueta+')';
   const updates={};
-  Object.keys(p.res.porSlug).forEach(slug=>{ const s=p.res.porSlug[slug];
+  Object.keys(agg.porSlug).forEach(slug=>{ const s=agg.porSlug[slug];
     updates[slug+'/'+p.sem]={semana:p.sem, actualizado:ahora, por, vendedores:s.vendedores, total:s.total, metaTienda:0, minimoTienda:0}; });
   try{
     const r=await fetch(base+'/ventaEquipo.json',{method:'PATCH',body:JSON.stringify(updates)});
     if(!r.ok) throw new Error('HTTP '+r.status);
-    Object.keys(p.res.porSlug).forEach(slug=>{ delete _veCache[slug+'|'+p.sem]; delete _veTotCache[slug+'|'+p.sem]; });
+    Object.keys(agg.porSlug).forEach(slug=>{ delete _veCache[slug+'|'+p.sem]; delete _veTotCache[slug+'|'+p.sem]; });
     _veCadPreview=null;
     renderObjCadena();
   }catch(e){ alert('No se pudo publicar: '+(e.message||e)); if(btn){ btn.disabled=false; btn.textContent='Publicar'; } }
@@ -3213,44 +3235,40 @@ function fetchVentaEquipoTotal(slug, sem){
 }
 // HTML de la previsualización (tabla por sucursal vs. meta) + Publicar/Cancelar
 function veCadPreviewHtml(sem, por){
-  const p=_veCadPreview, res=p.res;
-  const slugs=Object.keys(res.porSlug);
-  const filas=slugs.map(slug=>{
-    const s=res.porSlug[slug], meta=+((por[slug]||{}).meta)||0;
-    const full=SLUG_SUC[slug]||OUTLET_SUC[slug]||slug;
-    return {slug, nombre:(SLUG_SUC[slug]||OUTLET_SUC[slug])?full.replace(/^\d+-\s*/,''):nombreBonito(slug), n:s.vendedores.length, venta:s.total.venta, tickets:s.total.tickets, unidades:s.total.unidades, meta};
+  const p=_veCadPreview, res=p.res, agg=veAgregarSemana(res, sem);
+  const nombreDe = sl => (SLUG_SUC[sl]||OUTLET_SUC[sl]) ? (SLUG_SUC[sl]||OUTLET_SUC[sl]).replace(/^\d+-\s*/,'') : nombreBonito(sl);
+  const filas=Object.keys(agg.porSlug).map(slug=>{
+    const s=agg.porSlug[slug], meta=+((por[slug]||{}).meta)||0;
+    return {slug, nombre:nombreDe(slug), n:s.vendedores.length, venta:s.total.venta, tickets:s.total.tickets, unidades:s.total.unidades, meta};
   }).sort((a,b)=>b.venta-a.venta);
-  const sinVenta=Object.keys(por).filter(sl=>+((por[sl]||{}).meta)>0 && !res.porSlug[sl]).map(sl=>(SLUG_SUC[sl]||OUTLET_SUC[sl])?(SLUG_SUC[sl]||OUTLET_SUC[sl]).replace(/^\d+-\s*/,''):nombreBonito(sl));
+  const sinVenta=Object.keys(por).filter(sl=>+((por[sl]||{}).meta)>0 && !agg.porSlug[sl]).map(nombreDe);
   const T=filas.reduce((a,r)=>({venta:a.venta+r.venta, tickets:a.tickets+r.tickets, unidades:a.unidades+r.unidades, meta:a.meta+r.meta}),{venta:0,tickets:0,unidades:0,meta:0});
-  const otraSem = res.lunes.length===1 && res.lunes[0]!==sem;
-  const variasSem = res.lunes.length>1;
-  // días del archivo (Lu 17 · Ma 18 …) vs. los que corresponden a la semana elegida
-  let diasTxt='', diasMal=[];
-  if(res.pares && res.pares.length){
-    const d0=new Date(sem+'T00:00:00Z'), esperado={};
-    VE_DOW.forEach((d,i)=>{ const x=new Date(d0); x.setUTCDate(d0.getUTCDate()+i); esperado[d]=x.getUTCDate(); });
-    diasTxt=res.pares.map(p=>p.dow+' '+p.dia).join(' · ');
-    diasMal=res.pares.filter(p=>esperado[p.dow]!=null && esperado[p.dow]!==p.dia);
+  const vacio = !agg.nIn || !filas.length;
+  const rango = res.desde ? (res.desde===res.hasta ? 'el '+objSemLbl(res.desde) : 'del '+objSemLbl(res.desde)+' al '+objSemLbl(res.hasta)) : '';
+  const diasTxt = agg.pares.map(x=>x.dow+' '+x.dia).join(' · ');
+  let h='<div style="background:'+(vacio?'#fef2f2':'var(--mid-bg,#fdf3e3)')+';border:1px solid '+(vacio?'#fecaca':'#f0d8a8')+';border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:13px">'
+    +'<b>'+esc(p.fileName)+'</b>: '+res.nComp.toLocaleString('es-AR')+' comprobantes'+(rango?' '+rango:'')+'.';
+  if(vacio){
+    h+='<br>⚠️ <b>Ninguna venta del archivo cae en la '+esc(objSemTag(sem))+'</b> (lunes '+esc(objSemLbl(sem))+'). Elegí en el selector la semana que corresponde al archivo.';
+  }else{
+    h+='<br>Para la <b>'+esc(objSemTag(sem))+'</b> ('+esc(objSemLbl(sem))+') tomo <b>'+esc(diasTxt)+'</b>: '+agg.nIn.toLocaleString('es-AR')+' comprobantes'
+      +(agg.nOut?' (descarto '+agg.nOut.toLocaleString('es-AR')+' de otros días)':'')+' en <b>'+filas.length+'</b> sucursales. Si está bien, publicá: cada sucursal va a ver su venta provisoria de esa semana en Mi Sucursal.';
   }
-  let h='<div style="background:var(--mid-bg,#fdf3e3);border:1px solid #f0d8a8;border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:13px">'
-    +'Revisá lo leído de <b>'+esc(p.fileName)+'</b>: <b>'+filas.length+'</b> sucursales · '+res.nComp.toLocaleString('es-AR')+' comprobantes · '+esc(res.etiqueta)+'. Si está bien, publicá: cada sucursal va a ver su venta provisoria de la <b>'+esc(objSemTag(sem))+'</b> ('+esc(objSemLbl(sem))+') en Mi Sucursal.'
-    +(diasTxt?'<br>Días en el archivo: <b>'+esc(diasTxt)+'</b>.':'')
-    +(diasMal.length?' ⚠️ <b>No coinciden con la semana elegida</b> (lunes '+esc(objSemLbl(sem))+'): el archivo parece ser de otra semana. Cambiá la semana en el selector antes de publicar.':'')
-    +(otraSem?'<br>⚠️ <b>Ojo:</b> las fechas del archivo son de la semana del <b>'+esc(objSemLbl(res.lunes[0]))+'</b> y estás publicando en la <b>'+esc(objSemTag(sem))+'</b>. Cambiá la semana en el selector si corresponde.':'')
-    +(variasSem?'<br>⚠️ <b>Ojo:</b> el archivo abarca fechas de <b>'+res.lunes.length+' semanas distintas</b> ('+res.lunes.map(objSemLbl).join(', ')+'). Todo se va a sumar en la semana elegida.':'')
-    +(res.saltadas.length?'<br>Salteo (sin sucursal en el Portal): '+esc(res.saltadas.join(', ')):'')
-    +(sinVenta.length?'<br>Con meta pero sin venta en el archivo: '+esc(sinVenta.join(', ')):'')
-    +(res.ncPos?'<br>⚠️ '+res.ncPos+' notas de crédito con importe positivo (se esperaba negativo).':'')
+  h+=(agg.saltadas.length?'<br>Salteo (sin sucursal en el Portal): '+esc(agg.saltadas.join(', ')):'')
+    +(!vacio && sinVenta.length?'<br>Con meta pero sin venta en el archivo: '+esc(sinVenta.join(', ')):'')
+    +(agg.ncPos?'<br>⚠️ '+agg.ncPos+' notas de crédito con importe positivo (se esperaba negativo).':'')
     +'</div>';
-  const pctCol = r => !r.meta ? 'var(--mid)' : r.venta>=r.meta ? 'var(--ok,#16a34a)' : r.venta>=r.meta/1.2 ? '#d97706' : '#dc2626';
-  const tr = r => '<tr><td class="L">'+esc(r.nombre)+'</td><td>'+r.n+'</td>'
-    +'<td><span class="num">'+objMoney(r.venta)+'</span></td><td><span class="num">'+r.tickets.toLocaleString('es-AR')+'</span></td><td><span class="num">'+r.unidades.toLocaleString('es-AR')+'</span></td>'
-    +'<td><span class="num">'+(r.meta?objMoney(r.meta):'—')+'</span></td><td><b style="color:'+pctCol(r)+'">'+(r.meta?Math.round(r.venta/r.meta*100)+'%':'—')+'</b></td></tr>';
-  h+='<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L">Sucursal</th><th>Vend.</th><th>Venta</th><th>Tickets</th><th>Unid.</th><th>Meta</th><th>%</th></tr></thead><tbody>'
-    +filas.map(tr).join('')
-    +'<tr style="font-weight:700"><td class="L">Total</td><td>'+filas.reduce((a,r)=>a+r.n,0)+'</td><td><span class="num">'+objMoney(T.venta)+'</span></td><td><span class="num">'+T.tickets.toLocaleString('es-AR')+'</span></td><td><span class="num">'+T.unidades.toLocaleString('es-AR')+'</span></td><td><span class="num">'+(T.meta?objMoney(T.meta):'—')+'</span></td><td><b style="color:'+pctCol(T)+'">'+(T.meta?Math.round(T.venta/T.meta*100)+'%':'—')+'</b></td></tr>'
-    +'</tbody></table></div>';
-  h+='<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="veCadSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">Publicar</button>'
+  if(!vacio){
+    const pctCol = r => !r.meta ? 'var(--mid)' : r.venta>=r.meta ? 'var(--ok,#16a34a)' : r.venta>=r.meta/1.2 ? '#d97706' : '#dc2626';
+    const tr = r => '<tr><td class="L">'+esc(r.nombre)+'</td><td>'+r.n+'</td>'
+      +'<td><span class="num">'+objMoney(r.venta)+'</span></td><td><span class="num">'+r.tickets.toLocaleString('es-AR')+'</span></td><td><span class="num">'+r.unidades.toLocaleString('es-AR')+'</span></td>'
+      +'<td><span class="num">'+(r.meta?objMoney(r.meta):'—')+'</span></td><td><b style="color:'+pctCol(r)+'">'+(r.meta?Math.round(r.venta/r.meta*100)+'%':'—')+'</b></td></tr>';
+    h+='<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L">Sucursal</th><th>Vend.</th><th>Venta</th><th>Tickets</th><th>Unid.</th><th>Meta</th><th>%</th></tr></thead><tbody>'
+      +filas.map(tr).join('')
+      +'<tr style="font-weight:700"><td class="L">Total</td><td>'+filas.reduce((a,r)=>a+r.n,0)+'</td><td><span class="num">'+objMoney(T.venta)+'</span></td><td><span class="num">'+T.tickets.toLocaleString('es-AR')+'</span></td><td><span class="num">'+T.unidades.toLocaleString('es-AR')+'</span></td><td><span class="num">'+(T.meta?objMoney(T.meta):'—')+'</span></td><td><b style="color:'+pctCol(T)+'">'+(T.meta?Math.round(T.venta/T.meta*100)+'%':'—')+'</b></td></tr>'
+      +'</tbody></table></div>';
+  }
+  h+='<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="veCadSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)"'+(vacio?' disabled':'')+'>Publicar</button>'
     +'<button type="button" id="veCadCancel" class="tb-btn">Cancelar</button></div>';
   return h;
 }
