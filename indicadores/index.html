@@ -1556,6 +1556,10 @@ function fetchUltimoMes(){
 const OBJ_MESES_N = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const objMesLbl = per => { const p=String(per||'').split('-'); return (p.length===2 && OBJ_MESES_N[+p[1]-1]) ? OBJ_MESES_N[+p[1]-1]+' '+p[0] : String(per||''); };
 const objMoney = n => '$'+Math.round(n||0).toLocaleString('es-AR');
+// % de cumplimiento como indicador grande (mes/semana): número display en el color del cumplimiento + «de la meta» chico
+const objPctBig = (pct, col, size) => '<div style="display:flex;align-items:baseline;gap:6px;padding-left:14px;border-left:2px solid var(--line,#e6ebf5)">'
+  +'<span style="font-family:var(--font-d,inherit);font-size:'+(size||32)+'px;line-height:.9;letter-spacing:.5px;color:'+col+'">'+Math.round(pct*100)+'%</span>'
+  +'<span style="font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">de la meta</span></div>';
 const objSemLbl = iso => { const p=String(iso||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:iso; };
 // n° de semana retail = semana ISO 8601 (lun→dom), mismo criterio que el calendario del shell
 const objSemNum = iso => { const p=String(iso||'').split('-').map(Number); if(p.length!==3||!p[0]) return null;
@@ -1638,7 +1642,8 @@ async function objMesCadenaHtml(sem, weeks){
   h+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">';
   if(T.real){
     h+='<div style="font-family:var(--font-d,inherit);font-size:32px;line-height:.9;letter-spacing:.5px;color:'+col+'">'+objMoney(T.real)+'</div>'
-      +'<div style="font-size:13.5px;color:var(--mid);padding-bottom:4px">Meta del mes: <b style="color:var(--navy,#0B1527)">'+objMoney(T.meta)+'</b> · '+Math.round(pct*100)+'%</div>';
+      +objPctBig(pct,col,32)
+      +'<div style="font-size:13.5px;color:var(--mid);padding-bottom:4px">Meta del mes: <b style="color:var(--navy,#0B1527)">'+objMoney(T.meta)+'</b></div>';
   }else{
     h+='<div style="font-family:var(--font-d,inherit);font-size:32px;line-height:.9;letter-spacing:.5px">'+objMoney(T.meta)+'</div>'
       +'<div style="font-size:13px;color:var(--muted-light,#b0bcd4);padding-bottom:5px">Venta del mes: aún sin cargar</div>';
@@ -1730,7 +1735,8 @@ async function renderObjCadena(){
     html+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">';
     if(T.real){
       html+='<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px;color:'+col+'">'+objMoney(T.real)+'</div>'
-        +'<div style="font-size:14px;color:var(--mid);padding-bottom:5px">Meta '+esc(lblLinea)+': <b style="color:var(--navy,#0B1527)">'+objMoney(T.meta)+'</b> · '+Math.round(pct*100)+'%</div>';
+        +objPctBig(pct,col,40)
+        +'<div style="font-size:14px;color:var(--mid);padding-bottom:5px">Meta '+esc(lblLinea)+': <b style="color:var(--navy,#0B1527)">'+objMoney(T.meta)+'</b></div>';
     }else{
       html+='<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px">'+objMoney(T.meta)+'</div>'
         +'<div style="font-size:13px;color:var(--muted-light,#b0bcd4);padding-bottom:6px">Venta de la semana: aún sin cargar</div>';
@@ -2768,7 +2774,8 @@ async function objetivoMesHtml(slug, sem, weeks, ve){
   h+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">';
   if(real){
     h+='<div style="font-family:var(--font-d,inherit);font-size:32px;line-height:.9;letter-spacing:.5px;color:'+col+'">'+objMoney(real)+'</div>'
-      +'<div style="font-size:13.5px;color:var(--mid);padding-bottom:4px">Meta del mes: <b style="color:var(--navy,#0B1527)">'+objMoney(meta)+'</b> · '+Math.round(pct*100)+'%</div>';
+      +objPctBig(pct,col,32)
+      +'<div style="font-size:13.5px;color:var(--mid);padding-bottom:4px">Meta del mes: <b style="color:var(--navy,#0B1527)">'+objMoney(meta)+'</b></div>';
   }else{
     h+='<div style="font-family:var(--font-d,inherit);font-size:32px;line-height:.9;letter-spacing:.5px">'+objMoney(meta)+'</div>'
       +'<div style="font-size:13px;color:var(--muted-light,#b0bcd4);padding-bottom:5px">Venta del mes: aún sin cargar</div>';
@@ -2857,7 +2864,8 @@ async function renderObjetivo(){
     html+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">';
     if(real){
       html+='<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px;color:'+col+'">'+objMoney(real)+'</div>'
-        +'<div style="font-size:14px;color:var(--mid);padding-bottom:5px">Meta: <b style="color:var(--navy,#0B1527)">'+objMoney(meta)+'</b> · '+Math.round(pct*100)+'%'
+        +objPctBig(pct,col,40)
+        +'<div style="font-size:14px;color:var(--mid);padding-bottom:5px">Meta: <b style="color:var(--navy,#0B1527)">'+objMoney(meta)+'</b>'
         +(provisorio?' <span style="font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#d97706;background:#fff7ed;border:1px solid #fed7aa;border-radius:20px;padding:1px 7px;margin-left:4px">provisorio · encargado</span>':'')
         +'</div>';
     }else{
