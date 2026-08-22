@@ -459,6 +459,17 @@ entran acá: ven su objetivo en Indicadores.
   para las 21 sucursales con los criterios por línea del ETL. Sin `--publicar` solo
   muestra el resumen vs. meta. Se puede re-correr con el archivo actualizado (pisa).
   NO escribe el `real` de `objetivos/semanas` (ese es el oficial del HISTÓRICO).
+  **Desde el portal (22/08/2026, el camino habitual):** en Indicadores (Panel General),
+  vista **Cadena**, sección «Objetivo de la semana», botón **«⇧ Cargar venta de la
+  semana»** (solo gerencia): sube ese mismo `.xls` detallado con TODAS las sucursales,
+  lo agrega por comprobante con los mismos criterios (`veParseDetallado` = port de
+  `cargar-venta-semana.py`; mantener los dos en sintonía), previsualiza por sucursal
+  vs. meta (avisa si los días Lu 17 · Ma 18… no coinciden con la semana elegida en el
+  selector, si salteó sucursales sin slug —05-Depósito— o si hay metas sin venta) y
+  **publica en un solo PATCH multi-path** a `ventaEquipo/<slug>/<lunesISO>` (mismo
+  payload que el script). La tabla de la cadena muestra esa venta como **«prov»**
+  mientras no esté el real oficial (gerencia baja `ventaEquipo/<slug>/<sem>/total`
+  de cada sucursal). El script Python queda como plan B.
 - **Base «Horas asignadas» + justificaciones (03/08/2026)**: el toggle de KPIs de
   Indicadores pasó de "Horas con venta" a **"Horas asignadas"**: usa las horas que el
   encargado asignó a la venta en la grilla del equipo (de las contratadas, solo las de

@@ -657,6 +657,7 @@ footer b{color:var(--navy)}
       <h2 class="sec-title" id="objCadTitle">Objetivo <em>de la semana</em></h2>
       <p class="hint">La meta semanal de cada sucursal y el avance contra la venta real. Verde = llegó a la meta, ámbar = pasó el mínimo, rojo = abajo del mínimo. Para cargar o corregir metas, entrá al módulo Objetivos.</p>
       <div class="card pad" id="objCadCard"></div>
+      <input type="file" id="veCadFile" accept=".xlsx,.xls" style="display:none">
     </section>
 
     <!-- KPIs generales: los mismos cuatro indicadores de la vista sucursal pero
@@ -927,6 +928,7 @@ async function boot(){
   $('hmUni').onclick = ()=>{ heatMode='uni'; renderHeat(); };
   $('hmPct').onclick = ()=>{ heatMode='pct'; renderHeat(); };
   $('veFile').onchange = e => { const f=e.target.files&&e.target.files[0]; e.target.value=''; veArchivo(f); };
+  $('veCadFile').onchange = e => { const f=e.target.files&&e.target.files[0]; e.target.value=''; veCadArchivo(f); };
   $('eqFile').onchange = e => { const f=e.target.files&&e.target.files[0]; e.target.value=''; eqArchivoPMS(f); };
   $('btnPrint').onclick = ()=> window.print();
   $('btnCopiar').onclick = copiarResumen;
@@ -1678,9 +1680,18 @@ async function renderObjCadena(){
     const v=por[slug]||{}, meta=+v.meta||0;
     if(!meta) return null;
     const full=SLUG_SUC[slug]||OUTLET_SUC[slug]||slug;
-    return {nombre:full.replace(/^\d+-\s*/,''), fmt:formatoDe(full), meta,
-      minimo:+v.minimo||Math.round(meta/1.2), s120:+v.s120||Math.round(meta*1.2), real:+v.real||0};
+    return {slug, nombre:(SLUG_SUC[slug]||OUTLET_SUC[slug])?full.replace(/^\d+-\s*/,''):nombreBonito(slug), fmt:formatoDe(full), meta,
+      minimo:+v.minimo||Math.round(meta/1.2), s120:+v.s120||Math.round(meta*1.2), real:+v.real||0, prov:false};
   }).filter(Boolean);
+  // sin real oficial todavía: venta provisoria de la semana (ventaEquipo, lo que cargó
+  // gerencia con «Cargar venta» o cada encargado). Solo gerencia baja los totales de todas.
+  if(todas.some(r=>!r.real)){
+    const tots=await Promise.all(todas.map(r=> r.real ? null : fetchVentaEquipoTotal(r.slug, sem)));
+    if(!vistaCadena) return;
+    todas.forEach((r,i)=>{ const t=tots[i]; if(t && +t.venta>0){ r.real=Math.round(+t.venta); r.prov=true; } });
+  }
+  const hayProv = todas.some(r=>r.prov);
+  if(_veCadPreview) _veCadPreview.sem=sem;   // la previsualización se publica en la semana elegida
   // filtro por línea (mismos chips que el ranking)
   const rows = rkTipo ? todas.filter(r=>r.fmt===rkTipo) : todas;
   const lblLinea = rkTipo ? fmtLabel(rkTipo) : 'cadena';
@@ -1700,11 +1711,15 @@ async function renderObjCadena(){
     + weeks.map(k=>'<option value="'+esc(k)+'"'+(k===sem?' selected':'')+'>'+esc(objSemTag(k))+'</option>').join('')
     +'</select>';
   const hayReal = rows.some(r=>r.real>0);
+  const pillProv = '<span style="font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#d97706;background:#fff7ed;border:1px solid #fed7aa;border-radius:20px;padding:1px 7px;margin-left:6px">provisorio</span>';
   let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
-    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana · ':'Meta de la semana · ')+esc(lblLinea)+'</div>'
-    +selHtml+'</div>';
+    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana · ':'Meta de la semana · ')+esc(lblLinea)+(hayProv&&!_veCadPreview?pillProv:'')+'</div>'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+selHtml
+    +'<button type="button" id="veCadUpload" class="tb-btn" title="Subir la estadística de venta detallada del sistema con todas las sucursales (por día, vendedor y comprobante)">⇧ Cargar venta de la semana</button></div></div>';
 
-  if(!todas.length){
+  if(_veCadPreview){
+    html+=veCadPreviewHtml(sem, por);
+  }else if(!todas.length){
     html+='<p class="empty" style="margin:6px 0">El objetivo de esta semana aún no está cargado. Probá con otra semana.</p>';
   }else if(!rows.length){
     html+='<p class="empty" style="margin:6px 0">Sin metas cargadas para la línea '+esc(fmtLabel(rkTipo))+' esta semana.</p>';
@@ -1734,14 +1749,18 @@ async function renderObjCadena(){
       const c = !r.real ? 'var(--mid)' : r.real>=r.meta ? 'var(--ok,#16a34a)' : r.real>=r.minimo ? '#d97706' : '#dc2626';
       return '<tr><td class="L">'+esc(r.nombre)+'</td>'
         +'<td><span class="num">'+objMoney(r.meta)+'</span></td>'
-        +'<td><span class="num">'+(r.real?objMoney(r.real):'—')+'</span></td>'
+        +'<td><span class="num">'+(r.real?objMoney(r.real):'—')+(r.prov?'<span style="font-size:10px;color:#d97706;margin-left:3px" title="Venta provisoria de la semana (ventaEquipo), no el real oficial">prov</span>':'')+'</span></td>'
         +'<td><b style="color:'+c+'">'+(r.real?Math.round(p*100)+'%':'—')+'</b></td></tr>';
     }).join('');
     html+='<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L">Sucursal</th><th>Meta</th><th>Real</th><th>%</th></tr></thead><tbody>'+trs+'</tbody></table></div>';
+    if(hayProv) html+='<p class="hint" style="margin-top:8px">«prov» = venta de la semana en curso cargada desde «Cargar venta de la semana» (o por el encargado). El real oficial se completa desde el HISTÓRICO del Excel PMS en el módulo Objetivos.</p>';
   }
-  html+='<p class="hint" style="margin-top:12px"><a href="../objetivos/" style="color:var(--red,#CC0000);font-weight:600;text-decoration:none">Abrir Objetivos de Venta →</a> para cargar o corregir las metas de la semana.</p>';
+  html+='<p class="hint" style="margin-top:12px"><a href="../objetivos/" style="color:var(--red,#CC0000);font-weight:600;text-decoration:none">Abrir Objetivos de Venta →</a> para cargar o corregir las metas de la semana. <b>⇧ Cargar venta de la semana</b> sube la estadística de venta detallada del sistema (todas las sucursales, por día y vendedor) y la publica como venta provisoria para que cada sucursal la vea en Mi Sucursal.</p>';
   $('objCadCard').innerHTML=html;
   const sel=$('objCadSemSel'); if(sel) sel.onchange=e=>{ objCadSem=e.target.value; renderObjCadena(); };
+  const up=$('veCadUpload'); if(up) up.onclick=()=>$('veCadFile').click();
+  const sv=$('veCadSave'); if(sv) sv.onclick=veCadPublicar;
+  const cn=$('veCadCancel'); if(cn) cn.onclick=()=>{ _veCadPreview=null; renderObjCadena(); };
   sec.style.display='';
 }
 
@@ -3042,6 +3061,198 @@ async function veGuardar(){
     _vePreview=null;
     renderObjetivo();
   }catch(e){ alert('No se pudo guardar: '+(e.message||e)); if(btn){ btn.disabled=false; btn.textContent='Guardar'; } }
+}
+
+/* --- carga multi-sucursal de la venta de la semana (gerencia, vista Cadena) ---
+   El mismo export detallado por línea del sistema que lee scripts/cargar-venta-semana.py
+   ("Semana DD-MM-AA.xls": Sucursal · Día semana · Día · Vendedor · Hora · Nro.comprobante ·
+   Artículo · Rubro · Cantidad · Importe) pero subido desde el portal. Se agrega por
+   comprobante con los criterios por línea del ETL (copia fiel de criterio_linea) y se
+   publica ventaEquipo/<slug>/<semana> de cada sucursal en un solo PATCH: es el "real
+   provisorio" que ven las sucursales y el dashboard de Objetivos. NO toca el real oficial
+   de objetivos/semanas (ese lo completa el HISTÓRICO del Excel PMS). */
+let _veCadPreview = null;          // {sem, res, fileName} pendiente de publicar
+const _veTotCache = {};            // "slug|sem" -> Promise<total|null> (solo gerencia: avance provisorio de la cadena)
+const VE_DOW = ['Lu','Ma','Mi','Ju','Vi','Sa','Do'];
+// código NN del sistema -> slug del Portal (Diagonal 80 no tiene datos de Indicadores pero sí objetivo)
+const VE_PFX_SLUG = (()=>{ const m={}; Object.entries(Object.assign({}, SLUG_SUC, OUTLET_SUC)).forEach(([slug,n])=>{ m[n.slice(0,2)]=slug; }); m['10']='diagonal'; return m; })();
+function veNormU(s){ return String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\s+/g,' ').trim(); }
+// [cuenta unidades, cuenta importe] — mantener en sintonía con criterio_linea() del ETL
+function veCriterioLinea(rubro, art){
+  if(rubro==='OTROS') return [false,false];
+  if(rubro==='01-VARIOS') return art==='REDONDEO' ? [false,false] : [true,true];
+  if(rubro==='CONCEPTOS'){
+    if(art.indexOf('CREDITO A FAVOR')===0) return [true,true];
+    if(art.indexOf('INGRESO CUPON')===0 || art.indexOf('LLAVERO COMPRA GRANDE')>=0) return [false,false];
+    if(art.indexOf('CONCEPTOS VARIOS')===0) return [false,false];
+    return [false,true];
+  }
+  return [true,true];
+}
+// fecha ISO de una celda "Día" (serial de Excel o texto dd/mm/aa[aa]); null si no se entiende
+function veFechaISO(v){
+  if(typeof v==='number' && v>40000 && v<60000) return new Date(Date.UTC(1899,11,30)+v*86400000).toISOString().slice(0,10);
+  const m=/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/.exec(veStr(v));
+  if(!m) return null;
+  let y=+m[3]; if(y<100) y+=2000;
+  const d=new Date(Date.UTC(y,+m[2]-1,+m[1])); return isNaN(d)?null:d.toISOString().slice(0,10);
+}
+function veLunesDe(iso){ const d=new Date(iso+'T00:00:00Z'); const k=(d.getUTCDay()+6)%7; d.setUTCDate(d.getUTCDate()-k); return d.toISOString().slice(0,10); }
+// matriz (header:1) del export detallado -> {porSlug:{slug:{sucursal,vendedores,total}}, saltadas, etiqueta, lunes:[...]} | null
+function veParseDetallado(matrix){
+  let hr=-1, c=null;
+  for(let i=0;i<Math.min(matrix.length,15);i++){
+    const row=(matrix[i]||[]).map(veNormU);
+    const suc=row.indexOf('SUCURSAL'), nro=row.findIndex(x=>/^NRO/.test(x)), cant=row.indexOf('CANTIDAD'), imp=row.indexOf('IMPORTE');
+    if(suc>=0 && nro>=0 && cant>=0 && imp>=0){
+      hr=i; c={suc, nro, cant, imp,
+        dow: row.findIndex(x=>/^DIA SEMANA/.test(x)), dia: row.findIndex(x=>x==='DIA'||x==='FECHA'),
+        vend: row.findIndex(x=>/VENDEDOR/.test(x)), art: row.findIndex(x=>/^ARTICULO/.test(x)), rubro: row.indexOf('RUBRO')};
+      break;
+    }
+  }
+  if(hr<0) return null;
+  // 1) por comprobante (atómico): Σ cant/importe según criterio; metadata = línea de mayor |importe|
+  const comp=new Map();
+  for(let i=hr+1;i<matrix.length;i++){
+    const row=matrix[i]; if(!row) continue;
+    const suc=veStr(row[c.suc]); if(!suc || suc==='Total') continue;
+    const nro=veStr(row[c.nro]);
+    const cant=veNum(row[c.cant]), imp=veNum(row[c.imp]);
+    const ok=veCriterioLinea(c.rubro>=0?veNormU(row[c.rubro]):'', c.art>=0?veNormU(row[c.art]):'');
+    const k=suc+'|'+nro;
+    let x=comp.get(k); if(!x){ x={suc, nro, cant:0, imp:0, abs:-1, vend:'', dow:'', dia:null}; comp.set(k,x); }
+    if(ok[0]) x.cant+=cant;
+    if(ok[1]) x.imp+=imp;
+    if(Math.abs(imp)>x.abs){ x.abs=Math.abs(imp); x.vend=(c.vend>=0?veStr(row[c.vend]):'')||'SIN ASIGNAR';
+      x.dow=c.dow>=0?veStr(row[c.dow]):''; x.dia=c.dia>=0?row[c.dia]:null; }
+  }
+  if(!comp.size) return null;
+  // 2) por sucursal -> vendedor -> día (ticket = comprobante no-Nc con unidades > 0)
+  const sucV=new Map(), lunes=new Set(), dowSet=new Set(), pares=new Set(); let ncPos=0;
+  comp.forEach(x=>{
+    // "Día" suele venir como número de día del mes (17, 18…) sin mes: se guarda el par
+    // (Lu, 17) para chequear contra la semana elegida en la previsualización
+    const dn=parseInt(veStr(x.dia),10); if(x.dow && dn>=1 && dn<=31 && String(dn)===veStr(x.dia).replace(/\.0+$/,'')) pares.add(x.dow+'|'+dn);
+    const esNc=/^Nc/.test(x.nro); if(esNc && x.imp>0) ncPos++;
+    let vs=sucV.get(x.suc); if(!vs){ vs=new Map(); sucV.set(x.suc,vs); }
+    let v=vs.get(x.vend); if(!v){ v={venta:0,tickets:0,unidades:0,dias:{}}; vs.set(x.vend,v); }
+    v.venta+=x.imp; v.unidades+=x.cant; if(!esNc && x.cant>0) v.tickets++;
+    if(x.imp){ v.dias[x.dow]=(v.dias[x.dow]||0)+x.imp; }
+    if(x.dow) dowSet.add(x.dow);
+    const f=veFechaISO(x.dia); if(f) lunes.add(veLunesDe(f));
+  });
+  // 3) payloads por slug (mismo formato que guarda el encargado / el script)
+  const ord={}; VE_DOW.forEach((d,i)=>ord[d]=i);
+  const oi=d=>(ord[d]!=null?ord[d]:9);
+  const porSlug={}, saltadas=[];
+  Array.from(sucV.keys()).sort().forEach(suc=>{
+    const slug=VE_PFX_SLUG[suc.slice(0,2)];
+    if(!slug){ saltadas.push(suc); return; }
+    const lista=[];
+    sucV.get(suc).forEach((v,nombre)=>{
+      const venta=Math.round(v.venta), tk=v.tickets, un=Math.round(v.unidades);
+      if(!venta && !tk && !un) return;
+      const dias=Object.keys(v.dias).sort((a,b)=>oi(a)-oi(b)).map(d=>({d, v:Math.round(v.dias[d])})).filter(x=>x.v);
+      lista.push({nombre, venta, tickets:tk, unidades:un, dias});
+    });
+    lista.sort((a,b)=>b.venta-a.venta);
+    const total={ venta:lista.reduce((a,x)=>a+x.venta,0), tickets:lista.reduce((a,x)=>a+x.tickets,0), unidades:lista.reduce((a,x)=>a+x.unidades,0) };
+    porSlug[slug]={sucursal:suc, vendedores:lista, total};
+  });
+  if(!Object.keys(porSlug).length) return null;
+  const dows=Array.from(dowSet).sort((a,b)=>oi(a)-oi(b));
+  const etiqueta = dows.length ? 'estadística '+dows[0]+'-'+dows[dows.length-1] : 'estadística';
+  const paresL=Array.from(pares).map(k=>{ const q=k.split('|'); return {dow:q[0], dia:+q[1]}; }).sort((a,b)=>oi(a.dow)-oi(b.dow));
+  return {porSlug, saltadas, etiqueta, dias:dows, pares:paresL, lunes:Array.from(lunes).sort(), ncPos, nComp:comp.size};
+}
+// leer el Excel elegido por gerencia -> previsualizar en la vista Cadena
+async function veCadArchivo(file){
+  if(!file) return;
+  try{
+    const XLSX=await loadXLSX();
+    const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
+    let res=null;
+    for(const name of wb.SheetNames){
+      const m=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,defval:''});
+      res=veParseDetallado(m); if(res) break;
+    }
+    if(!res){ alert('No reconocí el formato. Esperaba la estadística de venta detallada del sistema, con las columnas Sucursal · Día semana · Día · Vendedor · Nro.comprobante · Artículo · Rubro · Cantidad · Importe (todas las sucursales juntas).'); return; }
+    _veCadPreview={sem:null, res, fileName:file.name};
+    // si el archivo trae fechas de una sola semana y esa semana está publicada, la selecciono
+    if(res.lunes.length===1){ const w=await fetchObjetivoWeeks().catch(()=>null); if(w && w.includes(res.lunes[0])) objCadSem=res.lunes[0]; }
+    renderObjCadena();
+  }catch(e){ alert('Error leyendo el Excel: '+(e.message||e)); }
+}
+// publicar la previsualización: un PATCH multi-path a ventaEquipo (21 sucursales de una)
+async function veCadPublicar(){
+  const p=_veCadPreview; if(!p || !p.sem) return;
+  const btn=$('veCadSave'); if(btn){ btn.disabled=true; btn.textContent='Publicando…'; }
+  const base=OBJETIVOS_URL.replace(/\/+$/,'');
+  const ahora=new Date().toISOString(), por=(SESSION.email||'')+' ('+p.res.etiqueta+')';
+  const updates={};
+  Object.keys(p.res.porSlug).forEach(slug=>{ const s=p.res.porSlug[slug];
+    updates[slug+'/'+p.sem]={semana:p.sem, actualizado:ahora, por, vendedores:s.vendedores, total:s.total, metaTienda:0, minimoTienda:0}; });
+  try{
+    const r=await fetch(base+'/ventaEquipo.json',{method:'PATCH',body:JSON.stringify(updates)});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    Object.keys(p.res.porSlug).forEach(slug=>{ delete _veCache[slug+'|'+p.sem]; delete _veTotCache[slug+'|'+p.sem]; });
+    _veCadPreview=null;
+    renderObjCadena();
+  }catch(e){ alert('No se pudo publicar: '+(e.message||e)); if(btn){ btn.disabled=false; btn.textContent='Publicar'; } }
+}
+// total provisorio de una sucursal (ventaEquipo/<slug>/<sem>/total): solo lo pide gerencia
+function fetchVentaEquipoTotal(slug, sem){
+  const key=slug+'|'+sem;
+  if(_veTotCache[key]) return _veTotCache[key];
+  const base=OBJETIVOS_URL.replace(/\/+$/,'');
+  _veTotCache[key]=fetch(base+'/ventaEquipo/'+encodeURIComponent(slug)+'/'+encodeURIComponent(sem)+'/total.json')
+    .then(r=>r.ok?r.json():null).catch(()=>null)
+    .then(t=> typeof t==='number' ? {venta:t} : (t && typeof t==='object' ? t : null));
+  return _veTotCache[key];
+}
+// HTML de la previsualización (tabla por sucursal vs. meta) + Publicar/Cancelar
+function veCadPreviewHtml(sem, por){
+  const p=_veCadPreview, res=p.res;
+  const slugs=Object.keys(res.porSlug);
+  const filas=slugs.map(slug=>{
+    const s=res.porSlug[slug], meta=+((por[slug]||{}).meta)||0;
+    const full=SLUG_SUC[slug]||OUTLET_SUC[slug]||slug;
+    return {slug, nombre:(SLUG_SUC[slug]||OUTLET_SUC[slug])?full.replace(/^\d+-\s*/,''):nombreBonito(slug), n:s.vendedores.length, venta:s.total.venta, tickets:s.total.tickets, unidades:s.total.unidades, meta};
+  }).sort((a,b)=>b.venta-a.venta);
+  const sinVenta=Object.keys(por).filter(sl=>+((por[sl]||{}).meta)>0 && !res.porSlug[sl]).map(sl=>(SLUG_SUC[sl]||OUTLET_SUC[sl])?(SLUG_SUC[sl]||OUTLET_SUC[sl]).replace(/^\d+-\s*/,''):nombreBonito(sl));
+  const T=filas.reduce((a,r)=>({venta:a.venta+r.venta, tickets:a.tickets+r.tickets, unidades:a.unidades+r.unidades, meta:a.meta+r.meta}),{venta:0,tickets:0,unidades:0,meta:0});
+  const otraSem = res.lunes.length===1 && res.lunes[0]!==sem;
+  const variasSem = res.lunes.length>1;
+  // días del archivo (Lu 17 · Ma 18 …) vs. los que corresponden a la semana elegida
+  let diasTxt='', diasMal=[];
+  if(res.pares && res.pares.length){
+    const d0=new Date(sem+'T00:00:00Z'), esperado={};
+    VE_DOW.forEach((d,i)=>{ const x=new Date(d0); x.setUTCDate(d0.getUTCDate()+i); esperado[d]=x.getUTCDate(); });
+    diasTxt=res.pares.map(p=>p.dow+' '+p.dia).join(' · ');
+    diasMal=res.pares.filter(p=>esperado[p.dow]!=null && esperado[p.dow]!==p.dia);
+  }
+  let h='<div style="background:var(--mid-bg,#fdf3e3);border:1px solid #f0d8a8;border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:13px">'
+    +'Revisá lo leído de <b>'+esc(p.fileName)+'</b>: <b>'+filas.length+'</b> sucursales · '+res.nComp.toLocaleString('es-AR')+' comprobantes · '+esc(res.etiqueta)+'. Si está bien, publicá: cada sucursal va a ver su venta provisoria de la <b>'+esc(objSemTag(sem))+'</b> ('+esc(objSemLbl(sem))+') en Mi Sucursal.'
+    +(diasTxt?'<br>Días en el archivo: <b>'+esc(diasTxt)+'</b>.':'')
+    +(diasMal.length?' ⚠️ <b>No coinciden con la semana elegida</b> (lunes '+esc(objSemLbl(sem))+'): el archivo parece ser de otra semana. Cambiá la semana en el selector antes de publicar.':'')
+    +(otraSem?'<br>⚠️ <b>Ojo:</b> las fechas del archivo son de la semana del <b>'+esc(objSemLbl(res.lunes[0]))+'</b> y estás publicando en la <b>'+esc(objSemTag(sem))+'</b>. Cambiá la semana en el selector si corresponde.':'')
+    +(variasSem?'<br>⚠️ <b>Ojo:</b> el archivo abarca fechas de <b>'+res.lunes.length+' semanas distintas</b> ('+res.lunes.map(objSemLbl).join(', ')+'). Todo se va a sumar en la semana elegida.':'')
+    +(res.saltadas.length?'<br>Salteo (sin sucursal en el Portal): '+esc(res.saltadas.join(', ')):'')
+    +(sinVenta.length?'<br>Con meta pero sin venta en el archivo: '+esc(sinVenta.join(', ')):'')
+    +(res.ncPos?'<br>⚠️ '+res.ncPos+' notas de crédito con importe positivo (se esperaba negativo).':'')
+    +'</div>';
+  const pctCol = r => !r.meta ? 'var(--mid)' : r.venta>=r.meta ? 'var(--ok,#16a34a)' : r.venta>=r.meta/1.2 ? '#d97706' : '#dc2626';
+  const tr = r => '<tr><td class="L">'+esc(r.nombre)+'</td><td>'+r.n+'</td>'
+    +'<td><span class="num">'+objMoney(r.venta)+'</span></td><td><span class="num">'+r.tickets.toLocaleString('es-AR')+'</span></td><td><span class="num">'+r.unidades.toLocaleString('es-AR')+'</span></td>'
+    +'<td><span class="num">'+(r.meta?objMoney(r.meta):'—')+'</span></td><td><b style="color:'+pctCol(r)+'">'+(r.meta?Math.round(r.venta/r.meta*100)+'%':'—')+'</b></td></tr>';
+  h+='<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L">Sucursal</th><th>Vend.</th><th>Venta</th><th>Tickets</th><th>Unid.</th><th>Meta</th><th>%</th></tr></thead><tbody>'
+    +filas.map(tr).join('')
+    +'<tr style="font-weight:700"><td class="L">Total</td><td>'+filas.reduce((a,r)=>a+r.n,0)+'</td><td><span class="num">'+objMoney(T.venta)+'</span></td><td><span class="num">'+T.tickets.toLocaleString('es-AR')+'</span></td><td><span class="num">'+T.unidades.toLocaleString('es-AR')+'</span></td><td><span class="num">'+(T.meta?objMoney(T.meta):'—')+'</span></td><td><b style="color:'+pctCol(T)+'">'+(T.meta?Math.round(T.venta/T.meta*100)+'%':'—')+'</b></td></tr>'
+    +'</tbody></table></div>';
+  h+='<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="veCadSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">Publicar</button>'
+    +'<button type="button" id="veCadCancel" class="tb-btn">Cancelar</button></div>';
+  return h;
 }
 
 /* --- reposición disponible en depósito (Barrida de Reserva) --- */
