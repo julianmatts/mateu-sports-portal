@@ -463,11 +463,17 @@ entran acá: ven su objetivo en Indicadores.
   vista **Cadena**, sección «Objetivo de la semana», botón **«⇧ Cargar venta de la
   semana»** (solo gerencia): sube el export detallado con TODAS las sucursales — sirve
   tanto el semanal ("Semana DD-MM-AA.xls") como el **del mes entero** ("Venta Agosto
-  Portal.xlsx", encabezados «Numero de comprobante»/«Descripcion» también válidos).
-  Las filas 0-1 traen año y mes → fecha completa de cada comprobante, y el portal se
-  queda **solo con los días de la semana elegida** en el selector (auto-selecciona la
-  última publicada que el archivo cubre; si ninguna venta cae en la semana, bloquea
-  Publicar). `veParseDetallado` (comprobantes) + `veAgregarSemana` (filtro + payloads)
+  Portal.xlsx", encabezados «Numero de comprobante»/«Descripcion» también válidos) como
+  la vista **"Venta semanal portal"** del sistema ("ventas semana DD-MM.xlsx": **sin fila
+  de encabezado**, sin año/mes, rubro sin prefijo «CALZADO»; `veDetectarColumnas`
+  reconoce cada columna por su contenido — código «NN-» de sucursal, Lu/Ma/…, nro de
+  comprobante «FcC.0057-…», rubros conocidos, enteros día/hora, los dos numéricos
+  finales = cantidad/importe, texto antes del nro = vendedor y después = artículo).
+  Con año y mes (filas 0-1) arma la fecha completa de cada comprobante; sin ellos
+  compara los pares (día de semana, día del mes) con el calendario de la semana. El
+  portal se queda **solo con los días de la semana elegida** en el selector
+  (auto-selecciona la última publicada que el archivo cubre; si ninguna venta cae en
+  la semana, bloquea Publicar). `veCriterioLinea` normaliza el rubro sin el «NN-». `veParseDetallado` (comprobantes) + `veAgregarSemana` (filtro + payloads)
   = port de `cargar-venta-semana.py`; mantener los criterios en sintonía. Previsualiza
   por sucursal vs. meta (avisa cuántos comprobantes descarta de otros días, sucursales
   sin slug —05-Depósito— y metas sin venta) y

@@ -3079,8 +3079,9 @@ const VE_PFX_SLUG = (()=>{ const m={}; Object.entries(Object.assign({}, SLUG_SUC
 function veNormU(s){ return String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\s+/g,' ').trim(); }
 // [cuenta unidades, cuenta importe] — mantener en sintonía con criterio_linea() del ETL
 function veCriterioLinea(rubro, art){
+  rubro=rubro.replace(/^\d+-\s*/,'');       // "01-VARIOS" y "VARIOS" son lo mismo
   if(rubro==='OTROS') return [false,false];
-  if(rubro==='01-VARIOS') return art==='REDONDEO' ? [false,false] : [true,true];
+  if(rubro==='VARIOS') return art==='REDONDEO' ? [false,false] : [true,true];
   if(rubro==='CONCEPTOS'){
     if(art.indexOf('CREDITO A FAVOR')===0) return [true,true];
     if(art.indexOf('INGRESO CUPON')===0 || art.indexOf('LLAVERO COMPRA GRANDE')>=0) return [false,false];
@@ -3104,6 +3105,49 @@ function veSumarDias(iso, n){ const d=new Date(iso+'T00:00:00Z'); d.setUTCDate(d
    se filtra, solo se agrupa por comprobante; veAgregarSemana() se queda con la semana
    elegida. Filas 0-1 traen año y mes → fecha completa de cada comprobante (la columna
    "Día" es solo el número del día). */
+const VE_RUBROS = ['CALZADO','INDUMENTARIA','ACCESORIOS','VARIOS','CONCEPTOS','OTROS'];
+const VE_DOW_SET = {Lu:1,Ma:1,Mi:1,Ju:1,Vi:1,Sa:1,Do:1};
+const veDow = v => { const n=veNormU(v); return n ? n.charAt(0)+n.slice(1).toLowerCase() : ''; };   // "SÁ" -> "Sa"
+/* Sin fila de encabezado (la vista "Venta semanal portal" del sistema exporta los datos pelados):
+   reconoce cada columna por su contenido sobre una muestra de filas. Devuelve {hr, c} o null. */
+function veDetectarColumnas(matrix){
+  const first = matrix.findIndex(r=> r && r.some(v=>/^\d{2}-\S/.test(veStr(v))));
+  if(first<0) return null;
+  const rows = matrix.slice(first, first+400).filter(r=>r && r.length);
+  const nCols = Math.max.apply(null, rows.map(r=>r.length));
+  const share = (j, test) => rows.filter(r=>test(r[j])).length / rows.length;
+  const esInt = v => v!=='' && v!=null && Number.isInteger(+v) && String(v).trim()!=='';
+  const prof = []; for(let j=0;j<nCols;j++){
+    prof.push({ j,
+      suc:   share(j, v=>/^\d{2}-\S/.test(veStr(v))),
+      dow:   share(j, v=>!!VE_DOW_SET[veDow(v)]),
+      nro:   share(j, v=>/^[A-Za-z]{2,4}\.?\d{3,4}-\d{4,}/.test(veStr(v))),
+      rubro: share(j, v=>VE_RUBROS.indexOf(veNormU(v).replace(/^\d+-\s*/,''))>=0),
+      int:   share(j, v=>esInt(v) && +v>=0 && +v<=31),
+      num:   share(j, v=>v!=='' && v!=null && isFinite(+String(v).replace(',','.'))),
+      distinct: new Set(rows.map(r=>veStr(r[j]))).size });
+  }
+  const best = (k, min) => { const b=prof.slice().sort((a,b)=>b[k]-a[k])[0]; return (b && b[k]>=min) ? b.j : -1; };
+  const c = { suc:best('suc',.9), dow:best('dow',.9), nro:best('nro',.9), rubro:best('rubro',.9) };
+  if(c.suc<0 || c.nro<0) return null;
+  const usados = new Set(Object.values(c).filter(j=>j>=0));
+  // enteros 0..31: día y hora; si una columna tiene valores >23 es el día; si no, la primera
+  const ints = prof.filter(x=>!usados.has(x.j) && x.int>=.95).map(x=>x.j);
+  const conMas23 = ints.find(j=>rows.some(r=>esInt(r[j]) && +r[j]>23));
+  c.dia = conMas23!=null ? conMas23 : (ints[0]!=null ? ints[0] : -1);
+  if(c.dia>=0) usados.add(c.dia);
+  const hora = ints.find(j=>j!==c.dia); if(hora!=null) usados.add(hora);
+  // importes: las dos últimas columnas numéricas no usadas (cantidad, importe en ese orden)
+  const nums = prof.filter(x=>!usados.has(x.j) && x.num>=.95).map(x=>x.j);
+  if(nums.length<2) return null;
+  c.cant = nums[nums.length-2]; c.imp = nums[nums.length-1]; usados.add(c.cant); usados.add(c.imp);
+  // texto restante: vendedor = antes del nro de comprobante; artículo = después (el de más valores distintos)
+  const txt = prof.filter(x=>!usados.has(x.j) && x.num<.5);
+  const antes = txt.filter(x=>x.j<c.nro).sort((a,b)=>b.distinct-a.distinct)[0];
+  const despues = txt.filter(x=>x.j>c.nro).sort((a,b)=>b.distinct-a.distinct)[0];
+  c.vend = antes ? antes.j : -1; c.art = despues ? despues.j : -1;
+  return {hr:first-1, c};
+}
 function veParseDetallado(matrix){
   let hr=-1, c=null, anio=0, mes=0;
   for(let i=0;i<Math.min(matrix.length,15);i++){
@@ -3118,7 +3162,7 @@ function veParseDetallado(matrix){
     // filas previas al encabezado: "2026" y "Agosto"
     row.forEach(x=>{ if(/^20\d\d$/.test(x)) anio=+x; const mi=VE_MESES.indexOf(x); if(mi>=0) mes=mi+1; });
   }
-  if(hr<0) return null;
+  if(hr<0){ const d=veDetectarColumnas(matrix); if(!d) return null; hr=d.hr; c=d.c; anio=0; mes=0; }
   // por comprobante (atómico): Σ cant/importe según criterio; metadata = línea de mayor |importe|
   const comp=new Map();
   for(let i=hr+1;i<matrix.length;i++){
@@ -3133,7 +3177,7 @@ function veParseDetallado(matrix){
     if(ok[1]) x.imp+=imp;
     if(Math.abs(imp)>x.abs){ x.abs=Math.abs(imp); x.vend=(c.vend>=0?veStr(row[c.vend]):'')||'SIN ASIGNAR';
       // día de semana sin tilde (Sá → Sa) para que coincida con VE_DOW
-      x.dow=c.dow>=0?veNormU(row[c.dow]).charAt(0)+veNormU(row[c.dow]).slice(1).toLowerCase():'';
+      x.dow=c.dow>=0?veDow(row[c.dow]):'';
       const raw=c.dia>=0?row[c.dia]:null;
       x.fecha=veFechaISO(raw);
       const dn=parseInt(veStr(raw),10); x.dia=(dn>=1 && dn<=31)?dn:0;
@@ -3143,7 +3187,10 @@ function veParseDetallado(matrix){
   if(!comp.size) return null;
   const comps=Array.from(comp.values());
   const fechas=comps.map(x=>x.fecha).filter(Boolean).sort();
-  return {comps, anio, mes, nComp:comps.length, desde:fechas[0]||null, hasta:fechas[fechas.length-1]||null};
+  const ordD={}; VE_DOW.forEach((d,i)=>ordD[d]=i);
+  const paresSet=new Set(comps.filter(x=>x.dow&&x.dia).map(x=>x.dow+'|'+x.dia));
+  const pares=Array.from(paresSet).map(k=>{ const q=k.split('|'); return {dow:q[0], dia:+q[1]}; }).sort((a,b)=>(ordD[a.dow]!=null?ordD[a.dow]:9)-(ordD[b.dow]!=null?ordD[b.dow]:9));
+  return {comps, anio, mes, nComp:comps.length, desde:fechas[0]||null, hasta:fechas[fechas.length-1]||null, pares, conFecha:!!fechas.length};
 }
 /* se queda con los comprobantes de la semana [sem, sem+6] y arma los payloads por slug
    (mismo formato que guarda el encargado / el script). Sin fecha completa, compara el par
@@ -3198,9 +3245,13 @@ async function veCadArchivo(file){
     }
     if(!res){ alert('No reconocí el formato. Esperaba la estadística de venta detallada del sistema, con las columnas Sucursal · Día semana · Día · Vendedor · Nro.comprobante · Artículo · Rubro · Cantidad · Importe (todas las sucursales juntas).'); return; }
     _veCadPreview={sem:null, res, fileName:file.name};
-    // si el archivo tiene fechas, voy a la última semana publicada que contenga alguna
-    if(res.hasta){ const w=await fetchObjetivoWeeks().catch(()=>null);
-      const k=(w||[]).find(sem=> sem<=res.hasta && veSumarDias(sem,6)>=res.desde); if(k) objCadSem=k; }
+    // voy a la última semana publicada que el archivo cubre: por fecha completa si la hay,
+    // si no por los pares (día de semana, día del mes)
+    const w=await fetchObjetivoWeeks().catch(()=>null);
+    const cubre = sem => res.conFecha
+      ? (sem<=res.hasta && veSumarDias(sem,6)>=res.desde)
+      : res.pares.some(p=> +veSumarDias(sem, VE_DOW.indexOf(p.dow)).slice(8,10)===p.dia && VE_DOW.indexOf(p.dow)>=0);
+    const k=(w||[]).find(cubre); if(k) objCadSem=k;
     renderObjCadena();
   }catch(e){ alert('Error leyendo el Excel: '+(e.message||e)); }
 }
@@ -3244,7 +3295,9 @@ function veCadPreviewHtml(sem, por){
   const sinVenta=Object.keys(por).filter(sl=>+((por[sl]||{}).meta)>0 && !agg.porSlug[sl]).map(nombreDe);
   const T=filas.reduce((a,r)=>({venta:a.venta+r.venta, tickets:a.tickets+r.tickets, unidades:a.unidades+r.unidades, meta:a.meta+r.meta}),{venta:0,tickets:0,unidades:0,meta:0});
   const vacio = !agg.nIn || !filas.length;
-  const rango = res.desde ? (res.desde===res.hasta ? 'el '+objSemLbl(res.desde) : 'del '+objSemLbl(res.desde)+' al '+objSemLbl(res.hasta)) : '';
+  const rango = res.conFecha
+    ? (res.desde===res.hasta ? 'el '+objSemLbl(res.desde) : 'del '+objSemLbl(res.desde)+' al '+objSemLbl(res.hasta))
+    : (res.pares.length ? '('+res.pares.map(x=>x.dow+' '+x.dia).join(' · ')+'; el archivo no trae mes ni año)' : '');
   const diasTxt = agg.pares.map(x=>x.dow+' '+x.dia).join(' · ');
   let h='<div style="background:'+(vacio?'#fef2f2':'var(--mid-bg,#fdf3e3)')+';border:1px solid '+(vacio?'#fecaca':'#f0d8a8')+';border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:13px">'
     +'<b>'+esc(p.fileName)+'</b>: '+res.nComp.toLocaleString('es-AR')+' comprobantes'+(rango?' '+rango:'')+'.';
