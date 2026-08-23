@@ -212,6 +212,17 @@
     .cert{ width:100%; box-shadow:none; }
     .no-print{ display:none !important; }
   }
+  .tabla{ overflow-x:auto; }
+  .tabla .trow{ min-width:720px; }
+  .trow.clic{ cursor:pointer; }
+  .badge-comp svg{ filter:drop-shadow(0 3px 6px rgba(201,168,0,.45)); }
+  @media (max-width:900px){
+    .indice{ display:flex; overflow-x:auto; position:static !important; padding:6px; gap:4px; }
+    .indice .cab{ display:none; }
+    .lec{ flex:0 0 auto; width:auto; border-left:none; border-bottom:3px solid transparent; padding:9px 12px; border-radius:4px; }
+    .lec.act{ border-bottom-color:var(--accent); }
+    .lec .t{ white-space:nowrap; font-size:13.5px; }
+  }
   @media (max-width:820px){
     .landing-grid{ grid-template-columns:1fr !important; }
     .topbar{ padding:0 14px; gap:14px; overflow-x:auto; }
@@ -295,9 +306,112 @@ function iconoProgSvg(k, size){ return '<svg width="'+(size||28)+'" height="'+(s
 const ENC_INTRO_DEFAULT = '¡Bienvenido a Mateu Sports! ¡Te sumaste a un equipo ganador!\n\nQueremos asegurarnos de que tengas un gran comienzo con nosotros. Estructuramos un programa para ayudarte a desarrollar el conocimiento, las habilidades y la mentalidad que garantizarán tu éxito. Este recorrido está diseñado para que te sientas bienvenido, entusiasmado y confiado en tu rol.\n\nAntes de comenzar tu aprendizaje, ayudanos a comprender tus necesidades completando esta encuesta con la mayor honestidad posible.';
 const ENC_CONFID = 'Tu nombre y respuestas individuales serán visibles sólo para los administradores de la Academia de Ventas Mateu (Iván y Cristian) y se mantendrán confidenciales. No se compartirán con nadie de tu sucursal. Para fines informativos, todas las respuestas se agregarán y se mantendrán anónimas. ¡Gracias por tu tiempo!';
 const ENC_PREG_DEFAULT = ['¿Cuánto hace que trabajás en Mateu y en qué puesto?','¿Qué esperás aprender en este programa?','¿Qué parte de la atención o la venta te cuesta más hoy?','¿Qué te ayudaría a vender mejor en tu sucursal?'];
-let ENC = null;        // {progId, paso:'intro'|'form'|'gracias'}
-let ENC_RESP = {};     // alumno: progId → respuesta propia (si ya la hizo)
+let ENC = null;        // {progId, tipo:'previa'|'post', paso:'intro'|'form'|'gracias'}
+let ENC_RESP = {};     // alumno: progId → respuesta propia (encuesta previa)
+let ENC_RESP_POST = {};// alumno: progId → respuesta propia (encuesta post-programa)
 function encActiva(p){ return !!(p && p.encuestaPrevia && p.encuestaPrevia.activa); }
+function encPostActiva(p){ return !!(p && p.encuestaPost && p.encuestaPost.activa); }
+const ENC_POST_INTRO_DEFAULT = '¡Terminaste el programa! Gracias por el esfuerzo.\n\nAntes de cerrar, contanos cómo fue: qué te sirvió, qué cambiarías y qué querés seguir aprendiendo. Tus respuestas nos ayudan a mejorar la Academia para vos y para los que vienen.';
+const ENC_POST_PREG_DEFAULT = ['¿Qué fue lo más útil del programa para tu trabajo de todos los días?','¿Qué cambiarías o agregarías?','¿Qué tema querés profundizar?','Del 1 al 10, ¿recomendarías este programa a un compañero? ¿Por qué?'];
+function programaCompletoPara(p){
+  const cs=(p.cursos||[]).map(cid=>CURSOS[cid]).filter(c=>c&&c.activo!==false);
+  return cs.length>0 && cs.every(c=>estadoCurso(avanceYo(c.id),c).completo);
+}
+/* PIN personal dentro de la Academia (seguridad blanda, como el PIN del Portal):
+   nodo pins/<slug>/<persona>. Lo define cada uno la primera vez; el encargado o
+   el staff lo resetean desde la ficha de la persona en «Mi equipo». */
+function pedirPin(titulo, texto, confirmar){
+  return new Promise(res=>{
+    const velo=document.createElement('div'); velo.className='velo';
+    velo.innerHTML='<div class="modal" style="max-width:420px"><h2>'+esc(titulo)+'</h2><p class="muted" style="margin:0 0 14px">'+esc(texto)+'</p>'+
+      '<input type="password" id="pinA" inputmode="numeric" maxlength="4" placeholder="4 dígitos" style="font-size:22px;letter-spacing:8px;text-align:center">'+
+      (confirmar?'<input type="password" id="pinB" inputmode="numeric" maxlength="4" placeholder="Repetí el PIN" style="font-size:22px;letter-spacing:8px;text-align:center;margin-top:10px">':'')+
+      '<div style="display:flex;gap:8px;margin-top:14px"><button class="btn pri" id="pinOk" style="flex:1">Continuar</button><button class="btn" id="pinCancel" style="background:#fff">Cancelar</button></div>'+
+      '<p class="muted" id="pinMsg" style="font-size:13px;margin:10px 0 0"></p></div>';
+    document.body.appendChild(velo);
+    const a=velo.querySelector('#pinA'); a.focus();
+    const ok=()=>{
+      const v=a.value.trim();
+      if(!/^\d{4}$/.test(v)){ velo.querySelector('#pinMsg').textContent='El PIN son 4 números.'; return; }
+      if(confirmar && velo.querySelector('#pinB').value.trim()!==v){ velo.querySelector('#pinMsg').textContent='Los dos PIN no coinciden.'; return; }
+      velo.remove(); res(v);
+    };
+    velo.querySelector('#pinOk').addEventListener('click',ok);
+    velo.addEventListener('keydown',e=>{ if(e.key==='Enter') ok(); });
+    velo.querySelector('#pinCancel').addEventListener('click',()=>{ velo.remove(); res(null); });
+  });
+}
+async function verificarPin(p){
+  const guardado = await fbGet('pins/'+MI_SLUG+'/'+p.id).catch(()=>null);
+  if(!guardado || !guardado.pin){
+    const pin = await pedirPin('Creá tu PIN', 'Hola '+p.nombre.split(' ')[0]+'. Elegí un PIN de 4 números para que tu avance quede solo a tu nombre. Si lo olvidás, tu encargado lo resetea.', true);
+    if(!pin) return false;
+    await fbPut('pins/'+MI_SLUG+'/'+p.id, {pin, ts:Date.now(), nombre:p.nombre});
+    return true;
+  }
+  for(let intento=1; intento<=3; intento++){
+    const pin = await pedirPin('Tu PIN', p.nombre+(intento>1?' · intento '+intento+' de 3':'')+'. Ingresá tu PIN de 4 números.', false);
+    if(pin===null) return false;
+    if(pin===String(guardado.pin)) return true;
+  }
+  alert('PIN incorrecto 3 veces. Pedile a tu encargado que lo resetee desde «Mi equipo».');
+  return false;
+}
+/* Mensajes directos a la cuenta de la sucursal (Bandeja del Portal) */
+const USUARIOS_DB_URL = 'https://discontinuos-mateu-default-rtdb.firebaseio.com';
+let USUARIOS_POR_SLUG = null;
+async function usuariosDeSucursal(slug){
+  if(!USUARIOS_POR_SLUG){
+    USUARIOS_POR_SLUG={};
+    const us=await getJSON(USUARIOS_DB_URL+'/usuarios.json').catch(()=>null)||{};
+    Object.values(us).forEach(u=>{ if(!u||!u.email) return; const k=u.sucursal||u.outlet_id; if(k){ (USUARIOS_POR_SLUG[k]=USUARIOS_POR_SLUG[k]||[]).push(u.email); } });
+  }
+  return USUARIOS_POR_SLUG[slug]||[];
+}
+function fbKeyMail(e){ return (e||'').toLowerCase().trim().replace(/\./g,','); }
+async function enviarDirecto(emailDestino, texto){
+  const ck=[fbKeyMail(SESSION.email), fbKeyMail(emailDestino)].sort().join('__');
+  const r=await fetch(MENSAJES_DB_URL+'/directos/'+ck+'.json',{method:'POST',body:JSON.stringify({de:SESSION.email,texto,ts:Date.now()}),headers:{'Content-Type':'application/json'}});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+}
+/* Resumen precomputado que leen otros módulos (Panel General, Evaluaciones, RRHH):
+   capacitaciones/resumen = { ts, porSlug:{slug:{personas,conCursos,pct,aprobados,sinActividad}}, personas:{slug:{pid:{nombre,rol,pct,aprobados:[...],ult}}} } */
+async function publicarResumen(){
+  if(!ES_STAFF) return;
+  const slugs=Object.keys(SLUG_SUC_IND);
+  await Promise.all(slugs.map(s=>dotacion(s).catch(()=>[])));
+  const porSlug={}, personas={};
+  slugs.forEach(slug=>{
+    let suma=0, con=0, aprob=0, sinAct=0; personas[slug]={};
+    personasDe(slug).forEach(per=>{
+      const st=statsPersona(slug,per);
+      if(st.asig){ con++; suma+=st.pct; aprob+=st.certs; if(!st.ult) sinAct++; }
+      const avP=(AVANCES[slug]||{})[per.id]||{};
+      const aprobados=cursosDe(slug,per.rol).filter(x=>estadoCurso(avP[x.curso.id],x.curso).completo).map(x=>x.curso.titulo);
+      personas[slug][per.id]={ nombre:per.nombre, rol:per.rol, pct:st.pct, asig:st.asig, aprobados, ult:st.ult||0 };
+    });
+    porSlug[slug]={ personas:personasDe(slug).length, conCursos:con, pct:con?Math.round(suma/con):0, aprobados:aprob, sinActividad:sinAct };
+  });
+  await fbPut('resumen',{ ts:Date.now(), porSlug, personas }).catch(()=>{});
+}
+/* Recordatorios automáticos de vencimiento: 7 días antes y el día anterior, una sola vez por programa. */
+async function recordatoriosVencimiento(){
+  const hoy=Date.now();
+  for(const p of Object.values(PROGRAMAS)){
+    if(!p.limite || p.activo===false || !programaVisible(p)) continue;
+    const d=diasHasta(p.limite); if(d===null || d<0) continue;
+    const rec=p.recordatorios||{};
+    const clave = d<=1 ? 'd1' : (d<=7 ? 'd7' : null);
+    if(!clave || rec[clave]) continue;
+    rec[clave]=hoy; p.recordatorios=rec;
+    try{
+      await fbPut('programas/'+p.id+'/recordatorios', rec);   // primero la marca, para no duplicar
+      const texto='⏰ Academia de Ventas: el programa «'+p.nombre+'» vence '+(d<=1?(d===0?'HOY':'MAÑANA'):'el '+p.limite+' (en '+d+' días)')+'. Entrá a Capacitaciones y completá lo que te falta.';
+      await fetch(MENSAJES_DB_URL+'/avisos.json',{method:'POST',body:JSON.stringify({de:'capacitacion@mateu.com.ar',texto,ts:hoy}),headers:{'Content-Type':'application/json'}});
+      await fbPost('novedades',{tipo:'Recordatorio',autor:CAPACITADOR_FIRMA,rol:'Capacitador',titulo:(d<=1?'Último día':'Quedan '+d+' días')+' para cerrar '+p.nombre,cuerpo:'Completá los cursos pendientes antes del '+p.limite+'.',ts:hoy});
+    }catch(e){}
+  }
+}
 const TIPOS_NOV = { 'Nuevo programa':{bg:'#fde7eb',color:'#b30022'}, 'Novedad':{bg:'#e7effa',color:'#0057b8'}, 'Recordatorio':{bg:'#fdf3d7',color:'#8a6d00'}, 'Curso completado':{bg:'#e2f4ea',color:'#178a50'} };
 
 /* ---------- sesión ---------- */
@@ -395,7 +509,9 @@ function pintarWho(){
 $('whoCambiar').addEventListener('click', async e=>{
   e.preventDefault(); lsSet('cap_yo_'+MI_SLUG,''); YO=null;
   await asegurarYo(); await cargarAvancesAlumno();
-  ENC_RESP={}; await Promise.all(Object.values(PROGRAMAS).filter(p=>encActiva(p)).map(async p=>{ const r=await fbGet('encuestasPrevias/'+p.id+'/'+MI_SLUG+'/'+YO.id).catch(()=>null); if(r) ENC_RESP[p.id]=r; }));
+  ENC_RESP={}; ENC_RESP_POST={};
+  await Promise.all(Object.values(PROGRAMAS).filter(p=>encActiva(p)).map(async p=>{ const r=await fbGet('encuestasPrevias/'+p.id+'/'+MI_SLUG+'/'+YO.id).catch(()=>null); if(r) ENC_RESP[p.id]=r; }));
+  await Promise.all(Object.values(PROGRAMAS).filter(p=>encPostActiva(p)).map(async p=>{ const r=await fbGet('encuestasPost/'+p.id+'/'+MI_SLUG+'/'+YO.id).catch(()=>null); if(r) ENC_RESP_POST[p.id]=r; }));
   pintarWho(); render();
 });
 
@@ -463,17 +579,20 @@ function estadoCurso(av,curso){
 function statsPersona(slug, per){
   const asig = cursosDe(slug, per.rol);
   const avP = (AVANCES[slug]||{})[per.id]||{};
-  let suma=0, mods=0, certs=0, ult=0;
+  let suma=0, mods=0, certs=0, ult=0, seg=0; const rapidos=[];
   asig.forEach(x=>{
     const a=avP[x.curso.id]; const e=estadoCurso(a,x.curso);
     suma+=e.avance; mods+=e.modsOk+((e.hayQuiz&&e.quizOk&&a)?1:0); if(e.completo) certs++;
-    if(a){ ult=Math.max(ult, a.fin||0, (a.quiz&&a.quiz.ts)||0, a.encTs||0); }
+    if(a){ ult=Math.max(ult, a.fin||0, (a.quiz&&a.quiz.ts)||0, a.encTs||0, a.ultTs||0); }
+    const t=a&&a.tiempo?Object.values(a.tiempo).reduce((q,v)=>q+(+v||0),0):0; seg+=t;
+    // "muy rápido": curso completo con 3+ módulos leídos en menos de 20 segundos por módulo
+    if(e.completo && e.nm>=3 && a && a.tiempo && t < e.nm*20) rapidos.push(x.curso.titulo);
   });
-  return { asig:asig.length, pct: asig.length?Math.round(suma/asig.length):0, mods, certs, ult };
+  return { asig:asig.length, pct: asig.length?Math.round(suma/asig.length):0, mods, certs, ult, seg, rapidos };
 }
 function avanceYo(cid){ return YO ? (((AVANCES[MI_SLUG]||{})[YO.id]||{})[cid]||null) : null; }
 async function guardarAvanceYo(cid,av){
-  av.nombre=YO.nombre; av.rol=YO.rol;
+  av.nombre=YO.nombre; av.rol=YO.rol; av.ultTs=Date.now();
   AVANCES[MI_SLUG]=AVANCES[MI_SLUG]||{}; AVANCES[MI_SLUG][YO.id]=AVANCES[MI_SLUG][YO.id]||{};
   const antes = AVANCES[MI_SLUG][YO.id][cid];
   AVANCES[MI_SLUG][YO.id][cid]=av;
@@ -489,7 +608,10 @@ async function guardarAvanceYo(cid,av){
 async function asegurarYo(){
   const k='cap_yo_'+MI_SLUG; const saved=lsGet(k);
   if(saved){ try{ YO=JSON.parse(saved); }catch(e){ YO=null; } }
-  if(!YO){ YO=await elegirPersona(); lsSet(k,JSON.stringify(YO)); }
+  while(!YO){
+    const p=await elegirPersona();
+    if(await verificarPin(p)){ YO=p; lsSet(k,JSON.stringify(YO)); }
+  }
 }
 function elegirPersona(){
   return dotacion(MI_SLUG).then(dot=>new Promise(res=>{
@@ -566,16 +688,17 @@ function cursoCardHtml(c, prog, est, extra){
       '<div class="tit">'+esc(c.titulo)+'</div>'+
     '</div></div>';
 }
-function encuestaCardHtml(p, chica){
-  const hecha = !!ENC_RESP[p.id];
-  return '<div class="ccard'+(chica?' chica':'')+'" data-enc="'+esc(p.id)+'" style="cursor:pointer">'+
+function encuestaCardHtml(p, chica, tipo){
+  const post = tipo==='post';
+  const hecha = post ? !!ENC_RESP_POST[p.id] : !!ENC_RESP[p.id];
+  return '<div class="ccard'+(chica?' chica':'')+'" data-enc="'+esc(p.id)+'" data-enc-tipo="'+(post?'post':'previa')+'" style="cursor:pointer">'+
     '<img class="cover" src="assets/covers/encuesta.png" alt="" loading="lazy"><div class="grad" style="background:'+gradCard(progColor(p))+'"></div>'+
     '<span class="check'+(hecha?' ok':'')+'">'+(hecha?'✓':'<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5 L6.5 11.5 L12.5 4.5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>')+'</span>'+
     '<div class="pie"><span class="dur"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.5" stroke="#fff" stroke-width="1.8"/><path d="M12 7.5 V12 L15 14" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg> 5min</span>'+
-    '<div class="tit">Encuesta previa al programa</div></div></div>';
+    '<div class="tit">'+(post?'Encuesta post-programa':'Encuesta previa al programa')+'</div></div></div>';
 }
 function bindCards(root){
-  root.querySelectorAll('[data-enc]').forEach(el=>el.addEventListener('click',()=>{ ENC={progId:el.dataset.enc, paso:'intro', resp:[]}; render(); window.scrollTo(0,0); }));
+  root.querySelectorAll('[data-enc]').forEach(el=>el.addEventListener('click',()=>{ ENC={progId:el.dataset.enc, tipo:el.dataset.encTipo||'previa', paso:'intro', resp:[]}; render(); window.scrollTo(0,0); }));
   root.querySelectorAll('[data-abrir]').forEach(el=>el.addEventListener('click',e=>{
     if(e.target.closest('[data-editar]')) return;
     abrirCurso(el.dataset.abrir);
@@ -646,8 +769,14 @@ function renderInicio(){
         '<div class="barra" style="height:7px"><div style="width:'+pct(porComp[c].ok,porComp[c].t)+'%"></div></div></div>').join('')+'</div></div>');
 
     // Certificados y badges
+    const compsGanadas=Object.keys(porComp).filter(c=>porComp[c].t>0 && porComp[c].ok===porComp[c].t);
     html.push('<div><div class="sec-t">Certificados y badges</div>'+
       '<div class="card-b" style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(62px,1fr));gap:14px;justify-items:center">'+
+      compsGanadas.map(c=>'<div class="badge-hex badge-comp" title="Competencia completa: '+esc(c)+'" style="cursor:default">'+
+        '<svg viewBox="0 0 72 80" width="62" height="68"><polygon points="36,2 68,21 68,59 36,78 4,59 4,21" fill="#c9a800" stroke="#fff" stroke-width="3"/>'+
+        '<polygon points="36,10 61,25 61,55 36,70 11,55 11,25" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2"/>'+
+        '<path transform="translate(24,28) scale(1.05)" d="M12 3 L14.5 8.5 L20.5 9.2 L16 13.2 L17.3 19.2 L12 16.2 L6.7 19.2 L8 13.2 L3.5 9.2 L9.5 8.5 Z" fill="none" stroke="#fff" stroke-width="1.7" stroke-linejoin="round"/></svg>'+
+        '<div style="font-size:10.5px;font-weight:700;color:#8a6d00;line-height:1.2;margin-top:3px">'+esc(c)+'</div></div>').join('')+
       (aprob.length?aprob.map((x,i)=>{
         const color=x.curso.color||PALETA[i%PALETA.length];
         return '<div class="badge-hex" title="'+esc(x.curso.titulo)+'" data-cert="'+esc(x.curso.id)+'">'+
@@ -655,8 +784,8 @@ function renderInicio(){
           '<polygon points="36,10 61,25 61,55 36,70 11,55 11,25" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2"/>'+
           '<text x="36" y="47" text-anchor="middle" fill="#fff" font-size="24" font-weight="800" font-family="Barlow">✓</text></svg>'+
           '<div style="font-size:10.5px;font-weight:600;color:var(--gris);line-height:1.2;margin-top:3px">'+esc(x.curso.titulo)+'</div></div>';
-      }).join(''):'<p class="muted" style="grid-column:1/-1;margin:6px 0">Aprobá tu primer curso para ganar el badge y su certificado.</p>')+
-      '</div></div>');
+      }).join(''):(compsGanadas.length?'':'<p class="muted" style="grid-column:1/-1;margin:6px 0">Aprobá tu primer curso para ganar el badge y su certificado.</p>'))+
+      '</div>'+(compsGanadas.length?'':'<p class="muted" style="font-size:12.5px;margin:8px 0 0">Completá todos los cursos de una competencia y ganás el badge dorado de esa competencia.</p>')+'</div>');
     html.push('</div>');
 
     // Continuá tu programa
@@ -664,10 +793,11 @@ function renderInicio(){
       const cs=(p.cursos||[]).map(cid=>CURSOS[cid]).filter(c=>c&&c.activo!==false);
       const pend=cs.filter(c=>!estadoCurso(avanceYo(c.id),c).completo);
       const encPend = encActiva(p) && !ENC_RESP[p.id];
-      if(!pend.length && !encPend) return;
+      const encPostPend = encPostActiva(p) && !ENC_RESP_POST[p.id] && programaCompletoPara(p);
+      if(!pend.length && !encPend && !encPostPend) return;
       html.push('<div style="margin-top:44px;display:flex;align-items:baseline;gap:14px"><div class="sec-t">Continuá tu programa · '+esc(p.nombre)+'</div>'+
         '<a href="#" data-ir-cat style="font-size:14px;font-weight:600">Ver todo</a></div>');
-      html.push('<div class="carrusel" style="margin-top:16px">'+(encPend?encuestaCardHtml(p,true).replace('class="ccard chica"','class="icard"'):'')+pend.map(c=>{
+      html.push('<div class="carrusel" style="margin-top:16px">'+(encPend?encuestaCardHtml(p,true).replace('class="ccard chica"','class="icard"'):'')+(encPostPend?encuestaCardHtml(p,true,'post').replace('class="ccard chica"','class="icard"'):'')+pend.map(c=>{
         const est=estadoCurso(avanceYo(c.id),c);
         const color=c.color||progColor(p);
         return '<div class="icard" data-abrir="'+esc(c.id)+'">'+coverHtml(c,color)+
@@ -732,8 +862,9 @@ function renderCatalogo(){
       '<button class="fchip'+(!CAT.comp||!comps.includes(CAT.comp)?' act':'')+'" data-comp="">Todas</button>'+
       comps.map(k=>'<button class="fchip'+(CAT.comp===k?' act':'')+'" data-comp="'+esc(k)+'">'+esc(k)+'</button>').join('')+'</div>');
     const encHtml = encActiva(p) && !q && !CAT.comp ? encuestaCardHtml(p) : '';
-    if(!cs.length && !encHtml) html.push('<div style="margin-top:30px;color:var(--gris);font-size:16px">No hay cursos que coincidan con la búsqueda.</div>');
-    else html.push('<div class="carrusel">'+encHtml+cs.map(c=>cursoCardHtml(c,p, esAl?estadoCurso(avanceYo(c.id),c):null, {editar:ES_STAFF})).join('')+'</div>');
+    const encPostHtml = encPostActiva(p) && !q && !CAT.comp && (ES_STAFF || programaCompletoPara(p)) ? encuestaCardHtml(p,false,'post') : '';
+    if(!cs.length && !encHtml && !encPostHtml) html.push('<div style="margin-top:30px;color:var(--gris);font-size:16px">No hay cursos que coincidan con la búsqueda.</div>');
+    else html.push('<div class="carrusel">'+encHtml+cs.map(c=>cursoCardHtml(c,p, esAl?estadoCurso(avanceYo(c.id),c):null, {editar:ES_STAFF})).join('')+encPostHtml+'</div>');
   }
   html.push('</div>');
   app.innerHTML=html.join('');
@@ -862,9 +993,16 @@ function renderPlayer(){
       html.push(yt?'<div class="video-marco"><iframe src="https://www.youtube.com/embed/'+yt+'" allowfullscreen loading="lazy"></iframe></div>'
         :'<div class="seccion"><a class="btn oscuro" target="_blank" rel="noopener" href="'+esc(m.contenido)+'">▶ Ver video</a></div>');
     } else if(m.tipo==='archivo'){
-      html.push('<div class="seccion"><div class="st">Material del curso</div><div style="margin-top:12px"><button class="btn oscuro" data-arch="'+esc(m.contenido)+'">📥 Descargar '+esc(m.archivoNombre||'material')+'</button></div></div>');
+      const esPdf=/\.pdf$/i.test(m.archivoNombre||'');
+      html.push('<div class="seccion"><div class="st">Material del curso</div><div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">'+
+        (esPdf?'<button class="btn oscuro" data-verpdf="'+esc(m.contenido)+'">📖 Ver acá</button>':'')+
+        '<button class="btn'+(esPdf?'':' oscuro')+'" data-arch="'+esc(m.contenido)+'">📥 Descargar '+esc(m.archivoNombre||'material')+'</button></div>'+
+        '<div id="pdfMarco" style="margin-top:14px"></div></div>');
     } else if(m.tipo==='enlace'){
-      html.push('<div class="seccion"><div class="st">Material del curso</div><div style="margin-top:12px"><a class="btn oscuro" target="_blank" rel="noopener" href="'+esc(m.contenido)+'">📄 Abrir material</a></div></div>');
+      const esPdf=/\.pdf(\?.*)?$/i.test(m.contenido||'');
+      html.push('<div class="seccion"><div class="st">Material del curso</div>'+
+        (esPdf?'<iframe src="'+esc(m.contenido)+'#view=FitH" style="width:100%;height:72vh;border:1px solid var(--borde);border-radius:6px;margin-top:12px;background:#fff"></iframe>':'')+
+        '<div style="margin-top:12px"><a class="btn'+(esPdf?'':' oscuro')+'" target="_blank" rel="noopener" href="'+esc(m.contenido)+'">📄 '+(esPdf?'Abrir en otra pestaña':'Abrir material')+'</a></div></div>');
     } else {
       seccionesDeTexto(m.contenido).forEach(s=>{
         html.push('<div class="seccion '+esc(s.tipo)+'">'+(s.titulo?'<div class="st">'+esc(s.titulo)+'</div>':'')+
@@ -939,9 +1077,18 @@ function renderPlayer(){
   }));
   const bc=$('pCert'); if(bc) bc.addEventListener('click',()=>verCertificado({curso:c}));
   const ant=$('pAnt'); if(ant) ant.addEventListener('click',()=>{ if(PLAYER.idx>0){ PLAYER.idx--; render(); } });
+  app.querySelectorAll('[data-verpdf]').forEach(b=>b.addEventListener('click', async ()=>{
+    b.disabled=true; b.textContent='Cargando…';
+    try{ const {blob}=await bajarArchivo(b.dataset.verpdf); const url=URL.createObjectURL(blob);
+      $('pdfMarco').innerHTML='<iframe src="'+url+'#view=FitH" style="width:100%;height:72vh;border:1px solid var(--borde);border-radius:6px;background:#fff"></iframe>'; b.textContent='📖 Abierto abajo';
+    }catch(err){ alert('No se pudo abrir: '+err.message); b.disabled=false; b.textContent='📖 Ver acá'; }
+  }));
+  // tiempo de lectura del módulo actual (se acumula al completar)
+  if(!esQuiz && PLAYER._idxT!==PLAYER.idx){ PLAYER._idxT=PLAYER.idx; PLAYER.t0=Date.now(); }
   const sig=$('pSig'); if(sig) sig.addEventListener('click', async ()=>{
     if(!ES_STAFF){
       const nuevo=Object.assign({},av); nuevo.mods=Object.assign({},av.mods||{}); nuevo.mods[PLAYER.idx]=1;
+      nuevo.tiempo=Object.assign({},av.tiempo||{}); nuevo.tiempo[PLAYER.idx]=(+nuevo.tiempo[PLAYER.idx]||0)+Math.min(1800, Math.round((Date.now()-(PLAYER.t0||Date.now()))/1000)); PLAYER.t0=Date.now();
       const e2=estadoCurso(nuevo,c); if(e2.completo&&!nuevo.fin) nuevo.fin=Date.now();
       sig.disabled=true;
       try{ await guardarAvanceYo(c.id,nuevo); }catch(err){ alert('No se pudo guardar: '+err.message); }
@@ -1028,6 +1175,7 @@ function renderHistorial(){
           '<span class="dur"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.5" stroke="#fff" stroke-width="1.8"/><path d="M12 7.5 V12 L15 14" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg> '+esc(c.dur||'')+'</span>'+
           '<div class="tit" style="font-size:18px">'+esc(c.titulo)+'</div></div></div>');
       });
+      if(encPostActiva(p) && completo) html.push(encuestaCardHtml(p,true,'post').replace('class="ccard chica"','class="hcard"'));
       html.push('</div>');
     });
   }
@@ -1118,8 +1266,12 @@ async function renderEquipo(){
   vis.sort((a,b)=>b.st.pct-a.st.pct||a.per.nombre.localeCompare(b.per.nombre));
 
   const html=['<div class="wrap medio">'];
-  html.push('<div><div class="titulo-xl">Mi equipo</div>'+
-    '<div class="bajada">'+(ES_STAFF?'Dotación real de todas las sucursales (Indicadores) y su avance en la Academia':'Tu sucursal y el avance de cada persona')+'</div></div>');
+  const sinEmpezar=vis.filter(f=>f.st.asig>0 && f.st.pct===0);
+  html.push('<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap"><div><div class="titulo-xl">Mi equipo</div>'+
+    '<div class="bajada">'+(ES_STAFF?'Dotación real de todas las sucursales (Indicadores) y su avance en la Academia. Tocá una persona para ver su ficha.':'Tu sucursal y el avance de cada persona. Tocá una persona para ver su ficha.')+'</div></div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+    (ES_STAFF&&sinEmpezar.length?'<button class="btn oscuro" id="eqRecordar">📣 Recordar a los que no empezaron ('+sinEmpezar.length+')</button>':'')+
+    (ES_STAFF?'<button class="btn" id="eqExcel">⇩ Excel</button>':'')+'</div></div>');
   html.push('<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:30px">'+
     ROLES_DESTINO.map(r=>'<div class="nivel-card" style="border-top-color:'+ROL_COLOR[r]+'">'+
       '<div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px">'+esc(ROL_LABEL_PERSONA[r])+'</span>'+
@@ -1135,9 +1287,9 @@ async function renderEquipo(){
     '</div>');
   html.push('<div class="tabla" style="margin-top:24px">'+
     '<div class="trow cab" style="grid-template-columns:2.3fr 1.3fr 1.3fr 1.6fr 1.1fr"><div>Persona</div><div>Nivel</div><div>Sucursal</div><div>Progreso de capacitación</div><div>Última actividad</div></div>'+
-    vis.map(f=>'<div class="trow" style="grid-template-columns:2.3fr 1.3fr 1.3fr 1.6fr 1.1fr">'+
+    vis.map(f=>'<div class="trow clic" data-ficha="'+esc(f.slug)+'|'+esc(f.per.id)+'" style="grid-template-columns:2.3fr 1.3fr 1.3fr 1.6fr 1.1fr">'+
       '<div style="display:flex;align-items:center;gap:12px;min-width:0"><div class="pava" style="width:40px;height:40px;background:'+(ROL_COLOR[f.per.rol]||'#1a1c1f')+';font-size:14px">'+esc(iniciales(f.per.nombre))+'</div>'+
-      '<span style="font-size:15px;font-weight:700">'+esc(f.per.nombre)+'</span></div>'+
+      '<span style="font-size:15px;font-weight:700">'+esc(f.per.nombre)+'</span>'+(f.st.rapidos.length?' <span class="chip ambar" title="Completó '+esc(f.st.rapidos.join(', '))+' demasiado rápido">⚠ muy rápido</span>':'')+'</div>'+
       '<div style="font-size:14.5px;color:#4b5158">'+esc(ROL_LABEL_PERSONA[f.per.rol]||f.per.rol)+'</div>'+
       '<div style="font-size:14.5px;color:#4b5158">'+esc(SUC_LABEL[f.slug]||f.slug)+'</div>'+
       '<div style="display:flex;align-items:center;gap:10px"><div class="barra'+(f.st.pct>=100?' v':'')+'" style="flex:1"><div style="width:'+f.st.pct+'%"></div></div>'+
@@ -1150,6 +1302,72 @@ async function renderEquipo(){
   const iq=$('eqQ'); iq.addEventListener('input',()=>{ EQ_FILTRO.q=iq.value; render(); const el=$('eqQ'); el.focus(); el.setSelectionRange(el.value.length,el.value.length); });
   app.querySelectorAll('[data-rol]').forEach(b=>b.addEventListener('click',()=>{ EQ_FILTRO.rol=b.dataset.rol; render(); }));
   const es=$('eqSuc'); if(es) es.addEventListener('change',e=>{ EQ_FILTRO.suc=e.target.value; render(); });
+  app.querySelectorAll('[data-ficha]').forEach(r=>r.addEventListener('click',()=>{ const [slug,pid]=r.dataset.ficha.split('|'); const f=filas.find(x=>x.slug===slug&&x.per.id===pid); if(f) fichaPersona(f); }));
+  const rec=$('eqRecordar'); if(rec) rec.addEventListener('click', async ()=>{
+    const porSuc={}; sinEmpezar.forEach(f=>{ (porSuc[f.slug]=porSuc[f.slug]||[]).push(f.per.nombre); });
+    const slugs=Object.keys(porSuc);
+    if(!confirm('Se manda un mensaje directo a la cuenta de '+slugs.length+' sucursal'+(slugs.length===1?'':'es')+' con los nombres de quienes todavía no empezaron sus cursos de la Academia. ¿Enviar?')) return;
+    rec.disabled=true; let ok=0, sinCuenta=[];
+    for(const slug of slugs){
+      const mails=await usuariosDeSucursal(slug);
+      if(!mails.length){ sinCuenta.push(SUC_LABEL[slug]||slug); continue; }
+      const texto='🎓 Academia de Ventas — recordatorio: todavía no empezaron sus cursos '+porSuc[slug].join(', ')+'. ¿Les dan una mano para que entren a Capacitaciones desde el Portal? Gracias.';
+      for(const m of mails){ try{ await enviarDirecto(m, texto); ok++; }catch(e){} }
+    }
+    alert('Enviado a '+ok+' cuenta'+(ok===1?'':'s')+'.'+(sinCuenta.length?'\nSin cuenta en el Portal: '+sinCuenta.join(', '):''));
+    rec.disabled=false;
+  });
+  const ex=$('eqExcel'); if(ex) ex.addEventListener('click', async ()=>{
+    ex.disabled=true; ex.textContent='Armando…';
+    try{
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+      const filasX=vis.map(f=>{ const avP=(AVANCES[f.slug]||{})[f.per.id]||{}; const asig=cursosDe(f.slug,f.per.rol);
+        return { 'Persona':f.per.nombre, 'Puesto':ROL_LABEL_PERSONA[f.per.rol]||f.per.rol, 'Sucursal':SUC_LABEL[f.slug]||f.slug, 'Cursos asignados':f.st.asig, 'Cursos aprobados':f.st.certs,
+          'Avance %':f.st.pct, 'Módulos vistos':f.st.mods, 'Minutos de lectura':Math.round(f.st.seg/60), 'Última actividad':f.st.ult?new Date(f.st.ult).toLocaleDateString('es-AR'):'',
+          'Pendientes':asig.filter(x=>!estadoCurso(avP[x.curso.id],x.curso).completo).map(x=>x.curso.titulo).join(' · '), 'Alerta':f.st.rapidos.length?'Muy rápido: '+f.st.rapidos.join(', '):'' }; });
+      const wb=XLSX.utils.book_new(); const ws=XLSX.utils.json_to_sheet(filasX); ws['!cols']=[{wch:28},{wch:12},{wch:20},{wch:10},{wch:10},{wch:9},{wch:10},{wch:10},{wch:14},{wch:60},{wch:30}];
+      XLSX.utils.book_append_sheet(wb, ws, 'Academia'); XLSX.writeFile(wb, 'academia-avance-'+new Date().toISOString().slice(0,10)+'.xlsx');
+    }catch(err){ alert('No se pudo exportar: '+err.message); }
+    ex.disabled=false; ex.textContent='⇩ Excel';
+  });
+}
+/* Ficha de una persona: qué le falta, tiempos, mensaje a la sucursal, reset de PIN */
+function fichaPersona(f){
+  const avP=(AVANCES[f.slug]||{})[f.per.id]||{};
+  const asig=cursosDe(f.slug,f.per.rol);
+  const velo=document.createElement('div'); velo.className='velo';
+  const filas=asig.map(x=>{ const a=avP[x.curso.id]; const e=estadoCurso(a,x.curso); const t=a&&a.tiempo?Object.values(a.tiempo).reduce((q,v)=>q+(+v||0),0):0;
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #eef0f3;font-size:14px"><span style="flex:1">'+esc(x.curso.titulo)+' <span class="muted" style="font-size:12px">· '+esc(x.programa.nombre)+'</span></span>'+
+      (e.completo?'<span class="chip verde">Aprobado'+(a&&a.quiz?' '+a.quiz.pje+'%':'')+'</span>':(e.empezado?'<span class="chip azulc">'+e.avance+'%</span>':'<span class="chip" style="background:#eef0f3">Pendiente</span>'))+
+      '<span class="muted" style="font-size:12px;width:52px;text-align:right">'+(t?Math.round(t/60)+' min':'—')+'</span></div>'; }).join('');
+  velo.innerHTML='<div class="modal" style="max-width:620px"><div style="display:flex;align-items:center;gap:12px"><div class="pava" style="width:46px;height:46px;background:'+(ROL_COLOR[f.per.rol]||'#1a1c1f')+';font-size:16px">'+esc(iniciales(f.per.nombre))+'</div>'+
+    '<div><h2 style="margin:0">'+esc(f.per.nombre)+'</h2><div class="muted" style="font-size:13.5px">'+esc(ROL_LABEL_PERSONA[f.per.rol]||f.per.rol)+' · '+esc(SUC_LABEL[f.slug]||f.slug)+' · avance '+f.st.pct+'% · '+(f.st.ult?'última actividad '+tiempoRel(f.st.ult):'sin actividad')+'</div></div></div>'+
+    (f.st.rapidos.length?'<div class="seccion evitar" style="margin-top:14px"><div class="st">Muy rápido</div><div class="sx">Completó '+esc(f.st.rapidos.join(', '))+' en menos de 20 segundos por módulo. Vale la pena charlarlo.</div></div>':'')+
+    '<div style="margin-top:16px">'+(filas||'<p class="muted">No tiene cursos asignados.</p>')+'</div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px;border-top:1px solid var(--borde);padding-top:14px">'+
+    (ES_STAFF?'<button class="btn oscuro mini" id="fMsg">✉ Escribir a la sucursal</button>':'')+
+    '<button class="btn mini" id="fPin">🔑 Resetear PIN</button>'+
+    '<button class="btn mini" id="fCerrar" style="margin-left:auto;background:#fff">Cerrar</button></div>'+
+    '<div id="fMsgBox" style="display:none;margin-top:12px"><textarea id="fTexto" style="min-height:80px"></textarea><div style="margin-top:8px"><button class="btn pri mini" id="fEnviar">Enviar a la Bandeja de la sucursal</button> <span class="muted" id="fEst" style="font-size:13px"></span></div></div></div>';
+  document.body.appendChild(velo);
+  velo.querySelector('#fCerrar').addEventListener('click',()=>velo.remove());
+  velo.addEventListener('click',e=>{ if(e.target===velo) velo.remove(); });
+  velo.querySelector('#fPin').addEventListener('click', async ()=>{
+    if(!confirm('¿Resetear el PIN de '+f.per.nombre+'? La próxima vez que entre, crea uno nuevo.')) return;
+    try{ await fbDel('pins/'+f.slug+'/'+f.per.id); alert('PIN reseteado.'); }catch(err){ alert('No se pudo: '+err.message); }
+  });
+  const bm=velo.querySelector('#fMsg'); if(bm) bm.addEventListener('click',()=>{
+    const box=velo.querySelector('#fMsgBox'); box.style.display='';
+    const pend=asig.filter(x=>!estadoCurso(avP[x.curso.id],x.curso).completo).map(x=>x.curso.titulo);
+    velo.querySelector('#fTexto').value='🎓 Academia de Ventas — para '+f.per.nombre+': '+(pend.length?'te falta completar '+pend.join(', ')+'. ':'¡felicitaciones, estás al día! ')+'Cualquier duda, me escribís.';
+  });
+  const be=velo.querySelector('#fEnviar'); if(be) be.addEventListener('click', async ()=>{
+    const texto=velo.querySelector('#fTexto').value.trim(); if(!texto) return;
+    be.disabled=true; const est=velo.querySelector('#fEst');
+    try{ const mails=await usuariosDeSucursal(f.slug); if(!mails.length) throw new Error('la sucursal no tiene cuenta en el Portal');
+      for(const m of mails) await enviarDirecto(m, texto); est.textContent='Enviado a '+mails.join(', ');
+    }catch(err){ est.textContent='No se pudo: '+err.message; be.disabled=false; }
+  });
 }
 
 /* ---------- RANKING ---------- */
@@ -1275,15 +1493,16 @@ async function _renderRankingSuc(slug){
 function renderEncuestaPrevia(){
   const app=$('app');
   const p=PROGRAMAS[ENC.progId];
-  if(!p||!encActiva(p)){ ENC=null; return render(); }
-  const cfg=p.encuestaPrevia; const pregs=(cfg.preguntas&&cfg.preguntas.length)?cfg.preguntas:ENC_PREG_DEFAULT;
-  const hecha=ENC_RESP[p.id];
+  const post = ENC.tipo==='post';
+  if(!p||(post?!encPostActiva(p):!encActiva(p))){ ENC=null; return render(); }
+  const cfg=post?p.encuestaPost:p.encuestaPrevia; const pregs=(cfg.preguntas&&cfg.preguntas.length)?cfg.preguntas:(post?ENC_POST_PREG_DEFAULT:ENC_PREG_DEFAULT);
+  const hecha=post?ENC_RESP_POST[p.id]:ENC_RESP[p.id];
   const html=['<div class="wrap" style="max-width:900px">'];
   html.push('<a href="#" id="eVolver" style="color:var(--gris);text-decoration:none;font-size:14px;font-weight:600">← Volver</a>');
-  html.push('<div class="lec-tit" style="font-size:42px;margin-top:16px">Encuesta previa al programa</div>');
+  html.push('<div class="lec-tit" style="font-size:42px;margin-top:16px">'+(post?'Encuesta post-programa':'Encuesta previa al programa')+'</div>');
   html.push('<div style="margin-top:12px;display:flex;align-items:center;gap:18px;font-size:13.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--gris);flex-wrap:wrap"><span>'+esc(p.nombre)+'</span><span>5min</span>'+(hecha?'<span class="chip verde">Respondida</span>':'')+(ES_STAFF?'<span class="chip azulc">Vista de staff</span>':'')+'</div>');
   if(ENC.paso==='intro' || ES_STAFF){
-    html.push('<div class="card-b" style="margin-top:24px;font-size:15.5px;color:#33383f;line-height:1.6">'+esc(cfg.intro||ENC_INTRO_DEFAULT).replace(/\n/g,'<br>')+'</div>');
+    html.push('<div class="card-b" style="margin-top:24px;font-size:15.5px;color:#33383f;line-height:1.6">'+esc(cfg.intro||(post?ENC_POST_INTRO_DEFAULT:ENC_INTRO_DEFAULT)).replace(/\n/g,'<br>')+'</div>');
     html.push('<div class="seccion dato" style="margin-top:14px"><div class="st">Confidencialidad</div><div class="sx">'+esc(ENC_CONFID)+'</div></div>');
     if(ES_STAFF){
       html.push('<div class="sec-t" style="margin-top:28px">Preguntas que responde el equipo</div><div class="card-b" style="margin-top:10px">'+pregs.map((q,i)=>'<div style="display:flex;gap:10px;font-size:15px;margin:6px 0"><b>'+(i+1)+'.</b><span>'+esc(q)+'</span></div>').join('')+'</div>');
@@ -1312,7 +1531,7 @@ function renderEncuestaPrevia(){
     if(pregs.some((q,i)=>!ENC.resp[i])){ alert('Completá todas las respuestas, aunque sea breve.'); return; }
     env.disabled=true;
     const payload={ nombre:YO.nombre, rol:YO.rol, ts:Date.now(), respuestas:pregs.map((q,i)=>({q, a:ENC.resp[i]})) };
-    try{ await fbPut('encuestasPrevias/'+p.id+'/'+MI_SLUG+'/'+YO.id, payload); ENC_RESP[p.id]=payload; ENC.paso='gracias'; render(); }
+    try{ await fbPut((post?'encuestasPost/':'encuestasPrevias/')+p.id+'/'+MI_SLUG+'/'+YO.id, payload); if(post) ENC_RESP_POST[p.id]=payload; else ENC_RESP[p.id]=payload; ENC.paso='gracias'; render(); }
     catch(err){ env.disabled=false; alert('No se pudo enviar: '+err.message); }
   });
 }
@@ -1359,9 +1578,22 @@ function verCertificado(op){
     '</div><div class="c-banda azul"></div></div>'+
     '<div class="no-print" style="text-align:center;margin-top:14px;display:flex;gap:10px;justify-content:center">'+
     '<button class="btn pri" id="certImp">🖨 Imprimir / PDF</button>'+
+    '<button class="btn oscuro" id="certShare">📤 Compartir</button>'+
     '<button class="btn" id="certCerrar" style="background:#fff">Cerrar</button></div></div>';
   document.body.appendChild(velo);
   velo.querySelector('#certImp').addEventListener('click',()=>window.print());
+  velo.querySelector('#certShare').addEventListener('click', async ()=>{
+    const b=velo.querySelector('#certShare'); b.disabled=true; b.textContent='Armando imagen…';
+    try{
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+      const canvas=await html2canvas(velo.querySelector('.cert'),{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+      const blob=await new Promise(r=>canvas.toBlob(r,'image/png'));
+      const file=new File([blob],'certificado-'+idFromNombre(quien)+'.png',{type:'image/png'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title:'Certificado Academia de Ventas', text:titulo+' — '+quien}); }
+      else{ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=file.name; document.body.appendChild(a); a.click(); a.remove(); }
+    }catch(err){ if(!/abort/i.test(err.message)) alert('No se pudo compartir: '+err.message); }
+    b.disabled=false; b.textContent='📤 Compartir';
+  });
   velo.querySelector('#certCerrar').addEventListener('click',()=>velo.remove());
   velo.addEventListener('click',e=>{ if(e.target===velo) velo.remove(); });
 }
@@ -1402,6 +1634,7 @@ function renderGesCursos(){
         '<div style="font-size:14px">'+((c.quiz&&(c.quiz.preguntas||[]).length)||0)+' preg.'+(c.activo===false?' <span class="chip ambar" style="margin-left:6px">borrador</span>':'')+'</div>'+
         '<div style="white-space:nowrap;text-align:right"><button class="btn mini" data-ver="'+esc(c.id)+'">👁 Ver</button> '+
         '<button class="btn mini" data-ed="'+esc(c.id)+'">✏ Editar</button> '+
+        '<button class="btn mini" data-dup="'+esc(c.id)+'" title="Duplicar (queda en borrador)">⧉</button> '+
         '<button class="btn mini peligro" data-del="'+esc(c.id)+'">🗑</button></div></div>').join('')+'</div>');
   }
   html.push('</div>');
@@ -1413,6 +1646,11 @@ function renderGesCursos(){
   });
   $('abrirWizard').addEventListener('click',()=>{ WIZ=null; VISTA={t:'wizard'}; render(); });
   app.querySelectorAll('[data-ver]').forEach(b=>b.addEventListener('click',()=>abrirCurso(b.dataset.ver)));
+  app.querySelectorAll('[data-dup]').forEach(b=>b.addEventListener('click', async ()=>{
+    const o=CURSOS[b.dataset.dup]; const c=JSON.parse(JSON.stringify(o));
+    c.id=nuevoId('c'); c.titulo=o.titulo+' (copia)'; c.activo=false; c.ts=Date.now(); c.por=SESSION.email;
+    try{ await fbPut('cursos/'+c.id,c); CURSOS[c.id]=c; render(); }catch(err){ alert('No se pudo duplicar: '+err.message); }
+  }));
   app.querySelectorAll('[data-ed]').forEach(b=>b.addEventListener('click',()=>{ EDIT_CURSO=JSON.parse(JSON.stringify(CURSOS[b.dataset.ed])); VISTA={t:'editorCurso'}; render(); }));
   app.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', async ()=>{
     const c=CURSOS[b.dataset.del];
@@ -1883,15 +2121,23 @@ function renderEditorPrograma(){
     '<div id="pEncBox" style="margin-top:14px;'+(ep.activa?'':'display:none')+'">'+
     '<label class="fl">Texto de bienvenida</label><textarea id="pEncIntro" style="min-height:110px">'+esc(ep.intro||ENC_INTRO_DEFAULT)+'</textarea>'+
     '<label class="fl" style="margin-top:12px">Preguntas (una por línea)</label><textarea id="pEncPreg" style="min-height:110px">'+esc((ep.preguntas&&ep.preguntas.length?ep.preguntas:ENC_PREG_DEFAULT).join('\n'))+'</textarea></div></div>');
+  const eq=p.encuestaPost||{};
+  html.push('<div class="card-b" style="margin-top:14px"><label style="display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700"><input type="checkbox" id="pEncPostAct"'+(eq.activa?' checked':'')+'> Encuesta post-programa</label>'+
+    '<p class="muted" style="font-size:13px;margin:6px 0 0">Aparece como última tarjeta cuando la persona completó todos los cursos del programa. Respuestas en Gestión → Encuestas.</p>'+
+    '<div id="pEncPostBox" style="margin-top:14px;'+(eq.activa?'':'display:none')+'">'+
+    '<label class="fl">Texto de cierre</label><textarea id="pEncPostIntro" style="min-height:90px">'+esc(eq.intro||ENC_POST_INTRO_DEFAULT)+'</textarea>'+
+    '<label class="fl" style="margin-top:12px">Preguntas (una por línea)</label><textarea id="pEncPostPreg" style="min-height:110px">'+esc((eq.preguntas&&eq.preguntas.length?eq.preguntas:ENC_POST_PREG_DEFAULT).join('\n'))+'</textarea></div></div>');
   html.push('<div style="margin-top:20px;display:flex;gap:10px"><button class="btn pri" id="guardarProg">💾 Guardar programa</button>'+
     '<button class="btn" id="cancelarProg" style="background:#fff">Cancelar</button></div></div>');
   app.innerHTML=html.join('');
   $('volver').addEventListener('click',e=>{ e.preventDefault(); EDIT_PROG=null; VISTA=null; render(); });
   $('cancelarProg').addEventListener('click',()=>{ EDIT_PROG=null; VISTA=null; render(); });
   $('pEncAct').addEventListener('change',e=>{ $('pEncBox').style.display=e.target.checked?'':'none'; });
+  $('pEncPostAct').addEventListener('change',e=>{ $('pEncPostBox').style.display=e.target.checked?'':'none'; });
   $('guardarProg').addEventListener('click', async ()=>{
     p.nombre=$('pNom').value.trim(); p.color=$('pColor').value; p.limite=$('pLim').value; p.icono=$('pIcono').value;
     p.encuestaPrevia={ activa:$('pEncAct').checked, intro:$('pEncIntro').value.trim(), preguntas:$('pEncPreg').value.split('\n').map(x=>x.trim()).filter(Boolean) };
+    p.encuestaPost={ activa:$('pEncPostAct').checked, intro:$('pEncPostIntro').value.trim(), preguntas:$('pEncPostPreg').value.split('\n').map(x=>x.trim()).filter(Boolean) };
     p.cursos=Array.from($('pCursos').selectedOptions).map(o=>o.value);
     p.roles=Array.from($('pRoles').selectedOptions).map(o=>o.value);
     p.sucursales=Array.from($('pSucs').selectedOptions).map(o=>o.value);
@@ -1904,21 +2150,24 @@ function renderEditorPrograma(){
 async function renderGesEncuestas(){
   const app=$('app');
   app.innerHTML='<div class="wrap medio"><div class="titulo-xl">Gestión</div><div class="bajada">Cargando encuestas…</div></div>';
-  const [data, previas]=await Promise.all([fbGet('encuestas').catch(()=>null), fbGet('encuestasPrevias').catch(()=>null)]);
+  const [data, previas, posts]=await Promise.all([fbGet('encuestas').catch(()=>null), fbGet('encuestasPrevias').catch(()=>null), fbGet('encuestasPost').catch(()=>null)]);
   const html=['<div class="wrap medio">'];
   html.push('<div class="titulo-xl">Gestión</div><div class="bajada">Lo que dijo el equipo al terminar cada curso (contenido · claridad · utilidad, de 1 a 5).</div>'+gesTabs());
   // Encuestas previas por programa (respuestas abiertas, confidenciales)
-  const prevIds=Object.keys(previas||{});
-  if(prevIds.length){
-    html.push('<div class="sec-t" style="margin-top:28px">Encuestas previas por programa</div>');
-    prevIds.forEach(pid=>{
-      const filas=[]; Object.keys(previas[pid]||{}).forEach(slug=>Object.values(previas[pid][slug]||{}).forEach(r=>filas.push(Object.assign({slug},r))));
+  const bloqueAbiertas=(titulo, data)=>{
+    const ids=Object.keys(data||{}); if(!ids.length) return;
+    html.push('<div class="sec-t" style="margin-top:28px">'+titulo+'</div>');
+    ids.forEach(pid=>{
+      const filas=[]; Object.keys(data[pid]||{}).forEach(slug=>Object.values(data[pid][slug]||{}).forEach(r=>filas.push(Object.assign({slug},r))));
       filas.sort((a,b)=>(b.ts||0)-(a.ts||0));
       html.push('<div class="card-b" style="margin-top:10px"><div style="display:flex;align-items:baseline;gap:12px"><b style="font-size:16px">'+esc((PROGRAMAS[pid]&&PROGRAMAS[pid].nombre)||pid)+'</b><span class="chip azulc">'+filas.length+' respuesta'+(filas.length===1?'':'s')+'</span></div>'+
         filas.map(r=>'<details style="margin-top:10px;border-top:1px solid var(--borde);padding-top:10px"><summary style="cursor:pointer;font-size:14.5px"><b>'+esc(r.nombre||'')+'</b> <span class="muted">· '+esc(ROL_LABEL_PERSONA[r.rol]||r.rol||'')+' · '+esc(SUC_LABEL[r.slug]||r.slug)+' · '+fechaCorta(r.ts||0)+'</span></summary>'+
           (r.respuestas||[]).map(x=>'<div style="margin:10px 0 0 14px;font-size:14.5px"><div class="muted" style="font-size:13px">'+esc(x.q)+'</div><div>'+esc(x.a)+'</div></div>').join('')+'</details>').join('')+'</div>');
     });
-  }
+  };
+  bloqueAbiertas('Encuestas previas por programa', previas);
+  bloqueAbiertas('Encuestas post-programa', posts);
+  const prevIds=Object.keys(previas||{}).concat(Object.keys(posts||{}));
   const cids=Object.keys(data||{});
   if(cids.length) html.push('<div class="sec-t" style="margin-top:32px">Encuestas al terminar cada curso</div>');
   if(!cids.length && !prevIds.length) html.push('<div class="vacio" style="margin-top:26px">Sin respuestas todavía. La encuesta de curso aparece automáticamente al completarlo; la previa, cuando el programa la tiene activada.</div>');
@@ -1956,9 +2205,12 @@ async function cargarAvancesAlumno(){ AVANCES[MI_SLUG]=(await fbGet('avances/'+M
         await asegurarYo(); await cargarAvancesAlumno();
         const conEnc=Object.values(PROGRAMAS).filter(p=>encActiva(p));
         await Promise.all(conEnc.map(async p=>{ const r=await fbGet('encuestasPrevias/'+p.id+'/'+MI_SLUG+'/'+YO.id).catch(()=>null); if(r) ENC_RESP[p.id]=r; }));
+        await Promise.all(Object.values(PROGRAMAS).filter(p=>encPostActiva(p)).map(async p=>{ const r=await fbGet('encuestasPost/'+p.id+'/'+MI_SLUG+'/'+YO.id).catch(()=>null); if(r) ENC_RESP_POST[p.id]=r; }));
       }
     }
     pintarWho(); pintarNav(); render();
+    recordatoriosVencimiento();                       // 7 días antes y el día anterior, una vez por programa
+    if(ES_STAFF) publicarResumen();                   // resumen para Panel General / Evaluaciones / RRHH
   }catch(e){
     $('app').innerHTML='<div class="wrap"><div class="err">No se pudo cargar la Academia ('+esc(e.message)+'). Probá recargar.</div></div>';
   }
