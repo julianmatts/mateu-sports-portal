@@ -191,6 +191,29 @@ la Bandeja y el clic en el logo del header (`#topLogo`) llevan a `./indicadores/
 Panel General) para sucursal/outlet y siempre que se llegó con `?ver=bandeja`; para admin en
 la grilla, vuelven a la grilla (`volverAlInicio()`).
 
+**Dos zonas (23/08/2026).** La pantalla (Mi Sucursal y Cadena) está partida en dos bandas
+con cabecera propia, para que no se mezclen las dos líneas de tiempo: **«En curso»**
+(banda ámbar `#zonaViva` / `#zonaVivaCad`, pill «● provisorio»: Objetivo del mes, Objetivo
+de la semana + equipo, **Indicadores de la semana** y Reposición — todo Firebase, mes/semana
+abiertos) y **«Cierre»** (`#zonaCierre` / `#zonaCierreCad`, pill «✓ oficial»: los cuatro
+indicadores con el switch Mes/Sem 1…4 y todo el análisis del último mes cerrado — JSON del
+ETL). El **selector de período vive en la cabecera de Cierre** (`#selPer` se mueve al
+`#selPerHost` de la vista activa en `pintarZonas()`), no en la barra global. Hay nav de
+salto «Ir a: En curso · Cierre» (sticky en Mi Sucursal; dentro de la barra de chips en
+Cadena). `pintarZonas()` pone las fechas en los títulos (`_zonaSem`/`_zonaMes`, que setean
+`renderObjetivo` / `renderObjCadena` / `objetivoMesHtml`) y oculta la banda viva si no tiene
+secciones (Ecommerce). Regla: todo número vivo lleva el pill `.pprov`; los cerrados, nunca.
+**Indicadores de la semana** (`secKpisSem`, `renderKpisSemana`): UPT, ticket promedio,
+tickets/hora y venta/hora de la semana elegida con la venta de `ventaEquipo` y las horas
+asignadas del equipo (solo los días que ya tienen venta: `eqHorasDias`), cada uno vs. el
+objetivo de la línea, vs. el mes cerrado (`kpisCerrado`: con horas asignadas si ese
+período tiene equipo guardado; si no, tickets/venta por hora se marcan «no comparable») y
+vs. la semana anterior; abajo **«El puente»** (semana · mes en curso acumulado · mes
+cerrado · objetivo — el acumulado calcula tickets/venta por hora solo con las semanas que
+tienen horas, `kpisAcum`) y un insight corto de la semana. En Cadena, la tabla del objetivo
+semanal suma **UPT sem. y Ticket prom. sem.** por sucursal con su % vs. el cierre, y el
+agregado de la línea. La Reposición avisa «hace N semanas» si el análisis tiene ≥7 días.
+
 `indicadores/` es un `index.html` self-contained que **lee la sesión del Portal**
 (no tiene login propio) y es la **pantalla de inicio de los roles `sucursal` y
 `outlet`**: el Portal los redirige a `./indicadores/` al entrar (ver
