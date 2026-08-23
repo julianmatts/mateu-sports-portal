@@ -678,6 +678,11 @@ por talle; "Ingresar a stock" cuando está ok) → reparto.
 ## Reglas
 
 - Responder y comentar el código en **español**.
+- **No usar la palabra «cadena» en textos visibles** (Juli, 23/08/2026): el agregado de todas
+  las sucursales se llama **«Todas las sucursales»** (vista, títulos) o **«total sucursales»**
+  (rótulos cortos: «Mínimo total sucursales»); en rankings cortos, «Todas 5/19» y «vs. todas».
+  En el código los identificadores (`vistaCadena`, `cadena.json`, etc.) siguen igual.
+- El objetivo de superación se muestra como **«★ 120%»** (nunca «Superación»).
 - No agregar frameworks ni build steps. Mantener todo self-contained.
 - No tocar la config de Firebase de los módulos (URLs de las bases) salvo pedido explícito.
 - Antes de un cambio grande en una herramienta, confirmá el alcance con Juli.

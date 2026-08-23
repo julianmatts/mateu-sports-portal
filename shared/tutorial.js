@@ -45,7 +45,7 @@
       { ic:'👥', t:'Cómo viene el equipo', d:'Panel para el encargado: armá tu equipo, asigná las horas de venta por turno y día (el portal reparte la Meta entre las personas) y subí el Excel de venta por vendedor para ver el ranking del equipo.' },
       { ic:'📦', t:'Reposición disponible', d:'Cuando el depósito publica su análisis semanal, acá aparece lo que tu sucursal puede pedir, por artículo y talle.' },
       { ic:'🗓️', t:'Meses de stock y Plantilla', d:'Más abajo: la foto de stock, ventas y ratio por rubro, y la dotación de la sucursal por rol y régimen (full/part time).' },
-      { ic:'🏢', t:'Vista cadena', d:'Con el selector de sucursal podés mirar cualquiera, y «Cadena (comparar todas)» pone a las sucursales una al lado de la otra.', roles:['admin','supervisor'] }
+      { ic:'🏢', t:'Todas las sucursales', d:'Con el selector de sucursal podés mirar cualquiera, y «Todas las sucursales (comparar)» las pone una al lado de la otra.', roles:['admin','supervisor'] }
     ]},
 
     turnero: { icono:'📅', nombre:'Turnero Depósito', pasos:[
@@ -134,7 +134,7 @@
       { ic:'🎯', t:'Qué es', d:'Acá gerencia carga los objetivos de venta por sucursal, semanales y mensuales. Cada sucursal ve el suyo en Indicadores.' },
       { ic:'📅', t:'Semanal', d:'Subí el Excel «PMS Objetivos» de la semana o cargá los montos a mano. El Mínimo (÷1,2) y el 120 (×1,2) se calculan solos; revisá y publicá.' },
       { ic:'📆', t:'Mensual', d:'Subí el Excel mensual acumulativo: publica la meta del mes y habilita la comparación contra el mismo mes del año anterior.' },
-      { ic:'📊', t:'Dashboard e histórico', d:'Cumplimiento por sucursal con semáforo (verde ≥ meta, ámbar ≥ mínimo, rojo por debajo), total cadena y ranking.' },
+      { ic:'📊', t:'Dashboard e histórico', d:'Cumplimiento por sucursal con semáforo (verde ≥ meta, ámbar ≥ mínimo, rojo por debajo), total de todas las sucursales y ranking.' },
       { ic:'⏱️', t:'Pesos por turno', d:'La matriz de venta por hora y día que usa el reparto de la Meta entre las personas del equipo de cada sucursal.' }
     ]},
 
@@ -142,7 +142,7 @@
       nombreRol:{ admin:'Academia · Guía del capacitador', supervisor:'Academia · Guía del capacitador', capacitador:'Academia · Guía del capacitador', sucursal:'Academia · Guía del vendedor', outlet:'Academia · Guía del vendedor' },
       pasos:[
       /* ===== STAFF: Iván (capacitador), Cristian (supervisor) y gerencia ===== */
-      { ic:'🎓', t:'Bienvenido: vos gestionás la Academia', d:'La Academia de Ventas es la plataforma de capacitación de toda la cadena. Con tu rol ves lo mismo que el equipo (Catálogo, Novedades, Ranking) más dos pestañas exclusivas: «Mi equipo», para seguir el avance de cada persona, y «Gestión», donde se crea y se asigna todo el contenido. Este recorrido te lleva por el circuito completo, en el orden en que lo vas a usar.', roles:['admin','supervisor','capacitador'] },
+      { ic:'🎓', t:'Bienvenido: vos gestionás la Academia', d:'La Academia de Ventas es la plataforma de capacitación de todas las sucursales. Con tu rol ves lo mismo que el equipo (Catálogo, Novedades, Ranking) más dos pestañas exclusivas: «Mi equipo», para seguir el avance de cada persona, y «Gestión», donde se crea y se asigna todo el contenido. Este recorrido te lleva por el circuito completo, en el orden en que lo vas a usar.', roles:['admin','supervisor','capacitador'] },
       { ic:'⚡', t:'Cargar una capacitación en 3 pasos', d:'Gestión → «Crear curso desde un PDF o PowerPoint». Paso 1: elegís el archivo de tu PC (el título se completa solo), duración y competencia. Paso 2: la Academia lee el texto y te propone un módulo por página o diapositiva. Paso 3: quiz opcional, a qué programa va y si avisás al equipo → «Publicar». El archivo original queda adjunto para descargar. Si preferís arrancar de cero, «Nuevo curso en blanco».', roles:['admin','supervisor','capacitador'] },
       { ic:'✨', t:'Ayudante con IA (si está activado)', d:'En el paso 2 del asistente, «Mejorar con IA» limpia el texto extraído (columnas mezcladas, líneas cortadas), lo reordena en módulos con tarjetas destacadas y propone título, descripción, frase gancho y un quiz; en el paso 3 y en el editor, «Proponer preguntas con IA» arma el quiz a partir del contenido. Siempre revisás antes de publicar. Los botones aparecen solo si gerencia cargó la clave de la API en Cloudflare.', roles:['admin','supervisor','capacitador'] },
       { ic:'✏️', t:'Personalizar la base que te propone', d:'En el paso 2 (y después desde ✏ Editar) el curso es todo tuyo: corregí el texto, cambiá títulos, reordená con ↑ ↓, uní un módulo con el anterior, quitalo o agregá módulos nuevos de texto, video de YouTube, archivo PDF/PPT o link. El botón 👁 «Vista previa» te muestra exactamente cómo lo va a ver el vendedor. Tip: un bloque que empieza con [[tip]] Título, [[dato]], [[evitar]] o [[ejemplo]] se destaca con color.', roles:['admin','supervisor','capacitador'] },
