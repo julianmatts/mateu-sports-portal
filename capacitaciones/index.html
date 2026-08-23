@@ -182,22 +182,38 @@
   .modal{ background:#fff; border-radius:8px; max-width:560px; width:100%; max-height:88vh; overflow:auto; padding:26px; }
   .modal h2{ margin:0 0 6px; font-size:21px; }
   #certVista{ position:fixed; inset:0; background:rgba(10,14,20,.68); z-index:60; display:flex; align-items:center; justify-content:center; padding:20px; overflow:auto; }
-  .cert{ background:#fff; width:840px; max-width:100%; padding:52px 58px; border:10px solid #0B1527; position:relative; }
-  .cert .c-borde{ position:absolute; inset:8px; border:2px solid var(--accent); pointer-events:none; }
-  .cert .c-logo{ height:40px; }
-  .cert .c-tit{ font-family:'Barlow Condensed',sans-serif; font-style:italic; font-weight:800; font-size:42px; letter-spacing:2px; margin:22px 0 4px; color:#0B1527; }
-  .cert .c-quien{ font-size:32px; font-weight:800; margin:14px 0 2px; color:var(--accent); }
-  .cert .c-firmas{ display:flex; gap:60px; margin-top:44px; }
-  .cert .c-firma{ flex:1; text-align:center; border-top:1.5px solid var(--tinta); padding-top:8px; font-size:14px; }
-  .cert .c-firma b{ display:block; font-size:15px; }
+  /* Certificado: diseño del prototipo (Certificado.dc.html) */
+  .cert{ width:1160px; max-width:100%; background:#fff; box-shadow:0 10px 40px rgba(0,0,0,.12); position:relative; overflow:hidden; }
+  .cert .c-banda{ height:10px; background:var(--accent); }
+  .cert .c-banda.azul{ background:var(--azul); }
+  .cert .c-deco{ position:absolute; right:-120px; top:-120px; width:340px; height:340px; transform:rotate(-8deg); pointer-events:none; }
+  .cert .c-in{ position:relative; display:flex; flex-direction:column; align-items:center; text-align:center; padding:64px 80px 56px; }
+  .cert .c-logo{ height:58px; display:block; }
+  .cert .c-tit{ margin-top:40px; font-family:'Barlow Condensed',sans-serif; font-style:italic; font-weight:800; font-size:68px; line-height:1; color:var(--tinta); letter-spacing:1px; }
+  .cert .c-sub{ margin-top:10px; font-size:20px; font-weight:700; letter-spacing:7px; color:var(--gris); }
+  .cert .c-otorga{ margin-top:48px; font-size:17px; color:var(--gris); }
+  .cert .c-quien{ margin-top:10px; font-size:52px; font-weight:700; color:var(--tinta); line-height:1.1; }
+  .cert .c-linea{ margin-top:8px; width:340px; max-width:80%; height:3px; background:var(--accent); }
+  .cert .c-por{ margin-top:34px; font-size:17px; color:#4b5158; max-width:640px; line-height:1.5; }
+  .cert .c-prog{ margin-top:22px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; justify-content:center; }
+  .cert .c-prog .nom{ font-family:'Barlow Condensed',sans-serif; font-style:italic; font-weight:800; font-size:46px; letter-spacing:1px; text-transform:uppercase; line-height:1.05; }
+  .cert .c-firmas{ margin-top:60px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:48px; width:100%; align-items:end; }
+  .cert .c-firma{ display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .cert .c-firma .v{ font-size:22px; font-weight:700; color:var(--tinta); }
+  .cert .c-firma .l{ width:100%; height:1.5px; background:#c6cad1; }
+  .cert .c-firma .k{ font-size:12.5px; font-weight:700; letter-spacing:2px; color:var(--gris); }
+  .cert .c-pw{ margin-top:44px; display:flex; align-items:center; gap:12px; }
+  @media (max-width:760px){ .cert .c-in{ padding:40px 22px 36px; } .cert .c-tit{ font-size:46px; } .cert .c-quien{ font-size:34px; } .cert .c-firmas{ grid-template-columns:1fr; gap:22px; } .cert .c-prog .nom{ font-size:30px; } }
   @media print{
+    @page{ size:landscape; margin:10mm; }
     body *{ visibility:hidden; }
     #certVista, #certVista *{ visibility:visible; }
-    #certVista{ position:absolute; inset:0; background:#fff; padding:0; }
-    .cert{ border-width:8px; width:100%; }
+    #certVista{ position:absolute; inset:0; background:#fff; padding:0; display:block; }
+    .cert{ width:100%; box-shadow:none; }
     .no-print{ display:none !important; }
   }
   @media (max-width:820px){
+    .landing-grid{ grid-template-columns:1fr !important; }
     .topbar{ padding:0 14px; gap:14px; overflow-x:auto; }
     .wrap{ padding:24px 14px 60px; }
     .who .nom,.who .rol,.who .cambiar{ display:none; }
@@ -697,9 +713,47 @@ function abrirCurso(cid){
   const nm=(c.modulos||[]).length;
   let idx=0;
   if(av&&av.mods){ while(idx<nm && av.mods[idx]) idx++; }   // primer módulo pendiente
-  PLAYER={ cid, idx, resp:{}, enviado:false };
+  PLAYER={ cid, idx, resp:{}, enviado:false, landing:true };
   render();
   window.scrollTo(0,0);
+}
+/* Portada del curso (pantalla "Módulo" del prototipo): datos, frase, qué vas a
+   aprender y cómo se evalúa, antes de entrar al contenido. */
+function renderLanding(){
+  const app=$('app');
+  const c=CURSOS[PLAYER.cid];
+  const av=ES_STAFF?{}:(avanceYo(c.id)||{});
+  const est=estadoCurso(av,c);
+  const mods=c.modulos||[];
+  const prog=(!ES_STAFF&&MI_SLUG)?(cursosDe(MI_SLUG,YO.rol).find(x=>x.curso.id===c.id)||{}).programa
+            : Object.values(PROGRAMAS).find(p=>(p.cursos||[]).includes(c.id));
+  const color=c.color||(prog?progColor(prog):'#1a1c1f');
+  const nQuiz=(c.quiz&&c.quiz.preguntas||[]).length;
+  const boton = est.completo ? 'Repasar el curso →' : (est.empezado ? 'Continuar →' : 'Comenzar módulo →');
+  const html=['<div class="wrap" style="max-width:1240px">'];
+  html.push('<a href="#" id="lVolver" style="color:var(--gris);text-decoration:none;font-size:14px;font-weight:600">← Volver</a>');
+  html.push('<div class="lec-tit" style="font-size:42px;margin-top:16px">'+esc(c.titulo)+'</div>');
+  html.push('<div style="margin-top:12px;display:flex;align-items:center;gap:18px;font-size:13.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--gris);flex-wrap:wrap">'+
+    (prog?'<span>'+esc(prog.nombre)+'</span>':'')+(c.dur?'<span>'+esc(c.dur)+'</span>':'')+
+    '<span>'+mods.length+' módulo'+(mods.length===1?'':'s')+(nQuiz?' + quiz':'')+'</span><span>Dicta: '+esc(CAPACITADOR_FIRMA)+'</span>'+
+    (est.completo?'<span class="chip verde">Completado</span>':'')+'</div>');
+  html.push('<div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:28px;align-items:start" class="landing-grid">');
+  html.push('<div style="position:relative;min-height:340px;border-radius:6px;overflow:hidden;background:'+color+'">'+coverHtml(c,color)+
+    '<div style="position:absolute;left:22px;right:22px;bottom:20px;color:#fff;font-size:24px;font-weight:800;text-transform:uppercase;line-height:1.15;text-shadow:0 1px 4px rgba(0,0,0,.3)">'+esc(c.frase||c.titulo)+'</div></div>');
+  html.push('<div style="display:flex;flex-direction:column;gap:20px">'+
+    '<button class="btn pri" id="lComenzar" style="width:100%;padding:16px;font-size:14px;letter-spacing:2.5px">'+boton+'</button>'+
+    (c.desc?'<div style="font-size:15.5px;color:#33383f;line-height:1.55">'+esc(c.desc).replace(/\n/g,'<br>')+'</div>':'')+
+    (mods.length?'<div style="display:flex;flex-direction:column;gap:10px"><div style="font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--gris)">Qué vas a aprender</div>'+
+      mods.map((m,i)=>'<div style="display:flex;align-items:flex-start;gap:11px;font-size:15.5px;color:#33383f;line-height:1.5"><span style="width:20px;height:20px;border-radius:50%;background:'+((av.mods&&av.mods[i])?'var(--verde)':'var(--accent)')+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:3px">'+((av.mods&&av.mods[i])?'✓':(i+1))+'</span><span>'+esc(m.titulo||('Módulo '+(i+1)))+'</span></div>').join('')+'</div>':'')+
+    '<div style="display:flex;flex-direction:column;gap:8px"><div style="font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--azul)">Evaluación</div>'+
+      '<div style="font-size:15px;color:#33383f;line-height:1.5">'+(nQuiz
+        ? 'Al terminar los '+mods.length+' módulos rendís un quiz de '+nQuiz+' pregunta'+(nQuiz===1?'':'s')+'. Se aprueba con '+(c.quiz.aprueba||70)+'% y podés reintentarlo. Al aprobar ganás el badge y tu certificado.'
+        : 'Este curso no tiene evaluación: se completa al leer todos los módulos y ganás el badge y tu certificado.')+'</div></div>'+
+    '</div>');
+  html.push('</div></div>');
+  app.innerHTML=html.join('');
+  $('lVolver').addEventListener('click',e=>{ e.preventDefault(); PLAYER=null; render(); });
+  $('lComenzar').addEventListener('click',()=>{ PLAYER.landing=false; render(); window.scrollTo(0,0); });
 }
 function seccionesDeTexto(contenido){
   // Bloques separados por línea en blanco. "[[tipo]] Título" al inicio de un
@@ -716,6 +770,7 @@ function renderPlayer(){
   const app=$('app');
   const c=CURSOS[PLAYER.cid];
   if(!c){ PLAYER=null; return render(); }
+  if(PLAYER.landing) return renderLanding();
   const av = ES_STAFF ? {} : (avanceYo(c.id)||{});
   const est = estadoCurso(av,c);
   const mods=c.modulos||[];
@@ -980,13 +1035,15 @@ function renderNovedades(){
       '<span style="font-size:13px;color:var(--gris2)">· '+tiempoRel(n.ts||0)+'</span>'+
       '<span class="chip" style="background:'+tag.bg+';color:'+tag.color+'">'+esc(n.tipo||'Novedad')+'</span></div>'+
       '<div style="font-size:17px;font-weight:700;line-height:1.3">'+esc(n.titulo)+'</div>'+
-      (n.cuerpo?'<div style="font-size:14.5px;color:#4b5158;line-height:1.5">'+esc(n.cuerpo)+'</div>':'')+'</div>'+
+      (n.cuerpo?'<div style="font-size:14.5px;color:#4b5158;line-height:1.5">'+esc(n.cuerpo)+'</div>':'')+
+      (n.tipo==='Nuevo programa'?'<a href="#" data-nov-ir="catalogo" style="font-size:14.5px;font-weight:700;margin-top:2px">Ver en el catálogo →</a>':n.tipo==='Curso completado'?'<a href="#" data-nov-ir="ranking" style="font-size:14.5px;font-weight:700;margin-top:2px">Ver ranking →</a>':'')+'</div>'+
       '<div style="width:10px;height:10px;border-radius:50%;background:'+(nueva?'var(--accent)':'transparent')+';flex-shrink:0;margin-top:6px"></div></div>';
   }).join('')+'</div>');
   html.push('</div>');
   app.innerHTML=html.join('');
   $('novTodas').addEventListener('click',()=>{ lsSet(novVistoKey(),String(Date.now())); pintarNav(); render(); });
   app.querySelectorAll('[data-f]').forEach(b=>b.addEventListener('click',()=>{ NOV_FILTRO=b.dataset.f; render(); }));
+  app.querySelectorAll('[data-nov-ir]').forEach(a=>a.addEventListener('click',e=>{ e.preventDefault(); TAB=a.dataset.novIr; pintarNav(); render(); }));
   const pub=$('nvPublicar'); if(pub) pub.addEventListener('click', async ()=>{
     const tit=$('nvTit').value.trim(); if(!tit){ alert('Poné un título.'); return; }
     pub.disabled=true;
@@ -1188,17 +1245,31 @@ function verCertificado(op){
       if(!isFinite(fecha)||fecha<=1) fecha=Date.now();
     }
   }
+  const colorProg = op.programa ? progColor(op.programa) : (op.curso.color||'#1a1c1f');
   const velo=document.createElement('div'); velo.id='certVista';
-  velo.innerHTML='<div><div class="cert"><div class="c-borde"></div>'+
+  velo.innerHTML='<div style="width:100%;max-width:1160px"><div class="cert">'+
+    '<div class="c-banda"></div>'+
+    '<div class="c-deco" style="background:'+hexToRgba(colorProg,.12)+'"></div>'+
+    '<div class="c-in">'+
     '<img class="c-logo" src="assets/logo-mateu.png" alt="Mateu Sports">'+
-    '<div class="c-tit">CERTIFICADO DE FINALIZACIÓN</div>'+
-    '<div class="muted">La Academia de Ventas de Mateu Sports certifica que</div>'+
-    '<div class="c-quien">'+esc(quien)+'</div>'+
-    '<div style="font-size:16px">completó satisfactoriamente '+(op.programa?'el programa':'el curso')+'</div>'+
-    '<div style="font-size:22px;font-weight:800;margin:6px 0 2px">'+esc(titulo)+'</div>'+
-    '<div class="muted" style="font-size:14px">'+esc(detalle)+' · '+fechaLarga(fecha)+'</div>'+
-    '<div class="c-firmas"><div class="c-firma"><b>'+esc(CAPACITADOR_FIRMA)+'</b>Capacitador</div>'+
-    '<div class="c-firma"><b>'+esc(SUPERVISOR_FIRMA)+'</b>Supervisor</div></div></div>'+
+    '<div class="c-tit">CERTIFICADO</div><div class="c-sub">DE FINALIZACIÓN</div>'+
+    '<div class="c-otorga">Se otorga a</div>'+
+    '<div class="c-quien">'+esc(quien)+'</div><div class="c-linea"></div>'+
+    '<div class="c-por">'+(op.programa?'Por completar con éxito la capacitación del siguiente nivel de carrera en tienda:':'Por completar con éxito el curso de la Academia de Ventas:')+'</div>'+
+    '<div class="c-prog">'+
+      '<div style="position:relative;width:66px;height:73px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 3px 6px rgba(0,0,0,.2))">'+
+      '<svg width="66" height="73" viewBox="0 0 72 80" style="position:absolute;inset:0"><polygon points="36,2 68,21 68,59 36,78 4,59 4,21" fill="'+colorProg+'" stroke="#fff" stroke-width="3"/><polygon points="36,10 61,25 61,55 36,70 11,55 11,25" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2"/></svg>'+
+      '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" style="position:relative"><path d="M12 20 C8 16.5 5.5 14 5.5 11 A3.2 3.2 0 0 1 12 9.5 A3.2 3.2 0 0 1 18.5 11 C18.5 14 16 16.5 12 20 Z" stroke="#fff" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 12 L11 14 L15 10" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>'+
+      '<div class="nom" style="color:'+colorProg+'">'+esc(titulo)+'</div></div>'+
+    '<div class="c-firmas">'+
+      '<div class="c-firma"><div class="v">'+esc(CAPACITADOR_FIRMA)+'</div><div class="l"></div><div class="k">CAPACITADOR</div></div>'+
+      '<div class="c-firma"><div class="v">'+esc(fechaCorta(fecha))+'</div><div class="l"></div><div class="k">FECHA</div></div>'+
+      '<div class="c-firma"><div class="v">'+esc(SUPERVISOR_FIRMA)+'</div><div class="l"></div><div class="k">SUPERVISOR</div></div></div>'+
+    '<div class="c-pw"><span style="color:var(--gris2);font-size:13px">powered by</span>'+
+      '<span style="font-family:\'Barlow Condensed\',sans-serif;font-style:italic;font-weight:800;font-size:18px;line-height:1">MATEU</span>'+
+      '<div style="width:1px;height:22px;background:#d8dbe0"></div>'+
+      '<div style="display:flex;flex-direction:column;font-size:8.5px;font-weight:700;letter-spacing:1px;line-height:1.3;text-align:left"><span>ACADEMIA</span><span>DE VENTAS</span></div></div>'+
+    '</div><div class="c-banda azul"></div></div>'+
     '<div class="no-print" style="text-align:center;margin-top:14px;display:flex;gap:10px;justify-content:center">'+
     '<button class="btn pri" id="certImp">🖨 Imprimir / PDF</button>'+
     '<button class="btn" id="certCerrar" style="background:#fff">Cerrar</button></div></div>';
@@ -1595,7 +1666,8 @@ function renderEditorCurso(){
     '<div><label class="fl">Competencia</label><select id="cComp">'+COMPETENCIAS.map(x=>'<option'+(c.competencia===x?' selected':'')+'>'+x+'</option>').join('')+'</select></div>'+
     '<div><label class="fl">Color</label><select id="cColor">'+PALETA.map(x=>'<option value="'+x+'"'+(c.color===x?' selected':'')+' style="background:'+x+';color:#fff">'+x+'</option>').join('')+'</select></div></div>'+
     '<div class="fila" style="margin-top:12px"><div style="flex:2"><label class="fl">Portada (URL de una foto, opcional)</label><input type="url" id="cPortada" value="'+esc(c.portada||'')+'" placeholder="https://… (si queda vacío, la tarjeta usa el color)"></div></div>'+
-    '<div style="margin-top:12px"><label class="fl">Descripción / objetivo</label><textarea id="cDesc" placeholder="Qué se lleva el equipo de este curso.">'+esc(c.desc||'')+'</textarea></div></div>');
+    '<div style="margin-top:12px"><label class="fl">Descripción / objetivo</label><textarea id="cDesc" placeholder="Qué se lleva el equipo de este curso.">'+esc(c.desc||'')+'</textarea></div>'+
+    '<div style="margin-top:12px"><label class="fl">Frase gancho de la portada (opcional)</label><input type="text" id="cFrase" value="'+esc(c.frase||'')+'" placeholder="Ej: Vender puede cualquiera, conectar es nuestro objetivo"></div></div>');
   html.push('<div class="sec-t" style="margin-top:28px">Módulos ('+(c.modulos||[]).length+')</div>');
   c.modulos=c.modulos||[];
   c.modulos.forEach((m,i)=>{ html.push(moduloEditorHtml(m,i,{pref:'m',unir:false,total:c.modulos.length})); });
@@ -1619,7 +1691,7 @@ function renderEditorCurso(){
 
   function leerForm(){
     c.titulo=$('cTit').value.trim(); c.dur=$('cDur').value.trim(); c.competencia=$('cComp').value;
-    c.color=$('cColor').value; c.portada=$('cPortada').value.trim(); c.desc=$('cDesc').value.trim();
+    c.color=$('cColor').value; c.portada=$('cPortada').value.trim(); c.desc=$('cDesc').value.trim(); c.frase=$('cFrase').value.trim();
     leerModulosForm(app,c.modulos,'m');
     c.quiz=c.quiz||{}; c.quiz.aprueba=Math.max(10,Math.min(100,+$('qAprueba').value||70));
     c.quiz.preguntas=c.quiz.preguntas||[];
