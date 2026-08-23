@@ -560,9 +560,21 @@ mismas pantallas y estética, con datos reales.
   seguridad blanda), `novedades/` (feed; no-leídas por localStorage),
   `encuestas/<cursoId>/` y `archivos/<fid>`. «📣 Avisar» de un programa publica en la
   Bandeja del Portal (`mensajes-mateu/avisos`) y en Novedades.
-- **Contenido cargado**: «Atención al Cliente» (10 lecciones + quiz, contenido real
-  del prototipo, programa «Introducción» para toda la cadena) y «Wilson: Tennis &
-  Padel 2026» (del PPT de Iván; falta asignarlo a un programa).
+- **Portada del curso** antes del player (datos, frase gancho, "Qué vas a aprender",
+  Evaluación) y **certificado** con el diseño exacto del prototipo. **Encuesta previa
+  al programa** (opción del programa: intro + preguntas abiertas de Iván; respuestas en
+  `encuestasPrevias/<prog>/<slug>/<persona>`, visibles en Gestión → Encuestas). Programas
+  con ícono (`icono`) y chips de filtro por competencia en el Catálogo. Cursos en
+  **borrador** (`activo:false`): el equipo no los ve; un programa sin contenido visible
+  no aparece al alumno.
+- **Asistente «Crear curso desde un PDF o PowerPoint»** (Gestión): lee el texto en el
+  navegador (pdf.js / JSZip por CDN), propone un módulo por página/diapositiva, Iván
+  revisa (reordena, une, quita, agrega, vista previa), quiz opcional, programa y aviso.
+- **Contenido cargado**: «Atención al Cliente» (programa «Introducción», toda la cadena),
+  «Wilson: Tennis & Padel 2026» y «Hockey: palos adidas y Malik FW26» (programa
+  «Producto de marca», vendedores+encargados), y los 4 programas del prototipo
+  (Onboarding, Vendedores, Vendedores Intermedio, Encargados) con 39 cursos en borrador
+  como hoja de ruta.
 - Las pantallas `.dc.html` + `support.js` + `sesion.js` son el **prototipo de Design**
   que originó el módulo; quedan como referencia visual (siguen gateadas).
 
