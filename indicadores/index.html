@@ -170,7 +170,17 @@ a{color:inherit}
 .zona-jump a:hover{border-color:var(--navy-mid)}
 .zona-jump{display:flex;gap:6px;flex-wrap:wrap}
 .rk-bar .zona-jump{margin-left:auto}
-@media(max-width:640px){ .zona-title{font-size:28px} .zona-title em{display:block;margin:6px 0 0} .zona-viva{padding:0 14px 18px} }
+/* tira resumen de la banda viva (semana · ritmo · mes · UPT · ticket prom.) */
+.zona-strip{display:flex;gap:8px;flex-wrap:wrap;padding:12px 0 0}
+.zona-strip:empty{display:none}
+.zs{font-family:var(--font-c);font-size:12.5px;letter-spacing:.3px;color:var(--muted);background:#fff;border:1px solid #f0d9ad;border-radius:8px;padding:5px 10px;display:inline-flex;align-items:baseline;gap:6px}
+.zs b{font-family:var(--font-d);font-size:17px;letter-spacing:.3px;color:var(--navy);font-weight:400}
+.zs.ok b{color:var(--ok)} .zs.mid b{color:var(--mid)} .zs.bad b{color:var(--bad)}
+/* ritmo esperado de la semana (matriz de pesos turno×día) */
+.ritmo{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;line-height:1.45;border-radius:9px;padding:8px 12px;margin:-4px 0 14px}
+.ritmo.r-ok{background:var(--ok-bg);color:#14663a} .ritmo.r-mid{background:var(--mid-bg);color:#7a5310} .ritmo.r-bad{background:var(--bad-bg);color:#7a1a15}
+.ritmo b{font-weight:700}
+@media(max-width:640px){ .zona-title{font-size:28px} .zona-title em{display:block;margin:6px 0 0} .zona-viva{padding:0 14px 18px} .zona-nav{display:none} }
 .hint{font-size:13px;color:var(--muted);margin:0 0 20px;max-width:680px;line-height:1.6}
 .hint b{color:var(--navy);font-weight:600}
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
@@ -563,8 +573,9 @@ footer b{color:var(--navy)}
     <!-- ===== ZONA EN CURSO: objetivo del mes y de la semana, equipo, indicadores de la semana, reposición (Firebase, provisorio) ===== -->
     <div class="zona zona-viva" id="zonaViva">
     <header class="zona-head">
-      <div><div class="zona-kicker">En curso</div><h2 class="zona-title" id="zonaVivaTitle">Semana <em>en curso</em></h2></div>
-      <span class="zona-pill prov" title="Venta de la semana / mes abierto: se actualiza a medida que se carga; el cierre oficial llega con el ETL del mes"><span class="dot"></span>provisorio</span>
+      <div><div class="zona-kicker">En curso</div><h2 class="zona-title" id="zonaVivaTitle">Mes <em>en curso</em></h2></div>
+      <div class="zona-ctrl"><span class="lbl">Semana</span><span id="semHost"></span><span class="zona-pill prov" title="Venta de la semana / mes abierto: se actualiza a medida que se carga; el cierre oficial llega con el ETL del mes"><span class="dot"></span>provisorio</span></div>
+      <div class="zona-strip" id="vivaStrip" style="flex-basis:100%"></div>
     </header>
 
     <section class="sec" id="secObjetivoMes" style="display:none">
@@ -726,8 +737,9 @@ footer b{color:var(--navy)}
     <!-- ===== ZONA EN CURSO (cadena): objetivo del mes y de la semana, todas las sucursales ===== -->
     <div class="zona zona-viva" id="zonaVivaCad">
     <header class="zona-head">
-      <div><div class="zona-kicker">En curso</div><h2 class="zona-title" id="zonaVivaCadTitle">Semana <em>en curso</em></h2></div>
-      <span class="zona-pill prov" title="Venta de la semana / mes abierto: se actualiza a medida que se carga; el cierre oficial llega con el ETL del mes"><span class="dot"></span>provisorio</span>
+      <div><div class="zona-kicker">En curso</div><h2 class="zona-title" id="zonaVivaCadTitle">Mes <em>en curso</em></h2></div>
+      <div class="zona-ctrl"><span class="lbl">Semana</span><span id="semHostCad"></span><span class="zona-pill prov" title="Venta de la semana / mes abierto: se actualiza a medida que se carga; el cierre oficial llega con el ETL del mes"><span class="dot"></span>provisorio</span></div>
+      <div class="zona-strip" id="vivaStripCad" style="flex-basis:100%"></div>
     </header>
 
     <section class="sec" id="secObjMesCadena" style="display:none">
@@ -1146,18 +1158,29 @@ function renderKpiSeg(){
    cabecera de Cierre de la vista activa, y ocultar la banda viva si no tiene nada
    (p.ej. Ecommerce). _zonaSem/_zonaMes los setean renderObjetivo / renderObjCadena. --- */
 let _zonaSem=null, _zonaMes=null;
+/* tira resumen de la banda viva: la llenan objetivoMesHtml / objMesCadenaHtml (mes),
+   renderObjetivo / renderObjCadena (semana, ritmo) y renderKpisSemana (UPT, ticket prom.) */
+let _resumenVivo={};
+function pintarResumenVivo(){
+  const el=$(vistaCadena?'vivaStripCad':'vivaStrip'); if(!el) return;
+  const R=_resumenVivo, chips=[];
+  const cls=p=> p>=100?'ok':p>=100/1.2?'mid':'bad';
+  if(R.sem && R.sem.meta){ const p=Math.round(R.sem.real/R.sem.meta*100); chips.push('<span class="zs '+(R.sem.real?cls(p):'')+'" title="Venta de la semana vs. meta">Semana <b>'+(R.sem.real?p+'%':'—')+'</b>de la meta</span>'); }
+  if(R.ritmo && !R.ritmo.completa){ const p=Math.round(R.ritmo.idx*100); chips.push('<span class="zs '+(p>=100?'ok':p>=90?'mid':'bad')+'" title="Venta vs. lo esperado a esta altura de la semana (curva de venta por día)">Ritmo <b>'+p+'%</b></span>'); }
+  if(R.mes && R.mes.meta){ const p=Math.round(R.mes.real/R.mes.meta*100); chips.push('<span class="zs '+(R.mes.real?cls(p):'')+'" title="Suma de las semanas publicadas vs. meta del mes">Mes <b>'+(R.mes.real?p+'%':'—')+'</b>de la meta</span>'); }
+  if(isFinite(R.upt)) chips.push('<span class="zs" title="UPT de la semana (provisorio)">UPT <b>'+fmt2(R.upt)+'</b></span>');
+  if(isFinite(R.tp)) chips.push('<span class="zs" title="Ticket promedio de la semana (provisorio)">Ticket prom. <b>'+fmtM(R.tp)+'</b></span>');
+  el.innerHTML=chips.join('');
+}
 function pintarZonas(){
   const cad=vistaCadena;
   const p=PERIODOS.find(x=>x.id===per)||{};
   const tC=$(cad?'zonaCierreCadTitle':'zonaCierreTitle');
   if(tC) tC.innerHTML = esc(perLabel(per))+(p.dias?'<em>'+esc(p.dias)+'</em>':'');
+  // la banda es del MES abierto; la semana elegida vive en el selector de la cabecera
   const tV=$(cad?'zonaVivaCadTitle':'zonaVivaTitle');
-  if(tV){
-    const n=_zonaSem?objSemNum(_zonaSem):null;
-    tV.innerHTML = _zonaSem
-      ? (n!=null?'Semana '+n:'Semana del '+esc(objSemLbl(_zonaSem)))+'<em>'+esc(objSemRango(_zonaSem))+(_zonaMes?' · '+esc(objMesLbl(_zonaMes)):'')+'</em>'
-      : 'Semana <em>en curso</em>';
-  }
+  if(tV) tV.innerHTML = _zonaMes ? esc(objMesLbl(_zonaMes))+'<em>mes abierto</em>' : 'Mes <em>en curso</em>';
+  pintarResumenVivo();
   const host=$(cad?'selPerHostCad':'selPerHost'), sel=$('selPer');
   if(host && sel && sel.parentNode!==host) host.appendChild(sel);
   const zv=$(cad?'zonaVivaCad':'zonaViva');
@@ -1181,6 +1204,7 @@ async function render(){
   // dejar claro que los KPIs son del último MES CERRADO: el objetivo semanal y
   // el del mes (más abajo) sí corren con la semana/mes vigente.
   segToggle();
+  _resumenVivo={};
   const topEl=document.querySelector('.top'); if(topEl) document.documentElement.style.setProperty('--rk-top', topEl.offsetHeight+'px');
   pintarZonas();
 
@@ -1471,6 +1495,17 @@ function copiarCadena(){
   });
   return L.join('\n');
 }
+// línea de la semana en curso para el resumen compartido (provisorio)
+function resumenVivoTxt(){
+  const R=_resumenVivo, p=[];
+  if(R.sem && R.sem.meta && R.sem.real) p.push(Math.round(R.sem.real/R.sem.meta*100)+'% de la meta');
+  if(R.ritmo && !R.ritmo.completa) p.push('ritmo '+Math.round(R.ritmo.idx*100)+'%');
+  if(R.mes && R.mes.meta && R.mes.real) p.push('mes '+Math.round(R.mes.real/R.mes.meta*100)+'%');
+  if(isFinite(R.upt)) p.push('UPT '+fmt2(R.upt));
+  if(isFinite(R.tp)) p.push('ticket prom. '+fmtM(R.tp));
+  if(!p.length) return null;
+  return '🟠 '+(_zonaSem?objSemTag(_zonaSem):'Semana en curso')+' (provisorio): '+p.join(' · ');
+}
 function copiarResumen(){
   let txt;
   if(vistaCadena){ txt = copiarCadena(); }
@@ -1487,6 +1522,7 @@ function copiarResumen(){
       `• Ticket promedio: ${fmtM(k.tp)}${cu(k.tp,obj.ticket_promedio)}`,
       (stock && stock!=='…' && stock!=='—') ? `• Meses de stock: ${stock}` : null,
       rTp ? `• Ranking en formato ${fmt}: ${rTp.pos}/${rTp.total} (ticket prom.)` : null,
+      resumenVivoTxt(),
     ].filter(Boolean).join('\n');
   }
   const ok=()=>{ const b=$('btnCopiar'); if(!b) return; const t=b.textContent; b.textContent='✓ Copiado'; b.classList.add('share-ok'); setTimeout(()=>{ b.textContent=t; b.classList.remove('share-ok'); },1600); };
@@ -1797,6 +1833,7 @@ async function objMesCadenaHtml(sem, weeks){
     });
     if(sum>0){ T.real=Math.round(sum); provisorio=true; }
   }
+  _resumenVivo.mes={real:T.real, meta:T.meta}; pintarResumenVivo();
   const pct=T.meta?T.real/T.meta:0, w=Math.min(100,Math.round(pct*100));
   const col = !T.real ? 'var(--mid)' : T.real>=T.meta ? 'var(--ok,#16a34a)' : T.real>=T.minimo ? '#d97706' : '#dc2626';
   let h='<div>'
@@ -1858,16 +1895,22 @@ async function renderObjCadena(){
   // encargado). Solo gerencia baja los de todas. Dan el real provisorio donde aún no hay
   // oficial, y UPT / ticket promedio de la semana para todas (comparados con el cierre).
   {
-    const tots=await Promise.all(todas.map(r=>fetchVentaEquipoTotal(r.slug, sem)));
+    // por sucursal: venta de la semana completa (días → ritmo y horas a la altura), equipo vigente
+    // (tickets por hora) y matriz de pesos (ritmo esperado). Gerencia baja todo; son lecturas chicas.
+    const datos=await Promise.all(todas.map(r=>Promise.all([fetchVentaEquipo(r.slug, sem), equipoVigente(r.slug, sem), fetchPesosSlug(r.slug)]).catch(()=>[null,null,null])));
     if(!vistaCadena) return;
     todas.forEach((r,i)=>{
-      const t=tots[i]; if(!t) return;
-      if(!r.real && +t.venta>0){ r.real=Math.round(+t.venta); r.prov=true; }
-      const tk=+t.tickets||0;
-      if(tk>0){ r.upt=(+t.unidades||0)/tk; r.tp=(+t.venta||0)/tk; r.tk=tk; r.un=+t.unidades||0; r.vt=+t.venta||0; }
+      const [ve, vig, pesos]=datos[i]||[]; const t=veTotales(ve); if(!t) return;
+      if(!r.real && t.venta>0){ r.real=Math.round(t.venta); r.prov=true; }
+      const tk=t.tickets||0;
+      if(tk>0){ r.upt=t.unidades/tk; r.tp=t.venta/tk; r.tk=tk; r.un=t.unidades; r.vt=t.venta; }
       const full=SLUG_SUC[r.slug]||OUTLET_SUC[r.slug];
       const c=(CAD&&CAD.sucursales||[]).find(x=>x.sucursal===full);
-      if(c && c.tickets){ r.uptC=c.unidades_netas/c.tickets; r.tpC=c.importe_neto/c.tickets; }
+      if(c && c.tickets){ r.uptC=c.unidades_netas/c.tickets; r.tpC=c.importe_neto/c.tickets;
+        if(hbase==='h_act' && c.h_act) r.tphC=c.tickets/c.h_act; }   // cierre con horas asignadas (solo en esa base)
+      const horas = vig&&vig.eq ? eqHorasDias(vig.eq, eqDiasSet(ve)) : 0;
+      if(horas>0 && tk>0){ r.horas=horas; r.tph=tk/horas; r.eqSem=vig.propio?null:vig.sem; }
+      r.ritmo = ritmoSemana(ve, pesos, r.meta);
     });
   }
   const hayProv = todas.some(r=>r.prov);
@@ -1892,9 +1935,10 @@ async function renderObjCadena(){
     +'</select>';
   const hayReal = rows.some(r=>r.real>0);
   const pillProv = '<span class="pprov">provisorio</span>';
+  const hostC=$('semHostCad'); if(hostC) hostC.innerHTML=selHtml;   // selector en la cabecera de la banda
   let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
-    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana · ':'Meta de la semana · ')+esc(lblLinea)+(hayProv&&!_veCadPreview?pillProv:'')+'</div>'
-    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+selHtml
+    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana · ':'Meta de la semana · ')+esc(lblLinea)+' · '+esc(objSemTag(sem))+(hayProv&&!_veCadPreview?pillProv:'')+'</div>'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
     +'<button type="button" id="veCadUpload" class="tb-btn" title="Subir la estadística de venta detallada del sistema con todas las sucursales (por día, vendedor y comprobante)">⇧ Cargar venta de la semana</button></div></div>';
 
   if(_veCadPreview){
@@ -1907,6 +1951,11 @@ async function renderObjCadena(){
     const T=rows.reduce((a,r)=>({meta:a.meta+r.meta, minimo:a.minimo+r.minimo, s120:a.s120+r.s120, real:a.real+r.real}),{meta:0,minimo:0,s120:0,real:0});
     const pct=T.meta?T.real/T.meta:0, w=Math.min(100,Math.round(pct*100));
     const col = !T.real ? 'var(--mid)' : T.real>=T.meta ? 'var(--ok,#16a34a)' : T.real>=T.minimo ? '#d97706' : '#dc2626';
+    // ritmo de la línea: suma de lo esperado y de lo vendido en las sucursales con curva
+    const conR=rows.filter(r=>r.ritmo && !r.ritmo.completa);
+    const ritmoT = conR.length ? (()=>{ const e=conR.reduce((a,r)=>a+r.ritmo.esperado,0), vta=conR.reduce((a,r)=>a+r.ritmo.venta,0), m=conR.reduce((a,r)=>a+r.meta,0);
+      const r0=conR[0].ritmo; return {share:m?e/m:r0.share, esperado:e, dif:vta-e, idx:e?vta/e:0, ndias:r0.ndias, ult:r0.ult, venta:vta, meta:m}; })() : null;
+    _resumenVivo.sem={real:T.real, meta:T.meta}; _resumenVivo.ritmo=ritmoT;
     html+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">';
     if(T.real){
       html+='<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px;color:'+col+'">'+objMoney(T.real)+'</div>'
@@ -1919,11 +1968,15 @@ async function renderObjCadena(){
     html+='</div>';
     html+='<div style="position:relative;height:10px;background:#eef0f7;border-radius:6px;overflow:hidden;margin:10px 0 14px">'
       +'<i style="position:absolute;left:0;top:0;bottom:0;border-radius:6px;width:'+w+'%;background:'+col+';display:block"></i></div>';
+    if(hayProv && ritmoT) html+=ritmoHtml(ritmoT).replace('Ritmo:', 'Ritmo '+esc(lblLinea)+' ('+conR.length+' de '+rows.length+' suc. con la semana en curso):');
     // UPT / ticket promedio de la semana para la línea (suma de numeradores y denominadores)
     const conK=rows.filter(r=>r.tk>0);
     const K=conK.reduce((a,r)=>({tk:a.tk+r.tk, un:a.un+r.un, vt:a.vt+r.vt}),{tk:0,un:0,vt:0});
     const cadC=(CAD&&CAD.sucursales||[]).filter(x=>x.sucursal!==ECOM && (!rkTipo || (x.formato||formatoDe(x.sucursal))===rkTipo));
-    const KC=cadC.reduce((a,x)=>({tk:a.tk+x.tickets, un:a.un+x.unidades_netas, vt:a.vt+x.importe_neto}),{tk:0,un:0,vt:0});
+    const KC=cadC.reduce((a,x)=>({tk:a.tk+x.tickets, un:a.un+x.unidades_netas, vt:a.vt+x.importe_neto, h:a.h+(x.h_act||0)}),{tk:0,un:0,vt:0,h:0});
+    const conH=rows.filter(r=>r.horas>0), H=conH.reduce((a,r)=>({tk:a.tk+r.tk, h:a.h+r.horas}),{tk:0,h:0});
+    if(K.tk>0){ _resumenVivo.upt=K.un/K.tk; _resumenVivo.tp=K.vt/K.tk; }
+    pintarResumenVivo();
     const kpiBox=(lbl,val,ref,fmtF)=>{ const d=(isFinite(ref)&&ref)?deltaHtml(val,ref):null;
       return '<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">'+lbl+'<span class="pprov">prov</span></div>'
         +'<div style="font-size:18px;font-weight:700;margin-top:2px">'+fmtF(val)+(d?' <span class="pte-sub" style="display:inline">'+d+' vs. '+esc(mesCorto(per))+'</span>':'')+'</div></div>'; };
@@ -1932,9 +1985,11 @@ async function renderObjCadena(){
       +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Superación 120 '+esc(lblLinea)+'</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+objMoney(T.s120)+'</div></div>'
       +(K.tk>0 ? kpiBox('UPT semana', K.un/K.tk, KC.tk?KC.un/KC.tk:NaN, fmt2)
                 +kpiBox('Ticket prom. semana', K.vt/K.tk, KC.tk?KC.vt/KC.tk:NaN, fmtM) : '')
+      +(H.h>0 ? kpiBox('Tickets/h semana', H.tk/H.h, (hbase==='h_act'&&KC.h)?KC.tk/KC.h:NaN, fmt2).replace('</div></div>', (conH.length<rows.length?' <span class="pte-sub" style="display:inline">'+conH.length+' de '+rows.length+' suc. con equipo</span>':'')+'</div></div>') : '')
       +'</div>';
     // por sucursal: con venta primero (ordenadas por % de cumplimiento), sin venta al final
     rows.sort((a,b)=> (b.real?b.real/b.meta:-1)-(a.real?a.real/a.meta:-1) || a.nombre.localeCompare(b.nombre));
+    const hayR=rows.some(r=>r.ritmo && !r.ritmo.completa), hayH=rows.some(r=>r.tph);
     const trs=rows.map(r=>{
       const p=r.meta?r.real/r.meta:0;
       const c = !r.real ? 'var(--mid)' : r.real>=r.meta ? 'var(--ok,#16a34a)' : r.real>=r.minimo ? '#d97706' : '#dc2626';
@@ -1944,13 +1999,19 @@ async function renderObjCadena(){
         +'<td><span class="num">'+objMoney(r.meta)+'</span></td>'
         +'<td><span class="num">'+(r.real?objMoney(r.real):'—')+(r.prov?'<span class="pprov" style="margin-left:4px" title="Venta provisoria de la semana (ventaEquipo), no el real oficial">prov</span>':'')+'</span></td>'
         +'<td><b style="color:'+c+'">'+(r.real?Math.round(p*100)+'%':'—')+'</b></td>'
-        +kc(r.upt, r.uptC, fmt2)+kc(r.tp, r.tpC, fmtM)+'</tr>';
+        +(hayR ? (r.ritmo&&r.ritmo.completa ? '<td><span class="muted" style="font-size:12px" title="Esta sucursal ya tiene cargada toda su semana: el % de la meta es el definitivo (provisorio hasta el real oficial)">✓ completa</span></td>' : r.ritmo ? '<td title="Vendido '+objMoney(Math.round(r.ritmo.venta))+' vs. esperado '+objMoney(Math.round(r.ritmo.esperado))+' al cierre del '+(DOW_NOMBRE[r.ritmo.ult]||'')+' ('+Math.round(r.ritmo.share*100)+'% de la semana)"><b style="color:'+(r.ritmo.idx>=1?'var(--ok,#16a34a)':r.ritmo.idx>=0.9?'#d97706':'#dc2626')+'">'+Math.round(r.ritmo.idx*100)+'%</b></td>' : '<td><span class="muted">—</span></td>') : '')
+        +kc(r.upt, r.uptC, fmt2)+kc(r.tp, r.tpC, fmtM)
+        +(hayH ? (r.tph ? '<td'+(r.eqSem?' title="Horas del equipo de la Sem '+objSemNum(r.eqSem)+' (esta semana no tiene equipo guardado)"':'')+'><span class="num">'+fmt2(r.tph)+(r.eqSem?'<span class="muted" style="font-size:10px;margin-left:3px">Sem '+objSemNum(r.eqSem)+'</span>':'')+'</span>'+((r.tphC&&isFinite(r.tphC))?'<div class="pte-sub">'+(deltaHtml(r.tph,r.tphC)||'')+'</div>':'')+'</td>' : '<td><span class="muted">—</span></td>') : '')
+        +'</tr>';
     }).join('');
     const hayK=rows.some(r=>r.tk>0);
     html+='<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L">Sucursal</th><th>Meta</th><th>Real</th><th>%</th>'
+      +(hayR?'<th title="Venta vs. lo esperado a esta altura de la semana según la curva de venta por día de cada sucursal">Ritmo<span class="pprov">prov</span></th>':'')
       +'<th title="Unidades por ticket de la semana (venta cargada) · % vs. el mes cerrado">UPT sem.<span class="pprov">prov</span></th>'
-      +'<th title="Ticket promedio de la semana (venta cargada) · % vs. el mes cerrado">Ticket prom. sem.<span class="pprov">prov</span></th></tr></thead><tbody>'+trs+'</tbody></table></div>';
-    if(hayProv||hayK) html+='<p class="hint" style="margin-top:8px">«prov» = dato de la semana en curso cargado desde «Cargar venta de la semana» (o por el encargado). El real oficial se completa desde el HISTÓRICO del Excel PMS en el módulo Objetivos. UPT y ticket promedio de la semana llevan debajo el % contra '+esc(perLabel(per))+' (cierre).</p>';
+      +'<th title="Ticket promedio de la semana (venta cargada) · % vs. el mes cerrado">Ticket prom. sem.<span class="pprov">prov</span></th>'
+      +(hayH?'<th title="Tickets por hora asignada del equipo de la semana (o del último equipo guardado)'+(hbase==='h_act'?' · % vs. el mes cerrado con horas asignadas':'')+'">Tickets/h sem.<span class="pprov">prov</span></th>':'')
+      +'</tr></thead><tbody>'+trs+'</tbody></table></div>';
+    if(hayProv||hayK) html+='<p class="hint" style="margin-top:8px">«prov» = dato de la semana en curso cargado desde «Cargar venta de la semana» (o por el encargado). El real oficial se completa desde el HISTÓRICO del Excel PMS en el módulo Objetivos. <b>Ritmo</b> = venta vs. lo esperado a esta altura de la semana (curva por día de cada sucursal). UPT, ticket promedio'+(hbase==='h_act'?' y tickets por hora':'')+' de la semana llevan debajo el % contra '+esc(perLabel(per))+' (cierre)'+(hbase!=='h_act'?'; tickets por hora no se compara con el cierre en base horas contratadas':'')+'.</p>';
   }
   html+='<p class="hint" style="margin-top:12px"><a href="../objetivos/" style="color:var(--red,#CC0000);font-weight:600;text-decoration:none">Abrir Objetivos de Venta →</a> para cargar o corregir las metas de la semana. <b>⇧ Cargar venta de la semana</b> sube la estadística de venta detallada del sistema (todas las sucursales, por día y vendedor) y la publica como venta provisoria para que cada sucursal la vea en Mi Sucursal.</p>';
   $('objCadCard').innerHTML=html;
@@ -2658,10 +2719,12 @@ const justifTexto=(tipo, sem, justif)=>{
 // limpiar los caches de horas asignadas cuando se guarda un equipo
 function limpiarAsigCache(slug){
   Object.keys(_asigCache).forEach(k=>{ if(k.indexOf(slug+'|')===0) delete _asigCache[k]; });
+  Object.keys(_eqVigCache).forEach(k=>{ if(k.indexOf(slug+'|')===0) delete _eqVigCache[k]; });
   Object.keys(_cadAsigCache).forEach(k=>delete _cadAsigCache[k]);
 }
 
 // bloque desplegable "cómo viene el equipo" dentro del card de Objetivo
+const _eqOpenState={};   // slug|sem → cómo dejó el usuario el desplegable del equipo en esta visita
 function veSectionHtml(slug, sem, v, ve, eqData, pesos, prevVe){
   const metaVal=(v&&v.meta)||0;
   const prev = _vePreview && _vePreview.slug===slug && _vePreview.sem===sem ? _vePreview : null;
@@ -2698,7 +2761,8 @@ function veSectionHtml(slug, sem, v, ve, eqData, pesos, prevVe){
       + '<button type="button" id="veUpload" class="tb-btn">⇧ '+(hayExcel?'Actualizar':'Cargar')+' venta por vendedor (Excel)</button>'
       + '<span class="hint" style="margin:0">El Excel también sirve como venta real cuando el equipo está armado.</span></div>';
   }
-  const open = (prev || editando || hayEquipo || hayExcel) ? ' open' : '';
+  const key=slug+'|'+sem; let visto=false; try{ visto=!!localStorage.getItem('ind_eq_visto_'+key); }catch(e){}
+  const open = (prev || editando || (_eqOpenState[key]!=null ? _eqOpenState[key] : (!visto && (hayEquipo || hayExcel)))) ? ' open' : '';
   return '<details class="bgrupo" style="margin-top:16px"'+open+'><summary>'+sum+'</summary>'
     + '<div style="padding:12px 14px">'+body+'</div></details>';
 }
@@ -2958,6 +3022,7 @@ async function objetivoMesHtml(slug, sem, weeks, ve){
   const w=Math.min(100, Math.round(pct*100));
   const cls=!real?'na':real>=meta?'ok':real>=minimo?'warn':'bad';
   const col=cls==='ok'?'var(--ok,#16a34a)':cls==='warn'?'#d97706':cls==='bad'?'#dc2626':'var(--mid)';
+  _resumenVivo.mes={real, meta}; pintarResumenVivo();
   // va en su propia sección "Objetivo del mes", arriba de la semanal
   let h='<div>'
     +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
@@ -3042,21 +3107,94 @@ async function kpisCerrado(slug){
     base:asig?'asignadas':'contratadas', label:mesCorto(per)};
 }
 const kpiFmt=(k,x)=> (k==='upt'||k==='tph') ? fmt2(x) : fmtM(x);
+// matriz de pesos de una sucursal por slug (Firebase → horneada por nombre); sirve en vista Cadena,
+// donde fetchEqPesos no aplica porque su fallback depende de la sucursal en foco
+const _pesosSlugCache={};
+function fetchPesosSlug(slug){
+  if(_pesosSlugCache[slug]) return _pesosSlugCache[slug];
+  const base=OBJETIVOS_URL.replace(/\/+$/,'');
+  const full=SLUG_SUC[slug]||OUTLET_SUC[slug]||SOLO_OBJ_SUC[slug];
+  const horneado=()=>{
+    const P=window.PESOS_TURNOS&&window.PESOS_TURNOS.pesos; if(!P) return null;
+    if(full && P[full]) return P[full];
+    // sin matriz propia (Diagonal 80): promedio de la cadena, como en el reparto del equipo
+    const ms=Object.values(P).filter(m=>m&&m.t1); if(!ms.length) return null;
+    const avg={t1:[],t2:[],t3:[],promedio:true};
+    ['t1','t2','t3'].forEach(t=>{ for(let d=0;d<7;d++) avg[t][d]=ms.reduce((a,m)=>a+(+m[t][d]||0),0)/ms.length; });
+    return avg;
+  };
+  _pesosSlugCache[slug]=fetch(base+'/objetivos/pesosTurnos/porSlug/'+encodeURIComponent(slug)+'.json')
+    .then(r=>r.ok?r.json():null).catch(()=>null).then(p=>(p&&p.t1)?p:horneado());
+  return _pesosSlugCache[slug];
+}
+// equipo con horas para una semana: el guardado de esa semana o, si no tiene horas, el último
+// guardado ANTERIOR (el encargado no siempre arma el equipo; sin esto tickets/hora queda en «—»)
+const _eqVigCache={};
+function equipoVigente(slug, sem){
+  const key=slug+'|'+sem; if(_eqVigCache[key]) return _eqVigCache[key];
+  _eqVigCache[key]=(async()=>{
+    const eq=await fetchEquipo(slug, sem);
+    if(eqHorasEquipo(eq)>0) return {eq, sem, propio:true};
+    const lista=await fetchEqSemanas(slug);   // desc
+    for(const w of lista){ if(w>=sem) continue; const e=await fetchEquipo(slug, w); if(eqHorasEquipo(e)>0) return {eq:e, sem:w, propio:false}; }
+    return {eq:null, sem:null, propio:false};
+  })();
+  return _eqVigCache[key];
+}
+// % de la meta semanal que «debería» estar vendido con los días cargados, según la curva
+// de venta por turno×día de la sucursal (la misma matriz que reparte la meta al equipo)
+// Un día SIN venta dentro de lo ya transcurrido (feriado, cerrado) sale de la curva: si no,
+// su peso infla lo esperado y la semana aparece «abajo del ritmo» sin estarlo.
+function ritmoEsperado(pesos, dias){
+  if(!pesos||!pesos.t1||!dias||!dias.size) return null;
+  const idxUlt=Math.max(...EQ_DOW.map((d,i)=>dias.has(d)?i:-1));
+  let tot=0, acum=0;
+  EQ_DOW.forEach((d,i)=>{
+    const w=['t1','t2','t3'].reduce((a,t)=>a+(+((pesos[t]||[])[i])||0),0);
+    if(i<=idxUlt && !dias.has(d)) return;
+    tot+=w; if(i<=idxUlt) acum+=w;
+  });
+  return tot>0 ? acum/tot : null;
+}
+const DOW_NOMBRE={lu:'lunes',ma:'martes',mi:'miércoles',ju:'jueves',vi:'viernes',sa:'sábado',do:'domingo'};
+function ritmoSemana(ve, pesos, meta){
+  const tot=veTotales(ve); if(!tot||!meta) return null;
+  const dias=eqDiasSet(ve), share=ritmoEsperado(pesos, dias);
+  if(share==null) return null;
+  if(share>=0.995) return {completa:true, venta:tot.venta, meta};   // semana completa: el % de la meta ya dice todo
+  const esperado=meta*share, dif=tot.venta-esperado, idx=esperado?tot.venta/esperado:0;
+  const ult=EQ_DOW.filter(d=>dias.has(d)).pop();
+  return {share, esperado, dif, idx, ndias:dias.size, ult, venta:tot.venta, meta};
+}
+function ritmoHtml(r){
+  if(!r || r.completa) return '';
+  const p=Math.round(r.idx*100), cls=p>=100?'r-ok':p>=90?'r-mid':'r-bad';
+  const signo=r.dif>=0?'+':'−';
+  return '<div class="ritmo '+cls+'" title="Curva de venta por turno y día de la sucursal (Objetivos → Pesos por turno)">'
+    +'<span>⏱</span><span>Ritmo: al cierre del <b>'+(DOW_NOMBRE[r.ult]||r.ult)+'</b> ('+r.ndias+' día'+(r.ndias===1?'':'s')+') lo esperado era el <b>'+Math.round(r.share*100)+'%</b> de la meta ('+objMoney(Math.round(r.esperado))+') · '
+    +'vas <b>'+signo+objMoney(Math.abs(Math.round(r.dif)))+'</b> '+(r.dif>=0?'arriba':'abajo')+' (<b>'+p+'%</b> del ritmo)</span></div>';
+}
 let _kpisSemToken=0;
-async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks){
+async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem, ritmo){
   const sec=$('secKpisSem'); if(!sec) return;
   const token=++_kpisSemToken, target=sucName;
-  const cur=kpisSemanaViva(ve, eqData);
+  if(!veTotales(ve)){ sec.style.display='none'; pintarZonas(); return; }
+  // equipo vigente (el de la semana o el último guardado) para esta semana y la anterior
+  const [vig, vigP] = await Promise.all([equipoVigente(slug, sem), prevSem?equipoVigente(slug, prevSem):null]);
+  if(token!==_kpisSemToken || sucName!==target) return;
+  const cur=kpisSemanaViva(ve, vig.eq);
   if(!cur){ sec.style.display='none'; pintarZonas(); return; }
-  const prev=kpisSemanaViva(prevVe, null);   // sin equipo previo a mano: solo UPT / ticket prom.
+  const prev=kpisSemanaViva(prevVe, vigP&&vigP.eq);
+  const hsNota = (vig.eq && !vig.propio) ? ' · equipo de Sem '+objSemNum(vig.sem) : '';
   // mes en curso acumulado: semanas publicadas del mismo mes (mismo criterio que «Objetivo del mes»)
   const mesISO = _zonaMes || String(sem).slice(0,7);
   const delMes=(weeks||[]).filter(w=>String(w).slice(0,7)===mesISO).sort();
   const [cerr, ...vivas] = await Promise.all([kpisCerrado(slug)].concat(delMes.map(async w=>{
-    const [vw,ew] = (w===sem) ? [ve,eqData] : await Promise.all([fetchVentaEquipo(slug,w), fetchEquipo(slug,w)]);
-    return kpisSemanaViva(vw, ew);
+    const [vw,ew] = (w===sem) ? [ve,vig] : await Promise.all([fetchVentaEquipo(slug,w), equipoVigente(slug,w)]);
+    return kpisSemanaViva(vw, ew&&ew.eq);
   })));
   if(token!==_kpisSemToken || sucName!==target) return;
+  _resumenVivo.upt=cur.upt; _resumenVivo.tp=cur.tp; pintarResumenVivo();
   const acum=kpisAcum(vivas);
   const fmt=(DET_FULL&&DET_FULL.formato)||formatoDe(sucName), obj=OBJ[fmt]||{};
   const semN=objSemNum(sem), semLbl=semN!=null?'Sem '+semN:'esta semana';
@@ -3065,14 +3203,14 @@ async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks){
   const defs=[
     {key:'upt', name:'UPT',              tgt:obj.upt,             unit:'unidades por ticket'},
     {key:'tp',  name:'Ticket promedio',  tgt:obj.ticket_promedio, unit:'venta por ticket'},
-    {key:'tph', name:'Tickets por hora', tgt:obj.tickets_hora,    unit:'por hora asignada', hs:true},
-    {key:'vh',  name:'Venta por hora',   tgt:null,                unit:'por hora asignada', hs:true},
+    {key:'tph', name:'Tickets por hora', tgt:obj.tickets_hora,    unit:'por hora asignada'+hsNota, hs:true},
+    {key:'vh',  name:'Venta por hora',   tgt:null,                unit:'por hora asignada'+hsNota, hs:true},
   ];
   $('kpisSem').innerHTML = defs.map(d=>{
     const x=cur[d.key];
     if(d.hs && !cur.horas){
       return '<div class="kpi"><div class="kpi-name">'+d.name+'<span class="pprov">prov</span></div><div class="kpi-val">—</div><div class="kpi-unit">sin horas asignadas</div>'
-        +'<div class="kpi-foot"><div class="kpi-empty">Armá el equipo y asigná las horas por turno para medir esta semana.</div></div></div>';
+        +'<div class="kpi-foot"><div class="kpi-empty">Tu sucursal todavía no tiene ningún equipo con horas guardado: armalo en «Cómo viene el equipo» para medir esta semana.</div></div></div>';
     }
     let objHtml='<span class="tgt">sin objetivo de formato</span>', semClass='';
     if(d.tgt && isFinite(x)){
@@ -3127,7 +3265,11 @@ async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks){
   else{
     const NM={tph:'tickets por hora',upt:'UPT',tp:'ticket promedio'};
     const [peor,pp]=cumpl[0];
-    const lead = pctMeta!=null ? 'Vas al <b>'+Math.round(pctMeta)+'%</b> de la meta de la semana'+(diasTxt?' con '+diasTxt:'')+'. ' : '';
+    let lead = pctMeta!=null ? 'Vas al <b>'+Math.round(pctMeta)+'%</b> de la meta de la semana'+(diasTxt?' con '+diasTxt:'') : '';
+    if(lead && ritmo && !ritmo.completa){ const pr=Math.round(ritmo.idx*100);
+      lead += ', con el <b>'+Math.round(ritmo.share*100)+'%</b> de la semana transcurrida según tu curva de venta: '
+        +(pr>=100?'<b>en ritmo</b> (+'+objMoney(Math.round(ritmo.dif))+' sobre lo esperado)':pr>=90?'<b>apenas abajo del ritmo</b> (−'+objMoney(Math.abs(Math.round(ritmo.dif)))+')':'<b>abajo del ritmo</b> (−'+objMoney(Math.abs(Math.round(ritmo.dif)))+' respecto de lo esperado)'); }
+    if(lead) lead+='. ';
     let tone, tt, txt;
     if(pp>=100){ tone='ok'; tt='Semana en objetivo'; txt=lead+'Los indicadores de la semana están en el objetivo de tu línea. Sostené el ritmo.'; }
     else{
@@ -3182,9 +3324,10 @@ async function renderObjetivo(){
     +'</select>';
 
   // objetivo del MES en su propia sección, arriba; abajo el semanal con su detalle
+  const ritmo = v ? ritmoSemana(ve, pesos, v.meta||0) : null;   // ¿vamos al ritmo esperado de la semana?
   const mesHtml = await pMes;
   if(sucName!==target) return;
-  renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks);   // async: pinta cuando tiene el cierre
+  renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem, ritmo);   // async: pinta cuando tiene el cierre
   const cardMes=$('objetivoMesCard');
   if(cardMes) cardMes.innerHTML=mesHtml||'';
   if(secMes) secMes.style.display = mesHtml ? '' : 'none';
@@ -3192,9 +3335,12 @@ async function renderObjetivo(){
   // con el real ya cargado el protagonista es la venta: real en grande, meta en chico
   const realEncTot = (()=>{ const t=ve&&ve.total; return typeof t==='number' ? t : (t&&t.venta)||0; })();
   const hayReal = !!v && ((v.real||0)>0 || realEncTot>0);
+  // el selector de semana vive en la cabecera de la banda «En curso»
+  const host=$('semHost'); if(host) host.innerHTML=selHtml;
+  _resumenVivo.sem={real:realEncTot||(v&&v.real)||0, meta:(v&&v.meta)||0}; _resumenVivo.ritmo=ritmo; pintarResumenVivo();
   let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
-    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana':'Meta de la semana')+'</div>'
-    +selHtml+'</div>';
+    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana':'Meta de la semana')+' · '+esc(objSemTag(sem))+'</div>'
+    +'</div>';
 
   if(!v){
     html+='<p class="empty" style="margin:6px 0">Todavía no cargaron el objetivo de tu sucursal para esta semana. Probá con otra semana.</p>';
@@ -3226,6 +3372,7 @@ async function renderObjetivo(){
     // barra siempre lisa, por color (verde/ámbar/rojo); lo provisorio se marca con la pill «prov»
     html+='<div style="position:relative;height:10px;background:#eef0f7;border-radius:6px;overflow:hidden;margin:10px 0 14px">'
       +'<i style="position:absolute;left:0;top:0;bottom:0;border-radius:6px;width:'+w+'%;background:'+col+';display:block"></i></div>';
+    if(!usaOf) html+=ritmoHtml(ritmo);   // semana en curso: ¿vamos al ritmo esperado?
     // cruce: cuando ya está el real oficial y el encargado había reportado algo esa semana
     if(usaOf && realEnc>0){
       const dif = realEnc - realOf, difPct = realOf ? (dif/realOf*100) : 0;
@@ -3249,6 +3396,9 @@ async function renderObjetivo(){
   sec.style.display='';   // puede venir oculta por mostrarEmpty() (sucursal sin indicadores)
   if(_objPintado){ _objPintado(); _objPintado=null; }   // libera la descarga del stock
   const selEl=$('objSemSel'); if(selEl) selEl.onchange = e => { objSem = e.target.value; _eqEdit=null; _eqRealDraft=null; renderObjetivo(); };
+  // «Cómo viene el equipo»: abierto la primera vez que se ve la semana; después recuerda cómo lo dejó el usuario
+  const det=$('objetivoCard').querySelector('details.bgrupo');
+  if(det){ const key=slug+'|'+sem; det.ontoggle=()=>{ _eqOpenState[key]=det.open; }; try{ localStorage.setItem('ind_eq_visto_'+key,'1'); }catch(e){} }
   const up=$('veUpload'); if(up) up.onclick = ()=> $('veFile').click();
   const sv=$('veSave'); if(sv) sv.onclick = veGuardar;
   const cn=$('veCancel'); if(cn) cn.onclick = ()=>{ _vePreview=null; renderObjetivo(); };

@@ -213,6 +213,21 @@ cerrado · objetivo — el acumulado calcula tickets/venta por hora solo con las
 tienen horas, `kpisAcum`) y un insight corto de la semana. En Cadena, la tabla del objetivo
 semanal suma **UPT sem. y Ticket prom. sem.** por sucursal con su % vs. el cierre, y el
 agregado de la línea. La Reposición avisa «hace N semanas» si el análisis tiene ≥7 días.
+**Afinado 23/08 (tarde):** la cabecera de «En curso» es del **mes abierto** («Agosto 2026 ·
+mes abierto») y lleva el **selector de semana** (`#semHost` / `#semHostCad`; lo pinta
+`renderObjetivo` / `renderObjCadena`) + una **tira resumen** (`#vivaStrip`, `pintarResumenVivo`
+sobre `_resumenVivo`: semana % · ritmo · mes % · UPT · ticket prom.; también va en «⧉ Copiar»
+vía `resumenVivoTxt`). **Ritmo esperado** (`ritmoSemana` / `ritmoEsperado`): con la matriz de
+pesos turno×día (`fetchEqPesos` en sucursal, `fetchPesosSlug` en Cadena, promedio si no hay)
+calcula qué % de la meta «debería» estar vendido con los días cargados; un día sin venta dentro
+de lo transcurrido (feriado) sale de la curva; semana completa → `{completa:true}` y no se
+muestra. Sale bajo la barra del objetivo semanal (`.ritmo`), en el insight de la semana y como
+columna «Ritmo» (+ «✓ completa») en la tabla de Cadena. **Equipo vigente** (`equipoVigente`):
+si la semana no tiene equipo con horas, usa el último guardado anterior (nota «equipo de Sem N»)
+— así tickets/hora de la semana y de la anterior siempre salen; Cadena suma la columna
+«Tickets/h sem.» (delta vs. cierre solo en base «Horas asignadas»). El desplegable «Cómo viene
+el equipo» abre solo la primera vez que se ve esa semana (`ind_eq_visto_<slug>|<sem>` en
+localStorage; `_eqOpenState` recuerda el toggle dentro de la visita). Nav «Ir a» oculto <640 px.
 
 `indicadores/` es un `index.html` self-contained que **lee la sesión del Portal**
 (no tiene login propio) y es la **pantalla de inicio de los roles `sucursal` y
