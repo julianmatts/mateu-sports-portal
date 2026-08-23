@@ -71,7 +71,11 @@
   }
   function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
-  function nombreCorto(email){ return (email||'').split('@')[0] || email || '—'; }
+  // Usuario del mail, con inicial en mayúscula ("julian" -> "Julian", "cristian.campion" -> "Cristian Campion")
+  function nombreCorto(email){
+    var u = (email||'').split('@')[0] || email || '';
+    return u ? u.split(/[._-]+/).map(function(p){ return p ? p.charAt(0).toUpperCase()+p.slice(1) : p; }).join(' ') : '—';
+  }
 
   // ---- estilos (colores horneados: no dependen de las variables del módulo) ----
   var CSS = ''

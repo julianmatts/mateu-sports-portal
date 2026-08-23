@@ -806,10 +806,15 @@ const SLUG_SUC = {
 const OUTLET_SUC = {
   'gonnet':'14-Outlet Gonnet','av-44':'20-Outlet Av. 44','calle-55':'03-Outlet Calle 55','aurelius-10':'07-Aurelius Calle 10',
 };
+// Sucursales SIN datos de Indicadores pero con objetivo / equipo / reposición en
+// Firebase (viven por slug): gerencia las ve igual en el selector, con empty state
+// de KPIs y la sección Objetivo completa. El Depósito no vende: queda afuera.
+const SOLO_OBJ_SUC = { 'diagonal':'10-Diagonal 80' };
 // nombre de sucursal (dato) -> slug del Portal, para leer la Barrida de reserva.
 const SUC2SLUG = {};
 Object.entries(SLUG_SUC).forEach(([slug,n])=>SUC2SLUG[n]=slug);
 Object.entries(OUTLET_SUC).forEach(([slug,n])=>SUC2SLUG[n]=slug);
+Object.entries(SOLO_OBJ_SUC).forEach(([slug,n])=>SUC2SLUG[n]=slug);
 // Base de la Barrida de Reserva: reusa recepciones-mateu (los datos viven en el
 // nodo `barrida/…`). Mismo criterio de seguridad blanda: cada sucursal baja solo
 // su propia lista de reposición. Vacío => la sección no aparece.
@@ -1071,9 +1076,12 @@ async function render(){
   // completar selector de sucursales (gerencia) una vez que hay cadena
   if(esGerencia && CAD){
     const sucs = CAD.sucursales.map(s=>s.sucursal);
-    if(!sucName || !sucs.includes(sucName)) sucName = sucs[0];
+    // + las que solo tienen objetivo (Diagonal 80), ordenadas por su código NN
+    const todas = sucs.concat(Object.values(SOLO_OBJ_SUC).filter(n=>!sucs.includes(n)))
+      .sort((a,b)=>a.localeCompare(b,'es',{numeric:true}));
+    if(!sucName || !todas.includes(sucName)) sucName = todas[0];
     $('selSuc').innerHTML = '<option value="__cadena">▦ Cadena (comparar todas)</option>'
-      + sucs.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');
+      + todas.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');
     $('selSuc').value = vistaCadena ? '__cadena' : sucName;
   }
 
@@ -1100,7 +1108,9 @@ async function render(){
   // indicadores (viven en Firebase por slug): se muestran igual.
   DET_FULL = await detalleDe(per, sucName);
   if(!DET_FULL || !CAD){
-    mostrarEmpty('No hay datos de <b>'+esc(sucName)+'</b> para '+esc(perLabel(per))+'.');
+    mostrarEmpty(Object.values(SOLO_OBJ_SUC).includes(sucName)
+      ? '<b>'+esc(sucName)+'</b> todavía no tiene datos de indicadores cargados (sí su objetivo y equipo).'
+      : 'No hay datos de <b>'+esc(sucName)+'</b> para '+esc(perLabel(per))+'.');
     if(slugActual()){ renderObjetivo(); renderBarrida(); }
     return;
   }
@@ -3895,7 +3905,11 @@ let LAST_NOTIFS=[], LAST_AVISO_TS=0, NOTIF_SEEN=new Set(), NOTIF_PRIMED=false, N
 function postJSON(url,data){ return fetch(url,{method:'POST',body:JSON.stringify(data),headers:{'Content-Type':'application/json'}}); }
 function putJSON(url,data){ return fetch(url,{method:'PUT',body:JSON.stringify(data),headers:{'Content-Type':'application/json'}}); }
 function firebaseKeyFromEmail(email){ return (email||'').toLowerCase().trim().replace(/\./g,','); }
-function nombreCorto(email){ return (email||'').split('@')[0] || email || '—'; }
+// Usuario del mail, con inicial en mayúscula ("julian" -> "Julian", "cristian.campion" -> "Cristian Campion")
+function nombreCorto(email){
+  const u = (email||'').split('@')[0] || email || '';
+  return u ? u.split(/[._-]+/).map(p=>p ? p.charAt(0).toUpperCase()+p.slice(1) : p).join(' ') : '—';
+}
 function horaCorta(ts){ try{ return new Date(ts).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } }
 function objToSortedList(obj){ return Object.keys(obj||{}).map(id=>Object.assign({id},obj[id])).sort((a,b)=>(a.ts||0)-(b.ts||0)); }
 function postParaMi(para){
