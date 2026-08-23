@@ -20,7 +20,11 @@
   .top{background:var(--navy);border-bottom:3px solid var(--red);display:flex;align-items:center;gap:12px;padding:calc(12px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) 12px calc(20px + env(safe-area-inset-left))}
   .top h1{font-family:var(--font-d);font-size:24px;color:#fff;letter-spacing:1px;margin:0;font-weight:400}
   .top .ts{font-family:var(--font-c);font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#b0bcd4}
-  .top .tag{margin-left:auto;font-family:var(--font-c);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);padding:4px 11px;border-radius:999px}
+  .top .tag{font-family:var(--font-c);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);padding:4px 11px;border-radius:999px}
+  .sync-dot{width:11px;height:11px;border-radius:50%;flex:none;box-shadow:0 0 0 2px rgba(255,255,255,.15)}
+  .sync-dot.ok{background:#3ddc84}
+  .sync-dot.busy{background:#f2c078;animation:syncpulse 1s ease-in-out infinite}
+  @keyframes syncpulse{0%,100%{opacity:.35}50%{opacity:1}}
   main{max-width:960px;margin:0 auto;padding:20px calc(16px + env(safe-area-inset-right)) calc(60px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))}
   .sec-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap}
   .sec-head h2{font-family:var(--font-d);font-size:26px;letter-spacing:.5px;margin:0;font-weight:400}
@@ -116,7 +120,7 @@
 <body>
 <header class="top">
   <div><h1 id="topTitle">Tareas de Depósito</h1><div class="ts">Depósito Central · Mateu Sports</div></div>
-  <span class="tag" id="topTag">Kiosco</span>
+  <div style="display:flex;align-items:center;gap:10px"><span class="sync-dot ok" id="syncDot" title="Todo guardado"></span><span class="tag" id="topTag">Kiosco</span></div>
 </header>
 <main id="view"><div class="state"><div class="spin"></div>Cargando…</div></main>
 <div class="toast" id="toast"></div>
@@ -144,6 +148,31 @@ async function fbGet(path,q){ const r=await fetch(fbUrl(path)+(q?('?'+q):'')); i
 async function fbPut(path,data){ const r=await fetch(fbUrl(path),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
 function nowISO(){ return new Date().toISOString().slice(0,19).replace('T',' '); }
 function toast(msg,kind){ const t=$('toast'); t.textContent=msg; t.className='toast show '+(kind||''); setTimeout(()=>{t.className='toast '+(kind||'');},2600); }
+
+/* ---- cola de guardado DURABLE: si se corta el wifi, no se pierde progreso ----
+   Los guardados por unidad se encolan (persistidos en localStorage) y se reintentan
+   hasta que salen. Un puntito en el header muestra el estado. */
+var SAVEQ_KEY='pk_saveq';
+var saveQueue=[]; var savingNow=false;
+try{ saveQueue=JSON.parse(localStorage.getItem(SAVEQ_KEY)||'[]')||[]; }catch(e){ saveQueue=[]; }
+function saveqPersist(){ try{ localStorage.setItem(SAVEQ_KEY, JSON.stringify(saveQueue)); }catch(e){} }
+function saveqStatus(){ const el=$('syncDot'); if(!el) return; const pend=saveQueue.length; el.className='sync-dot '+(savingNow||pend?'busy':'ok'); el.title=(savingNow||pend)?('Guardando… '+pend+' pendiente'+(pend===1?'':'s')):'Todo guardado'; }
+function enqueueSave(path,data){
+  var start=savingNow?1:0; // no tocar el que se está enviando
+  for(var i=start;i<saveQueue.length;i++){ if(saveQueue[i].p===path){ saveQueue[i].d=data; saveqPersist(); saveqStatus(); procesarCola(); return; } }
+  saveQueue.push({p:path,d:data}); saveqPersist(); saveqStatus(); procesarCola();
+}
+function procesarCola(){
+  if(savingNow){ return; } if(!saveQueue.length){ saveqStatus(); return; }
+  savingNow=true; saveqStatus();
+  const job=saveQueue[0];
+  fbPut(job.p, job.d).then(function(){ saveQueue.shift(); saveqPersist(); savingNow=false; saveqStatus(); if(saveQueue.length) procesarCola(); })
+    .catch(function(){ savingNow=false; saveqStatus(); setTimeout(procesarCola, 3000); });
+}
+// guardar YA (transiciones): intenta directo y, si falla, cae a la cola
+async function saveNow(path,data){ try{ await fbPut(path,data); return true; }catch(e){ enqueueSave(path,data); return false; } }
+window.addEventListener('online', procesarCola);
+window.addEventListener('beforeunload', function(e){ if(saveQueue.length){ e.preventDefault(); e.returnValue=''; } });
 const vals = o => o?Object.keys(o).map(k=>o[k]):[];
 function fmtDur(ms){ if(!ms||ms<0) return '—'; const s=Math.round(ms/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; if(h) return h+'h '+m+'m'; if(m) return m+'m '+ss+'s'; return ss+'s'; }
 function nombreSuc(slug){ return String(slug||'').split('-').map(w=> !w?w:(w.length<=2?w.toUpperCase():w.charAt(0).toUpperCase()+w.slice(1))).join(' '); }
@@ -289,9 +318,9 @@ async function cargarPicking(){
 }
 function pkK(nro){ return String(nro).replace(/[.#$/\[\]]/g,'~'); }
 function pkGet(){ return DATA.pick.pickings[pkK(state.pickNro)]||null; }
-async function pkSaveItem(nro,iid,item){ try{ await fbPut('picking/pickings/'+pkK(nro)+'/items/'+iid, item); }catch(e){} }
-async function pkSaveField(nro,field,val){ try{ await fbPut('picking/pickings/'+pkK(nro)+'/'+field, val); }catch(e){} }
-function pkEvento(ev){ const k=nowISO().replace(/\D/g,'')+'_'+Math.floor((performance.now()*7)%100000); fbPut('picking/eventos/'+k, Object.assign({ts:nowISO()},ev)).catch(()=>{}); }
+function pkSaveItem(nro,iid,item){ enqueueSave('picking/pickings/'+pkK(nro)+'/items/'+iid, item); }         // por unidad: durable, no bloquea el scan
+async function pkSaveField(nro,field,val){ return saveNow('picking/pickings/'+pkK(nro)+'/'+field, val); }        // transiciones: guarda ya (con fallback a cola)
+function pkEvento(ev){ const k=nowISO().replace(/\D/g,'')+'_'+Math.floor((performance.now()*7)%100000); enqueueSave('picking/eventos/'+k, Object.assign({ts:nowISO()},ev)); }
 function pkResumen(P){ let req=0,pk=0,lines=0,falt=0; Object.keys(P.items||{}).forEach(iid=>{ (P.items[iid].talles||[]).forEach(t=>{ lines++; req+=num(t.req); pk+=num(t.picked); if(t.faltante) falt+=Math.max(0,num(t.req)-num(t.picked)); }); }); return {req,pk,lines,falt}; }
 function pkLines(P){ const out=[]; Object.keys(P.items||{}).map(iid=>({iid,...P.items[iid]})).sort((a,b)=>num(a.sequence)-num(b.sequence))
   .forEach(it=>{ (it.talles||[]).forEach((t,ti)=>{ out.push({iid:it.iid,ti,codigo:it.codigo,desc:it.desc,marca:it.marca,zona:it.zonaNombre||'Sin zona',talle:t.t,ean:t.ean||'',req:num(t.req),picked:num(t.picked),faltante:t.faltante||null}); }); }); return out; }
@@ -380,6 +409,12 @@ function renderPickSummary(){
   if($('cont')) $('cont').onclick=async()=>{ if(P.estado==='PAUSADO'){ P.estado='EN PREPARACIÓN'; await pkSaveField(P.nro,'estado','EN PREPARACIÓN'); pkEvento({event_type:'picking_resumed',picking_id:P.nro,operator_id:P.operario}); } state.view='op'; render(); };
   if($('iniciar')) $('iniciar').onclick=async()=>{
     const op=$('opP').value; if(!op){ toast('Elegí tu nombre','bad'); return; }
+    // lock suave: re-chequeo el estado en vivo por si otro operario ya lo tomó
+    let curEst=null; try{ curEst=await fbGet('picking/pickings/'+pkK(P.nro)+'/estado'); }catch(e){}
+    if(curEst==='EN PREPARACIÓN' || curEst==='PAUSADO'){ let quien=''; try{ quien=await fbGet('picking/pickings/'+pkK(P.nro)+'/operario'); }catch(e){}
+      if(!confirm('Este pick ya lo empezó '+(quien||'otra persona')+'. ¿Tomarlo igual?')){ state.view='lista'; try{ await cargarPicking(); }catch(e){} render(); return; }
+      pkEvento({event_type:'picking_reassigned',picking_id:P.nro,operator_id:op,value:{de:quien}});
+    }
     P.operario=op; P.started_at=nowISO(); P.started_ms=Date.now(); P.estado='EN PREPARACIÓN';
     await Promise.all([ pkSaveField(P.nro,'operario',op), pkSaveField(P.nro,'started_at',P.started_at), pkSaveField(P.nro,'started_ms',P.started_ms), pkSaveField(P.nro,'estado','EN PREPARACIÓN') ]);
     pkEvento({event_type:'picking_started',picking_id:P.nro,operator_id:op});
@@ -490,7 +525,7 @@ function renderPickFin(){
     P.estado='LISTO PARA CONTROL'; P.completed_at=nowISO(); P.con_diferencias=falt>0;
     await Promise.all([ pkSaveField(P.nro,'estado','LISTO PARA CONTROL'), pkSaveField(P.nro,'completed_at',P.completed_at), pkSaveField(P.nro,'con_diferencias',falt>0) ]);
     pkEvento({event_type:'picking_completed',picking_id:P.nro,operator_id:P.operario,value:{solicitadas:sol,encontradas:enc,faltantes:falt}});
-    toast('Enviado a control','ok'); state.view='lista'; await cargarPicking(); render();
+    toast('Enviado a control','ok'); state.view='lista'; try{ await cargarPicking(); }catch(e){} render();
   };
 }
 
@@ -541,6 +576,9 @@ function renderCfSummary(){
   $('view').innerHTML=h;
   $('backC').onclick=()=>{ state.view='lista'; render(); };
   $('iniciarC').onclick=async()=>{ const op=$('opC').value; if(!op){ toast('Elegí tu nombre','bad'); return; }
+    // lock suave: re-chequeo si otro ya está controlando este pick
+    let quien=null; try{ quien=await fbGet('picking/pickings/'+pkK(P.nro)+'/controlado_por'); }catch(e){}
+    if(quien && quien!==op){ if(!confirm('Este control ya lo empezó '+quien+'. ¿Seguir vos?')) return; }
     P.controlado_por=op; P.control_started_at=nowISO(); P.control_started_ms=Date.now();
     await Promise.all([ pkSaveField(P.nro,'controlado_por',op), pkSaveField(P.nro,'control_started_at',P.control_started_at), pkSaveField(P.nro,'control_started_ms',P.control_started_ms) ]);
     pkEvento({event_type:'control_started',picking_id:P.nro,operator_id:op});
@@ -632,7 +670,7 @@ async function cfCerrar(P,conDif,motivo){
   if(conDif){ P.con_diferencias=true; P.control_excepcion=motivo; saves.push(pkSaveField(P.nro,'con_diferencias',true), pkSaveField(P.nro,'control_excepcion',motivo)); }
   await Promise.all(saves);
   pkEvento({event_type:'control_completed',picking_id:P.nro,operator_id:P.controlado_por,value:{con_diferencias:conDif,motivo:motivo||''}});
-  toast(conDif?'Cerrado con diferencias':'Control correcto — cerrado','ok'); state.view='lista'; await cargarPicking(); render();
+  toast(conDif?'Cerrado con diferencias':'Control correcto — cerrado','ok'); state.view='lista'; try{ await cargarPicking(); }catch(e){} render();
 }
 
 /* ============================================================ TUTORIAL ======== */
@@ -683,6 +721,7 @@ function kioTutorial(){
 /* ============================================================ init ============ */
 render();
 kioTutorial();
+saveqStatus(); procesarCola();   // reanuda guardados pendientes de una sesión anterior
 </script>
 </body>
 </html>
