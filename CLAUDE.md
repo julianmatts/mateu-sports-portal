@@ -193,7 +193,7 @@ la grilla, vuelven a la grilla (`volverAlInicio()`).
 
 **Dos zonas (23/08/2026).** La pantalla (Mi Sucursal y Cadena) está partida en dos bandas
 con cabecera propia, para que no se mezclen las dos líneas de tiempo: **«En curso»**
-(banda ámbar `#zonaViva` / `#zonaVivaCad`, pill «● provisorio»: Objetivo del mes, Objetivo
+(banda azul intenso `#zonaViva` / `#zonaVivaCad` — tokens `--vivo*` —, pill «● provisorio»: Objetivo del mes, Objetivo
 de la semana + equipo, **Indicadores de la semana** y Reposición — todo Firebase, mes/semana
 abiertos) y **«Cierre»** (`#zonaCierre` / `#zonaCierreCad`, pill «✓ oficial»: los cuatro
 indicadores con el switch Mes/Sem 1…4 y todo el análisis del último mes cerrado — JSON del
