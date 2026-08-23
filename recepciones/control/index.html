@@ -635,8 +635,54 @@ async function cfCerrar(P,conDif,motivo){
   toast(conDif?'Cerrado con diferencias':'Control correcto — cerrado','ok'); state.view='lista'; await cargarPicking(); render();
 }
 
+/* ============================================================ TUTORIAL ======== */
+/* Propio del kiosco: el tutorial estándar (shared/tutorial.js) no corre sin sesión,
+   y la tablet no tiene login. Botón «?» + recorrido, se abre solo la 1ª vez. */
+function kioTutorial(){
+  if($('ktutFab')) return;
+  var PASOS=[
+    {ic:'👋',t:'Tu estación',d:'Esta tablet es tu estación de depósito. No hace falta usuario ni contraseña: tocás una tarea y arrancás. Con «← Tareas» volvés al menú cuando quieras.'},
+    {ic:'🔫',t:'El escáner',d:'Con la lectora: apuntás y disparás. El cursor queda solo en el campo, no toques nada. Verde + beep = correcto; rojo = incorrecto. Si un artículo no tiene código cargado, usás «+1 manual»; y también está el botón «Cámara».'},
+    {ic:'📦',t:'Control de Ingreso',d:'Cuando llega un remito: lo elegís de la lista y escaneás cada unidad a ciegas (no ves las cantidades esperadas, para no redondear). Al terminar tocás «Terminé» y el encargado hace la conciliación.'},
+    {ic:'📋',t:'Picking',d:'Elegís un pedido y tu nombre, y tocás «Iniciar». La pantalla te va guiando: la ZONA a la que ir, el producto, el talle y cuántas retirar. Escaneás cada unidad. Si no encontrás stock, tocás «No encuentro stock». Al final, «Enviar a control».'},
+    {ic:'✅',t:'Control',d:'Controlás un pedido que ya se preparó (mejor si lo armó otra persona): re-escaneás todo y el sistema verifica contra lo que se pickeó. Si hay diferencias, ponés el motivo para poder cerrar.'}
+  ];
+  var VISTO='mtu_visto_kiosco';
+  var css='.ktut-fab{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));width:46px;height:46px;border-radius:50%;background:var(--navy);color:#fff;border:2px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,.28);font-family:var(--font-d);font-size:24px;cursor:pointer;z-index:70;line-height:1}'
+    +'.ktut-scrim{position:fixed;inset:0;background:rgba(11,21,39,.6);display:none;align-items:center;justify-content:center;padding:20px;z-index:80}'
+    +'.ktut-scrim.open{display:flex}'
+    +'.ktut-card{background:#fff;border-radius:16px;max-width:440px;width:100%;overflow:hidden}'
+    +'.ktut-head{background:var(--navy);color:#fff;padding:15px 18px;display:flex;align-items:center;gap:12px;border-bottom:3px solid var(--red)}'
+    +'.ktut-head .hic{font-size:26px}.ktut-head .k{font-family:var(--font-c);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#b0bcd4}.ktut-head .n{font-family:var(--font-d);font-size:22px;letter-spacing:.5px}'
+    +'.ktut-x{margin-left:auto;background:none;border:none;color:#fff;font-size:26px;cursor:pointer;line-height:1}'
+    +'.ktut-body{padding:24px 20px;text-align:center;min-height:170px}'
+    +'.ktut-bic{font-size:42px}.ktut-bt{font-family:var(--font-d);font-size:26px;margin:8px 0 8px;color:var(--navy);letter-spacing:.5px}.ktut-bd{font-family:var(--font-b);font-size:15px;color:#31384a;line-height:1.55;margin:0}'
+    +'.ktut-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px;border-top:1px solid var(--border)}'
+    +'.ktut-dots{display:flex;gap:7px}.ktut-dot{width:9px;height:9px;border-radius:50%;background:#d7dce6;border:none;cursor:pointer;padding:0}.ktut-dot.on{background:var(--red)}'
+    +'.ktut-btn{background:#fff;border:1.5px solid var(--border);border-radius:9px;padding:10px 15px;font-family:var(--font-c);font-weight:700;text-transform:uppercase;letter-spacing:.5px;font-size:12px;cursor:pointer;color:var(--navy)}.ktut-btn.pri{background:var(--red);color:#fff;border-color:var(--red)}.ktut-btn:disabled{opacity:.4}';
+  document.head.insertAdjacentHTML('beforeend','<style>'+css+'</style>');
+  var fab=document.createElement('button'); fab.id='ktutFab'; fab.className='ktut-fab'; fab.type='button'; fab.title='Cómo usar la tablet'; fab.textContent='?'; document.body.appendChild(fab);
+  var scrim=document.createElement('div'); scrim.className='ktut-scrim'; scrim.setAttribute('role','dialog'); scrim.setAttribute('aria-modal','true');
+  scrim.innerHTML='<div class="ktut-card"><div class="ktut-head"><span class="hic">📱</span><div><div class="k">Cómo se usa</div><div class="n">Tablet del depósito</div></div><button class="ktut-x" title="Cerrar">×</button></div>'
+    +'<div class="ktut-body"><div class="ktut-bic"></div><div class="ktut-bt"></div><p class="ktut-bd"></p></div>'
+    +'<div class="ktut-foot"><button class="ktut-btn" data-p="prev">‹ Anterior</button><div class="ktut-dots"></div><button class="ktut-btn pri" data-p="next">Siguiente ›</button></div></div>';
+  document.body.appendChild(scrim);
+  var i=0;
+  var elIc=scrim.querySelector('.ktut-bic'),elT=scrim.querySelector('.ktut-bt'),elD=scrim.querySelector('.ktut-bd'),elDots=scrim.querySelector('.ktut-dots'),bp=scrim.querySelector('[data-p="prev"]'),bn=scrim.querySelector('[data-p="next"]');
+  elDots.innerHTML=PASOS.map(function(_,k){ return '<button class="ktut-dot" type="button" data-k="'+k+'" aria-label="Paso '+(k+1)+'"></button>'; }).join('');
+  function pintar(){ var p=PASOS[i]; elIc.textContent=p.ic; elT.textContent=p.t; elD.textContent=p.d; var d=elDots.children; for(var k=0;k<d.length;k++) d[k].classList.toggle('on',k===i); bp.disabled=(i===0); bn.textContent=(i===PASOS.length-1)?'¡Listo!':'Siguiente ›'; }
+  function abrir(){ i=0; pintar(); scrim.classList.add('open'); try{ localStorage.setItem(VISTO,'1'); }catch(e){} }
+  function cerrar(){ scrim.classList.remove('open'); }
+  fab.onclick=abrir; scrim.querySelector('.ktut-x').onclick=cerrar; scrim.addEventListener('click',function(e){ if(e.target===scrim) cerrar(); });
+  bp.onclick=function(){ if(i>0){ i--; pintar(); } }; bn.onclick=function(){ if(i<PASOS.length-1){ i++; pintar(); } else cerrar(); };
+  elDots.addEventListener('click',function(e){ var b=e.target.closest('.ktut-dot'); if(b){ i=+b.getAttribute('data-k'); pintar(); } });
+  var visto=null; try{ visto=localStorage.getItem(VISTO); }catch(e){}
+  if(!visto) setTimeout(abrir,800);
+}
+
 /* ============================================================ init ============ */
 render();
+kioTutorial();
 </script>
 </body>
 </html>

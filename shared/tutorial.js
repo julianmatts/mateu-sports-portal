@@ -169,10 +169,13 @@
     ]},
 
     picking: { icono:'📋', nombre:'Picking', pasos:[
-      { ic:'📋', t:'Qué es', d:'La gestión de pickings del Depósito Central: qué hay que armar, de qué zona sale y quién lo arma.' },
-      { ic:'🧺', t:'Pickings', d:'La lista de pickings pendientes y terminados, con el detalle por artículo.' },
-      { ic:'🗺️', t:'Zonas', d:'Las zonas del depósito y qué atiende cada una.' },
-      { ic:'👷', t:'Operarios', d:'El equipo del depósito y la asignación de pickings a cada operario.' }
+      { ic:'📋', t:'Qué es', d:'La preparación de los pedidos del Depósito Central: acá el encargado crea los pickings, sigue cómo avanzan y los controla. El operario los prepara físicamente desde la tablet (el kiosco), no desde acá.' },
+      { ic:'📊', t:'Panel', d:'La pantalla que abre primero: el estado de todos los pickings (pendientes, en preparación, para control, finalizados y con diferencias), las unidades pendientes y pickeadas, la productividad por operario y los faltantes. Es tu tablero para ver dónde está trabada la operación.' },
+      { ic:'🗺️', t:'1º — Zonas', d:'Antes de crear pickings, definí las zonas del depósito (nombre y orden del recorrido) y asigná cada marca/rubro a su zona. Con eso, cada pedido se ordena solo por el recorrido físico (Zona A → B → C…). Sin zonas, los artículos salen “sin zona” al final.' },
+      { ic:'👷', t:'2º — Operarios', d:'Cargá los nombres del equipo del depósito. El kiosco los muestra en una lista para que el operario elija quién arma o controla cada pedido (así queda el registro de quién hizo qué).' },
+      { ic:'➕', t:'3º — Crear un picking', d:'En la pestaña Pickings, «+ Crear picking»: elegís la sucursal destino y, si querés, filtrás por marca y/o rubro. El detalle sale de la última barrida, ya ordenado por zona, y le podés poner prioridad (normal, alta o urgente).' },
+      { ic:'🔀', t:'Estados y prioridad', d:'Cada pick recorre: Pendiente → En preparación → Listo para control → Finalizado (o Con diferencias si faltó algo). Los urgentes aparecen arriba y destacados.' },
+      { ic:'📱', t:'La tablet (kiosco)', d:'El operario entra a «…/recepciones/control/» (sin usuario, en la tablet del depósito), elige la tarea Picking, y el sistema lo va guiando zona → producto → cantidad, validando con el escáner. Después otra persona hace el Control final. Vos seguís todo desde el Panel.' }
     ]}
   };
 
