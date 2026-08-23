@@ -582,6 +582,25 @@ mismas pantallas y estética, con datos reales.
   con ícono (`icono`) y chips de filtro por competencia en el Catálogo. Cursos en
   **borrador** (`activo:false`): el equipo no los ve; un programa sin contenido visible
   no aparece al alumno.
+- **Mejoras 03/08/2026 (todas en `capacitaciones/index.html` salvo aviso)**: PIN personal de 4
+  dígitos por persona (`pins/<slug>/<persona>`; lo crea cada uno, staff/encargado lo resetea desde la
+  ficha); tiempo de lectura por módulo (`avance.tiempo`) + alerta «muy rápido» (<20 s/módulo);
+  Mi equipo → ficha de persona (pendientes, minutos, directo a la cuenta de la sucursal vía
+  `mensajes-mateu/directos`, reset PIN), «Recordar a los que no empezaron» y export Excel;
+  recordatorios automáticos de vencimiento (7 días antes y el día anterior, flag
+  `programas/<id>/recordatorios`) a Bandeja + Novedades; PDF embebido en el curso; badges
+  dorados por competencia completa; duplicar curso; encuesta post-programa
+  (`encuestasPost/`); certificado «Compartir» (html2canvas + Web Share); celular (índice
+  horizontal, tablas con scroll). **Resumen para otros módulos**: el staff publica
+  `capacitaciones/resumen` (por sucursal y por persona) al entrar; `capacitaciones/resumen-widget.js`
+  lo inyecta en Indicadores (sección «Academia de Ventas»), Evaluaciones (tarjeta bajo el
+  formulario) y RRHH (chip por legajo) — cada uno lo incluye con una línea en el `<head>`.
+- **Ayudante con IA**: `functions/api/academia-ia.js` (Pages Function; HTTP directo a
+  `/v1/messages`, `claude-opus-5`, salida JSON Schema, fallback server-side). Necesita
+  `ANTHROPIC_API_KEY` en Cloudflare Pages → Settings → Environment variables; sin la clave el
+  GET responde `disponible:false` y la Academia no muestra los botones ✨ («Mejorar con IA» en
+  el asistente, «Proponer preguntas con IA» en asistente y editor). Pendiente técnico: los
+  archivos subidos van en base64 en RTDB (tope 20 MB); si crecen, migrar a Firebase Storage.
 - **Asistente «Crear curso desde un PDF o PowerPoint»** (Gestión): lee el texto en el
   navegador (pdf.js / JSZip por CDN), propone un módulo por página/diapositiva, Iván
   revisa (reordena, une, quita, agrega, vista previa), quiz opcional, programa y aviso.
