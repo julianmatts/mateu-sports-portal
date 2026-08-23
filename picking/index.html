@@ -223,23 +223,39 @@ function ktile(v,k,cls){ return '<div class="ktile'+(cls?' '+cls:'')+'"><div cla
 function renderPanel(){
   panelCss();
   const all=vals(DATA.pickings);
+  const per=state.panelPer||'hoy';
+  const today=new Date().toISOString().slice(0,10), ayer=new Date(Date.now()-864e5).toISOString().slice(0,10), lim7=new Date(Date.now()-7*864e5).toISOString().slice(0,10);
+  const enPer=iso=>{ if(per==='todo') return true; if(!iso) return false; const d=String(iso).slice(0,10); if(per==='hoy') return d===today; if(per==='ayer') return d===ayer; if(per==='semana') return d>=lim7; return true; };
+  const perLbl={hoy:'hoy',ayer:'ayer',semana:'últimos 7 días',todo:'histórico'}[per];
+  // ---- backlog: foto actual (no depende del período) ----
   const c=est=>all.filter(p=>p.estado===est).length;
   const prep=all.filter(p=>p.estado==='EN PREPARACIÓN'||p.estado==='PAUSADO').length;
-  const conDif=all.filter(p=>p.con_diferencias).length;
-  let uPend=0,uPick=0,uFalt=0; const faltBySku={};
-  all.forEach(P=>{ const r=pickResumen(P); uPick+=r.pick; if(P.estado!=='FINALIZADO') uPend+=Math.max(0,r.req-r.pick);
-    if(P.completed_at||P.estado==='FINALIZADO'){ vals(P.items||{}).forEach(it=>{ const f=num(it.requested_qty)-num(it.picked_qty); if(f>0){ faltBySku[it.codigo]=(faltBySku[it.codigo]||0)+f; uFalt+=f; } }); } });
-  const prod={}; all.forEach(P=>{ if(!P.operario||!P.started_at||!P.completed_at) return; const d=pickDur(P); const r=pickResumen(P); const o=prod[P.operario]||(prod[P.operario]={picks:0,units:0,ms:0}); o.picks++; o.units+=r.pick; o.ms+=(d||0); });
-  const errScan=vals(DATA.eventos).filter(e=>e&&(e.event_type==='sku_error'||e.event_type==='control_error')).length;
-  let totU=0,totMs=0; Object.keys(prod).forEach(k=>{ totU+=prod[k].units; totMs+=prod[k].ms; });
+  const conDifCola=all.filter(p=>p.con_diferencias && p.estado!=='FINALIZADO').length;
+  let uPend=0; all.forEach(P=>{ if(P.estado!=='FINALIZADO'){ const r=pickResumen(P); uPend+=Math.max(0,r.req-r.pick); } });
+  // ---- producción del período: picks completados (picking) en el rango ----
+  const comp=all.filter(P=>P.completed_at && enPer(P.completed_at));
+  let uPick=0,uReq=0,uFalt=0,totMs=0,picksT=0,linesT=0; const prod={},faltBySku={},faltByZona={};
+  comp.forEach(P=>{ const r=pickResumen(P); uPick+=r.pick; uReq+=r.req; const d=pickDur(P);
+    if(P.operario&&d){ const o=prod[P.operario]||(prod[P.operario]={picks:0,units:0,lines:0,ms:0}); o.picks++; o.units+=r.pick; o.lines+=r.skus; o.ms+=d; totMs+=d; picksT++; linesT+=r.skus; }
+    vals(P.items||{}).forEach(it=>{ const f=num(it.requested_qty)-num(it.picked_qty); if(f>0){ faltBySku[it.codigo]=(faltBySku[it.codigo]||0)+f; faltByZona[it.zonaNombre||'Sin zona']=(faltByZona[it.zonaNombre||'Sin zona']||0)+f; uFalt+=f; } }); });
+  const errScan=vals(DATA.eventos).filter(e=>e&&(e.event_type==='sku_error'||e.event_type==='control_error')&&enPer(e.ts)).length;
+  let totU=0; Object.keys(prod).forEach(k=>totU+=prod[k].units);
   const uHora=totMs>0?Math.round(totU/(totMs/3600000)):0;
+  const linHora=totMs>0?Math.round(linesT/(totMs/3600000)):0;
+  const minPick=picksT>0?Math.round(totMs/picksT/60000):0;
+  const prec=uReq>0?Math.round(uPick/uReq*100):100;
 
-  let h=seccionHead('Panel','Estado de la operación de picking y productividad.',
+  let h=seccionHead('Panel','Foto de la operación y producción por período.',
     '<button class="btn btn-outline btn-sm" id="reloadPanel">↻ Actualizar</button>');
+  // backlog
+  h+='<div class="sub" style="font-family:var(--font-c);font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:2px 0 8px">En curso ahora</div>';
   h+='<div class="kgrid">'+ktile(c('PENDIENTE'),'Pendientes')+ktile(prep,'En preparación')
-    +ktile(c('LISTO PARA CONTROL'),'Para control')+ktile(c('FINALIZADO'),'Finalizados','ok')+ktile(conDif,'Con diferencias','dif')+ktile(all.filter(pkDemorado).length,'Demorados','warn')+'</div>';
-  h+='<div class="kgrid">'+ktile(fmtInt(uPend),'Unidades pendientes')+ktile(fmtInt(uPick),'Unidades pickeadas')
-    +ktile(fmtInt(uHora),'Unidades / hora')+ktile(fmtInt(uFalt),'Faltantes','warn')+ktile(fmtInt(errScan),'Errores de scan','dif')+'</div>';
+    +ktile(c('LISTO PARA CONTROL'),'Para control')+ktile(conDifCola,'Con diferencias','dif')+ktile(all.filter(pkDemorado).length,'Demorados','warn')+ktile(fmtInt(uPend),'Unidades pendientes')+'</div>';
+  // período selector
+  h+='<div class="sub" style="font-family:var(--font-c);font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 8px">Producción · '+esc(perLbl)+'</div>';
+  h+='<div class="subtabs" style="margin-bottom:12px">'+['hoy','ayer','semana','todo'].map(p=>'<button class="subtab'+(per===p?' on':'')+'" data-per="'+p+'">'+({hoy:'Hoy',ayer:'Ayer',semana:'7 días',todo:'Todo'}[p])+'</button>').join('')+'</div>';
+  h+='<div class="kgrid">'+ktile(fmtInt(comp.length),'Pickings','ok')+ktile(fmtInt(uPick),'Unidades')+ktile(prec+'%','Precisión',(prec>=99?'ok':(prec>=95?'warn':'dif')))
+    +ktile(fmtInt(uHora),'Unid./hora')+ktile(fmtInt(linHora),'Líneas/hora')+ktile(minPick?minPick+' min':'—','Min./pick')+ktile(fmtInt(uFalt),'Faltantes','warn')+ktile(fmtInt(errScan),'Errores scan','dif')+'</div>';
 
   const recientes=all.slice().sort((a,b)=>cmp(b.created_at||'',a.created_at||'')).slice(0,25);
   h+='<div class="sec-head" style="margin:18px 0 8px"><div><h1 style="font-size:20px">Pickings</h1><div class="sub">Los 25 más recientes.</div></div></div>';
@@ -253,20 +269,27 @@ function renderPanel(){
   }).join('') : '<tr><td colspan="6" class="hint" style="padding:14px">Todavía no hay pickings.</td></tr>';
   h+='</tbody></table></div>';
 
-  const prodRows=Object.keys(prod).map(o=>({o:o,picks:prod[o].picks,units:prod[o].units,ms:prod[o].ms,uh:prod[o].ms>0?Math.round(prod[o].units/(prod[o].ms/3600000)):0})).sort((a,b)=>b.uh-a.uh);
-  h+='<div class="sec-head" style="margin:18px 0 8px"><div><h1 style="font-size:20px">Productividad por operario</h1><div class="sub">De los pickings ya completados.</div></div></div>';
-  h+='<div class="tbl-wrap"><table><thead><tr><th>Operario</th><th class="num">Pickings</th><th class="num">Unidades</th><th class="num">Tiempo</th><th class="num">Unid./hora</th></tr></thead><tbody>';
-  h+= prodRows.length?prodRows.map(x=>'<tr><td><b>'+esc(x.o)+'</b></td><td class="num">'+x.picks+'</td><td class="num">'+fmtInt(x.units)+'</td><td class="num">'+fmtDurMs(x.ms)+'</td><td class="num"><b>'+fmtInt(x.uh)+'</b></td></tr>').join('')
-    :'<tr><td colspan="5" class="hint" style="padding:14px">Todavía no hay pickings completados.</td></tr>';
+  const prodRows=Object.keys(prod).map(o=>({o:o,picks:prod[o].picks,units:prod[o].units,lines:prod[o].lines,ms:prod[o].ms,uh:prod[o].ms>0?Math.round(prod[o].units/(prod[o].ms/3600000)):0})).sort((a,b)=>b.uh-a.uh);
+  h+='<div class="sec-head" style="margin:18px 0 8px"><div><h1 style="font-size:20px">Productividad por operario</h1><div class="sub">Pickings completados · '+esc(perLbl)+'.</div></div></div>';
+  h+='<div class="tbl-wrap"><table><thead><tr><th>Operario</th><th class="num">Pickings</th><th class="num">Unidades</th><th class="num">Líneas</th><th class="num">Tiempo</th><th class="num">Unid./hora</th></tr></thead><tbody>';
+  h+= prodRows.length?prodRows.map(x=>'<tr><td><b>'+esc(x.o)+'</b></td><td class="num">'+x.picks+'</td><td class="num">'+fmtInt(x.units)+'</td><td class="num">'+fmtInt(x.lines)+'</td><td class="num">'+fmtDurMs(x.ms)+'</td><td class="num"><b>'+fmtInt(x.uh)+'</b></td></tr>').join('')
+    :'<tr><td colspan="6" class="hint" style="padding:14px">Sin pickings completados en el período.</td></tr>';
   h+='</tbody></table></div>';
 
   const faltRows=Object.keys(faltBySku).map(k=>({k:k,n:faltBySku[k]})).sort((a,b)=>b.n-a.n).slice(0,15);
+  const faltZonaRows=Object.keys(faltByZona).map(k=>({k:k,n:faltByZona[k]})).sort((a,b)=>b.n-a.n);
   if(faltRows.length){
-    h+='<div class="sec-head" style="margin:18px 0 8px"><div><h1 style="font-size:20px">Faltantes por artículo</h1><div class="sub">Unidades pedidas que no se pudieron pickear.</div></div></div>';
-    h+='<div class="tbl-wrap"><table><thead><tr><th>Código</th><th class="num">Faltante</th></tr></thead><tbody>'
-      + faltRows.map(x=>'<tr><td>'+esc(x.k)+'</td><td class="num" style="color:var(--bad);font-weight:700">'+fmtInt(x.n)+'</td></tr>').join('')+'</tbody></table></div>';
+    h+='<div class="grid2" style="margin-top:18px">';
+    h+='<div><div class="sec-head" style="margin:0 0 8px"><div><h1 style="font-size:18px">Faltantes por artículo</h1></div></div>'
+      +'<div class="tbl-wrap"><table><thead><tr><th>Código</th><th class="num">Faltante</th></tr></thead><tbody>'
+      + faltRows.map(x=>'<tr><td>'+esc(x.k)+'</td><td class="num" style="color:var(--bad);font-weight:700">'+fmtInt(x.n)+'</td></tr>').join('')+'</tbody></table></div></div>';
+    h+='<div><div class="sec-head" style="margin:0 0 8px"><div><h1 style="font-size:18px">Faltantes por zona</h1></div></div>'
+      +'<div class="tbl-wrap"><table><thead><tr><th>Zona</th><th class="num">Faltante</th></tr></thead><tbody>'
+      + faltZonaRows.map(x=>'<tr><td>'+esc(x.k)+'</td><td class="num" style="color:var(--bad);font-weight:700">'+fmtInt(x.n)+'</td></tr>').join('')+'</tbody></table></div></div>';
+    h+='</div>';
   }
   $('view').innerHTML=h;
+  document.querySelectorAll('[data-per]').forEach(b=>b.onclick=()=>{ state.panelPer=b.dataset.per; render(); });
   const rl=$('reloadPanel'); if(rl) rl.onclick=async()=>{ rl.disabled=true; try{ await cargar(); render(); toast('Actualizado','ok'); }catch(e){ rl.disabled=false; toast('No pude actualizar','bad'); } };
 }
 
