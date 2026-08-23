@@ -1393,9 +1393,66 @@ async function extraerPptx(file){
   return mods;
 }
 
+/* ---------- editor de módulos (compartido: asistente + editor de curso) ---------- */
+let PREV_ABIERTAS = new Set();   // vistas previas desplegadas ("<pref><i>")
+const TIPO_LABEL = { texto:'Texto / lectura', video:'Video (YouTube)', archivo:'Archivo (PDF / PowerPoint)', enlace:'Material (link externo)' };
+function previewModuloHtml(m){
+  if(m.tipo==='video'){ const yt=esUrlYoutube(m.contenido); return yt?'<div class="video-marco" style="max-width:520px"><iframe src="https://www.youtube.com/embed/'+yt+'" allowfullscreen loading="lazy"></iframe></div>':'<p class="muted">Pegá un link de YouTube para ver el video acá.</p>'; }
+  if(m.tipo==='archivo') return '<div class="seccion"><div class="st">Material del curso</div><div style="margin-top:10px"><span class="btn oscuro mini">📥 Descargar '+esc(m.archivoNombre||'material')+'</span></div></div>';
+  if(m.tipo==='enlace') return '<div class="seccion"><div class="st">Material del curso</div><div style="margin-top:10px"><span class="btn oscuro mini">📄 Abrir material</span></div></div>';
+  const secs=seccionesDeTexto(m.contenido);
+  if(!secs.length) return '<p class="muted">Escribí el contenido para ver cómo queda.</p>';
+  return '<div style="display:flex;flex-direction:column;gap:10px">'+secs.map(s=>'<div class="seccion '+esc(s.tipo)+'">'+(s.titulo?'<div class="st">'+esc(s.titulo)+'</div>':'')+'<div class="sx" style="font-size:14.5px">'+esc(s.texto)+'</div></div>').join('')+'</div>';
+}
+function moduloEditorHtml(m,i,op){
+  const p=op.pref, abierta=PREV_ABIERTAS.has(p+i), total=op.total;
+  return '<div class="card-b" style="margin-top:10px"><div class="fila">'+
+    '<div style="flex:2;min-width:220px"><label class="fl">Módulo '+(i+1)+'</label><input type="text" data-'+p+'t="'+i+'" value="'+esc(m.titulo||'')+'" placeholder="Título del módulo"></div>'+
+    '<div><label class="fl">Tipo</label><select data-'+p+'tipo="'+i+'">'+['texto','video','archivo','enlace'].map(t=>'<option value="'+t+'"'+((m.tipo||'texto')===t?' selected':'')+'>'+TIPO_LABEL[t]+'</option>').join('')+'</select></div>'+
+    '<div style="align-self:flex-end;display:flex;gap:6px;flex-wrap:wrap">'+
+      '<button class="btn mini" data-'+p+'up="'+i+'" title="Subir"'+(i===0?' disabled':'')+'>↑</button>'+
+      '<button class="btn mini" data-'+p+'down="'+i+'" title="Bajar"'+(i===total-1?' disabled':'')+'>↓</button>'+
+      (op.unir?'<button class="btn mini" data-'+p+'unir="'+i+'" title="Pegar este módulo al final del anterior">⤴ Unir</button>':'')+
+      '<button class="btn mini" data-'+p+'prev="'+i+'">👁 '+(abierta?'Ocultar':'Vista previa')+'</button>'+
+      '<button class="btn mini peligro" data-'+p+'del="'+i+'">🗑</button></div></div>'+
+    '<div style="margin-top:10px">'+
+    ((m.tipo||'texto')==='texto' ? '<label class="fl">Contenido</label><textarea data-'+p+'c="'+i+'" style="min-height:130px" placeholder="Doble enter = tarjeta nueva. Opcional: [[tip]] Título, [[dato]] Título, [[evitar]] Título o [[ejemplo]] Título al inicio de un bloque lo destaca con color.">'+esc(m.contenido||'')+'</textarea>'
+      : m.tipo==='archivo' ? '<label class="fl">Archivo</label>'+
+        (m.contenido?'<p style="margin:0 0 8px;font-size:14px">Subido: <b>'+esc(m.archivoNombre||m.contenido)+'</b> ✓ — elegir otro archivo lo reemplaza.</p>':'')+
+        '<input type="file" data-'+p+'f="'+i+'" accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx"> <span class="muted" data-'+p+'fst="'+i+'" style="font-size:13px"></span>'+
+        '<p class="muted" style="font-size:12.5px;margin:7px 0 0">Máx. '+ARCHIVO_MAX_MB+' MB. Si el PPT pesa mucho por las fotos, conviene exportarlo a PDF.</p>'
+      : '<label class="fl">URL</label><input type="url" data-'+p+'c="'+i+'" value="'+esc(m.contenido||'')+'" placeholder="https://…">')+
+    (abierta?'<div style="margin-top:12px;padding:14px;background:#f6f7f8;border-radius:6px"><div class="fl" style="margin-bottom:8px">Así lo ve el equipo</div>'+previewModuloHtml(m)+'</div>':'')+
+    '</div></div>';
+}
+function leerModulosForm(app,mods,p){
+  app.querySelectorAll('[data-'+p+'t]').forEach(i=>{ mods[+i.dataset[p+'t']].titulo=i.value.trim(); });
+  app.querySelectorAll('[data-'+p+'tipo]').forEach(i=>{ mods[+i.dataset[p+'tipo']].tipo=i.value; });
+  app.querySelectorAll('[data-'+p+'c]').forEach(i=>{ mods[+i.dataset[p+'c']].contenido=i.value.trim(); });
+}
+function bindModulosEditor(app,mods,p,leer){
+  app.querySelectorAll('[data-'+p+'del]').forEach(b=>b.addEventListener('click',()=>{ leer(); mods.splice(+b.dataset[p+'del'],1); PREV_ABIERTAS.clear(); render(); }));
+  app.querySelectorAll('[data-'+p+'up]').forEach(b=>b.addEventListener('click',()=>{ leer(); const i=+b.dataset[p+'up']; if(i>0){ [mods[i-1],mods[i]]=[mods[i],mods[i-1]]; PREV_ABIERTAS.clear(); render(); } }));
+  app.querySelectorAll('[data-'+p+'down]').forEach(b=>b.addEventListener('click',()=>{ leer(); const i=+b.dataset[p+'down']; if(i<mods.length-1){ [mods[i+1],mods[i]]=[mods[i],mods[i+1]]; PREV_ABIERTAS.clear(); render(); } }));
+  app.querySelectorAll('[data-'+p+'prev]').forEach(b=>b.addEventListener('click',()=>{ leer(); const k=p+b.dataset[p+'prev']; if(PREV_ABIERTAS.has(k)) PREV_ABIERTAS.delete(k); else PREV_ABIERTAS.add(k); render(); }));
+  app.querySelectorAll('[data-'+p+'tipo]').forEach(s=>s.addEventListener('change',()=>{ leer(); render(); }));
+  app.querySelectorAll('[data-'+p+'f]').forEach(inp=>inp.addEventListener('change', async ()=>{
+    const f=inp.files&&inp.files[0]; if(!f) return;
+    if(f.size>ARCHIVO_MAX_MB*1048576){ alert('«'+f.name+'» pesa '+(f.size/1048576).toFixed(1)+' MB y el máximo es '+ARCHIVO_MAX_MB+' MB.\nSi es un PowerPoint con muchas fotos, exportalo a PDF y subí ese.'); inp.value=''; return; }
+    leer();
+    const st=app.querySelector('[data-'+p+'fst="'+inp.dataset[p+'f']+'"]'); inp.disabled=true;
+    try{
+      const fid=await subirArchivo(f,(i,n)=>{ if(st) st.textContent='Subiendo… parte '+i+' de '+n; });
+      const m=mods[+inp.dataset[p+'f']]; m.contenido=fid; m.archivoNombre=f.name;
+      if(!m.titulo) m.titulo=f.name.replace(/\.[^.]+$/,'');
+      render();
+    }catch(err){ alert('No se pudo subir el archivo: '+err.message); inp.disabled=false; if(st) st.textContent=''; }
+  }));
+}
+
 function renderWizard(){
   const app=$('app');
-  if(!WIZ) WIZ={ paso:1, file:null, titulo:'', dur:'20min', competencia:'Producto de marca', color:PALETA[Object.keys(CURSOS).length%PALETA.length], mods:[], quiz:{aprueba:70,preguntas:[]}, progId:'', progNuevo:'', avisar:false, estado:'' };
+  if(!WIZ) WIZ={ paso:1, file:null, titulo:'', desc:'', dur:'20min', competencia:'Producto de marca', color:PALETA[Object.keys(CURSOS).length%PALETA.length], mods:[], quiz:{aprueba:70,preguntas:[]}, progId:'', progNuevo:'', avisar:false, estado:'' };
   const w=WIZ;
   const html=['<div class="wrap medio">'];
   html.push('<p style="margin:0 0 14px"><a href="#" id="volver">← Volver a gestión</a></p>');
@@ -1411,17 +1468,16 @@ function renderWizard(){
       '<div style="flex:2;min-width:240px"><label class="fl">Título del curso</label><input type="text" id="wzTit" value="'+esc(w.titulo)+'" placeholder="Se completa con el nombre del archivo"></div>'+
       '<div><label class="fl">Duración</label><input type="text" id="wzDur" value="'+esc(w.dur)+'"></div>'+
       '<div><label class="fl">Competencia</label><select id="wzComp">'+COMPETENCIAS.map(x=>'<option'+(w.competencia===x?' selected':'')+'>'+x+'</option>').join('')+'</select></div></div>'+
+      '<div style="margin-top:12px"><label class="fl">Descripción / objetivo (opcional)</label><textarea id="wzDesc" style="min-height:60px" placeholder="Qué se lleva el equipo de este curso.">'+esc(w.desc||'')+'</textarea></div>'+
       '<div style="margin-top:18px"><button class="btn pri" id="wzLeer"'+(w.file?'':' disabled')+'>Leer el archivo y armar los módulos →</button></div></div>');
   }
   if(w.paso===2){
-    html.push('<p class="bajada">Se detectaron <b>'+w.mods.length+'</b> módulos. Corregí títulos, uní o quitá los que no sirvan. Tip: un bloque que empieza con <code>[[tip]] Título</code>, <code>[[dato]]</code>, <code>[[evitar]]</code> o <code>[[ejemplo]]</code> se destaca con color.</p>');
+    html.push('<p class="bajada">El portal armó <b>'+w.mods.length+'</b> módulos como base. Es todo tuyo: corregí el texto, cambiá títulos, reordená, uní, quitá o agregá módulos nuevos (texto, video, link). Un bloque que empieza con <code>[[tip]] Título</code>, <code>[[dato]]</code>, <code>[[evitar]]</code> o <code>[[ejemplo]]</code> se destaca con color — mirá la vista previa.</p>');
     w.mods.forEach((m,i)=>{
-      html.push('<div class="card-b" style="margin-top:10px"><div class="fila">'+
-        '<div style="flex:2;min-width:220px"><label class="fl">Módulo '+(i+1)+'</label><input type="text" data-wt="'+i+'" value="'+esc(m.titulo)+'"></div>'+
-        '<div style="align-self:flex-end;display:flex;gap:6px">'+(i>0?'<button class="btn mini" data-wunir="'+i+'">⤴ Unir con el anterior</button>':'')+'<button class="btn mini peligro" data-wdel="'+i+'">🗑 Quitar</button></div></div>'+
-        '<div style="margin-top:10px"><textarea data-wc="'+i+'" style="min-height:120px">'+esc(m.contenido)+'</textarea></div></div>');
+      html.push(moduloEditorHtml(m,i,{pref:'w',unir:i>0,total:w.mods.length}));
     });
-    html.push('<div style="margin-top:20px;display:flex;gap:10px"><button class="btn" id="wzAtras1">← Atrás</button><button class="btn pri" id="wzPaso3">Siguiente: quiz y publicar →</button></div>');
+    html.push('<div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn" data-wadd="texto">＋ Módulo de texto</button><button class="btn" data-wadd="video">＋ Video (YouTube)</button><button class="btn" data-wadd="enlace">＋ Link a material</button></div>');
+    html.push('<div style="margin-top:24px;display:flex;gap:10px"><button class="btn" id="wzAtras1">← Atrás</button><button class="btn pri" id="wzPaso3">Siguiente: quiz y publicar →</button></div>');
   }
   if(w.paso===3){
     const q=w.quiz;
@@ -1431,7 +1487,7 @@ function renderWizard(){
     (q.preguntas||[]).forEach((p,i)=>{
       html.push('<div class="card-b" style="margin-top:10px"><div class="fila">'+
         '<div style="flex:3;min-width:240px"><label class="fl">Pregunta '+(i+1)+'</label><input type="text" data-wq="'+i+'" value="'+esc(p.q||'')+'"></div>'+
-        '<div style="align-self:flex-end"><button class="btn mini peligro" data-wqdel="'+i+'">🗑</button></div></div>'+
+        '<div style="align-self:flex-end;display:flex;gap:6px"><button class="btn mini" data-wqup="'+i+'"'+(i===0?' disabled':'')+'>↑</button><button class="btn mini" data-wqdown="'+i+'"'+(i===(q.preguntas||[]).length-1?' disabled':'')+'>↓</button><button class="btn mini peligro" data-wqdel="'+i+'">🗑</button></div></div>'+
         '<div class="fila" style="margin-top:10px"><div style="flex:3;min-width:240px"><label class="fl">Opciones (una por línea)</label><textarea data-wo="'+i+'">'+esc((p.ops||[]).join('\n'))+'</textarea></div>'+
         '<div><label class="fl">Correcta (Nº de línea)</label><input type="number" data-wok="'+i+'" value="'+((+p.ok||0)+1)+'" min="1" style="max-width:110px"></div></div></div>');
     });
@@ -1457,7 +1513,7 @@ function renderWizard(){
       $('wzLeer').disabled=!f;
     });
     $('wzLeer').addEventListener('click', async ()=>{
-      w.titulo=$('wzTit').value.trim(); w.dur=$('wzDur').value.trim(); w.competencia=$('wzComp').value;
+      w.titulo=$('wzTit').value.trim(); w.desc=$('wzDesc').value.trim(); w.dur=$('wzDur').value.trim(); w.competencia=$('wzComp').value;
       const f=w.file; if(!f) return;
       if(f.size>ARCHIVO_MAX_MB*1048576){ alert('El archivo pesa '+(f.size/1048576).toFixed(1)+' MB; el máximo es '+ARCHIVO_MAX_MB+' MB. Exportalo a PDF más liviano.'); return; }
       const est=$('wzEstado'); $('wzLeer').disabled=true; est.textContent='Leyendo el archivo…';
@@ -1472,11 +1528,12 @@ function renderWizard(){
     });
   }
   if(w.paso===2){
-    const leer=()=>{ app.querySelectorAll('[data-wt]').forEach(i=>{ w.mods[+i.dataset.wt].titulo=i.value.trim(); }); app.querySelectorAll('[data-wc]').forEach(i=>{ w.mods[+i.dataset.wc].contenido=i.value.trim(); }); };
-    app.querySelectorAll('[data-wdel]').forEach(b=>b.addEventListener('click',()=>{ leer(); w.mods.splice(+b.dataset.wdel,1); render(); }));
+    const leer=()=>leerModulosForm(app,w.mods,'w');
+    bindModulosEditor(app,w.mods,'w',leer);
     app.querySelectorAll('[data-wunir]').forEach(b=>b.addEventListener('click',()=>{ leer(); const i=+b.dataset.wunir; w.mods[i-1].contenido=(w.mods[i-1].contenido+'\n\n'+w.mods[i].titulo+':\n'+w.mods[i].contenido).trim(); w.mods.splice(i,1); render(); }));
+    app.querySelectorAll('[data-wadd]').forEach(b=>b.addEventListener('click',()=>{ leer(); w.mods.push({titulo:'',tipo:b.dataset.wadd,contenido:''}); render(); setTimeout(()=>{ const ult=app.querySelectorAll('[data-wt]'); if(ult.length) ult[ult.length-1].focus(); },50); }));
     $('wzAtras1').addEventListener('click',()=>{ leer(); w.paso=1; render(); });
-    $('wzPaso3').addEventListener('click',()=>{ leer(); w.mods=w.mods.filter(m=>m.titulo||m.contenido); if(!w.mods.length){ alert('Dejá al menos un módulo.'); return; } w.paso=3; render(); });
+    $('wzPaso3').addEventListener('click',()=>{ leer(); PREV_ABIERTAS.clear(); w.mods=w.mods.filter(m=>m.titulo||m.contenido); if(!w.mods.length){ alert('Dejá al menos un módulo.'); return; } w.paso=3; render(); });
   }
   if(w.paso===3){
     const leerQ=()=>{
@@ -1488,6 +1545,8 @@ function renderWizard(){
     };
     $('wzAddPreg').addEventListener('click',()=>{ leerQ(); w.quiz.preguntas.push({q:'',ops:[],ok:0}); render(); });
     app.querySelectorAll('[data-wqdel]').forEach(b=>b.addEventListener('click',()=>{ leerQ(); w.quiz.preguntas.splice(+b.dataset.wqdel,1); render(); }));
+    app.querySelectorAll('[data-wqup]').forEach(b=>b.addEventListener('click',()=>{ leerQ(); const i=+b.dataset.wqup, q=w.quiz.preguntas; if(i>0){ [q[i-1],q[i]]=[q[i],q[i-1]]; render(); } }));
+    app.querySelectorAll('[data-wqdown]').forEach(b=>b.addEventListener('click',()=>{ leerQ(); const i=+b.dataset.wqdown, q=w.quiz.preguntas; if(i<q.length-1){ [q[i+1],q[i]]=[q[i],q[i+1]]; render(); } }));
     $('wzAtras2').addEventListener('click',()=>{ leerQ(); w.paso=2; render(); });
     $('wzPublicar').addEventListener('click', async ()=>{
       leerQ();
@@ -1498,7 +1557,7 @@ function renderWizard(){
       try{
         est.textContent='Subiendo el archivo…';
         const fid=await subirArchivo(w.file,(i,n)=>{ est.textContent='Subiendo el archivo… parte '+i+' de '+n; });
-        const curso={ id:nuevoId('c'), titulo:w.titulo, desc:'', dur:w.dur, competencia:w.competencia, color:w.color, portada:'', activo:true, ts:Date.now(), por:SESSION.email,
+        const curso={ id:nuevoId('c'), titulo:w.titulo, desc:w.desc||'', dur:w.dur, competencia:w.competencia, color:w.color, portada:'', activo:true, ts:Date.now(), por:SESSION.email,
           modulos: w.mods.concat([{ titulo:'Material original: '+w.file.name, tipo:'archivo', contenido:fid, archivoNombre:w.file.name }]),
           quiz:{ aprueba:w.quiz.aprueba, preguntas:w.quiz.preguntas.filter(p=>p.q&&p.ops.length>=2) } };
         est.textContent='Guardando el curso…';
@@ -1518,7 +1577,7 @@ function renderWizard(){
           NOVEDADES=await fbGet('novedades').catch(()=>NOVEDADES)||{};
         }
         WIZ=null; VISTA=null; pintarNav();
-        alert('¡Listo! El curso «'+curso.titulo+'» quedó publicado'+(prog?' en '+prog.nombre:' (sin programa todavía)')+'.');
+        alert('¡Listo! El curso «'+curso.titulo+'» quedó publicado'+(prog?' en '+prog.nombre:' (sin programa todavía)')+'.\n\nPodés seguir ajustándolo cuando quieras desde Gestión → ✏ Editar (texto, orden, portada, quiz).');
         abrirCurso(curso.id);
       }catch(err){ btn.disabled=false; est.textContent=''; alert('No se pudo publicar: '+err.message); }
     });
@@ -1538,28 +1597,16 @@ function renderEditorCurso(){
     '<div class="fila" style="margin-top:12px"><div style="flex:2"><label class="fl">Portada (URL de una foto, opcional)</label><input type="url" id="cPortada" value="'+esc(c.portada||'')+'" placeholder="https://… (si queda vacío, la tarjeta usa el color)"></div></div>'+
     '<div style="margin-top:12px"><label class="fl">Descripción / objetivo</label><textarea id="cDesc" placeholder="Qué se lleva el equipo de este curso.">'+esc(c.desc||'')+'</textarea></div></div>');
   html.push('<div class="sec-t" style="margin-top:28px">Módulos ('+(c.modulos||[]).length+')</div>');
-  (c.modulos||[]).forEach((m,i)=>{
-    html.push('<div class="card-b" style="margin-top:10px"><div class="fila">'+
-      '<div style="flex:2;min-width:220px"><label class="fl">Título del módulo '+(i+1)+'</label><input type="text" data-mt="'+i+'" value="'+esc(m.titulo||'')+'"></div>'+
-      '<div><label class="fl">Tipo</label><select data-mtipo="'+i+'">'+
-        ['texto','video','archivo','enlace'].map(t=>'<option value="'+t+'"'+(m.tipo===t?' selected':'')+'>'+({texto:'Texto / lectura',video:'Video (YouTube)',archivo:'Archivo (PDF / PowerPoint)',enlace:'Material (link externo)'}[t])+'</option>').join('')+'</select></div>'+
-      '<div style="align-self:flex-end"><button class="btn mini peligro" data-mdel="'+i+'">🗑 Quitar</button></div></div>'+
-      '<div style="margin-top:10px">'+
-      (m.tipo==='texto' ? '<label class="fl">Contenido</label><textarea data-mc="'+i+'" style="min-height:130px" placeholder="El texto que lee el vendedor. Doble enter = tarjeta nueva.\nOpcional: arrancá un bloque con [[tip]] Título, [[dato]] Título, [[evitar]] Título o [[ejemplo]] Título para destacarlo con color.">'+esc(m.contenido||'')+'</textarea>'
-        : m.tipo==='archivo' ? '<label class="fl">Archivo</label>'+
-          (m.contenido?'<p style="margin:0 0 8px;font-size:14px">Subido: <b>'+esc(m.archivoNombre||m.contenido)+'</b> ✓ — elegir otro archivo lo reemplaza.</p>':'')+
-          '<input type="file" data-mf="'+i+'" accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx"> <span class="muted" data-mfst="'+i+'" style="font-size:13px"></span>'+
-          '<p class="muted" style="font-size:12.5px;margin:7px 0 0">Máx. '+ARCHIVO_MAX_MB+' MB. Si el PPT pesa mucho por las fotos, conviene exportarlo a PDF.</p>'
-        : '<label class="fl">URL</label><input type="url" data-mc="'+i+'" value="'+esc(m.contenido||'')+'" placeholder="https://…">')+'</div></div>');
-  });
-  html.push('<p style="margin-top:12px"><button class="btn" id="addMod">＋ Agregar módulo</button></p>');
+  c.modulos=c.modulos||[];
+  c.modulos.forEach((m,i)=>{ html.push(moduloEditorHtml(m,i,{pref:'m',unir:false,total:c.modulos.length})); });
+  html.push('<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn" data-madd="texto">＋ Módulo de texto</button><button class="btn" data-madd="video">＋ Video (YouTube)</button><button class="btn" data-madd="archivo">＋ Archivo PDF/PPT</button><button class="btn" data-madd="enlace">＋ Link a material</button></div>');
   const q=c.quiz||{aprueba:70,preguntas:[]};
   html.push('<div class="sec-t" style="margin-top:24px">Evaluación ('+(q.preguntas||[]).length+' preguntas)</div>');
   html.push('<div class="card-b" style="margin-top:10px"><label class="fl">Se aprueba con (%)</label><input type="number" id="qAprueba" value="'+(q.aprueba||70)+'" min="10" max="100" style="max-width:120px"></div>');
   (q.preguntas||[]).forEach((p,i)=>{
     html.push('<div class="card-b" style="margin-top:10px"><div class="fila">'+
       '<div style="flex:3;min-width:240px"><label class="fl">Pregunta '+(i+1)+'</label><input type="text" data-qq="'+i+'" value="'+esc(p.q||'')+'"></div>'+
-      '<div style="align-self:flex-end"><button class="btn mini peligro" data-qdel="'+i+'">🗑 Quitar</button></div></div>'+
+      '<div style="align-self:flex-end;display:flex;gap:6px"><button class="btn mini" data-qup="'+i+'"'+(i===0?' disabled':'')+'>↑</button><button class="btn mini" data-qdown="'+i+'"'+(i===(q.preguntas||[]).length-1?' disabled':'')+'>↓</button><button class="btn mini peligro" data-qdel="'+i+'">🗑</button></div></div>'+
       '<div class="fila" style="margin-top:10px">'+
       '<div style="flex:3;min-width:240px"><label class="fl">Opciones (una por línea)</label><textarea data-qo="'+i+'">'+esc((p.ops||[]).join('\n'))+'</textarea></div>'+
       '<div><label class="fl">Correcta (Nº de línea)</label><input type="number" data-qok="'+i+'" value="'+((+p.ok||0)+1)+'" min="1" style="max-width:110px"></div></div></div>');
@@ -1573,9 +1620,7 @@ function renderEditorCurso(){
   function leerForm(){
     c.titulo=$('cTit').value.trim(); c.dur=$('cDur').value.trim(); c.competencia=$('cComp').value;
     c.color=$('cColor').value; c.portada=$('cPortada').value.trim(); c.desc=$('cDesc').value.trim();
-    app.querySelectorAll('[data-mt]').forEach(i=>{ c.modulos[+i.dataset.mt].titulo=i.value.trim(); });
-    app.querySelectorAll('[data-mtipo]').forEach(i=>{ c.modulos[+i.dataset.mtipo].tipo=i.value; });
-    app.querySelectorAll('[data-mc]').forEach(i=>{ c.modulos[+i.dataset.mc].contenido=i.value.trim(); });
+    leerModulosForm(app,c.modulos,'m');
     c.quiz=c.quiz||{}; c.quiz.aprueba=Math.max(10,Math.min(100,+$('qAprueba').value||70));
     c.quiz.preguntas=c.quiz.preguntas||[];
     app.querySelectorAll('[data-qq]').forEach(i=>{ c.quiz.preguntas[+i.dataset.qq].q=i.value.trim(); });
@@ -1584,23 +1629,12 @@ function renderEditorCurso(){
   }
   $('volver').addEventListener('click',e=>{ e.preventDefault(); EDIT_CURSO=null; VISTA=null; render(); });
   $('cancelarCurso').addEventListener('click',()=>{ EDIT_CURSO=null; VISTA=null; render(); });
-  $('addMod').addEventListener('click',()=>{ leerForm(); c.modulos.push({titulo:'',tipo:'texto',contenido:''}); render(); });
+  app.querySelectorAll('[data-madd]').forEach(b=>b.addEventListener('click',()=>{ leerForm(); c.modulos.push({titulo:'',tipo:b.dataset.madd,contenido:''}); render(); }));
   $('addPreg').addEventListener('click',()=>{ leerForm(); c.quiz.preguntas.push({q:'',ops:[],ok:0}); render(); });
-  app.querySelectorAll('[data-mdel]').forEach(b=>b.addEventListener('click',()=>{ leerForm(); c.modulos.splice(+b.dataset.mdel,1); render(); }));
   app.querySelectorAll('[data-qdel]').forEach(b=>b.addEventListener('click',()=>{ leerForm(); c.quiz.preguntas.splice(+b.dataset.qdel,1); render(); }));
-  app.querySelectorAll('[data-mtipo]').forEach(s=>s.addEventListener('change',()=>{ leerForm(); render(); }));
-  app.querySelectorAll('[data-mf]').forEach(inp=>inp.addEventListener('change', async ()=>{
-    const f=inp.files&&inp.files[0]; if(!f) return;
-    if(f.size>ARCHIVO_MAX_MB*1048576){ alert('«'+f.name+'» pesa '+(f.size/1048576).toFixed(1)+' MB y el máximo es '+ARCHIVO_MAX_MB+' MB.\nSi es un PowerPoint con muchas fotos, exportalo a PDF y subí ese.'); inp.value=''; return; }
-    leerForm();
-    const st=app.querySelector('[data-mfst="'+inp.dataset.mf+'"]'); inp.disabled=true;
-    try{
-      const fid=await subirArchivo(f,(i,n)=>{ if(st) st.textContent='Subiendo… parte '+i+' de '+n; });
-      const m=c.modulos[+inp.dataset.mf]; m.contenido=fid; m.archivoNombre=f.name;
-      if(!m.titulo) m.titulo=f.name.replace(/\.[^.]+$/,'');
-      render();
-    }catch(err){ alert('No se pudo subir el archivo: '+err.message); inp.disabled=false; if(st) st.textContent=''; }
-  }));
+  app.querySelectorAll('[data-qup]').forEach(b=>b.addEventListener('click',()=>{ leerForm(); const i=+b.dataset.qup; if(i>0){ const q=c.quiz.preguntas; [q[i-1],q[i]]=[q[i],q[i-1]]; render(); } }));
+  app.querySelectorAll('[data-qdown]').forEach(b=>b.addEventListener('click',()=>{ leerForm(); const i=+b.dataset.qdown; const q=c.quiz.preguntas; if(i<q.length-1){ [q[i+1],q[i]]=[q[i],q[i+1]]; render(); } }));
+  bindModulosEditor(app,c.modulos,'m',leerForm);
   $('guardarCurso').addEventListener('click', async ()=>{
     leerForm();
     if(!c.titulo){ alert('Poné un título al curso.'); return; }
