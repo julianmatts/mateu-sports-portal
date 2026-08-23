@@ -85,23 +85,6 @@
   .startbox{background:#fff;border:1px solid var(--border);border-radius:14px;padding:34px 24px;text-align:center;margin-top:10px}
   .startbox .big{font-family:var(--font-d);font-size:30px;letter-spacing:.5px}
   .startbox .sub{font-family:var(--font-c);font-size:14px;color:var(--muted);margin:6px 0 20px}
-  .progwrap{position:sticky;top:0;background:var(--off);padding:10px 0;z-index:5}
-  .progbar{height:10px;background:#eef1f7;border-radius:99px;overflow:hidden}
-  .progbar span{display:block;height:100%;background:var(--ok);transition:width .2s}
-  .progtxt{display:flex;justify-content:space-between;font-family:var(--font-c);font-size:13px;color:var(--muted);margin-bottom:6px}
-  .grp{font-family:var(--font-c);font-weight:700;letter-spacing:.5px;text-transform:uppercase;font-size:12px;color:var(--muted);margin:16px 0 4px;border-bottom:1px solid var(--border);padding-bottom:4px}
-  .chk{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-bottom:8px;cursor:pointer}
-  .chk.done{background:#f2faf5;border-color:#bbe3c9}
-  .chk .box{width:30px;height:30px;border:2px solid var(--navy-mid);border-radius:8px;display:flex;align-items:center;justify-content:center;flex:none;font-size:18px;color:#fff}
-  .chk.done .box{background:var(--ok);border-color:var(--ok)}
-  .chk .body{flex:1;min-width:0}
-  .chk .art{font-family:var(--font-c);font-weight:700;font-size:16px;line-height:1.15}
-  .chk .art small{color:var(--muted);font-weight:500}
-  .chk .meta{font-size:12.5px;color:var(--muted);margin-top:2px}
-  .chk .qty{font-family:var(--font-d);font-size:26px;color:var(--navy);flex:none;text-align:right;line-height:1}
-  .chk .qty small{display:block;font-family:var(--font-c);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
-  .chk .ubic{font-family:var(--font-c);font-size:11px;color:var(--muted)}
-  .chk.done .art{text-decoration:line-through;text-decoration-color:#9bcfae}
   .summary{background:#fff;border:1px solid var(--border);border-radius:14px;padding:24px;text-align:center;margin-top:10px}
   .summary .chk-ic{font-size:40px;color:var(--ok)}
   .sumrow{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:16px}
@@ -114,17 +97,14 @@
 
   /* --- mobile / tablet (celular y tablet, vertical y horizontal · Android + iOS) --- */
   .inp{font-size:16px}                         /* evita el auto-zoom de iOS al enfocar */
-  .task,.card,.chk{-webkit-tap-highlight-color:transparent}
+  .task,.card{-webkit-tap-highlight-color:transparent}
   .task:active,.card:active{transform:scale(.995)}
-  .chk .art,.chk .art small{overflow-wrap:anywhere}
-  .flash .sub,.chk .meta{overflow-wrap:anywhere}
+  .flash .sub{overflow-wrap:anywhere}
   .sec-head .btn,.row-actions .btn{flex:0 0 auto}
   @media (max-width:520px){
     .top h1{font-size:21px}
     .sec-head h2{font-size:22px}
     .hero .n{font-size:46px}
-    .chk{padding:11px 12px;gap:11px}
-    .chk .qty{font-size:22px}
     .task{padding:22px 18px}
     .btn{padding:12px 16px}
     .row-actions .btn{flex:1 1 auto}          /* botones de acción a ancho completo en el celu */
@@ -169,7 +149,7 @@ function fmtDur(ms){ if(!ms||ms<0) return '—'; const s=Math.round(ms/1000),h=M
 function nombreSuc(slug){ return String(slug||'').split('-').map(w=> !w?w:(w.length<=2?w.toUpperCase():w.charAt(0).toUpperCase()+w.slice(1))).join(' '); }
 
 const state = { task:null, view:'lista', remito:null, suc:null };
-const DATA = { remitos:{}, control:{}, bar:{ ultima:null, slugs:[], tareas:{}, repo:{} } };
+const DATA = { remitos:{}, control:{}, pick:{ pickings:{}, operarios:{} } };
 
 /* ============================================================ HOME ============ */
 function render(){
@@ -294,152 +274,6 @@ async function toggleCam(){
 }
 function stopCam(){ try{ if(_zxCtl&&_zxCtl.stop) _zxCtl.stop(); }catch(e){} try{ if(_zx&&_zx.reset) _zx.reset(); }catch(e){} _zxCtl=null; _zx=null; const box=$('cam'); if(box) box.style.display='none'; const b=$('camBtn'); if(b) b.textContent='📷 Cámara'; }
 
-/* ============================================================ REPOSICIÓN ====== */
-async function cargarBarrida(){
-  const ultima = await fbGet(ROOT_BAR+'/ultima');
-  DATA.bar.ultima = ultima; DATA.bar.slugs=[]; DATA.bar.tareas={}; DATA.bar.repo={};
-  if(!ultima) return;
-  const lk = fbKey(ultima);
-  const [slugsObj, tareas] = await Promise.all([
-    fbGet(ROOT_BAR+'/barridas/'+lk+'/reposicion','shallow=true'),
-    fbGet(ROOT_BAR+'/tareas/'+lk)
-  ]);
-  DATA.bar.slugs = slugsObj ? Object.keys(slugsObj).sort((a,b)=>nombreSuc(a).localeCompare(nombreSuc(b),'es')) : [];
-  DATA.bar.tareas = tareas || {};
-}
-function tareaOf(slug){ return (DATA.bar.tareas||{})[slug]||null; }
-function estadoTarea(T){ if(!T||!T.inicio_ms) return {t:'Sin empezar',cls:'mut'}; if(!T.fin_ms) return {t:'En curso',cls:'info'}; return {t:'Terminada',cls:'ok'}; }
-
-function renderRepoLista(){
-  let h = '<div class="sec-head"><div><h2>Reposición por sucursal</h2>'
-    + '<div class="sub">'+(DATA.bar.ultima?('Barrida del '+esc(DATA.bar.ultima)):'')+' — elegí la sucursal que vas a preparar.</div></div>'
-    + '<div style="display:flex;gap:8px"><button class="btn btn-outline" id="reloadR">↻ Actualizar</button><button class="btn btn-outline" id="home">← Tareas</button></div></div>';
-  if(!DATA.bar.ultima || !DATA.bar.slugs.length){ $('view').innerHTML = h + '<div class="state">No hay una barrida cargada todavía. Cuando el depósito suba una, aparecen acá las sucursales a reponer.</div>'; bindRepoHead(); return; }
-  const cards = DATA.bar.slugs.map(slug=>{
-    const T=tareaOf(slug); const est=estadoTarea(T);
-    let extra='';
-    if(T&&T.fin_ms) extra='<div class="n">'+fmtDur(T.fin_ms-T.inicio_ms)+'<small>tardó</small></div>';
-    else if(T&&T.inicio_ms) extra='<div class="n">'+fmtInt(Object.keys(T.tildados||{}).length)+'<small>tildados</small></div>';
-    return '<div class="card" data-slug="'+esc(slug)+'"><div class="nro">'+esc(nombreSuc(slug))+'</div>'
-      + '<div class="sub">Reposición</div><div class="foot"><span class="pill '+est.cls+'">'+est.t+'</span>'+extra+'</div></div>';
-  }).join('');
-  $('view').innerHTML = h + '<div class="grid">'+cards+'</div>';
-  document.querySelectorAll('.card[data-slug]').forEach(c=>c.onclick=()=>{ state.view='suc'; state.suc=c.getAttribute('data-slug'); render(); });
-  bindRepoHead();
-}
-function bindRepoHead(){ const r=$('reloadR'); if(r) r.onclick=async()=>{ r.disabled=true; try{ await cargarBarrida(); render(); toast('Actualizado','ok'); }catch(e){ r.disabled=false; toast('No pude actualizar','bad'); } }; const hm=$('home'); if(hm) hm.onclick=backHome; }
-
-async function loadRepo(slug){
-  if(DATA.bar.repo[slug]) return DATA.bar.repo[slug];
-  const lk=fbKey(DATA.bar.ultima);
-  const arr = await fbGet(ROOT_BAR+'/barridas/'+lk+'/reposicion/'+slug);
-  DATA.bar.repo[slug] = Array.isArray(arr)?arr:(arr?vals(arr):[]);
-  return DATA.bar.repo[slug];
-}
-async function saveTarea(slug, now){
-  const lk=fbKey(DATA.bar.ultima); const T=DATA.bar.tareas[slug]; if(!T) return;
-  const go=()=>fbPut(ROOT_BAR+'/tareas/'+lk+'/'+slug, T).catch(()=>{});
-  clearTimeout(_saveT); if(now) go(); else _saveT=setTimeout(go,700);
-}
-
-function renderRepoSuc(){
-  const slug=state.suc; if(!slug){ state.view='lista'; return render(); }
-  const T=tareaOf(slug);
-  const backBtn='<button class="btn btn-outline" id="backR">← Volver</button>';
-  // 1) no empezada → pantalla de Comenzar
-  if(!T || !T.inicio_ms){
-    $('view').innerHTML = '<div class="sec-head"><div><h2>'+esc(nombreSuc(slug))+'</h2><div class="sub">Reposición · barrida del '+esc(DATA.bar.ultima)+'</div></div>'+backBtn+'</div>'
-      + '<div class="startbox"><div class="big">'+esc(nombreSuc(slug))+'</div>'
-      + '<div class="sub">Cuando estés en el sector y listo para juntar, tocá Comenzar. Se cuenta el tiempo desde ese momento.</div>'
-      + '<div class="opname" style="justify-content:center"><label for="opR">Operario</label><input class="inp" id="opR" placeholder="Tu nombre (opcional)"></div>'
-      + '<div style="margin-top:20px"><button class="btn btn-primary btn-lg" id="start">▶ Comenzar</button></div></div>';
-    $('backR').onclick=()=>{ state.view='lista'; render(); };
-    $('start').onclick=async()=>{
-      const b=$('start'); b.disabled=true;
-      try{ await loadRepo(slug);
-        const T2={ inicio:nowISO(), inicio_ms:Date.now(), operario:($('opR')?$('opR').value.trim():''), tildados:{}, estado:'en_curso' };
-        DATA.bar.tareas[slug]=T2; await saveTarea(slug,true); render();
-      }catch(e){ b.disabled=false; toast('No pude cargar el detalle: '+e.message,'bad'); }
-    };
-    return;
-  }
-  // 3) terminada → resumen
-  if(T.fin_ms) return renderRepoResumen(slug);
-  // 2) en curso → checklist
-  return renderChecklist(slug);
-}
-
-function itemUnidades(it){ return num(it.sugerido); }
-function tallesTxt(it){ const ts=(it.talles||[]).filter(x=>num(x.s)>0).map(x=>esc(x.t)+'×'+num(x.s)); return ts.join(' · '); }
-function itemKey(it,i){ return String(it.id||it.codigo||('i'+i)); }
-
-async function renderChecklist(slug){
-  const T=tareaOf(slug);
-  let items = DATA.bar.repo[slug];
-  if(!items){ $('view').innerHTML='<div class="state"><div class="spin"></div>Cargando detalle…</div>'; try{ items=await loadRepo(slug); }catch(e){ $('view').innerHTML='<div class="state">No pude cargar el detalle.</div>'; return; } }
-  const totArt=items.length; let totUn=0; items.forEach(it=>totUn+=itemUnidades(it));
-  // agrupar por rubro
-  const byRubro={}; items.forEach((it,i)=>{ const r=it.rubro||'Otros'; (byRubro[r]=byRubro[r]||[]).push([it,i]); });
-  const rubros=Object.keys(byRubro).sort((a,b)=>a.localeCompare(b,'es'));
-  const done=()=>Object.keys(T.tildados||{}).length;
-  let h = '<div class="sec-head"><div><h2>'+esc(nombreSuc(slug))+'</h2><div class="sub">'+fmtInt(totArt)+' artículos · '+fmtInt(totUn)+' unidades a juntar</div></div>'
-    + '<button class="btn btn-outline" id="backR">← Volver</button></div>';
-  h += '<div class="progwrap"><div class="progtxt"><span id="pTxt">'+done()+' / '+totArt+' tildados</span><span id="pTime"></span></div><div class="progbar"><span id="pBar" style="width:'+(totArt?Math.round(done()/totArt*100):0)+'%"></span></div></div>';
-  rubros.forEach(r=>{
-    h += '<div class="grp">'+esc(r)+'</div>';
-    byRubro[r].forEach(([it,i])=>{
-      const k=itemKey(it,i); const chk = T.tildados && T.tildados[k];
-      const tt=tallesTxt(it);
-      h += '<div class="chk'+(chk?' done':'')+'" data-k="'+esc(k)+'">'
-        + '<div class="box">'+(chk?'✓':'')+'</div>'
-        + '<div class="body"><div class="art">'+esc(it.desc||it.codigo||'')+' <small>'+esc(it.codigo||'')+(it.marca?(' · '+esc(it.marca)):'')+'</small></div>'
-        + '<div class="meta">'+(tt?('Talles: '+tt):'')+'</div>'
-        + '<div class="ubic">Ubicación: —</div></div>'
-        + '<div class="qty">'+fmtInt(itemUnidades(it))+'<small>a juntar</small></div></div>';
-    });
-  });
-  h += '<div class="row-actions"><button class="btn btn-primary btn-lg" id="fin">✓ Finalizado</button></div>';
-  $('view').innerHTML=h;
-  $('backR').onclick=()=>{ state.view='lista'; render(); };
-  // cronómetro en vivo
-  const tick=()=>{ const el=$('pTime'); if(el&&T.inicio_ms) el.textContent='⏱ '+fmtDur(Date.now()-T.inicio_ms); };
-  tick(); const timer=setInterval(()=>{ if($('pTime')) tick(); else clearInterval(timer); }, 1000);
-  document.querySelectorAll('.chk[data-k]').forEach(row=>{
-    row.onclick=()=>{
-      const k=row.getAttribute('data-k'); T.tildados=T.tildados||{};
-      if(T.tildados[k]){ delete T.tildados[k]; row.classList.remove('done'); row.querySelector('.box').textContent=''; }
-      else { T.tildados[k]=true; row.classList.add('done'); row.querySelector('.box').textContent='✓'; }
-      const d=done(); $('pTxt').textContent=d+' / '+totArt+' tildados'; $('pBar').style.width=(totArt?Math.round(d/totArt*100):0)+'%';
-      saveTarea(slug);
-    };
-  });
-  $('fin').onclick=async()=>{
-    if(!confirm('¿Terminaste de preparar '+nombreSuc(slug)+'?')) return;
-    T.fin=nowISO(); T.fin_ms=Date.now(); T.estado='terminada';
-    const b=$('fin'); b.disabled=true;
-    try{ await saveTarea(slug,true); render(); }catch(e){ b.disabled=false; toast('No se pudo guardar: '+e.message,'bad'); }
-  };
-}
-
-function renderRepoResumen(slug){
-  const T=tareaOf(slug); const items=DATA.bar.repo[slug]||[];
-  const totArt=items.length; let totUn=0; items.forEach(it=>totUn+=itemUnidades(it));
-  const tild=Object.keys(T.tildados||{}).length;
-  $('view').innerHTML = '<div class="sec-head"><div><h2>'+esc(nombreSuc(slug))+'</h2><div class="sub">Reposición terminada</div></div>'
-    + '<button class="btn btn-outline" id="backR">← Volver</button></div>'
-    + '<div class="summary"><div class="chk-ic">✓</div><div style="font-family:var(--font-d);font-size:26px;margin-top:6px">Tarea finalizada</div>'
-    + '<div class="sub" style="font-family:var(--font-c);color:var(--muted)">'+(T.operario?('Operario: '+esc(T.operario)+' · '):'')+esc((T.inicio||'').slice(11))+' → '+esc((T.fin||'').slice(11))+'</div>'
-    + '<div class="sumrow">'
-    + '<div class="s"><div class="v">'+fmtDur(T.fin_ms-T.inicio_ms)+'</div><div class="k">Tiempo</div></div>'
-    + '<div class="s"><div class="v">'+fmtInt(totArt)+'</div><div class="k">Artículos</div></div>'
-    + '<div class="s"><div class="v">'+fmtInt(totUn)+'</div><div class="k">Unidades</div></div>'
-    + '<div class="s"><div class="v">'+fmtInt(tild)+'</div><div class="k">Tildados</div></div>'
-    + '</div>'
-    + (tild<totArt?'<div class="blind" style="margin-top:16px">Ojo: se tildaron '+tild+' de '+totArt+' artículos. Quedaron '+(totArt-tild)+' sin tildar.</div>':'')
-    + '</div>';
-  $('backR').onclick=()=>{ state.view='lista'; render(); };
-}
-
 /* ============================================================ PICKING ========= */
 /* El kiosco EJECUTA los picks creados en el módulo picking/. Datos en
    recepciones-mateu/picking/. Valida el scan contra el EAN horneado en cada
@@ -465,18 +299,36 @@ function pkZonas(P){ return new Set(pkLines(P).map(l=>l.zona)).size; }
 let _ac=null; function beep(ok){ try{ _ac=_ac||new (window.AudioContext||window.webkitAudioContext)(); const o=_ac.createOscillator(),g=_ac.createGain(); o.connect(g); g.connect(_ac.destination); o.frequency.value=ok?880:200; o.type=ok?'sine':'square'; g.gain.value=.08; o.start(); setTimeout(()=>{o.stop();},ok?110:240); }catch(e){} }
 
 function pkInjectCss(){ if($('pkCss')) return; const css=''
-  +'.pk-op{max-width:580px;margin:0 auto}'
-  +'.pk-zona{background:var(--navy);color:#fff;border-radius:14px;padding:16px;text-align:center;margin-bottom:12px}'
-  +'.pk-zona .lbl{font-family:var(--font-c);font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#b0bcd4}'
-  +'.pk-zona .z{font-family:var(--font-d);font-size:38px;letter-spacing:1px;line-height:1.05}'
-  +'.pk-prod{background:#fff;border:1px solid var(--border);border-radius:14px;padding:18px;text-align:center}'
-  +'.pk-prod .desc{font-family:var(--font-c);font-weight:700;font-size:20px;overflow-wrap:anywhere}'
+  +'.pk-op{max-width:600px;margin:0 auto}'
+  +'.pk-top{position:sticky;top:0;background:var(--off);padding:8px 0 10px;z-index:6;margin-bottom:6px}'
+  +'.pk-top-row{display:flex;align-items:center;gap:10px}'
+  +'.pk-id{font-family:var(--font-d);font-size:22px;letter-spacing:.5px}'
+  +'.pk-dest2{font-family:var(--font-c);font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+  +'.btn-xs{padding:7px 11px;min-height:0;font-size:11px}'
+  +'.pk-progbar{height:9px;background:#e3e8f2;border-radius:99px;overflow:hidden;margin-top:8px}'
+  +'.pk-progbar span{display:block;height:100%;background:var(--ok);transition:width .25s}'
+  +'.pk-progtxt{font-family:var(--font-c);font-weight:600;font-size:12px;color:var(--muted);margin-top:4px}'
+  +'.pk-zona{background:var(--navy);color:#fff;border-radius:16px;padding:18px;text-align:center;margin-bottom:12px}'
+  +'.pk-zona .lbl{font-family:var(--font-c);font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#8ea3c9}'
+  +'.pk-zona .z{font-family:var(--font-d);font-size:clamp(34px,10vw,52px);letter-spacing:1px;line-height:1.02;margin-top:2px}'
+  +'.pk-prod{background:#fff;border:2px solid var(--border);border-radius:16px;padding:18px;text-align:center;transition:border-color .15s,background .15s}'
+  +'.pk-prod.ok{border-color:var(--ok);background:#f2faf5}'
+  +'.pk-prod.bad{border-color:var(--bad);background:#fdecec}'
+  +'.pk-prod .desc{font-family:var(--font-c);font-weight:700;font-size:20px;line-height:1.15;overflow-wrap:anywhere}'
   +'.pk-prod .cod{font-family:var(--font-c);color:var(--muted);font-size:13px;margin-top:2px}'
-  +'.pk-prod .talle{font-family:var(--font-d);font-size:54px;line-height:1;margin:8px 0 0}'
-  +'.pk-prod .talle small{font-family:var(--font-c);font-size:13px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;display:block}'
-  +'.pk-qty{font-family:var(--font-d);font-size:40px;color:var(--red);margin-top:8px}'
-  +'.pk-qty small{font-family:var(--font-c);font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}'
-  +'.pk-count{font-family:var(--font-c);font-weight:700;color:var(--muted);text-align:center;margin-top:6px}';
+  +'.pk-prod .talle{font-family:var(--font-d);font-size:clamp(48px,16vw,72px);line-height:.95;margin-top:8px}'
+  +'.pk-prod .talle small{display:block;font-family:var(--font-c);font-size:12px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:-4px}'
+  +'.pk-dots{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin:12px 0 4px}'
+  +'.pk-dots .dot{width:16px;height:16px;border-radius:50%;background:#e3e8f2;border:1px solid #cfd8ea}'
+  +'.pk-dots .dot.on{background:var(--ok);border-color:var(--ok)}'
+  +'.pk-qty{font-family:var(--font-c);font-weight:700;font-size:15px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:8px}'
+  +'.pk-qty b{font-family:var(--font-d);font-size:clamp(40px,13vw,64px);color:var(--red);display:block;line-height:1;letter-spacing:1px;font-weight:400}'
+  +'.pk-qty small{display:block;font-size:12px;font-weight:600}'
+  +'.pk-fb{font-family:var(--font-c);font-weight:700;font-size:16px;margin-top:12px;min-height:22px;color:var(--muted)}'
+  +'.pk-fb.ok{color:var(--ok)}.pk-fb.bad{color:var(--bad)}'
+  +'.pk-scan{display:flex;gap:8px;margin-top:14px}'
+  +'.pk-scan .inp{flex:1;font-size:16px}'
+  +'.pk-bottom{display:flex;justify-content:center;margin-top:14px}';
   document.head.insertAdjacentHTML('beforeend','<style id="pkCss">'+css+'</style>'); }
 
 function renderPickView(){ pkInjectCss();
@@ -534,46 +386,64 @@ function renderPickSummary(){
 
 function renderPickOperativo(){
   const P=pkGet(); if(!P){ state.view='lista'; return render(); }
-  const r=pkResumen(P); const line=pkNext(P);
+  const line=pkNext(P);
   if(!line){ state.view='fin'; return render(); }
-  const rest=line.req-line.picked;
-  let h='<div class="sec-head" style="margin-bottom:8px"><div><h2>PICK #'+esc(P.nro)+'</h2><div class="sub">'+esc(nombreSuc(P.destino))+' · '+fmtInt(r.pk)+' / '+fmtInt(r.req)+'</div></div>'
-    +'<button class="btn btn-outline" id="pausar">⏸ Pausar</button></div>';
-  h+='<div class="pk-op">'
-    +'<div class="pk-zona"><div class="lbl">Siguiente ubicación</div><div class="z">'+esc(line.zona)+'</div></div>'
-    +'<div class="pk-prod"><div class="desc">'+esc(line.desc||line.codigo)+'</div><div class="cod">'+esc(line.codigo)+(line.marca?(' · '+esc(line.marca)):'')+'</div>'
-    +'<div class="talle">'+esc(line.talle)+'<small>Talle</small></div>'
-    +'<div class="pk-qty">RETIRAR '+fmtInt(rest)+'<small> unidad'+(rest===1?'':'es')+'</small></div></div>'
-    +'<div class="scanbar" style="margin-top:14px"><input class="inp" id="pscan" inputmode="numeric" autocomplete="off" placeholder="Escaneá el producto…"><button class="btn btn-outline" id="pmanual">+1 manual</button></div>'
-    +'<div class="flash" id="pflash"><span class="ic">📷</span><div><div class="big">'+(line.ean?'Escaneá cada unidad':'Sin código para validar — contá y tocá +1')+'</div><div class="sub">'+esc((line.desc||'').slice(0,40))+'</div></div></div>'
-    +'<div class="pk-count">'+fmtInt(line.picked)+' / '+fmtInt(line.req)+' de este talle</div>'
-    +'<div class="row-actions" style="justify-content:center;margin-top:14px"><button class="btn btn-outline" id="nostock">No encuentro stock</button></div>'
+  const r=pkResumen(P); const rest=line.req-line.picked; const pct=r.req?Math.round(r.pk/r.req*100):0;
+  let dots=''; for(let i=0;i<line.req;i++) dots+='<span class="dot'+(i<line.picked?' on':'')+'"></span>';
+  let h='<div class="pk-op">'
+    +'<div class="pk-top"><div class="pk-top-row"><span class="pk-id">PICK #'+esc(P.nro)+'</span>'
+    +'<span class="pk-dest2">'+esc(nombreSuc(P.destino))+'</span><button class="btn btn-outline btn-xs" id="pausar">⏸ Pausar</button></div>'
+    +'<div class="pk-progbar"><span id="pkPb" style="width:'+pct+'%"></span></div>'
+    +'<div class="pk-progtxt" id="pkPt">'+fmtInt(r.pk)+' / '+fmtInt(r.req)+' unidades</div></div>'
+    +'<div class="pk-zona"><div class="lbl">Ir a</div><div class="z">'+esc(line.zona)+'</div></div>'
+    +'<div class="pk-prod" id="pkProd"><div class="desc">'+esc(line.desc||line.codigo)+'</div>'
+    +'<div class="cod">'+esc(line.codigo)+(line.marca?(' · '+esc(line.marca)):'')+'</div>'
+    +'<div class="talle"><small>Talle</small>'+esc(line.talle)+'</div>'
+    +'<div class="pk-dots" id="pkDots">'+dots+'</div>'
+    +'<div class="pk-qty" id="pkQty">Retirar <b>'+fmtInt(rest)+'</b><small>unidad'+(rest===1?'':'es')+'</small></div>'
+    +'<div class="pk-fb" id="pkFb">'+(line.ean?'Escaneá cada unidad':'Sin código — contá y tocá +1')+'</div></div>'
+    +'<div class="pk-scan"><input class="inp" id="pscan" inputmode="numeric" autocomplete="off" placeholder="Escaneá el producto…"><button class="btn btn-outline" id="pmanual">+1 manual</button></div>'
+    +'<div class="pk-bottom"><button class="btn btn-outline" id="nostock">No encuentro stock</button></div>'
     +'</div>';
   $('view').innerHTML=h;
   const inp=$('pscan');
-  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); pkScan(inp.value); inp.value=''; inp.focus(); } });
-  $('pmanual').onclick=()=>{ pkContar(1,'manual'); };
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); const v=inp.value; inp.value=''; pkScan(v); setTimeout(()=>{ const i=$('pscan'); if(i) i.focus(); },0); } });
+  $('pmanual').onclick=()=>{ pkFeedback(true,'✓ +1'); pkContar(1,'manual'); };
   $('pausar').onclick=pkPausar;
   $('nostock').onclick=pkNoStock;
   inp.focus();
 }
-function pflash(kind,ic,big,sub){ const f=$('pflash'); if(!f) return; f.className='flash '+(kind||''); f.innerHTML='<span class="ic">'+ic+'</span><div><div class="big">'+esc(big)+'</div><div class="sub">'+esc(sub||'')+'</div></div>'; }
+function pkFeedback(ok,msg){
+  const prod=$('pkProd'); if(prod){ prod.classList.remove('ok','bad'); void prod.offsetWidth; prod.classList.add(ok?'ok':'bad'); setTimeout(()=>{ const p=$('pkProd'); if(p) p.classList.remove('ok','bad'); },500); }
+  const fb=$('pkFb'); if(fb){ fb.className='pk-fb '+(ok?'ok':'bad'); fb.textContent=msg; }
+  beep(ok);
+}
 function pkScan(raw){
   const P=pkGet(); const line=pkNext(P); if(!line) return;
   const ean=String(raw||'').replace(/\D/g,''); if(!ean) return;
   if(line.ean){
-    if(ean===line.ean){ pflash('ok','✓','Correcto','Talle '+line.talle); beep(true); pkContar(1,'scan'); }
-    else { pflash('bad','⚠','Artículo incorrecto','Esperado talle '+line.talle+' · escaneaste otro'); beep(false); pkEvento({event_type:'sku_error',picking_id:P.nro,operator_id:P.operario,ean:ean,value:{esperado:line.ean}}); }
-  } else { pflash('ok','✓','+1 (sin validación)','Talle '+line.talle); beep(true); pkContar(1,'scan'); }
+    if(ean===line.ean){ pkFeedback(true,'✓ Correcto'); pkContar(1,'scan'); }
+    else { pkFeedback(false,'✗ Incorrecto — se espera talle '+line.talle); pkEvento({event_type:'sku_error',picking_id:P.nro,operator_id:P.operario,ean:ean,value:{esperado:line.ean}}); }
+  } else { pkFeedback(true,'✓ +1 (sin validación de código)'); pkContar(1,'scan'); }
 }
-async function pkContar(n,via){
+function pkContar(n,via){
   const P=pkGet(); const line=pkNext(P); if(!line) return;
   const item=P.items[line.iid]; const t=item.talles[line.ti];
   t.picked=Math.min(num(t.req), num(t.picked)+n);
   item.picked_qty=(item.talles||[]).reduce((s,x)=>s+num(x.picked),0);
-  await pkSaveItem(P.nro,line.iid,item);
+  pkSaveItem(P.nro,line.iid,item); // backend fuente de verdad; no bloquea el escaneo
   pkEvento({event_type:'unit_picked',picking_id:P.nro,operator_id:P.operario,sku_id:line.codigo,ean:line.ean||null,value:{talle:line.talle,via:via}});
-  render(); // avanza solo a la próxima línea / o a finalización
+  if(t.picked>=num(t.req)) render();      // línea completa → avanza / o finaliza
+  else pkUpdateOpDom();                    // en el lugar (sin recargar → no pierde foco)
+}
+function pkUpdateOpDom(){
+  const P=pkGet(); const line=pkNext(P); if(!line) return;
+  const r=pkResumen(P); const rest=line.req-line.picked; const pct=r.req?Math.round(r.pk/r.req*100):0;
+  const dots=$('pkDots'); if(dots){ let s=''; for(let i=0;i<line.req;i++) s+='<span class="dot'+(i<line.picked?' on':'')+'"></span>'; dots.innerHTML=s; }
+  const q=$('pkQty'); if(q) q.innerHTML='Retirar <b>'+fmtInt(rest)+'</b><small>unidad'+(rest===1?'':'es')+'</small>';
+  const pb=$('pkPb'); if(pb) pb.style.width=pct+'%';
+  const pt=$('pkPt'); if(pt) pt.textContent=fmtInt(r.pk)+' / '+fmtInt(r.req)+' unidades';
+  const i=$('pscan'); if(i) i.focus();
 }
 function pkPausar(){ const P=pkGet(); P.estado='PAUSADO'; P.paused_at=nowISO(); pkSaveField(P.nro,'estado','PAUSADO'); pkSaveField(P.nro,'paused_at',P.paused_at); pkEvento({event_type:'picking_paused',picking_id:P.nro,operator_id:P.operario}); toast('Picking pausado — podés retomarlo después','ok'); state.view='lista'; render(); }
 function pkNoStock(){
