@@ -136,7 +136,10 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const FIREBASE_DB_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
+const MENSAJES_DB_URL = 'https://mensajes-mateu-default-rtdb.firebaseio.com';   // Bandeja de avisos del Portal
 const ROOT_ING = 'ingreso';
+/* aviso al tablero del Portal (best-effort; no bloquea) */
+function postAviso(texto){ try{ fetch(MENSAJES_DB_URL+'/avisos.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({de:'deposito@mateu.com.ar',texto:texto,ts:Date.now()})}).catch(function(){}); }catch(e){} }
 const ROOT_BAR = 'barrida';
 
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -525,6 +528,7 @@ function renderPickFin(){
     P.estado='LISTO PARA CONTROL'; P.completed_at=nowISO(); P.con_diferencias=falt>0;
     await Promise.all([ pkSaveField(P.nro,'estado','LISTO PARA CONTROL'), pkSaveField(P.nro,'completed_at',P.completed_at), pkSaveField(P.nro,'con_diferencias',falt>0) ]);
     pkEvento({event_type:'picking_completed',picking_id:P.nro,operator_id:P.operario,value:{solicitadas:sol,encontradas:enc,faltantes:falt}});
+    postAviso('📋 PICK #'+P.nro+' ('+nombreSuc(P.destino)+') listo para control — preparó '+(P.operario||'—')+(falt>0?(', con '+falt+' faltante'+(falt===1?'':'s')):'')+'.');
     toast('Enviado a control','ok'); state.view='lista'; try{ await cargarPicking(); }catch(e){} render();
   };
 }
@@ -670,6 +674,7 @@ async function cfCerrar(P,conDif,motivo){
   if(conDif){ P.con_diferencias=true; P.control_excepcion=motivo; saves.push(pkSaveField(P.nro,'con_diferencias',true), pkSaveField(P.nro,'control_excepcion',motivo)); }
   await Promise.all(saves);
   pkEvento({event_type:'control_completed',picking_id:P.nro,operator_id:P.controlado_por,value:{con_diferencias:conDif,motivo:motivo||''}});
+  if(conDif) postAviso('⚠️ Control del PICK #'+P.nro+' ('+nombreSuc(P.destino)+') cerrado CON DIFERENCIAS — '+motivo+(P.controlado_por?(' (controló '+P.controlado_por+')'):'')+'.');
   toast(conDif?'Cerrado con diferencias':'Control correcto — cerrado','ok'); state.view='lista'; try{ await cargarPicking(); }catch(e){} render();
 }
 
