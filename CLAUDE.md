@@ -431,7 +431,7 @@ entran acá: ven su objetivo en Indicadores.
   slug; suma semanas publicadas + lo provisorio del encargado).
 
 - **Valores por sucursal/semana**: **META** (el objetivo, el único que se carga),
-  **MÍNIMO** (= Meta ÷ 1,2), **120** (= Meta × 1,2, superación) y **REAL** (venta de
+  **MÍNIMO** (= Meta ÷ 1,2), **120** (= Meta × 1,2, el gran objetivo; en pantalla se llama solo «120», destacado) y **REAL** (venta de
   la semana). Banda geométrica de razón 1,2 alrededor de la Meta (validado con el
   Excel real de Juli: p.ej. Meta 108M → Mín 90M → 120 129,6M). Mínimo/120 se derivan
   solos y se guardan horneados. Los factores están en `F_MIN`/`F_120` del módulo.
