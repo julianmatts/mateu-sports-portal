@@ -92,10 +92,20 @@
   .fchip.act{ background:var(--accent); color:#fff; border-color:var(--accent); }
 
   /* ---- catálogo ---- */
-  .prog-tabs{ display:flex; gap:16px; margin-top:14px; flex-wrap:wrap; }
-  .prog-tab{ display:flex; align-items:center; justify-content:space-between; gap:14px; width:252px; min-height:76px; padding:14px 18px;
-    color:#fff; border:3px solid transparent; border-radius:12px; cursor:pointer; text-align:left; font-family:var(--font-c); font-size:16px; font-weight:700; text-transform:uppercase; line-height:1.2; letter-spacing:.6px; box-shadow:var(--sombra); }
-  .prog-tab.act{ border-color:var(--navy); box-shadow:var(--sombra-md); }
+  .prog-tabs{ display:flex; gap:14px; margin-top:14px; flex-wrap:wrap; }
+  .prog-tab{ display:flex; align-items:center; gap:13px; min-width:235px; max-width:300px; flex:0 1 auto; padding:13px 16px;
+    background:#fff; border:2px solid var(--borde); border-radius:12px; cursor:pointer; text-align:left;
+    box-shadow:var(--sombra); transition:transform .14s, box-shadow .14s, border-color .14s; position:relative; overflow:hidden; }
+  .prog-tab:hover{ transform:translateY(-1px); box-shadow:var(--sombra-md); }
+  .prog-tab .pt-ic{ width:42px; height:42px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
+  .prog-tab .pt-tx{ min-width:0; flex:1; }
+  .prog-tab .pt-nom{ font-family:var(--font-c); font-weight:700; font-size:15px; letter-spacing:.5px; text-transform:uppercase; color:var(--navy); line-height:1.15; }
+  .prog-tab .pt-sub{ font-family:var(--font-c); font-size:10.5px; font-weight:600; color:var(--gris); letter-spacing:1px; text-transform:uppercase; margin-top:3px; display:flex; gap:7px; align-items:center; flex-wrap:wrap; }
+  .prog-tab .pt-sub .venc{ color:var(--accent); }
+  .prog-tab .pt-barra{ position:absolute; left:0; right:0; bottom:0; height:4px; background:#edf0f7; }
+  .prog-tab .pt-barra>span{ display:block; height:100%; }
+  .prog-tab.act{ box-shadow:var(--sombra-md); }
+  .prog-tab.act .pt-nom{ color:inherit; }
   .carrusel{ display:flex; gap:18px; overflow-x:auto; margin-top:26px; padding-bottom:14px; scroll-snap-type:x proximity; }
   .ccard{ position:relative; flex-shrink:0; width:258px; height:460px; border-radius:12px; overflow:hidden; background:#dce3f0; scroll-snap-align:start; cursor:pointer; box-shadow:var(--sombra); }
   .ccard:hover{ box-shadow:0 8px 24px rgba(0,0,0,.22); }
@@ -867,7 +877,27 @@ function renderCatalogo(){
     html.push('<div class="sec-t" style="margin-top:40px">Programas por nivel</div>');
     html.push('<div class="prog-tabs">'+progs.map((p,i)=>{
       const color=progColor(p,i);
-      return '<button class="prog-tab'+(CAT.prog===p.id?' act':'')+'" data-prog="'+esc(p.id)+'" style="background:'+color+'"><span>'+esc(p.nombre)+'</span>'+iconoProgSvg(p.icono)+'</button>';
+      const csAct=(p.cursos||[]).map(cid=>CURSOS[cid]).filter(c=>c&&c.activo!==false);
+      const conEncPrev = encActiva(p)?1:0;
+      const total = csAct.length;
+      let sub='', pctBar=null;
+      if(esAl){
+        const done=csAct.filter(c=>estadoCurso(avanceYo(c.id),c).completo).length;
+        sub = total ? (done+'/'+total+' cursos') : (conEncPrev?'Encuesta previa':'Sin cursos');
+        if(total) pctBar = pct(done,total);
+      } else {
+        const borradores=(p.cursos||[]).filter(cid=>CURSOS[cid]&&CURSOS[cid].activo===false).length;
+        sub = total+' curso'+(total===1?'':'s')+(borradores?' · '+borradores+' en borrador':'');
+      }
+      const d = diasHasta(p.limite);
+      const venc = (p.limite && d!==null) ? (d<0?'<span class="venc">Vencido</span>':(d<=7?'<span class="venc">Vence en '+d+' d</span>':'')) : '';
+      const act = CAT.prog===p.id;
+      return '<button class="prog-tab'+(act?' act':'')+'" data-prog="'+esc(p.id)+'"'+(act?' style="border-color:'+color+';background:'+hexToRgba(color,.06)+'"':'')+'>'+
+        '<span class="pt-ic" style="background:'+color+'">'+iconoProgSvg(p.icono,22)+'</span>'+
+        '<span class="pt-tx"><span class="pt-nom" style="display:block'+(act?';color:'+color:'')+'">'+esc(p.nombre)+'</span>'+
+        '<span class="pt-sub">'+sub+(venc?' '+venc:'')+'</span></span>'+
+        (pctBar!==null?'<span class="pt-barra"><span style="width:'+pctBar+'%;background:'+color+'"></span></span>':'')+
+        '</button>';
     }).join('')+'</div>');
 
     const p = PROGRAMAS[CAT.prog] || progs[0];
