@@ -157,6 +157,7 @@ function render(){
   if(!state.task){ tt.textContent='Tareas de Depósito'; tg.textContent='Kiosco'; return renderHome(); }
   if(state.task==='ingreso'){ tt.textContent='Control de Ingreso'; tg.textContent='A ciegas'; return (state.view==='control')?renderControl():renderIngLista(); }
   if(state.task==='picking'){ tt.textContent='Picking'; tg.textContent=(state.view==='op'?'Preparando':'Pedidos'); return renderPickView(); }
+  if(state.task==='cfinal'){ tt.textContent='Control'; tg.textContent=(state.view==='op'?'Controlando':'Pedidos'); return renderCfView(); }
 }
 function renderHome(){
   $('view').innerHTML =
@@ -164,16 +165,18 @@ function renderHome(){
     + '<div class="home">'
     + '<button class="task" id="tIng"><div class="ic">📦</div><div class="t">Control de Ingreso</div><div class="d">Controlar un remito que llegó al depósito, escaneando cada unidad.</div></button>'
     + '<button class="task" id="tRep"><div class="ic">📋</div><div class="t">Picking</div><div class="d">Preparar los pedidos asignados: te guía ubicación → producto → cantidad, con scan.</div></button>'
+    + '<button class="task" id="tCf"><div class="ic">✅</div><div class="t">Control</div><div class="d">Controlar un pedido ya preparado: re-escaneás y el sistema verifica contra el picking.</div></button>'
     + '</div>';
   $('tIng').onclick=()=>enterTask('ingreso');
   $('tRep').onclick=()=>enterTask('picking');
+  $('tCf').onclick=()=>enterTask('cfinal');
 }
 async function enterTask(task){
   state.task=task; state.view='lista'; state.remito=null; state.suc=null;
   $('view').innerHTML='<div class="state"><div class="spin"></div>Cargando…</div>';
   try{
     if(task==='ingreso') await cargarIngreso();
-    else if(task==='picking') await cargarPicking();
+    else if(task==='picking' || task==='cfinal') await cargarPicking();
     render();
   }catch(e){ $('view').innerHTML='<div class="state">No pude cargar. Revisá la conexión.<br><br><button class="btn btn-outline" onclick="location.reload()">↻ Reintentar</button></div>'; }
 }
@@ -489,6 +492,147 @@ function renderPickFin(){
     pkEvento({event_type:'picking_completed',picking_id:P.nro,operator_id:P.operario,value:{solicitadas:sol,encontradas:enc,faltantes:falt}});
     toast('Enviado a control','ok'); state.view='lista'; await cargarPicking(); render();
   };
+}
+
+/* ============================================================ CONTROL FINAL === */
+/* Segunda etapa: otra persona re-escanea lo preparado y se cruza pedido→picking→
+   control. Reusa los datos de picking/ (DATA.pick, pkGet/pkSaveItem/pkSaveField/
+   pkEvento/pkFeedback) y la estética .pk-*. Prefijo cf (control final). */
+function cfLines(P){ const out=[]; Object.keys(P.items||{}).map(iid=>({iid,...P.items[iid]})).sort((a,b)=>num(a.sequence)-num(b.sequence))
+  .forEach(it=>{ (it.talles||[]).forEach((t,ti)=>{ if(num(t.picked)>0) out.push({iid:it.iid,ti,codigo:it.codigo,desc:it.desc,marca:it.marca,zona:it.zonaNombre||'Sin zona',talle:t.t,ean:t.ean||'',req:num(t.req),picked:num(t.picked),controlled:num(t.controlled)}); }); }); return out; }
+function cfNext(P){ return cfLines(P).find(l=>l.controlled<l.picked)||null; }
+function cfResumen(P){ let picked=0,ctrl=0,lines=0; cfLines(P).forEach(l=>{lines++;picked+=l.picked;ctrl+=l.controlled;}); return {picked,ctrl,lines}; }
+
+function renderCfView(){ pkInjectCss();
+  if(state.view==='op') return renderCfOperativo();
+  if(state.view==='fin') return renderCfFin();
+  if(state.view==='sum') return renderCfSummary();
+  return renderCfLista();
+}
+function renderCfLista(){
+  const list=Object.keys(DATA.pick.pickings).map(k=>DATA.pick.pickings[k]).filter(P=>P.estado==='LISTO PARA CONTROL')
+    .sort((a,b)=>cmp(a.completed_at||'',b.completed_at||''));
+  let h='<div class="sec-head"><div><h2>Pedidos para controlar</h2><div class="sub">Pickings ya preparados. Idealmente controla otra persona.</div></div>'
+    +'<div style="display:flex;gap:8px"><button class="btn btn-outline" id="reloadC">↻ Actualizar</button><button class="btn btn-outline" id="home">← Tareas</button></div></div>';
+  if(!list.length){ $('view').innerHTML=h+'<div class="state">No hay pickings esperando control.</div>'; bindCfHead(); return; }
+  const cards=list.map(P=>{ const r=cfResumen(P);
+    return '<div class="card" data-nro="'+esc(P.nro)+'"><div class="nro">PICK #'+esc(P.nro)+'</div>'
+      +'<div class="sub">'+esc(nombreSuc(P.destino))+(P.operario?(' · pickeó '+esc(P.operario)):'')+(P.con_diferencias?' · <b style="color:var(--warn)">con faltantes</b>':'')+'</div>'
+      +'<div class="foot"><span class="pill info">Para control</span><div class="n">'+fmtInt(r.picked)+'<small>preparadas</small></div></div></div>'; }).join('');
+  $('view').innerHTML=h+'<div class="grid">'+cards+'</div>';
+  document.querySelectorAll('.card[data-nro]').forEach(c=>c.onclick=()=>{ state.pickNro=c.getAttribute('data-nro'); state.view='sum'; render(); });
+  bindCfHead();
+}
+function bindCfHead(){ const r=$('reloadC'); if(r) r.onclick=async()=>{ r.disabled=true; try{ await cargarPicking(); render(); toast('Actualizado','ok'); }catch(e){ r.disabled=false; toast('No pude actualizar','bad'); } }; const hm=$('home'); if(hm) hm.onclick=backHome; }
+
+function renderCfSummary(){
+  const P=pkGet(); if(!P){ state.view='lista'; return render(); }
+  const r=cfResumen(P);
+  const activos=Object.keys(DATA.pick.operarios).map(id=>DATA.pick.operarios[id]).filter(o=>o.activo!==false).sort((a,b)=>cmp(a.nombre,b.nombre));
+  let h='<div class="sec-head"><div><h2>Control PICK #'+esc(P.nro)+'</h2><div class="sub">'+esc(nombreSuc(P.destino))+'</div></div><button class="btn btn-outline" id="backC">← Volver</button></div>';
+  h+='<div class="startbox"><div class="big">'+esc(nombreSuc(P.destino))+'</div>'
+    +'<div class="sub" style="font-family:var(--font-c);color:var(--muted)">Volvé a escanear lo preparado para verificarlo contra el picking.</div>'
+    +'<div class="sumrow" style="margin:14px 0"><div class="s"><div class="v">'+fmtInt(r.picked)+'</div><div class="k">Preparadas</div></div>'
+    +'<div class="s"><div class="v">'+fmtInt(r.lines)+'</div><div class="k">SKUs</div></div></div>'
+    +'<div class="opname" style="justify-content:center"><label for="opC">Controla</label><select class="inp" id="opC" style="max-width:260px"><option value="">Elegí tu nombre…</option>'
+    + activos.map(o=>'<option>'+esc(o.nombre)+'</option>').join('')+'</select></div>'
+    + (P.operario?'<div class="sub" style="font-family:var(--font-c);color:var(--muted);font-size:12px">Este pick lo preparó '+esc(P.operario)+' — mejor que controle otra persona.</div>':'')
+    +'<div style="margin-top:16px"><button class="btn btn-primary btn-lg" id="iniciarC">▶ Iniciar control</button></div></div>';
+  $('view').innerHTML=h;
+  $('backC').onclick=()=>{ state.view='lista'; render(); };
+  $('iniciarC').onclick=async()=>{ const op=$('opC').value; if(!op){ toast('Elegí tu nombre','bad'); return; }
+    P.controlado_por=op; P.control_started_at=nowISO(); P.control_started_ms=Date.now();
+    await Promise.all([ pkSaveField(P.nro,'controlado_por',op), pkSaveField(P.nro,'control_started_at',P.control_started_at), pkSaveField(P.nro,'control_started_ms',P.control_started_ms) ]);
+    pkEvento({event_type:'control_started',picking_id:P.nro,operator_id:op});
+    state.view='op'; render();
+  };
+}
+
+function renderCfOperativo(){
+  const P=pkGet(); if(!P){ state.view='lista'; return render(); }
+  const line=cfNext(P);
+  if(!line){ state.view='fin'; return render(); }
+  const r=cfResumen(P); const rest=line.picked-line.controlled; const pct=r.picked?Math.round(r.ctrl/r.picked*100):0;
+  let dots=''; for(let i=0;i<line.picked;i++) dots+='<span class="dot'+(i<line.controlled?' on':'')+'"></span>';
+  let h='<div class="pk-op">'
+    +'<div class="pk-top"><div class="pk-top-row"><span class="pk-id">CONTROL #'+esc(P.nro)+'</span>'
+    +'<span class="pk-dest2">'+esc(nombreSuc(P.destino))+'</span><button class="btn btn-outline btn-xs" id="salirC">← Salir</button></div>'
+    +'<div class="pk-progbar"><span id="pkPb" style="width:'+pct+'%"></span></div>'
+    +'<div class="pk-progtxt" id="pkPt">'+fmtInt(r.ctrl)+' / '+fmtInt(r.picked)+' controladas</div></div>'
+    +'<div class="pk-zona"><div class="lbl">Verificar</div><div class="z">'+esc(line.zona)+'</div></div>'
+    +'<div class="pk-prod" id="pkProd"><div class="desc">'+esc(line.desc||line.codigo)+'</div>'
+    +'<div class="cod">'+esc(line.codigo)+(line.marca?(' · '+esc(line.marca)):'')+'</div>'
+    +'<div class="talle"><small>Talle</small>'+esc(line.talle)+'</div>'
+    +'<div class="pk-dots" id="pkDots">'+dots+'</div>'
+    +'<div class="pk-qty" id="pkQty">Controlar <b>'+fmtInt(rest)+'</b><small>de '+fmtInt(line.picked)+' preparada'+(line.picked===1?'':'s')+'</small></div>'
+    +'<div class="pk-fb" id="pkFb">'+(line.ean?'Escaneá cada unidad':'Sin código — contá y tocá +1')+'</div></div>'
+    +'<div class="pk-scan"><input class="inp" id="cscan" inputmode="numeric" autocomplete="off" placeholder="Escaneá el producto…"><button class="btn btn-outline" id="cmanual">+1 manual</button></div>'
+    +'<div class="pk-bottom"><button class="btn btn-outline" id="cfin">Terminar y ver resultado</button></div>'
+    +'</div>';
+  $('view').innerHTML=h;
+  const inp=$('cscan');
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); const v=inp.value; inp.value=''; cfScan(v); setTimeout(()=>{ const i=$('cscan'); if(i) i.focus(); },0); } });
+  $('cmanual').onclick=()=>{ pkFeedback(true,'✓ +1'); cfContar(1,'manual'); };
+  $('salirC').onclick=()=>{ state.view='lista'; render(); };
+  $('cfin').onclick=()=>{ state.view='fin'; render(); };
+  inp.focus();
+}
+function cfScan(raw){
+  const P=pkGet(); const line=cfNext(P); if(!line) return;
+  const ean=String(raw||'').replace(/\D/g,''); if(!ean) return;
+  if(line.ean){
+    if(ean===line.ean){ pkFeedback(true,'✓ Correcto'); cfContar(1,'scan'); }
+    else { pkFeedback(false,'✗ Incorrecto — se espera talle '+line.talle); pkEvento({event_type:'control_error',picking_id:P.nro,operator_id:P.controlado_por,ean:ean,value:{esperado:line.ean}}); }
+  } else { pkFeedback(true,'✓ +1 (sin validación de código)'); cfContar(1,'scan'); }
+}
+function cfContar(n,via){
+  const P=pkGet(); const line=cfNext(P); if(!line) return;
+  const item=P.items[line.iid]; const t=item.talles[line.ti];
+  t.controlled=Math.min(num(t.picked), num(t.controlled)+n);
+  item.controlled_qty=(item.talles||[]).reduce((s,x)=>s+num(x.controlled),0);
+  pkSaveItem(P.nro,line.iid,item);
+  pkEvento({event_type:'control_scan',picking_id:P.nro,operator_id:P.controlado_por,sku_id:line.codigo,ean:line.ean||null,value:{talle:line.talle,via:via}});
+  if(t.controlled>=num(t.picked)) render(); else cfUpdateOpDom();
+}
+function cfUpdateOpDom(){
+  const P=pkGet(); const line=cfNext(P); if(!line) return;
+  const r=cfResumen(P); const rest=line.picked-line.controlled; const pct=r.picked?Math.round(r.ctrl/r.picked*100):0;
+  const dots=$('pkDots'); if(dots){ let s=''; for(let i=0;i<line.picked;i++) s+='<span class="dot'+(i<line.controlled?' on':'')+'"></span>'; dots.innerHTML=s; }
+  const q=$('pkQty'); if(q) q.innerHTML='Controlar <b>'+fmtInt(rest)+'</b><small>de '+fmtInt(line.picked)+' preparada'+(line.picked===1?'':'s')+'</small>';
+  const pb=$('pkPb'); if(pb) pb.style.width=pct+'%';
+  const pt=$('pkPt'); if(pt) pt.textContent=fmtInt(r.ctrl)+' / '+fmtInt(r.picked)+' controladas';
+  const i=$('cscan'); if(i) i.focus();
+}
+function renderCfFin(){
+  const P=pkGet(); if(!P){ state.view='lista'; return render(); }
+  const rows=cfLines(P).map(l=>Object.assign(l,{dif:l.picked-l.controlled}));
+  const conDif=rows.filter(r=>r.dif!==0);
+  const dur=P.control_started_ms?fmtDur(Date.now()-P.control_started_ms):'—';
+  let h='<div class="sec-head"><div><h2>Control PICK #'+esc(P.nro)+'</h2><div class="sub">'+esc(nombreSuc(P.destino))+'</div></div><button class="btn btn-outline" id="volverC">← Seguir</button></div>';
+  if(!conDif.length){
+    h+='<div class="summary"><div class="chk-ic">✓</div><div style="font-family:var(--font-d);font-size:26px;margin-top:6px">Control correcto</div>'
+      +'<div class="sub" style="font-family:var(--font-c);color:var(--muted)">Lo controlado coincide con lo preparado'+(P.controlado_por?(' · '+esc(P.controlado_por)):'')+' · '+dur+'</div>'
+      +'<div class="row-actions" style="justify-content:center;margin-top:16px"><button class="btn btn-primary btn-lg" id="cerrar">Cerrar picking</button></div></div>';
+  } else {
+    h+='<div class="blind" style="margin-bottom:12px">Se detectaron <b>'+conDif.length+'</b> diferencia(s) entre lo preparado y lo controlado. Registrá el motivo para poder cerrar.</div>'
+      +'<div class="oplist"><table><thead><tr><th>Talle</th><th class="num">Pedido</th><th class="num">Pickeado</th><th class="num">Controlado</th><th class="num">Dif.</th></tr></thead><tbody>'
+      + rows.map(r=>'<tr'+(r.dif!==0?' style="background:#fdecec"':'')+'><td class="talle">'+esc(r.talle)+' <small style="color:var(--muted);font-weight:400">'+esc(r.codigo)+'</small></td><td class="num">'+fmtInt(r.req)+'</td><td class="num">'+fmtInt(r.picked)+'</td><td class="num">'+fmtInt(r.controlled)+'</td><td class="num'+(r.dif!==0?' bad':'')+'">'+(r.dif>0?'+':'')+(r.dif||0)+'</td></tr>').join('')
+      +'</tbody></table></div>'
+      +'<div class="opname" style="margin-top:12px"><label for="cexc">Motivo</label><input class="inp" id="cexc" style="flex:1;max-width:none" placeholder="Ej: faltaba 1 en la caja"></div>'
+      +'<div class="row-actions" style="margin-top:12px"><button class="btn btn-primary" id="cerrarDif">Registrar excepción y cerrar</button></div>';
+  }
+  $('view').innerHTML=h;
+  $('volverC').onclick=()=>{ state.view='op'; render(); };
+  if($('cerrar')) $('cerrar').onclick=()=>cfCerrar(P,false,'');
+  if($('cerrarDif')) $('cerrarDif').onclick=()=>{ const m=$('cexc').value.trim(); if(!m){ toast('Poné el motivo de la diferencia','bad'); return; } cfCerrar(P,true,m); };
+}
+async function cfCerrar(P,conDif,motivo){
+  P.estado='FINALIZADO'; P.control_completed_at=nowISO(); P.control_ok=!conDif;
+  const saves=[ pkSaveField(P.nro,'estado','FINALIZADO'), pkSaveField(P.nro,'control_completed_at',P.control_completed_at), pkSaveField(P.nro,'control_ok',!conDif) ];
+  if(conDif){ P.con_diferencias=true; P.control_excepcion=motivo; saves.push(pkSaveField(P.nro,'con_diferencias',true), pkSaveField(P.nro,'control_excepcion',motivo)); }
+  await Promise.all(saves);
+  pkEvento({event_type:'control_completed',picking_id:P.nro,operator_id:P.controlado_por,value:{con_diferencias:conDif,motivo:motivo||''}});
+  toast(conDif?'Cerrado con diferencias':'Control correcto — cerrado','ok'); state.view='lista'; await cargarPicking(); render();
 }
 
 /* ============================================================ init ============ */
