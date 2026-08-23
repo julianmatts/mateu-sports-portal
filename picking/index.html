@@ -138,7 +138,9 @@ if($('whoName')) $('whoName').textContent=(SESSION&&(SESSION.nombre||SESSION.ema
 if($('whoRole')) $('whoRole').textContent=(SESSION&&SESSION.rol)||'—';
 
 /* ---- estado + datos ---- */
-const state = { tab:'panel', pkTab:'pend' };
+const state = { tab:'panel', pkTab:'pend', pkFiltro:{ suc:'', q:'' } };
+const DEMORA_MIN = 45;   // un pick en preparación más de esto = demorado
+function pkDemorado(P){ return (P.estado==='EN PREPARACIÓN'||P.estado==='PAUSADO') && P.started_ms && (Date.now()-P.started_ms > DEMORA_MIN*60000); }
 const DATA = { operarios:{}, zonas:{}, asignZona:{}, pickings:{}, eventos:{}, seq:1841,
   bar:{ ultima:null, meta:null, slugs:[], combos:[], repoCache:{} } };
 const EST_LABEL = { PENDIENTE:'pend', 'EN PREPARACIÓN':'prep', 'LISTO PARA CONTROL':'ctrl', FINALIZADO:'fin', 'CON DIFERENCIAS':'dif', PAUSADO:'prep' };
@@ -235,19 +237,19 @@ function renderPanel(){
   let h=seccionHead('Panel','Estado de la operación de picking y productividad.',
     '<button class="btn btn-outline btn-sm" id="reloadPanel">↻ Actualizar</button>');
   h+='<div class="kgrid">'+ktile(c('PENDIENTE'),'Pendientes')+ktile(prep,'En preparación')
-    +ktile(c('LISTO PARA CONTROL'),'Para control')+ktile(c('FINALIZADO'),'Finalizados','ok')+ktile(conDif,'Con diferencias','dif')+'</div>';
+    +ktile(c('LISTO PARA CONTROL'),'Para control')+ktile(c('FINALIZADO'),'Finalizados','ok')+ktile(conDif,'Con diferencias','dif')+ktile(all.filter(pkDemorado).length,'Demorados','warn')+'</div>';
   h+='<div class="kgrid">'+ktile(fmtInt(uPend),'Unidades pendientes')+ktile(fmtInt(uPick),'Unidades pickeadas')
     +ktile(fmtInt(uHora),'Unidades / hora')+ktile(fmtInt(uFalt),'Faltantes','warn')+ktile(fmtInt(errScan),'Errores de scan','dif')+'</div>';
 
   const recientes=all.slice().sort((a,b)=>cmp(b.created_at||'',a.created_at||'')).slice(0,25);
   h+='<div class="sec-head" style="margin:18px 0 8px"><div><h1 style="font-size:20px">Pickings</h1><div class="sub">Los 25 más recientes.</div></div></div>';
   h+='<div class="tbl-wrap"><table><thead><tr><th>#</th><th>Destino</th><th>Operario</th><th>Progreso</th><th>Estado</th><th class="num">Tiempo</th></tr></thead><tbody>';
-  h+= recientes.length?recientes.map(P=>{ const r=pickResumen(P); const d=pickDur(P); const est=EST_LABEL[P.estado]||'pend'; const enCurso=(P.estado==='EN PREPARACIÓN'||P.estado==='PAUSADO');
-    return '<tr><td><b>#'+esc(P.nro)+'</b>'+(P.prioridad&&P.prioridad!=='NORMAL'?' <span class="pill p-'+esc(P.prioridad)+'">'+esc(P.prioridad)+'</span>':'')+'</td>'
+  h+= recientes.length?recientes.map(P=>{ const r=pickResumen(P); const d=pickDur(P); const est=EST_LABEL[P.estado]||'pend'; const enCurso=(P.estado==='EN PREPARACIÓN'||P.estado==='PAUSADO'); const dem=pkDemorado(P);
+    return '<tr'+(dem?' style="background:#fff4e2"':'')+'><td><b>#'+esc(P.nro)+'</b>'+(P.prioridad&&P.prioridad!=='NORMAL'?' <span class="pill p-'+esc(P.prioridad)+'">'+esc(P.prioridad)+'</span>':'')+'</td>'
       +'<td>'+esc(nombreSuc(P.destino))+'</td><td>'+esc(P.operario||'—')+'</td>'
       +'<td><div class="row-x"><div class="mini-prog"><span style="width:'+r.pct+'%"></span></div><span class="hint">'+r.pct+'%</span></div></td>'
       +'<td><span class="pill '+est+'">'+esc(P.estado)+'</span></td>'
-      +'<td class="num">'+(d!=null?(fmtDurMs(d)+(enCurso?' …':'')):'—')+'</td></tr>';
+      +'<td class="num">'+(d!=null?(fmtDurMs(d)+(enCurso?(dem?' ⏱':' …'):'')):'—')+'</td></tr>';
   }).join('') : '<tr><td colspan="6" class="hint" style="padding:14px">Todavía no hay pickings.</td></tr>';
   h+='</tbody></table></div>';
 
@@ -283,14 +285,24 @@ function renderPickings(){
   html += '<div class="subtabs">'
     + subtab('pend','Pendientes',cnt('pend')) + subtab('prep','En preparación',cnt('prep'))
     + subtab('ctrl','Listos para control',cnt('ctrl')) + subtab('fin','Finalizados',cnt('fin')) + '</div>';
-  const list=all.filter(p=>groups[state.pkTab].includes(p.estado))
-    .sort((a,b)=>{ const pr={URGENTE:0,ALTA:1,NORMAL:2}; return (pr[a.prioridad]??2)-(pr[b.prioridad]??2) || cmp(b.created_at||'',a.created_at||''); });
-  if(!list.length){ $('view').innerHTML = html + '<div class="state">No hay pickings en esta pestaña.</div>'; bindPickings(); return; }
+  // filtro por sucursal + búsqueda
+  const sucs=[...new Set(all.map(p=>p.destino))].sort((a,b)=>cmp(nombreSuc(a),nombreSuc(b)));
+  const f=state.pkFiltro;
+  html += '<div class="row-x" style="gap:8px;margin-bottom:14px;flex-wrap:wrap">'
+    + '<select class="sel" id="fSuc"><option value="">Todas las sucursales</option>'+sucs.map(s=>'<option value="'+esc(s)+'"'+(f.suc===s?' selected':'')+'>'+esc(nombreSuc(s))+'</option>').join('')+'</select>'
+    + '<input class="inp" id="fQ" placeholder="Buscar por nº o destino…" value="'+esc(f.q)+'" style="flex:1;min-width:150px">'
+    + ((f.suc||f.q)?'<button class="btn btn-outline btn-sm" id="fClear">Limpiar</button>':'') + '</div>';
+  let list=all.filter(p=>groups[state.pkTab].includes(p.estado));
+  if(f.suc) list=list.filter(p=>p.destino===f.suc);
+  if(f.q){ const q=f.q.toLowerCase(); list=list.filter(p=>String(p.nro).includes(q)||nombreSuc(p.destino).toLowerCase().includes(q)); }
+  list.sort((a,b)=>{ const pr={URGENTE:0,ALTA:1,NORMAL:2}; return (pr[a.prioridad]??2)-(pr[b.prioridad]??2) || cmp(b.created_at||'',a.created_at||''); });
+  if(!list.length){ $('view').innerHTML = html + '<div class="state">No hay pickings'+((f.suc||f.q)?' para el filtro':' en esta pestaña')+'.</div>'; bindPickings(); return; }
   const cards=list.map(P=>{
-    const r=pickResumen(P); const est=EST_LABEL[P.estado]||'pend';
+    const r=pickResumen(P); const est=EST_LABEL[P.estado]||'pend'; const dem=pkDemorado(P);
+    const liberable=(P.estado==='EN PREPARACIÓN'||P.estado==='PAUSADO');
     return '<div class="card prio-'+esc(P.prioridad||'NORMAL')+'">'
       + '<div class="row-x" style="justify-content:space-between"><span class="pk-nro">PICK #'+esc(P.nro)+'</span>'
-      + (P.prioridad&&P.prioridad!=='NORMAL'?'<span class="pill p-'+esc(P.prioridad)+'">'+esc(P.prioridad)+'</span>':'')+'</div>'
+      + '<span class="row-x" style="gap:6px">'+(dem?'<span class="pill dif">⏱ demorado</span>':'')+(P.prioridad&&P.prioridad!=='NORMAL'?'<span class="pill p-'+esc(P.prioridad)+'">'+esc(P.prioridad)+'</span>':'')+'</span></div>'
       + '<div class="pk-dest">'+esc(nombreSuc(P.destino))+'</div>'
       + '<div class="pk-meta">'+fmtInt(r.req)+' unidades · '+fmtInt(r.skus)+' SKUs'
       + (P.filtros&&(P.filtros.marca||P.filtros.rubro)?(' · '+esc([P.filtros.marca,P.filtros.rubro].filter(Boolean).join(' / '))):'')+'</div>'
@@ -298,9 +310,11 @@ function renderPickings(){
       + '<div class="prog"><span style="width:'+r.pct+'%"></span></div>'
       + '<div class="pk-foot"><span class="pill '+est+'">'+esc(P.estado)+'</span>'
       + '<span class="hint">'+fmtInt(r.pick)+' / '+fmtInt(r.req)+' u</span></div>'
-      + '<div class="pk-foot"><span class="hint">'+esc((P.created_at||'').slice(0,16))+'</span>'
-      + '<button class="btn btn-outline btn-sm" data-del="'+esc(P.nro)+'">🗑</button></div>'
-      + '</div>';
+      + '<div class="pk-foot" style="gap:6px;flex-wrap:wrap">'
+      +   '<select class="sel" data-prio="'+esc(P.nro)+'" title="Prioridad" style="padding:5px 8px;font-size:12px"><option'+((P.prioridad==='NORMAL'||!P.prioridad)?' selected':'')+'>NORMAL</option><option'+(P.prioridad==='ALTA'?' selected':'')+'>ALTA</option><option'+(P.prioridad==='URGENTE'?' selected':'')+'>URGENTE</option></select>'
+      +   (liberable?'<button class="btn btn-outline btn-sm" data-lib="'+esc(P.nro)+'" title="Volver a pendiente para que lo tome otro">↺ Liberar</button>':'')
+      +   '<button class="btn btn-outline btn-sm" data-del="'+esc(P.nro)+'" title="Eliminar">🗑</button>'
+      + '</div></div>';
   }).join('');
   $('view').innerHTML = html + '<div class="grid">'+cards+'</div>';
   bindPickings();
@@ -308,6 +322,12 @@ function renderPickings(){
 function bindPickings(){
   const n=$('btnNuevo'); if(n) n.onclick=abrirNuevoPicking;
   document.querySelectorAll('.subtab[data-st]').forEach(b=>b.onclick=()=>{ state.pkTab=b.dataset.st; render(); });
+  const fs=$('fSuc'); if(fs) fs.onchange=()=>{ state.pkFiltro.suc=fs.value; render(); };
+  const fq=$('fQ'); if(fq){ fq.oninput=()=>{ state.pkFiltro.q=fq.value; }; fq.onkeydown=e=>{ if(e.key==='Enter') render(); }; }
+  const fc=$('fClear'); if(fc) fc.onclick=()=>{ state.pkFiltro={suc:'',q:''}; render(); };
+  document.querySelectorAll('[data-prio]').forEach(s=>s.onchange=async()=>{ const nro=s.dataset.prio, P=DATA.pickings[fbKey(nro)]; if(!P) return; P.prioridad=s.value; try{ await fbPut(ROOT+'/pickings/'+fbKey(nro)+'/prioridad', s.value); logEvento({event_type:'priority_changed',picking_id:P.nro,value:s.value}); toast('Prioridad: '+s.value,'ok'); render(); }catch(e){ toast('No se pudo','bad'); } });
+  document.querySelectorAll('[data-lib]').forEach(b=>b.onclick=async()=>{ const nro=b.dataset.lib, P=DATA.pickings[fbKey(nro)]; if(!P) return; if(!confirm('¿Liberar el PICK #'+nro+'? Vuelve a Pendiente y libera al operario; el avance se conserva y otro lo puede retomar.')) return; b.disabled=true;
+    try{ const r=await fetch(fbUrl(ROOT+'/pickings/'+fbKey(nro)),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:'PENDIENTE',operario:''})}); if(!r.ok) throw new Error(); Object.assign(P,{estado:'PENDIENTE',operario:''}); logEvento({event_type:'picking_released',picking_id:P.nro}); render(); toast('Pick liberado','ok'); }catch(e){ b.disabled=false; toast('No se pudo','bad'); } });
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{ const nro=b.dataset.del; if(!confirm('¿Eliminar el PICK #'+nro+'?')) return; b.disabled=true; try{ await fbDelete(ROOT+'/pickings/'+fbKey(nro)); delete DATA.pickings[fbKey(nro)]; render(); toast('Picking eliminado','ok'); }catch(e){ b.disabled=false; toast('No se pudo','bad'); } });
 }
 function subtab(id,label,n){ return '<button class="subtab'+(state.pkTab===id?' on':'')+'" data-st="'+id+'">'+esc(label)+(n?(' ('+n+')'):'')+'</button>'; }
