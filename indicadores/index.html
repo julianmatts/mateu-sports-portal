@@ -125,6 +125,11 @@ a{color:inherit}
   font-weight:600;margin-bottom:5px}
 .sec-title{font-family:var(--font-d);font-size:32px;letter-spacing:.5px;line-height:1;margin-bottom:8px}
 .sec-title em{color:var(--red);font-style:normal}
+.sec-head{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:8px}
+.sec-head .sec-title{margin-bottom:0}
+.sec-head .seg{margin-left:auto}
+.sec-head .seg button{padding:8px 12px}
+.sec-head .seg button:disabled{opacity:.45;cursor:default}
 .hint{font-size:13px;color:var(--muted);margin:0 0 20px;max-width:680px;line-height:1.6}
 .hint b{color:var(--navy);font-weight:600}
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
@@ -531,7 +536,10 @@ footer b{color:var(--navy)}
 
     <section class="sec" id="secKpis">
       <div class="sec-label">Resumen</div>
-      <h2 class="sec-title">Los cuatro <em>indicadores</em></h2>
+      <div class="sec-head">
+        <h2 class="sec-title">Los cuatro <em>indicadores</em></h2>
+        <div class="seg" id="kpiSeg" role="group" aria-label="Ver mes completo o una semana" style="display:none"></div>
+      </div>
       <div class="kpis" id="kpis"></div>
       <p class="cob-nota" id="cobNota"></p>
       <div id="kpiCrit"></div>
@@ -1007,24 +1015,46 @@ function detalleDe(id, name){
 }
 
 /* ============================ RENDER ============================ */
-let CAD=null, CAD_PREV=null, DET=null, DET_FULL=null;
+let CAD=null, CAD_PREV=null, DET=null, DET_FULL=null, DET_PREV=null;  // DET_PREV: detalle del mes anterior (solo en Sem 1)
 let DET_ASIG=null;   // horas asignadas del período para la sucursal en foco (null = sin equipo guardado)
 
 // Clona el detalle de la sucursal quedándose SOLO con la semana n (venta + horas).
 // Cobertura, heatmap y summary.semanas se conservan (mes completo) para las secciones
 // que son a nivel mes y para el gráfico de barras.
+// Las semanas del ETL traen tickets/unidades/importe pero NO horas: si la semana
+// no tiene horas_contr/h_act, se prorratea el total del mes por cantidad de semanas
+// (si no, Tickets por hora daba 0 en modo semana).
+function semanaConHoras(ws, tot, nsem){
+  if(!ws) return ws;
+  const k = nsem||1;
+  return {...ws,
+    horas_contr: ws.horas_contr!=null ? ws.horas_contr : (tot.horas_contr||0)/k,
+    h_act:       ws.h_act!=null       ? ws.h_act       : (tot.h_act||0)/k};
+}
 function cloneSemana(full, n){
-  const ws = (full.summary.semanas||[]).find(w=>w.n===n);
+  const sem = full.summary.semanas||[], nsem = sem.length||1;
+  const ws = semanaConHoras(sem.find(w=>w.n===n), full.summary, nsem);
   if(!ws) return full;
   const summary = {...full.summary, tickets:ws.tickets, tickets_todos:ws.tickets,
     unidades:ws.unidades_netas, unidades_netas:ws.unidades_netas, importe:ws.importe_neto, importe_neto:ws.importe_neto,
     horas_contr:ws.horas_contr, h_act:ws.h_act, cobertura:100, dev_i:0, dev_u:0};
   const vendedores = full.vendedores.map(v=>{
-    const w = (v.semanas||[]).find(x=>x.n===n);
+    const w = semanaConHoras((v.semanas||[]).find(x=>x.n===n), v, nsem);
     if(!w) return null;
     return {...v, tickets:w.tickets, unidades_netas:w.unidades_netas, importe_neto:w.importe_neto, horas_contr:w.horas_contr, h_act:w.h_act};
   }).filter(v=> v && (v.tickets>0 || v.h_act>0));
   return {...full, summary, vendedores};
+}
+// switch «Mes · Sem 1 · Sem 2…» arriba de los KPIs: es la misma selección que el
+// gráfico «Semana a semana» (semSel), pero a mano al entrar, sin scrollear.
+function renderKpiSeg(){
+  const seg=$('kpiSeg'); if(!seg) return;
+  const sem = DET_FULL && DET_FULL.summary && DET_FULL.summary.semanas;
+  if(!Array.isArray(sem) || sem.length<2){ seg.style.display='none'; return; }
+  seg.style.display='';
+  seg.innerHTML = `<button data-sem="0" aria-pressed="${!semSel}" title="Todo el mes retail (${esc((PERIODOS.find(x=>x.id===per)||{}).dias||'')})">Mes</button>`
+    + sem.map(w=>`<button data-sem="${w.n}" aria-pressed="${semSel===w.n}" title="${esc(w.rango||'')}">Sem ${w.n}</button>`).join('');
+  seg.querySelectorAll('button').forEach(b=> b.onclick=()=>{ const n=+b.getAttribute('data-sem'); semSel = n||null; render(); });
 }
 function actualizarFiltroBanner(){
   const b=$('filtroBanner'); if(!b) return;
@@ -1108,6 +1138,7 @@ async function render(){
   // indicadores (viven en Firebase por slug): se muestran igual.
   DET_FULL = await detalleDe(per, sucName);
   if(!DET_FULL || !CAD){
+    $('kpiSeg').style.display='none';
     mostrarEmpty(Object.values(SOLO_OBJ_SUC).includes(sucName)
       ? '<b>'+esc(sucName)+'</b> todavía no tiene datos de indicadores cargados (sí su objetivo y equipo).'
       : 'No hay datos de <b>'+esc(sucName)+'</b> para '+esc(perLabel(per))+'.');
@@ -1124,7 +1155,10 @@ async function render(){
     if(DET_ASIG) detBase = conHorasAsignadas(DET_FULL, DET_ASIG);
   }
   DET = semSel ? cloneSemana(detBase, semSel) : detBase;
+  // Sem 1 se compara con la última semana del mes anterior (mismo archivo por sucursal)
+  DET_PREV = (semSel===1 && prevPerId()) ? await detalleDe(prevPerId(), sucName) : null;
   ocultarEmpty();
+  renderKpiSeg();
   actualizarFiltroBanner();
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
@@ -1391,9 +1425,16 @@ function renderKPIs(){
     // pie: en modo semana, delta vs. la semana anterior y sin ranking mensual
     let deltaHtmlStr, rankHtml;
     if(semSel){
-      const wp = (DET_FULL.summary.semanas||[]).find(x=>x.n===semSel-1);
+      const semAct = DET_FULL.summary.semanas||[];
+      let wp = semanaConHoras(semAct.find(x=>x.n===semSel-1), DET_FULL.summary, semAct.length), wpLbl = 'Sem '+(semSel-1);
+      if(!wp && semSel===1 && DET_PREV && Array.isArray(DET_PREV.summary.semanas) && DET_PREV.summary.semanas.length){
+        // primera semana: contra la última del mes anterior
+        const semPrev = DET_PREV.summary.semanas;
+        wp = semanaConHoras(semPrev[semPrev.length-1], DET_PREV.summary, semPrev.length);
+        wpLbl = 'Sem '+wp.n+' '+mesCorto(prevPerId());
+      }
       const dp = wp ? deltaHtml(k[d.key], kpis(wp)[d.key]) : null;
-      deltaHtmlStr = dp ? `${dp} vs. Sem ${semSel-1}` : '<span class="muted">primera semana del mes</span>';
+      deltaHtmlStr = dp ? `${dp} vs. ${wpLbl}` : '<span class="muted">sin semana anterior</span>';
       const ws = (DET_FULL.summary.semanas||[]).find(x=>x.n===semSel);
       rankHtml = `<span class="muted">Semana ${semSel}${ws&&ws.rango?' · '+esc(ws.rango):''}</span>`;
     } else {
