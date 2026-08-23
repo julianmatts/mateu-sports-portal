@@ -87,7 +87,8 @@
      ocultos: el JS del módulo los sigue escribiendo (whoName/whoRole/salir). -->
 <div hidden aria-hidden="true"><span id="whoName"></span><span id="whoRole"></span><button id="salir"></button></div>
 <nav class="tabs" id="tabs">
-  <button class="tab on" data-tab="pickings">Pickings</button>
+  <button class="tab on" data-tab="panel">Panel</button>
+  <button class="tab" data-tab="pickings">Pickings</button>
   <button class="tab" data-tab="zonas">Zonas</button>
   <button class="tab" data-tab="operarios">Operarios</button>
 </nav>
@@ -137,18 +138,18 @@ if($('whoName')) $('whoName').textContent=(SESSION&&(SESSION.nombre||SESSION.ema
 if($('whoRole')) $('whoRole').textContent=(SESSION&&SESSION.rol)||'—';
 
 /* ---- estado + datos ---- */
-const state = { tab:'pickings', pkTab:'pend' };
-const DATA = { operarios:{}, zonas:{}, asignZona:{}, pickings:{}, seq:1841,
+const state = { tab:'panel', pkTab:'pend' };
+const DATA = { operarios:{}, zonas:{}, asignZona:{}, pickings:{}, eventos:{}, seq:1841,
   bar:{ ultima:null, meta:null, slugs:[], combos:[], repoCache:{} } };
 const EST_LABEL = { PENDIENTE:'pend', 'EN PREPARACIÓN':'prep', 'LISTO PARA CONTROL':'ctrl', FINALIZADO:'fin', 'CON DIFERENCIAS':'dif', PAUSADO:'prep' };
 
 async function cargar(){
-  const [ope,zon,asig,pick,seq,ultima] = await Promise.all([
+  const [ope,zon,asig,pick,seq,ultima,evs] = await Promise.all([
     fbGet(ROOT+'/operarios'), fbGet(ROOT+'/zonas'), fbGet(ROOT+'/asignZona'),
-    fbGet(ROOT+'/pickings'), fbGet(ROOT+'/seq'), fbGet(BARR+'/ultima')
+    fbGet(ROOT+'/pickings'), fbGet(ROOT+'/seq'), fbGet(BARR+'/ultima'), fbGet(ROOT+'/eventos')
   ]);
   DATA.operarios=ope||{}; DATA.zonas=zon||{}; DATA.asignZona=asig||{}; DATA.pickings=pick||{};
-  DATA.seq=num(seq)||1841; DATA.bar.ultima=ultima||null;
+  DATA.eventos=evs||{}; DATA.seq=num(seq)||1841; DATA.bar.ultima=ultima||null;
   if(ultima){
     const lk=fbKey(ultima);
     const [meta,slugsObj]=await Promise.all([ fbGet(BARR+'/barridas/'+lk+'/meta'), fbGet(BARR+'/barridas/'+lk+'/reposicion','shallow=true') ]);
@@ -194,9 +195,74 @@ function logEvento(ev){ fbPost(ROOT+'/eventos', Object.assign({ts:nowISO(), oper
 /* ============================================================ RENDER ========= */
 function render(){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on', t.dataset.tab===state.tab));
+  if(state.tab==='panel') return renderPanel();
   if(state.tab==='zonas') return renderZonas();
   if(state.tab==='operarios') return renderOperarios();
   return renderPickings();
+}
+
+/* ---- PANEL / DASHBOARD ---- */
+function parseISO(s){ return s?new Date(String(s).replace(' ','T')+'Z').getTime():null; }
+function fmtDurMs(ms){ if(ms==null||ms<0) return '—'; const m=Math.round(ms/60000); if(m<1) return '<1 min'; if(m<60) return m+' min'; const h=Math.floor(m/60); return h+'h '+(m%60)+'m'; }
+function pickDur(P){ const s=parseISO(P.started_at); const e=parseISO(P.completed_at)||((P.started_at&&P.estado!=='PENDIENTE')?Date.now():null); return (s&&e)?(e-s):null; }
+function panelCss(){ if($('panelCss')) return; const css=''
+  +'.kgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:12px;margin-bottom:12px}'
+  +'.ktile{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px 16px}'
+  +'.ktile .v{font-family:var(--font-d);font-size:32px;line-height:1;color:var(--navy)}'
+  +'.ktile .k{font-family:var(--font-c);font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-top:4px}'
+  +'.ktile.dif .v{color:var(--bad)}.ktile.ok .v{color:var(--ok)}.ktile.warn .v{color:var(--warn)}'
+  +'.mini-prog{height:7px;width:88px;background:#eef1f7;border-radius:99px;overflow:hidden}'
+  +'.mini-prog span{display:block;height:100%;background:var(--ok)}';
+  document.head.insertAdjacentHTML('beforeend','<style id="panelCss">'+css+'</style>'); }
+function ktile(v,k,cls){ return '<div class="ktile'+(cls?' '+cls:'')+'"><div class="v">'+v+'</div><div class="k">'+esc(k)+'</div></div>'; }
+function renderPanel(){
+  panelCss();
+  const all=vals(DATA.pickings);
+  const c=est=>all.filter(p=>p.estado===est).length;
+  const prep=all.filter(p=>p.estado==='EN PREPARACIÓN'||p.estado==='PAUSADO').length;
+  const conDif=all.filter(p=>p.con_diferencias).length;
+  let uPend=0,uPick=0,uFalt=0; const faltBySku={};
+  all.forEach(P=>{ const r=pickResumen(P); uPick+=r.pick; if(P.estado!=='FINALIZADO') uPend+=Math.max(0,r.req-r.pick);
+    if(P.completed_at||P.estado==='FINALIZADO'){ vals(P.items||{}).forEach(it=>{ const f=num(it.requested_qty)-num(it.picked_qty); if(f>0){ faltBySku[it.codigo]=(faltBySku[it.codigo]||0)+f; uFalt+=f; } }); } });
+  const prod={}; all.forEach(P=>{ if(!P.operario||!P.started_at||!P.completed_at) return; const d=pickDur(P); const r=pickResumen(P); const o=prod[P.operario]||(prod[P.operario]={picks:0,units:0,ms:0}); o.picks++; o.units+=r.pick; o.ms+=(d||0); });
+  const errScan=vals(DATA.eventos).filter(e=>e&&(e.event_type==='sku_error'||e.event_type==='control_error')).length;
+  let totU=0,totMs=0; Object.keys(prod).forEach(k=>{ totU+=prod[k].units; totMs+=prod[k].ms; });
+  const uHora=totMs>0?Math.round(totU/(totMs/3600000)):0;
+
+  let h=seccionHead('Panel','Estado de la operación de picking y productividad.',
+    '<button class="btn btn-outline btn-sm" id="reloadPanel">↻ Actualizar</button>');
+  h+='<div class="kgrid">'+ktile(c('PENDIENTE'),'Pendientes')+ktile(prep,'En preparación')
+    +ktile(c('LISTO PARA CONTROL'),'Para control')+ktile(c('FINALIZADO'),'Finalizados','ok')+ktile(conDif,'Con diferencias','dif')+'</div>';
+  h+='<div class="kgrid">'+ktile(fmtInt(uPend),'Unidades pendientes')+ktile(fmtInt(uPick),'Unidades pickeadas')
+    +ktile(fmtInt(uHora),'Unidades / hora')+ktile(fmtInt(uFalt),'Faltantes','warn')+ktile(fmtInt(errScan),'Errores de scan','dif')+'</div>';
+
+  const recientes=all.slice().sort((a,b)=>cmp(b.created_at||'',a.created_at||'')).slice(0,25);
+  h+='<div class="sec-head" style="margin:18px 0 8px"><div><h1 style="font-size:20px">Pickings</h1><div class="sub">Los 25 más recientes.</div></div></div>';
+  h+='<div class="tbl-wrap"><table><thead><tr><th>#</th><th>Destino</th><th>Operario</th><th>Progreso</th><th>Estado</th><th class="num">Tiempo</th></tr></thead><tbody>';
+  h+= recientes.length?recientes.map(P=>{ const r=pickResumen(P); const d=pickDur(P); const est=EST_LABEL[P.estado]||'pend'; const enCurso=(P.estado==='EN PREPARACIÓN'||P.estado==='PAUSADO');
+    return '<tr><td><b>#'+esc(P.nro)+'</b>'+(P.prioridad&&P.prioridad!=='NORMAL'?' <span class="pill p-'+esc(P.prioridad)+'">'+esc(P.prioridad)+'</span>':'')+'</td>'
+      +'<td>'+esc(nombreSuc(P.destino))+'</td><td>'+esc(P.operario||'—')+'</td>'
+      +'<td><div class="row-x"><div class="mini-prog"><span style="width:'+r.pct+'%"></span></div><span class="hint">'+r.pct+'%</span></div></td>'
+      +'<td><span class="pill '+est+'">'+esc(P.estado)+'</span></td>'
+      +'<td class="num">'+(d!=null?(fmtDurMs(d)+(enCurso?' …':'')):'—')+'</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="hint" style="padding:14px">Todavía no hay pickings.</td></tr>';
+  h+='</tbody></table></div>';
+
+  const prodRows=Object.keys(prod).map(o=>({o:o,picks:prod[o].picks,units:prod[o].units,ms:prod[o].ms,uh:prod[o].ms>0?Math.round(prod[o].units/(prod[o].ms/3600000)):0})).sort((a,b)=>b.uh-a.uh);
+  h+='<div class="sec-head" style="margin:18px 0 8px"><div><h1 style="font-size:20px">Productividad por operario</h1><div class="sub">De los pickings ya completados.</div></div></div>';
+  h+='<div class="tbl-wrap"><table><thead><tr><th>Operario</th><th class="num">Pickings</th><th class="num">Unidades</th><th class="num">Tiempo</th><th class="num">Unid./hora</th></tr></thead><tbody>';
+  h+= prodRows.length?prodRows.map(x=>'<tr><td><b>'+esc(x.o)+'</b></td><td class="num">'+x.picks+'</td><td class="num">'+fmtInt(x.units)+'</td><td class="num">'+fmtDurMs(x.ms)+'</td><td class="num"><b>'+fmtInt(x.uh)+'</b></td></tr>').join('')
+    :'<tr><td colspan="5" class="hint" style="padding:14px">Todavía no hay pickings completados.</td></tr>';
+  h+='</tbody></table></div>';
+
+  const faltRows=Object.keys(faltBySku).map(k=>({k:k,n:faltBySku[k]})).sort((a,b)=>b.n-a.n).slice(0,15);
+  if(faltRows.length){
+    h+='<div class="sec-head" style="margin:18px 0 8px"><div><h1 style="font-size:20px">Faltantes por artículo</h1><div class="sub">Unidades pedidas que no se pudieron pickear.</div></div></div>';
+    h+='<div class="tbl-wrap"><table><thead><tr><th>Código</th><th class="num">Faltante</th></tr></thead><tbody>'
+      + faltRows.map(x=>'<tr><td>'+esc(x.k)+'</td><td class="num" style="color:var(--bad);font-weight:700">'+fmtInt(x.n)+'</td></tr>').join('')+'</tbody></table></div>';
+  }
+  $('view').innerHTML=h;
+  const rl=$('reloadPanel'); if(rl) rl.onclick=async()=>{ rl.disabled=true; try{ await cargar(); render(); toast('Actualizado','ok'); }catch(e){ rl.disabled=false; toast('No pude actualizar','bad'); } };
 }
 
 /* ---- PICKINGS ---- */
