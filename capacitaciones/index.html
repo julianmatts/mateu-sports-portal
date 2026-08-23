@@ -488,6 +488,19 @@ let RK_VISTA = ES_STAFF ? 'empresa' : 'sucursal';
 let GES_SUB = 'cursos';
 let EDIT_CURSO = null, EDIT_PROG = null;
 let WIZ = null;                // asistente "crear curso desde archivo"
+/* Ayudante con IA: Pages Function /api/academia-ia (solo si en Cloudflare está
+   cargada ANTHROPIC_API_KEY; si no, el botón no aparece). */
+let IA_DISPONIBLE = false;
+async function iaDisponible(){
+  try{ const r=await fetch('/api/academia-ia',{cache:'no-store'}); if(!r.ok) return false; const j=await r.json(); IA_DISPONIBLE=!!j.disponible; }catch(e){ IA_DISPONIBLE=false; }
+  return IA_DISPONIBLE;
+}
+async function iaPedir(accion, titulo, modulos, nPreguntas){
+  const r=await fetch('/api/academia-ia',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accion,titulo,modulos:modulos.map(m=>({titulo:m.titulo||'',contenido:m.contenido||''})),nPreguntas})});
+  const j=await r.json().catch(()=>({error:'respuesta inválida'}));
+  if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+  return j;
+}
 let PLAYER = null;             // {cid, idx, resp:{}, enviado:false}
 
 /* ---------- identidad ---------- */
@@ -1872,7 +1885,9 @@ function renderWizard(){
     w.mods.forEach((m,i)=>{
       html.push(moduloEditorHtml(m,i,{pref:'w',unir:i>0,total:w.mods.length}));
     });
-    html.push('<div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn" data-wadd="texto">＋ Módulo de texto</button><button class="btn" data-wadd="video">＋ Video (YouTube)</button><button class="btn" data-wadd="enlace">＋ Link a material</button></div>');
+    html.push('<div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center"><button class="btn" data-wadd="texto">＋ Módulo de texto</button><button class="btn" data-wadd="video">＋ Video (YouTube)</button><button class="btn" data-wadd="enlace">＋ Link a material</button>'+
+      (IA_DISPONIBLE?'<span style="flex:1"></span><button class="btn oscuro" id="wzIA">✨ Mejorar con IA</button><span class="muted" id="wzIAEst" style="font-size:13px"></span>':'')+'</div>');
+    if(IA_DISPONIBLE) html.push('<p class="muted" style="font-size:12.5px;margin:8px 0 0">«Mejorar con IA» limpia el texto extraído (columnas mezcladas, líneas cortadas), lo reordena en módulos con tarjetas destacadas y propone título, descripción, frase gancho y un quiz. Vos revisás todo antes de publicar.</p>');
     html.push('<div style="margin-top:24px;display:flex;gap:10px"><button class="btn" id="wzAtras1">← Atrás</button><button class="btn pri" id="wzPaso3">Siguiente: quiz y publicar →</button></div>');
   }
   if(w.paso===3){
@@ -1887,7 +1902,7 @@ function renderWizard(){
         '<div class="fila" style="margin-top:10px"><div style="flex:3;min-width:240px"><label class="fl">Opciones (una por línea)</label><textarea data-wo="'+i+'">'+esc((p.ops||[]).join('\n'))+'</textarea></div>'+
         '<div><label class="fl">Correcta (Nº de línea)</label><input type="number" data-wok="'+i+'" value="'+((+p.ok||0)+1)+'" min="1" style="max-width:110px"></div></div></div>');
     });
-    html.push('<p style="margin-top:10px"><button class="btn" id="wzAddPreg">＋ Agregar pregunta</button></p>');
+    html.push('<p style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn" id="wzAddPreg">＋ Agregar pregunta</button>'+(IA_DISPONIBLE?'<button class="btn oscuro" id="wzIAQuiz">✨ Proponer preguntas con IA</button><span class="muted" id="wzIAQuizEst" style="font-size:13px"></span>':'')+'</p>');
     const progs=Object.values(PROGRAMAS).sort((a,b)=>(a.ts||0)-(b.ts||0));
     html.push('<div class="sec-t" style="margin-top:28px">¿A quién se lo asignamos?</div>');
     html.push('<div class="card-b" style="margin-top:10px"><div class="fila">'+
@@ -1929,6 +1944,20 @@ function renderWizard(){
     app.querySelectorAll('[data-wunir]').forEach(b=>b.addEventListener('click',()=>{ leer(); const i=+b.dataset.wunir; w.mods[i-1].contenido=(w.mods[i-1].contenido+'\n\n'+w.mods[i].titulo+':\n'+w.mods[i].contenido).trim(); w.mods.splice(i,1); render(); }));
     app.querySelectorAll('[data-wadd]').forEach(b=>b.addEventListener('click',()=>{ leer(); w.mods.push({titulo:'',tipo:b.dataset.wadd,contenido:''}); render(); setTimeout(()=>{ const ult=app.querySelectorAll('[data-wt]'); if(ult.length) ult[ult.length-1].focus(); },50); }));
     $('wzAtras1').addEventListener('click',()=>{ leer(); w.paso=1; render(); });
+    const bia=$('wzIA'); if(bia) bia.addEventListener('click', async ()=>{
+      leer(); const textos=w.mods.filter(m=>(m.tipo||'texto')==='texto' && m.contenido);
+      if(!textos.length){ alert('No hay módulos de texto para mejorar.'); return; }
+      bia.disabled=true; const est=$('wzIAEst'); est.textContent='Pensando… (puede tardar 1-2 minutos)';
+      try{
+        const r=await iaPedir('curso', w.titulo, textos, 7);
+        const otros=w.mods.filter(m=>(m.tipo||'texto')!=='texto');
+        w.mods=(r.modulos||[]).map(m=>({titulo:m.titulo,tipo:'texto',contenido:m.contenido})).concat(otros);
+        if(r.titulo) w.titulo=r.titulo; if(r.desc) w.desc=r.desc; if(r.frase) w.frase=r.frase;
+        if(r.quiz&&r.quiz.preguntas&&r.quiz.preguntas.length&&!(w.quiz.preguntas||[]).length){ w.quiz={aprueba:r.quiz.aprueba||70,preguntas:r.quiz.preguntas}; }
+        PREV_ABIERTAS.clear(); render();
+        alert('Listo: '+w.mods.length+' módulos ordenados'+(r.quiz&&r.quiz.preguntas?', '+r.quiz.preguntas.length+' preguntas de quiz propuestas':'')+'. Revisá y ajustá lo que quieras.');
+      }catch(err){ est.textContent=''; bia.disabled=false; alert('No se pudo: '+err.message); }
+    });
     $('wzPaso3').addEventListener('click',()=>{ leer(); PREV_ABIERTAS.clear(); w.mods=w.mods.filter(m=>m.titulo||m.contenido); if(!w.mods.length){ alert('Dejá al menos un módulo.'); return; } w.paso=3; render(); });
   }
   if(w.paso===3){
@@ -1940,6 +1969,11 @@ function renderWizard(){
       w.progId=$('wzProg').value; w.progNuevo=$('wzProgNuevo').value.trim(); w.avisar=$('wzAvisar').checked;
     };
     $('wzAddPreg').addEventListener('click',()=>{ leerQ(); w.quiz.preguntas.push({q:'',ops:[],ok:0}); render(); });
+    const biq=$('wzIAQuiz'); if(biq) biq.addEventListener('click', async ()=>{
+      leerQ(); biq.disabled=true; $('wzIAQuizEst').textContent='Pensando…';
+      try{ const r=await iaPedir('quiz', w.titulo, w.mods.filter(m=>(m.tipo||'texto')==='texto'), 7); w.quiz.preguntas=w.quiz.preguntas.filter(p=>p.q).concat(r.quiz.preguntas||[]); render(); }
+      catch(err){ biq.disabled=false; $('wzIAQuizEst').textContent=''; alert('No se pudo: '+err.message); }
+    });
     app.querySelectorAll('[data-wqdel]').forEach(b=>b.addEventListener('click',()=>{ leerQ(); w.quiz.preguntas.splice(+b.dataset.wqdel,1); render(); }));
     app.querySelectorAll('[data-wqup]').forEach(b=>b.addEventListener('click',()=>{ leerQ(); const i=+b.dataset.wqup, q=w.quiz.preguntas; if(i>0){ [q[i-1],q[i]]=[q[i],q[i-1]]; render(); } }));
     app.querySelectorAll('[data-wqdown]').forEach(b=>b.addEventListener('click',()=>{ leerQ(); const i=+b.dataset.wqdown, q=w.quiz.preguntas; if(i<q.length-1){ [q[i+1],q[i]]=[q[i],q[i+1]]; render(); } }));
@@ -1953,7 +1987,7 @@ function renderWizard(){
       try{
         est.textContent='Subiendo el archivo…';
         const fid=await subirArchivo(w.file,(i,n)=>{ est.textContent='Subiendo el archivo… parte '+i+' de '+n; });
-        const curso={ id:nuevoId('c'), titulo:w.titulo, desc:w.desc||'', dur:w.dur, competencia:w.competencia, color:w.color, portada:'', activo:true, ts:Date.now(), por:SESSION.email,
+        const curso={ id:nuevoId('c'), titulo:w.titulo, desc:w.desc||'', frase:w.frase||'', dur:w.dur, competencia:w.competencia, color:w.color, portada:'', activo:true, ts:Date.now(), por:SESSION.email,
           modulos: w.mods.concat([{ titulo:'Material original: '+w.file.name, tipo:'archivo', contenido:fid, archivoNombre:w.file.name }]),
           quiz:{ aprueba:w.quiz.aprueba, preguntas:w.quiz.preguntas.filter(p=>p.q&&p.ops.length>=2) } };
         est.textContent='Guardando el curso…';
@@ -2009,7 +2043,7 @@ function renderEditorCurso(){
       '<div style="flex:3;min-width:240px"><label class="fl">Opciones (una por línea)</label><textarea data-qo="'+i+'">'+esc((p.ops||[]).join('\n'))+'</textarea></div>'+
       '<div><label class="fl">Correcta (Nº de línea)</label><input type="number" data-qok="'+i+'" value="'+((+p.ok||0)+1)+'" min="1" style="max-width:110px"></div></div></div>');
   });
-  html.push('<p style="margin-top:12px"><button class="btn" id="addPreg">＋ Agregar pregunta</button></p>');
+  html.push('<p style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn" id="addPreg">＋ Agregar pregunta</button>'+(IA_DISPONIBLE?'<button class="btn oscuro" id="edIAQuiz">✨ Proponer preguntas con IA</button><span class="muted" id="edIAQuizEst" style="font-size:13px"></span>':'')+'</p>');
   html.push('<div style="margin-top:22px;display:flex;gap:10px"><button class="btn pri" id="guardarCurso">💾 Guardar curso</button>'+
     '<button class="btn" id="cancelarCurso" style="background:#fff">Cancelar</button></div>');
   html.push('</div>');
@@ -2029,6 +2063,13 @@ function renderEditorCurso(){
   $('cancelarCurso').addEventListener('click',()=>{ EDIT_CURSO=null; VISTA=null; render(); });
   app.querySelectorAll('[data-madd]').forEach(b=>b.addEventListener('click',()=>{ leerForm(); c.modulos.push({titulo:'',tipo:b.dataset.madd,contenido:''}); render(); }));
   $('addPreg').addEventListener('click',()=>{ leerForm(); c.quiz.preguntas.push({q:'',ops:[],ok:0}); render(); });
+  const eiq=$('edIAQuiz'); if(eiq) eiq.addEventListener('click', async ()=>{
+    leerForm(); const textos=c.modulos.filter(m=>(m.tipo||'texto')==='texto'&&m.contenido);
+    if(!textos.length){ alert('El curso no tiene módulos de texto para armar preguntas.'); return; }
+    eiq.disabled=true; $('edIAQuizEst').textContent='Pensando…';
+    try{ const r=await iaPedir('quiz', c.titulo, textos, 7); c.quiz.preguntas=c.quiz.preguntas.filter(p=>p.q).concat(r.quiz.preguntas||[]); render(); }
+    catch(err){ eiq.disabled=false; $('edIAQuizEst').textContent=''; alert('No se pudo: '+err.message); }
+  });
   app.querySelectorAll('[data-qdel]').forEach(b=>b.addEventListener('click',()=>{ leerForm(); c.quiz.preguntas.splice(+b.dataset.qdel,1); render(); }));
   app.querySelectorAll('[data-qup]').forEach(b=>b.addEventListener('click',()=>{ leerForm(); const i=+b.dataset.qup; if(i>0){ const q=c.quiz.preguntas; [q[i-1],q[i]]=[q[i],q[i-1]]; render(); } }));
   app.querySelectorAll('[data-qdown]').forEach(b=>b.addEventListener('click',()=>{ leerForm(); const i=+b.dataset.qdown; const q=c.quiz.preguntas; if(i<q.length-1){ [q[i+1],q[i]]=[q[i],q[i+1]]; render(); } }));
@@ -2211,6 +2252,7 @@ async function cargarAvancesAlumno(){ AVANCES[MI_SLUG]=(await fbGet('avances/'+M
     pintarWho(); pintarNav(); render();
     recordatoriosVencimiento();                       // 7 días antes y el día anterior, una vez por programa
     if(ES_STAFF) publicarResumen();                   // resumen para Panel General / Evaluaciones / RRHH
+    if(ES_STAFF) iaDisponible();                      // muestra los botones ✨ si la clave está cargada en Cloudflare
   }catch(e){
     $('app').innerHTML='<div class="wrap"><div class="err">No se pudo cargar la Academia ('+esc(e.message)+'). Probá recargar.</div></div>';
   }
