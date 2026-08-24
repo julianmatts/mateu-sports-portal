@@ -1890,6 +1890,8 @@ async function objMesCadenaHtml(sem, weeks){
 }
 
 let objCadSem = null;              // semana elegida en la vista cadena (lunesISO); null = la última
+let _objCadToken = 0;              // corta pasadas viejas si el usuario cambió de semana/vista
+let _objCadDetalle = false;        // false = pasada 1 (sin Ritmo/Tickets-h todavía)
 async function renderObjCadena(){
   const sec=$('secObjCadena'), secMes=$('secObjMesCadena'); if(!sec) return;
   const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; const ld=$('vivaLoadCad'); if(ld) ld.style.display='none'; pintarZonas(); };
@@ -1903,6 +1905,7 @@ async function renderObjCadena(){
   if(!weeks || !weeks.length){ ocultar(); return; }
   const sem = (objCadSem && weeks.includes(objCadSem)) ? objCadSem : weeks[0];
   _zonaSem = sem;
+  const token = ++_objCadToken;
   // semana + bloque del mes en paralelo (los fetch se cachean por promesa)
   const [data, mesHtml] = await Promise.all([
     fetchObjetivoSemana(sem),
@@ -1918,32 +1921,47 @@ async function renderObjCadena(){
     return {slug, nombre:(SLUG_SUC[slug]||OUTLET_SUC[slug])?full.replace(/^\d+-\s*/,''):nombreBonito(slug), fmt:formatoDe(full), meta,
       minimo:+v.minimo||Math.round(meta/1.2), s120:+v.s120||Math.round(meta*1.2), real:+v.real||0, prov:false};
   }).filter(Boolean);
-  // totales de la semana (ventaEquipo, lo que cargó gerencia con «Cargar venta» o cada
-  // encargado). Solo gerencia baja los de todas. Dan el real provisorio donde aún no hay
-  // oficial, y UPT / ticket promedio de la semana para todas (comparados con el cierre).
+  // PASADA 1 (rápida): totales de la semana (ventaEquipo/total, un request chico por
+  // sucursal). Dan el real provisorio donde aún no hay oficial y UPT / ticket promedio
+  // (traen tickets y unidades). Con esto ya se pinta la tarjeta completa salvo Ritmo
+  // y Tickets/h, que necesitan la venta abierta por día + equipo + curva (pesados) y
+  // llegan en la pasada 2, de fondo — antes la tarjeta esperaba TODO (~80 requests).
   {
-    // por sucursal: venta de la semana completa (días → ritmo y horas a la altura), equipo vigente
-    // (tickets por hora) y matriz de pesos (ritmo esperado). Gerencia baja todo; son lecturas chicas.
-    const datos=await Promise.all(todas.map(r=>Promise.all([fetchVentaEquipo(r.slug, sem), equipoVigente(r.slug, sem), fetchPesosSlug(r.slug)]).catch(()=>[null,null,null])));
-    if(!vistaCadena) return;
+    const tots=await Promise.all(todas.map(r=>fetchVentaEquipoTotal(r.slug, sem)));
+    if(!vistaCadena || token!==_objCadToken) return;
     todas.forEach((r,i)=>{
-      const [ve, vig, pesos]=datos[i]||[]; const t=veTotales(ve); if(!t) return;
-      if(!r.real && t.venta>0){ r.real=Math.round(t.venta); r.prov=true; }
-      const tk=t.tickets||0;
-      if(tk>0){ r.upt=t.unidades/tk; r.tp=t.venta/tk; r.tk=tk; r.un=t.unidades; r.vt=t.venta; }
+      const t=tots[i]; if(!t) return;
+      if(!r.real && +t.venta>0){ r.real=Math.round(+t.venta); r.prov=true; }
+      const tk=+t.tickets||0;
+      if(tk>0){ r.upt=(+t.unidades||0)/tk; r.tp=(+t.venta||0)/tk; r.tk=tk; r.un=+t.unidades||0; r.vt=+t.venta||0; }
       const full=SLUG_SUC[r.slug]||OUTLET_SUC[r.slug];
       const c=(CAD&&CAD.sucursales||[]).find(x=>x.sucursal===full);
       if(c && c.tickets){ r.uptC=c.unidades_netas/c.tickets; r.tpC=c.importe_neto/c.tickets;
         if(hbase==='h_act' && c.h_act) r.tphC=c.tickets/c.h_act; }   // cierre con horas asignadas (solo en esa base)
-      const horas = vig&&vig.eq ? eqHorasDias(vig.eq, eqDiasSet(ve)) : 0;
-      if(horas>0 && tk>0){ r.horas=horas; r.tph=tk/horas; r.eqSem=vig.propio?null:vig.sem; }
-      r.ritmo = ritmoSemana(ve, pesos, r.meta);
     });
   }
+  // PASADA 2 (fondo): venta por día + equipo vigente + curva → Ritmo y Tickets/h.
+  // Cuando termina, repinta la tarjeta si el usuario sigue en la misma semana/vista.
+  (async()=>{
+    // cada resultado se escribe sobre SU fila (nada de índices: la primera pintada
+    // ordena `todas` por % y un array paralelo quedaría corrido de sucursal)
+    await Promise.all(todas.map(async r=>{
+      const [ve, vig, pesos]=await Promise.all([fetchVentaEquipo(r.slug, sem), equipoVigente(r.slug, sem), fetchPesosSlug(r.slug)]).catch(()=>[null,null,null]);
+      if(token!==_objCadToken) return;
+      const horas = vig&&vig.eq ? eqHorasDias(vig.eq, eqDiasSet(ve)) : 0;
+      if(horas>0 && r.tk>0){ r.horas=horas; r.tph=r.tk/horas; r.eqSem=vig.propio?null:vig.sem; }
+      r.ritmo = ritmoSemana(ve, pesos, r.meta);
+    }));
+    if(!vistaCadena || token!==_objCadToken) return;
+    _objCadDetalle = true;
+    pintarObjCad();
+  })();
+  _objCadDetalle = false;
+  function pintarObjCad(){
   const hayProv = todas.some(r=>r.prov);
   if(_veCadPreview) _veCadPreview.sem=sem;   // la previsualización se publica en la semana elegida
   // filtro por línea (mismos chips que el ranking)
-  const rows = rkTipo ? todas.filter(r=>r.fmt===rkTipo) : todas;
+  const rows = rkTipo ? todas.filter(r=>r.fmt===rkTipo) : todas.slice();   // copia: el sort no debe mutar `todas`
   const lblLinea = rkTipo ? fmtLabel(rkTipo) : 'total sucursales';
   const tit=$('objCadTitle'); if(tit) tit.innerHTML = rkTipo
     ? 'Objetivo de la semana · <em>'+esc(fmtLabel(rkTipo))+'</em>'
@@ -1979,7 +1997,7 @@ async function renderObjCadena(){
     const pct=T.meta?T.real/T.meta:0, w=Math.min(100,Math.round(pct*100));
     const col = !T.real ? 'var(--mid)' : T.real>=T.meta ? 'var(--ok,#16a34a)' : T.real>=T.minimo ? '#d97706' : '#dc2626';
     // ritmo de la línea: suma de lo esperado y de lo vendido en las sucursales con curva
-    const conR=rows.filter(r=>r.ritmo && !r.ritmo.completa);
+    const conR=_objCadDetalle ? rows.filter(r=>r.ritmo && !r.ritmo.completa) : [];
     const ritmoT = conR.length ? (()=>{ const e=conR.reduce((a,r)=>a+r.ritmo.esperado,0), vta=conR.reduce((a,r)=>a+r.ritmo.venta,0), m=conR.reduce((a,r)=>a+r.meta,0);
       const r0=conR[0].ritmo; return {share:m?e/m:r0.share, esperado:e, dif:vta-e, idx:e?vta/e:0, ndias:r0.ndias, ult:r0.ult, venta:vta, meta:m}; })() : null;
     _resumenVivo.sem={real:T.real, meta:T.meta}; _resumenVivo.ritmo=ritmoT;
@@ -2001,7 +2019,8 @@ async function renderObjCadena(){
     const K=conK.reduce((a,r)=>({tk:a.tk+r.tk, un:a.un+r.un, vt:a.vt+r.vt}),{tk:0,un:0,vt:0});
     const cadC=(CAD&&CAD.sucursales||[]).filter(x=>x.sucursal!==ECOM && (!rkTipo || (x.formato||formatoDe(x.sucursal))===rkTipo));
     const KC=cadC.reduce((a,x)=>({tk:a.tk+x.tickets, un:a.un+x.unidades_netas, vt:a.vt+x.importe_neto, h:a.h+(x.h_act||0)}),{tk:0,un:0,vt:0,h:0});
-    const conH=rows.filter(r=>r.horas>0), H=conH.reduce((a,r)=>({tk:a.tk+r.tk, h:a.h+r.horas}),{tk:0,h:0});
+    const conH=_objCadDetalle ? rows.filter(r=>r.horas>0) : [];
+    const H=conH.reduce((a,r)=>({tk:a.tk+r.tk, h:a.h+r.horas}),{tk:0,h:0});
     if(K.tk>0){ _resumenVivo.upt=K.un/K.tk; _resumenVivo.tp=K.vt/K.tk; }
     pintarResumenVivo();
     const kpiBox=(lbl,val,ref,fmtF)=>{ const d=(isFinite(ref)&&ref)?deltaHtml(val,ref):null;
@@ -2016,7 +2035,9 @@ async function renderObjCadena(){
       +'</div>';
     // por sucursal: con venta primero (ordenadas por % de cumplimiento), sin venta al final
     rows.sort((a,b)=> (b.real?b.real/b.meta:-1)-(a.real?a.real/a.meta:-1) || a.nombre.localeCompare(b.nombre));
-    const hayR=rows.some(r=>r.ritmo && !r.ritmo.completa), hayH=rows.some(r=>r.tph);
+    const hayR=_objCadDetalle ? rows.some(r=>r.ritmo && !r.ritmo.completa) : true;
+    const hayH=_objCadDetalle ? rows.some(r=>r.tph) : true;
+    const espera='<td><span class="muted" title="Calculando con la venta por día y el equipo de cada sucursal…">…</span></td>';
     const trs=rows.map(r=>{
       const p=r.meta?r.real/r.meta:0;
       const c = !r.real ? 'var(--mid)' : r.real>=r.meta ? 'var(--ok,#16a34a)' : r.real>=r.minimo ? '#d97706' : '#dc2626';
@@ -2026,9 +2047,11 @@ async function renderObjCadena(){
         +'<td><span class="num">'+objMoney(r.meta)+'</span></td>'
         +'<td><span class="num">'+(r.real?objMoney(r.real):'—')+(r.prov?'<span class="pprov" style="margin-left:4px" title="Venta provisoria de la semana (ventaEquipo), no el real oficial">prov</span>':'')+'</span></td>'
         +'<td><b style="color:'+c+'">'+(r.real?Math.round(p*100)+'%':'—')+'</b></td>'
-        +(hayR ? (r.ritmo&&r.ritmo.completa ? '<td><span class="muted" style="font-size:12px" title="Esta sucursal ya tiene cargada toda su semana: el % de la meta es el definitivo (provisorio hasta el real oficial)">✓ completa</span></td>' : r.ritmo ? '<td title="Vendido '+objMoney(Math.round(r.ritmo.venta))+' vs. esperado '+objMoney(Math.round(r.ritmo.esperado))+' al cierre del '+(DOW_NOMBRE[r.ritmo.ult]||'')+' ('+Math.round(r.ritmo.share*100)+'% de la semana)"><b style="color:'+(r.ritmo.idx>=1?'var(--ok,#16a34a)':r.ritmo.idx>=0.9?'#d97706':'#dc2626')+'">'+Math.round(r.ritmo.idx*100)+'%</b></td>' : '<td><span class="muted">—</span></td>') : '')
+        +(!_objCadDetalle ? espera : '')
+        +(_objCadDetalle && hayR ? (r.ritmo&&r.ritmo.completa ? '<td><span class="muted" style="font-size:12px" title="Esta sucursal ya tiene cargada toda su semana: el % de la meta es el definitivo (provisorio hasta el real oficial)">✓ completa</span></td>' : r.ritmo ? '<td title="Vendido '+objMoney(Math.round(r.ritmo.venta))+' vs. esperado '+objMoney(Math.round(r.ritmo.esperado))+' al cierre del '+(DOW_NOMBRE[r.ritmo.ult]||'')+' ('+Math.round(r.ritmo.share*100)+'% de la semana)"><b style="color:'+(r.ritmo.idx>=1?'var(--ok,#16a34a)':r.ritmo.idx>=0.9?'#d97706':'#dc2626')+'">'+Math.round(r.ritmo.idx*100)+'%</b></td>' : '<td><span class="muted">—</span></td>') : '')
         +kc(r.upt, r.uptC, fmt2)+kc(r.tp, r.tpC, fmtM)
-        +(hayH ? (r.tph ? '<td'+(r.eqSem?' title="Horas del equipo de la Sem '+objSemNum(r.eqSem)+' (esta semana no tiene equipo guardado)"':'')+'><span class="num">'+fmt2(r.tph)+(r.eqSem?'<span class="muted" style="font-size:10px;margin-left:3px">Sem '+objSemNum(r.eqSem)+'</span>':'')+'</span>'+((r.tphC&&isFinite(r.tphC))?'<div class="pte-sub">'+(deltaHtml(r.tph,r.tphC)||'')+'</div>':'')+'</td>' : '<td><span class="muted">—</span></td>') : '')
+        +(!_objCadDetalle ? espera : '')
+        +(_objCadDetalle && hayH ? (r.tph ? '<td'+(r.eqSem?' title="Horas del equipo de la Sem '+objSemNum(r.eqSem)+' (esta semana no tiene equipo guardado)"':'')+'><span class="num">'+fmt2(r.tph)+(r.eqSem?'<span class="muted" style="font-size:10px;margin-left:3px">Sem '+objSemNum(r.eqSem)+'</span>':'')+'</span>'+((r.tphC&&isFinite(r.tphC))?'<div class="pte-sub">'+(deltaHtml(r.tph,r.tphC)||'')+'</div>':'')+'</td>' : '<td><span class="muted">—</span></td>') : '')
         +'</tr>';
     }).join('');
     const hayK=rows.some(r=>r.tk>0);
@@ -2049,6 +2072,8 @@ async function renderObjCadena(){
   sec.style.display='';
   const ldc=$('vivaLoadCad'); if(ldc) ldc.style.display='none';
   pintarZonas();
+  }
+  pintarObjCad();
 }
 
 /* --- KPIs generales de la cadena: mismos cuatro indicadores, agregados.
@@ -3164,8 +3189,8 @@ function equipoVigente(slug, sem){
   _eqVigCache[key]=(async()=>{
     const eq=await fetchEquipo(slug, sem);
     if(eqHorasEquipo(eq)>0) return {eq, sem, propio:true};
-    const lista=await fetchEqSemanas(slug);   // desc
-    for(const w of lista){ if(w>=sem) continue; const e=await fetchEquipo(slug, w); if(eqHorasEquipo(e)>0) return {eq:e, sem:w, propio:false}; }
+    const lista=(await fetchEqSemanas(slug)).filter(w=>w<sem).slice(0,4);   // las 4 anteriores alcanzan
+    for(const w of lista){ const e=await fetchEquipo(slug, w); if(eqHorasEquipo(e)>0) return {eq:e, sem:w, propio:false}; }
     return {eq:null, sem:null, propio:false};
   })();
   return _eqVigCache[key];
