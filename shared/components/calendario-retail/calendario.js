@@ -22,6 +22,13 @@
      2. rango:  { "fecha_inicio": "...", "fecha_fin": "..." }
      3. movil:  { "regla": { "mes":10, "semana":3, "dia":0 } }
                 = 3er domingo de octubre (dia 0=domingo..6=sabado).
+
+   Anotaciones personales: cada usuario logueado (menos el rol
+   `puesto`, que es un quiosco a la vista de clientes) puede dejar
+   una nota propia por dia (clic en el dia -> editor en el panel).
+   Se guardan en Firebase recepciones-mateu, nodo
+   notasCalendario/<mail con , por .>/<YYYY-MM-DD>, con cache en
+   localStorage para render instantaneo. Son privadas por cuenta.
    ============================================================ */
 (function(){
   'use strict';
@@ -35,6 +42,8 @@
   var MOUNT_SEL = CFG.mount || '.top-right';
   var LS_FILTROS = 'cr_filtros';
   var LS_MODO = 'cr_modo';
+  // anotaciones personales por dia (Firebase recepciones-mateu, nodo aparte)
+  var FB_NOTAS_BASE = 'https://recepciones-mateu-default-rtdb.firebaseio.com/notasCalendario/';
 
   // ---- meta de tipos ----
   var TIPOS = ['feriado','comercial','interno'];
@@ -151,6 +160,43 @@
   function guardarModo(){ try{ localStorage.setItem(LS_MODO, modo); }catch(e){} }
   function pasaFiltro(o){ return filtros[o.tipo]; }
   var esRetail = function(){ return modo==='retail'; };
+
+  // ---- anotaciones personales ----
+  var NOTAS = {};           // { 'YYYY-MM-DD': 'texto' }
+  var notasMailKey = null;  // null = sin sesion o rol puesto -> sin anotaciones
+
+  // clave del usuario para Firebase (mismo criterio que el Portal: . -> ,)
+  function mailKeyDeSesion(){
+    try{
+      var s = JSON.parse(localStorage.getItem('mateu_portal_session'));
+      if(!s || !s.email || s.rol==='puesto') return null; // puesto = quiosco a la vista de clientes
+      return String(s.email).toLowerCase().trim().replace(/\./g,',');
+    }catch(e){ return null; }
+  }
+  function ymd(d){
+    function p(n){ return (n<10?'0':'')+n; }
+    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+  }
+  function notaDe(fecha){ return notasMailKey ? (NOTAS[ymd(fecha)] || '') : ''; }
+  function cacheNotas(){ try{ localStorage.setItem('cr_notas_'+notasMailKey, JSON.stringify(NOTAS)); }catch(e){} }
+  function cargarNotas(){
+    notasMailKey = mailKeyDeSesion();
+    if(!notasMailKey) return;
+    try{ var c = JSON.parse(localStorage.getItem('cr_notas_'+notasMailKey)); if(c) NOTAS = c; }catch(e){}
+    fetch(FB_NOTAS_BASE + notasMailKey + '.json')
+      .then(function(r){ return r.ok ? r.json() : undefined; })
+      .then(function(j){ if(j !== undefined){ NOTAS = j || {}; cacheNotas(); render(); } })
+      .catch(function(){}); // sin red: queda el cache local
+  }
+  function guardarNota(key, texto){
+    texto = (texto||'').trim();
+    if(texto) NOTAS[key] = texto; else delete NOTAS[key];
+    cacheNotas(); render();
+    if(!notasMailKey) return;
+    fetch(FB_NOTAS_BASE + notasMailKey + '/' + key + '.json',
+      texto ? { method:'PUT', body:JSON.stringify(texto) } : { method:'DELETE' }
+    ).catch(function(){});
+  }
 
   // ---- refs de DOM ----
   var elTrigger, elPop, elDot, elModal, elPanel;
@@ -278,8 +324,10 @@
 
   function celdaDia(fecha, ocs, big, fuera){
     var delDia = ocs.filter(function(o){ return soloDia(o.inicio)<=fecha && fecha<=soloDia(o.fin); });
+    var nota = notaDe(fecha);
     var cls = 'cr-day';
     if(fuera) cls += ' cr-out';
+    if(nota) cls += ' cr-has-nota';
     if(mismoDia(fecha, hoyD)) cls += ' cr-today';
     if(seleccion && mismoDia(fecha, seleccion)) cls += ' cr-selected';
     var rango = delDia.find(function(o){ return diffDias(o.inicio,o.fin) > 0; });
@@ -294,14 +342,16 @@
       extra = delDia.slice(0,3).map(function(o){
         return '<span class="cr-ev-pill" style="background:'+o.color+'">'+esc(o.titulo)+'</span>';
       }).join('');
+      if(nota) extra += '<span class="cr-ev-pill cr-nota-pill">✎ '+esc(nota)+'</span>';
       extra = extra ? '<span class="cr-ev-pills">'+extra+'</span>' : '';
     } else {
       var dots = delDia.slice(0,3).map(function(o){ return '<i style="background:'+o.color+'"></i>'; }).join('');
       extra = dots ? '<span class="cr-dots">'+dots+'</span>' : '';
+      if(nota) extra += '<span class="cr-nota-mark" aria-hidden="true"></span>';
     }
     var fstr = fecha.getFullYear()+'-'+fecha.getMonth()+'-'+fecha.getDate();
     return '<button class="'+cls+'" type="button" data-fecha="'+fstr+'" tabindex="'+tab+'" '+
-      'aria-label="'+fecha.getDate()+' de '+MESES_L[fecha.getMonth()]+(delDia.length?', '+delDia.length+' evento(s)':'')+'">'+
+      'aria-label="'+fecha.getDate()+' de '+MESES_L[fecha.getMonth()]+(delDia.length?', '+delDia.length+' evento(s)':'')+(nota?', con anotación':'')+'">'+
       '<span class="cr-day-num">'+fecha.getDate()+'</span>'+extra+
     '</button>';
   }
@@ -349,12 +399,28 @@
       }).join('')+'</ul>';
     }
 
+    // anotacion personal del dia seleccionado (solo con sesion, nunca en puesto)
+    var notaHTML = '';
+    if(seleccion && notasMailKey){
+      var nk = ymd(seleccion), nv = NOTAS[nk] || '';
+      notaHTML = '<div class="cr-nota">'+
+        '<div class="cr-nota-title">✎ Mi anotación</div>'+
+        '<textarea class="cr-nota-txt" data-nota-txt data-nota-key="'+nk+'" rows="2" maxlength="500" '+
+          'placeholder="Anotación personal de este día (solo la ves vos)…">'+esc(nv)+'</textarea>'+
+        '<div class="cr-nota-actions">'+
+          '<button class="cr-nota-btn cr-nota-save" type="button" data-nota-save>Guardar</button>'+
+          (nv ? '<button class="cr-nota-btn" type="button" data-nota-del>Borrar</button>' : '')+
+        '</div>'+
+      '</div>';
+    }
+
     return '<div class="cr-list-wrap">'+
       '<div class="cr-list-head">'+
         '<div class="cr-list-title">'+titulo+'</div>'+
         '<button class="cr-clear'+(hayFiltroDia?' cr-show':'')+'" type="button" data-clear>Ver próximas</button>'+
       '</div>'+
       items+
+      notaHTML+
     '</div>';
   }
 
@@ -387,6 +453,18 @@
     if(ex) ex.addEventListener('click', function(){ big ? cerrarModal() : abrirModal(); });
     var grid = cont.querySelector('.cr-days');
     if(grid) grid.addEventListener('keydown', navTeclado);
+    // anotacion del dia seleccionado
+    var nt = cont.querySelector('[data-nota-txt]');
+    if(nt){
+      var salvar = function(){ guardarNota(nt.dataset.notaKey, nt.value); };
+      var ns = cont.querySelector('[data-nota-save]');
+      if(ns) ns.addEventListener('click', salvar);
+      var nd = cont.querySelector('[data-nota-del]');
+      if(nd) nd.addEventListener('click', function(){ guardarNota(nt.dataset.notaKey, ''); });
+      nt.addEventListener('keydown', function(e){
+        if(e.key==='Enter' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); salvar(); }
+      });
+    }
   }
 
   function navegarMes(delta){
@@ -488,6 +566,7 @@
     if(!host){ return; }
     construir();
     host.insertBefore(elTrigger, host.firstChild);
+    cargarNotas();
     fetch(DATA_URL)
       .then(function(r){ return r.ok ? r.json() : null; })
       .then(function(j){ RAW = (j && j.eventos) ? j.eventos : []; render(); })
