@@ -1842,13 +1842,22 @@ async function objMesCadenaHtml(sem, weeks){
     const delMes=(weeks||[]).filter(w=>String(w).slice(0,7)===per);
     const sems=await Promise.all(delMes.map(fetchObjetivoSemana));
     const slugsOk=new Set(filas.map(r=>r.slug));
+    // por semana: real oficial donde está; para las sucursales sin oficial, la venta
+    // provisoria cargada (ventaEquipo) — así la semana recién subida ya suma al mes
+    const porSem=await Promise.all(sems.map(async (sd,wi)=>{
+      if(!sd || !sd.porSlug) return {sub:0, hay:false, prov:false};
+      let sub=0, hay=false, prov=false; const faltan=[];
+      Object.keys(sd.porSlug).forEach(sl=>{
+        if(!slugsOk.has(sl)) return;
+        const v=sd.porSlug[sl];
+        if(v && +v.real>0){ sub+=+v.real; hay=true; } else faltan.push(sl);
+      });
+      const tots=await Promise.all(faltan.map(sl=>fetchVentaEquipoTotal(sl, delMes[wi])));
+      tots.forEach(t=>{ const n=(t&&+t.venta)||0; if(n>0){ sub+=n; hay=true; prov=true; } });
+      return {sub, hay, prov};
+    }));
     let sum=0;
-    sems.forEach(sd=>{
-      if(!sd || !sd.porSlug) return;
-      let hay=false;
-      Object.keys(sd.porSlug).forEach(sl=>{ const v=sd.porSlug[sl]; if(slugsOk.has(sl) && v && +v.real>0){ sum+=+v.real; hay=true; } });
-      if(hay) nSem++;
-    });
+    porSem.forEach(x=>{ if(x.hay){ sum+=x.sub; nSem++; if(x.prov) provisorio=true; } });
     if(sum>0){ T.real=Math.round(sum); provisorio=true; }
   }
   _resumenVivo.mes={real:T.real, meta:T.meta}; pintarResumenVivo();
@@ -3024,16 +3033,17 @@ async function objetivoMesHtml(slug, sem, weeks, ve){
   const meta=m.meta||0, minimo=m.minimo||Math.round(meta/1.2), s120=m.s120||Math.round(meta*1.2);
   let real=m.real||0, provisorio=false;
   if(!real){
-    // sumar las semanas del mes (cada fetch es por slug y queda cacheado)
+    // sumar las semanas del mes (cada fetch es por slug y queda cacheado):
+    // real oficial donde está; si no, la venta provisoria cargada (ventaEquipo)
     const delMes=(weeks||[]).filter(w=>String(w).slice(0,7)===per);
-    const vs=await Promise.all(delMes.map(w=>fetchObjetivoData(slug,w)));
+    const [vs, tots]=await Promise.all([
+      Promise.all(delMes.map(w=>fetchObjetivoData(slug,w))),
+      Promise.all(delMes.map(w=>fetchVentaEquipoTotal(slug,w)))
+    ]);
     let sum=0, hay=false;
     vs.forEach((v,i)=>{
       if(v && v.real>0){ sum+=v.real; hay=true; }
-      else if(delMes[i]===sem){       // semana activa sin real oficial: lo del encargado
-        const t=ve&&ve.total; const n=typeof t==='number'?t:(t&&t.venta)||0;
-        if(n>0){ sum+=n; hay=true; provisorio=true; }
-      }
+      else{ const t=tots[i], n=(t&&+t.venta)||0; if(n>0){ sum+=n; hay=true; provisorio=true; } }
     });
     if(hay){ real=Math.round(sum); provisorio=true; }
   }

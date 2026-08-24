@@ -424,7 +424,7 @@ entran acá: ven su objetivo en Indicadores.
   ALCANZADO: el real llega con el Excel del mes siguiente. Checkbox «Publicar
   también el histórico» → PATCH con todos los meses (habilita el **vs. mismo mes
   del año anterior** del dashboard; `·m` = compara la meta porque el mes está
-  abierto). Avance del mes abierto = suma de las semanas ya cargadas («x sem»).
+  abierto). Avance del mes abierto = suma de las semanas del mes: real oficial donde está y, si no, la venta provisoria cargada (ventaEquipo) — «x sem».
   Firebase: `objetivos/meses/<YYYY-MM>` (mismo formato porSlug que las semanas,
   + campo `semanal`) y `objetivos/ultimoMes`. En **Indicadores**, bloque
   «Objetivo del mes» dentro de la sección Objetivo (cada sucursal baja solo su
