@@ -380,6 +380,7 @@ tr.team:hover td.td-lead{background:rgba(224,164,0,.18)}
 /* ===== IMPRESIÓN / PDF ===== */
 @media print{
   #toolbar, .menu-open, #notifWidget, .drawer, .drawer-scrim, .zona-nav, .zona-jump{display:none!important}
+  .zona-ctrl select, .zona-ctrl .lbl, .zona-cargando{display:none!important}
   body{background:#fff}
   .top{position:static;border-bottom:3px solid var(--red)}
   .top-in{padding:8px 0;grid-template-columns:1fr}
@@ -1534,7 +1535,7 @@ function copiarResumen(){
     const stock=$('stockVal')?$('stockVal').textContent.trim():'';
     const rTp=rankFormato(CAD,'tp',sucName,fmt);
     txt=[
-      `📊 ${sucName} · ${perLabel(per)}`,
+      `📊 ${sucName} · ${perLabel(per)}${semSel?` · Semana ${semSel} (del mes)`:''}`,
       `• UPT: ${fmt2(k.upt)}${cu(k.upt,obj.upt)}`,
       `• Tickets/hora: ${s.horas_contr?fmt2(k.tph):'—'}${cu(k.tph,obj.tickets_hora)}`,
       `• Ticket promedio: ${fmtM(k.tp)}${cu(k.tp,obj.ticket_promedio)}`,
@@ -1860,7 +1861,7 @@ async function objMesCadenaHtml(sem, weeks){
     porSem.forEach(x=>{ if(x.hay){ sum+=x.sub; nSem++; if(x.prov) provisorio=true; } });
     if(sum>0){ T.real=Math.round(sum); provisorio=true; }
   }
-  _resumenVivo.mes={real:T.real, meta:T.meta}; pintarResumenVivo();
+  if(vistaCadena){ _resumenVivo.mes={real:T.real, meta:T.meta}; pintarResumenVivo(); }
   const pct=T.meta?T.real/T.meta:0, w=Math.min(100,Math.round(pct*100));
   const col = !T.real ? 'var(--mid)' : T.real>=T.meta ? 'var(--ok,#16a34a)' : T.real>=T.minimo ? '#d97706' : '#dc2626';
   let h='<div>'
@@ -3076,7 +3077,7 @@ async function objetivoMesHtml(slug, sem, weeks, ve){
   const w=Math.min(100, Math.round(pct*100));
   const cls=!real?'na':real>=meta?'ok':real>=minimo?'warn':'bad';
   const col=cls==='ok'?'var(--ok,#16a34a)':cls==='warn'?'#d97706':cls==='bad'?'#dc2626':'var(--mid)';
-  _resumenVivo.mes={real, meta}; pintarResumenVivo();
+  if(!vistaCadena){ _resumenVivo.mes={real, meta}; pintarResumenVivo(); }
   // va en su propia sección "Objetivo del mes", arriba de la semanal
   let h='<div>'
     +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
@@ -3391,7 +3392,7 @@ async function renderObjetivo(){
   const hayReal = !!v && ((v.real||0)>0 || realEncTot>0);
   // el selector de semana vive en la cabecera de la banda «En curso»
   const host=$('semHost'); if(host) host.innerHTML=selHtml;
-  _resumenVivo.sem={real:realEncTot||(v&&v.real)||0, meta:(v&&v.meta)||0}; _resumenVivo.ritmo=ritmo; pintarResumenVivo();
+  _resumenVivo.sem={real:(v&&v.real)||realEncTot||0, meta:(v&&v.meta)||0}; _resumenVivo.ritmo=ritmo; pintarResumenVivo();
   let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
     +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana':'Meta de la semana')+' · '+esc(objSemTag(sem))+'</div>'
     +'</div>';
