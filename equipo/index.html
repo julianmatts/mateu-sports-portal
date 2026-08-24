@@ -275,6 +275,7 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
     <div id="transf-status" style="margin-top:10px;font-family:var(--font-c);font-size:12px;color:var(--muted)"></div>
   </div>
   <div id="cruce-filters" style="display:none;margin-bottom:16px;display:none;gap:10px;flex-wrap:wrap;align-items:center">
+    <select id="f-sucursal" onchange="renderCruce()" style="font-size:12px"><option value="">Todas las sucursales que envían</option></select>
     <select id="f-operador" onchange="renderCruce()" style="font-size:12px"><option value="">Ambos operadores</option><option value="David">David</option><option value="Daniel">Daniel</option></select>
     <select id="f-tipo-cruce" onchange="renderCruce()" style="font-size:12px"><option value="">Todos los casos</option><option value="no_ejecutado">No ejecutados</option><option value="diferencia">Con diferencia</option><option value="ok">Exactos</option></select>
     <select id="f-rubro" onchange="renderCruce()" style="font-size:12px"><option value="">Todos los rubros</option><option value="INDUMENTARIA">Indumentaria</option><option value="CALZADO">Calzado</option><option value="ACCESORIOS">Accesorios</option></select>
@@ -337,8 +338,6 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
 
 <script>
 // ═══════════════ SEED DATA ═══════════════
-const SEED_F8S = [
-];
 
 
 // ═══════════════ CRUCE SEED ═══════════════
@@ -354,8 +353,16 @@ const BRAND_MAP=[['ADI','Adidas'],['NIK','Nike'],['PUM','Puma'],['RUG','RUGE/EDL
 const FB_F8S='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/f8s.json';
 const FB_CTRL='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/ctrl.json';
 let _F8S=null, _CTRL=null;
-function getF8s(){ return _F8S||[...SEED_F8S]; }
-const setF8s=d=>{ _F8S=d; fetch(FB_F8S,{method:'PUT',body:JSON.stringify(d),headers:{'Content-Type':'application/json'}}); };
+// Los F8s viven en Firebase como OBJETO por id (cada alta es un PATCH que no pisa
+// a las demás: David y Daniel pueden subir a la vez). Acá se manejan como array.
+const normF8s=d=>{
+  if(!d)return[];
+  const a=Array.isArray(d)?d.filter(Boolean):Object.values(d);
+  return a.sort((x,y)=>String(x.date).localeCompare(String(y.date))||String(x.id).localeCompare(String(y.id)));
+};
+function getF8s(){ return _F8S||[]; }
+const addF8=e=>{ _F8S=getF8s(); _F8S.push(e); _F8S_HASH=''; fetch(FB_F8S,{method:'PATCH',body:JSON.stringify({[e.id]:e}),headers:{'Content-Type':'application/json'}}); };
+const setF8s=d=>{ _F8S=d; _F8S_HASH=''; const obj=d.length?Object.fromEntries(d.map(e=>[e.id,e])):null; fetch(FB_F8S,{method:'PUT',body:JSON.stringify(obj),headers:{'Content-Type':'application/json'}}); };
 function getCtrl(){ return _CTRL||[]; }
 const setCtrl=d=>{ _CTRL=d; fetch(FB_CTRL,{method:'PUT',body:JSON.stringify(d),headers:{'Content-Type':'application/json'}}); };
 
@@ -364,17 +371,18 @@ async function loadEquipo(){
   try{
     const [r1,r2]=await Promise.all([fetch(FB_F8S),fetch(FB_CTRL)]);
     const [d1,d2]=await Promise.all([r1.json(),r2.json()]);
-    _F8S=d1||[...SEED_F8S];
+    _F8S=normF8s(d1);
     _CTRL=d2||[];
     _F8S_HASH=JSON.stringify(_F8S); _CTRL_HASH=JSON.stringify(_CTRL);
-  }catch(e){ _F8S=[...SEED_F8S]; _CTRL=[]; }
+  }catch(e){ _F8S=[]; _CTRL=[]; }
 }
 async function pollEquipo(){
   try{
     const [r1,r2]=await Promise.all([fetch(FB_F8S),fetch(FB_CTRL)]);
     const [d1,d2]=await Promise.all([r1.json(),r2.json()]);
-    const h1=JSON.stringify(d1), h2=JSON.stringify(d2);
-    if(d1&&h1!==_F8S_HASH){ _F8S_HASH=h1; _F8S=d1; renderDashboard(); renderHistory(); }
+    const a1=normF8s(d1);
+    const h1=JSON.stringify(a1), h2=JSON.stringify(d2);
+    if(h1!==_F8S_HASH){ _F8S_HASH=h1; _F8S=a1; renderDashboard(); renderHistory(); }
     if(d2&&h2!==_CTRL_HASH){ _CTRL_HASH=h2; _CTRL=d2; }
   }catch(e){}
   setTimeout(pollEquipo,5000);
@@ -490,8 +498,9 @@ function calcControlReal(opFilter){
     for(const L of f.lineas){
       const tr=transfIndex.get(tk(nrmF8(L.o),L.c,nrmF8(L.d)));
       const sent=tr?Math.round(tr.enviado):0;
-      const key=L.d+'|'+f.date;
-      sucs.add(L.d);
+      // Eje del control: la sucursal de ORIGEN (a la que se le pidió enviar)
+      const key=L.o+'|'+f.date;
+      sucs.add(L.o);
       if(!cells[key])cells[key]={ok:0,diff:0,no_ej:0,total:0,plan:0,transf:0,operator:f.operator};
       const c=cells[key];c.total++;c.plan+=Math.round(+L.t||0);c.transf+=sent;
       if(sent===0)c.no_ej++;else if(sent===Math.round(+L.t))c.ok++;else c.diff++;
@@ -681,8 +690,8 @@ function readF8(file,op){
       if(dm){const p=dm[0].replace(/_/g,'-').split('-');ds=p[0].length===4?dm[0].replace(/_/g,'-'):p[2]+'-'+p[1]+'-'+p[0];}
       const n=file.name.toLowerCase();
       const tipo=(n.includes('puma')||n.includes('givova')||n.includes('aurelius')||n.includes('camisas')||n.includes('fila')||n.includes('vans'))?'barrida':'pedidos';
-      const entry={id:Date.now(),operator:op,filename:file.name,date:ds,wk:weekKeyFor(ds),tipo,...stats};
-      const f8s=getF8s();f8s.push(entry);setF8s(f8s);
+      const entry={id:'f'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),operator:op,filename:file.name,date:ds,wk:weekKeyFor(ds),tipo,...stats};
+      addF8(entry);
       showResult(op.toLowerCase(),stats,ds,file.name);
       showToast('F8 de '+op+' procesado ✓');
       renderDashboard();
@@ -758,6 +767,17 @@ function processTransfFile(file){
 function renderCruce(){
   if(!transfIndex)return;
   buildF8Cruce();
+  // Poblar el filtro de sucursal de origen (para el control sucursal por sucursal)
+  const selSuc=document.getElementById('f-sucursal');
+  const origs=new Map();for(const f8 of f8CruceIndex.values()){const n=nrmF8(f8.origen_raw);if(!origs.has(n))origs.set(n,f8.origen_raw);}
+  const firma=[...origs.keys()].sort().join('§');
+  if(selSuc.dataset.firma!==firma){
+    const prev=selSuc.value;
+    selSuc.innerHTML='<option value="">Todas las sucursales que envían</option>'+[...origs.entries()].sort((a,b)=>a[1].localeCompare(b[1])).map(([n,raw])=>`<option value="${n}">${raw}</option>`).join('');
+    selSuc.dataset.firma=firma;
+    if(prev&&origs.has(prev))selSuc.value=prev;
+  }
+  const sucF=selSuc.value;
   const opF=document.getElementById('f-operador').value;
   const tipoF=document.getElementById('f-tipo-cruce').value;
   const rubroF=document.getElementById('f-rubro').value;
@@ -766,6 +786,7 @@ function renderCruce(){
   const results=[];
   if(useF8){
     for(const[key,f8] of f8CruceIndex){
+      if(sucF&&nrmF8(f8.origen_raw)!==sucF)continue;
       if(opF&&f8.operator!==opF)continue;
       if(rubroF&&!f8.rubro.toUpperCase().includes(rubroF))continue;
       const tData=transfIndex.get(key);
