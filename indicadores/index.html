@@ -175,6 +175,11 @@ a{color:inherit}
 .zona-jump a:hover{border-color:var(--navy-mid)}
 .zona-jump{display:flex;gap:6px;flex-wrap:wrap}
 .rk-bar .zona-jump{margin-left:auto}
+/* placeholder de la banda viva: se ve desde el primer pintado, mientras Firebase carga,
+   para que el Cierre (estático, instantáneo) nunca aparezca primero y "salte" la página */
+.zona-cargando{padding:26px 0 10px;color:var(--muted);font-size:14px;display:flex;align-items:center;gap:10px}
+.zona-cargando::before{content:'';width:14px;height:14px;border-radius:50%;border:2px solid var(--vivo-line);border-top-color:var(--vivo);animation:zvspin 1s linear infinite}
+@keyframes zvspin{to{transform:rotate(360deg)}}
 /* tira resumen de la banda viva (semana · ritmo · mes · UPT · ticket prom.) */
 .zona-strip{display:flex;gap:8px;flex-wrap:wrap;padding:12px 0 0}
 .zona-strip:empty{display:none}
@@ -584,6 +589,7 @@ footer b{color:var(--navy)}
       <div class="zona-ctrl"><span class="lbl">Semana</span><span id="semHost"></span><span class="zona-pill prov" title="Venta de la semana / mes abierto: se actualiza a medida que se carga; el cierre oficial llega con el ETL del mes"><span class="dot"></span>provisorio</span></div>
       <div class="zona-strip" id="vivaStrip" style="flex-basis:100%"></div>
     </header>
+    <div class="zona-cargando" id="vivaLoad">Cargando la semana en curso…</div>
 
     <section class="sec" id="secObjetivoMes" style="display:none">
       <div class="sec-label">Objetivo de venta</div>
@@ -748,6 +754,7 @@ footer b{color:var(--navy)}
       <div class="zona-ctrl"><span class="lbl">Semana</span><span id="semHostCad"></span><span class="zona-pill prov" title="Venta de la semana / mes abierto: se actualiza a medida que se carga; el cierre oficial llega con el ETL del mes"><span class="dot"></span>provisorio</span></div>
       <div class="zona-strip" id="vivaStripCad" style="flex-basis:100%"></div>
     </header>
+    <div class="zona-cargando" id="vivaLoadCad">Cargando la semana en curso…</div>
 
     <section class="sec" id="secObjMesCadena" style="display:none">
       <div class="sec-label">Objetivo de venta</div>
@@ -1184,15 +1191,19 @@ function pintarZonas(){
   const p=PERIODOS.find(x=>x.id===per)||{};
   const tC=$(cad?'zonaCierreCadTitle':'zonaCierreTitle');
   if(tC) tC.innerHTML = esc(perLabel(per))+(p.dias?'<em>'+esc(p.dias)+'</em>':'');
-  // la banda es del MES abierto; la semana elegida vive en el selector de la cabecera
+  // la banda es del MES abierto; la semana elegida vive en el selector de la cabecera.
+  // Antes de que Firebase conteste, el mes se estima por fecha (los meses de Objetivos
+  // son calendario), para que el título salga en el primer pintado.
+  const mesTit = _zonaMes || (()=>{ const h=new Date(); return h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0'); })();
   const tV=$(cad?'zonaVivaCadTitle':'zonaVivaTitle');
-  if(tV) tV.innerHTML = _zonaMes ? esc(objMesLbl(_zonaMes))+'<em>mes abierto</em>' : 'Mes <em>en curso</em>';
+  if(tV) tV.innerHTML = esc(objMesLbl(mesTit))+'<em>mes abierto</em>';
   pintarResumenVivo();
   const host=$(cad?'selPerHostCad':'selPerHost'), sel=$('selPer');
   if(host && sel && sel.parentNode!==host) host.appendChild(sel);
   const zv=$(cad?'zonaVivaCad':'zonaViva');
   if(zv){
-    const hay=[...zv.querySelectorAll('section')].some(x=>x.style.display!=='none');
+    const ld=$(cad?'vivaLoadCad':'vivaLoad');
+    const hay=[...zv.querySelectorAll('section')].some(x=>x.style.display!=='none') || (ld && ld.style.display!=='none');
     zv.style.display=hay?'':'none';
     const nav=$(cad?'zonaJumpCad':'zonaNav'); if(nav) nav.style.display=hay?'':'none';
   }
@@ -1306,7 +1317,7 @@ async function render(){
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
   $('secCanales').style.display = ecom?'':'none';
-  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secSem','secBarrida','secObjetivo','secObjetivoMes','secKpisSem'].forEach(id=>$(id).style.display='none'); pintarZonas(); }
+  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secSem','secBarrida','secObjetivo','secObjetivoMes','secKpisSem'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
   const seg=document.querySelector('.seg'); if(seg) seg.style.display = ecom?'none':'flex';
   renderKPIs();
   renderDiagnostico();
@@ -1872,7 +1883,7 @@ async function objMesCadenaHtml(sem, weeks){
 let objCadSem = null;              // semana elegida en la vista cadena (lunesISO); null = la última
 async function renderObjCadena(){
   const sec=$('secObjCadena'), secMes=$('secObjMesCadena'); if(!sec) return;
-  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; pintarZonas(); };
+  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; const ld=$('vivaLoadCad'); if(ld) ld.style.display='none'; pintarZonas(); };
   if(!OBJETIVOS_URL || !esGerencia){ ocultar(); return; }
   if(!$('objCadCard').innerHTML){
     $('objCadCard').innerHTML='<p class="empty" style="margin:6px 0">Cargando objetivo…</p>';
@@ -2027,6 +2038,7 @@ async function renderObjCadena(){
   const sv=$('veCadSave'); if(sv) sv.onclick=veCadPublicar;
   const cn=$('veCadCancel'); if(cn) cn.onclick=()=>{ _veCadPreview=null; renderObjCadena(); };
   sec.style.display='';
+  const ldc=$('vivaLoadCad'); if(ldc) ldc.style.display='none';
   pintarZonas();
 }
 
@@ -3294,7 +3306,7 @@ async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem
 
 async function renderObjetivo(){
   const sec=$('secObjetivo'), secMes=$('secObjetivoMes'); if(!sec) return;
-  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; const ks=$('secKpisSem'); if(ks) ks.style.display='none'; pintarZonas(); };
+  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; const ks=$('secKpisSem'); if(ks) ks.style.display='none'; const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); };
   if(!OBJETIVOS_URL){ ocultar(); return; }
   const slug = slugActual();
   if(!slug){ ocultar(); return; }
@@ -3419,6 +3431,7 @@ async function renderObjetivo(){
   eqWire(slug, sem, eqData);
   jvWire();
   sec.style.display='';
+  const ldv=$('vivaLoad'); if(ldv) ldv.style.display='none';
   pintarZonas();
 }
 
