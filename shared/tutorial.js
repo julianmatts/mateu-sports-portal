@@ -230,6 +230,9 @@
   +'background:#0B1527;color:#fff;border:2px solid #CC0000;cursor:pointer;display:flex;align-items:center;justify-content:center;'
   +'font-family:\'Bebas Neue\',sans-serif;font-size:22px;line-height:1;box-shadow:0 4px 16px rgba(11,21,39,.35);'
   +'transition:transform .14s,background .14s}'
+  // con la campana de notificaciones: arriba de ella y con el eje centrado (campana 56px a right:22 → eje a 50px; el «?» de 46px necesita right:27)
+  +'.mtu-fab.mtu-fab-campana{bottom:92px;right:27px}'
+  +'@media(max-width:560px){.mtu-fab.mtu-fab-campana{bottom:86px;right:21px}}'
   +'.mtu-fab:hover{background:#CC0000;transform:translateY(-2px)}'
   +'.mtu-scrim{position:fixed;inset:0;background:rgba(11,21,39,.62);z-index:1300;display:flex;align-items:center;justify-content:center;'
   +'padding:16px;opacity:0;visibility:hidden;transition:opacity .22s}'
@@ -288,7 +291,7 @@
     fab.className = 'mtu-fab';
     // si la pantalla tiene la campana de notificaciones (Portal, Indicadores) abajo a la
     // derecha, el «?» va arriba de ella para no taparla
-    if(document.getElementById('notifWidget')) fab.style.bottom = '92px';
+    if(document.getElementById('notifWidget')) fab.classList.add('mtu-fab-campana');
     fab.type = 'button';
     fab.title = 'Cómo usar esta herramienta';
     fab.setAttribute('aria-label','Ver el tutorial de esta herramienta');
