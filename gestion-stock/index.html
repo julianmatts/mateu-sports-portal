@@ -205,6 +205,8 @@ tr.gs-mia:hover td{background:#eef4ff!important}
 .gs-bar-val{width:56px;text-align:right;font-weight:700;font-size:13px;color:var(--navy);flex-shrink:0}
 .td-num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .td-code{font-family:monospace;font-weight:700;color:var(--navy);white-space:nowrap}
+.chk-repite{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--navy);cursor:pointer;white-space:nowrap;user-select:none}
+.chk-repite input{accent-color:var(--bad);cursor:pointer}
 .td-ubic{white-space:nowrap;font-size:12.5px}
 .td-ubic .ubic-sin{color:var(--warn);font-weight:700}
 .td-ubic .ubic-cargando{color:#9aa3b2}
@@ -914,6 +916,7 @@ async function renderSucursalView(slug, container, opts){
         '<select class="sel" id="sucFiltroRubro"><option value="">Rubro (todos)</option></select>'+
         '<select class="sel" id="sucFiltroMarca"><option value="">Marca (todas)</option></select>'+
         '<select class="sel" id="sucFiltroGrupo2"><option value="">Grupo 2 (todos)</option></select>'+
+        (prevYm ? '<label class="chk-repite" title="Solo los artículos que repiten vs '+ymToLabel(prevYm)+'"><input type="checkbox" id="sucSoloRepite"> Solo repetidos</label>' : '')+
         '<span class="a-count" id="sucCount"></span>'+
       '</div>'+
       '<div class="table-wrap"><table id="sucTable"><thead><tr>'+
@@ -943,7 +946,9 @@ async function renderSucursalView(slug, container, opts){
   function draw(){
     const q = normLower($('sucSearch').value);
     const fr = $('sucFiltroRubro').value, fm = $('sucFiltroMarca').value, fg = $('sucFiltroGrupo2').value;
+    const soloRep = !!(prevYm && $('sucSoloRepite') && $('sucSoloRepite').checked);
     const filtered = conEnvio.filter(i=>{
+      if(soloRep && !prevKeys[articuloKey(i)]) return false;
       if(fr && i.rubro!==fr) return false;
       if(fm && i.marca!==fm) return false;
       if(fg && i.grupo2!==fg) return false;
@@ -967,7 +972,7 @@ async function renderSucursalView(slug, container, opts){
     $('sucCount').textContent = filtered.length+' resultado(s)';
     $('sucNoResults').style.display = filtered.length? 'none':'block';
   }
-  ['sucSearch','sucFiltroRubro','sucFiltroMarca','sucFiltroGrupo2'].forEach(id=>{
+  ['sucSearch','sucFiltroRubro','sucFiltroMarca','sucFiltroGrupo2'].concat(prevYm?['sucSoloRepite']:[]).forEach(id=>{
     $(id).addEventListener('input', draw); $(id).addEventListener('change', draw);
   });
   draw();
