@@ -781,15 +781,15 @@ const OUTLET_PORTAL_TO_MARCAS = {'gonnet':'out-gon','av-44':'out-44','calle-55':
 function isAdminSession(){ return SESSION && SESSION.rol === 'admin'; }
 function allowedSucId(){
   if(!SESSION || isAdminSession()) return null;
-  if(SESSION.rol === 'sucursal') return SUCURSAL_PORTAL_TO_MARCAS[SESSION.sucursal] || null;
+  if(SESSION.rol === 'sucursal' || SESSION.rol === 'deposito') return SUCURSAL_PORTAL_TO_MARCAS[SESSION.sucursal] || null;
   if(SESSION.rol === 'outlet') return OUTLET_PORTAL_TO_MARCAS[SESSION.outlet_id] || null;
   return null;
 }
 function canSeeSuc(id){
   if(!SESSION) return false;
-  // Sucursales y outlets ven solo SU asignación. Si el usuario no tiene
-  // sucursal mapeada acá (ej. Depósito), no ve ninguna (antes veía todas).
-  if(SESSION.rol==='sucursal' || SESSION.rol==='outlet') return id === allowedSucId();
+  // Sucursales, outlets y cuentas de depósito ven solo SU asignación. Si el
+  // usuario no tiene sucursal mapeada acá, no ve ninguna (antes veía todas).
+  if(SESSION.rol==='sucursal' || SESSION.rol==='outlet' || SESSION.rol==='deposito') return id === allowedSucId();
   return true; // admin (u otros roles con la herramienta asignada) ven todo
 }
 

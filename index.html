@@ -718,7 +718,21 @@ async function renderUsuariosView(container){
   }
 
   function draw(){
-    const keys = Object.keys(usuarios).sort((a,b)=> (usuarios[a].email||'').localeCompare(usuarios[b].email||''));
+    // Orden: primero el staff (admin/supervisor/capacitador, por email); después
+    // los locales agrupados por sucursal/outlet, y dentro de cada local la cuenta
+    // principal (sucursal/outlet) con sus sub-usuarios (deposito, puesto) debajo.
+    const ROL_ORDEN_LOCAL = {sucursal:0, outlet:0, deposito:1, puesto:2};
+    const esStaff = u => u.rol==='admin' || u.rol==='supervisor' || u.rol==='capacitador';
+    const keys = Object.keys(usuarios).sort((a,b)=>{
+      const ua=usuarios[a]||{}, ub=usuarios[b]||{};
+      const sa=esStaff(ua)?0:1, sb=esStaff(ub)?0:1;
+      if(sa!==sb) return sa-sb;
+      if(sa===0) return (ua.email||'').localeCompare(ub.email||'');
+      const la=ua.sucursal||ua.outlet_id||'zzz', lb=ub.sucursal||ub.outlet_id||'zzz';
+      if(la!==lb) return la.localeCompare(lb);
+      const ra=ROL_ORDEN_LOCAL[ua.rol]??9, rb=ROL_ORDEN_LOCAL[ub.rol]??9;
+      return (ra-rb) || (ua.email||'').localeCompare(ub.email||'');
+    });
     body.innerHTML =
       '<div class="card"><div class="table-wrap"><table class="settings-table"><thead><tr><th>Email</th><th>Rol</th><th>Sucursal/Outlet</th><th>Herramientas</th><th></th></tr></thead><tbody>'+
       keys.map(k=>{
