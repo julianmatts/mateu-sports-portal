@@ -113,8 +113,10 @@ encargado/subencargado (es la única que ve Mi Sucursal):
 - **`puesto`** (p.ej. `NN-consulta@`): quiosco del salón a la vista de clientes.
   El Portal lo redirige SIEMPRE a `ubicaciones/` (también con `?ver=bandeja`);
   `header.js` no le monta Menú/drawer y el logo va sin link; `tutorial.js` no
-  aparece. En el Buscador: solo pestaña Buscar, tarjetas solo-lectura, sin
-  perfiles, sin Salir (queda logueado). Ya no hay contraseñas en el código:
+  aparece. En el Buscador: solo pestaña Buscar, sin perfiles fijos; puede
+  **comentar** artículos eligiendo qué perfil firma (la selección se olvida al
+  cerrar la hoja). «Salir» pide el **PIN de la cuenta** antes de cerrar la
+  sesión (`salirPuesto`), así un cliente no desloguea el quiosco. Ya no hay contraseñas en el código:
 la config del `<script>` es `TOOLS` (nombre, ícono y url de cada herramienta)
 y las listas de sucursales/outlets.
 
