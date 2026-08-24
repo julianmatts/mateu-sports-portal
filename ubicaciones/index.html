@@ -386,6 +386,15 @@ table.prev th{ background:var(--bg); font-family:var(--font-c); letter-spacing:.
 .fb-item .av{ width:32px; height:32px; flex-shrink:0; font-size:13px; }
 .fb-item .info{ flex:1; min-width:0; font-size:13px; }
 .fb-item .quien{ font-size:11px; color:var(--gray-400); }
+/* selector de quién comenta (modo puesto de consulta) */
+.fb-quien-row{ display:flex; flex-wrap:wrap; gap:8px; }
+.fb-quien{
+  display:inline-flex; align-items:center; gap:7px; border:1.5px solid var(--gray-200);
+  background:#fff; border-radius:22px; padding:5px 12px 5px 5px; cursor:pointer;
+  font-family:var(--font-c); font-size:13px; font-weight:600; letter-spacing:.3px; color:var(--gray-600);
+}
+.fb-quien .av{ width:26px; height:26px; flex-shrink:0; font-size:11px; }
+.fb-quien.sel{ border-color:var(--red); color:var(--navy); background:var(--bg); }
 
 /* ============ HISTORIAL DE CONSULTAS ============ */
 .search-row{ display:flex; gap:10px; margin-bottom:12px; align-items:stretch; flex-wrap:wrap; }
@@ -949,6 +958,8 @@ let suSoloNuevos = false;  // filtro "⚡ Nuevos" de la sección SIN UBICAR
 let moduloVista = null;    // {estId, modId} para el filtro inverso
 let AUDIT = null;          // auditoría en curso {estId, marcas} (se declara acá
                            // porque setTab la resetea ya durante el arranque)
+let FB_PERFIL = null;      // modo puesto: quién firma el comentario (se elige en la
+                           // hoja de feedback y se olvida al cerrarla — puesto compartido)
 
 // Quién puede qué (se recalcula al elegir perfil / sucursal)
 function canAssign(){ return MODE==='admin' || (MODE==='sucursal' && !!PERFIL); }
@@ -982,8 +993,9 @@ const sucPath = ()=> FB + '/sucursales/' + SUC;
     entrarSucursal();
   } else if(MODE==='puesto'){
     // Modo mostrador del salón: directo a Buscar, sin selector de perfiles.
+    // Los perfiles se cargan igual: firman los comentarios de los artículos.
     SUC = SESSION.sucursal;
-    montarApp();
+    cargarPerfiles().then(montarApp);
   } else {
     montarGlobal();
   }
@@ -1938,6 +1950,8 @@ function artCardHtml(a){
   const uids = Object.keys(ubis);
   const sinUbi = !uids.length;
   const puede = canAssign();
+  // Comentar también puede el puesto de consulta (firma con un perfil de la sucursal)
+  const puedeComentar = puede || MODE==='puesto';
   // feedback del equipo sobre este artículo
   const fb = (DATA.feedback||{})[a.key];
   const fbItems = fb && fb.items ? Object.values(fb.items) : [];
@@ -1945,8 +1959,8 @@ function artCardHtml(a){
   fbItems.forEach(i=>{ porTipo[i.tipo]=(porTipo[i.tipo]||0)+1; });
   const fbChips = FEEDBACK_TIPOS.filter(t=>porTipo[t.id])
     .map(t=>'<span class="fb-chip">'+t.emoji+' '+t.label+' <b>'+porTipo[t.id]+'</b></span>').join('');
-  const fbRow = (fbChips || puede)
-    ? '<div class="fb-row">'+fbChips+(puede?'<button class="fb-add" data-fb="1">💬 Comentar</button>':'')+'</div>'
+  const fbRow = (fbChips || puedeComentar)
+    ? '<div class="fb-row">'+fbChips+(puedeComentar?'<button class="fb-add" data-fb="1">💬 Comentar</button>':'')+'</div>'
     : '';
   const nuevo = sinUbi && esNuevo(a);
   return '<div class="art-card'+(sinUbi?' sin-ubicar':'')+(nuevo?' nuevo':'')+'" data-art="'+esc(a.key)+'">'+
@@ -2071,7 +2085,10 @@ function sheetElegirModulo(artKey, estId){
   $('sheetVolver').addEventListener('click', ()=> abrirSheetAsignar(artKey));
 }
 
-function cerrarSheet(){ $('sheetOverlay').classList.remove('show'); }
+function cerrarSheet(){
+  $('sheetOverlay').classList.remove('show');
+  FB_PERFIL = null;   // puesto compartido: el próximo comentario vuelve a elegir quién firma
+}
 
 async function asignarUbicacion(artKey, estId, modId){
   cerrarSheet();
@@ -2132,9 +2149,20 @@ function abrirSheetFeedback(artKey){
     {g:'mas',   tt:'🔥 Para pedir más (va a la planilla de Pedidos)'},
     {g:'menos', tt:'🧊 Para frenar (va a la planilla de Menos Vendidos)'},
   ];
+  // En el puesto de consulta el comentario se firma con un perfil de la sucursal
+  const esPuesto = MODE==='puesto';
+  const quienes = esPuesto ? perfilesOrdenados() : [];
   $('sheetBody').innerHTML =
     '<div class="sheet-title">💬 '+esc(a.codigo)+'</div>'+
     '<div class="sheet-sub">'+esc(a.descripcion||'')+' — elegí un comentario</div>'+
+    (esPuesto
+      ? '<div class="fb-grupo">👤 ¿Quién comenta?</div>'+
+        (quienes.length
+          ? '<div class="fb-quien-row">'+quienes.map(p=>
+              '<button class="fb-quien'+(FB_PERFIL&&FB_PERFIL.id===p.id?' sel':'')+'" data-fbquien="'+esc(p.id)+'">'+
+              avatarHtml(p)+esc(p.nombre)+'</button>').join('')+'</div>'
+          : '<div class="hint">La sucursal todavía no tiene perfiles creados.</div>')
+      : '')+
     grupos.map(({g,tt})=>
       '<div class="fb-grupo '+g+'">'+tt+'</div>'+
       FEEDBACK_TIPOS.filter(t=>t.grupo===g).map(t=>
@@ -2152,18 +2180,28 @@ function abrirSheetFeedback(artKey){
         }).join('')
       : '');
   $('sheetOverlay').classList.add('show');
-  $('sheetBody').querySelectorAll('[data-fbtipo]').forEach(b=> b.addEventListener('click', ()=> agregarFeedback(artKey, b.dataset.fbtipo)));
+  $('sheetBody').querySelectorAll('[data-fbquien]').forEach(b=> b.addEventListener('click', ()=>{
+    const id = b.dataset.fbquien;
+    FB_PERFIL = PERFILES[id] ? {id, ...PERFILES[id]} : null;
+    abrirSheetFeedback(artKey);   // re-render para marcar la selección
+  }));
+  $('sheetBody').querySelectorAll('[data-fbtipo]').forEach(b=> b.addEventListener('click', ()=>{
+    if(MODE==='puesto' && !FB_PERFIL){ toast('Primero elegí quién comenta 👆'); return; }
+    agregarFeedback(artKey, b.dataset.fbtipo);
+  }));
   $('sheetBody').querySelectorAll('[data-fbdel]').forEach(b=> b.addEventListener('click', ()=> quitarFeedback(artKey, b.dataset.fbdel)));
 }
 
 async function agregarFeedback(artKey, tipo){
   const a = DATA.articulos[artKey]; if(!a) return;
-  const por = nombreOperador();
+  if(MODE==='puesto' && !FB_PERFIL) return;   // el puesto firma siempre con un perfil
+  const firmante = MODE==='puesto' ? FB_PERFIL : PERFIL;
+  const por = MODE==='puesto' ? FB_PERFIL.nombre : nombreOperador();
   const fb = (DATA.feedback||{})[artKey];
   const repetido = fb && fb.items && Object.values(fb.items).some(i=>i.tipo===tipo && i.por===por);
   if(repetido){ toast('Ya dejaste ese comentario en este artículo.'); return; }
   const id = newId('f');
-  const item = { tipo, por, avatar:(MODE==='sucursal' && PERFIL && PERFIL.avatar)||null, ts:Date.now() };
+  const item = { tipo, por, avatar:(firmante && firmante.avatar)||null, ts:Date.now() };
   // un solo PATCH multi-path: datos del artículo + el comentario nuevo
   const patch = { codigo:a.codigo, descripcion:(a.descripcion||'').slice(0,60) };
   patch['items/'+id] = item;
