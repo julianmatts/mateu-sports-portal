@@ -273,6 +273,7 @@
 
     var S = leerSesion();
     if(!S || !S.rol) return;   // sin sesión (p.ej. pantalla de login del Portal) no hay tutorial
+    if(S.rol==='puesto') return;   // puesto de consulta del salón (quiosco): sin tutorial ni botón «?»
 
     var pasos = tut.pasos.filter(function(p){ return !p.roles || p.roles.indexOf(S.rol)>=0; });
     if(!pasos.length) return;

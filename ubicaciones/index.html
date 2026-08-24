@@ -916,16 +916,21 @@ function tieneAcceso(s){
 }
 
 // MODO de la cuenta:
-//  'sucursal' → cuenta de una sucursal (opera con perfiles)
+//  'sucursal' → cuenta de una sucursal o de su depósito (opera con perfiles)
+//  'puesto'   → puesto de consulta del salón: SOLO buscar (sin perfiles ni edición)
 //  'admin'    → Juli: todas las sucursales, edición total
 //  'super'    → supervisión: todas las sucursales, solo consulta
 let MODE = null;
 if(SESSION){
   const email = (SESSION.email||'').toLowerCase();
   if(SESSION.rol==='admin') MODE='admin';
-  else if(SESSION.rol==='sucursal' && SESSION.sucursal) MODE='sucursal';
+  else if((SESSION.rol==='sucursal' || SESSION.rol==='deposito') && SESSION.sucursal) MODE='sucursal';
+  else if(SESSION.rol==='puesto' && SESSION.sucursal) MODE='puesto';
   else if(SUPERVISION_EMAILS.includes(email)) MODE='super';
 }
+// Cuenta operativa del depósito: asigna ubicaciones y carga el stock del día,
+// pero NO administra perfiles (eso queda para el encargado y el admin).
+const ES_DEPOSITO = !!(SESSION && SESSION.rol==='deposito');
 
 /* ============================================================
    ESTADO
@@ -947,9 +952,13 @@ let AUDIT = null;          // auditoría en curso {estId, marcas} (se declara ac
 
 // Quién puede qué (se recalcula al elegir perfil / sucursal)
 function canAssign(){ return MODE==='admin' || (MODE==='sucursal' && !!PERFIL); }
-function canManage(){ return MODE==='admin' || (MODE==='sucursal' && PERFIL && PERFIL.rol==='encargado'); }
+// Cargar stock del día + editar estanterías: admin, perfil encargado o cuenta de depósito.
+function canStock(){ return MODE==='admin' || (MODE==='sucursal' && (ES_DEPOSITO || (PERFIL && PERFIL.rol==='encargado'))); }
+// Administrar perfiles: SOLO admin o perfil encargado con cuenta de sucursal.
+function canManage(){ return MODE==='admin' || (MODE==='sucursal' && !ES_DEPOSITO && PERFIL && PERFIL.rol==='encargado'); }
 function nombreOperador(){
   if(MODE==='sucursal' && PERFIL) return PERFIL.nombre;
+  if(MODE==='puesto') return 'Puesto de consulta';
   return (SESSION && SESSION.email) || '—';
 }
 
@@ -971,6 +980,10 @@ const sucPath = ()=> FB + '/sucursales/' + SUC;
   if(MODE==='sucursal'){
     SUC = SESSION.sucursal;
     entrarSucursal();
+  } else if(MODE==='puesto'){
+    // Modo mostrador del salón: directo a Buscar, sin selector de perfiles.
+    SUC = SESSION.sucursal;
+    montarApp();
   } else {
     montarGlobal();
   }
@@ -1109,6 +1122,8 @@ function montarApp(){
   }
   // «Perfiles» vive en la barra superior (entre el perfil activo y Mostrador), solo para quien administra
   $('btnPerfiles').style.display = canManage() ? 'inline-flex' : 'none';
+  // El puesto de consulta queda siempre logueado (quiosco): sin botón Salir.
+  $('btnSalir').style.display = MODE==='puesto' ? 'none' : '';
   $('app').style.display='block';
   const ids = renderTabs();
   // si la vista activa ya no corresponde (p.ej. Perfiles al pasar de encargado a vendedor), a Buscar
@@ -1119,11 +1134,14 @@ function montarApp(){
 
 function renderTabs(){
   const tabs = [];
-  if(MODE!=='sucursal') tabs.push({id:'resumen', label:'Resumen'});
+  if(MODE==='admin' || MODE==='super') tabs.push({id:'resumen', label:'Resumen'});
   if(SUC){
     tabs.push({id:'buscar', label:'Buscar', badge:true});
-    tabs.push({id:'estanterias', label:'Estanterías'});
-    tabs.push({id:'actividad', label:'Actividad'});
+    // El puesto de consulta del salón solo busca: sin estanterías ni actividad.
+    if(MODE!=='puesto'){
+      tabs.push({id:'estanterias', label:'Estanterías'});
+      tabs.push({id:'actividad', label:'Actividad'});
+    }
   }
   $('tabs').innerHTML = tabs.map(t=>
     '<button class="tab" data-tab="'+t.id+'">'+t.label+
@@ -1247,7 +1265,7 @@ function renderVistaActiva(){
 }
 
 function renderStatusbar(){
-  $('btnCargarStock').style.display = (SUC && canManage()) ? 'inline-flex' : 'none';
+  $('btnCargarStock').style.display = (SUC && canStock()) ? 'inline-flex' : 'none';
   if(!SUC){ $('stCarga').innerHTML=''; renderSyncLabel(); return; }
   const m = DATA.meta || {};
   if(!m.ultimaCargaStock){
@@ -1371,7 +1389,7 @@ function renderBuscar(){
   $('cargaBox').innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">'+
     '<button class="btn btn-outline btn-sm" id="btnExportar" title="Descargar la planilla completa">⬇ Excel</button></div>';
   $('btnExportar').addEventListener('click', exportarExcel);
-  $('btnCargarStock').style.display = (SUC && canManage()) ? 'inline-flex' : 'none';
+  $('btnCargarStock').style.display = (SUC && canStock()) ? 'inline-flex' : 'none';
 
   renderSinUbicar();
   renderResultados();
@@ -1457,7 +1475,7 @@ function renderResultados(){
     const m = DATA.meta||{};
     cont.innerHTML = '<div class="empty">'+(m.ultimaCargaStock
       ? 'No hay artículos cargados.'
-      : (canManage() ? 'Todavía no cargaste el stock de hoy.<br>Subí el Excel para empezar.' : 'Todavía no se cargó el stock de esta sucursal.'))+'</div>';
+      : (canStock() ? 'Todavía no cargaste el stock de hoy.<br>Subí el Excel para empezar.' : 'Todavía no se cargó el stock de esta sucursal.'))+'</div>';
     return;
   }
   if(!q){
@@ -2008,7 +2026,7 @@ function abrirSheetAsignar(artKey){
   const a = DATA.articulos[artKey]; if(!a) return;
   const ests = estanteriasOrdenadas();
   if(!ests.length){
-    toast(canManage() ? 'Primero creá estanterías en la pestaña Estanterías.' : 'No hay estanterías creadas. Pedile al encargado que las cargue.');
+    toast(canStock() ? 'Primero creá estanterías en la pestaña Estanterías.' : 'No hay estanterías creadas. Pedile al encargado que las cargue.');
     return;
   }
   const {pref, sugs} = sugerirUbicaciones(artKey);
@@ -2588,7 +2606,7 @@ function cerrarModal(){ $('modalOverlay').classList.remove('show'); }
 function renderEstanterias(){
   const cont = $('view-estanterias');
   const ests = estanteriasOrdenadas();
-  const manage = canManage();
+  const manage = canStock();   // estanterías las arma quien opera el depósito (encargado o cuenta depósito)
   const counts = contarUbicados();
   let html = '';
   if(manage) html += '<button class="btn btn-navy btn-block" id="btnNuevaEst" style="margin-bottom:12px">+ Nueva estantería</button>';

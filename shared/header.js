@@ -134,15 +134,31 @@
     st.textContent = CSS;
     document.head.appendChild(st);
 
+    // Puesto de consulta del salón (quiosco a la vista de clientes): header
+    // pelado — sin botón Menú, sin drawer y con el logo SIN link al Portal.
+    var S0 = leerSesion() || {};
+    var esPuesto = S0.rol === 'puesto';
+
     // ---- barra superior ----
     var top = document.createElement('div');
     top.className = 'msh-top';
     top.innerHTML = '<div class="msh-top-in">'
-      +'<button class="msh-menu" id="mshMenuBtn" aria-haspopup="true" aria-expanded="false" aria-controls="mshDrawer"><span class="msh-bars">☰</span> Menú</button>'
-      +'<a class="msh-logo" href="'+ROOT+'" title="Volver al Portal"><img src="'+LOGO+'" alt="Mateu Sports"></a>'
+      +(esPuesto ? '<span></span>'
+        : '<button class="msh-menu" id="mshMenuBtn" aria-haspopup="true" aria-expanded="false" aria-controls="mshDrawer"><span class="msh-bars">☰</span> Menú</button>')
+      +(esPuesto ? '<span class="msh-logo"><img src="'+LOGO+'" alt="Mateu Sports"></span>'
+        : '<a class="msh-logo" href="'+ROOT+'" title="Volver al Portal"><img src="'+LOGO+'" alt="Mateu Sports"></a>')
       +'<span class="msh-cal"></span>'
       +'</div>';
     document.body.insertBefore(top, document.body.firstChild);
+
+    if(esPuesto){
+      // sin drawer: solo publicar --msh-h y montar el calendario
+      var setH0 = function(){ document.documentElement.style.setProperty('--msh-h', top.offsetHeight+'px'); };
+      setH0();
+      window.addEventListener('resize', setH0);
+      montarCalendario();
+      return;
+    }
 
     // ---- drawer ----
     var scrim = document.createElement('div');
@@ -165,8 +181,8 @@
     document.body.appendChild(dr);
 
     // ---- sesión → usuario + herramientas ----
-    var S = leerSesion() || {};
-    var ROLE = {admin:'Administrador',sucursal:'Sucursal',outlet:'Outlet',supervisor:'Supervisor'};
+    var S = S0;
+    var ROLE = {admin:'Administrador',sucursal:'Sucursal',outlet:'Outlet',supervisor:'Supervisor',deposito:'Depósito',puesto:'Puesto de consulta'};
     var esGerencia = S.rol==='admin' || S.rol==='supervisor';
     // slug del Portal -> legible ("diagonal" -> "Diagonal", "calle-49" -> "Calle 49")
     var bonito = function(s){ return s ? String(s).split('-').map(function(p){ return p ? p.charAt(0).toUpperCase()+p.slice(1) : p; }).join(' ') : ''; };
@@ -205,6 +221,10 @@
     window.addEventListener('resize', setH);
 
     // ---- calendario retail (si el módulo no lo cargó ya) ----
+    montarCalendario();
+  }
+
+  function montarCalendario(){
     if(CFG.calendario!==false && !window.CALENDARIO_RETAIL_CONFIG){
       window.CALENDARIO_RETAIL_CONFIG = { mount:'.msh-cal' };
       var lk = document.createElement('link');

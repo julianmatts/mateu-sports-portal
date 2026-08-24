@@ -428,7 +428,7 @@ const TOOLS = {
   capacitaciones:{ name:'Capacitaciones',         desc:'Academia de Ventas: programas, cursos, certificados y ranking del equipo.', icon:'🎓', url:'./capacitaciones/', red:false },
 };
 
-const ROLE_LABEL = { admin:'Administrador', supervisor:'Supervisor', capacitador:'Capacitador', sucursal:'Sucursal', outlet:'Outlet' };
+const ROLE_LABEL = { admin:'Administrador', supervisor:'Supervisor', capacitador:'Capacitador', sucursal:'Sucursal', outlet:'Outlet', deposito:'Depósito', puesto:'Puesto de consulta' };
 const SESSION_KEY = 'mateu_portal_session';
 
 /* ============================================================
@@ -492,6 +492,15 @@ function herramientasEfectivas(rol, herramientas){
   if(rol==='capacitador'){
     if(!h.includes('capacitaciones')) h.push('capacitaciones');
   }
+  // Cuenta operativa del depósito de una sucursal: opera el Buscador (asignar
+  // ubicaciones + cargar stock) y lo que se le asigne, pero NUNCA Mi Sucursal
+  // (indicadores: ventas y objetivos son solo del encargado/subencargado).
+  if(rol==='deposito'){
+    if(!h.includes('ubicaciones')) h.push('ubicaciones');
+    return h.filter(k=>k!=='indicadores');
+  }
+  // Puesto de consulta del salón (quiosco a la vista de clientes): SOLO el Buscador.
+  if(rol==='puesto') return ['ubicaciones'];
   return h;
 }
 
@@ -541,6 +550,12 @@ function render(session){
   // del módulo (?ver=bandeja) no se los redirige, así pueden leer/responder mensajes.
   const ver = new URLSearchParams(location.search).get('ver');
   const verBandeja = ver==='bandeja';
+  // El puesto de consulta del salón vive SIEMPRE dentro del Buscador (modo
+  // mostrador): nunca ve la grilla de tiles ni la bandeja.
+  if(session && session.rol==='puesto'){
+    location.replace('./ubicaciones/');
+    return;
+  }
   if(session && (session.rol==='sucursal' || session.rol==='outlet') && !verBandeja){
     location.replace('./indicadores/');
     return;
@@ -717,9 +732,9 @@ async function renderUsuariosView(container){
       '<div class="card"><div class="card-title">Nuevo usuario</div><div class="form-grid">'+
         '<div class="fld"><label>Email</label><input id="nuEmail" type="email"></div>'+
         '<div class="fld"><label>Rol</label><select class="sel" id="nuRol" style="width:100%">'+
-          '<option value="admin">admin</option><option value="supervisor">supervisor</option><option value="capacitador">capacitador</option><option value="sucursal">sucursal</option><option value="outlet">outlet</option>'+
+          '<option value="admin">admin</option><option value="supervisor">supervisor</option><option value="capacitador">capacitador</option><option value="sucursal">sucursal</option><option value="outlet">outlet</option><option value="deposito">deposito (opera el Buscador, sin Mi Sucursal)</option><option value="puesto">puesto (consulta del salón, solo buscar)</option>'+
         '</select></div>'+
-        '<div class="fld"><label>Sucursal (si rol=sucursal)</label><select class="sel" id="nuSucursal" style="width:100%"><option value="">—</option>'+SUCURSALES.map(s=>'<option value="'+s.slug+'">'+s.nombre+'</option>').join('')+'</select></div>'+
+        '<div class="fld"><label>Sucursal (si rol=sucursal/deposito/puesto)</label><select class="sel" id="nuSucursal" style="width:100%"><option value="">—</option>'+SUCURSALES.map(s=>'<option value="'+s.slug+'">'+s.nombre+'</option>').join('')+'</select></div>'+
         '<div class="fld"><label>Outlet (si rol=outlet)</label><select class="sel" id="nuOutlet" style="width:100%"><option value="">—</option>'+OUTLETS_LIST.map(o=>'<option value="'+o.id+'">'+o.nombre+'</option>').join('')+'</select></div>'+
         '<div class="fld fld-full"><label>Sucursales que supervisa (si rol=supervisor)</label><select class="sel" multiple size="5" id="nuSupSuc" style="width:100%">'+LOCALES_SUP.map(l=>'<option value="'+l.id+'">'+l.nombre+'</option>').join('')+'</select></div>'+
         '<div class="fld fld-full"><label>Herramientas</label><select class="sel" multiple size="6" id="nuHerramientas" style="width:100%">'+HERRAMIENTAS_LIST.map(h=>'<option value="'+h.id+'">'+h.nombre+'</option>').join('')+'</select></div>'+
@@ -756,7 +771,7 @@ async function renderUsuariosView(container){
       if(!email){ alert('Falta el email.'); return; }
       const herramientas = Array.from($('nuHerramientas').selectedOptions).map(o=>o.value);
       const rec = {email, pin:'1111', rol, herramientas};
-      if(rol==='sucursal') rec.sucursal = $('nuSucursal').value;
+      if(rol==='sucursal' || rol==='deposito' || rol==='puesto') rec.sucursal = $('nuSucursal').value;
       if(rol==='outlet') rec.outlet_id = $('nuOutlet').value;
       if(rol==='supervisor') rec.sucursales = Array.from($('nuSupSuc').selectedOptions).map(o=>o.value);
       const key = firebaseKeyFromEmail(email);

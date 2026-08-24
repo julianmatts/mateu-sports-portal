@@ -99,8 +99,22 @@ Config en Cloudflare Pages: build command vacío, output directory = raíz (`/`)
 Login centralizado **blando** (sin Firebase Auth; ordena accesos, NO es
 seguridad real): email + PIN de 4 dígitos validado contra
 `discontinuos-mateu-default-rtdb/usuarios`. Cada usuario tiene `rol`
-(`admin` | `sucursal` | `outlet`), su `sucursal`/`outlet_id` y la lista
-`herramientas`, que define qué tiles ve. Ya no hay contraseñas en el código:
+(`admin` | `sucursal` | `outlet` | `supervisor` | `capacitador` | `deposito` | `puesto`),
+su `sucursal`/`outlet_id` y la lista `herramientas`, que define qué tiles ve.
+
+**Roles operativos de sucursal (24/08/2026)** — la cuenta `sucursal` queda para
+encargado/subencargado (es la única que ve Mi Sucursal):
+- **`deposito`** (p.ej. `NN-deposito@`): opera el Buscador de Artículos con todo
+  (asignar/desasignar, cargar stock del día, editar estanterías) + las herramientas
+  que se le asignen, pero **NUNCA `indicadores`** (se filtra en
+  `herramientasEfectivas` y el propio módulo lo rebota). NO administra perfiles
+  (`canManage` false; cargar stock/estanterías usa `canStock`). Su home es la
+  grilla del Portal.
+- **`puesto`** (p.ej. `NN-consulta@`): quiosco del salón a la vista de clientes.
+  El Portal lo redirige SIEMPRE a `ubicaciones/` (también con `?ver=bandeja`);
+  `header.js` no le monta Menú/drawer y el logo va sin link; `tutorial.js` no
+  aparece. En el Buscador: solo pestaña Buscar, tarjetas solo-lectura, sin
+  perfiles, sin Salir (queda logueado). Ya no hay contraseñas en el código:
 la config del `<script>` es `TOOLS` (nombre, ícono y url de cada herramienta)
 y las listas de sucursales/outlets.
 
