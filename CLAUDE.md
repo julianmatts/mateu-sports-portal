@@ -317,10 +317,39 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
 ## Evaluaciones de Supervisor
 
 `evaluaciones/` es un `index.html` self-contained **igual que el resto**: lee/escribe
-a Firebase por REST (base `evaluaciones-mateu`). Carga semanal operativa+actitudinal
+a Firebase por REST (base `evaluaciones-mateu`). Carga operativa+actitudinal
 por sucursal, con ranking, gráficos, seguimiento de puntos de mejora y vista de
 encargado. Se evaluó pasarlo por Pages Functions + D1 para tener permisos en el
 server, pero Juli eligió mantenerlo consistente con el resto (seguridad blanda).
+
+- **Dos tipos de evaluación (24/08/2026)**: la **visita SEMANAL** (el detalle de cada
+  recorrida de Cristian) y la **evaluación MENSUAL, que es la oficial** — la que cuenta
+  para la nota final de la sucursal. El selector «Tipo» está en Ranking, formulario,
+  Gráficos y vista de encargado; **la vista por defecto es la mensual**. La mensual se
+  nutre de las semanales: el form muestra las visitas del mes (tarjetas con nota y
+  «Ver»), en cada ítem los valores semana a semana con una **sugerencia**
+  (`E.sugerirMensual`: promedio de puntos → valor más cercano, en `lib/evaluacion.js`
+  con tests) y un botón «⤓ Precargar ítems desde las semanas» que llena los vacíos.
+  Una semana ISO pertenece al mes de su **jueves** (`mesDeSemana`). Árbol: la mensual
+  va en `evaluaciones_mensuales/<suc>__<YYYY-MM>` (campo `mes`; mismo formato que la
+  semanal); las semanales siguen en `evaluaciones/<suc>__<semana>`. Los
+  **puntos_mejora nacen SOLO de las semanales** (circuito operativo); la mensual
+  guarda sus planes en sus items.
+- **Notificaciones por la Bandeja** (directos `mensajes-mateu`, best-effort): al
+  **guardar una evaluación** (estado enviada) les llega a gerencia
+  (`GERENCIA_MAILS`), al supervisor (`SUPERVISOR_MAIL` = cristian.campion@) y a la
+  cuenta de la sucursal evaluada (se resuelve con
+  `discontinuos-mateu/usuarios` → `emailsDeSucursal(slug)`); cuando el encargado
+  **marca resuelto un punto** o deja un **descargo**, le llega a Cristian.
+- **Descargo del encargado en los puntos de mejora**: botón «💬 Agregar descargo» en
+  su vista (ej.: "no tenemos insumos de limpieza") → `puntos_mejora/<id>/comentario`
+  (+ por/en); el supervisor lo ve en el form y en el detalle.
+- **Campana flotante compartida**: `shared/notificaciones.js` (la misma campana del
+  Portal/Indicadores como componente del shell: se inyecta sola, no hace nada si la
+  página ya tiene `#notifWidget` o no hay sesión). Se incluye con una línea en el
+  `<head>` **antes de `tutorial.js`** (así el «?» se corre arriba de la campana):
+  `<script src="../shared/notificaciones.js" defer></script>`. Hoy la incluye
+  `evaluaciones/`; cualquier módulo puede sumarla con esa línea.
 
 - **Cálculo** (`lib/evaluacion.js`): única fuente de verdad del puntaje/nota
   (Bien 10 · Regular 5 · Mal 0; Operativa/50 + Actitudinal/50; A≥80 B≥60 C≥40 D<40).

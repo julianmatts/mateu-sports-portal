@@ -115,11 +115,11 @@
     ]},
 
     evaluaciones: { icono:'📋', nombre:'Evaluaciones de Supervisor', pasos:[
-      { ic:'📋', t:'Qué es', d:'La evaluación semanal de cada sucursal: parte operativa y parte actitudinal (50 + 50 puntos, nota de A a D).' },
-      { ic:'📝', t:'Cargar', d:'Elegí sucursal y semana y marcá cada ítem (Bien · Regular · Mal); el puntaje y la nota se calculan solos.', roles:['admin','supervisor'] },
-      { ic:'🏆', t:'Ranking y gráficos', d:'La comparativa entre sucursales y la evolución de cada una en el tiempo.' },
-      { ic:'🔧', t:'Puntos de mejora', d:'Dejá registrado qué tiene que corregir cada sucursal y hacé el seguimiento hasta resolverlo.' },
-      { ic:'👀', t:'Vista de encargado', d:'Cada sucursal entra con su cuenta y ve sus propias evaluaciones y pendientes.', roles:['sucursal','outlet'] }
+      { ic:'📋', t:'Qué es', d:'Dos tipos: la visita SEMANAL (el detalle de cada recorrida) y la evaluación MENSUAL, que es la oficial de la sucursal. Parte operativa + actitudinal (50 + 50 puntos, nota de A a D).' },
+      { ic:'📝', t:'Cargar', d:'Elegí tipo, sucursal y período y marcá cada ítem (Bien · Regular · Mal); el puntaje y la nota se calculan solos. En la mensual ves lo que marcaste semana a semana y podés precargar desde las visitas.', roles:['admin','supervisor'] },
+      { ic:'🏆', t:'Ranking y gráficos', d:'La comparativa entre sucursales y la evolución de cada una en el tiempo, por mes (oficial) o por semana.' },
+      { ic:'🔧', t:'Puntos de mejora', d:'Dejá registrado qué tiene que corregir cada sucursal y hacé el seguimiento hasta resolverlo. Cuando el encargado lo marca resuelto o deja un descargo, te llega el aviso por la Bandeja.' },
+      { ic:'👀', t:'Vista de encargado', d:'Cada sucursal entra con su cuenta y ve su evaluación mensual, las visitas semanales y sus pendientes; puede marcar resuelto y dejar un descargo (ej.: faltan insumos).', roles:['sucursal','outlet'] }
     ]},
 
     barrida: { icono:'🧹', nombre:'Análisis de Reserva Depósito Central', pasos:[
