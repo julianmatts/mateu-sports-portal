@@ -397,39 +397,51 @@ table.prev th{ background:var(--bg); font-family:var(--font-c); letter-spacing:.
 .fb-quien.sel{ border-color:var(--red); color:var(--navy); background:var(--bg); }
 
 /* ============ MODO PUESTO (quiosco del salón, a la vista de clientes) ============
-   Pantalla vidriera: buscador protagonista centrado y nada operativo alrededor.
-   Todo cuelga de body.puesto: no toca los otros modos. */
+   Vidriera navy con la misma estética que el selector de perfiles tipo Netflix
+   (hace de protector de pantalla con la marca). Todo cuelga de body.puesto:
+   no toca los otros modos. */
+body.puesto{ background:var(--navy); }
 body.puesto #statusbar, body.puesto #tabs, body.puesto .search-row .su-head,
 body.puesto #suTools, body.puesto #suBody, body.puesto #nuevosBanner{ display:none !important; }
 body.puesto .main{ max-width:880px; margin:0 auto; }
-.puesto-hero{ text-align:center; padding:36px 8px 22px; }
+/* header del módulo fundido con el fondo */
+body.puesto .hdr{ background:transparent; border-bottom:none; }
+body.puesto .hdr-title .t{ color:#fff; }
+body.puesto .hdr-title .s{ font-size:12px; color:rgba(255,255,255,.5); }
+body.puesto .btn-salir{ background:transparent; border-color:rgba(255,255,255,.22); color:rgba(255,255,255,.5); }
+body.puesto .btn-salir:hover{ background:#c0261f; border-color:#c0261f; color:#fff; }
+/* hero: logo + título, calcado del selector de perfiles */
+.puesto-hero{ text-align:center; padding:42px 8px 28px; }
+.puesto-hero .ph-logo{ height:48px; filter:brightness(0) invert(1); margin-bottom:16px; }
 .puesto-hero .ph-t{
-  font-family:var(--font-d); font-size:clamp(34px,6vw,52px); letter-spacing:1.5px;
-  color:var(--navy); line-height:1;
+  font-family:var(--font-d); font-size:clamp(34px,6vw,54px); letter-spacing:2px;
+  color:#fff; line-height:1;
 }
-.puesto-hero .ph-t b{ color:var(--red); font-weight:400; }
+.puesto-hero .ph-t b{ color:var(--red-soft); font-weight:400; }
 .puesto-hero .ph-s{
-  font-family:var(--font-c); font-size:16px; font-weight:600; letter-spacing:1px;
-  text-transform:uppercase; color:var(--gray-400); margin-top:10px;
+  font-family:var(--font-c); font-size:15px; font-weight:600; letter-spacing:2px;
+  text-transform:uppercase; color:rgba(255,255,255,.5); margin-top:12px;
 }
 body.puesto .search-row{ justify-content:center; }
 body.puesto .search-input{
   min-height:76px; font-size:24px; border-radius:16px; padding:18px 60px 18px 26px;
-  box-shadow:0 12px 34px rgba(11,21,39,.12);
+  border-color:transparent; box-shadow:0 18px 44px rgba(0,0,0,.35);
 }
-body.puesto .hist-btn{ width:76px; border-radius:16px; font-size:26px; }
+body.puesto .search-input:focus{ border-color:var(--red); }
+body.puesto .hist-btn{
+  width:76px; border-radius:16px; font-size:26px;
+  background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.25); color:#fff;
+}
+body.puesto .hist-btn:hover{ border-color:#fff; }
 body.puesto #searchResults .hint{
-  font-size:16px; font-family:var(--font-c); font-weight:600; letter-spacing:.6px;
-  color:var(--gray-400); padding:26px 0;
+  font-size:15px; font-family:var(--font-c); font-weight:600; letter-spacing:2px;
+  text-transform:uppercase; color:rgba(255,255,255,.45); padding:30px 0; text-align:center;
 }
-body.puesto .empty{ font-size:16px; padding:40px 10px; }
-body.puesto .art-card{ border-radius:12px; padding:15px 18px; margin-bottom:10px; }
+body.puesto .empty{ font-size:16px; padding:44px 10px; color:rgba(255,255,255,.55); }
+body.puesto .art-card{ border-radius:12px; padding:15px 18px; margin-bottom:10px; border-color:transparent; }
 body.puesto .art-desc{ font-size:16px; }
 body.puesto .art-cod{ font-size:17px; }
 body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
-body.puesto .hdr-title .s{ font-size:12px; }
-body.puesto .btn-salir{ opacity:.55; }
-body.puesto .btn-salir:hover{ opacity:1; }
 
 /* ============ HISTORIAL DE CONSULTAS ============ */
 .search-row{ display:flex; gap:10px; margin-bottom:12px; align-items:stretch; flex-wrap:wrap; }
@@ -1453,8 +1465,9 @@ function bumpRev(){ patchJSON(sucPath()+'/meta.json', {rev:Date.now()}).catch(()
    ============================================================ */
 function renderBuscar(){
   if(MODE==='puesto'){
-    // vidriera del salón: bienvenida grande en lugar del botón de export
+    // vidriera del salón: logo + bienvenida grande en lugar del botón de export
     $('cargaBox').innerHTML = '<div class="puesto-hero">'+
+      '<img class="ph-logo" src="'+LOGO+'" alt="Mateu Sports">'+
       '<div class="ph-t">¿QUÉ ARTÍCULO <b>BUSCÁS</b>?</div>'+
       '<div class="ph-s">Escribí el nombre o el código, o escaneá la etiqueta</div></div>';
   } else {
@@ -1556,10 +1569,26 @@ function renderResultados(){
     cont.innerHTML = '<div class="hint" style="text-align:center;padding:14px 0">'+todos.length+' artículos en el depósito. Buscá por código o descripción.</div>';
     return;
   }
-  const res = todos.filter(a=>matchArticulo(a,q))
+  let res = todos.filter(a=>matchArticulo(a,q))
     .sort((a,b)=>(a.codigo||'').localeCompare(b.codigo||''));
+  // Lectora de mano: la etiqueta del sistema codifica CÓDIGO + símbolo + TALLE
+  // ("MAT375$M"). Si lo escaneado no matchea tal cual, se reintenta con el
+  // código base (lo anterior al símbolo) y se muestra el artículo completo.
+  let notaScan = '';
+  if(!res.length && /[$%&|¬°#*+]/.test(q)){
+    const base = q.split(/[$%&|¬°#*+]/)[0].trim();
+    if(base.length>=3){
+      res = todos.filter(a=>matchArticulo(a,base))
+        .sort((a,b)=>(a.codigo||'').localeCompare(b.codigo||''));
+      if(res.length){
+        const talle = q.slice(base.length+1).trim();
+        notaScan = '<div class="hint" style="text-align:center;margin-bottom:8px">Escaneado: <b>'+esc(base.toUpperCase())+'</b>'+
+          (talle?' · talle '+esc(talle.toUpperCase()):'')+'</div>';
+      }
+    }
+  }
   cont.innerHTML = res.length
-    ? res.slice(0,100).map(a=>artCardHtml(a)).join('') + (res.length>100?'<div class="hint" style="text-align:center">Mostrando 100 de '+res.length+' resultados.</div>':'')
+    ? notaScan + res.slice(0,100).map(a=>artCardHtml(a)).join('') + (res.length>100?'<div class="hint" style="text-align:center">Mostrando 100 de '+res.length+' resultados.</div>':'')
     : '<div class="empty">Sin resultados para “'+esc(searchQuery)+'”.</div>';
   wireArtCards(cont, {consulta:true});
   // resultado único con código "completo" tipeado/escaneado → se registra solo
