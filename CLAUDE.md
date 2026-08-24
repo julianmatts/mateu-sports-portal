@@ -15,7 +15,7 @@ mateu-sports-portal/
 ├── index.html          # EL PORTAL: login (email+PIN contra Firebase) + tiles a cada herramienta
 ├── netlify.toml        # leftover de cuando se usaba Netlify; ya no aplica, no usar de referencia
 ├── condiciones/        # Condiciones Comerciales (localStorage)
-├── equipo/             # Área de Producto / transferencias (localStorage)
+├── equipo/             # Área de Producto: F8s de David/Daniel (Firebase turnero-mateu, nodo equipo/); reseteado a cero 24/08/2026
 ├── turnero/            # Turnero de proveedores (Firebase + EmailJS)
 ├── marcas/             # Asignación de Marcas (Firebase REST)
 ├── gestion-stock/      # Discontinuos por sucursal + Reporte Mensual + Meses de Stock
@@ -79,7 +79,8 @@ propio: ahí NO se incluye.**
   `regalias/` guarda su ledger de acumuladores por temporada: hoy en
   **localStorage** con `FIREBASE_DB_URL` como placeholder; cuando Juli cree
   la base a mano (p.ej. `regalias-mateu`) y pegue la URL, migra solo a Firebase.
-  `condiciones/` y `equipo/` usan **localStorage** (no tienen backend).
+  `condiciones/` usa **localStorage** (no tiene backend). `equipo/` guarda los
+  F8s y el control manual en la base del turnero (`turnero-mateu`, nodo `equipo/`).
   `evaluaciones/` escribe a su propia base Firebase `evaluaciones-mateu`.
   No migrar Firebase a otra cosa sin que Juli lo pida: es la opción correcta
   para los datos multi-usuario en tiempo real.
