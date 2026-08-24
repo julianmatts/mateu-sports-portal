@@ -219,4 +219,21 @@
 
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', montar);
   else montar();
+
+  /* Mantener el service worker del Portal al día desde cualquier módulo.
+     El registro original vive en el index raíz, pero sucursal/gerencia son
+     redirigidas a Indicadores antes del evento load: sin esto, el sw.js nuevo
+     recién se descargaba cuando Chrome revisaba por su cuenta (cada 24 h) y
+     mientras tanto la restauración de sesión servía páginas viejas. */
+  if('serviceWorker' in navigator){
+    try{
+      var swURL = ROOT + 'sw.js';
+      var refresco = function(reg){ if(reg && reg.update) reg.update().catch(function(){}); };
+      navigator.serviceWorker.register(swURL).then(function(reg){
+        refresco(reg);
+        document.addEventListener('visibilitychange', function(){ if(!document.hidden) refresco(reg); });
+        window.addEventListener('focus', function(){ refresco(reg); });
+      }).catch(function(){});
+    }catch(e){}
+  }
 })();

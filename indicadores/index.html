@@ -4533,6 +4533,21 @@ function iniciarNotif(){
 
 boot();
 iniciarNotif();
+
+/* Mantener el service worker del Portal al día: esta es la pantalla de entrada real
+   (el Portal redirige acá antes de su propio chequeo en load). Sin esto, el sw.js
+   nuevo recién bajaba cuando Chrome revisaba por su cuenta (cada 24 h) y la
+   restauración de sesión mostraba la versión vieja unos segundos. */
+if('serviceWorker' in navigator){
+  try{
+    const swRefresco = reg => { if(reg && reg.update) reg.update().catch(()=>{}); };
+    navigator.serviceWorker.register('../sw.js').then(reg=>{
+      swRefresco(reg);
+      document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) swRefresco(reg); });
+      window.addEventListener('focus', ()=>swRefresco(reg));
+    }).catch(()=>{});
+  }catch(e){}
+}
 </script>
 </body>
 </html>

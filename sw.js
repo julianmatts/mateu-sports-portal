@@ -77,6 +77,9 @@ self.addEventListener('fetch', (e) => {
       // HTML siempre revalidado contra el servidor (nunca del cache HTTP sin preguntar)
       // (con la URL: un Request con mode 'navigate' no se puede reconstruir con init)
       const fresh = await (esNav ? fetch(req.url, { cache: 'no-cache' }) : fetch(req));
+      // una respuesta redirigida no puede responder una navegación (redirect mode manual):
+      // devolver el redirect para que el navegador re-navegue a la URL final
+      if (esNav && fresh && fresh.redirected) return Response.redirect(fresh.url, 302);
       if (fresh && fresh.status === 200 && fresh.type === 'basic') {
         const c = await caches.open(CACHE);
         c.put(req, fresh.clone());
