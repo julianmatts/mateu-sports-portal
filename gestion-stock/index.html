@@ -205,6 +205,9 @@ tr.gs-mia:hover td{background:#eef4ff!important}
 .gs-bar-val{width:56px;text-align:right;font-weight:700;font-size:13px;color:var(--navy);flex-shrink:0}
 .td-num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .td-code{font-family:monospace;font-weight:700;color:var(--navy);white-space:nowrap}
+.td-ubic{white-space:nowrap;font-size:12.5px}
+.td-ubic .ubic-sin{color:var(--warn);font-weight:700}
+.td-ubic .ubic-cargando{color:#9aa3b2}
 .no-results{padding:34px;text-align:center;color:var(--muted);font-style:italic}
 .sub-section-title{font-family:var(--font-c);font-size:13px;font-weight:700;letter-spacing:1px;
   text-transform:uppercase;color:var(--navy-mid);margin:16px 0 8px;padding-bottom:4px;border-bottom:2px solid var(--border)}
@@ -770,6 +773,72 @@ function logDescarga(tipoExport, mesExportado){
 }
 
 /* ============================================================
+   ÚLTIMA UBICACIÓN EN EL DEPÓSITO (Buscador de Artículos)
+   Cruza el artículo discontinuo con ubicaciones-mateu (misma base
+   que ubicaciones/) para mostrar la última ubicación asignada en
+   el depósito de la sucursal. Solo lectura; cache por sucursal.
+   ============================================================ */
+const UBIC_FB = 'https://ubicaciones-mateu-default-rtdb.firebaseio.com';
+const UBIC_CACHE = {};   // slug -> {porCodigo, porItem} | null (sin datos / error)
+
+// Misma normalización de clave que fbKey() del Buscador de Artículos.
+function ubicKey(codigo){ return String(codigo||'').trim().replace(/[.#$\/\[\]]/g,'-'); }
+
+async function getUbicacionesSucursal(slug){
+  if(UBIC_CACHE[slug] !== undefined) return UBIC_CACHE[slug];
+  try{
+    const base = UBIC_FB+'/sucursales/'+slug;
+    const [arts, ests] = await Promise.all([
+      fetchJSON(base+'/articulos.json'),
+      fetchJSON(base+'/estanterias.json').catch(()=>null)
+    ]);
+    if(!arts || !Object.keys(arts).length){ UBIC_CACHE[slug] = null; return null; }
+    const porCodigo = {}, porItem = {};
+    Object.keys(arts).forEach(k=>{
+      const a = arts[k] || {};
+      let ult = null;
+      Object.keys(a.ubicaciones||{}).forEach(uid=>{
+        const u = a.ubicaciones[uid];
+        if(u && (!ult || (u.ts||0) > (ult.ts||0))) ult = u;
+      });
+      let txt = null, ts = 0;
+      if(ult){
+        const est = (ests||{})[ult.estanteriaId];
+        const mod = est && est.modulos && est.modulos[ult.moduloId];
+        txt = est ? est.nombre + (mod ? ' · '+mod.nombre : '') : '(estantería eliminada)';
+        ts = ult.ts||0;
+      }
+      const info = {txt, ts};   // txt null = está en el Buscador pero sin ubicar
+      porCodigo[k] = info;
+      if(a.articulo) porItem[String(a.articulo).trim()] = info;   // Id.item
+    });
+    UBIC_CACHE[slug] = {porCodigo, porItem};
+  }catch(e){ UBIC_CACHE[slug] = null; }
+  return UBIC_CACHE[slug];
+}
+
+function ubicCelda(i){
+  return '<td class="td-ubic" data-ubcod="'+esc(ubicKey(i.codigo))+'" data-ubart="'+esc(String(i.articulo||'').trim())+'">'+
+    '<span class="ubic-cargando">…</span></td>';
+}
+function pintarUbicaciones(scope, datos){
+  if(datos === undefined) return;   // todavía cargando: quedan los "…"
+  scope.querySelectorAll('td[data-ubcod]').forEach(td=>{
+    const info = datos && (datos.porCodigo[td.dataset.ubcod] || (td.dataset.ubart ? datos.porItem[td.dataset.ubart] : null));
+    if(!info){
+      td.textContent = '—';
+      td.title = datos ? 'No está en el stock cargado del Buscador de Artículos' : 'La sucursal no tiene stock cargado en el Buscador de Artículos';
+    } else if(!info.txt){
+      td.innerHTML = '<span class="ubic-sin">Sin ubicar</span>';
+      td.title = 'Está en el Buscador de Artículos pero sin ubicación asignada';
+    } else {
+      td.textContent = info.txt;
+      if(info.ts) td.title = 'Última ubicación asignada el '+new Date(info.ts).toLocaleDateString('es-AR');
+    }
+  });
+}
+
+/* ============================================================
    VISTA SUCURSAL
    ============================================================ */
 async function renderSucursalView(slug, container, opts){
@@ -849,6 +918,7 @@ async function renderSucursalView(slug, container, opts){
       '</div>'+
       '<div class="table-wrap"><table id="sucTable"><thead><tr>'+
         '<th>Rubro</th><th>Grupo 2</th><th>Marca</th><th>Código</th><th>Artículo</th><th>Descripción</th><th class="r">Cant.</th><th>Destino</th>'+
+        '<th title="Última ubicación asignada en el depósito, según el Buscador de Artículos">Ubicación depósito</th>'+
       '</tr></thead><tbody></tbody></table></div>'+
       '<div id="sucNoResults" class="no-results" style="display:none">No se encontraron artículos.</div>'+
     '</div>'+
@@ -860,6 +930,11 @@ async function renderSucursalView(slug, container, opts){
   const conEnvio = items.filter(i=>i.destino);
   const sinEnvio = items.filter(i=>!i.destino);
   const prevKeys = articuloKeySet(prevItems);
+
+  // Última ubicación en el depósito (Buscador de Artículos): carga en paralelo
+  // y pinta las celdas de las dos tablas cuando llega.
+  let ubicDatos;
+  getUbicacionesSucursal(slug).then(d=>{ ubicDatos = d; pintarUbicaciones(container, d); });
 
   fillSelectOptions('sucFiltroRubro', uniqueVals(items,'rubro'));
   fillSelectOptions('sucFiltroMarca', uniqueVals(items,'marca'));
@@ -884,9 +959,11 @@ async function renderSucursalView(slug, container, opts){
       if(prevKeys[articuloKey(i)]) tr.className = 'tr-repite';
       tr.innerHTML = '<td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td>'+
         '<td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td>'+esc(i.descripcion)+'</td>'+
-        '<td class="td-num">'+fmtNum(i.cantidad)+'</td><td>'+(i.destino?(OUTLET_BY_ID[i.destino]?OUTLET_BY_ID[i.destino].nombre:i.destino):'—')+'</td>';
+        '<td class="td-num">'+fmtNum(i.cantidad)+'</td><td>'+(i.destino?(OUTLET_BY_ID[i.destino]?OUTLET_BY_ID[i.destino].nombre:i.destino):'—')+'</td>'+
+        ubicCelda(i);
       tbody.appendChild(tr);
     });
+    pintarUbicaciones(tbody, ubicDatos);
     $('sucCount').textContent = filtered.length+' resultado(s)';
     $('sucNoResults').style.display = filtered.length? 'none':'block';
   }
@@ -901,9 +978,11 @@ async function renderSucursalView(slug, container, opts){
       '<div class="collapsible-head" id="sinEnvioHead"><span>Sin envío a outlet ('+sinEnvio.length+' artículos)</span><span class="collapsible-arrow">▾</span></div>'+
       '<div class="collapsible-body" id="sinEnvioBody"><div class="table-wrap"><table><thead><tr>'+
         '<th>Rubro</th><th>Grupo 2</th><th>Marca</th><th>Código</th><th>Artículo</th><th>Descripción</th><th class="r">Cant.</th>'+
+        '<th title="Última ubicación asignada en el depósito, según el Buscador de Artículos">Ubicación depósito</th>'+
       '</tr></thead><tbody>'+
-      sinEnvio.map(i=>'<tr'+(prevKeys[articuloKey(i)]?' class="tr-repite"':'')+'><td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td><td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td>'+esc(i.descripcion)+'</td><td class="td-num">'+fmtNum(i.cantidad)+'</td></tr>').join('')+
+      sinEnvio.map(i=>'<tr'+(prevKeys[articuloKey(i)]?' class="tr-repite"':'')+'><td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td><td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td>'+esc(i.descripcion)+'</td><td class="td-num">'+fmtNum(i.cantidad)+'</td>'+ubicCelda(i)+'</tr>').join('')+
       '</tbody></table></div></div></div>';
+    pintarUbicaciones($('sinEnvioBody'), ubicDatos);
     $('sinEnvioHead').addEventListener('click', ()=>{
       $('sinEnvioBody').classList.toggle('open');
       $('sinEnvioHead').querySelector('.collapsible-arrow').classList.toggle('open');
