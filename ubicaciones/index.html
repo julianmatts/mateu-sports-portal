@@ -1203,6 +1203,38 @@ function montarQuiosco(){
   }
 }
 
+/* Puente con el escáner del sistema (modo puesto): un programita en la PC
+   (scripts/puente-escaner/) detecta la ráfaga de la lectora cuando el vendedor
+   escanea PARADO EN EL SISTEMA y publica el código en scanBridge/<slug>.
+   Acá lo escuchamos por SSE y disparamos la búsqueda solos: una sola
+   escaneada sirve para el sistema Y el Buscador. */
+let sbUltimoTs = null, sbActivo = false;
+function iniciarScanBridge(){
+  if(MODE!=='puesto' || !window.EventSource || sbActivo) return;
+  sbActivo = true;
+  let primera = true;
+  try{
+    const es = new EventSource(FB + '/scanBridge/' + encodeURIComponent(SUC) + '.json');
+    es.addEventListener('put', e=>{
+      try{
+        const d = JSON.parse(e.data);
+        const rec = d && d.data;
+        const codigo = rec && rec.codigo, ts = rec && rec.ts;
+        // el primer put es el estado guardado (un escaneo viejo): se ignora
+        if(primera){ primera = false; sbUltimoTs = ts || null; return; }
+        if(!codigo || (ts && ts===sbUltimoTs)) return;
+        sbUltimoTs = ts || null;
+        $('searchInput').value = codigo;
+        searchQuery = codigo;
+        $('searchClear').style.display = 'block';
+        renderResultados();
+        toast('📡 Escaneado en el sistema: '+codigo);
+      }catch(err){}
+    });
+    // si se corta la conexión, EventSource reintenta solo
+  }catch(e){}
+}
+
 /* Modo mostrador manual: cierra lo que esté abierto y vuelve al selector
    de perfiles estilo Netflix (mismo estado que el protector de pantalla por
    inactividad). Deja el puesto listo para que el próximo elija su cara. */
@@ -1250,7 +1282,7 @@ function montarApp(){
   $('btnSalir').style.display = '';
   // Modo vidriera: la pantalla del salón esconde lo operativo (ver CSS body.puesto)
   document.body.classList.toggle('puesto', MODE==='puesto');
-  if(MODE==='puesto') montarQuiosco();
+  if(MODE==='puesto'){ montarQuiosco(); iniciarScanBridge(); }
   $('app').style.display='block';
   const ids = renderTabs();
   // si la vista activa ya no corresponde (p.ej. Perfiles al pasar de encargado a vendedor), a Buscar
