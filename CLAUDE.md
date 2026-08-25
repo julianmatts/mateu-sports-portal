@@ -330,6 +330,34 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   días» en la tarjeta (borde ámbar), siempre primeros en la lista y marcados con ⚡
   en la impresión. Dejan de ser "nuevos" al ubicarlos (`esNuevo`, `nuevosLista`).
 
+## Área de Producto (`equipo/`) — Control F8
+
+`equipo/index.html` self-contained (lee la sesión del Portal). David (Indumentaria &
+Accesorios) y Daniel (Calzado) suben sus F8s; el módulo los cruza contra la
+estadística de transferencias del sistema. Calibrado con archivos reales 25/08/2026.
+
+- **F8 (.xlsx)**: parser por encabezados (fila con `ORIGEN`; soporta layouts
+  distintos: con/sin columna MARCA, ORIGEN en col A o B, columna DESTINO por fila o
+  matriz con una columna por sucursal). El rótulo `TOTAL` puede estar en cualquier
+  fila de la cabecera y el valor 1-2 columnas a la derecha (merges). La **fecha del
+  F8 sale del nombre del archivo** (`F8 18-08-2026.xlsx`); re-subir el mismo F8
+  (operador+archivo+fecha) REEMPLAZA al anterior. La marca sale de la columna MARCA
+  si existe; si no, por prefijo del código (`BRAND_MAP2`). ⚠ `RUGE-EDLP` con guion:
+  la `/` es ilegal como clave Firebase y hacía fallar el guardado en silencio.
+- **Transferencias (.csv ;-separado, latin1)**: export con fila de encabezado
+  `…;Enviado;Recibido;Días proc.`; viene CON o SIN columna Id.item → las columnas
+  se detectan por contenido (las dos con prefijo `NN-` = origen y destino, el código
+  entre ellas). Queda **guardado en Firebase**: lo sube uno y lo ven todos; subir
+  otro lo reemplaza («✕ quitar» lo borra).
+- **Cruce**: clave `origen+código+destino` (normalización `nrmF8`/`nrmT` con mapa
+  `DEST_MAP_F8`, pliega acentos). Estados: Exacto / Con diferencia / No ejecutado.
+  El control se agrupa por la **sucursal que ENVÍA**; 100% = mandó todo exacto.
+  Calendario por sucursal×fecha + tarjetas + tabla con filtros y **⇩ Excel**.
+- **Firebase** (`turnero-mateu`, nodo `equipo/`): `f8s/<id>` (objeto por id, alta
+  con PATCH — así las subidas simultáneas no se pisan), `ctrl` (registro manual,
+  legacy) y `transf` (export vigente `{archivo,subido,por,filas:[[o,c,d,art,env]]}`).
+  Eliminar un F8: botón 🗑 en el Historial (PATCH null).
+
 ## Evaluaciones de Supervisor
 
 `evaluaciones/` es un `index.html` self-contained **igual que el resto**: lee/escribe

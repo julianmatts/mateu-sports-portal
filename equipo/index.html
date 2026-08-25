@@ -251,6 +251,7 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
   </div>
   <div style="margin-top:28px">
     <div class="section-title">Registro manual de fechas F8</div>
+    <div style="font-family:var(--font-c);font-size:12px;color:var(--muted);margin-bottom:10px">Opcional: anotador a mano del estado por sucursal. No afecta el cruce ni el calendario de arriba.</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
       <input type="date" id="ctrl-date">
       <button class="btn" onclick="addF8Date()">+ Agregar fecha</button>
@@ -261,11 +262,11 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
   <div class="section-title" style="margin-top:32px">F8 vs Transferencias</div>
   <div style="font-family:var(--font-c);font-size:13px;color:var(--muted);margin-bottom:6px">Comparación de los F8s cargados contra las transferencias reales, a la fecha de hoy.</div>
   <div style="margin-bottom:20px">
-    <div style="font-family:var(--font-c);font-size:13px;color:var(--muted);margin-bottom:16px">Subí el export de transferencias (con columnas Mes y Día). Clave de cruce: <strong>origen + código + destino</strong>, ventana 15 días.</div>
+    <div style="font-family:var(--font-c);font-size:13px;color:var(--muted);margin-bottom:16px">Subí la estadística de transferencias tal como sale del sistema (.csv). Tiene que cubrir <strong>desde la fecha del F8 más viejo</strong>. Clave de cruce: <strong>origen + código + destino</strong>. Queda guardada: la sube uno y la ven todos; subir otra la reemplaza.</div>
   </div>
   <div class="upload-card" style="margin-bottom:22px">
     <div style="font-family:var(--font-d);font-size:18px;letter-spacing:1px;margin-bottom:3px">Export de transferencias (.csv)</div>
-    <div style="font-family:var(--font-c);font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:14px">Con columnas Mes y Día al inicio</div>
+    <div style="font-family:var(--font-c);font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:14px">Tal como sale del sistema · queda guardado para todos</div>
     <div class="drop-zone" id="dz-transf" ondragover="dzDrag(event,'transf')" ondragleave="dzLeave('transf')" ondrop="dzDropTransf(event)">
       <input type="file" accept=".csv" onchange="handleTransf(event)">
       <div class="drop-icon">📊</div>
@@ -280,6 +281,7 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
     <select id="f-tipo-cruce" onchange="renderCruce()" style="font-size:12px"><option value="">Todos los casos</option><option value="no_ejecutado">No ejecutados</option><option value="diferencia">Con diferencia</option><option value="ok">Exactos</option></select>
     <select id="f-rubro" onchange="renderCruce()" style="font-size:12px"><option value="">Todos los rubros</option><option value="INDUMENTARIA">Indumentaria</option><option value="CALZADO">Calzado</option><option value="ACCESORIOS">Accesorios</option></select>
     <input type="text" id="f-busqueda" oninput="renderCruce()" placeholder="Buscar..." style="font-size:12px;min-width:160px">
+    <button class="btn" onclick="exportCruce()" style="font-size:12px">⇩ Excel</button>
   </div>
   <div id="cruce-kpis" style="display:none;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px"></div>
   <div id="cruce-result" style="display:none">
@@ -352,6 +354,7 @@ const BRAND_MAP=[['ADI','Adidas'],['NIK','Nike'],['PUM','Puma'],['RUG','RUGE-EDL
 (function(){try{const s=JSON.parse(localStorage.getItem('mateu_portal_session')||'null');if(!s||!(s.herramientas||[]).includes('equipo'))location.href='../';}catch(e){location.href='../'}})();
 const FB_F8S='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/f8s.json';
 const FB_CTRL='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/ctrl.json';
+const FB_TRANSF='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/transf.json';
 let _F8S=null, _CTRL=null;
 // Los F8s viven en Firebase como OBJETO por id (cada alta es un PATCH que no pisa
 // a las demás: David y Daniel pueden subir a la vez). Acá se manejan como array.
@@ -376,11 +379,12 @@ const setCtrl=d=>{ _CTRL=d; fetch(FB_CTRL,{method:'PUT',body:JSON.stringify(d),h
 let _F8S_HASH='', _CTRL_HASH='';
 async function loadEquipo(){
   try{
-    const [r1,r2]=await Promise.all([fetch(FB_F8S),fetch(FB_CTRL)]);
-    const [d1,d2]=await Promise.all([r1.json(),r2.json()]);
+    const [r1,r2,r3]=await Promise.all([fetch(FB_F8S),fetch(FB_CTRL),fetch(FB_TRANSF)]);
+    const [d1,d2,d3]=await Promise.all([r1.json(),r2.json(),r3.json()]);
     _F8S=normF8s(d1);
     _CTRL=d2||[];
     _F8S_HASH=JSON.stringify(_F8S); _CTRL_HASH=JSON.stringify(_CTRL);
+    cargarTransfGuardadas(d3);
   }catch(e){ _F8S=[]; _CTRL=[]; }
 }
 async function pollEquipo(){
@@ -397,6 +401,17 @@ async function pollEquipo(){
 
 function resetApp(){
   if(confirm('¿Recargar la página?')) location.reload();
+}
+
+function delF8(id){
+  const f=getF8s().find(x=>String(x.id)===String(id));
+  if(!f)return;
+  if(!confirm('¿Eliminar el F8 «'+f.filename+'» de '+f.operator+' ('+f.date+')? Sale del Dashboard, el Historial y el cruce.'))return;
+  _F8S=getF8s().filter(x=>String(x.id)!==String(id));_F8S_HASH='';
+  fetch(FB_F8S,{method:'PATCH',body:JSON.stringify({[id]:null}),headers:{'Content-Type':'application/json'}});
+  renderDashboard();renderHistory();renderF8ActivoSelect();
+  if(transfIndex)renderCruce();
+  showToast('F8 eliminado ✓');
 }
 
 function resetF8sData(){
@@ -808,12 +823,64 @@ function processTransfFile(file){
           transfIndex.get(key).enviado+=env;
         }
       }
-      status.innerHTML=`<span style="color:var(--green);font-weight:700">✓ Procesado</span> — ${withMov.toLocaleString()} líneas · ${transfIndex.size.toLocaleString()} triplas`;
+      guardarTransf(file.name);
+      pintarTransfStatus();
       document.getElementById('cruce-filters').style.display='flex';
       renderCruce();
     }catch(err){status.innerHTML='<span style="color:var(--red)">Error</span>';console.error(err);}
   };
   reader.readAsText(file,'latin1');
+}
+
+// ── Persistencia del export de transferencias: lo sube uno y lo ven todos ──
+let _transfMeta=null;
+function sesionMail(){try{return (JSON.parse(localStorage.getItem('mateu_portal_session')||'{}').email)||'';}catch(e){return'';}}
+function guardarTransf(nombreArchivo){
+  // Se guarda el índice ya agregado (tripla origen·código·destino + enviado), compacto
+  const filas=[];
+  for(const[key,v] of transfIndex){filas.push([v.origen_t||'',key.split('||')[1],v.destino_t||'',v.articulo||'',v.enviado]);}
+  _transfMeta={archivo:nombreArchivo,subido:new Date().toISOString().slice(0,16).replace('T',' '),por:sesionMail()};
+  fetch(FB_TRANSF,{method:'PUT',body:JSON.stringify({..._transfMeta,filas}),headers:{'Content-Type':'application/json'}});
+}
+function cargarTransfGuardadas(d){
+  if(!d||!d.filas||!d.filas.length)return;
+  transfIndex=new Map();
+  for(const [o,c,dst,a,e] of d.filas){
+    const key=tk(nrmT(o),c,nrmT(dst));
+    if(!transfIndex.has(key))transfIndex.set(key,{enviado:0,marca:detectBrand(c),articulo:a,rubro:'',origen_t:o,destino_t:dst});
+    transfIndex.get(key).enviado+=e;
+  }
+  _transfMeta={archivo:d.archivo||'',subido:d.subido||'',por:d.por||''};
+}
+function pintarTransfStatus(){
+  const status=document.getElementById('transf-status');if(!status)return;
+  if(!transfIndex||!transfIndex.size){status.innerHTML='';return;}
+  const m=_transfMeta||{};
+  status.innerHTML=`<span style="color:var(--green);font-weight:700">✓ Transferencias cargadas</span> — ${transfIndex.size.toLocaleString()} triplas`+
+    (m.archivo?` · ${m.archivo}`:'')+(m.subido?` · ${m.subido}`:'')+(m.por?` · ${m.por}`:'')+
+    ` · <a href="#" onclick="quitarTransf();return false" style="color:var(--red)">✕ quitar</a>`;
+}
+function quitarTransf(){
+  if(!confirm('¿Quitar las transferencias cargadas? El control queda vacío hasta subir otro export (para todos los usuarios).'))return;
+  transfIndex=null;_transfMeta=null;
+  fetch(FB_TRANSF,{method:'DELETE'});
+  document.getElementById('transf-status').innerHTML='';
+  document.getElementById('cruce-filters').style.display='none';
+  document.getElementById('cruce-kpis').style.display='none';
+  document.getElementById('cruce-result').style.display='none';
+  renderCalendar();
+  showToast('Transferencias quitadas ✓');
+}
+let _cruceResults=[];
+function exportCruce(){
+  if(!_cruceResults.length){showToast('No hay resultados para exportar',true);return;}
+  const ESTADO={ok:'Exacto',diferencia:'Con diferencia',no_ejecutado:'No ejecutado'};
+  const aoa=[['Código','Artículo','Marca','Rubro','Sucursal que envía','Destino','F8 Plan','Transferido','Diferencia','Estado','Operador']];
+  for(const r of _cruceResults)aoa.push([r.codigo,r.desc,r.marca,r.rubro,sucBonito(nrmF8(r.origen_f8)),sucBonito(nrmF8(r.destino_f8)),r.plan,r.transferido,r.diff,ESTADO[r.estado]||r.estado,r.operator]);
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols']=[{wch:18},{wch:34},{wch:14},{wch:13},{wch:20},{wch:20},{wch:9},{wch:11},{wch:10},{wch:14},{wch:9}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Control F8');
+  XLSX.writeFile(wb,'control-f8-'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 function renderCruce(){
   if(!transfIndex)return;
@@ -875,6 +942,7 @@ function renderCruce(){
       return`<tr><td style="font-family:var(--font-c);font-size:11px;color:var(--muted)">${r.codigo}</td><td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.desc}">${r.desc}</td><td style="font-family:var(--font-c);font-size:12px">${r.marca}</td><td style="font-family:var(--font-c);font-size:11px;color:var(--muted)">${r.rubro}</td><td style="font-family:var(--font-c);font-size:11px;font-weight:600">${r.origen_f8||'—'}</td><td style="font-family:var(--font-c);font-size:11px;font-weight:600">${r.destino_f8||'—'}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;color:var(--muted)">${r.plan||'—'}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;color:var(--navy)">${r.transferido||'—'}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;${ds}">${dt}</td><td>${BADGE[r.estado]||''} ${OPT[r.operator]||''}</td></tr>`;
     }).join('');
   }
+  _cruceResults=results;
   const sinMatch=results.length>0&&results.every(r=>r.transferido===0)&&transfIndex.size>0;
   document.getElementById('cruce-count').innerHTML=`Mostrando ${Math.min(show.length,300)} de ${results.length} · clave: origen + código + destino`+
     (sinMatch?'<br><span style="color:var(--red);font-weight:700">⚠ Ninguna línea del F8 matchea con las transferencias: puede ser un tema de nombres de sucursal o de códigos. Avisale a Juli.</span>':'');
@@ -906,8 +974,8 @@ function renderHistory(){
     const items=byWeek[wk].slice().sort((a,b)=>b.date.localeCompare(a.date));
     const dCount=items.filter(f=>f.operator==='David').length;
     const dnCount=items.filter(f=>f.operator==='Daniel').length;
-    const rows=items.map(f=>`<tr><td>${f.date}</td><td><span class="op-tag op-${f.operator.toLowerCase()}">${f.operator}</span></td><td><span style="font-family:var(--font-c);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">${f.tipo||'—'}</span></td><td>${f.totalRows}</td><td><strong style="color:var(--red)">${f.withMovCount}</strong></td><td>${f.uniqueArts}</td><td>${f.totalUnits.toLocaleString()}</td><td>${(f.topBrands||[]).slice(0,3).map(([b,c])=>'<span class="brand-pill">'+b+' '+c+'</span>').join('')}</td></tr>`).join('');
-    return`<div class="f8-date-row"><div class="f8-date-header" onclick="toggleHistWeek(this)"><div><div style="font-family:var(--font-d);font-size:18px;letter-spacing:1px;color:var(--navy)">Semana ${wk.split('-W')[1]} — ${weekKeyRange(wk)}</div><div style="font-family:var(--font-c);font-size:11px;color:var(--muted);margin-top:3px">David: ${dCount} F8s · Daniel: ${dnCount} F8s</div></div><div style="font-family:var(--font-d);font-size:24px;color:var(--navy-mid)">${items.length}</div></div><div style="display:none;border-top:1px solid var(--border);overflow-x:auto"><table class="history-table" style="width:100%"><thead><tr><th>Fecha</th><th>Operador</th><th>Tipo</th><th>Líneas</th><th>Movimientos</th><th>Artículos</th><th>Unidades</th><th>Top marcas</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    const rows=items.map(f=>`<tr><td>${f.date}</td><td><span class="op-tag op-${f.operator.toLowerCase()}">${f.operator}</span></td><td><span style="font-family:var(--font-c);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">${f.tipo||'—'}</span></td><td style="font-family:var(--font-c);font-size:11px;color:var(--muted);max-width:170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${f.filename||''}</td><td>${f.totalRows}</td><td><strong style="color:var(--red)">${f.withMovCount}</strong></td><td>${f.uniqueArts}</td><td>${f.totalUnits.toLocaleString()}</td><td>${(f.topBrands||[]).slice(0,3).map(([b,c])=>'<span class="brand-pill">'+b+' '+c+'</span>').join('')}</td><td><button onclick="event.stopPropagation();delF8('${f.id}')" title="Eliminar este F8" style="background:none;border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:3px 8px;font-size:13px;line-height:1">🗑</button></td></tr>`).join('');
+    return`<div class="f8-date-row"><div class="f8-date-header" onclick="toggleHistWeek(this)"><div><div style="font-family:var(--font-d);font-size:18px;letter-spacing:1px;color:var(--navy)">Semana ${wk.split('-W')[1]} — ${weekKeyRange(wk)}</div><div style="font-family:var(--font-c);font-size:11px;color:var(--muted);margin-top:3px">David: ${dCount} F8s · Daniel: ${dnCount} F8s</div></div><div style="font-family:var(--font-d);font-size:24px;color:var(--navy-mid)">${items.length}</div></div><div style="display:none;border-top:1px solid var(--border);overflow-x:auto"><table class="history-table" style="width:100%"><thead><tr><th>Fecha</th><th>Operador</th><th>Tipo</th><th>Archivo</th><th>Líneas</th><th>Movimientos</th><th>Artículos</th><th>Unidades</th><th>Top marcas</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
   }).join('');
 }
 
@@ -919,7 +987,11 @@ function showToast(msg,err=false){
 }
 
 // ═══════════════ INIT ═══════════════
-loadEquipo().then(()=>{ renderDashboard(); setTimeout(pollEquipo,5000); });
+loadEquipo().then(()=>{
+  renderDashboard();
+  if(transfIndex&&transfIndex.size){pintarTransfStatus();document.getElementById('cruce-filters').style.display='flex';renderCruce();}
+  setTimeout(pollEquipo,5000);
+});
 </script>
 </body>
 </html>
