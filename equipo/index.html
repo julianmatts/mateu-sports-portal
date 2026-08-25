@@ -664,6 +664,7 @@ function parseF8(wb){
   const cD=findCol('DESTINO');
   const cC0=findCol('CODIGO','CÓDIGO','COD');const cC=cC0>=0?cC0:2;
   const cA0=findCol('ARTICULO','ARTÍCULO','DESCRIPCION','DESCRIPCIÓN');const cA=cA0>=0?cA0:3;
+  const cM=findCol('MARCA');
   // Primera columna de talles/cantidades = después de la última columna de texto de la cabecera
   const base=Math.max(cO,cC,cA,cD,5)+1;
   // Sin columna DESTINO → formato matriz: una columna por sucursal destino entre base y TOTAL
@@ -676,7 +677,11 @@ function parseF8(wb){
     let t=null;for(let ci=tc;ci<=tc+2&&ci<r.length;ci++)if(typeof r[ci]==='number'){t=r[ci];break;}
     if(t===null){const fin=tc>base?tc:r.length;const ns=[];for(let ci=base;ci<fin&&ci<r.length;ci++)if(typeof r[ci]==='number')ns.push(r[ci]);t=ns.reduce((a,b)=>a+b,0);}
     if(t>0){
-      wm.push({r,t});const b=detectBrand(r[cC]);bc[b]=(bc[b]||0)+1;
+      // Marca: la columna MARCA del F8 si existe (nombre real); si no, por prefijo del código.
+      // Sin caracteres prohibidos por Firebase en la clave (./#/$/[/]) — ver el caso RUGE/EDLP.
+      wm.push({r,t});
+      const b=(cM>=0&&r[cM])?String(r[cM]).trim().toLowerCase().replace(/[.#$/\[\]]/g,'-').replace(/\b\p{L}/gu,c=>c.toUpperCase()):detectBrand(r[cC]);
+      bc[b]=(bc[b]||0)+1;
       const o=String((cO>=0?r[cO]:r[1])||'').trim();const c=String(r[cC]||'').trim();const a=String(r[cA]||'').trim();
       if(cD>=0){const d=String(r[cD]||'').trim();if(o&&c&&d)lineas.push({o,d,c,a,t});}
       else for(const ci of dcols){const v=r[ci];if(typeof v==='number'&&v>0&&o&&c)lineas.push({o,d:H[ci],c,a,t:v});}
