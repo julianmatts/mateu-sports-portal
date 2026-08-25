@@ -361,7 +361,14 @@ const normF8s=d=>{
   return a.sort((x,y)=>String(x.date).localeCompare(String(y.date))||String(x.id).localeCompare(String(y.id)));
 };
 function getF8s(){ return _F8S||[]; }
-const addF8=e=>{ _F8S=getF8s(); _F8S.push(e); _F8S_HASH=''; fetch(FB_F8S,{method:'PATCH',body:JSON.stringify({[e.id]:e}),headers:{'Content-Type':'application/json'}}); };
+const addF8=e=>{
+  // Re-subir el mismo F8 (mismo operador + archivo + fecha) REEMPLAZA al anterior:
+  // si sumara, el plan quedaría duplicado y los envíos exactos saldrían como «diferencia»
+  const prev=getF8s().filter(x=>x.operator===e.operator&&x.filename===e.filename&&x.date===e.date);
+  const patch={};prev.forEach(x=>patch[x.id]=null);patch[e.id]=e;
+  _F8S=getF8s().filter(x=>!prev.includes(x));_F8S.push(e);_F8S_HASH='';
+  fetch(FB_F8S,{method:'PATCH',body:JSON.stringify(patch),headers:{'Content-Type':'application/json'}});
+};
 const setF8s=d=>{ _F8S=d; _F8S_HASH=''; const obj=d.length?Object.fromEntries(d.map(e=>[e.id,e])):null; fetch(FB_F8S,{method:'PUT',body:JSON.stringify(obj),headers:{'Content-Type':'application/json'}}); };
 function getCtrl(){ return _CTRL||[]; }
 const setCtrl=d=>{ _CTRL=d; fetch(FB_CTRL,{method:'PUT',body:JSON.stringify(d),headers:{'Content-Type':'application/json'}}); };
@@ -764,15 +771,24 @@ function processTransfFile(file){
       let hIdx=-1,eCol=-1;
       for(let i=0;i<Math.min(5,lines.length);i++){const c=lines[i].split(';').map(x=>x.trim().toUpperCase());const j=c.indexOf('ENVIADO');if(j>=0){hIdx=i;eCol=j;break;}}
       if(hIdx>=0&&eCol>=4){
+        // Columnas por CONTENIDO: las dos con prefijo «NN-» son origen y destino, el código
+        // va entre ellas. El export puede traer o no la columna Id.item (después de destino).
+        const muestra=lines.slice(hIdx+1,hIdx+61);
+        const cnt={};
+        for(const l of muestra){const cs=l.split(';');for(let i=0;i<eCol&&i<cs.length;i++)if(/^\d{1,2}-/.test(cs[i].trim()))cnt[i]=(cnt[i]||0)+1;}
+        const sucCols=Object.keys(cnt).filter(i=>cnt[i]>muestra.length/2).map(Number).sort((a,b)=>a-b);
+        let iO,iC,iD,iA;
+        if(sucCols.length>=2){iO=sucCols[0];iD=sucCols[1];iC=iO+1;iA=(iD+1<eCol)?iD+1:-1;}
+        else{iO=eCol-4;iC=eCol-3;iD=eCol-2;iA=eCol-1;} // respaldo: mapeo posicional (formato con Id.item)
         for(const line of lines.slice(hIdx+1)){
           const cols=line.split(';');
           if(cols.length<=eCol)continue;
-          const codigo=(cols[eCol-3]||'').trim();if(!codigo)continue;
+          const codigo=(cols[iC]||'').trim();if(!codigo)continue;
           const env=parseFloat((cols[eCol]||'0').replace(',','.'))||0;
           if(env<=0)continue;withMov++;
-          const orig=(cols[eCol-4]||'').trim();const dest=(cols[eCol-2]||'').trim();
+          const orig=(cols[iO]||'').trim();const dest=(cols[iD]||'').trim();
           const key=tk(nrmT(orig),codigo,nrmT(dest));
-          if(!transfIndex.has(key))transfIndex.set(key,{enviado:0,marca:detectBrand(codigo),articulo:(cols[eCol-1]||'').trim(),rubro:'',origen_t:orig,destino_t:dest});
+          if(!transfIndex.has(key))transfIndex.set(key,{enviado:0,marca:detectBrand(codigo),articulo:iA>=0?(cols[iA]||'').trim():'',rubro:'',origen_t:orig,destino_t:dest});
           transfIndex.get(key).enviado+=env;
         }
       }else{
