@@ -346,7 +346,7 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
 const SUCURSALES=['Plaza','Mateu Kids','Outlet','Aurelius 12','Depósito','City Bell','Aurelius 10','Calle 47','Adidas 7','Diagonal','Ensenada','Calle 12','Los Hornos','Outlet Gonnet','Originals','Berisso','Aurelius CB','Aurelius 5','Calle 49','Outlet Av. 44','Adidas 12','Ecommerce'];
 const STATUSES=['Hecho','Incompleto','Sin hacer','En proceso','N/A'];
 const STATUS_CLASS={'Hecho':'st-hecho','Incompleto':'st-incompleto','Sin hacer':'st-sinhacer','En proceso':'st-proceso','N/A':'st-nd'};
-const BRAND_MAP=[['ADI','Adidas'],['NIK','Nike'],['PUM','Puma'],['RUG','RUGE/EDLP'],['MAT','Mateu'],['UMB','Umbro'],['UA','Under Armour'],['NB2','New Balance'],['CHV','Chevignon'],['VAN','Vans'],['GIV','Givova'],['TOP','Topper'],['KAP','Kappa'],['COL','Columbia'],['HEA','Head'],['AUR','Aurelius'],['SAU','Saucony'],['FIL','Fila'],['RBK','Reebok']];
+const BRAND_MAP=[['ADI','Adidas'],['NIK','Nike'],['PUM','Puma'],['RUG','RUGE-EDLP'],['MAT','Mateu'],['UMB','Umbro'],['UA','Under Armour'],['NB2','New Balance'],['CHV','Chevignon'],['VAN','Vans'],['GIV','Givova'],['TOP','Topper'],['KAP','Kappa'],['COL','Columbia'],['HEA','Head'],['AUR','Aurelius'],['SAU','Saucony'],['FIL','Fila'],['RBK','Reebok']];
 
 // ═══════════════ STORAGE ═══════════════
 (function(){try{const s=JSON.parse(localStorage.getItem('mateu_portal_session')||'null');if(!s||!(s.herramientas||[]).includes('equipo'))location.href='../';}catch(e){location.href='../'}})();
@@ -487,6 +487,7 @@ function renderTrend(filtered,allF8s){
 
 // ═══════════════ CALENDAR ═══════════════
 let _calReal=null;
+const sucBonito=n=>String(n).replace(/\b\p{L}/gu,c=>c.toUpperCase());
 function calcControlReal(opFilter){
   // Efectividad real por sucursal destino × fecha de F8: detalle de los F8s cargados vs. transferencias subidas
   if(!transfIndex)return null;
@@ -498,9 +499,11 @@ function calcControlReal(opFilter){
     for(const L of f.lineas){
       const tr=transfIndex.get(tk(nrmF8(L.o),L.c,nrmF8(L.d)));
       const sent=tr?Math.round(tr.enviado):0;
-      // Eje del control: la sucursal de ORIGEN (a la que se le pidió enviar)
-      const key=L.o+'|'+f.date;
-      sucs.add(L.o);
+      // Eje del control: la sucursal de ORIGEN (a la que se le pidió enviar),
+      // agrupada por nombre normalizado: «BERISSO», «Berisso» y «berisso» son la misma
+      const suc=sucBonito(nrmF8(L.o));
+      const key=suc+'|'+f.date;
+      sucs.add(suc);
       if(!cells[key])cells[key]={ok:0,diff:0,no_ej:0,total:0,plan:0,transf:0,operator:f.operator};
       const c=cells[key];c.total++;c.plan+=Math.round(+L.t||0);c.transf+=sent;
       if(sent===0)c.no_ej++;else if(sent===Math.round(+L.t))c.ok++;else c.diff++;
@@ -642,7 +645,7 @@ function selectF8Activo(){
 }
 
 // ═══════════════ CARGAR F8 ═══════════════
-const BRAND_MAP2=[['ADI','Adidas'],['NIK','Nike'],['PUM','Puma'],['RUG','RUGE/EDLP'],['MAT','Mateu'],['UMB','Umbro'],['UA','Under Armour'],['NB2','New Balance'],['CHV','Chevignon'],['VAN','Vans'],['GIV','Givova'],['TOP','Topper'],['KAP','Kappa'],['COL','Columbia'],['HEA','Head'],['AUR','Aurelius'],['SAU','Saucony'],['FIL','Fila'],['RBK','Reebok']];
+const BRAND_MAP2=[['ADI','Adidas'],['NIK','Nike'],['PUM','Puma'],['RUG','RUGE-EDLP'],['MAT','Mateu'],['UMB','Umbro'],['UA','Under Armour'],['NB2','New Balance'],['CHV','Chevignon'],['VAN','Vans'],['GIV','Givova'],['TOP','Topper'],['KAP','Kappa'],['COL','Columbia'],['HEA','Head'],['AUR','Aurelius'],['SAU','Saucony'],['FIL','Fila'],['RBK','Reebok']];
 function detectBrand(code){if(!code)return'Otros';const s=String(code);for(const[p,b]of BRAND_MAP2)if(s.startsWith(p))return b;return'Otros';}
 function parseF8(wb){
   const ws=wb.Sheets[wb.SheetNames[0]];
@@ -668,8 +671,10 @@ function parseF8(wb){
   const dr=rows.slice(hi+1);const bc={};let wm=[];let tr=0;const lineas=[];
   for(const r of dr){
     if(!r[1])continue;tr++;
-    let t=typeof r[tc]==='number'?r[tc]:0;
-    if(!t){const fin=tc>base?tc:r.length;const ns=[];for(let ci=base;ci<fin&&ci<r.length;ci++)if(typeof r[ci]==='number')ns.push(r[ci]);t=ns.reduce((a,b)=>a+b,0);}
+    // El valor del total puede estar 1-2 columnas a la derecha del rótulo (celdas combinadas);
+    // un total numérico encontrado (aunque sea 0) es definitivo: el fallback solo corre sin total
+    let t=null;for(let ci=tc;ci<=tc+2&&ci<r.length;ci++)if(typeof r[ci]==='number'){t=r[ci];break;}
+    if(t===null){const fin=tc>base?tc:r.length;const ns=[];for(let ci=base;ci<fin&&ci<r.length;ci++)if(typeof r[ci]==='number')ns.push(r[ci]);t=ns.reduce((a,b)=>a+b,0);}
     if(t>0){
       wm.push({r,t});const b=detectBrand(r[cC]);bc[b]=(bc[b]||0)+1;
       const o=String((cO>=0?r[cO]:r[1])||'').trim();const c=String(r[cC]||'').trim();const a=String(r[cA]||'').trim();
@@ -749,19 +754,38 @@ function processTransfFile(file){
     try{
       const lines=e.target.result.split(/\r?\n/).filter(l=>l.trim());
       transfIndex=new Map();let withMov=0;
-      const firstData=lines[2]?lines[2].split(';'):[];
-      const hasDate=firstData.length>0&&!isNaN(parseInt(firstData[0]))&&parseInt(firstData[0])>=1&&parseInt(firstData[0])<=12;
-      const co=hasDate?2:0;
-      for(const line of lines.slice(2)){
-        const cols=line.split(';');
-        if(cols.length<(hasDate?10:8))continue;
-        const codigo=cols[co+4].trim();if(!codigo)continue;
-        let env=0;for(let i=co+6;i<cols.length;i+=2)env+=parseFloat(cols[i])||0;
-        if(env<=0)continue;withMov++;
-        const origN=nrmT(cols[co+0]);const destN=nrmT(cols[co+5]);
-        const key=tk(origN,codigo,destN);
-        if(!transfIndex.has(key))transfIndex.set(key,{enviado:0,marca:cols[co+2].trim(),articulo:cols[co+3].replace(/^%%%/,'').trim(),rubro:cols[co+1].trim(),origen_t:cols[co+0].trim(),destino_t:cols[co+5].trim()});
-        transfIndex.get(key).enviado+=env;
+      // Formato real del export: una fila de encabezado con «Enviado» y columnas
+      // Mes;Día;Origen;Código;Destino;Id.item;Enviado;Recibido;Días proc. (decimales con coma)
+      let hIdx=-1,eCol=-1;
+      for(let i=0;i<Math.min(5,lines.length);i++){const c=lines[i].split(';').map(x=>x.trim().toUpperCase());const j=c.indexOf('ENVIADO');if(j>=0){hIdx=i;eCol=j;break;}}
+      if(hIdx>=0&&eCol>=4){
+        for(const line of lines.slice(hIdx+1)){
+          const cols=line.split(';');
+          if(cols.length<=eCol)continue;
+          const codigo=(cols[eCol-3]||'').trim();if(!codigo)continue;
+          const env=parseFloat((cols[eCol]||'0').replace(',','.'))||0;
+          if(env<=0)continue;withMov++;
+          const orig=(cols[eCol-4]||'').trim();const dest=(cols[eCol-2]||'').trim();
+          const key=tk(nrmT(orig),codigo,nrmT(dest));
+          if(!transfIndex.has(key))transfIndex.set(key,{enviado:0,marca:detectBrand(codigo),articulo:(cols[eCol-1]||'').trim(),rubro:'',origen_t:orig,destino_t:dest});
+          transfIndex.get(key).enviado+=env;
+        }
+      }else{
+        // Formato viejo (dos filas de encabezado, pares cantidad/importe)
+        const firstData=lines[2]?lines[2].split(';'):[];
+        const hasDate=firstData.length>0&&!isNaN(parseInt(firstData[0]))&&parseInt(firstData[0])>=1&&parseInt(firstData[0])<=12;
+        const co=hasDate?2:0;
+        for(const line of lines.slice(2)){
+          const cols=line.split(';');
+          if(cols.length<(hasDate?10:8))continue;
+          const codigo=cols[co+4].trim();if(!codigo)continue;
+          let env=0;for(let i=co+6;i<cols.length;i+=2)env+=parseFloat(cols[i])||0;
+          if(env<=0)continue;withMov++;
+          const origN=nrmT(cols[co+0]);const destN=nrmT(cols[co+5]);
+          const key=tk(origN,codigo,destN);
+          if(!transfIndex.has(key))transfIndex.set(key,{enviado:0,marca:cols[co+2].trim(),articulo:cols[co+3].replace(/^%%%/,'').trim(),rubro:cols[co+1].trim(),origen_t:cols[co+0].trim(),destino_t:cols[co+5].trim()});
+          transfIndex.get(key).enviado+=env;
+        }
       }
       status.innerHTML=`<span style="color:var(--green);font-weight:700">✓ Procesado</span> — ${withMov.toLocaleString()} líneas · ${transfIndex.size.toLocaleString()} triplas`;
       document.getElementById('cruce-filters').style.display='flex';
@@ -775,7 +799,7 @@ function renderCruce(){
   buildF8Cruce();
   // Poblar el filtro de sucursal de origen (para el control sucursal por sucursal)
   const selSuc=document.getElementById('f-sucursal');
-  const origs=new Map();for(const f8 of f8CruceIndex.values()){const n=nrmF8(f8.origen_raw);if(!origs.has(n))origs.set(n,f8.origen_raw);}
+  const origs=new Map();for(const f8 of f8CruceIndex.values()){const n=nrmF8(f8.origen_raw);if(!origs.has(n))origs.set(n,sucBonito(n));}
   const firma=[...origs.keys()].sort().join('§');
   if(selSuc.dataset.firma!==firma){
     const prev=selSuc.value;
