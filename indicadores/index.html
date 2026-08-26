@@ -2468,6 +2468,20 @@ let _eqRealDraft=null;   // borrador de reales manuales {slug,sem,real:{key:mont
 const eqNorm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
 const eqKeyName = s => (eqNorm(s).replace(/ /g,'-').slice(0,60)) || 'p';
 
+// Solo Ecommerce y Outlet Gonnet abren los domingos (Juli, 26/08/2026): al resto
+// se le anula el peso del domingo y se renormaliza a 100. Importa sobre todo con
+// la matriz promedio (fallback), que arrastra el domingo de esas dos.
+const ABRE_DOMINGO = ['ecommerce','gonnet'];
+function pesosSinDomingo(slug, m){
+  if(!m || !m.t1 || ABRE_DOMINGO.includes(slug)) return m;
+  const dom=['t1','t2','t3'].reduce((a,t)=>a+(+((m[t]||[])[6])||0),0);
+  if(!(dom>0)) return m;
+  const out={...m, t1:(m.t1||[]).slice(), t2:(m.t2||[]).slice(), t3:(m.t3||[]).slice()};
+  ['t1','t2','t3'].forEach(t=>{ out[t][6]=0; });
+  let tot=0; ['t1','t2','t3'].forEach(t=>{ for(let d=0;d<6;d++) tot+=(+out[t][d]||0); });
+  if(tot>0) ['t1','t2','t3'].forEach(t=>{ out[t]=out[t].map(v=>+(((+v||0)/tot*100).toFixed(4))); });
+  return out;
+}
 function fetchEqPesos(slug){
   if(_eqPesosCache[slug]) return _eqPesosCache[slug];
   const base=OBJETIVOS_URL.replace(/\/+$/,'');
@@ -2485,7 +2499,7 @@ function fetchEqPesos(slug){
   };
   _eqPesosCache[slug]=fetch(base+'/objetivos/pesosTurnos/porSlug/'+encodeURIComponent(slug)+'.json')
     .then(r=>r.ok?r.json():null).catch(()=>null)
-    .then(p=> (p && p.t1) ? p : horneado());
+    .then(p=> pesosSinDomingo(slug, (p && p.t1) ? p : horneado()));
   return _eqPesosCache[slug];
 }
 function fetchEquipo(slug, sem){
@@ -3262,7 +3276,7 @@ function fetchPesosSlug(slug){
     return avg;
   };
   _pesosSlugCache[slug]=fetch(base+'/objetivos/pesosTurnos/porSlug/'+encodeURIComponent(slug)+'.json')
-    .then(r=>r.ok?r.json():null).catch(()=>null).then(p=>(p&&p.t1)?p:horneado());
+    .then(r=>r.ok?r.json():null).catch(()=>null).then(p=>pesosSinDomingo(slug, (p&&p.t1)?p:horneado()));
   return _pesosSlugCache[slug];
 }
 // equipo con horas para una semana: el guardado de esa semana o, si no tiene horas, el último
