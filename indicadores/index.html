@@ -3710,9 +3710,12 @@ async function veArchivo(file){
       // solo con la sucursal de la sesión y los días de la semana elegida.
       // Va ANTES del genérico: su encabezado también tiene Vendedor+Importe y el
       // genérico la agarraría mal (una fila por línea de venta, sin agrupar).
+      // si el export viene sin columna Sucursal (bajado filtrado a una sola), todo
+      // es de la sucursal de la sesión: se le pasa su código NN como sucursal fija
+      const pfxMio=(Object.entries(VE_PFX_SLUG).find(e=>e[1]===slug)||[])[0];
       for(const name of wb.SheetNames){
         const m=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,defval:''});
-        const res=veParseDetallado(m);
+        const res=veParseDetallado(m, pfxMio ? pfxMio+'-'+slug : '');
         if(res){
           const agg=veAgregarSemana(res, sem);
           const mio=agg.porSlug[slug];
@@ -3725,7 +3728,8 @@ async function veArchivo(file){
           }
           data={vendedores:mio.vendedores, total:mio.total};
           info='Leído como <b>estadística detallada</b> ('+esc(agg.etiqueta)+', con día a día por vendedor).'
-            +(agg.nOut>0?' Se descartaron '+agg.nOut+' comprobantes de días fuera de la semana.':'');
+            +(agg.nOut>0?' Se descartaron '+agg.nOut+' comprobantes de días fuera de la semana.':'')
+            +(Object.keys(agg.porSlug).length>1?' El archivo traía varias sucursales: se tomó solo la tuya.':'');
           break;
         }
       }
@@ -3800,8 +3804,11 @@ const VE_DOW_SET = {Lu:1,Ma:1,Mi:1,Ju:1,Vi:1,Sa:1,Do:1};
 const veDow = v => { const n=veNormU(v); return n ? n.charAt(0)+n.slice(1).toLowerCase() : ''; };   // "SÁ" -> "Sa"
 /* Sin fila de encabezado (la vista "Venta semanal portal" del sistema exporta los datos pelados):
    reconoce cada columna por su contenido sobre una muestra de filas. Devuelve {hr, c} o null. */
-function veDetectarColumnas(matrix){
-  const first = matrix.findIndex(r=> r && r.some(v=>/^\d{2}-\S/.test(veStr(v))));
+function veDetectarColumnas(matrix, sinSuc){
+  // sinSuc (subida del encargado): el export puede venir sin columna de sucursal;
+  // en ese caso la fila ancla se busca por el nro de comprobante en vez del "NN-"
+  const esNroC = v=>/^[A-Za-z]{2,4}\.?\d{3,4}-\d{4,}/.test(veStr(v));
+  const first = matrix.findIndex(r=> r && (r.some(v=>/^\d{2}-\S/.test(veStr(v))) || (sinSuc && r.some(esNroC))));
   if(first<0) return null;
   const rows = matrix.slice(first, first+400).filter(r=>r && r.length);
   const nCols = Math.max.apply(null, rows.map(r=>r.length));
@@ -3819,7 +3826,7 @@ function veDetectarColumnas(matrix){
   }
   const best = (k, min) => { const b=prof.slice().sort((a,b)=>b[k]-a[k])[0]; return (b && b[k]>=min) ? b.j : -1; };
   const c = { suc:best('suc',.9), dow:best('dow',.9), nro:best('nro',.9), rubro:best('rubro',.9) };
-  if(c.suc<0 || c.nro<0) return null;
+  if((c.suc<0 && !sinSuc) || c.nro<0) return null;
   const usados = new Set(Object.values(c).filter(j=>j>=0));
   // enteros 0..31: día y hora; si una columna tiene valores >23 es el día; si no, la primera
   const ints = prof.filter(x=>!usados.has(x.j) && x.int>=.95).map(x=>x.j);
@@ -3838,26 +3845,31 @@ function veDetectarColumnas(matrix){
   c.vend = antes ? antes.j : -1; c.art = despues ? despues.j : -1;
   return {hr:first-1, c};
 }
-function veParseDetallado(matrix){
+function veParseDetallado(matrix, sucFija){
+  // sucFija (solo desde la subida del encargado): valor de sucursal a asumir cuando el
+  // export viene SIN columna Sucursal (el sistema la omite al bajarlo filtrado a una)
   let hr=-1, c=null, anio=0, mes=0;
   for(let i=0;i<Math.min(matrix.length,15);i++){
     const row=(matrix[i]||[]).map(veNormU);
     const suc=row.indexOf('SUCURSAL'), nro=row.findIndex(x=>/^(NRO|NUMERO|NUM|N°)/.test(x)), cant=row.indexOf('CANTIDAD'), imp=row.indexOf('IMPORTE');
-    if(suc>=0 && nro>=0 && cant>=0 && imp>=0){
-      hr=i; c={suc, nro, cant, imp,
-        dow: row.findIndex(x=>/^DIA SEMANA/.test(x)), dia: row.findIndex(x=>x==='DIA'||x==='FECHA'),
-        vend: row.findIndex(x=>/VENDEDOR/.test(x)), art: row.findIndex(x=>/^(ARTICULO|DESCRIPCION)/.test(x)), rubro: row.indexOf('RUBRO')};
-      break;
+    if(nro>=0 && cant>=0 && imp>=0){
+      const vend=row.findIndex(x=>/VENDEDOR/.test(x));
+      if(suc>=0 || (sucFija && vend>=0)){
+        hr=i; c={suc, nro, cant, imp,
+          dow: row.findIndex(x=>/^DIA SEMANA/.test(x)), dia: row.findIndex(x=>x==='DIA'||x==='FECHA'),
+          vend, art: row.findIndex(x=>/^(ARTICULO|DESCRIPCION)/.test(x)), rubro: row.indexOf('RUBRO')};
+        break;
+      }
     }
     // filas previas al encabezado: "2026" y "Agosto"
     row.forEach(x=>{ if(/^20\d\d$/.test(x)) anio=+x; const mi=VE_MESES.indexOf(x); if(mi>=0) mes=mi+1; });
   }
-  if(hr<0){ const d=veDetectarColumnas(matrix); if(!d) return null; hr=d.hr; c=d.c; anio=0; mes=0; }
+  if(hr<0){ const d=veDetectarColumnas(matrix, !!sucFija); if(!d) return null; hr=d.hr; c=d.c; anio=0; mes=0; }
   // por comprobante (atómico): Σ cant/importe según criterio; metadata = línea de mayor |importe|
   const comp=new Map();
   for(let i=hr+1;i<matrix.length;i++){
     const row=matrix[i]; if(!row) continue;
-    const suc=veStr(row[c.suc]); if(!suc || suc==='Total') continue;
+    const suc=c.suc>=0 ? veStr(row[c.suc]) : sucFija; if(!suc || suc==='Total') continue;
     const nro=veStr(row[c.nro]);
     const cant=veNum(row[c.cant]), imp=veNum(row[c.imp]);
     const ok=veCriterioLinea(c.rubro>=0?veNormU(row[c.rubro]):'', c.art>=0?veNormU(row[c.art]):'');
