@@ -2862,6 +2862,7 @@ function veSectionHtml(slug, sem, v, ve, eqData, pesos, prevVe){
     const otraSemana = prev.data.semArchivo && prev.data.semArchivo!==sem;
     body = '<div style="background:var(--mid-bg,#fdf3e3);border:1px solid #f0d8a8;border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:13px">'
       + 'Revisá los datos leídos de <b>'+esc(prev.fileName)+'</b> ('+prev.data.vendedores.length+' vendedores). Si está bien, guardá.'
+      + (prev.info?'<br>'+prev.info:'')
       + (otraSemana?'<br>⚠️ <b>Ojo:</b> el archivo es de la <b>'+esc(objSemTag(prev.data.semArchivo))+'</b> ('+esc(objSemLbl(prev.data.semArchivo))+') y estás guardando en la <b>'+esc(objSemTag(sem))+'</b> ('+esc(objSemLbl(sem))+').':'')
       + '</div>'
       + veDetailHtml(prev.data, metaVal, prevVe)
@@ -3699,19 +3700,45 @@ async function veArchivo(file){
     const buf=await file.arrayBuffer();
     const wb=XLSX.read(buf,{type:'array'});
     // 1º el template PMS semanal de las sucursales (hoja PMS(H) + detalle diario de REAL)
-    let data=veParsePMS(wb, XLSX);
+    let data=veParsePMS(wb, XLSX), info=null;
     if(data){
       const dias=veParseDias(wb, XLSX);
       if(dias) data.vendedores.forEach(v=>{ if(dias[v.nombre]) v.dias=dias[v.nombre]; });
     } else {
-      // genérico: la primera hoja con columnas reconocibles (vendedor + venta)
+      // 2º la estadística de venta detallada por línea (la misma que sube gerencia en
+      // la vista de todas las sucursales): trae el día a día por vendedor. Se queda
+      // solo con la sucursal de la sesión y los días de la semana elegida.
+      // Va ANTES del genérico: su encabezado también tiene Vendedor+Importe y el
+      // genérico la agarraría mal (una fila por línea de venta, sin agrupar).
+      for(const name of wb.SheetNames){
+        const m=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,defval:''});
+        const res=veParseDetallado(m);
+        if(res){
+          const agg=veAgregarSemana(res, sem);
+          const mio=agg.porSlug[slug];
+          if(!mio){
+            const otras=Object.values(agg.porSlug).map(x=>x.sucursal).join(', ');
+            alert(agg.nIn===0
+              ? 'La estadística no tiene ventas dentro de la semana elegida ('+objSemTag(sem)+'). Fijate el selector de semana y que el archivo sea de esos días.'
+              : 'La estadística no trae ventas de tu sucursal en esa semana'+(otras?' (trae: '+otras+')':'')+'.');
+            return;
+          }
+          data={vendedores:mio.vendedores, total:mio.total};
+          info='Leído como <b>estadística detallada</b> ('+esc(agg.etiqueta)+', con día a día por vendedor).'
+            +(agg.nOut>0?' Se descartaron '+agg.nOut+' comprobantes de días fuera de la semana.':'');
+          break;
+        }
+      }
+    }
+    if(!data){
+      // 3º genérico: la primera hoja con columnas reconocibles (vendedor + venta)
       for(const name of wb.SheetNames){
         const m=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,defval:''});
         data=veParse(m); if(data) break;
       }
     }
     if(!data){ alert('No pude reconocer las columnas (vendedor y venta) en el Excel. Revisá que tenga esos encabezados.'); return; }
-    _vePreview={slug, sem, data, fileName:file.name};
+    _vePreview={slug, sem, data, fileName:file.name, info};
     renderObjetivo();
   }catch(e){ alert('Error leyendo el Excel: '+(e.message||e)); }
 }
