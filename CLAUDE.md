@@ -278,7 +278,19 @@ consolidado viejo (por comprobante) venía SIN las líneas de promo → importes
 `formato='consolidado'` queda soportado pero no usarlo si está el detallado. Staff:
 `Sucursales staff.xlsx` en Descargas.
 Los objetivos por formato y la regla nombre→formato viven fijos en ese script — NO tocar
-el cálculo salvo pedido.
+el cálculo salvo pedido. Desde el 26/08/2026 el ETL además emite **`rubros`** (venta neta
+por CALZADO/INDUMENTARIA/ACCESORIOS/… por vendedor y por sucursal, cada línea atribuida
+al vendedor de su comprobante; aditivo, no cambia ningún número): lo consume la sección
+**«Quién vende cada rubro»** (`secRubros`/`renderRubros`) del análisis del mes en
+`indicadores/` — participación + mix propio por vendedor, referente ★ y sugerencias de
+mentoreo (el que domina el rubro le tira tips al que lo tiene flojo). Oculta en Ecommerce
+y en períodos sin el dato. Los KPIs usan la tipografía «rendimiento» (Saira itálica 800,
+la de meses de stock) con el color del semáforo en el número. **Solo Ecommerce y Outlet
+Gonnet abren los domingos**: `pesosSinDomingo()` anula el domingo de la matriz de pesos
+para el resto (importa con la curva promedio, fallback de Diagonal 80). El objetivo
+semanal se abre además **por día** (tira «Objetivo por día» del local con real y % cuando
+hay venta diaria, y objetivo diario por vendedor en su desplegable — `eqPesosDia`,
+`eqSharesDia`, `objDiasHtml`).
 
 Alternativa sin Python (cuando solo se tiene el JSON del ETL, no los Excel):
 `node scripts/gen-indicadores.mjs indicadores-2026-05.json indicadores-2026-06.json`
@@ -537,8 +549,15 @@ entran acá: ven su objetivo en Indicadores.
   sección no aparece. Usa `SUC2SLUG`.
 - **Venta por vendedor que carga el encargado** (en `indicadores/`, dentro de la
   sección Objetivo): panel desplegable "Cómo viene el equipo". El encargado sube el
-  Excel de venta **abierta por vendedor** (SheetJS lazy; autodetecta las columnas
-  vendedor/venta y, si vienen, tickets/unidades), **previsualiza** y guarda. Muestra
+  Excel de venta **abierta por vendedor** (SheetJS lazy), **previsualiza** y guarda.
+  Tres formatos autodetectados en orden: (1) template PMS semanal (hoja PMS(H) +
+  día a día de la hoja REAL); (2) **la estadística detallada por línea** (26/08/2026,
+  la misma que sube gerencia en la vista Cadena — puede venir SIN columna Sucursal
+  y hasta SIN encabezados: `veParseDetallado(m, sucFija)` + `veDetectarColumnas(m,
+  sinSuc)` asumen la sucursal de la sesión, se quedan solo con los días de la semana
+  elegida y traen el día a día por vendedor; va ANTES del genérico porque el genérico
+  la leería mal); (3) genérico (columnas vendedor/venta y, si vienen, tickets/unidades
+  — sin días). Muestra
   ranking por venta con barra de participación, avance del equipo **vs. la Meta de la
   semana**, y UPT/ticket promedio por vendedor cuando el Excel trae tickets/unidades.
   Firebase: reusa `recepciones-mateu`, nodo `ventaEquipo/<slug>/<semanaISO>` (agrupado
