@@ -2534,6 +2534,56 @@ function eqShares(equipo, pesos){
   });
   return {shares, cobertura, totalPeso};
 }
+// pesos por DÍA (fracción de la semana): suma de los tres turnos de ese día
+function eqPesosDia(pesos){
+  if(!pesos||!pesos.t1) return null;
+  const pd=EQ_DIAS.map((_,d)=>['t1','t2','t3'].reduce((a,t)=>a+(+((pesos[t]||[])[d])||0),0)/100);
+  return pd.some(x=>x>0)?pd:null;
+}
+// reparto por persona ABIERTO POR DÍA (misma fórmula que eqShares); la suma de
+// los 7 días de una persona = su share semanal
+function eqSharesDia(equipo, pesos){
+  const P=[pesos.t1||[],pesos.t2||[],pesos.t3||[]];
+  const tot=EQ_DIAS.map(()=>[0,0,0]);
+  equipo.forEach(p=>p.h.forEach((day,d)=>day.forEach((v,t)=>{ tot[d][t]+=v||0; })));
+  return equipo.map(p=>EQ_DIAS.map((_,d)=>[0,1,2].reduce((s,t)=>{
+    const w=P[t][d]||0, v=(p.h[d]||[])[t]||0;
+    return (v>0 && tot[d][t]>0) ? s+w*(v/tot[d][t]) : s; },0)/100));
+}
+// venta del local por día ('lu'…'do'): suma de los días de todos los vendedores
+function veVentaDia(ve){
+  const m={};
+  (ve&&ve.vendedores||[]).forEach(x=>(x.dias||[]).forEach(d=>{
+    const p=eqNorm(String(d.d||'')).slice(0,2); if(p) m[p]=(m[p]||0)+(+d.v||0); }));
+  return m;
+}
+// objetivo DIARIO del local: la meta semanal repartida con la curva de venta por
+// día; con venta cargada, el real del día en color vs. su objetivo
+function objDiasHtml(meta, pesos, ve){
+  const pd = pesos ? eqPesosDia(pesos) : null;
+  if(!meta || !pd) return '';
+  const vd = veVentaDia(ve);
+  let cards='';
+  EQ_DIAS.forEach((lbl,d)=>{
+    const obj=meta*pd[d]; if(obj<1) return;   // día sin peso (cerrado): no se muestra
+    const real=vd[EQ_DOW[d]]||0;
+    const pct=real/obj, col=pct>=1?'var(--ok,#16a34a)':pct>=1/1.2?'#d97706':'#dc2626';
+    cards+='<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:7px 10px;background:#fff;min-width:96px;flex:1">'
+      +'<div style="font-family:var(--font-c,inherit);font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--mid)">'+lbl+'</div>'
+      +(real>0
+        ?'<div style="font-size:14px;font-weight:700;margin-top:1px;color:'+col+'">'+objMoney(real)+'</div>'
+          +'<div style="font-size:11px;color:var(--mid)">Obj '+objMoney(obj)+' · <b style="color:'+col+'">'+Math.round(pct*100)+'%</b></div>'
+        :'<div style="font-size:14px;font-weight:700;margin-top:1px">'+objMoney(obj)+'</div>')
+      +'</div>';
+  });
+  if(!cards) return '';
+  return '<div style="margin-top:14px">'
+    +'<div style="font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid);margin-bottom:6px">Objetivo por día</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap">'+cards+'</div>'
+    +'<p class="hint" style="margin:6px 0 0">La meta de la semana repartida según la curva de venta por día de tu sucursal'
+    +(pesos.promedio?' (todavía sin curva propia: se usa el promedio de todas las sucursales)':'')+'.</p>'
+    +'</div>';
+}
 // match de nombres por tokens: tolera orden invertido ("NOBLE ANALIA" vs
 // "Analia Noble cubre"), sufijos de rol (full, cajera, refuerzo, 24hs…) y
 // nombres extra de un lado ("Paris Isabella (Cajera Full)" vs "PARIS ISABELLA GALA")
@@ -2857,11 +2907,22 @@ function eqPrevMatcher(prevVe){
 }
 // contenido del desplegable por vendedor: KPIs con flechas vs. semana anterior,
 // insight a trabajar (o felicitación si mejoró en todo) y el día a día
-function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin){
+function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias){
   let h='';
   if(notaMin) h+='<div style="font-size:12px;color:var(--muted,#6B7A99);margin-bottom:8px">'+notaMin+'</div>';
   if(!cur || !(cur.venta>0)){
     h+='<p class="hint" style="margin:0">Todavía sin ventas registradas esta semana.</p>';
+    // aun sin venta, el vendedor ve su objetivo de cada día
+    if(Array.isArray(objDias) && objDias.some(x=>x>=1)){
+      h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:9px">';
+      EQ_DOW.forEach((k,i)=>{ const obj=objDias[i]||0; if(obj<1) return;
+        h+='<div style="border:1px solid var(--border,#e6ebf5);border-radius:8px;padding:6px 10px;background:#fff;min-width:86px">'
+          +'<div style="font-family:var(--font-c,inherit);font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted,#6B7A99)">'+EQ_DIAS[i]+'</div>'
+          +'<div style="font-size:13px;font-weight:700;margin-top:1px">'+objMoney(obj)+'</div>'
+          +'<div style="font-size:11px;color:var(--muted,#6B7A99)">objetivo del día</div>'
+          +'</div>'; });
+      h+='</div>';
+    }
     return h;
   }
   const k=eqKpisDe(cur), kp=eqKpisDe(prevX);
@@ -2896,12 +2957,30 @@ function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin){
     ins='Punto a trabajar: '+txt+' <b>('+(pd>0?'+':'')+Math.round(pd*100)+'% vs. semana anterior)</b>.';
   }
   h+='<div style="font-size:12.5px;margin-bottom:10px">'+ins+'</div>';
-  if(Array.isArray(cur.dias) && cur.dias.length){
-    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+cur.dias.map(d=>'<div style="border:1px solid var(--border,#e6ebf5);border-radius:8px;padding:6px 10px;background:#fff;min-width:86px">'
-      +'<div style="font-family:var(--font-c,inherit);font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted,#6B7A99)">'+esc(d.d)+'</div>'
-      +'<div style="font-size:13px;font-weight:700;margin-top:1px">'+objMoney(d.v)+'</div>'
-      +(d.h?'<div style="font-size:11px;color:var(--muted,#6B7A99)">'+fmt2(d.h)+' h venta</div>':'')
-      +'</div>').join('')+'</div>';
+  // día a día: la venta del vendedor + su objetivo del día (cuando la meta está repartida)
+  const vdMap={};
+  if(Array.isArray(cur.dias)) cur.dias.forEach(d=>{
+    const p=eqNorm(String(d.d||'')).slice(0,2); if(!p) return;
+    if(vdMap[p]) { vdMap[p]={...vdMap[p], v:(vdMap[p].v||0)+(d.v||0), h:(vdMap[p].h||0)+(d.h||0)}; }
+    else vdMap[p]=d;
+  });
+  const hayObj = Array.isArray(objDias) && objDias.some(x=>x>=1);
+  if(hayObj || (Array.isArray(cur.dias) && cur.dias.length)){
+    let cards='';
+    EQ_DOW.forEach((k,i)=>{
+      const d=vdMap[k], obj=hayObj?(objDias[i]||0):0;
+      if(!d && obj<1) return;   // día sin venta ni objetivo: no se muestra
+      const pct=(d&&obj>=1)?(d.v||0)/obj:null;
+      const col=pct==null?null:pct>=1?'var(--ok,#16a34a)':pct>=1/1.2?'#d97706':'#dc2626';
+      cards+='<div style="border:1px solid var(--border,#e6ebf5);border-radius:8px;padding:6px 10px;background:#fff;min-width:86px">'
+        +'<div style="font-family:var(--font-c,inherit);font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted,#6B7A99)">'+esc(d?d.d:EQ_DIAS[i])+'</div>'
+        +(d?'<div style="font-size:13px;font-weight:700;margin-top:1px'+(col?';color:'+col:'')+'">'+objMoney(d.v)+'</div>'
+           :'<div style="font-size:13px;font-weight:700;margin-top:1px;color:var(--muted-light,#b0bcd4)">—</div>')
+        +(obj>=1?'<div style="font-size:11px;color:var(--muted,#6B7A99)">Obj '+objMoney(obj)+(pct!=null?' · <b style="color:'+col+'">'+Math.round(pct*100)+'%</b>':'')+'</div>':'')
+        +(d&&d.h?'<div style="font-size:11px;color:var(--muted,#6B7A99)">'+fmt2(d.h)+' h venta</div>':'')
+        +'</div>';
+    });
+    if(cards) h+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+cards+'</div>';
   }
   return h;
 }
@@ -2917,6 +2996,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
   }
   if(pesos.promedio) h+='<p class="hint" style="margin:0 0 10px">Tu sucursal todavía no tiene matriz de pesos propia: la meta se reparte con el <b>promedio de todas las sucursales</b> hasta que gerencia la publique desde Objetivos → Pesos por turno.</p>';
   const {shares, cobertura, totalPeso}=eqShares(equipo, pesos);
+  const sharesDia=eqSharesDia(equipo, pesos);   // reparto abierto por día (objetivo diario individual)
   const editReal = _eqRealDraft && _eqRealDraft.slug===slug && _eqRealDraft.sem===sem;
   if(totalPeso>0 && cobertura < totalPeso-0.5){
     h+='<div style="background:var(--mid-bg,#fdf3e3);border:1px solid #f0d8a8;border-radius:9px;padding:8px 12px;margin-bottom:12px;font-size:12.5px">⚠️ Hay turnos con venta esperada y <b>sin horas asignadas</b>: queda un <b>'+(totalPeso-cobertura).toFixed(1)+'%</b> de la semana sin dueño. Esa parte de la meta no se reparte.</div>';
@@ -2942,6 +3022,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
     const r=matches[i];
     rows.push({ nombre:p.nombre, horas:eqHorasPersona(p), share:shares[i],
       meta:metaVal*shares[i], min:minVal*shares[i],
+      objDias: metaVal ? sharesDia[i].map(s=>metaVal*s) : null,
       venta:(r&&r.monto)||0, src:r&&r.src, veRow:(r&&r.ix>=0)?ve.vendedores[r.ix]:null, fuera:false });
   });
   sueltos.forEach(x=>rows.push({nombre:x.nombre, horas:0, share:0, meta:0, min:0, venta:x.venta, src:'excel', veRow:x, fuera:true}));
@@ -2987,7 +3068,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
       ? 'Mínimo: <b>'+objMoney(row.min)+'</b> · Meta: <b>'+objMoney(row.meta)+'</b> · participa el '+(row.share*100).toFixed(1)+'% de la meta del equipo'
       : (row.fuera?'No está en el equipo de esta semana — si corresponde, sumalo desde ✎ Equipo y horas.':null);
     h+='<tr class="vedias" style="display:none"><td colspan="'+nCols+'" class="L" style="background:#f8f9fe;padding:10px 14px 12px">'
-      + eqDetalleHtml(row.nombre, cur, prevM(row.nombre), diasSet, notaMin) + '</td></tr>';
+      + eqDetalleHtml(row.nombre, cur, prevM(row.nombre), diasSet, notaMin, row.objDias) + '</td></tr>';
   });
   // total
   const totHs=equipo.reduce((a,p)=>a+eqHorasPersona(p),0), totSh=shares.reduce((a,x)=>a+x,0);
@@ -3445,6 +3526,7 @@ async function renderObjetivo(){
       +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Mínimo</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+objMoney(minimo)+'</div></div>'
       +'<div class="box120" style="border-radius:9px;padding:10px 12px" title="Meta × 1,2: el gran objetivo de la semana"><div class="b120-l">★ 120%</div><div class="b120-v">'+objMoney(s120)+'</div></div>'
       +'</div>';
+    html += objDiasHtml(meta, pesos, ve);   // objetivo diario del local (curva por día)
     if(v.nota) html+='<p class="hint" style="margin-top:12px">📝 '+esc(v.nota)+'</p>';
   }
   _jvState=null;   // lo repuebla eqDistribHtml si corresponde
