@@ -186,7 +186,9 @@ def cargar_detallado(cfg):
     Articulo (col G) y Rubro (col H) + un par Cantidad/Importe por mes calendario
     (I..N = mayo/junio/julio). Aplica criterio_linea() y agrega por comprobante,
     devolviendo el mismo formato de 8 columnas del resto de los loaders. El indice
-    dia+dia-de-semana de cargar_ventas() filtra despues el periodo retail."""
+    dia+dia-de-semana de cargar_ventas() filtra despues el periodo retail.
+    Devuelve (v, lin): lin = detalle por LINEA con el rubro (para el mix de venta
+    por rubro por vendedor); None en los formatos sin rubro."""
     raw = pd.read_excel(cfg['archivo'], sheet_name=0, header=None, skiprows=2)
     def norm(s):
         s = unicodedata.normalize('NFD', str(s if s is not None else '')).encode('ascii', 'ignore').decode()
@@ -194,6 +196,8 @@ def cargar_detallado(cfg):
     flags = [criterio_linea(r, a) for r, a in zip(raw[7].map(norm), raw[6].map(norm))]
     cant_ok = pd.Series([f[0] for f in flags], index=raw.index)
     imp_ok  = pd.Series([f[1] for f in flags], index=raw.index)
+    # rubro amigable: "02-CALZADO" -> "CALZADO" (VARIOS/CONCEPTOS/OTROS quedan tal cual)
+    rub = raw[7].map(norm).str.replace(r'^\d+-\s*', '', regex=True)
     # Solo los pares de los meses calendario que el período toca. NO cargar los
     # demás: a 13 semanas justas (91 días) el par día+día-de-semana SE REPITE
     # (27-30/4 = 27-30/7), así que un período que cruza mes (mayo retail) se
@@ -202,7 +206,7 @@ def cargar_detallado(cfg):
     f_ = cfg['desde']
     while f_ <= cfg['hasta']:
         meses_periodo.add(f_.month); f_ += dt.timedelta(days=1)
-    frames = []
+    frames, lin_frames = [], []
     for i in range(3):                # pares (I,J)(K,L)(M,N) = mayo · junio · julio
         if (5 + i) not in meses_periodo:
             continue
@@ -215,6 +219,14 @@ def cargar_detallado(cfg):
         f['importe']  = imp[sel].where(imp_ok[sel], 0)
         f = f[(f.cantidad != 0) | (f.importe != 0)]     # lineas que no cuentan nada, afuera
         f['vendedor'] = f.vendedor.fillna('SIN ASIGNAR')
+        # detalle por linea con rubro (misma seleccion y criterios): para el mix
+        # por rubro por vendedor. El vendedor se asigna despues, por comprobante.
+        l = raw.loc[sel, [0, 1, 2, 5]].copy()
+        l.columns = ['sucursal', 'dia_semana', 'dia', 'comprobante']
+        l['rubro']    = rub[sel]
+        l['cantidad'] = cant[sel].where(cant_ok[sel], 0)
+        l['importe']  = imp[sel].where(imp_ok[sel], 0)
+        lin_frames.append(l[(l.cantidad != 0) | (l.importe != 0)])
         # Un comprobante = UNA fila (atomico): se suman sus lineas y la metadata
         # (dia/hora/vendedor) la define la linea de mayor |importe| — la del articulo
         # principal, no la del cupon: ~5% de los tickets traen lineas con otro
@@ -227,11 +239,12 @@ def cargar_detallado(cfg):
                  )[['sucursal', 'dia_semana', 'dia', 'vendedor', 'hora', 'comprobante']]
         frames.append(meta_f.merge(tot, on=['sucursal', 'comprobante']))
     v = pd.concat(frames, ignore_index=True)
-    return v
+    return v, pd.concat(lin_frames, ignore_index=True)
 
 def cargar_ventas(cfg):
+    lin = None
     if cfg.get('formato') == 'detallado':
-        v = cargar_detallado(cfg)
+        v, lin = cargar_detallado(cfg)
     elif cfg.get('formato') == 'consolidado':
         v = cargar_consolidado(cfg)
     else:
@@ -261,10 +274,16 @@ def cargar_ventas(cfg):
             print(f'  ⚠ {huerfanas} filas con día/día-semana fuera del período: se descartan')
         v = v[v.fecha.notna()]
     v['es_nc'] = v.comprobante.str.startswith('Nc')
-    return v
+    # el detalle por linea sigue los mismos filtros de periodo que v
+    if lin is not None:
+        lin = lin[(lin.sucursal != 'Total') & (lin.dia != 'Total') & (lin.sucursal != '05-Depósito')].copy()
+        lin['dia'] = lin.dia.astype(int)
+        lin['fecha'] = [idx.get((d, ds)) for d, ds in zip(lin.dia, lin.dia_semana)]
+        lin = lin[lin.fecha.notna()]
+    return v, lin
 
 def procesar(per, cfg, st):
-    v  = cargar_ventas(cfg)
+    v, lin = cargar_ventas(cfg)
     nc = v[v.es_nc]
     vt = v[(~v.es_nc) & (v.cantidad > 0)].copy()          # fuera: canjes sin importe y operaciones sin unidades
     vt['dia'] = vt.fecha                                  # fecha real: el período puede cruzar dos meses
@@ -404,6 +423,32 @@ def procesar(per, cfg, st):
                       'horas_contr','h_act','dias','cubre','propuesto']].round(2).to_dict('records')
     for rec in vend_recs:
         rec['semanas'] = lista_sem(vend_sem.get((rec['sucursal'], rec['vendedor']), {}))
+
+    # ── mix de venta por rubro por vendedor (solo formato detallado) ─────────
+    # Cada linea se atribuye al vendedor de su comprobante (la metadata del comp).
+    # Es aditivo: no toca ningun calculo existente; el modulo lo usa para el
+    # apartado "venta por rubro por persona" del analisis mensual.
+    if lin is not None and len(lin):
+        vend_comp = v[['sucursal','comprobante','vendedor']].drop_duplicates(['sucursal','comprobante'])
+        lm = lin.merge(vend_comp, on=['sucursal','comprobante'], how='inner')
+        rub_v = lm.groupby(['sucursal','vendedor','rubro']).agg(
+            importe=('importe','sum'), unidades=('cantidad','sum')).reset_index()
+        rmap = {}
+        for r in rub_v.itertuples(index=False):
+            rmap.setdefault((r.sucursal, r.vendedor), {})[r.rubro] = {
+                'importe': round(float(r.importe), 2), 'unidades': round(float(r.unidades), 2)}
+        for rec in vend_recs:
+            rr = rmap.get((rec['sucursal'], rec['vendedor']))
+            if rr: rec['rubros'] = rr
+        rub_s = lm.groupby(['sucursal','rubro']).agg(
+            importe=('importe','sum'), unidades=('cantidad','sum')).reset_index()
+        smap = {}
+        for r in rub_s.itertuples(index=False):
+            smap.setdefault(r.sucursal, {})[r.rubro] = {
+                'importe': round(float(r.importe), 2), 'unidades': round(float(r.unidades), 2)}
+        for rec in suc_recs:
+            rr = smap.get(rec['sucursal'])
+            if rr: rec['rubros'] = rr
 
     return {'periodo': per,
       'meta': {'dias': f"{cfg['desde'].strftime('%d/%m')}–{cfg['hasta'].strftime('%d/%m')}",

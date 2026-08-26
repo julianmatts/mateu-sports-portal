@@ -667,6 +667,13 @@ footer b{color:var(--navy)}
       </div>
     </section>
 
+    <section class="sec" id="secRubros" style="display:none">
+      <div class="sec-label">Mix por rubro</div>
+      <h2 class="sec-title">Quién vende <em>cada rubro</em></h2>
+      <p class="hint">Por vendedor: qué parte de la venta del rubro puso (participación) y qué % de su propia venta es ese rubro (mix). El que más domina un rubro es el referente natural para tirarle tips al que menos lo trabaja.</p>
+      <div class="card pad" id="rubros"></div>
+    </section>
+
     <section class="sec" id="secSem" style="display:none">
       <div class="sec-label">Evolución</div>
       <h2 class="sec-title">La venta <em>semana a semana</em></h2>
@@ -1320,7 +1327,7 @@ async function render(){
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
   $('secCanales').style.display = ecom?'':'none';
-  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secSem','secBarrida','secObjetivo','secObjetivoMes','secKpisSem'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
+  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secObjetivo','secObjetivoMes','secKpisSem'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
   const seg=document.querySelector('.seg'); if(seg) seg.style.display = ecom?'none':'flex';
   renderKPIs();
   renderDiagnostico();
@@ -1329,13 +1336,13 @@ async function render(){
   renderHeat();
   renderNotas();
   if(ecom){ renderCanales(); }
-  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderSem(); renderObjetivo(); renderBarrida(); }
+  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderRubros(); renderSem(); renderObjetivo(); renderBarrida(); }
 }
 
 function mostrarEmpty(msg){
   // Objetivo / Reposición se muestran igual si hay slug (las pinta su propio render)
   const conSlug = !!slugActual();
-  ['secEq','secMix','secCov','secPlantilla','secTbl','secSem','secHeat','secBarrida','secObjetivo','secObjetivoMes','secKpisSem']
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secObjetivo','secObjetivoMes','secKpisSem']
     .filter(id=>!(conSlug && /^sec(Barrida|Objetivo|KpisSem)/.test(id))).forEach(id=>$(id).style.display='none');
   pintarZonas();
   $('cobNota').style.display='none';
@@ -4308,6 +4315,74 @@ function renderTbl(){
   document.querySelectorAll('#tbl th').forEach(th=>{ th.removeAttribute('data-sorted');
     if(th.dataset.k===sort.k) th.setAttribute('data-sorted','1');
     th.onclick=()=>{ sort={k:th.dataset.k, dir: sort.k===th.dataset.k?-sort.dir:-1}; renderTbl(); }; });
+}
+
+/* --- mix de venta por rubro por vendedor (dato `rubros` del ETL, mes completo) ---
+   Participación = qué parte de la venta del rubro de la sucursal puso esa persona.
+   Mix propio = qué % de SU venta es ese rubro (no depende de sus horas: sirve para
+   comparar un part-time contra un full). El referente del rubro (mayor participación)
+   se sugiere como mentor de los que tienen el rubro flojo en su mix. */
+const RUBROS_MIX=['CALZADO','INDUMENTARIA','ACCESORIOS'];
+const RUBRO_LBL={CALZADO:'Calzado',INDUMENTARIA:'Indumentaria',ACCESORIOS:'Accesorios'};
+function renderRubros(){
+  const sec=$('secRubros'), box=$('rubros'); if(!sec||!box) return;
+  const det=DET_FULL||DET;
+  const gente=(det&&det.vendedores||[]).filter(v=>v.rubros&&v.importe_neto>0);
+  if(!gente.length){ sec.style.display='none'; return; }
+  const pctf=v=>Math.round(v*100)+'%';
+  const nom=x=>titleCase(x.v.vendedor);
+  // total por rubro de la sucursal: del summary si está; si no, suma de la gente
+  const sucRub={};
+  RUBROS_MIX.forEach(r=>{
+    const s=det.summary&&det.summary.rubros&&det.summary.rubros[r];
+    sucRub[r]=Math.max(s?s.importe:gente.reduce((a,v)=>a+((v.rubros[r]||{}).importe||0),0),0);
+  });
+  const sucTot=RUBROS_MIX.reduce((a,r)=>a+sucRub[r],0);
+  if(!(sucTot>0)){ sec.style.display='none'; return; }
+  const mixSuc={}; RUBROS_MIX.forEach(r=>mixSuc[r]=sucRub[r]/sucTot);
+  const rows=gente.map(v=>{
+    const rr={}; let tot=0;
+    RUBROS_MIX.forEach(r=>{ const imp=Math.max(((v.rubros||{})[r]||{}).importe||0,0); rr[r]=imp; tot+=imp; });
+    return {v, rr, tot};
+  }).filter(x=>x.tot>0).sort((a,b)=>b.tot-a.tot);
+  if(!rows.length){ sec.style.display='none'; return; }
+  const refPor={}; RUBROS_MIX.forEach(r=>{ const b=rows.slice().sort((a,c)=>c.rr[r]-a.rr[r])[0]; if(b&&b.rr[r]>0) refPor[r]=b; });
+  let h='<div class="tbl-wrap"><table><thead><tr><th class="L">Vendedor</th>';
+  RUBROS_MIX.forEach(r=>h+='<th>'+RUBRO_LBL[r]+'</th>');
+  h+='<th>Venta rubros</th></tr></thead><tbody>';
+  rows.forEach(x=>{
+    h+='<tr><td class="L">'+esc(x.v.vendedor)+'</td>';
+    RUBROS_MIX.forEach(r=>{
+      const part=sucRub[r]>0?x.rr[r]/sucRub[r]:0, mix=x.rr[r]/x.tot;
+      const esRef=refPor[r]===x;
+      h+='<td'+(esRef?' style="background:rgba(204,0,0,.06)" title="Referente del rubro: la mayor participación de la sucursal"':'')+'>'
+        +(x.rr[r]>0
+          ? '<b>'+(esRef?'★ ':'')+pctf(part)+'</b> <span class="muted" style="font-size:11px">del rubro</span>'
+            +'<div class="muted" style="font-size:11.5px">'+pctf(mix)+' de su venta</div>'
+          : '<span class="muted">—</span>')
+        +'</td>';
+    });
+    h+='<td><span class="num">'+kM(x.tot)+'</span></td></tr>';
+  });
+  h+='<tr class="team" style="cursor:default"><td class="L">Mix de la sucursal</td>';
+  RUBROS_MIX.forEach(r=>h+='<td><b>'+pctf(mixSuc[r])+'</b> <span class="muted" style="font-size:11px">de la venta</span></td>');
+  h+='<td><span class="num">'+kM(sucTot)+'</span></td></tr>';
+  h+='</tbody></table></div>';
+  // sugerencias de mentoreo: referente del rubro → los que lo tienen flojo en su mix
+  const sug=[];
+  RUBROS_MIX.forEach(r=>{
+    const ref=refPor[r]; if(!ref || mixSuc[r]<0.05) return;
+    const flojos=rows.filter(x=>x!==ref && x.tot>=0.35*(sucTot/rows.length) && (x.rr[r]/x.tot)<0.6*mixSuc[r])
+      .sort((a,b)=>(a.rr[r]/a.tot)-(b.rr[r]/b.tot)).slice(0,2);
+    if(!flojos.length) return;
+    sug.push('<div style="border:1px solid var(--border,#e6ebf5);border-left:3px solid var(--red);border-radius:9px;padding:9px 12px;font-size:12.5px;background:#fff">'
+      +'🤝 <b>'+RUBRO_LBL[r]+':</b> <b>'+esc(nom(ref))+'</b> concentra el <b>'+pctf(ref.rr[r]/sucRub[r])+'</b> del rubro — puede compartir cómo lo trabaja con '
+      +flojos.map(f=>'<b>'+esc(nom(f))+'</b> ('+pctf(f.rr[r]/f.tot)+' de su venta es '+RUBRO_LBL[r].toLowerCase()+', contra '+pctf(mixSuc[r])+' en la sucursal)').join(' y ')+'.</div>');
+  });
+  if(sug.length) h+='<div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">'+sug.join('')+'</div>';
+  h+='<p class="hint" style="margin:10px 0 0">Solo los tres rubros de producto (gift cards, conceptos y redondeos quedan afuera). El mix por rubro es del <b>mes completo</b>'+((typeof semSel!=='undefined'&&semSel)?' aunque estés filtrando una semana':'')+'.</p>';
+  box.innerHTML=h;
+  sec.style.display='';
 }
 
 /* --- semana a semana (semanas retail del mes) --- */
