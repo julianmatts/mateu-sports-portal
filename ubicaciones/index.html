@@ -2699,9 +2699,19 @@ function abrirModalMapeo(wb, hojaElegida){
 }
 
 async function sincronizarStock(lista){
-  // leer artículos y estanterías actuales JUSTO antes, para preservar ubicaciones
-  const prev = await fetchJSON(sucPath()+'/articulos.json').catch(()=>({})) || {};
-  const ests = await fetchJSON(sucPath()+'/estanterias.json').catch(()=>({})) || {};
+  // leer artículos y estanterías actuales JUSTO antes, para preservar ubicaciones.
+  // ⚠ Si esta lectura falla NO se puede seguir: continuar con {} haría que toda
+  // la sucursal parezca nueva y se pisarían TODAS las ubicaciones (le pasó a
+  // Diagonal el 26/08/2026 con una lectura que falló en silencio).
+  let prev, ests;
+  try{
+    prev = await fetchJSON(sucPath()+'/articulos.json') || {};
+    ests = await fetchJSON(sucPath()+'/estanterias.json') || {};
+  }catch(e){
+    cerrarModal();
+    toast('⚠ No se pudo leer el estado actual de la sucursal. NO se cargó nada: revisá la conexión y probá de nuevo.');
+    return;
+  }
   const now = Date.now();
   const out = {};
   const nuevos = [], eliminados = [];
@@ -2753,6 +2763,17 @@ async function sincronizarStock(lista){
     }
     ubicacionesImportadas++;
   }
+  // Red de seguridad: si la carga borra una parte grande de las ubicaciones
+  // existentes (artículos que desaparecen del Excel o claves que no matchean),
+  // frenar y pedir confirmación con los números en la mano.
+  const conUbi = o => Object.values(o).filter(a=>a.ubicaciones && Object.keys(a.ubicaciones).length).length;
+  const ubisPrev = conUbi(prev), ubisAhora = conUbi(out);
+  const perdidas = ubisPrev - ubisAhora;
+  if(perdidas > 0 && perdidas >= Math.max(10, Math.round(ubisPrev*0.3))){
+    const seguir = confirm('⚠ ATENCIÓN\n\nHoy hay '+ubisPrev+' artículos con ubicación asignada y después de esta carga quedarían '+ubisAhora+' ('+perdidas+' perderían su lugar).\n\nSi no era la intención, cancelá y revisá el archivo.\n\n¿Continuar igual?');
+    if(!seguir){ cerrarModal(); toast('Carga cancelada. No se cambió nada.'); return; }
+  }
+
   if(estsCambiadas) await putJSON(sucPath()+'/estanterias.json', ests);
   DATA.estanterias = ests;
 
