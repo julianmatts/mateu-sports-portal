@@ -691,6 +691,13 @@ footer b{color:var(--navy)}
       <input type="file" id="eqFile" accept=".xlsx,.xls" style="display:none">
     </section>
 
+    <section class="sec" id="secF8" style="display:none">
+      <div class="sec-label">Área de Producto</div>
+      <h2 class="sec-title">F8 <em>para armar</em></h2>
+      <p class="hint">Pedidos de transferencia que el Área de Producto le hizo a tu sucursal. Descargalo, armá el envío y <b>confirmá artículo por artículo</b>: tildá lo enviado y marcá con cruz (y motivo) lo que no se pudo enviar.</p>
+      <div class="card pad" id="f8SucCard"></div>
+    </section>
+
     <section class="sec" id="secBarrida" style="display:none">
       <div class="sec-label">Depósito central</div>
       <h2 class="sec-title">Reposición <em>disponible</em></h2>
@@ -1429,7 +1436,7 @@ async function render(){
     $('cadenaView').style.display='none';
     $('content').style.display='block';
     mostrarEmpty('Tu sucursal todavía no tiene datos de indicadores cargados.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); }
+    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); }
     return;
   }
 
@@ -1490,7 +1497,7 @@ async function render(){
     mostrarEmpty(Object.values(SOLO_OBJ_SUC).includes(sucName)
       ? '<b>'+esc(sucName)+'</b> todavía no tiene datos de indicadores cargados (sí su objetivo y equipo).'
       : 'No hay datos de <b>'+esc(sucName)+'</b> para '+esc(perLabel(per))+'.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); }
+    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); }
     return;
   }
   // la semana elegida tiene que existir en esta sucursal/período
@@ -1511,7 +1518,7 @@ async function render(){
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
   $('secCanales').style.display = ecom?'':'none';
-  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secObjetivo','secObjetivoMes'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
+  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secF8','secObjetivo','secObjetivoMes'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
   const seg=document.querySelector('.seg'); if(seg) seg.style.display = ecom?'none':'flex';
   renderKPIs();
   renderDiagnostico();
@@ -1520,14 +1527,14 @@ async function render(){
   renderHeat();
   renderNotas();
   if(ecom){ renderCanales(); }
-  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderRubros(); renderSem(); renderObjetivo(); renderBarrida(); }
+  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderRubros(); renderSem(); renderObjetivo(); renderBarrida(); renderF8Suc(); }
   _kbVisible=false; $('kpiBar').classList.remove('show'); kpiBarScroll();   // re-evaluar la mini-barra con la vista nueva
 }
 
 function mostrarEmpty(msg){
   // Objetivo / Reposición se muestran igual si hay slug (las pinta su propio render)
   const conSlug = !!slugActual();
-  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secObjetivo','secObjetivoMes']
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secF8','secObjetivo','secObjetivoMes']
     .filter(id=>!(conSlug && /^sec(Barrida|Objetivo)/.test(id))).forEach(id=>$(id).style.display='none');
   pintarZonas();
   $('cobNota').style.display='none';
@@ -4481,6 +4488,120 @@ function bMacro(r){
   if(s.includes('INDUMENT')) return 'Indumentaria';
   if(s.includes('ACCESORI')) return 'Accesorios';
   return 'Otros';
+}
+/* ══════════ F8 para armar (Área de Producto → sucursal) ══════════ */
+const EQUIPO_F8_URL='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/f8suc';
+const MOTIVOS_F8=['Se vendió antes de armar el envío','Producto fallado / no está en condiciones','No se encontró en el local','El stock del sistema no coincide (no lo tenemos)','Otro motivo'];
+let _f8SucDocs=null, _f8ConfDraft={};
+async function renderF8Suc(){
+  const sec=$('secF8'); if(!sec) return;
+  sec.style.display='none';
+  const slug=slugActual(); if(!slug) return;
+  let docs=null;
+  try{ docs=await (await fetch(EQUIPO_F8_URL+'/'+encodeURIComponent(slug)+'.json')).json(); }catch(e){ return; }
+  if(!docs||!Object.keys(docs).length){ pintarZonas(); return; }
+  _f8SucDocs={slug,docs};
+  paintF8Suc();
+  pintarZonas();
+}
+function paintF8Suc(){
+  const sec=$('secF8'), card=$('f8SucCard'); if(!sec||!card||!_f8SucDocs) return;
+  const {slug,docs}=_f8SucDocs;
+  const lista=Object.values(docs).filter(Boolean).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+  if(!lista.length){ sec.style.display='none'; return; }
+  const fmtF=f=>{const p=String(f||'').split('-');return p.length===3?p[2]+'/'+p[1]:f;};
+  let html='';
+  lista.forEach(d=>{
+    const tot=(d.lineas||[]).length;
+    const conf=d.conf&&d.conf.lineas?d.conf:null;
+    const pend=!conf;
+    const chip=pend
+      ?'<span style="background:rgba(204,0,0,.1);color:#CC0000;border:1px solid rgba(204,0,0,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">PENDIENTE DE CONFIRMAR</span>'
+      :'<span style="background:rgba(0,168,107,.1);color:#00a86b;border:1px solid rgba(0,168,107,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">✓ CONFIRMADO</span>';
+    html+='<details class="bgrupo"'+(pend?' open':'')+' data-f8="'+esc(d.id)+'" ontoggle="f8Visto(this)">'
+      +'<summary><b>F8 del '+esc(fmtF(d.fecha))+'</b> · '+esc(d.operador||'')+' · '+tot+' artículo'+(tot===1?'':'s')+' · '+chip+'</summary>'
+      +'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0">'
+      +'<button type="button" class="btn" onclick="f8Descargar(\''+esc(d.id)+'\')">⇩ Descargar planilla</button>'
+      +(pend?'<span class="hint" style="margin:0" id="f8prog-'+esc(d.id)+'"></span>':'')
+      +'</div>';
+    html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Código</th><th class="L">Descripción</th><th class="L">Destino</th><th>Cant.</th><th class="L">'+(pend?'¿Lo enviaste?':'Confirmación')+'</th></tr></thead><tbody>';
+    (d.lineas||[]).forEach((L,i)=>{
+      const cant=L.todo?'Todo':(L.t||'');
+      let celda;
+      if(!pend){
+        const c=(conf.lineas||{})[i]||{};
+        celda=c.ok===true?'<span style="color:#00a86b;font-weight:700">✓ Enviado</span>'
+          :c.ok===false?'<span style="color:#CC0000;font-weight:700">✗ No enviado</span> <span class="hint" style="margin:0">'+esc(c.motivo||'')+'</span>'
+          :'—';
+      }else{
+        const dr=(_f8ConfDraft[d.id]||{})[i]||{};
+        celda='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
+          +'<button type="button" onclick="f8Marcar(\''+esc(d.id)+'\','+i+',true)" style="border:1px solid '+(dr.ok===true?'#00a86b;background:rgba(0,168,107,.15)':'var(--line,#dce3f0);background:#fff')+';border-radius:6px;padding:4px 10px;cursor:pointer;font-weight:700;color:#00a86b">✓</button>'
+          +'<button type="button" onclick="f8Marcar(\''+esc(d.id)+'\','+i+',false)" style="border:1px solid '+(dr.ok===false?'#CC0000;background:rgba(204,0,0,.12)':'var(--line,#dce3f0);background:#fff')+';border-radius:6px;padding:4px 10px;cursor:pointer;font-weight:700;color:#CC0000">✗</button>'
+          +(dr.ok===false?'<select onchange="f8Motivo(\''+esc(d.id)+'\','+i+',this.value)" style="font-size:12px;max-width:230px"><option value="">Elegí el motivo…</option>'+MOTIVOS_F8.map(m=>'<option'+(dr.motivo===m?' selected':'')+'>'+esc(m)+'</option>').join('')+'</select>':'')
+          +'</div>';
+      }
+      html+='<tr><td class="L" style="font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:nowrap">'+esc(L.c||'')+'</td><td class="L">'+esc(L.a||'')+'</td><td class="L">'+esc(L.d||'')+'</td><td>'+esc(String(cant))+'</td><td class="L">'+celda+'</td></tr>';
+    });
+    html+='</tbody></table></div>';
+    if(pend)html+='<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="btn btn-primary" id="f8btn-'+esc(d.id)+'" onclick="f8Confirmar(\''+esc(d.id)+'\')">Enviar confirmación</button><span class="hint" style="margin:0">Respondé todos los artículos (y el motivo de cada ✗) para poder enviarla.</span></div>';
+    html+='</details>';
+  });
+  if(esGerencia)html='<p class="hint">Vista de gerencia: la confirmación la hace la cuenta de la sucursal.</p>'+html;
+  card.innerHTML=html;
+  lista.forEach(d=>{if(!d.conf)f8ProgTxt(d.id);});
+  sec.style.display='';
+}
+function f8Doc(id){return _f8SucDocs&&Object.values(_f8SucDocs.docs).find(x=>x&&x.id===id);}
+function f8Patch(id,body){return fetch(EQUIPO_F8_URL+'/'+encodeURIComponent(_f8SucDocs.slug)+'/'+encodeURIComponent(id)+'.json',{method:'PATCH',body:JSON.stringify(body),headers:{'Content-Type':'application/json'}}).catch(()=>null);}
+function f8Visto(el){
+  if(!el.open||esGerencia)return;
+  const d=f8Doc(el.dataset.f8);
+  if(d&&!d.visto){d.visto=Date.now();f8Patch(d.id,{visto:d.visto});}
+}
+function f8Descargar(id){
+  const d=f8Doc(id); if(!d) return;
+  const filas=[['Código','Artículo (Id.item)','Descripción','Destino','Cantidad']]
+    .concat((d.lineas||[]).map(L=>[L.c||'',L.a||'','',L.d||'',L.todo?'Todo':(L.t||'')]));
+  const csv='﻿'+filas.map(r=>r.map(v=>String(v).replace(/;/g,',')).join(';')).join('\r\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download='F8 '+d.fecha+' '+_f8SucDocs.slug+'.csv'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  if(!esGerencia&&!d.descargado){d.descargado=Date.now();f8Patch(id,{descargado:d.descargado});}
+}
+function f8Marcar(id,i,ok){
+  if(esGerencia)return;
+  const m=(_f8ConfDraft[id]=_f8ConfDraft[id]||{});
+  m[i]={ok,motivo:ok?'':(m[i]&&m[i].motivo)||''};
+  paintF8Suc();
+}
+function f8Motivo(id,i,mot){
+  const m=(_f8ConfDraft[id]=_f8ConfDraft[id]||{});
+  m[i]={ok:false,motivo:mot};
+  f8ProgTxt(id);
+}
+function f8ProgTxt(id){
+  const d=f8Doc(id); if(!d) return;
+  const tot=(d.lineas||[]).length;
+  const m=_f8ConfDraft[id]||{};
+  const resp=Object.values(m).filter(x=>x&&(x.ok===true||(x.ok===false&&x.motivo))).length;
+  const el=$('f8prog-'+id); if(el) el.innerHTML='Respondidos: <b>'+resp+'</b> de '+tot;
+  const btn=$('f8btn-'+id); if(btn){btn.disabled=resp<tot;btn.style.opacity=resp<tot?'.5':'1';}
+}
+async function f8Confirmar(id){
+  if(esGerencia)return;
+  const d=f8Doc(id); if(!d) return;
+  const tot=(d.lineas||[]).length;
+  const m=_f8ConfDraft[id]||{};
+  const completos=Object.values(m).filter(x=>x&&(x.ok===true||(x.ok===false&&x.motivo))).length;
+  if(completos<tot){alert('Faltan responder '+(tot-completos)+' artículo(s) — y cada ✗ necesita su motivo.');return;}
+  const si=Object.values(m).filter(x=>x.ok===true).length;
+  if(!confirm('¿Enviar la confirmación del F8 del '+d.fecha+'?\n\n✓ Enviados: '+si+'\n✗ No enviados (con motivo): '+(tot-si)+'\n\nEsto le llega al Área de Producto y se cruza contra las transferencias reales.'))return;
+  const conf={ts:Date.now(),por:(SESSION&&SESSION.email)||'',lineas:m};
+  await f8Patch(id,{conf});
+  d.conf=conf; delete _f8ConfDraft[id];
+  paintF8Suc();
 }
 function fetchBarrida(slug){
   if(_barridaCache[slug]) return _barridaCache[slug];

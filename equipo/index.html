@@ -289,7 +289,7 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
   <div id="cruce-filters" style="display:none;margin-bottom:16px;display:none;gap:10px;flex-wrap:wrap;align-items:center">
     <select id="f-sucursal" onchange="renderCruce()" style="font-size:12px"><option value="">Todas las sucursales que envían</option></select>
     <select id="f-operador" onchange="renderCruce()" style="font-size:12px"><option value="">Ambos operadores</option><option value="David">David</option><option value="Daniel">Daniel</option></select>
-    <select id="f-tipo-cruce" onchange="renderCruce()" style="font-size:12px"><option value="">Todos los casos</option><option value="no_ejecutado">No ejecutados</option><option value="diferencia">Con diferencia</option><option value="ok">Exactos</option><option value="sin_f8">Enviados sin F8</option></select>
+    <select id="f-tipo-cruce" onchange="renderCruce()" style="font-size:12px"><option value="">Todos los casos</option><option value="no_ejecutado">No ejecutados</option><option value="diferencia">Con diferencia</option><option value="ok">Exactos</option><option value="justificado">Justificados</option><option value="critico">⚠ Críticos</option><option value="sin_f8">Enviados sin F8</option></select>
     <select id="f-rubro" onchange="renderCruce()" style="font-size:12px"><option value="">Todos los rubros</option><option value="INDUMENTARIA">Indumentaria</option><option value="CALZADO">Calzado</option><option value="ACCESORIOS">Accesorios</option></select>
     <input type="text" id="f-busqueda" oninput="renderCruce()" placeholder="Buscar..." style="font-size:12px;min-width:160px">
     <button class="btn" onclick="exportCruce()" style="font-size:12px">⇩ Excel</button>
@@ -345,6 +345,9 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
       <div class="upload-result" id="res-daniel"></div>
     </div>
   </div>
+  <div class="section-title" style="margin-top:34px">Seguimiento del circuito</div>
+  <div style="font-family:var(--font-c);font-size:13px;color:var(--muted);margin-bottom:12px">Al subir un F8, cada sucursal lo recibe en <strong>Mi Sucursal → «F8 para armar»</strong> (con aviso por la Bandeja). Acá se ve quién lo vio, lo descargó y lo confirmó artículo por artículo.</div>
+  <div id="segF8"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -368,6 +371,11 @@ const FB_CTRL='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/ctrl.jso
 const FB_TRANSF='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/transf.json';
 const FB_REP='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/reporteSem/';
 const FB_CONFIG='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/config.json';
+const FB_F8SUC='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/f8suc';
+const USUARIOS_URL='https://discontinuos-mateu-default-rtdb.firebaseio.com/usuarios.json';
+// slug del Portal por nombre canónico de sucursal (salida de nrmF8) — para repartir el F8
+const SLUG_EQ={'plaza italia':'plaza','mateu kids':'kids','outlet calle 55':'calle-55','outlet gonnet':'gonnet','outlet av. 44':'av-44','aurelius calle 12':'aurelius-12','aurelius calle 5':'aurelius-5','aurelius city bell':'aurelius-cb','aurelius calle 10':'aurelius-10','adidas av. 7':'adidas','adidas calle 12':'adidas-12','adidas originals':'originals','calle 12':'calle-12','calle 47':'calle-47','calle 49':'calle-49','city bell':'city-bell','los hornos':'los-hornos','berisso':'berisso','ensenada':'ensenada','ecommerce':'ecommerce','diagonal 80':'diagonal','deposito':'deposito'};
+const MOTIVOS_F8=['Se vendió antes de armar el envío','Producto fallado / no está en condiciones','No se encontró en el local','El stock del sistema no coincide (no lo tenemos)','Otro motivo'];
 // Tolerancia compartida: margen (±%) para dar por cumplida una línea con cantidad distinta
 // (entre el F8 y el envío el artículo pudo venderse o estar fallado). La setea gerencia
 // y la ven todos igual, así el reporte usa una única vara.
@@ -396,16 +404,96 @@ const addF8=e=>{
   const patch={};prev.forEach(x=>patch[x.id]=null);patch[e.id]=e;
   _F8S=getF8s().filter(x=>!prev.includes(x));_F8S.push(e);_F8S_HASH='';
   fetch(FB_F8S,{method:'PATCH',body:JSON.stringify(patch),headers:{'Content-Type':'application/json'}});
+  return prev;
 };
+
+// ── Circuito F8 → sucursal: reparto, aviso por la Bandeja y seguimiento ──
+let _F8SUC=null;
+function fbKeyMail(m){return (m||'').toLowerCase().trim().replace(/\./g,',');}
+function convKeyDe(a,b){return [fbKeyMail(a),fbKeyMail(b)].sort().join('__');}
+let _usuarios=null;
+async function usuariosPortal(){if(_usuarios)return _usuarios;try{_usuarios=await (await fetch(USUARIOS_URL)).json()||{};}catch(e){_usuarios={};}return _usuarios;}
+async function emailsDeSucursal(slug){
+  const us=await usuariosPortal();const out=[];
+  for(const k in us){const u=us[k];if(!u||!u.email)continue;
+    if((u.rol==='sucursal'&&u.sucursal===slug)||(u.rol==='outlet'&&u.outlet_id===slug))out.push(u.email);}
+  return out;
+}
+async function repartirF8(entry,prevs){
+  if(!_F8SUC)_F8SUC={};
+  const patch={};
+  // reemplazo: limpiar el reparto de versiones anteriores de este mismo F8
+  for(const p of (prevs||[])){
+    const slugsPrev=new Set((p.lineas||[]).map(L=>SLUG_EQ[nrmF8(L.o)]).filter(Boolean));
+    for(const s of slugsPrev){patch[s+'/'+p.id]=null;if(_F8SUC[s])delete _F8SUC[s][p.id];}
+  }
+  const porSlug={};const sinSlug=new Set();
+  for(const L of (entry.lineas||[])){
+    const slug=SLUG_EQ[nrmF8(L.o)];
+    if(!slug){sinSlug.add(L.o);continue;}
+    (porSlug[slug]=porSlug[slug]||[]).push(L);
+  }
+  for(const slug in porSlug){
+    const doc={id:entry.id,fecha:entry.date,operador:entry.operator,archivo:entry.filename,ts:Date.now(),lineas:porSlug[slug],visto:0,descargado:0,conf:null};
+    patch[slug+'/'+entry.id]=doc;
+    (_F8SUC[slug]=_F8SUC[slug]||{})[entry.id]=doc;
+  }
+  if(Object.keys(patch).length)await fetch(FB_F8SUC+'.json',{method:'PATCH',body:JSON.stringify(patch),headers:{'Content-Type':'application/json'}}).catch(()=>{});
+  renderSeguimiento();
+  const slugs=Object.keys(porSlug);
+  if(sinSlug.size)showToast('Sin sucursal en el portal (no se reparte): '+[...sinSlug].join(', '),true);
+  if(slugs.length&&confirm('F8 repartido a '+slugs.length+' sucursal(es): cada una ya lo ve en Mi Sucursal.\n\n¿Avisarles ahora por la Bandeja del portal?')){
+    notificarF8(porSlug,entry).then(n=>showToast('Avisos enviados a '+n+' cuenta(s) ✓'));
+  }
+}
+async function notificarF8(porSlug,entry){
+  // Aviso por directo de la Bandeja a las cuentas de cada sucursal.
+  // Mail real: pendiente de un template propio en EmailJS (el del turnero tiene texto
+  // fijo de turnos); cuando exista, enganchar acá emailjs.send con los mismos destinos.
+  const de=sesionMail()||'equipo@mateu.com.ar';const ts=Date.now();let n=0;
+  const p=String(entry.date).split('-');const f=(p[2]||'')+'/'+(p[1]||'');
+  for(const slug in porSlug){
+    const mails=await emailsDeSucursal(slug);
+    const arts=porSlug[slug].length;
+    const texto='📦 F8 nuevo del '+f+' ('+entry.operator+'): tenés '+arts+' artículo'+(arts===1?'':'s')+' para enviar. Entrá a Mi Sucursal → «F8 para armar»: mirá el detalle, descargalo y CONFIRMALO artículo por artículo cuando lo hagas.';
+    for(const a of mails){
+      if((a||'').toLowerCase()===de.toLowerCase())continue;
+      await fetch(MENSAJES_URL+'/directos/'+convKeyDe(de,a)+'.json',{method:'POST',body:JSON.stringify({de,texto,ts}),headers:{'Content-Type':'application/json'}}).catch(()=>null);
+      n++;
+    }
+  }
+  return n;
+}
+function renderSeguimiento(){
+  const box=document.getElementById('segF8');if(!box)return;
+  if(!_F8SUC||!Object.keys(_F8SUC).length){box.innerHTML='<div class="empty">Todavía no se repartió ningún F8 a las sucursales.</div>';return;}
+  const filas=[];
+  for(const slug in _F8SUC)for(const id in _F8SUC[slug]){const d=_F8SUC[slug][id];if(d)filas.push({slug,...d});}
+  filas.sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))||a.slug.localeCompare(b.slug));
+  const fhora=ts=>ts?new Date(ts).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})+' '+new Date(ts).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}):null;
+  const chip=(okTs,lbl)=>okTs?`<span style="color:var(--green);font-weight:700" title="${fhora(okTs)}">✓ ${lbl}</span>`:`<span style="color:var(--muted-light)">— ${lbl}</span>`;
+  const rows=filas.map(d=>{
+    const tot=(d.lineas||[]).length;
+    let confHtml='<span style="color:var(--red);font-weight:700">Pendiente</span>';
+    if(d.conf&&d.conf.lineas){
+      const cs=Object.values(d.conf.lineas);
+      const si=cs.filter(c=>c&&c.ok===true).length,no=cs.filter(c=>c&&c.ok===false).length;
+      confHtml=`<span style="color:var(--green);font-weight:700" title="${fhora(d.conf.ts)||''}">✓ ${si} enviados · ${no} justificados</span>`;
+    }
+    return`<tr><td style="font-weight:700;color:var(--navy)">${sucBonito(d.slug.replace(/-/g,' '))}</td><td>${d.fecha} · <span class="op-tag op-${(d.operador||'').toLowerCase()}">${d.operador}</span></td><td style="text-align:center">${tot}</td><td>${chip(d.ts,'recibido')}</td><td>${chip(d.visto,'visto')}</td><td>${chip(d.descargado,'descargado')}</td><td>${confHtml}</td></tr>`;
+  }).join('');
+  box.innerHTML=`<div class="card" style="overflow:hidden"><div style="overflow-x:auto"><table class="history-table" style="width:100%"><thead><tr><th>Sucursal</th><th>F8</th><th>Artículos</th><th>Recepción</th><th>Visto</th><th>Descargado</th><th>Confirmación</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
 const setF8s=d=>{ _F8S=d; _F8S_HASH=''; const obj=d.length?Object.fromEntries(d.map(e=>[e.id,e])):null; fetch(FB_F8S,{method:'PUT',body:JSON.stringify(obj),headers:{'Content-Type':'application/json'}}); };
 function getCtrl(){ return _CTRL||[]; }
 const setCtrl=d=>{ _CTRL=d; fetch(FB_CTRL,{method:'PUT',body:JSON.stringify(d),headers:{'Content-Type':'application/json'}}); };
 
-let _F8S_HASH='', _CTRL_HASH='';
+let _F8S_HASH='', _CTRL_HASH='', _F8SUC_HASH='';
 async function loadEquipo(){
   try{
-    const [r1,r2,r3,r4]=await Promise.all([fetch(FB_F8S),fetch(FB_CTRL),fetch(FB_TRANSF),fetch(FB_CONFIG)]);
-    const [d1,d2,d3,d4]=await Promise.all([r1.json(),r2.json(),r3.json(),r4.json()]);
+    const [r1,r2,r3,r4,r5]=await Promise.all([fetch(FB_F8S),fetch(FB_CTRL),fetch(FB_TRANSF),fetch(FB_CONFIG),fetch(FB_F8SUC+'.json')]);
+    const [d1,d2,d3,d4,d5]=await Promise.all([r1.json(),r2.json(),r3.json(),r4.json(),r5.json()]);
+    _F8SUC=d5||{};
     _F8S=normF8s(d1);
     _CTRL=d2||[];
     _F8S_HASH=JSON.stringify(_F8S); _CTRL_HASH=JSON.stringify(_CTRL);
@@ -416,12 +504,13 @@ async function loadEquipo(){
 }
 async function pollEquipo(){
   try{
-    const [r1,r2]=await Promise.all([fetch(FB_F8S),fetch(FB_CTRL)]);
-    const [d1,d2]=await Promise.all([r1.json(),r2.json()]);
+    const [r1,r2,r3]=await Promise.all([fetch(FB_F8S),fetch(FB_CTRL),fetch(FB_F8SUC+'.json')]);
+    const [d1,d2,d3]=await Promise.all([r1.json(),r2.json(),r3.json()]);
     const a1=normF8s(d1);
-    const h1=JSON.stringify(a1), h2=JSON.stringify(d2);
+    const h1=JSON.stringify(a1), h2=JSON.stringify(d2), h3=JSON.stringify(d3);
     if(h1!==_F8S_HASH){ _F8S_HASH=h1; _F8S=a1; renderDashboard(); renderHistory(); }
     if(d2&&h2!==_CTRL_HASH){ _CTRL_HASH=h2; _CTRL=d2; }
+    if(h3!==_F8SUC_HASH){ _F8SUC_HASH=h3; _F8SUC=d3||{}; renderSeguimiento(); if(transfIndex)renderCruce(); }
   }catch(e){}
   setTimeout(pollEquipo,5000);
 }
@@ -537,9 +626,23 @@ function renderTrend(filtered,allF8s){
 // ═══════════════ CALENDAR ═══════════════
 let _calReal=null;
 const sucBonito=n=>String(n).replace(/\b\p{L}/gu,c=>c.toUpperCase());
+// Índice de confirmaciones de las sucursales (✓ enviado / ✗ con motivo) por tripla del cruce
+let _confIndex=null;
+function buildConfIndex(){
+  _confIndex=new Map();
+  if(!_F8SUC)return;
+  for(const slug in _F8SUC)for(const id in _F8SUC[slug]){
+    const d=_F8SUC[slug][id];if(!d||!d.conf||!d.conf.lineas)continue;
+    (d.lineas||[]).forEach((L,i)=>{
+      const c=d.conf.lineas[i];
+      if(c&&typeof c.ok!=='undefined')_confIndex.set(tk(nrmF8(L.o),L.c,nrmF8(L.d)),c);
+    });
+  }
+}
 function calcControlReal(opFilter){
   // Efectividad real por sucursal destino × fecha de F8: detalle de los F8s cargados vs. transferencias subidas
   if(!transfIndex)return null;
+  buildConfIndex();
   const cells={};const dates=new Set();const sucs=new Set();
   for(const f of getF8s()){
     if(!f.lineas||!f.lineas.length)continue;
@@ -553,16 +656,20 @@ function calcControlReal(opFilter){
       const suc=sucBonito(nrmF8(L.o));
       const key=suc+'|'+f.date;
       sucs.add(suc);
-      if(!cells[key])cells[key]={ok:0,diff:0,no_ej:0,total:0,plan:0,transf:0,operator:f.operator};
-      const c=cells[key];c.total++;c.plan+=Math.round(+L.t||0);c.transf+=sent;
-      if(L.todo){if(sent>0)c.ok++;else c.no_ej++;} // «Todo» sin cantidad: hubo envío = hecho
-      else if(sent===0)c.no_ej++;
-      else if(sent===Math.round(+L.t)||dentroTol(Math.round(+L.t),sent))c.ok++;
+      if(!cells[key])cells[key]={ok:0,diff:0,no_ej:0,just:0,crit:0,total:0,plan:0,transf:0,operator:f.operator};
+      const c=cells[key];const plan=Math.round(+L.t||0);c.total++;c.plan+=plan;c.transf+=sent;
+      const conf=_confIndex?_confIndex.get(tk(nrmF8(L.o),L.c,nrmF8(L.d))):null;
+      if(sent===0){
+        if(conf&&conf.ok===false)c.just++;              // no enviado con justificativo → cuenta como cumplido
+        else if(conf&&conf.ok===true){c.crit++;c.no_ej++;} // ⚠ marcado enviado sin transferencia real
+        else c.no_ej++;
+      }
+      else if(L.todo||sent===plan||dentroTol(plan,sent))c.ok++; // «Todo»: hubo envío = hecho
       else c.diff++;
       if(c.operator!==f.operator)c.operator='Ambos';
     }
   }
-  for(const k in cells){const c=cells[k];c.efect=Math.round(c.ok/c.total*100);c.estado=c.efect>=80?'hecho':c.efect>0?'incompleto':'sinhacer';}
+  for(const k in cells){const c=cells[k];c.efect=Math.round((c.ok+c.just)/c.total*100);c.estado=c.efect>=80?'hecho':c.efect>0?'incompleto':'sinhacer';}
   return {sucursales:[...sucs].sort((a,b)=>a.localeCompare(b)),dates:[...dates].sort(),cells};
 }
 function renderCalendar(){
@@ -594,7 +701,7 @@ function renderCalendar(){
       const col=cell.estado==='hecho'?'#00a86b':cell.estado==='incompleto'?'#e6900a':'#CC0000';
       const bdr=cell.estado==='hecho'?'rgba(0,168,107,.3)':cell.estado==='incompleto'?'rgba(230,144,10,.3)':'rgba(204,0,0,.25)';
       totalE+=cell.efect;cnt++;
-      rowCells+=`<td style="padding:5px 4px;text-align:center;background:${bg};border:1px solid ${bdr};cursor:pointer" onclick="showCellDetail('${s}','${d}')"><div style="font-family:var(--font-d);font-size:18px;color:${col};line-height:1">${cell.efect}%</div><div style="font-size:9px;color:${col};margin-top:1px">${cell.ok}✓·${cell.diff}~·${cell.no_ej}✗</div></td>`;
+      rowCells+=`<td style="padding:5px 4px;text-align:center;background:${bg};border:1px solid ${bdr};cursor:pointer" onclick="showCellDetail('${s}','${d}')"><div style="font-family:var(--font-d);font-size:18px;color:${col};line-height:1">${cell.efect}%</div><div style="font-size:9px;color:${col};margin-top:1px">${cell.ok}✓${cell.just?'+'+cell.just+'j':''}·${cell.diff}~·${cell.no_ej}✗${cell.crit?' <b style="color:#CC0000">⚠'+cell.crit+'</b>':''}</div></td>`;
     });
     const prom=cnt>0?Math.round(totalE/cnt):0;
     const pc=prom>=80?'#00a86b':prom>0?'#e6900a':'#CC0000';
@@ -608,7 +715,7 @@ function showCellDetail(suc,f8date){
   const cell=_calReal&&_calReal.cells[suc+'|'+f8date];
   if(!cell)return;
   const p=f8date.split('-');
-  alert(suc+' — F8 '+p[2]+'/'+p[1]+'/'+p[0]+'\n\nEfectividad: '+cell.efect+'%\nOK exacto: '+cell.ok+'\nDiferencia: '+cell.diff+'\nNo ejecutado: '+cell.no_ej+'\nTotal líneas: '+cell.total+'\nPlan: '+cell.plan+' u · Enviadas: '+cell.transf+' u\nOperador: '+cell.operator);
+  alert(suc+' — F8 '+p[2]+'/'+p[1]+'/'+p[0]+'\n\nEfectividad: '+cell.efect+'%\nCumplidos: '+cell.ok+(cell.just?'\nJustificados (no enviado con motivo): '+cell.just:'')+'\nDiferencia: '+cell.diff+'\nNo ejecutado: '+cell.no_ej+(cell.crit?'\n⚠ CRÍTICOS (marcado enviado, sin transferencia): '+cell.crit:'')+'\nTotal líneas: '+cell.total+'\nPlan: '+cell.plan+' u · Enviadas: '+cell.transf+' u\nOperador: '+cell.operator);
 }
 
 // ═══════════════ SUCURSAL CARDS ═══════════════
@@ -623,11 +730,11 @@ function renderSucursalDash(){
   const porSuc={};
   for(const k in cal.cells){
     const suc=k.split('|')[0];const c=cal.cells[k];
-    if(!porSuc[suc])porSuc[suc]={suc,ok:0,diff:0,no_ej:0,total:0,plan:0,transf:0,ops:new Set()};
-    const s=porSuc[suc];s.ok+=c.ok;s.diff+=c.diff;s.no_ej+=c.no_ej;s.total+=c.total;s.plan+=c.plan;s.transf+=c.transf;
+    if(!porSuc[suc])porSuc[suc]={suc,ok:0,diff:0,no_ej:0,just:0,crit:0,total:0,plan:0,transf:0,ops:new Set()};
+    const s=porSuc[suc];s.ok+=c.ok;s.diff+=c.diff;s.no_ej+=c.no_ej;s.just+=c.just||0;s.crit+=c.crit||0;s.total+=c.total;s.plan+=c.plan;s.transf+=c.transf;
     (c.operator==='Ambos'?['David','Daniel']:[c.operator]).forEach(o=>s.ops.add(o));
   }
-  const data=Object.values(porSuc).map(s=>({...s,pct_ok:s.total?Math.round(s.ok/s.total*100):0,ops:[...s.ops].join(' + ')}));
+  const data=Object.values(porSuc).map(s=>({...s,pct_ok:s.total?Math.round((s.ok+s.just)/s.total*100):0,ops:[...s.ops].join(' + ')}));
   data.sort((a,b)=>b.pct_ok-a.pct_ok);
   // Enviados sin F8 por sucursal de origen (transferencias sin pedido en ningún F8)
   buildF8Cruce();
@@ -644,7 +751,7 @@ function renderSucursalDash(){
   container.innerHTML=data.map(s=>{
     const pct=s.pct_ok;const col=gc(pct);
     const cumpl=s.plan>0?Math.min(Math.round(s.transf/s.plan*100),999):0;
-    return`<div style="background:#fff;border:1px solid ${gbr(pct)};border-radius:10px;overflow:hidden;box-shadow:var(--shadow)"><div style="background:${gb(pct)};padding:11px 15px;border-bottom:1px solid ${gbr(pct)};display:flex;align-items:center;justify-content:space-between"><div><div style="font-family:var(--font-d);font-size:17px;letter-spacing:1px;color:var(--navy)">${s.suc}</div><div style="font-family:var(--font-c);font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-top:1px">Envíos F8 — ${s.ops}</div></div><div style="text-align:right"><div style="font-family:var(--font-d);font-size:30px;color:${col};line-height:1">${pct}%</div><div style="font-family:var(--font-c);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">exactitud</div></div></div><div style="padding:10px 15px 0"><div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${col};border-radius:3px"></div></div></div><div style="padding:10px 15px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px"><div style="text-align:center;background:rgba(0,168,107,.07);border-radius:5px;padding:6px 3px"><div style="font-family:var(--font-d);font-size:22px;color:var(--green)">${s.ok}</div><div style="font-family:var(--font-c);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--green)">Exacto</div></div><div style="text-align:center;background:rgba(230,144,10,.07);border-radius:5px;padding:6px 3px"><div style="font-family:var(--font-d);font-size:22px;color:var(--yellow)">${s.diff}</div><div style="font-family:var(--font-c);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--yellow)">Diferencia</div></div><div style="text-align:center;background:rgba(204,0,0,.07);border-radius:5px;padding:6px 3px"><div style="font-family:var(--font-d);font-size:22px;color:var(--red)">${s.no_ej}</div><div style="font-family:var(--font-c);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--red)">No envió</div></div></div><div style="padding:0 15px 12px;display:flex;justify-content:space-between;font-family:var(--font-c);font-size:11px;color:var(--muted)"><span>Plan: <strong style="color:var(--navy)">${s.plan.toLocaleString()}</strong>u</span><span>Enviadas: <strong style="color:var(--navy)">${s.transf.toLocaleString()}</strong>u</span><span>Cumpl: <strong style="color:${col}">${s.plan>0?cumpl+'%':'—'}</strong></span></div>${sinF8Suc[s.suc]?`<div style="padding:8px 15px;border-top:1px solid var(--border);font-family:var(--font-c);font-size:11px;color:#6d4fd0">📤 Envió sin F8: <strong>${sinF8Suc[s.suc].n.toLocaleString()}</strong> artículos · ${sinF8Suc[s.suc].u.toLocaleString()} u.</div>`:''}</div>`;
+    return`<div style="background:#fff;border:1px solid ${gbr(pct)};border-radius:10px;overflow:hidden;box-shadow:var(--shadow)"><div style="background:${gb(pct)};padding:11px 15px;border-bottom:1px solid ${gbr(pct)};display:flex;align-items:center;justify-content:space-between"><div><div style="font-family:var(--font-d);font-size:17px;letter-spacing:1px;color:var(--navy)">${s.suc}</div><div style="font-family:var(--font-c);font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-top:1px">Envíos F8 — ${s.ops}</div></div><div style="text-align:right"><div style="font-family:var(--font-d);font-size:30px;color:${col};line-height:1">${pct}%</div><div style="font-family:var(--font-c);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">exactitud</div></div></div><div style="padding:10px 15px 0"><div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${col};border-radius:3px"></div></div></div><div style="padding:10px 15px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px"><div style="text-align:center;background:rgba(0,168,107,.07);border-radius:5px;padding:6px 3px"><div style="font-family:var(--font-d);font-size:22px;color:var(--green)">${s.ok}</div><div style="font-family:var(--font-c);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--green)">Exacto</div></div><div style="text-align:center;background:rgba(230,144,10,.07);border-radius:5px;padding:6px 3px"><div style="font-family:var(--font-d);font-size:22px;color:var(--yellow)">${s.diff}</div><div style="font-family:var(--font-c);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--yellow)">Diferencia</div></div><div style="text-align:center;background:rgba(204,0,0,.07);border-radius:5px;padding:6px 3px"><div style="font-family:var(--font-d);font-size:22px;color:var(--red)">${s.no_ej}</div><div style="font-family:var(--font-c);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--red)">No envió</div></div></div><div style="padding:0 15px 12px;display:flex;justify-content:space-between;font-family:var(--font-c);font-size:11px;color:var(--muted)"><span>Plan: <strong style="color:var(--navy)">${s.plan.toLocaleString()}</strong>u</span><span>Enviadas: <strong style="color:var(--navy)">${s.transf.toLocaleString()}</strong>u</span><span>Cumpl: <strong style="color:${col}">${s.plan>0?cumpl+'%':'—'}</strong></span></div>${(s.just||s.crit)?`<div style="padding:6px 15px 0;font-family:var(--font-c);font-size:11px">${s.just?'<span style="color:#1e64dc">🔵 '+s.just+' justificado'+(s.just===1?'':'s')+'</span>':''}${s.just&&s.crit?' · ':''}${s.crit?'<strong style="color:var(--red)">⚠ '+s.crit+' CRÍTICO'+(s.crit===1?'':'S')+' (marcado enviado, sin transferencia)</strong>':''}</div>`:''}${sinF8Suc[s.suc]?`<div style="padding:8px 15px;border-top:1px solid var(--border);font-family:var(--font-c);font-size:11px;color:#6d4fd0">📤 Envió sin F8: <strong>${sinF8Suc[s.suc].n.toLocaleString()}</strong> artículos · ${sinF8Suc[s.suc].u.toLocaleString()} u.</div>`:''}</div>`;
   }).join('');
 }
 
@@ -772,7 +879,8 @@ function readF8(file,op){
       const n=file.name.toLowerCase();
       const tipo=(n.includes('puma')||n.includes('givova')||n.includes('aurelius')||n.includes('camisas')||n.includes('fila')||n.includes('vans'))?'barrida':'pedidos';
       const entry={id:'f'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),operator:op,filename:file.name,date:ds,wk:weekKeyFor(ds),tipo,...stats};
-      addF8(entry);
+      const prev=addF8(entry);
+      repartirF8(entry,prev);
       showResult(op.toLowerCase(),stats,ds,file.name);
       showToast('F8 de '+op+' procesado ✓');
       renderDashboard();
@@ -938,23 +1046,25 @@ function datosReporte(){
   const porSuc={};
   for(const k in cal.cells){
     const suc=k.split('|')[0];const c=cal.cells[k];
-    if(!porSuc[suc])porSuc[suc]={suc,ok:0,diff:0,no_ej:0,total:0};
-    const s=porSuc[suc];s.ok+=c.ok;s.diff+=c.diff;s.no_ej+=c.no_ej;s.total+=c.total;
+    if(!porSuc[suc])porSuc[suc]={suc,ok:0,diff:0,no_ej:0,just:0,crit:0,total:0};
+    const s=porSuc[suc];s.ok+=c.ok;s.diff+=c.diff;s.no_ej+=c.no_ej;s.just+=c.just||0;s.crit+=c.crit||0;s.total+=c.total;
   }
-  const data=Object.values(porSuc).map(s=>({...s,pct:s.total?Math.round(s.ok/s.total*100):0}));
+  const data=Object.values(porSuc).map(s=>({...s,pct:s.total?Math.round((s.ok+s.just)/s.total*100):0}));
   data.sort((a,b)=>b.pct-a.pct||b.total-a.total);
   return {data,fechas:cal.dates};
 }
 function reporteTexto(){
   const d=datosReporte();if(!d)return null;
   const m=_transfMeta||{};
-  const fmt=s=>`• ${s.suc} — ${s.pct}% (${s.ok}✓ · ${s.diff}~ · ${s.no_ej}✗ de ${s.total})`;
+  const fmt=s=>`• ${s.suc} — ${s.pct}% (${s.ok}✓${s.just?' + '+s.just+' justif.':''} · ${s.diff}~ · ${s.no_ej}✗ de ${s.total})${s.crit?' ⚠'+s.crit+' CRÍTICOS':''}`;
   const verdes=d.data.filter(s=>s.pct>=80),ambar=d.data.filter(s=>s.pct>0&&s.pct<80),rojos=d.data.filter(s=>s.pct===0);
   const fF8=d.fechas.map(x=>{const p=x.split('-');return p[2]+'/'+p[1];}).join(' y ');
   let t=`📋 CONTROL F8 — CIERRE SEMANAL\nF8s del ${fF8} · cruce contra ${m.archivo||'el export vigente'}${m.subido?' ('+m.subido+')':''}\nEfectividad = % de pedidos cumplidos por cada sucursal (tolerancia ${TOL?('±'+TOL+'%'):'exacta'}).\n`;
   if(verdes.length)t+=`\n🟢 CUMPLIERON (80% o más)\n${verdes.map(fmt).join('\n')}\n`;
   if(ambar.length)t+=`\n🟡 A MEJORAR (1–79%)\n${ambar.map(fmt).join('\n')}\n`;
   if(rojos.length)t+=`\n🔴 NO CUMPLIERON (0% — no enviaron nada exacto)\n${rojos.map(fmt).join('\n')}\n`;
+  const criticos=d.data.filter(s=>s.crit>0);
+  if(criticos.length)t+=`\n⚠️ CASOS CRÍTICOS — marcado como enviado, SIN transferencia real\n${criticos.map(s=>`• ${s.suc}: ${s.crit} artículo${s.crit===1?'':'s'}`).join('\n')}\n`;
   buildF8Cruce();let n=0,u=0;for(const[key,v] of transfIndex){if(!f8CruceIndex.has(key)){n++;u+=Math.round(v.enviado);}}
   t+=`\n📤 Además se enviaron sin F8: ${n.toLocaleString()} artículos · ${u.toLocaleString()} u.\n\n— Área de Producto · Portal Mateu Sports`;
   return t;
@@ -1002,17 +1112,18 @@ function verSinF8(){
 }
 function exportCruce(){
   if(!_cruceResults.length){showToast('No hay resultados para exportar',true);return;}
-  const ESTADO={ok:'Exacto',diferencia:'Con diferencia',no_ejecutado:'No ejecutado',sin_f8:'Enviado sin F8'};
-  const aoa=[['Código','Artículo','Marca','Rubro','Sucursal que envía','Destino','F8 Plan','Transferido','Diferencia','Estado','Operador']];
-  for(const r of _cruceResults)aoa.push([r.codigo,r.desc,r.marca,r.rubro,sucBonito(nrmF8(r.origen_f8)),sucBonito(nrmF8(r.destino_f8)),r.sinCant?'Todo':(r.estado==='sin_f8'?'':r.plan),r.transferido,(r.sinCant||r.estado==='sin_f8')?'':r.diff,(r.sinCant&&r.estado==='ok')?'Hecho':(r.tol?'Dentro de tolerancia':(ESTADO[r.estado]||r.estado)),r.operator]);
+  const ESTADO={ok:'Exacto',diferencia:'Con diferencia',no_ejecutado:'No ejecutado',sin_f8:'Enviado sin F8',justificado:'Justificado',critico:'CRÍTICO: marcado enviado, sin transferencia'};
+  const aoa=[['Código','Artículo','Marca','Rubro','Sucursal que envía','Destino','F8 Plan','Transferido','Diferencia','Estado','Motivo','Operador']];
+  for(const r of _cruceResults)aoa.push([r.codigo,r.desc,r.marca,r.rubro,sucBonito(nrmF8(r.origen_f8)),sucBonito(nrmF8(r.destino_f8)),r.sinCant?'Todo':(r.estado==='sin_f8'?'':r.plan),r.transferido,(r.sinCant||r.estado==='sin_f8')?'':r.diff,(r.sinCant&&r.estado==='ok')?'Hecho':(r.tol?'Dentro de tolerancia':(ESTADO[r.estado]||r.estado)),r.motivo||'',r.operator]);
   const ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=[{wch:18},{wch:34},{wch:14},{wch:13},{wch:20},{wch:20},{wch:9},{wch:11},{wch:10},{wch:14},{wch:9}];
+  ws['!cols']=[{wch:18},{wch:34},{wch:14},{wch:13},{wch:20},{wch:20},{wch:9},{wch:11},{wch:10},{wch:16},{wch:34},{wch:9}];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Control F8');
   XLSX.writeFile(wb,'control-f8-'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 function renderCruce(){
   if(!transfIndex)return;
   buildF8Cruce();
+  buildConfIndex();
   // Poblar el filtro de sucursal de origen (para el control sucursal por sucursal)
   const selSuc=document.getElementById('f-sucursal');
   const origs=new Map();for(const f8 of f8CruceIndex.values()){const n=nrmF8(f8.origen_raw);if(!origs.has(n))origs.set(n,sucBonito(n));}
@@ -1055,26 +1166,40 @@ function renderCruce(){
       if(busq&&!desc.toLowerCase().includes(busq)&&!key.toLowerCase().includes(busq)&&!marca.toLowerCase().includes(busq))continue;
       // «Todo» sin cantidad pedida: control laxo — hubo envío = Hecho, sin comparar unidades.
       // Con cantidad: exacto, o dentro de la tolerancia (artículos vendidos/fallados en el medio)
-      let estado,tol=false;
+      let estado,tol=false,motivo='';
       if(f8.sinCant)estado=transferido>0?'ok':'no_ejecutado';
       else if(transferido===0)estado='no_ejecutado';
       else if(transferido===plan)estado='ok';
       else if(dentroTol(plan,transferido)){estado='ok';tol=true;}
       else estado='diferencia';
+      // Confirmación de la sucursal: no enviado + ✗ con motivo = justificado (cuenta como
+      // cumplido); no enviado + ✓ = CRÍTICO (lo marcó enviado sin transferencia real)
+      const conf=_confIndex?_confIndex.get(key):null;
+      if(transferido===0&&conf){
+        if(conf.ok===false){estado='justificado';motivo=conf.motivo||'';}
+        else if(conf.ok===true)estado='critico';
+      }
       if(tipoF&&estado!==tipoF)continue;
       const parts=key.split('||');
-      results.push({codigo:parts[1],origen_f8:f8.origen_raw,destino_f8:f8.destino_raw,desc,marca,rubro:f8.rubro,operator:f8.operator,plan,transferido,diff:f8.sinCant?0:transferido-plan,estado,sinCant:!!f8.sinCant,tol});
+      results.push({codigo:parts[1],origen_f8:f8.origen_raw,destino_f8:f8.destino_raw,desc,marca,rubro:f8.rubro,operator:f8.operator,plan,transferido,diff:f8.sinCant?0:transferido-plan,estado,sinCant:!!f8.sinCant,tol,motivo});
     }
   }
-  const ORDER={no_ejecutado:0,diferencia:1,ok:2,sin_f8:3};
+  const ORDER={critico:-1,no_ejecutado:0,diferencia:1,justificado:2,ok:3,sin_f8:4};
   results.sort((a,b)=>(ORDER[a.estado]??9)-(ORDER[b.estado]??9)||Math.abs(b.diff)-Math.abs(a.diff));
   const ne=results.filter(r=>r.estado==='no_ejecutado').length;
   const df=results.filter(r=>r.estado==='diferencia').length;
   const ok=results.filter(r=>r.estado==='ok').length;
+  const ju=results.filter(r=>r.estado==='justificado').length;
+  const cr=results.filter(r=>r.estado==='critico').length;
   const kpis=document.getElementById('cruce-kpis');kpis.style.display='grid';
   const enCruce=tipoF==='sin_f8'?'—':results.length.toLocaleString();
   kpis.style.gridTemplateColumns='repeat(auto-fit,minmax(150px,1fr))';
-  kpis.innerHTML=[['🔴','No ejecutados',tipoF==='sin_f8'?'—':ne.toLocaleString(),'en F8 sin transfer.',''],['🟡','Con diferencia',tipoF==='sin_f8'?'—':df.toLocaleString(),'cantidad distinta',''],['🟢','Cumplidos',tipoF==='sin_f8'?'—':ok.toLocaleString(),TOL?('exacto o ±'+TOL+'%'):'plan = transfer.',''],['📊','Total cruzado',enCruce,'líneas F8',''],['📤','Enviados sin F8',sinF8N.toLocaleString(),sinF8U.toLocaleString()+' u. sin pedido — clic para ver','verSinF8()']].map(([ic,k,v,s,click])=>`<div class="summary-stat"${click?` style="cursor:pointer" onclick="${click}"`:''}><div class="summary-icon">${ic}</div><div><div class="summary-val">${v}</div><div class="summary-key">${k}</div><div style="font-family:var(--font-c);font-size:10px;color:var(--muted-light);margin-top:2px">${s}</div></div></div>`).join('');
+  const noSin=v=>tipoF==='sin_f8'?'—':v.toLocaleString();
+  const chips=[['🔴','No ejecutados',noSin(ne),'en F8 sin transfer.',''],['🟡','Con diferencia',noSin(df),'cantidad distinta',''],['🟢','Cumplidos',noSin(ok),TOL?('exacto o ±'+TOL+'%'):'plan = transfer.','']];
+  if(ju||tipoF==='justificado')chips.push(['🔵','Justificados',noSin(ju),'no enviado, con motivo','']);
+  if(cr||tipoF==='critico')chips.push(['⚠️','CRÍTICOS',noSin(cr),'marcado enviado, sin transfer.','']);
+  chips.push(['📊','Total cruzado',enCruce,'líneas F8',''],['📤','Enviados sin F8',sinF8N.toLocaleString(),sinF8U.toLocaleString()+' u. sin pedido — clic para ver','verSinF8()']);
+  kpis.innerHTML=chips.map(([ic,k,v,s,click])=>`<div class="summary-stat"${click?` style="cursor:pointer" onclick="${click}"`:''}><div class="summary-icon">${ic}</div><div><div class="summary-val">${v}</div><div class="summary-key">${k}</div><div style="font-family:var(--font-c);font-size:10px;color:var(--muted-light);margin-top:2px">${s}</div></div></div>`).join('');
   const BADGE={ok:'<span class="cruce-badge cruce-ok">Exacto</span>',no_ejecutado:'<span class="cruce-badge cruce-no-ej">No ejecutado</span>',diferencia:'<span class="cruce-badge cruce-diff">Diferencia</span>',sin_f8:'<span class="cruce-badge" style="background:rgba(120,90,220,.12);color:#6d4fd0;border:1px solid rgba(120,90,220,.35)">Sin F8</span>'};
   const OPT={David:'<span class="op-tag op-david">David</span>',Daniel:'<span class="op-tag op-daniel">Daniel</span>'};
   const show=results.slice(0,300);
@@ -1090,7 +1215,12 @@ function renderCruce(){
       const ds=r.diff===0?'color:var(--muted)':r.diff>0?'color:var(--green)':'color:var(--red)';
       const dt=(r.sinCant||r.estado==='sin_f8')?'—':(r.diff===0?'—':(r.diff>0?'+':'')+r.diff);
       const planTxt=r.sinCant?'<span style="font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Todo</span>':(r.plan||'—');
-      const badge=(r.sinCant&&r.estado==='ok')?'<span class="cruce-badge cruce-ok">Hecho</span>':(r.tol?'<span class="cruce-badge cruce-ok" style="opacity:.8">±Tolerancia</span>':(BADGE[r.estado]||''));
+      let badge;
+      if(r.estado==='critico')badge=`<span class="cruce-badge" style="background:#CC0000;color:#fff;border:1px solid #8f0000" title="La sucursal lo marcó como enviado pero no hay ninguna transferencia registrada">⚠ CRÍTICO</span>`;
+      else if(r.estado==='justificado')badge=`<span class="cruce-badge" style="background:rgba(30,100,220,.10);color:#1e64dc;border:1px solid rgba(30,100,220,.35)" title="${(r.motivo||'').replace(/"/g,'&quot;')}">Justificado</span>`;
+      else if(r.sinCant&&r.estado==='ok')badge='<span class="cruce-badge cruce-ok">Hecho</span>';
+      else if(r.tol)badge='<span class="cruce-badge cruce-ok" style="opacity:.8">±Tolerancia</span>';
+      else badge=BADGE[r.estado]||'';
       return`<tr><td style="font-family:var(--font-c);font-size:11px;color:var(--muted)">${r.codigo}</td><td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.desc}">${r.desc}</td><td style="font-family:var(--font-c);font-size:12px">${r.marca}</td><td style="font-family:var(--font-c);font-size:11px;color:var(--muted)">${r.rubro}</td><td style="font-family:var(--font-c);font-size:11px;font-weight:600">${r.origen_f8||'—'}</td><td style="font-family:var(--font-c);font-size:11px;font-weight:600">${r.destino_f8||'—'}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;color:var(--muted)">${planTxt}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;color:var(--navy)">${r.transferido||'—'}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;${ds}">${dt}</td><td>${badge} ${OPT[r.operator]||''}</td></tr>`;
     }).join('');
   }
@@ -1141,6 +1271,7 @@ function showToast(msg,err=false){
 // ═══════════════ INIT ═══════════════
 loadEquipo().then(()=>{
   renderDashboard();
+  renderSeguimiento();
   if(transfIndex&&transfIndex.size){pintarTransfStatus();document.getElementById('cruce-filters').style.display='flex';renderCruce();}
   chequearReporteSemanal();
   setTimeout(pollEquipo,5000);
