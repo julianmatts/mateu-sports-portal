@@ -2443,6 +2443,42 @@ function detectarEncabezado(rows){
   return null;
 }
 
+/* Export SIN fila de encabezados (p.ej. el stock pelado de Diagonal: Id.item ·
+   SKU · Descripción · Stock): se reconocen las columnas por su CONTENIDO sobre
+   una muestra de filas. Números grandes (≥1000, ~6 dígitos) = Id.item; números
+   chicos = stock; texto con espacios = descripción; texto corto sin espacios =
+   código (SKU). Devuelve {fila:-1, iCod, iDesc, iStk, iUbi, iArt} o null. */
+function detectarColumnasDatos(rows){
+  const sample = rows.filter(r=>r && r.some(c=>String(c==null?'':c).trim()!=='')).slice(0,300);
+  if(sample.length<2) return null;
+  const nCols = Math.max.apply(null, sample.map(r=>r.length));
+  const st=[];
+  for(let j=0;j<nCols;j++){
+    const vals = sample.map(r=>String(r[j]==null?'':r[j]).trim()).filter(v=>v!=='');
+    if(vals.length < sample.length*0.5) continue;   // columnas casi vacías no juegan
+    const nums = vals.filter(v=>/^-?\d+(?:[.,]\d+)?$/.test(v));
+    st.push({ j,
+      numShare: nums.length/vals.length,
+      avg: nums.length ? nums.reduce((a,v)=>a+parseFloat(v.replace(',','.')),0)/nums.length : 0,
+      spaceShare: vals.filter(v=>v.indexOf(' ')>=0).length/vals.length,
+      avgLen: vals.reduce((a,v)=>a+v.length,0)/vals.length,
+      ubiShare: vals.filter(v=>parseUbicacionTexto(v).length).length/vals.length });
+  }
+  if(!st.length) return null;
+  const usados=new Set();
+  const pick=(filtro,orden)=>{ const c=st.filter(x=>!usados.has(x.j)).filter(filtro).sort(orden)[0];
+    if(c) usados.add(c.j); return c?c.j:-1; };
+  const iDesc = pick(x=>x.numShare<0.3 && x.spaceShare>=0.4, (a,b)=>b.avgLen-a.avgLen);
+  const iUbi  = pick(x=>x.ubiShare>=0.5, (a,b)=>b.ubiShare-a.ubiShare);
+  const numCols = st.filter(x=>!usados.has(x.j) && x.numShare>=0.9).sort((a,b)=>a.avg-b.avg);
+  const iStk = numCols.length ? numCols[0].j : -1; if(iStk>=0) usados.add(iStk);
+  const iArt = (numCols.length>1 && numCols[numCols.length-1].avg>=1000) ? numCols[numCols.length-1].j : -1;
+  if(iArt>=0) usados.add(iArt);
+  const iCod = pick(x=>x.numShare<0.9, (a,b)=>(a.spaceShare-b.spaceShare) || (a.avgLen-b.avgLen));
+  if(iCod<0 || iStk<0) return null;
+  return {fila:-1, iCod, iDesc, iStk, iUbi, iArt};
+}
+
 // "EST 2 - MOD 1" con variantes sucias: orden invertido, espacios/guiones
 // irregulares y "MOD 3y4" (dos módulos). Devuelve [{est, mod|null}].
 function parseUbicacionTexto(txt){
@@ -2599,12 +2635,17 @@ function abrirModalMapeo(wb, hojaElegida){
   const hoja = hojaElegida
     || hojas.find(n=>RX_UBI.test(n) && detectarEncabezado(rowsDe(n)))
     || hojas.find(n=>detectarEncabezado(rowsDe(n)))
+    || hojas.find(n=>detectarColumnasDatos(rowsDe(n)))
     || hojas[0];
   const rows = rowsDe(hoja);
-  const det = detectarEncabezado(rows) || {fila:0, iCod:-1, iDesc:-1, iStk:-1, iUbi:-1};
+  // 1º encabezados con nombre; 2º sin encabezados, columnas por contenido (fila:-1)
+  const det = detectarEncabezado(rows) || detectarColumnasDatos(rows) || {fila:0, iCod:-1, iDesc:-1, iStk:-1, iUbi:-1};
 
   function selCol(id, sel, opcional){
-    const hdr = rows[parseInt($('mapFila').value,10)]||[];
+    const f = parseInt($('mapFila').value,10);
+    // sin encabezados: como rótulo se muestra la letra de la columna + un valor de ejemplo
+    const hdr = f>=0 ? (rows[f]||[])
+      : (rows[0]||[]).map((c,j)=>'Col '+String.fromCharCode(65+j)+' · ej: '+String(c==null?'':c).slice(0,16));
     return '<select id="'+id+'">'+(opcional?'<option value="-1"'+(sel<0?' selected':'')+'>— No importar —</option>':'')+
       hdr.map((c,j)=>'<option value="'+j+'"'+(j===sel?' selected':'')+'>'+esc(String(c||('(col '+(j+1)+')')).slice(0,40))+'</option>').join('')+'</select>';
   }
@@ -2612,18 +2653,22 @@ function abrirModalMapeo(wb, hojaElegida){
   $('modalBody').innerHTML =
     '<div class="modal-title">Cargar stock — mapeo de columnas</div>'+
     '<div class="hint" style="margin-bottom:10px">'+rows.length+' filas. '+
-      (det.iCod>=0?'Se detectaron las columnas automáticamente; revisá y confirmá.':'⚠ No se pudieron detectar las columnas: elegilas a mano.')+
+      (det.fila===-1?'El archivo viene sin encabezados: se reconocieron las columnas por su contenido; revisá y confirmá.'
+        :det.iCod>=0?'Se detectaron las columnas automáticamente; revisá y confirmá.':'⚠ No se pudieron detectar las columnas: elegilas a mano.')+
       (esPlanillaDrive(wb)?' <a href="#" id="mapDrive">Volver al modo planilla de ubicaciones</a>':'')+'</div>'+
     (hojas.length>1
       ? '<div class="fld"><label>Hoja del archivo</label><select id="mapHoja">'+
           hojas.map(n=>'<option value="'+esc(n)+'"'+(n===hoja?' selected':'')+'>'+esc(n)+'</option>').join('')+'</select></div>'
       : '')+
     '<div class="fld"><label>Fila de encabezados</label><select id="mapFila">'+
+      '<option value="-1"'+(det.fila===-1?' selected':'')+'>Sin encabezados (los datos arrancan en la fila 1)</option>'+
       rows.slice(0,25).map((r,i)=>'<option value="'+i+'"'+(i===det.fila?' selected':'')+'>Fila '+(i+1)+': '+
         esc(r.slice(0,5).map(c=>String(c||'—').slice(0,14)).join(' | ').slice(0,70))+'</option>').join('')+'</select></div>'+
     '<div class="fld"><label>Columna código</label><span id="wrapCod"></span></div>'+
     '<div class="fld"><label>Columna descripción</label><span id="wrapDesc"></span></div>'+
     '<div class="fld"><label>Columna stock</label><span id="wrapStk"></span></div>'+
+    '<div class="fld"><label>Columna Id.item (opcional)</label><span id="wrapArt"></span>'+
+      '<div class="hint" style="margin-top:4px">El número interno del sistema (p.ej. 104585): sirve para buscar y escanear. Si no viene, se conserva el que ya estaba guardado.</div></div>'+
     '<div class="fld"><label>Columna ubicación (opcional)</label><span id="wrapUbi"></span>'+
       '<div class="hint" style="margin-top:4px">Si se importa, solo se aplica a artículos que todavía no tienen ninguna ubicación asignada en la app. Crea las estanterías/módulos que falten.</div></div>'+
     '<div id="mapPreview"></div>'+
@@ -2636,19 +2681,21 @@ function abrirModalMapeo(wb, hojaElegida){
   if(selHoja) selHoja.addEventListener('change', ()=> abrirModalMapeo(wb, selHoja.value));
   if($('mapDrive')) $('mapDrive').addEventListener('click', e=>{ e.preventDefault(); abrirModalDrive(wb); });
 
-  function refrescarSelects(iCod,iDesc,iStk,iUbi){
+  function refrescarSelects(iCod,iDesc,iStk,iUbi,iArt){
     $('wrapCod').innerHTML  = selCol('mapCod',  iCod);
     $('wrapDesc').innerHTML = selCol('mapDesc', iDesc);
     $('wrapStk').innerHTML  = selCol('mapStk',  iStk);
+    $('wrapArt').innerHTML  = selCol('mapArt',  iArt!=null?iArt:-1, true);
     $('wrapUbi').innerHTML  = selCol('mapUbi',  iUbi, true);
-    ['mapCod','mapDesc','mapStk','mapUbi'].forEach(id=> $(id).addEventListener('change', preview));
+    ['mapCod','mapDesc','mapStk','mapArt','mapUbi'].forEach(id=> $(id).addEventListener('change', preview));
     preview();
   }
 
   function parsearConMapeo(){
-    const f = parseInt($('mapFila').value,10);
+    const f = parseInt($('mapFila').value,10);   // -1 = sin encabezados: los datos arrancan en la fila 0
     const iCod=parseInt($('mapCod').value,10), iDesc=parseInt($('mapDesc').value,10),
-          iStk=parseInt($('mapStk').value,10), iUbi=parseInt($('mapUbi').value,10);
+          iStk=parseInt($('mapStk').value,10), iUbi=parseInt($('mapUbi').value,10),
+          iArt=parseInt(($('mapArt')||{value:'-1'}).value,10);
     const porCodigo = {};
     let filasLeidas = 0;
     for(let i=f+1; i<rows.length; i++){
@@ -2662,6 +2709,9 @@ function abrirModalMapeo(wb, hojaElegida){
       if(!porCodigo[codigo]) porCodigo[codigo] = {codigo, descripcion:desc, stock:0, ubis:[]};
       if(!porCodigo[codigo].descripcion && desc) porCodigo[codigo].descripcion = desc;
       porCodigo[codigo].stock += isNaN(stock)?0:stock;
+      if(iArt>=0 && !porCodigo[codigo].articulo){
+        const av=String(r[iArt]==null?'':r[iArt]).trim(); if(av) porCodigo[codigo].articulo=av;
+      }
       if(iUbi>=0){
         for(const u of parseUbicacionTexto(r[iUbi])){
           if(!porCodigo[codigo].ubis.some(x=>x.est===u.est && x.mod===u.mod)) porCodigo[codigo].ubis.push(u);
@@ -2685,8 +2735,13 @@ function abrirModalMapeo(wb, hojaElegida){
         '</table></div>';
   }
 
-  $('mapFila').addEventListener('change', ()=> refrescarSelects(0,1,2,-1));
-  refrescarSelects(Math.max(det.iCod,0), Math.max(det.iDesc,0), Math.max(det.iStk,0), det.iUbi!=null?det.iUbi:-1);
+  $('mapFila').addEventListener('change', ()=>{
+    // al cambiar la fila, re-detectar: con -1 (sin encabezados) por contenido
+    const f=parseInt($('mapFila').value,10);
+    const d2=(f===-1 ? detectarColumnasDatos(rows) : null) || {iCod:0,iDesc:1,iStk:2,iUbi:-1,iArt:-1};
+    refrescarSelects(Math.max(d2.iCod,0), Math.max(d2.iDesc,0), Math.max(d2.iStk,0), d2.iUbi!=null?d2.iUbi:-1, d2.iArt!=null?d2.iArt:-1);
+  });
+  refrescarSelects(Math.max(det.iCod,0), Math.max(det.iDesc,0), Math.max(det.iStk,0), det.iUbi!=null?det.iUbi:-1, det.iArt!=null?det.iArt:-1);
 
   $('mapCancelar').addEventListener('click', cerrarModal);
   $('mapConfirmar').addEventListener('click', async ()=>{
