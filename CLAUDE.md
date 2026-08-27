@@ -354,6 +354,14 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   talles («CITY BELL ×4 — 40×2 · 41»). Talles de letra en orden de ropa (XS→S→M→L→XL),
   ×1 se omite. Los destinos **«Todo X» sin unidades** ahora entran a la lista (antes
   se descartaban por total 0) marcados «TODO lo que haya», sin cantidad ni talles.
+- **Dos depósitos en Diagonal 80 (27/08/2026)**: el mapa `DEPOSITOS_SUC` de
+  `ubicaciones/index.html` asigna rangos de estantería → piso (slug `diagonal`:
+  E1–E26 = **Subsuelo**, E27 en adelante = **2° piso**; el piso se deduce del
+  número en el nombre de la estantería, `depositoDe()`). La etiqueta del piso
+  aparece en las ubicaciones de la tarjeta/export, la hoja de asignación (con
+  separador por piso), la pestaña Estanterías (cabecera por piso), los recorridos
+  de F8/retiro y las impresiones/auditoría. Sucursal nueva con más de un
+  depósito = agregar su entrada al mapa.
 - **Artículos nuevos sin ubicar** (prioridad del depósito): «nuevo» = `fechaAlta`
   posterior a la **primera carga** de la sucursal (cada carga graba un único
   timestamp; así el día 1 no se marca todo) y ≤ `NUEVO_DIAS` (7). Se destacan con

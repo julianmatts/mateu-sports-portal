@@ -805,6 +805,31 @@ const SUCURSALES = [
 ];
 const SUCURSAL_BY_SLUG = {}; SUCURSALES.forEach(s=>SUCURSAL_BY_SLUG[s.slug]=s);
 
+// Sucursales con más de un depósito físico: rangos de estantería → nombre del piso.
+// Diagonal 80 tiene dos: E1–E26 en el subsuelo y E27 en adelante en el 2° piso.
+const DEPOSITOS_SUC = {
+  'diagonal': [
+    {nombre:'Subsuelo', desde:1,  hasta:26},
+    {nombre:'2° piso',  desde:27, hasta:Infinity}
+  ]
+};
+function numEstanteria(est){
+  const n = parseInt(String((est&&est.nombre)||'').replace(/\D+/g,''),10);
+  return isNaN(n) ? null : n;
+}
+// "Subsuelo" / "2° piso" para una estantería, o null si la sucursal tiene un solo depósito
+function depositoDe(est){
+  const zonas = DEPOSITOS_SUC[SUC]; if(!zonas) return null;
+  const n = numEstanteria(est); if(n===null) return null;
+  const z = zonas.find(z=> n>=z.desde && n<=z.hasta);
+  return z ? z.nombre : null;
+}
+// Nota de orden para los recorridos: " — primero Subsuelo, después 2° piso"
+function depositosOrdenTxt(){
+  const zonas = DEPOSITOS_SUC[SUC]; if(!zonas) return '';
+  return ' — primero '+zonas.map(z=>z.nombre).join(', después ');
+}
+
 // Cuentas de supervisión: ven TODAS las sucursales en modo consulta.
 // La cuenta con rol admin del Portal (Juli) además edita todo.
 const SUPERVISION_EMAILS = [
@@ -1498,7 +1523,8 @@ function nombreUbicacion(u){
   const est = (DATA.estanterias||{})[u.estanteriaId];
   const mod = est && est.modulos && est.modulos[u.moduloId];
   if(!est) return '(estantería eliminada)';
-  return est.nombre + (mod ? ' · '+mod.nombre : '');
+  const dep = depositoDe(est);
+  return est.nombre + (mod ? ' · '+mod.nombre : '') + (dep ? ' · '+dep : '');
 }
 // Cuenta artículos por estantería y por módulo en una sola pasada
 // (cada artículo cuenta una vez por estantería/módulo, aunque tenga varias asignaciones).
@@ -1651,8 +1677,9 @@ function f8Orden(art){
     const mod=est.modulos && est.modulos[u.moduloId];
     const ne=parseInt(String(est.nombre||'').replace(/\D+/g,''),10); const neN=isNaN(ne)?9998:ne;
     const nmP=mod?parseInt(String(mod.nombre||'').replace(/\D+/g,''),10):0; const nmN=isNaN(nmP)?0:nmP;
+    const dep=depositoDe(est);
     if(!best || neN<best.ne || (neN===best.ne && nmN<best.nm))
-      best={ne:neN, nm:nmN, nom:est.nombre+(mod?' · '+mod.nombre:'')};
+      best={ne:neN, nm:nmN, nom:est.nombre+(mod?' · '+mod.nombre:'')+(dep?' · '+dep:'')};
   }
   if(best){ best.todas = us.map(u=>nombreUbicacion(u)).join(' / '); return best; }
   return {ne:9999, nm:9999, nom:'SIN UBICAR'};
@@ -1672,7 +1699,7 @@ async function renderF8s(){
   if(!lista.length){ v.innerHTML='<div class="hint" style="padding:24px;text-align:center">No hay F8s recibidos del Área de Producto todavía.</div>'; return; }
   const puedeConf = MODE==='sucursal';
   const fmtF = f=>{ const p=String(f||'').split('-'); return p.length===3 ? p[2]+'/'+p[1] : f; };
-  let html = '<div class="hint" style="margin:12px 0 14px">Cada F8 llega con el <b>recorrido de armado</b> según las ubicaciones de tu depósito (en orden de estantería). Juntá la mercadería, marcá ✓ lo enviado y ✗ + motivo lo que no, y enviá la confirmación.</div>';
+  let html = '<div class="hint" style="margin:12px 0 14px">Cada F8 llega con el <b>recorrido de armado</b> según las ubicaciones de tu depósito (en orden de estantería'+depositosOrdenTxt()+'). Juntá la mercadería, marcá ✓ lo enviado y ✗ + motivo lo que no, y enviá la confirmación.</div>';
   lista.forEach(d=>{
     const filas = f8Filas(d);
     const pend = !d.conf;
@@ -1771,7 +1798,7 @@ function f8Imprimir(id){
   const w=window.open('','_blank'); if(!w){ toast('El navegador bloqueó la ventana de impresión.'); return; }
   const rows=r.filas.map((f,i)=>'<tr'+(f.ord.ne>=9999?' style="background:#fdf3e3"':'')+'><td>'+(i+1)+'</td><td><b>'+esc(f.ord.nom)+'</b></td><td style="font-family:monospace">'+esc(f.L.c||'')+'</td><td>'+esc((f.art&&f.art.descripcion)||f.L.a||'')+'</td><td>'+esc(f.L.d||'')+'</td><td style="text-align:center;font-weight:700">'+esc(String(f.L.todo?'Todo':(f.L.t||'')))+'</td><td style="width:34px;border:1px solid #999"></td></tr>').join('');
   w.document.write('<html><head><title>Recorrido F8 '+esc(r.d.fecha)+'</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}h2{margin:0 0 2px}table{border-collapse:collapse;width:100%;margin-top:12px}th,td{border:1px solid #ccc;padding:5px 7px;text-align:left}th{background:#0B1527;color:#fff}</style></head><body>'
-    +'<h2>Recorrido de armado — F8 del '+esc(r.d.fecha)+'</h2><div>'+esc(r.d.operador||'')+' · '+r.filas.length+' artículos · Sucursal: '+esc(SUC)+' · en orden de estantería</div>'
+    +'<h2>Recorrido de armado — F8 del '+esc(r.d.fecha)+'</h2><div>'+esc(r.d.operador||'')+' · '+r.filas.length+' artículos · Sucursal: '+esc(SUC)+' · en orden de estantería'+esc(depositosOrdenTxt())+'</div>'
     +'<table><thead><tr><th>#</th><th>Ubicación</th><th>Código</th><th>Descripción</th><th>Destino</th><th>Cant.</th><th>✓</th></tr></thead><tbody>'+rows+'</tbody></table>'
     +'<script>window.print()<\/script></body></html>');
   w.document.close();
@@ -2299,7 +2326,7 @@ function pickingImprimir(){
     '<div class="sub">'+fmtFecha(Date.now())+' · '+pickingItems.length+' artículos · '+esc(nombreOperador())+'</div>'+
     claves.map(g=>{
       const e = DATA.estanterias[g];
-      return '<h2>'+(e?esc(e.nombre):'SIN UBICAR')+'</h2>'+
+      return '<h2>'+(e?esc(e.nombre)+(depositoDe(e)?' · '+esc(depositoDe(e)):''):'SIN UBICAR')+'</h2>'+
         '<table><tr><th class="chk">☐</th><th>Código</th><th>Descripción</th>'+
         (conF8?'<th>Retirar</th><th>Destino</th>':'')+
         '<th>Stock</th><th>Módulo</th></tr>'+
@@ -2479,17 +2506,25 @@ function abrirSheetAsignar(artKey){
       sugs.map(s=>{
         const e = DATA.estanterias[s.estId];
         const mod = s.modId && e.modulos && e.modulos[s.modId];
+        const dep = depositoDe(e);
         return '<button class="sheet-opt sug" data-sug="'+s.estId+'::'+(s.modId||'')+'">'+
-          esc(e.nombre + (mod ? ' · '+mod.nombre : ''))+'<span class="n">'+s.n+' art.</span></button>';
+          esc(e.nombre + (mod ? ' · '+mod.nombre : '') + (dep ? ' · '+dep : ''))+'<span class="n">'+s.n+' art.</span></button>';
       }).join('')+
       '<div class="fb-grupo">O elegí a mano</div>'
     : '';
+  // Con más de un depósito (Diagonal 80): separador por piso en la lista
+  let prevDepSheet;
   $('sheetBody').innerHTML =
     '<div class="sheet-title">'+esc(a.codigo)+'</div>'+
     '<div class="sheet-sub">'+esc(a.descripcion||'')+' — elegí la estantería</div>'+
     sugsHtml+
-    ests.map(e=>'<button class="sheet-opt" data-est="'+e.id+'">'+esc(e.nombre)+
-      '<span class="n">'+Object.keys(e.modulos||{}).length+' módulos</span></button>').join('');
+    ests.map(e=>{
+      const dep = depositoDe(e);
+      const head = (dep && dep!==prevDepSheet) ? '<div class="fb-grupo">'+esc(dep)+'</div>' : '';
+      prevDepSheet = dep;
+      return head+'<button class="sheet-opt" data-est="'+e.id+'">'+esc(e.nombre)+
+        '<span class="n">'+Object.keys(e.modulos||{}).length+' módulos</span></button>';
+    }).join('');
   $('sheetOverlay').classList.add('show');
   $('sheetBody').querySelectorAll('[data-sug]').forEach(b=> b.addEventListener('click', ()=>{
     const [estId, modId] = b.dataset.sug.split('::');
@@ -2507,7 +2542,7 @@ function sheetElegirModulo(artKey, estId){
     return asignarUbicacion(artKey, estId, null);
   }
   $('sheetBody').innerHTML =
-    '<div class="sheet-title">'+esc(a.codigo)+' → '+esc(est.nombre)+'</div>'+
+    '<div class="sheet-title">'+esc(a.codigo)+' → '+esc(est.nombre)+(depositoDe(est)?' · '+esc(depositoDe(est)):'')+'</div>'+
     '<div class="sheet-sub">Elegí el módulo</div>'+
     mods.map(m=>'<button class="sheet-opt" data-mod="'+m.id+'">'+esc(m.nombre)+'</button>').join('')+
     '<button class="btn btn-outline btn-block" id="sheetVolver" style="margin-top:6px">← Volver</button>';
@@ -3160,9 +3195,16 @@ function renderEstanterias(){
   if(!ests.length){
     html += '<div class="empty">No hay estanterías creadas.'+(manage?'<br>Creá la primera con el botón de arriba.':'')+'</div>';
   } else {
+    // Con más de un depósito (Diagonal 80): cabecera por piso entre las tarjetas
+    let prevDep;
     html += ests.map((e,idx)=>{
       const mods = modulosOrdenados(e);
-      return '<div class="est-card">'+
+      const dep = depositoDe(e);
+      const depHead = (dep && dep!==prevDep)
+        ? '<div class="fb-grupo" style="font-size:13px;letter-spacing:2px;color:var(--navy);margin:16px 0 8px">'+esc(dep)+'</div>'
+        : '';
+      prevDep = dep;
+      return depHead+'<div class="est-card">'+
         '<div class="est-head"><span class="nm">'+esc(e.nombre)+'</span>'+
           '<span class="cnt">'+(counts.porEst[e.id]||0)+' art.</span>'+
           (manage?
@@ -3356,7 +3398,7 @@ function renderVistaModulo(){
 
   cont.innerHTML =
     '<button class="btn btn-outline btn-sm" id="modVolver" style="margin-bottom:10px">← Estanterías</button>'+
-    '<div class="card-title" style="font-size:17px">'+esc(e.nombre)+' · '+esc(m.nombre)+
+    '<div class="card-title" style="font-size:17px">'+esc(e.nombre)+' · '+esc(m.nombre)+(depositoDe(e)?' · '+esc(depositoDe(e)):'')+
       ' <span class="hint">('+arts.length+' artículo'+(arts.length===1?'':'s')+')</span></div>'+
     (arts.length ? arts.map(a=>artCardHtml(a)).join('') : '<div class="empty">No hay artículos ubicados en este módulo.</div>');
   $('modVolver').addEventListener('click', ()=>{ moduloVista=null; setTab('estanterias'); });
@@ -3397,7 +3439,7 @@ function imprimirEstanteria(estId){
   const grupos = articulosPorModulo(estId);
   const total = grupos.reduce((s,g)=>s+g.arts.length,0);
   $('printArea').innerHTML =
-    '<h1>Auditoría de depósito — '+esc(e.nombre)+'</h1>'+
+    '<h1>Auditoría de depósito — '+esc(e.nombre)+(depositoDe(e)?' ('+esc(depositoDe(e))+')':'')+'</h1>'+
     '<div class="sub">'+esc(info?info.nombre:SUC)+' · '+fmtFecha(Date.now())+' · '+total+' artículos · Marcar ✓ lo que está / ✗ lo que falta</div>'+
     (grupos.length
       ? grupos.map(g=>'<h2>'+esc(g.nombre)+' ('+g.arts.length+')</h2>'+
@@ -3437,7 +3479,7 @@ function renderAuditoria(){
 
   cont.innerHTML =
     '<button class="btn btn-outline btn-sm" id="audVolver">← Salir de la auditoría</button>'+
-    '<div class="card-title" style="font-size:17px;margin-top:10px">📋 Auditoría — '+esc(e.nombre)+'</div>'+
+    '<div class="card-title" style="font-size:17px;margin-top:10px">📋 Auditoría — '+esc(e.nombre)+(depositoDe(e)?' · '+esc(depositoDe(e)):'')+'</div>'+
     '<div class="hint" id="audProgreso" style="margin-bottom:10px"></div>'+
     (total
       ? grupos.map(g=>'<div class="fb-grupo">'+esc(g.nombre)+' · '+g.arts.length+'</div>'+
