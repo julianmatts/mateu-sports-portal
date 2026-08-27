@@ -206,6 +206,8 @@ a{color:inherit}
 /* vista de todas las sucursales: los números de las tablas del objetivo (semana y mes)
    con la misma tipografía «rendimiento» que el resto */
 #objCadCard .num,#objMesCadCard .num{font-family:'Saira',var(--font-c),sans-serif;font-style:italic;font-weight:700;font-size:15px}
+/* KPIs por vendedor (desplegable de «Cómo viene el equipo»): mismos números «rendimiento» */
+.kv-num{font-family:'Saira',var(--font-c),sans-serif;font-style:italic;font-weight:800}
 /* la columna protagonista es el ACUMULADO del mes: tinte azul «en curso» y número más grande */
 .pte th.pte-acum,.pte td.pte-acum{background:var(--vivo-pill)}
 .pte td.pte-acum{box-shadow:inset 3px 0 0 var(--vivo)}
@@ -2698,7 +2700,7 @@ function veDetailHtml(ve, metaVal, prevVe){
       // fila oculta: KPIs + comparativa vs semana anterior + insight + día a día
       const notaMin = x.minimo>0 ? 'Mínimo: <b>'+objMoney(x.minimo)+'</b>'+(x.meta?' · Meta: <b>'+objMoney(x.meta)+'</b>':'') : null;
       h+='<tr class="vedias" style="display:none"><td colspan="'+nCols+'" class="L" style="background:#f8f9fe;padding:10px 14px 12px">'
-        + eqDetalleHtml(x.nombre, x, prevM(x.nombre), diasSet, notaMin) + '</td></tr>';
+        + eqDetalleHtml(x.nombre, x, prevM(x.nombre), diasSet, notaMin, null, x.meta||0) + '</td></tr>';
     }
   });
   h+='<tr class="team" style="cursor:default"><td class="L">Total equipo</td>';
@@ -3267,7 +3269,7 @@ function eqPrevMatcher(prevVe){
 }
 // contenido del desplegable por vendedor: KPIs con flechas vs. semana anterior,
 // insight a trabajar (o felicitación si mejoró en todo) y el día a día
-function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias){
+function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias, metaInd){
   let h='';
   if(notaMin) h+='<div style="font-size:12px;color:var(--muted,#6B7A99);margin-bottom:8px">'+notaMin+'</div>';
   if(!cur || !(cur.venta>0)){
@@ -3278,7 +3280,7 @@ function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias){
       EQ_DOW.forEach((k,i)=>{ const obj=objDias[i]||0; if(obj<1) return;
         h+='<div style="border:1px solid var(--border,#e6ebf5);border-radius:8px;padding:6px 10px;background:#fff;min-width:86px">'
           +'<div style="font-family:var(--font-c,inherit);font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted,#6B7A99)">'+EQ_DIAS[i]+'</div>'
-          +'<div style="font-size:13px;font-weight:700;margin-top:1px">'+objMoney(obj)+'</div>'
+          +'<div class="kv-num" style="font-size:14px;margin-top:1px">'+objMoney(obj)+'</div>'
           +'<div style="font-size:11px;color:var(--muted,#6B7A99)">objetivo del día</div>'
           +'</div>'; });
       h+='</div>';
@@ -3292,10 +3294,13 @@ function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias){
   const dUpt = (k.upt!=null && kp && kp.upt>0) ? k.upt/kp.upt-1 : null; if(dUpt!=null) deltas.push(['upt',dUpt]);
   const dTp  = (k.tp!=null && kp && kp.tp>0) ? k.tp/kp.tp-1 : null; if(dTp!=null) deltas.push(['tp',dTp]);
   const arrow=d=> d==null?'' : ' <b style="color:'+(d>=0?'var(--ok,#16a34a)':'#dc2626')+';font-size:11px">'+(d>=0?'▲':'▼')+(d>0?'+':'')+Math.round(d*100)+'%</b>';
-  const chip=(lbl,val,d)=>'<span style="border:1px solid var(--border,#e6ebf5);border-radius:8px;padding:5px 10px;background:#fff;font-size:12.5px;white-space:nowrap">'
-    +'<span style="font-family:var(--font-c,inherit);font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted,#6B7A99)">'+lbl+'</span> <b>'+val+'</b>'+arrow(d)+'</span>';
+  const chip=(lbl,val,d,c)=>'<span style="border:1px solid var(--border,#e6ebf5);border-radius:8px;padding:5px 10px;background:#fff;font-size:12.5px;white-space:nowrap">'
+    +'<span style="font-family:var(--font-c,inherit);font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted,#6B7A99)">'+lbl+'</span> <b class="kv-num" style="font-size:15px'+(c?';color:'+c:'')+'">'+val+'</b>'+arrow(d)+'</span>';
+  // el color del semáforo en la venta, contra SU meta (como en los KPIs generales)
+  const colV = (metaInd>0 && k.venta>0)
+    ? (k.venta/metaInd>=1?'var(--ok,#16a34a)':k.venta/metaInd>=1/1.2?'#d97706':'#dc2626') : null;
   h+='<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px">'
-    + chip('Venta', objMoney(k.venta), dVenta)
+    + chip('Venta', objMoney(k.venta), dVenta, colV)
     + (k.tickets? chip('Tickets', fmtN(k.tickets), null):'')
     + (k.upt!=null? chip('UPT', fmt2(k.upt), dUpt):'')
     + (k.tp!=null? chip('Ticket prom.', objMoney(k.tp), dTp):'')
@@ -3344,7 +3349,7 @@ function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias){
       const col=pct==null?null:pct>=1?'var(--ok,#16a34a)':pct>=1/1.2?'#d97706':'#dc2626';
       cards+='<div style="border:1px solid var(--border,#e6ebf5);border-radius:8px;padding:6px 10px;background:#fff;min-width:86px">'
         +'<div style="font-family:var(--font-c,inherit);font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted,#6B7A99)">'+esc(d?d.d:EQ_DIAS[i])+'</div>'
-        +(d?'<div style="font-size:13px;font-weight:700;margin-top:1px'+(col?';color:'+col:'')+'">'+objMoney(d.v)+'</div>'
+        +(d?'<div class="kv-num" style="font-size:14px;margin-top:1px'+(col?';color:'+col:'')+'">'+objMoney(d.v)+'</div>'
            :'<div style="font-size:13px;font-weight:700;margin-top:1px;color:var(--muted-light,#b0bcd4)">—</div>')
         +(obj>=1?'<div style="font-size:11px;color:var(--muted,#6B7A99)">Obj '+objMoney(obj)+(pct!=null?' · <b style="color:'+col+'">'+Math.round(pct*100)+'%</b>':'')+'</div>':'')
         +(d&&d.h?'<div style="font-size:11px;color:var(--muted,#6B7A99)">'+fmt2(d.h)+' h venta</div>':'')
@@ -3438,7 +3443,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
       ? 'Mínimo: <b>'+objMoney(row.min)+'</b> · Meta: <b>'+objMoney(row.meta)+'</b> · participa el '+(row.share*100).toFixed(1)+'% de la meta del equipo'
       : (row.fuera?'No está en el equipo de esta semana — si corresponde, sumalo desde ✎ Equipo y horas.':null);
     h+='<tr class="vedias" style="display:none"><td colspan="'+nCols+'" class="L" style="background:#f8f9fe;padding:10px 14px 12px">'
-      + eqDetalleHtml(row.nombre, cur, prevM(row.nombre), diasSet, notaMin, row.objDias) + '</td></tr>';
+      + eqDetalleHtml(row.nombre, cur, prevM(row.nombre), diasSet, notaMin, row.objDias, (!row.fuera&&row.share)?row.meta:0) + '</td></tr>';
   });
   // total
   const totHs=equipo.reduce((a,p)=>a+eqHorasPersona(p),0), totSh=shares.reduce((a,x)=>a+x,0);
