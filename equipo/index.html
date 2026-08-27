@@ -278,7 +278,7 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
   <div id="cruce-filters" style="display:none;margin-bottom:16px;display:none;gap:10px;flex-wrap:wrap;align-items:center">
     <select id="f-sucursal" onchange="renderCruce()" style="font-size:12px"><option value="">Todas las sucursales que envían</option></select>
     <select id="f-operador" onchange="renderCruce()" style="font-size:12px"><option value="">Ambos operadores</option><option value="David">David</option><option value="Daniel">Daniel</option></select>
-    <select id="f-tipo-cruce" onchange="renderCruce()" style="font-size:12px"><option value="">Todos los casos</option><option value="no_ejecutado">No ejecutados</option><option value="diferencia">Con diferencia</option><option value="ok">Exactos</option></select>
+    <select id="f-tipo-cruce" onchange="renderCruce()" style="font-size:12px"><option value="">Todos los casos</option><option value="no_ejecutado">No ejecutados</option><option value="diferencia">Con diferencia</option><option value="ok">Exactos</option><option value="sin_f8">Enviados sin F8</option></select>
     <select id="f-rubro" onchange="renderCruce()" style="font-size:12px"><option value="">Todos los rubros</option><option value="INDUMENTARIA">Indumentaria</option><option value="CALZADO">Calzado</option><option value="ACCESORIOS">Accesorios</option></select>
     <input type="text" id="f-busqueda" oninput="renderCruce()" placeholder="Buscar..." style="font-size:12px;min-width:160px">
     <button class="btn" onclick="exportCruce()" style="font-size:12px">⇩ Excel</button>
@@ -600,13 +600,22 @@ function renderSucursalDash(){
   }
   const data=Object.values(porSuc).map(s=>({...s,pct_ok:s.total?Math.round(s.ok/s.total*100):0,ops:[...s.ops].join(' + ')}));
   data.sort((a,b)=>b.pct_ok-a.pct_ok);
+  // Enviados sin F8 por sucursal de origen (transferencias sin pedido en ningún F8)
+  buildF8Cruce();
+  const sinF8Suc={};
+  for(const[key,v] of transfIndex){
+    if(f8CruceIndex.has(key))continue;
+    const suc=sucBonito(key.split('||')[0]);
+    if(!sinF8Suc[suc])sinF8Suc[suc]={n:0,u:0};
+    sinF8Suc[suc].n++;sinF8Suc[suc].u+=Math.round(v.enviado);
+  }
   const gc=pct=>pct>=80?'var(--green)':pct>0?'var(--yellow)':'var(--red)';
   const gb=pct=>pct>=80?'rgba(0,168,107,.07)':pct>0?'rgba(230,144,10,.07)':'rgba(204,0,0,.05)';
   const gbr=pct=>pct>=80?'rgba(0,168,107,.25)':pct>0?'rgba(230,144,10,.25)':'rgba(204,0,0,.2)';
   container.innerHTML=data.map(s=>{
     const pct=s.pct_ok;const col=gc(pct);
     const cumpl=s.plan>0?Math.min(Math.round(s.transf/s.plan*100),999):0;
-    return`<div style="background:#fff;border:1px solid ${gbr(pct)};border-radius:10px;overflow:hidden;box-shadow:var(--shadow)"><div style="background:${gb(pct)};padding:11px 15px;border-bottom:1px solid ${gbr(pct)};display:flex;align-items:center;justify-content:space-between"><div><div style="font-family:var(--font-d);font-size:17px;letter-spacing:1px;color:var(--navy)">${s.suc}</div><div style="font-family:var(--font-c);font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-top:1px">Envíos F8 — ${s.ops}</div></div><div style="text-align:right"><div style="font-family:var(--font-d);font-size:30px;color:${col};line-height:1">${pct}%</div><div style="font-family:var(--font-c);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">exactitud</div></div></div><div style="padding:10px 15px 0"><div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${col};border-radius:3px"></div></div></div><div style="padding:10px 15px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px"><div style="text-align:center;background:rgba(0,168,107,.07);border-radius:5px;padding:6px 3px"><div style="font-family:var(--font-d);font-size:22px;color:var(--green)">${s.ok}</div><div style="font-family:var(--font-c);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--green)">Exacto</div></div><div style="text-align:center;background:rgba(230,144,10,.07);border-radius:5px;padding:6px 3px"><div style="font-family:var(--font-d);font-size:22px;color:var(--yellow)">${s.diff}</div><div style="font-family:var(--font-c);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--yellow)">Diferencia</div></div><div style="text-align:center;background:rgba(204,0,0,.07);border-radius:5px;padding:6px 3px"><div style="font-family:var(--font-d);font-size:22px;color:var(--red)">${s.no_ej}</div><div style="font-family:var(--font-c);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--red)">No envió</div></div></div><div style="padding:0 15px 12px;display:flex;justify-content:space-between;font-family:var(--font-c);font-size:11px;color:var(--muted)"><span>Plan: <strong style="color:var(--navy)">${s.plan.toLocaleString()}</strong>u</span><span>Enviadas: <strong style="color:var(--navy)">${s.transf.toLocaleString()}</strong>u</span><span>Cumpl: <strong style="color:${col}">${cumpl}%</strong></span></div></div>`;
+    return`<div style="background:#fff;border:1px solid ${gbr(pct)};border-radius:10px;overflow:hidden;box-shadow:var(--shadow)"><div style="background:${gb(pct)};padding:11px 15px;border-bottom:1px solid ${gbr(pct)};display:flex;align-items:center;justify-content:space-between"><div><div style="font-family:var(--font-d);font-size:17px;letter-spacing:1px;color:var(--navy)">${s.suc}</div><div style="font-family:var(--font-c);font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-top:1px">Envíos F8 — ${s.ops}</div></div><div style="text-align:right"><div style="font-family:var(--font-d);font-size:30px;color:${col};line-height:1">${pct}%</div><div style="font-family:var(--font-c);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">exactitud</div></div></div><div style="padding:10px 15px 0"><div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${col};border-radius:3px"></div></div></div><div style="padding:10px 15px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px"><div style="text-align:center;background:rgba(0,168,107,.07);border-radius:5px;padding:6px 3px"><div style="font-family:var(--font-d);font-size:22px;color:var(--green)">${s.ok}</div><div style="font-family:var(--font-c);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--green)">Exacto</div></div><div style="text-align:center;background:rgba(230,144,10,.07);border-radius:5px;padding:6px 3px"><div style="font-family:var(--font-d);font-size:22px;color:var(--yellow)">${s.diff}</div><div style="font-family:var(--font-c);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--yellow)">Diferencia</div></div><div style="text-align:center;background:rgba(204,0,0,.07);border-radius:5px;padding:6px 3px"><div style="font-family:var(--font-d);font-size:22px;color:var(--red)">${s.no_ej}</div><div style="font-family:var(--font-c);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--red)">No envió</div></div></div><div style="padding:0 15px 12px;display:flex;justify-content:space-between;font-family:var(--font-c);font-size:11px;color:var(--muted)"><span>Plan: <strong style="color:var(--navy)">${s.plan.toLocaleString()}</strong>u</span><span>Enviadas: <strong style="color:var(--navy)">${s.transf.toLocaleString()}</strong>u</span><span>Cumpl: <strong style="color:${col}">${s.plan>0?cumpl+'%':'—'}</strong></span></div>${sinF8Suc[s.suc]?`<div style="padding:8px 15px;border-top:1px solid var(--border);font-family:var(--font-c);font-size:11px;color:#6d4fd0">📤 Envió sin F8: <strong>${sinF8Suc[s.suc].n.toLocaleString()}</strong> artículos · ${sinF8Suc[s.suc].u.toLocaleString()} u.</div>`:''}</div>`;
   }).join('');
 }
 
@@ -878,11 +887,17 @@ function quitarTransf(){
   showToast('Transferencias quitadas ✓');
 }
 let _cruceResults=[];
+function verSinF8(){
+  const s=document.getElementById('f-tipo-cruce');
+  s.value=s.value==='sin_f8'?'':'sin_f8';
+  renderCruce();
+  const res=document.getElementById('cruce-result');if(res)res.scrollIntoView({behavior:'smooth',block:'start'});
+}
 function exportCruce(){
   if(!_cruceResults.length){showToast('No hay resultados para exportar',true);return;}
-  const ESTADO={ok:'Exacto',diferencia:'Con diferencia',no_ejecutado:'No ejecutado'};
+  const ESTADO={ok:'Exacto',diferencia:'Con diferencia',no_ejecutado:'No ejecutado',sin_f8:'Enviado sin F8'};
   const aoa=[['Código','Artículo','Marca','Rubro','Sucursal que envía','Destino','F8 Plan','Transferido','Diferencia','Estado','Operador']];
-  for(const r of _cruceResults)aoa.push([r.codigo,r.desc,r.marca,r.rubro,sucBonito(nrmF8(r.origen_f8)),sucBonito(nrmF8(r.destino_f8)),r.sinCant?'Todo':r.plan,r.transferido,r.sinCant?'':r.diff,(r.sinCant&&r.estado==='ok')?'Hecho':(ESTADO[r.estado]||r.estado),r.operator]);
+  for(const r of _cruceResults)aoa.push([r.codigo,r.desc,r.marca,r.rubro,sucBonito(nrmF8(r.origen_f8)),sucBonito(nrmF8(r.destino_f8)),r.sinCant?'Todo':(r.estado==='sin_f8'?'':r.plan),r.transferido,(r.sinCant||r.estado==='sin_f8')?'':r.diff,(r.sinCant&&r.estado==='ok')?'Hecho':(ESTADO[r.estado]||r.estado),r.operator]);
   const ws=XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols']=[{wch:18},{wch:34},{wch:14},{wch:13},{wch:20},{wch:20},{wch:9},{wch:11},{wch:10},{wch:14},{wch:9}];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Control F8');
@@ -907,8 +922,21 @@ function renderCruce(){
   const rubroF=document.getElementById('f-rubro').value;
   const busq=document.getElementById('f-busqueda').value.toLowerCase();
   const useF8=f8CruceIndex&&f8CruceIndex.size>0;
+  // Enviados sin F8: transferencias cuya tripla origen·código·destino no está pedida en ningún F8
+  let sinF8N=0,sinF8U=0;const sinF8Rows=[];
+  for(const[key,v] of transfIndex){
+    if(f8CruceIndex.has(key))continue;
+    if(sucF&&key.split('||')[0]!==sucF)continue;
+    sinF8N++;sinF8U+=Math.round(v.enviado);
+    if(tipoF==='sin_f8'){
+      const cod=key.split('||')[1];
+      if(busq&&!cod.toLowerCase().includes(busq)&&!(v.articulo||'').toLowerCase().includes(busq)&&!(v.marca||'').toLowerCase().includes(busq))continue;
+      sinF8Rows.push({codigo:cod,origen_f8:v.origen_t,destino_f8:v.destino_t,desc:v.articulo?('#'+v.articulo):'',marca:v.marca||'',rubro:'—',operator:'',plan:0,transferido:Math.round(v.enviado),diff:Math.round(v.enviado),estado:'sin_f8',sinCant:false});
+    }
+  }
   const results=[];
-  if(useF8){
+  if(tipoF==='sin_f8'){results.push(...sinF8Rows);}
+  else if(useF8){
     for(const[key,f8] of f8CruceIndex){
       if(sucF&&nrmF8(f8.origen_raw)!==sucF)continue;
       if(opF&&f8.operator!==opF)continue;
@@ -927,14 +955,16 @@ function renderCruce(){
       results.push({codigo:parts[1],origen_f8:f8.origen_raw,destino_f8:f8.destino_raw,desc,marca,rubro:f8.rubro,operator:f8.operator,plan,transferido,diff:f8.sinCant?0:transferido-plan,estado,sinCant:!!f8.sinCant});
     }
   }
-  const ORDER={no_ejecutado:0,diferencia:1,ok:2};
+  const ORDER={no_ejecutado:0,diferencia:1,ok:2,sin_f8:3};
   results.sort((a,b)=>(ORDER[a.estado]??9)-(ORDER[b.estado]??9)||Math.abs(b.diff)-Math.abs(a.diff));
   const ne=results.filter(r=>r.estado==='no_ejecutado').length;
   const df=results.filter(r=>r.estado==='diferencia').length;
   const ok=results.filter(r=>r.estado==='ok').length;
   const kpis=document.getElementById('cruce-kpis');kpis.style.display='grid';
-  kpis.innerHTML=[['🔴','No ejecutados',ne.toLocaleString(),'en F8 sin transfer.'],['🟡','Con diferencia',df.toLocaleString(),'cantidad distinta'],['🟢','Exactos',ok.toLocaleString(),'plan = transfer.'],['📊','Total cruzado',results.length.toLocaleString(),'líneas F8']].map(([ic,k,v,s])=>`<div class="summary-stat"><div class="summary-icon">${ic}</div><div><div class="summary-val">${v}</div><div class="summary-key">${k}</div><div style="font-family:var(--font-c);font-size:10px;color:var(--muted-light);margin-top:2px">${s}</div></div></div>`).join('');
-  const BADGE={ok:'<span class="cruce-badge cruce-ok">Exacto</span>',no_ejecutado:'<span class="cruce-badge cruce-no-ej">No ejecutado</span>',diferencia:'<span class="cruce-badge cruce-diff">Diferencia</span>'};
+  const enCruce=tipoF==='sin_f8'?'—':results.length.toLocaleString();
+  kpis.style.gridTemplateColumns='repeat(auto-fit,minmax(150px,1fr))';
+  kpis.innerHTML=[['🔴','No ejecutados',tipoF==='sin_f8'?'—':ne.toLocaleString(),'en F8 sin transfer.',''],['🟡','Con diferencia',tipoF==='sin_f8'?'—':df.toLocaleString(),'cantidad distinta',''],['🟢','Exactos',tipoF==='sin_f8'?'—':ok.toLocaleString(),'plan = transfer.',''],['📊','Total cruzado',enCruce,'líneas F8',''],['📤','Enviados sin F8',sinF8N.toLocaleString(),sinF8U.toLocaleString()+' u. sin pedido — clic para ver','verSinF8()']].map(([ic,k,v,s,click])=>`<div class="summary-stat"${click?` style="cursor:pointer" onclick="${click}"`:''}><div class="summary-icon">${ic}</div><div><div class="summary-val">${v}</div><div class="summary-key">${k}</div><div style="font-family:var(--font-c);font-size:10px;color:var(--muted-light);margin-top:2px">${s}</div></div></div>`).join('');
+  const BADGE={ok:'<span class="cruce-badge cruce-ok">Exacto</span>',no_ejecutado:'<span class="cruce-badge cruce-no-ej">No ejecutado</span>',diferencia:'<span class="cruce-badge cruce-diff">Diferencia</span>',sin_f8:'<span class="cruce-badge" style="background:rgba(120,90,220,.12);color:#6d4fd0;border:1px solid rgba(120,90,220,.35)">Sin F8</span>'};
   const OPT={David:'<span class="op-tag op-david">David</span>',Daniel:'<span class="op-tag op-daniel">Daniel</span>'};
   const show=results.slice(0,300);
   const tbody=document.getElementById('cruce-body');const empty=document.getElementById('cruce-empty');
@@ -947,7 +977,7 @@ function renderCruce(){
     empty.style.display='none';
     tbody.innerHTML=show.map(r=>{
       const ds=r.diff===0?'color:var(--muted)':r.diff>0?'color:var(--green)':'color:var(--red)';
-      const dt=r.sinCant?'—':(r.diff===0?'—':(r.diff>0?'+':'')+r.diff);
+      const dt=(r.sinCant||r.estado==='sin_f8')?'—':(r.diff===0?'—':(r.diff>0?'+':'')+r.diff);
       const planTxt=r.sinCant?'<span style="font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Todo</span>':(r.plan||'—');
       const badge=(r.sinCant&&r.estado==='ok')?'<span class="cruce-badge cruce-ok">Hecho</span>':(BADGE[r.estado]||'');
       return`<tr><td style="font-family:var(--font-c);font-size:11px;color:var(--muted)">${r.codigo}</td><td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.desc}">${r.desc}</td><td style="font-family:var(--font-c);font-size:12px">${r.marca}</td><td style="font-family:var(--font-c);font-size:11px;color:var(--muted)">${r.rubro}</td><td style="font-family:var(--font-c);font-size:11px;font-weight:600">${r.origen_f8||'—'}</td><td style="font-family:var(--font-c);font-size:11px;font-weight:600">${r.destino_f8||'—'}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;color:var(--muted)">${planTxt}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;color:var(--navy)">${r.transferido||'—'}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;${ds}">${dt}</td><td>${badge} ${OPT[r.operator]||''}</td></tr>`;
