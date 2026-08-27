@@ -110,6 +110,9 @@ img,svg{ max-width:100%; } /* ningún medio empuja el ancho en pantallas chicas 
 .card-title{ font-family:var(--font-c); font-size:14px; font-weight:700; letter-spacing:1px; text-transform:uppercase; margin-bottom:10px; }
 .empty{ text-align:center; color:var(--gray-400); padding:26px 10px; font-size:14px; }
 .hint{ font-size:12px; color:var(--gray-400); }
+.btn-sec{ border:1px solid var(--gray-200); background:#fff; border-radius:8px; padding:7px 14px; font-size:13px; font-weight:600; cursor:pointer; }
+.btn-sec:hover{ border-color:var(--navy); }
+.btn-pri{ border:none; background:var(--red,#CC0000); color:#fff; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:700; cursor:pointer; }
 
 .btn{
   font-family:var(--font-c); font-size:14px; font-weight:700; letter-spacing:1.5px;
@@ -720,6 +723,8 @@ body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
     </div>
 
     <!-- VISTA: estanterías -->
+    <div class="view" id="view-f8s"></div>
+
     <div class="view" id="view-estanterias"></div>
 
     <!-- VISTA: contenido de un módulo (filtro inverso) -->
@@ -1288,6 +1293,7 @@ function montarApp(){
   document.body.classList.toggle('puesto', MODE==='puesto');
   if(MODE==='puesto'){ montarQuiosco(); iniciarScanBridge(); }
   $('app').style.display='block';
+  if(SUC && MODE!=='puesto') cargarF8s();
   const ids = renderTabs();
   // si la vista activa ya no corresponde (p.ej. Perfiles al pasar de encargado a vendedor), a Buscar
   setTab(ids.includes(tabActiva) || (tabActiva==='perfiles' && canManage()) ? tabActiva : 'buscar');
@@ -1302,13 +1308,15 @@ function renderTabs(){
     tabs.push({id:'buscar', label:'Buscar', badge:true});
     // El puesto de consulta del salón solo busca: sin estanterías ni actividad.
     if(MODE!=='puesto'){
+      tabs.push({id:'f8s', label:'F8s', badgeF8:true});
       tabs.push({id:'estanterias', label:'Estanterías'});
       tabs.push({id:'actividad', label:'Actividad'});
     }
   }
   $('tabs').innerHTML = tabs.map(t=>
     '<button class="tab" data-tab="'+t.id+'">'+t.label+
-    (t.badge?'<span class="badge" id="tabBadgeSU" style="display:none">0</span>':'')+'</button>'
+    (t.badge?'<span class="badge" id="tabBadgeSU" style="display:none">0</span>':'')+
+    (t.badgeF8?'<span class="badge" id="tabBadgeF8" style="display:none">0</span>':'')+'</button>'
   ).join('');
   $('tabs').querySelectorAll('.tab').forEach(b=> b.addEventListener('click', ()=> setTab(b.dataset.tab)));
   return tabs.map(t=>t.id);
@@ -1323,6 +1331,7 @@ function setTab(id){
   document.querySelectorAll('.view').forEach(v=> v.classList.remove('active'));
   const el = $('view-'+id); if(el) el.classList.add('active');
   if(id==='buscar') renderBuscar();
+  if(id==='f8s') renderF8s();
   if(id==='estanterias') renderEstanterias();
   if(id==='actividad') renderActividad();
   if(id==='perfiles') renderPanelPerfiles();
@@ -1423,6 +1432,7 @@ document.addEventListener('visibilitychange', ()=>{
 function renderVistaActiva(){
   if(AUDIT) return; // auditoría en curso: no pisar las marcas con el polling
   if(tabActiva==='buscar') renderBuscar();
+  else if(tabActiva==='f8s') renderF8s();
   else if(tabActiva==='estanterias'){ moduloVista ? renderVistaModulo() : renderEstanterias(); }
   else if(tabActiva==='resumen') {} // el resumen se actualiza a demanda
 }
@@ -1600,6 +1610,173 @@ function renderSinUbicar(){
 function matchArticulo(a, q){
   return (a.codigo||'').toLowerCase().includes(q) || (a.descripcion||'').toLowerCase().includes(q)
     || (a.articulo ? String(a.articulo).includes(q) : false); // Id.item (planilla de Drive)
+}
+
+/* ══════════ F8s del Área de Producto: recorrido de armado + confirmación ══════════ */
+const EQUIPO_FB = 'https://turnero-mateu-default-rtdb.firebaseio.com/equipo/f8suc';
+const MOTIVOS_F8 = ['Se vendió antes de armar el envío','Producto fallado / no está en condiciones','No se encontró en el local','El stock del sistema no coincide (no lo tenemos)','Otro motivo'];
+let _F8DOCS = null, _f8Draft = {};
+
+async function cargarF8s(){
+  if(!SUC) return;
+  try{ _F8DOCS = await fetchJSON(EQUIPO_FB+'/'+encodeURIComponent(SUC)+'.json'); }catch(e){ _F8DOCS=null; }
+  actualizarBadgeF8();
+}
+function f8Lista(){ return Object.values(_F8DOCS||{}).filter(Boolean).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))); }
+function actualizarBadgeF8(){
+  const b = $('tabBadgeF8'); if(!b) return;
+  const n = f8Lista().filter(d=>!d.conf).length;
+  b.style.display = n ? 'inline-block' : 'none'; b.textContent = n;
+}
+function f8Patch2(id, body){
+  return fetch(EQUIPO_FB+'/'+encodeURIComponent(SUC)+'/'+encodeURIComponent(id)+'.json',
+    {method:'PATCH', body:JSON.stringify(body), headers:{'Content-Type':'application/json'}}).catch(()=>null);
+}
+// Índices del stock local para cruzar el F8 (Id.item primero, código de marca de respaldo)
+function f8Indices(){
+  const byId={}, byCod={}; const arts=DATA.articulos||{};
+  for(const k in arts){ const a=arts[k];
+    if(a.articulo) byId[String(a.articulo).trim()] = {key:k, ...a};
+    if(a.codigo) byCod[String(a.codigo).replace(/\s+/g,'').toUpperCase()] = {key:k, ...a};
+  }
+  return {byId, byCod};
+}
+// Orden del recorrido: número de estantería y de módulo de la primera ubicación
+function f8Orden(art){
+  if(!art) return {ne:9999, nm:9999, nom:'SIN UBICAR'};
+  const us = Object.values(art.ubicaciones||{});
+  let best = null;
+  for(const u of us){
+    const est=(DATA.estanterias||{})[u.estanteriaId]; if(!est) continue;
+    const mod=est.modulos && est.modulos[u.moduloId];
+    const ne=parseInt(String(est.nombre||'').replace(/\D+/g,''),10); const neN=isNaN(ne)?9998:ne;
+    const nmP=mod?parseInt(String(mod.nombre||'').replace(/\D+/g,''),10):0; const nmN=isNaN(nmP)?0:nmP;
+    if(!best || neN<best.ne || (neN===best.ne && nmN<best.nm))
+      best={ne:neN, nm:nmN, nom:est.nombre+(mod?' · '+mod.nombre:'')};
+  }
+  if(best){ best.todas = us.map(u=>nombreUbicacion(u)).join(' / '); return best; }
+  return {ne:9999, nm:9999, nom:'SIN UBICAR'};
+}
+function f8Filas(d){
+  const {byId, byCod} = f8Indices();
+  return (d.lineas||[]).map((L,i)=>{
+    const art = (L.a && byId[String(L.a).trim()]) || byCod[String(L.c||'').replace(/\s+/g,'').toUpperCase()] || null;
+    return {L, i, art, ord:f8Orden(art)};
+  }).sort((x,y)=> x.ord.ne-y.ord.ne || x.ord.nm-y.ord.nm || String(x.L.c).localeCompare(String(y.L.c)));
+}
+async function renderF8s(){
+  const v = $('view-f8s'); if(!v) return;
+  v.innerHTML = '<div class="hint" style="padding:20px">Cargando F8s…</div>';
+  await cargarF8s();
+  const lista = f8Lista();
+  if(!lista.length){ v.innerHTML='<div class="hint" style="padding:24px;text-align:center">No hay F8s recibidos del Área de Producto todavía.</div>'; return; }
+  const puedeConf = MODE==='sucursal';
+  const fmtF = f=>{ const p=String(f||'').split('-'); return p.length===3 ? p[2]+'/'+p[1] : f; };
+  let html = '<div class="hint" style="margin:12px 0 14px">Cada F8 llega con el <b>recorrido de armado</b> según las ubicaciones de tu depósito (en orden de estantería). Juntá la mercadería, marcá ✓ lo enviado y ✗ + motivo lo que no, y enviá la confirmación.</div>';
+  lista.forEach(d=>{
+    const filas = f8Filas(d);
+    const pend = !d.conf;
+    const ubicadas = filas.filter(f=>f.ord.ne<9999).length;
+    const chip = pend
+      ? '<span style="background:rgba(204,0,0,.1);color:#CC0000;border:1px solid rgba(204,0,0,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;white-space:nowrap">PENDIENTE</span>'
+      : '<span style="background:rgba(0,168,107,.1);color:#00a86b;border:1px solid rgba(0,168,107,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;white-space:nowrap">✓ CONFIRMADO</span>';
+    html += '<details class="est-card" '+(pend?'open':'')+' style="margin-bottom:14px" data-f8="'+esc(d.id)+'">'
+      +'<summary class="est-head" style="cursor:pointer;list-style:none"><span class="nm">F8 del '+esc(fmtF(d.fecha))+' · '+esc(d.operador||'')+'</span><span class="cnt">'+filas.length+' art. · '+ubicadas+' ubicados</span>&nbsp;'+chip+'</summary>'
+      +'<div style="padding:12px">'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
+      +'<button type="button" class="btn-sec" onclick="f8Imprimir(\''+esc(d.id)+'\')">🖨 Imprimir recorrido</button>'
+      +'<button type="button" class="btn-sec" onclick="f8Csv(\''+esc(d.id)+'\')">⇩ Descargar</button>'
+      +(pend&&puedeConf?'<span class="hint" style="margin:0;align-self:center" id="f8uProg-'+esc(d.id)+'"></span>':'')
+      +'</div>';
+    html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;border-bottom:2px solid var(--navy)"><th style="padding:6px 8px">#</th><th style="padding:6px 8px">Ubicación</th><th style="padding:6px 8px">Código</th><th style="padding:6px 8px">Descripción</th><th style="padding:6px 8px">Stock</th><th style="padding:6px 8px">Destino</th><th style="padding:6px 8px">Cant.</th><th style="padding:6px 8px">'+(pend?'¿Enviado?':'Confirmación')+'</th></tr></thead><tbody>';
+    filas.forEach((f,ordIdx)=>{
+      const L=f.L, sin=f.ord.ne>=9999;
+      const cant = L.todo ? 'Todo' : (L.t||'');
+      let celda='—';
+      if(!pend){
+        const c=(d.conf.lineas||{})[f.i]||{};
+        celda = c.ok===true ? '<span style="color:#00a86b;font-weight:700">✓ Enviado</span>'
+          : c.ok===false ? '<span style="color:#CC0000;font-weight:700">✗</span> <span class="hint" style="margin:0">'+esc(c.motivo||'')+'</span>' : '—';
+      }else if(puedeConf){
+        const dr=(_f8Draft[d.id]||{})[f.i]||{};
+        celda='<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
+          +'<button type="button" onclick="f8uMarcar(\''+esc(d.id)+'\','+f.i+',true)" style="border:1px solid '+(dr.ok===true?'#00a86b;background:rgba(0,168,107,.15)':'var(--gray-200);background:#fff')+';border-radius:6px;padding:3px 9px;cursor:pointer;font-weight:700;color:#00a86b">✓</button>'
+          +'<button type="button" onclick="f8uMarcar(\''+esc(d.id)+'\','+f.i+',false)" style="border:1px solid '+(dr.ok===false?'#CC0000;background:rgba(204,0,0,.12)':'var(--gray-200);background:#fff')+';border-radius:6px;padding:3px 9px;cursor:pointer;font-weight:700;color:#CC0000">✗</button>'
+          +(dr.ok===false?'<select onchange="f8uMotivo(\''+esc(d.id)+'\','+f.i+',this.value)" style="font-size:12px;max-width:210px"><option value="">Motivo…</option>'+MOTIVOS_F8.map(m=>'<option'+(dr.motivo===m?' selected':'')+'>'+esc(m)+'</option>').join('')+'</select>':'')
+          +'</div>';
+      }
+      html += '<tr style="border-bottom:1px solid var(--gray-200)'+(sin?';background:rgba(230,144,10,.06)':'')+'">'
+        +'<td style="padding:6px 8px;color:var(--gray-400)">'+(ordIdx+1)+'</td>'
+        +'<td style="padding:6px 8px;font-weight:700;'+(sin?'color:#e6900a':'color:var(--navy)')+'" '+(f.ord.todas&&f.ord.todas!==f.ord.nom?'title="'+esc(f.ord.todas)+'"':'')+'>'+esc(f.ord.nom)+'</td>'
+        +'<td style="padding:6px 8px;font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:nowrap">'+esc(L.c||'')+'</td>'
+        +'<td style="padding:6px 8px">'+esc((f.art&&f.art.descripcion)||L.a||'')+'</td>'
+        +'<td style="padding:6px 8px">'+(f.art?esc(String(f.art.stock??'')):'<span class="hint" style="margin:0">no está</span>')+'</td>'
+        +'<td style="padding:6px 8px">'+esc(L.d||'')+'</td>'
+        +'<td style="padding:6px 8px;font-weight:700">'+esc(String(cant))+'</td>'
+        +'<td style="padding:6px 8px">'+celda+'</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    if(pend&&puedeConf) html += '<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="btn-pri" id="f8uBtn-'+esc(d.id)+'" onclick="f8uConfirmar(\''+esc(d.id)+'\')">Enviar confirmación</button><span class="hint" style="margin:0">Respondé todos los artículos (cada ✗ con su motivo).</span></div>';
+    html += '</div></details>';
+  });
+  v.innerHTML = html;
+  lista.forEach(d=>{
+    if(!d.conf){
+      f8uProg(d.id);
+      if(puedeConf && !d.visto){ d.visto=Date.now(); f8Patch2(d.id,{visto:d.visto}); }
+    }
+  });
+  actualizarBadgeF8();
+}
+function f8Doc2(id){ return f8Lista().find(x=>x.id===id); }
+function f8uMarcar(id,i,ok){ const m=(_f8Draft[id]=_f8Draft[id]||{}); m[i]={ok, motivo:ok?'':(m[i]&&m[i].motivo)||''}; renderF8s(); }
+function f8uMotivo(id,i,mot){ const m=(_f8Draft[id]=_f8Draft[id]||{}); m[i]={ok:false, motivo:mot}; f8uProg(id); }
+function f8uProg(id){
+  const d=f8Doc2(id); if(!d) return;
+  const tot=(d.lineas||[]).length, m=_f8Draft[id]||{};
+  const resp=Object.values(m).filter(x=>x&&(x.ok===true||(x.ok===false&&x.motivo))).length;
+  const el=$('f8uProg-'+id); if(el) el.innerHTML='Respondidos: <b>'+resp+'</b> de '+tot;
+  const btn=$('f8uBtn-'+id); if(btn){ btn.disabled=resp<tot; btn.style.opacity=resp<tot?'.5':'1'; }
+}
+async function f8uConfirmar(id){
+  const d=f8Doc2(id); if(!d||MODE!=='sucursal') return;
+  const tot=(d.lineas||[]).length, m=_f8Draft[id]||{};
+  const resp=Object.values(m).filter(x=>x&&(x.ok===true||(x.ok===false&&x.motivo))).length;
+  if(resp<tot){ toast('Faltan responder '+(tot-resp)+' artículo(s) — cada ✗ con su motivo.'); return; }
+  const si=Object.values(m).filter(x=>x.ok===true).length;
+  if(!confirm('¿Enviar la confirmación del F8 del '+d.fecha+'?\n\n✓ Enviados: '+si+'\n✗ No enviados (con motivo): '+(tot-si)+'\n\nLe llega al Área de Producto y se cruza contra las transferencias reales.')) return;
+  const conf={ts:Date.now(), por:(SESSION&&SESSION.email)||'', lineas:m};
+  await f8Patch2(id,{conf});
+  d.conf=conf; delete _f8Draft[id];
+  toast('Confirmación enviada ✓');
+  renderF8s();
+}
+function f8RecorridoFilas(id){
+  const d=f8Doc2(id); if(!d) return null;
+  return {d, filas:f8Filas(d)};
+}
+function f8Csv(id){
+  const r=f8RecorridoFilas(id); if(!r) return;
+  const filas=[['#','Ubicación','Código','Id.item','Descripción','Stock','Destino','Cantidad']]
+    .concat(r.filas.map((f,i)=>[i+1, f.ord.nom, f.L.c||'', f.L.a||'', (f.art&&f.art.descripcion)||'', f.art?(f.art.stock??''):'', f.L.d||'', f.L.todo?'Todo':(f.L.t||'')]));
+  const csv='﻿'+filas.map(x=>x.map(v=>String(v).replace(/;/g,',')).join(';')).join('\r\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download='Recorrido F8 '+r.d.fecha+' '+SUC+'.csv'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  if(MODE==='sucursal'&&!r.d.descargado){ r.d.descargado=Date.now(); f8Patch2(id,{descargado:r.d.descargado}); }
+}
+function f8Imprimir(id){
+  const r=f8RecorridoFilas(id); if(!r) return;
+  const w=window.open('','_blank'); if(!w){ toast('El navegador bloqueó la ventana de impresión.'); return; }
+  const rows=r.filas.map((f,i)=>'<tr'+(f.ord.ne>=9999?' style="background:#fdf3e3"':'')+'><td>'+(i+1)+'</td><td><b>'+esc(f.ord.nom)+'</b></td><td style="font-family:monospace">'+esc(f.L.c||'')+'</td><td>'+esc((f.art&&f.art.descripcion)||f.L.a||'')+'</td><td>'+esc(f.L.d||'')+'</td><td style="text-align:center;font-weight:700">'+esc(String(f.L.todo?'Todo':(f.L.t||'')))+'</td><td style="width:34px;border:1px solid #999"></td></tr>').join('');
+  w.document.write('<html><head><title>Recorrido F8 '+esc(r.d.fecha)+'</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}h2{margin:0 0 2px}table{border-collapse:collapse;width:100%;margin-top:12px}th,td{border:1px solid #ccc;padding:5px 7px;text-align:left}th{background:#0B1527;color:#fff}</style></head><body>'
+    +'<h2>Recorrido de armado — F8 del '+esc(r.d.fecha)+'</h2><div>'+esc(r.d.operador||'')+' · '+r.filas.length+' artículos · Sucursal: '+esc(SUC)+' · en orden de estantería</div>'
+    +'<table><thead><tr><th>#</th><th>Ubicación</th><th>Código</th><th>Descripción</th><th>Destino</th><th>Cant.</th><th>✓</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<script>window.print()<\/script></body></html>');
+  w.document.close();
+  const d=r.d;
+  if(MODE==='sucursal'&&!d.descargado){ d.descargado=Date.now(); f8Patch2(id,{descargado:d.descargado}); }
 }
 
 // Exporta la planilla completa (respaldo / reemplazo de la vieja planilla de Drive)
