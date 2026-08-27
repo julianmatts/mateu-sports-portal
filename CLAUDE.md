@@ -415,6 +415,11 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   **⚠ CRÍTICO** (✓ de la sucursal SIN transferencia real = intento de engaño).
   Aviso doble a cada cuenta de la sucursal: directo por la Bandeja + **mail real**
   (EmailJS: servicio del turnero + template `template_s38ov8s`, conectado 27/08).
+  **Recorrido de armado**: el Buscador de Artículos (`ubicaciones/`) tiene pestaña
+  «F8s» (badge de pendientes; el puesto no la ve): cruza el F8 con el stock local
+  (Id.item, respaldo código) y ordena el picking por estantería/módulo, con
+  imprimir/descargar; la confirmación ✓/✗+motivo también se puede hacer ahí
+  (misma escritura en `f8suc`).
 - **Firebase** (`turnero-mateu`, nodo `equipo/`): `f8s/<id>` (objeto por id, alta
   con PATCH — así las subidas simultáneas no se pisan), `ctrl` (registro manual,
   legacy), `transf` (export vigente `{archivo,subido,por,filas:[[o,c,d,art,env]]}`),
