@@ -1134,8 +1134,10 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape') cerrarDrops(); })
    Meses de stock, que llega async, entra solo cuando está) y hereda el color del
    semáforo. Clic = volver a las tarjetas. --- */
 let _kbVisible=false;
+// grilla de KPIs activa según la vista (Mi Sucursal o todas las sucursales)
+function kpiBarGrid(){ return (typeof vistaCadena!=='undefined' && vistaCadena) ? $('kpisCad') : $('kpis'); }
 function kpiBarHtml(){
-  const g=$('kpis'); if(!g) return '';
+  const g=kpiBarGrid(); if(!g) return '';
   const items=[...g.querySelectorAll('.kpi')].map(k=>{
     const n=(k.querySelector('.kpi-name')||{textContent:''}).textContent.replace(/\*/g,'').trim();
     const v=(k.querySelector('.kpi-val')||{textContent:''}).textContent.trim();
@@ -1149,9 +1151,9 @@ function kpiBarHtml(){
     +'</div>';
 }
 function kpiBarScroll(){
-  const bar=$('kpiBar'), g=$('kpis'), cont=$('content');
+  const bar=$('kpiBar'), g=kpiBarGrid();
   if(!bar) return;
-  const activo = g && cont && cont.style.display!=='none' && g.offsetParent!==null;
+  const activo = g && g.offsetParent!==null;
   if(!activo){ if(_kbVisible){ bar.classList.remove('show'); _kbVisible=false; } return; }
   const top=document.querySelector('.top'), hTop=top?top.getBoundingClientRect().bottom:0;
   const mostrar = g.getBoundingClientRect().bottom < hTop+8;
@@ -1215,7 +1217,7 @@ async function boot(){
   // clic (o Enter) en la mini-barra de KPIs: volver a las tarjetas
   const kb=$('kpiBar');
   if(kb){
-    const ir=()=>{ const g=$('kpis'); if(!g) return;
+    const ir=()=>{ const g=kpiBarGrid(); if(!g) return;
       const hTop=(document.querySelector('.top')||{getBoundingClientRect:()=>({bottom:0})}).getBoundingClientRect().bottom;
       const y=Math.max(window.scrollY+g.getBoundingClientRect().top-hTop-72,0);
       // navegadores viejos (Win7) ignoran el objeto de opciones: fallback al salto directo
@@ -1362,6 +1364,11 @@ function pintarResumenVivo(){
   const el=$(vistaCadena?'vivaStripCad':'vivaStrip'); if(!el) return;
   const R=_resumenVivo, chips=[];
   const cls=p=> p>=100?'ok':p>=100/1.2?'mid':'bad';
+  if(R.hoy && R.hoy.obj){
+    const p=R.hoy.real?Math.round(R.hoy.real/R.hoy.obj*100):null;
+    chips.push('<span class="zs '+(p!=null?cls(p):'')+'" title="Objetivo de hoy ('+esc(R.hoy.dia)+'): la meta de la semana repartida con tu curva de venta por día'+(R.hoy.real?' · vendido '+objMoney(Math.round(R.hoy.real)):'')+'">'
+      +'Hoy <b>'+(R.hoy.real?p+'%':objMoney(Math.round(R.hoy.obj)))+'</b>'+(R.hoy.real?'de '+objMoney(Math.round(R.hoy.obj)):'objetivo del día')+'</span>');
+  }
   if(R.sem && R.sem.meta){ const p=Math.round(R.sem.real/R.sem.meta*100); chips.push('<span class="zs '+(R.sem.real?cls(p):'')+'" title="Venta de la semana vs. meta">Semana <b>'+(R.sem.real?p+'%':'—')+'</b>de la meta</span>'); }
   if(R.ritmo && !R.ritmo.completa){ const p=Math.round(R.ritmo.idx*100); chips.push('<span class="zs '+(p>=100?'ok':p>=90?'mid':'bad')+'" title="Venta vs. lo esperado a esta altura de la semana (curva de venta por día)">Ritmo <b>'+p+'%</b></span>'); }
   if(R.mes && R.mes.meta){ const p=Math.round(R.mes.real/R.mes.meta*100); chips.push('<span class="zs '+(R.mes.real?cls(p):'')+'" title="Suma de las semanas publicadas vs. meta del mes">Mes <b>'+(R.mes.real?p+'%':'—')+'</b>de la meta</span>'); }
@@ -1702,6 +1709,7 @@ function copiarCadena(){
 // línea de la semana en curso para el resumen compartido (provisorio)
 function resumenVivoTxt(){
   const R=_resumenVivo, p=[];
+  if(R.hoy && R.hoy.obj) p.push('hoy '+(R.hoy.real?Math.round(R.hoy.real/R.hoy.obj*100)+'% de '+objMoney(Math.round(R.hoy.obj)):objMoney(Math.round(R.hoy.obj))+' objetivo'));
   if(R.sem && R.sem.meta && R.sem.real) p.push(Math.round(R.sem.real/R.sem.meta*100)+'% de la meta');
   if(R.ritmo && !R.ritmo.completa) p.push('ritmo '+Math.round(R.ritmo.idx*100)+'%');
   if(R.mes && R.mes.meta && R.mes.real) p.push('mes '+Math.round(R.mes.real/R.mes.meta*100)+'%');
@@ -2136,11 +2144,13 @@ async function renderObjCadena(){
       if(token!==_objCadToken) return;
       const horas = vig&&vig.eq ? eqHorasDias(vig.eq, eqDiasSet(ve)) : 0;
       if(horas>0 && r.tk>0){ r.horas=horas; r.tph=r.tk/horas; r.eqSem=vig.propio?null:vig.sem; }
+      r.eqPropio = !!(vig && vig.propio && horas>0);   // equipo armado ESTA semana (semáforo de datos)
       r.ritmo = ritmoSemana(ve, pesos, r.meta);
     }));
     if(!vistaCadena || token!==_objCadToken) return;
     _objCadDetalle = true;
     pintarObjCad();
+    alertasRitmo(sem, todas).catch(()=>{});   // jueves+: aviso automático a las que van abajo del ritmo
   })();
   _objCadDetalle = false;
   function pintarObjCad(){
@@ -2219,6 +2229,20 @@ async function renderObjCadena(){
                 +kpiBox('Ticket prom. semana', K.vt/K.tk, KC.tk?KC.vt/KC.tk:NaN, fmtM) : '')
       +(H.h>0 ? kpiBox('Tickets/h semana', H.tk/H.h, (hbase==='h_act'&&KC.h)?KC.tk/KC.h:NaN, fmt2).replace('</div></div>', (conH.length<rows.length?' <span class="pte-sub" style="display:inline">'+conH.length+' de '+rows.length+' suc. con equipo</span>':'')+'</div></div>') : '')
       +'</div>';
+    // semáforo de datos de la semana (necesita la pasada 2: equipo por sucursal)
+    if(_objCadDetalle){
+      const sinVenta=rows.filter(r=>!(r.real>0)), sinEq=rows.filter(r=>!r.eqPropio);
+      _chkFaltantes={sem, sinVenta, sinEq};
+      const chip=(ok,txt,title)=>'<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid '+(ok?'#bfe6cf':'#f0d8a8')+';background:'+(ok?'var(--ok-bg)':'var(--mid-bg)')+';color:'+(ok?'var(--ok)':'#8a5a00')+';border-radius:20px;padding:4px 12px;font-family:var(--font-c);font-size:12px;font-weight:700;letter-spacing:.4px;cursor:default" title="'+esc(title||'')+'">'+txt+'</span>';
+      html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px">'
+        +'<span style="font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">Datos de la semana</span>'
+        +chip(!sinVenta.length,'Venta cargada <b>'+(rows.length-sinVenta.length)+'/'+rows.length+'</b>', sinVenta.length?'Sin venta: '+sinVenta.map(r=>r.nombre).join(' · '):'Todas con venta cargada')
+        +chip(!sinEq.length,'Equipo armado <b>'+(rows.length-sinEq.length)+'/'+rows.length+'</b>', sinEq.length?'Sin equipo propio esta semana: '+sinEq.map(r=>r.nombre).join(' · '):'Todas con equipo de la semana')
+        +((sinVenta.length||sinEq.length)
+          ?'<button type="button" id="chkRecordar" class="tb-btn" style="padding:5px 12px;font-size:12px" title="Directo por la Bandeja a cada sucursal con lo que le falta">📣 Recordar a las que faltan</button>'
+          :'<span class="muted" style="font-size:12px">✓ todas al día</span>')
+        +'</div>';
+    }
     // por sucursal: con venta primero (ordenadas por % de cumplimiento), sin venta al final
     rows.sort((a,b)=> (b.real?b.real/b.meta:-1)-(a.real?a.real/a.meta:-1) || a.nombre.localeCompare(b.nombre));
     const hayR=_objCadDetalle ? rows.some(r=>r.ritmo && !r.ritmo.completa) : true;
@@ -2253,6 +2277,7 @@ async function renderObjCadena(){
   $('objCadCard').innerHTML=html;
   const sel=$('objCadSemSel'); if(sel){ sel.onchange=e=>{ objCadSem=e.target.value; renderObjCadena(); }; dropSel(sel); }
   const up=$('veCadUpload'); if(up) up.onclick=()=>$('veCadFile').click();
+  const rec=$('chkRecordar'); if(rec) rec.onclick=recordarFaltantes;
   const sv=$('veCadSave'); if(sv) sv.onclick=veCadPublicar;
   const cn=$('veCadCancel'); if(cn) cn.onclick=()=>{ _veCadPreview=null; renderObjCadena(); };
   sec.style.display='';
@@ -2960,6 +2985,79 @@ async function avisarAdmins(texto){
     .filter(a=>a.toLowerCase()!==de.toLowerCase())
     .map(a=>postJSON(MENSAJES_DB_URL+'/directos/'+convKeyDe(de,a)+'.json',{de,texto,ts}).catch(()=>null)));
 }
+// cuentas del Portal (discontinuos-mateu/usuarios): para resolver los mails de una sucursal
+const USUARIOS_DB_URL='https://discontinuos-mateu-default-rtdb.firebaseio.com';
+let _usuariosPortal=null;
+function fetchUsuariosPortal(){
+  if(_usuariosPortal) return _usuariosPortal;
+  _usuariosPortal=fetchJSON(USUARIOS_DB_URL+'/usuarios.json').catch(()=>null);
+  return _usuariosPortal;
+}
+async function emailsDeSlug(slug){
+  const us=await fetchUsuariosPortal(); const out=[];
+  Object.keys(us||{}).forEach(k=>{ const u=us[k]; if(!u||!u.email) return;
+    if((u.rol==='sucursal'&&u.sucursal===slug)||(u.rol==='outlet'&&u.outlet_id===slug)) out.push(u.email); });
+  return out;
+}
+async function enviarDirectosA(destinos, texto){
+  if(!MENSAJES_OK || !SESSION || !SESSION.email) return;
+  const de=SESSION.email, ts=Date.now();
+  const unicos=[...new Set(destinos.map(x=>(x||'').toLowerCase().trim()).filter(x=>x && x!==de.toLowerCase()))];
+  await Promise.all(unicos.map(a=>postJSON(MENSAJES_DB_URL+'/directos/'+convKeyDe(de,a)+'.json',{de,texto,ts}).catch(()=>null)));
+}
+/* --- semáforo de datos (Panel General): recordar por la Bandeja a las sucursales
+   que no armaron el equipo o no cargaron la venta de la semana --- */
+let _chkFaltantes=null;   // {sem, sinVenta:[rows], sinEq:[rows]} — lo llena pintarObjCad
+async function recordarFaltantes(){
+  const st=_chkFaltantes; if(!st) return;
+  const slugs=[...new Set([...st.sinVenta,...st.sinEq].map(r=>r.slug))];
+  const det=slugs.map(slug=>{
+    const r=[...st.sinVenta,...st.sinEq].find(x=>x.slug===slug);
+    const faltas=[st.sinEq.some(x=>x.slug===slug)?'armar el equipo y las horas':null,
+                  st.sinVenta.some(x=>x.slug===slug)?'cargar la venta':null].filter(Boolean);
+    return {slug, nombre:r.nombre, faltas};
+  });
+  if(!det.length) return;
+  if(!confirm('Se les manda un directo por la Bandeja a '+det.length+' sucursal'+(det.length===1?'':'es')+' ('+objSemTag(st.sem)+'):\n\n'
+    +det.map(d=>'· '+d.nombre+' — falta '+d.faltas.join(' y ')).join('\n')+'\n\n¿Enviar?')) return;
+  const btn=$('chkRecordar'); if(btn){ btn.disabled=true; btn.textContent='Enviando…'; }
+  let ok=0, sinCuenta=[];
+  for(const d of det){
+    const mails=await emailsDeSlug(d.slug).catch(()=>[]);
+    if(!mails.length){ sinCuenta.push(d.nombre); continue; }
+    const texto='📋 Recordatorio de la '+objSemTag(st.sem)+': falta '+d.faltas.join(' y ')
+      +'. Se carga en Mi Sucursal → Objetivo de la semana → «Cómo viene el equipo».';
+    await enviarDirectosA(mails, texto).catch(()=>{});
+    ok++;
+  }
+  if(btn) btn.textContent='✓ Enviado a '+ok+(sinCuenta.length?' · sin cuenta: '+sinCuenta.join(', '):'');
+}
+/* --- alerta de ritmo automática (Panel General, jueves en adelante, semana en curso):
+   directo por la Bandeja a la sucursal y al supervisor cuando va <90% del ritmo
+   esperado. Una sola vez por semana y sucursal: flag en
+   recepciones-mateu objetivos/alertasRitmo/<sem>/<slug>. Best-effort, silenciosa. --- */
+const SUPERVISOR_ALERTA='cristian.campion@mateu.com.ar';
+async function alertasRitmo(sem, rows){
+  if(!MENSAJES_OK || !esGerencia) return;
+  const h=new Date();
+  if(h.getDay()>0 && h.getDay()<4) return;       // recién desde el jueves (Do cuenta: cierre)
+  const lun=new Date(h); lun.setDate(h.getDate()-((h.getDay()+6)%7));
+  const isoLun=lun.getFullYear()+'-'+String(lun.getMonth()+1).padStart(2,'0')+'-'+String(lun.getDate()).padStart(2,'0');
+  if(sem!==isoLun) return;                       // solo la semana en curso
+  const base=OBJETIVOS_URL.replace(/\/+$/,'');
+  const flags=await fetchJSON(base+'/objetivos/alertasRitmo/'+encodeURIComponent(sem)+'.json').catch(()=>null)||{};
+  for(const r of rows){
+    if(!r.ritmo || r.ritmo.completa || !(r.ritmo.idx<0.9) || flags[r.slug]) continue;
+    const p=Math.round(r.ritmo.idx*100);
+    const texto='⏱ Alerta de ritmo ('+objSemTag(sem)+'): '+r.nombre+' va al '+p+'% del ritmo esperado — vendido '
+      +objMoney(Math.round(r.ritmo.venta))+' contra '+objMoney(Math.round(r.ritmo.esperado))+' esperado al cierre del '
+      +(DOW_NOMBRE[r.ritmo.ult]||'')+'. Meta de la semana: '+objMoney(r.meta)+'.';
+    const mails=await emailsDeSlug(r.slug).catch(()=>[]);
+    await enviarDirectosA([...mails, SUPERVISOR_ALERTA], texto).catch(()=>{});
+    await fetch(base+'/objetivos/alertasRitmo/'+encodeURIComponent(sem)+'/'+encodeURIComponent(r.slug)+'.json',
+      {method:'PUT',body:JSON.stringify({ts:Date.now(), idx:+r.ritmo.idx.toFixed(3), por:(SESSION.email||'')})}).catch(()=>{});
+  }
+}
 // casos "sin horas": días en 0 dentro del equipo + gente de la dotación fuera del equipo
 function eqCasosSinHoras(equipo){
   const casos=[];
@@ -3138,6 +3236,16 @@ function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias){
     + (k.upt!=null? chip('UPT', fmt2(k.upt), dUpt):'')
     + (k.tp!=null? chip('Ticket prom.', objMoney(k.tp), dTp):'')
     + '</div>';
+  // mix por rubro de la semana (la estadística detallada lo trae; otros formatos no)
+  if(cur.rubros){
+    const tot=RUBROS_MIX.reduce((a,r)=>a+Math.max(cur.rubros[r]||0,0),0);
+    if(tot>0){
+      h+='<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px;align-items:center">'
+        +'<span style="font-family:var(--font-c,inherit);font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted,#6B7A99)">Mix de la semana</span>'
+        +RUBROS_MIX.filter(r=>(cur.rubros[r]||0)>0).map(r=>'<span style="border:1px solid var(--border,#e6ebf5);border-radius:20px;padding:3px 10px;background:#fff;font-size:12px">'+RUBRO_LBL[r]+' <b>'+Math.round(Math.max(cur.rubros[r],0)/tot*100)+'%</b></span>').join('')
+        +'</div>';
+    }
+  }
   let ins;
   if(!prevX) ins='Sin datos de la semana anterior para comparar.';
   else if(!deltas.length) ins='La semana anterior no tiene indicadores comparables.';
@@ -3678,7 +3786,18 @@ async function renderObjetivo(){
   const hayReal = !!v && ((v.real||0)>0 || realEncTot>0);
   // el selector de semana vive en la cabecera de la banda «En curso»
   const host=$('semHost'); if(host) host.innerHTML=selHtml;
-  _resumenVivo.sem={real:(v&&v.real)||realEncTot||0, meta:(v&&v.meta)||0}; _resumenVivo.ritmo=ritmo; pintarResumenVivo();
+  _resumenVivo.sem={real:(v&&v.real)||realEncTot||0, meta:(v&&v.meta)||0}; _resumenVivo.ritmo=ritmo;
+  // «Hoy»: el objetivo del día de HOY (solo si la semana elegida es la actual y hoy abre)
+  _resumenVivo.hoy=null;
+  try{
+    const h=new Date(), lun=new Date(h); lun.setDate(h.getDate()-((h.getDay()+6)%7));
+    const isoLun=lun.getFullYear()+'-'+String(lun.getMonth()+1).padStart(2,'0')+'-'+String(lun.getDate()).padStart(2,'0');
+    if(sem===isoLun && v && v.meta && pesos){
+      const pd=eqPesosDia(pesos), i=(h.getDay()+6)%7;
+      if(pd && pd[i]>0){ const vd=veVentaDia(ve); _resumenVivo.hoy={obj:v.meta*pd[i], real:vd[EQ_DOW[i]]||0, dia:DOW_NOMBRE[EQ_DOW[i]]||''}; }
+    }
+  }catch(e){}
+  pintarResumenVivo();
   let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
     +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana':'Meta de la semana')+' · '+esc(objSemTag(sem))+'</div>'
     +'</div>';
@@ -3930,6 +4049,9 @@ async function veArchivo(file){
       }
     }
     if(!data){ alert('No pude reconocer las columnas (vendedor y venta) en el Excel. Revisá que tenga esos encabezados.'); return; }
+    // el template PMS trae su propia semana: si no coincide con la elegida, avisar ANTES de previsualizar
+    if(data.semArchivo && data.semArchivo!==sem &&
+       !confirm('Ojo: el archivo es de la '+objSemTag(data.semArchivo)+' y estás parado en la '+objSemTag(sem)+'.\n\n¿Seguir igual y guardar en la '+objSemTag(sem)+'?')) return;
     _vePreview={slug, sem, data, fileName:file.name, info};
     renderObjetivo();
   }catch(e){ alert('Error leyendo el Excel: '+(e.message||e)); }
@@ -4062,9 +4184,11 @@ function veParseDetallado(matrix, sucFija){
     const cant=veNum(row[c.cant]), imp=veNum(row[c.imp]);
     const ok=veCriterioLinea(c.rubro>=0?veNormU(row[c.rubro]):'', c.art>=0?veNormU(row[c.art]):'');
     const k=suc+'|'+nro;
-    let x=comp.get(k); if(!x){ x={suc, nro, cant:0, imp:0, abs:-1, vend:'', dow:'', dia:0, fecha:null}; comp.set(k,x); }
+    let x=comp.get(k); if(!x){ x={suc, nro, cant:0, imp:0, abs:-1, vend:'', dow:'', dia:0, fecha:null, rub:{}}; comp.set(k,x); }
     if(ok[0]) x.cant+=cant;
     if(ok[1]) x.imp+=imp;
+    // importe por rubro del comprobante (para el mix por rubro de la semana viva)
+    if(ok[1] && imp && c.rubro>=0){ const rb=veNormU(row[c.rubro]).replace(/^\d+-\s*/,''); if(rb) x.rub[rb]=(x.rub[rb]||0)+imp; }
     if(Math.abs(imp)>x.abs){ x.abs=Math.abs(imp); x.vend=(c.vend>=0?veStr(row[c.vend]):'')||'SIN ASIGNAR';
       // día de semana sin tilde (Sá → Sa) para que coincida con VE_DOW
       x.dow=c.dow>=0?veDow(row[c.dow]):'';
@@ -4098,6 +4222,7 @@ function veAgregarSemana(res, sem){
     let v=vs.get(x.vend); if(!v){ v={venta:0,tickets:0,unidades:0,dias:{}}; vs.set(x.vend,v); }
     v.venta+=x.imp; v.unidades+=x.cant; if(!esNc && x.cant>0) v.tickets++;
     if(x.imp){ v.dias[x.dow]=(v.dias[x.dow]||0)+x.imp; }
+    if(x.rub) for(const rb in x.rub){ v.rubros=v.rubros||{}; v.rubros[rb]=(v.rubros[rb]||0)+x.rub[rb]; }
     if(x.dow) dowSet.add(x.dow+'|'+x.dia);
   });
   const ord={}; VE_DOW.forEach((d,i)=>ord[d]=i);
@@ -4111,7 +4236,11 @@ function veAgregarSemana(res, sem){
       const venta=Math.round(v.venta), tk=v.tickets, un=Math.round(v.unidades);
       if(!venta && !tk && !un) return;
       const dias=Object.keys(v.dias).sort((a,b)=>oi(a)-oi(b)).map(d=>({d, v:Math.round(v.dias[d])})).filter(x=>x.v);
-      lista.push({nombre, venta, tickets:tk, unidades:un, dias});
+      const fila={nombre, venta, tickets:tk, unidades:un, dias};
+      if(v.rubros){ const rr={}; let hay=false;
+        Object.keys(v.rubros).forEach(rb=>{ const m=Math.round(v.rubros[rb]); if(m){ rr[rb]=m; hay=true; } });
+        if(hay) fila.rubros=rr; }
+      lista.push(fila);
     });
     lista.sort((a,b)=>b.venta-a.venta);
     const total={ venta:lista.reduce((a,x)=>a+x.venta,0), tickets:lista.reduce((a,x)=>a+x.tickets,0), unidades:lista.reduce((a,x)=>a+x.unidades,0) };

@@ -1455,6 +1455,47 @@ async function cargarArchivo(fileList){
   }catch(err){ console.error(err); toast(err.message||'No pude leer el archivo','err'); }
 }
 
+/* --- Etapa 2 (26/08/2026): aviso interno al publicar la semana ---------------
+   Al confirmar la publicación, un directo por la Bandeja del Portal
+   (mensajes-mateu) a cada cuenta de sucursal/outlet con su meta. Los mails se
+   resuelven contra discontinuos-mateu/usuarios. Best-effort: si falla, la
+   publicación ya quedó hecha igual. */
+const MENSAJES_DB_URL='https://mensajes-mateu-default-rtdb.firebaseio.com';
+const USUARIOS_DB_URL='https://discontinuos-mateu-default-rtdb.firebaseio.com';
+const fbKeyMail=e=>(e||'').toLowerCase().trim().replace(/\./g,',');
+const convKeyDe=(a,b)=>[fbKeyMail(a),fbKeyMail(b)].sort().join('__');
+let _usuariosPortal=null;
+function usuariosPortal(){
+  if(_usuariosPortal) return _usuariosPortal;
+  _usuariosPortal=fetch(USUARIOS_DB_URL+'/usuarios.json').then(r=>r.ok?r.json():null).catch(()=>null);
+  return _usuariosPortal;
+}
+function semRango(iso){
+  const d=new Date(iso+'T00:00:00'), f=new Date(d); f.setDate(d.getDate()+6);
+  const dd=x=>String(x.getDate()).padStart(2,'0')+'/'+String(x.getMonth()+1).padStart(2,'0');
+  return dd(d)+'–'+dd(f);
+}
+async function notificarSucursales(sem, porSlug){
+  const slugs=Object.keys(porSlug||{}); if(!slugs.length) return 0;
+  const us=await usuariosPortal(); if(!us) return 0;
+  const de=(SESSION.email||'').toLowerCase(); if(!de) return 0;
+  const ts=Date.now();
+  let n=0;
+  for(const slug of slugs){
+    const v=porSlug[slug];
+    const mails=Object.values(us).filter(u=>u&&u.email&&((u.rol==='sucursal'&&u.sucursal===slug)||(u.rol==='outlet'&&u.outlet_id===slug))).map(u=>u.email.toLowerCase());
+    if(!mails.length) continue;
+    const texto='🎯 Ya está tu objetivo de la semana del '+semRango(sem)+': Meta '+fmtMoney(v.meta)
+      +' · Mínimo '+fmtMoney(v.minimo)+' · ★ 120% '+fmtMoney(v.s120)
+      +(v.nota?' · Nota: '+v.nota:'')+'. Lo ves en Mi Sucursal.';
+    await Promise.all([...new Set(mails)].filter(m=>m!==de)
+      .map(a=>fetch(MENSAJES_DB_URL+'/directos/'+convKeyDe(de,a)+'.json',
+        {method:'POST',body:JSON.stringify({de:SESSION.email, texto, ts})}).catch(()=>null)));
+    n++;
+  }
+  return n;
+}
+
 async function guardar(){
   const sem = ($('semInput')&&$('semInput').value) || state.semana;
   if(!sem){ toast('Elegí la semana','err'); return; }
@@ -1483,6 +1524,11 @@ async function guardar(){
     let bf=0; try{ bf = await backfillRealPublicadas(); }catch(e){ console.warn('backfill', e); }
     state.dashWeek = sem; state.dashData = payload;
     toast('Objetivos publicados ✓'+(bf?(' · real completado en '+bf+' semana'+(bf===1?'':'s')):''),'ok');
+    // Etapa 2: aviso interno a cada sucursal por la Bandeja (opcional, con confirmación)
+    if(confirm('Objetivos publicados ✓\n\n¿Avisar ahora a las '+n+' sucursales por la Bandeja de mensajes?\nA cada una le llega su meta por directo.')){
+      try{ const av=await notificarSucursales(sem, porSlug); toast('Aviso enviado a '+av+' sucursal'+(av===1?'':'es')+' ✓','ok'); }
+      catch(e){ console.warn(e); toast('Publicado OK, pero el aviso a las sucursales falló','err'); }
+    }
     setTab('dashboard');
   }catch(err){ console.error(err); toast('No pude guardar: '+(err.message||''),'err'); }
 }

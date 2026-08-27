@@ -633,9 +633,22 @@ entran acá: ven su objetivo en Indicadores.
   (`justif.sinHoras` / `justif.sinVenta`) y el resumen les llega por **directo de la
   Bandeja** a `ALERTA_ADMINS` (capacitaciones@ —cubre RRHH, confirmado por Juli— /
   cristian.campion@ / capacitacion@, constante en `indicadores/`).
-- **Etapa 2 pendiente (pedida por Juli)**: armar los objetivos directo en el portal
-  (sin Excel) y, al confirmar, **enviar una notificación interna** a cada usuario de
-  sucursal. Enganchar con la Bandeja de mensajes (`mensajes-mateu`) del Portal.
+- **Etapa 2 (26/08/2026, HECHA la parte de aviso)**: al publicar la semana en
+  `objetivos/` (`guardar()`), con confirmación se manda un **directo por la Bandeja**
+  (`mensajes-mateu`) a cada cuenta de sucursal/outlet con su meta (`notificarSucursales`;
+  mails resueltos contra `discontinuos-mateu/usuarios`). Queda pendiente solo la parte
+  de armar objetivos sin Excel (ya se pueden cargar a mano).
+- **Circuito operativo en Indicadores (26/08/2026)**: chip **«Hoy»** en la tira viva
+  (objetivo del día de HOY con la curva, real y % si hay venta — solo en la semana en
+  curso); **semáforo «Datos de la semana»** en el Panel General (venta cargada X/N y
+  equipo armado X/N, botón «📣 Recordar a las que faltan» → directos por la Bandeja);
+  **alerta de ritmo automática** (`alertasRitmo`): de jueves a domingo, al abrir el
+  Panel General, directo a la sucursal + supervisor si va <90% del ritmo (una vez por
+  semana/sucursal, flag `objetivos/alertasRitmo/<sem>/<slug>` en recepciones-mateu).
+  El payload de `ventaEquipo` ahora guarda **`rubros`** por vendedor (importe por
+  CALZADO/INDUMENTARIA/… de la estadística detallada) → «Mix de la semana» en el
+  desplegable de cada vendedor. La matemática del reparto tiene **tests**:
+  `node --test lib/reparto.test.js` (extraen las funciones del propio index.html).
 
 **Puesta en marcha: ya funciona (usa `recepciones-mateu`, en vivo). No hace falta
 crear ninguna base.**
