@@ -347,6 +347,13 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   la tarjeta lo muestra como `#233282` y el export lo lleva en su columna.
 - Validado 21/08/2026 con el archivo real de Diagonal 80: 4.191 artículos, 2.175
   ubicados, 30 estanterías, re-importación idempotente.
+- **Lista de retiro con talles del F8 (27/08/2026)**: al importar el F8 en la Lista
+  de retiro, el parser captura la **curva de talles** (las columnas entre la cabecera
+  y el TOTAL, solo en el formato con columna DESTINO; el formato matriz no las trae)
+  y el recorrido impreso muestra por artículo un renglón por destino con cantidad y
+  talles («CITY BELL ×4 — 40×2 · 41»). Talles de letra en orden de ropa (XS→S→M→L→XL),
+  ×1 se omite. Los destinos **«Todo X» sin unidades** ahora entran a la lista (antes
+  se descartaban por total 0) marcados «TODO lo que haya», sin cantidad ni talles.
 - **Artículos nuevos sin ubicar** (prioridad del depósito): «nuevo» = `fechaAlta`
   posterior a la **primera carga** de la sucursal (cada carga graba un único
   timestamp; así el día 1 no se marca todo) y ≤ `NUEVO_DIAS` (7). Se destacan con
