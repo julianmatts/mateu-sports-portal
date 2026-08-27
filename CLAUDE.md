@@ -393,6 +393,10 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   por efectividad, con «⧉ Copiar» (WhatsApp) y «📣 Publicar en la Bandeja»
   (`mensajes-mateu/avisos`); banner recordatorio vie-dom si la semana no salió
   (flag `equipo/reporteSem/<semanaISO>`).
+  **Tolerancia** (pedido de Juli 27/08: entre el F8 y el envío hay ventas/fallas):
+  selector en Control F8 (exacta/±10/±20/±30, default ±10%), compartida en
+  `equipo/config/tolerancia`; línea con envío dentro del margen = cumplida
+  (badge «±Tolerancia»); enviar cero nunca se tolera. El reporte declara la vara.
 - **Firebase** (`turnero-mateu`, nodo `equipo/`): `f8s/<id>` (objeto por id, alta
   con PATCH — así las subidas simultáneas no se pisan), `ctrl` (registro manual,
   legacy) y `transf` (export vigente `{archivo,subido,por,filas:[[o,c,d,art,env]]}`).
