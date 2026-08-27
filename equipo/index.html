@@ -528,7 +528,8 @@ function calcControlReal(opFilter){
       sucs.add(suc);
       if(!cells[key])cells[key]={ok:0,diff:0,no_ej:0,total:0,plan:0,transf:0,operator:f.operator};
       const c=cells[key];c.total++;c.plan+=Math.round(+L.t||0);c.transf+=sent;
-      if(sent===0)c.no_ej++;else if(sent===Math.round(+L.t))c.ok++;else c.diff++;
+      if(L.todo){if(sent>0)c.ok++;else c.no_ej++;} // «Todo» sin cantidad: hubo envío = hecho
+      else if(sent===0)c.no_ej++;else if(sent===Math.round(+L.t))c.ok++;else c.diff++;
       if(c.operator!==f.operator)c.operator='Ambos';
     }
   }
@@ -698,14 +699,18 @@ function parseF8(wb){
     // un total numérico encontrado (aunque sea 0) es definitivo: el fallback solo corre sin total
     let t=null;for(let ci=tc;ci<=tc+2&&ci<r.length;ci++)if(typeof r[ci]==='number'){t=r[ci];break;}
     if(t===null){const fin=tc>base?tc:r.length;const ns=[];for(let ci=base;ci<fin&&ci<r.length;ci++)if(typeof r[ci]==='number')ns.push(r[ci]);t=ns.reduce((a,b)=>a+b,0);}
-    if(t>0){
+    // Destino «Todo X» sin unidades = pedido de mandar todo lo que haya, sin cantidad:
+    // entra al cruce con control laxo (hubo envío → Hecho; nada → No ejecutado)
+    const dRaw=cD>=0?String(r[cD]||'').trim():'';
+    const esTodo=t===0&&/^todo(\s|$)/i.test(dRaw);
+    if(t>0||esTodo){
       // Marca: la columna MARCA del F8 si existe (nombre real); si no, por prefijo del código.
       // Sin caracteres prohibidos por Firebase en la clave (./#/$/[/]) — ver el caso RUGE/EDLP.
       wm.push({r,t});
       const b=(cM>=0&&r[cM])?String(r[cM]).trim().toLowerCase().replace(/[.#$/\[\]]/g,'-').replace(/\b\p{L}/gu,c=>c.toUpperCase()):detectBrand(r[cC]);
       bc[b]=(bc[b]||0)+1;
       const o=String((cO>=0?r[cO]:r[1])||'').trim();const c=String(r[cC]||'').trim();const a=String(r[cA]||'').trim();
-      if(cD>=0){const d=String(r[cD]||'').trim();if(o&&c&&d)lineas.push({o,d,c,a,t});}
+      if(cD>=0){const d=dRaw;if(o&&c&&d)lineas.push(esTodo?{o,d,c,a,t:0,todo:1}:{o,d,c,a,t});}
       else for(const ci of dcols){const v=r[ci];if(typeof v==='number'&&v>0&&o&&c)lineas.push({o,d:H[ci],c,a,t:v});}
     }
   }
@@ -768,6 +773,7 @@ function buildF8Cruce(){
       const key=tk(nrmF8(L.o),L.c,nrmF8(L.d));
       if(!f8CruceIndex.has(key))f8CruceIndex.set(key,{plan:0,desc:L.a||'',origen_raw:L.o,destino_raw:L.d,operator:f.operator,rubro:f.operator==='David'?'indumentaria':'calzado',fecha:f.date});
       f8CruceIndex.get(key).plan+=+L.t||0;
+      if(L.todo)f8CruceIndex.get(key).sinCant=true;
     }
   }
 }
@@ -876,7 +882,7 @@ function exportCruce(){
   if(!_cruceResults.length){showToast('No hay resultados para exportar',true);return;}
   const ESTADO={ok:'Exacto',diferencia:'Con diferencia',no_ejecutado:'No ejecutado'};
   const aoa=[['Código','Artículo','Marca','Rubro','Sucursal que envía','Destino','F8 Plan','Transferido','Diferencia','Estado','Operador']];
-  for(const r of _cruceResults)aoa.push([r.codigo,r.desc,r.marca,r.rubro,sucBonito(nrmF8(r.origen_f8)),sucBonito(nrmF8(r.destino_f8)),r.plan,r.transferido,r.diff,ESTADO[r.estado]||r.estado,r.operator]);
+  for(const r of _cruceResults)aoa.push([r.codigo,r.desc,r.marca,r.rubro,sucBonito(nrmF8(r.origen_f8)),sucBonito(nrmF8(r.destino_f8)),r.sinCant?'Todo':r.plan,r.transferido,r.sinCant?'':r.diff,(r.sinCant&&r.estado==='ok')?'Hecho':(ESTADO[r.estado]||r.estado),r.operator]);
   const ws=XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols']=[{wch:18},{wch:34},{wch:14},{wch:13},{wch:20},{wch:20},{wch:9},{wch:11},{wch:10},{wch:14},{wch:9}];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Control F8');
@@ -909,13 +915,16 @@ function renderCruce(){
       if(rubroF&&!f8.rubro.toUpperCase().includes(rubroF))continue;
       const tData=transfIndex.get(key);
       const transferido=tData?Math.round(tData.enviado):0;
-      const plan=Math.round(f8.plan);if(plan<=0)continue;
+      const plan=Math.round(f8.plan);if(plan<=0&&!f8.sinCant)continue;
       const desc=f8.desc.replace(/^%%%/,'');const marca=tData?tData.marca:'';
       if(busq&&!desc.toLowerCase().includes(busq)&&!key.toLowerCase().includes(busq)&&!marca.toLowerCase().includes(busq))continue;
-      let estado;if(transferido===0)estado='no_ejecutado';else if(transferido===plan)estado='ok';else estado='diferencia';
+      // «Todo» sin cantidad pedida: control laxo — hubo envío = Hecho, sin comparar unidades
+      let estado;
+      if(f8.sinCant)estado=transferido>0?'ok':'no_ejecutado';
+      else if(transferido===0)estado='no_ejecutado';else if(transferido===plan)estado='ok';else estado='diferencia';
       if(tipoF&&estado!==tipoF)continue;
       const parts=key.split('||');
-      results.push({codigo:parts[1],origen_f8:f8.origen_raw,destino_f8:f8.destino_raw,desc,marca,rubro:f8.rubro,operator:f8.operator,plan,transferido,diff:transferido-plan,estado});
+      results.push({codigo:parts[1],origen_f8:f8.origen_raw,destino_f8:f8.destino_raw,desc,marca,rubro:f8.rubro,operator:f8.operator,plan,transferido,diff:f8.sinCant?0:transferido-plan,estado,sinCant:!!f8.sinCant});
     }
   }
   const ORDER={no_ejecutado:0,diferencia:1,ok:2};
@@ -938,8 +947,10 @@ function renderCruce(){
     empty.style.display='none';
     tbody.innerHTML=show.map(r=>{
       const ds=r.diff===0?'color:var(--muted)':r.diff>0?'color:var(--green)':'color:var(--red)';
-      const dt=r.diff===0?'—':(r.diff>0?'+':'')+r.diff;
-      return`<tr><td style="font-family:var(--font-c);font-size:11px;color:var(--muted)">${r.codigo}</td><td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.desc}">${r.desc}</td><td style="font-family:var(--font-c);font-size:12px">${r.marca}</td><td style="font-family:var(--font-c);font-size:11px;color:var(--muted)">${r.rubro}</td><td style="font-family:var(--font-c);font-size:11px;font-weight:600">${r.origen_f8||'—'}</td><td style="font-family:var(--font-c);font-size:11px;font-weight:600">${r.destino_f8||'—'}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;color:var(--muted)">${r.plan||'—'}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;color:var(--navy)">${r.transferido||'—'}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;${ds}">${dt}</td><td>${BADGE[r.estado]||''} ${OPT[r.operator]||''}</td></tr>`;
+      const dt=r.sinCant?'—':(r.diff===0?'—':(r.diff>0?'+':'')+r.diff);
+      const planTxt=r.sinCant?'<span style="font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Todo</span>':(r.plan||'—');
+      const badge=(r.sinCant&&r.estado==='ok')?'<span class="cruce-badge cruce-ok">Hecho</span>':(BADGE[r.estado]||'');
+      return`<tr><td style="font-family:var(--font-c);font-size:11px;color:var(--muted)">${r.codigo}</td><td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.desc}">${r.desc}</td><td style="font-family:var(--font-c);font-size:12px">${r.marca}</td><td style="font-family:var(--font-c);font-size:11px;color:var(--muted)">${r.rubro}</td><td style="font-family:var(--font-c);font-size:11px;font-weight:600">${r.origen_f8||'—'}</td><td style="font-family:var(--font-c);font-size:11px;font-weight:600">${r.destino_f8||'—'}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;color:var(--muted)">${planTxt}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;color:var(--navy)">${r.transferido||'—'}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;${ds}">${dt}</td><td>${badge} ${OPT[r.operator]||''}</td></tr>`;
     }).join('');
   }
   _cruceResults=results;
