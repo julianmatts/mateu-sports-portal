@@ -413,8 +413,8 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   (recibido/visto/descargado/confirmado) y el cruce suma dos estados: 
   **Justificado** (✗ con motivo, sin transferencia — cuenta para la efectividad) y
   **⚠ CRÍTICO** (✓ de la sucursal SIN transferencia real = intento de engaño).
-  Mail real a la sucursal: pendiente de un template propio de EmailJS (el del
-  turnero tiene texto fijo de turnos); hook en `notificarF8`.
+  Aviso doble a cada cuenta de la sucursal: directo por la Bandeja + **mail real**
+  (EmailJS: servicio del turnero + template `template_s38ov8s`, conectado 27/08).
 - **Firebase** (`turnero-mateu`, nodo `equipo/`): `f8s/<id>` (objeto por id, alta
   con PATCH — así las subidas simultáneas no se pisan), `ctrl` (registro manual,
   legacy), `transf` (export vigente `{archivo,subido,por,filas:[[o,c,d,art,env]]}`),
