@@ -364,6 +364,9 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   (operador+archivo+fecha) REEMPLAZA al anterior. La marca sale de la columna MARCA
   si existe; si no, por prefijo del código (`BRAND_MAP2`). ⚠ `RUGE-EDLP` con guion:
   la `/` es ilegal como clave Firebase y hacía fallar el guardado en silencio.
+  **Destino `Todo <sucursal>` sin unidades** = mandar todo lo que haya: entra al
+  cruce con control laxo (hubo envío → «Hecho», cuenta como exacto sin comparar
+  cantidades; nada → «No ejecutado»); plan mostrado como «Todo» (regla de Juli 26/08).
 - **Transferencias (.csv ;-separado, latin1)**: export con fila de encabezado
   `…;Enviado;Recibido;Días proc.`; viene CON o SIN columna Id.item → las columnas
   se detectan por contenido (las dos con prefijo `NN-` = origen y destino, el código
