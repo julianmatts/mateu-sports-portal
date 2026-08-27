@@ -796,27 +796,41 @@ function processTransfFile(file){
     try{
       const lines=e.target.result.split(/\r?\n/).filter(l=>l.trim());
       transfIndex=new Map();let withMov=0;
-      // Formato real del export: una fila de encabezado con «Enviado» y columnas
-      // Mes;Día;Origen;Código;Destino;Id.item;Enviado;Recibido;Días proc. (decimales con coma)
-      let hIdx=-1,eCol=-1;
-      for(let i=0;i<Math.min(5,lines.length);i++){const c=lines[i].split(';').map(x=>x.trim().toUpperCase());const j=c.indexOf('ENVIADO');if(j>=0){hIdx=i;eCol=j;break;}}
-      if(hIdx>=0&&eCol>=4){
-        // Columnas por CONTENIDO: las dos con prefijo «NN-» son origen y destino, el código
-        // va entre ellas. El export puede traer o no la columna Id.item (después de destino).
-        const muestra=lines.slice(hIdx+1,hIdx+61);
-        const cnt={};
-        for(const l of muestra){const cs=l.split(';');for(let i=0;i<eCol&&i<cs.length;i++)if(/^\d{1,2}-/.test(cs[i].trim()))cnt[i]=(cnt[i]||0)+1;}
-        const sucCols=Object.keys(cnt).filter(i=>cnt[i]>muestra.length/2).map(Number).sort((a,b)=>a-b);
-        let iO,iC,iD,iA;
-        if(sucCols.length>=2){iO=sucCols[0];iD=sucCols[1];iC=iO+1;iA=(iD+1<eCol)?iD+1:-1;}
-        else{iO=eCol-4;iC=eCol-3;iD=eCol-2;iA=eCol-1;} // respaldo: mapeo posicional (formato con Id.item)
-        for(const line of lines.slice(hIdx+1)){
+      // El export de transferencias viene en VARIAS variantes (con/sin fila de encabezado,
+      // con/sin Id.item, y el orden origen/código/destino puede cambiar). Cada columna se
+      // detecta por CONTENIDO: sucursales = prefijo «NN-» (1ª origen, 2ª destino), código =
+      // la columna con letras que no es sucursal, enviado = la del encabezado «Enviado» o la
+      // primera decimal (1,00 / 1.00) después de código y destino, Id.item = enteros largos.
+      let hIdx=-1,eHdr=-1;
+      for(let i=0;i<Math.min(5,lines.length);i++){const c=lines[i].split(';').map(x=>x.trim().toUpperCase());const j=c.indexOf('ENVIADO');if(j>=0){hIdx=i;eHdr=j;break;}}
+      const datos=lines.slice(hIdx+1);
+      const muestra=datos.slice(0,80).map(l=>l.split(';'));
+      const cuenta=pred=>{const cnt={};for(const cs of muestra)for(let i=0;i<cs.length;i++)if(pred((cs[i]||'').trim()))cnt[i]=(cnt[i]||0)+1;return cnt;};
+      const esSuc=v=>/^\d{1,2}-/.test(v);
+      const sucCnt=cuenta(esSuc);
+      const sucCols=Object.keys(sucCnt).filter(i=>sucCnt[i]>muestra.length/2).map(Number).sort((a,b)=>a-b);
+      if(sucCols.length>=2){
+        const iO=sucCols[0],iD=sucCols[1];
+        const letCnt=cuenta(v=>v&&/[A-Za-z]/.test(v)&&!esSuc(v));
+        let iC=-1,mejorC=0;for(const i in letCnt)if(+i!==iO&&+i!==iD&&letCnt[i]>mejorC){mejorC=letCnt[i];iC=+i;}
+        let iE=eHdr;
+        if(iE<0){
+          const decCnt=cuenta(v=>/^\d+[.,]\d{1,2}$/.test(v));
+          const cand=Object.keys(decCnt).filter(i=>decCnt[i]>muestra.length/2).map(Number).sort((a,b)=>a-b);
+          iE=cand.find(i=>i>iC&&i>iD);
+          if(iE===undefined)iE=cand.length?cand[cand.length-1]:-1;
+        }
+        const intCnt=cuenta(v=>/^\d{4,}$/.test(v));
+        let iA=-1,mejorA=0;for(const i in intCnt)if(+i!==iO&&+i!==iD&&+i!==iC&&+i!==iE&&intCnt[i]>muestra.length/2&&intCnt[i]>mejorA){mejorA=intCnt[i];iA=+i;}
+        if(iC<0||iE<0){status.innerHTML='<span style="color:var(--red)">No pude reconocer las columnas del export. Avisale a Juli con el archivo.</span>';return;}
+        for(const line of datos){
           const cols=line.split(';');
-          if(cols.length<=eCol)continue;
+          if(cols.length<=iE)continue;
           const codigo=(cols[iC]||'').trim();if(!codigo)continue;
-          const env=parseFloat((cols[eCol]||'0').replace(',','.'))||0;
-          if(env<=0)continue;withMov++;
           const orig=(cols[iO]||'').trim();const dest=(cols[iD]||'').trim();
+          if(!esSuc(orig)&&!esSuc(dest))continue; // filas de totales o basura
+          const env=parseFloat((cols[iE]||'0').replace(',','.'))||0;
+          if(env<=0)continue;withMov++;
           const key=tk(nrmT(orig),codigo,nrmT(dest));
           if(!transfIndex.has(key))transfIndex.set(key,{enviado:0,marca:detectBrand(codigo),articulo:iA>=0?(cols[iA]||'').trim():'',rubro:'',origen_t:orig,destino_t:dest});
           transfIndex.get(key).enviado+=env;
