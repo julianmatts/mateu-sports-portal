@@ -202,7 +202,26 @@ a{color:inherit}
 /* «El puente»: semana · mes en curso acumulado · mes cerrado · objetivo */
 #puenteBox{margin-top:16px}
 .pte-h{font-family:var(--font-c);font-weight:700;font-size:15px;letter-spacing:.6px;text-transform:uppercase;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:12px;color:var(--navy)}
-.pte .num{font-family:'Saira',var(--font-c),sans-serif;font-style:italic;font-weight:700;font-size:15px}
+.pte .num{font-family:'Saira',var(--font-c),sans-serif;font-style:italic;font-weight:700;font-size:16px}
+/* la columna protagonista es el ACUMULADO del mes: tinte azul «en curso» y número más grande */
+.pte th.pte-acum,.pte td.pte-acum{background:var(--vivo-pill)}
+.pte td.pte-acum{box-shadow:inset 3px 0 0 var(--vivo)}
+.pte td.pte-acum .num{font-size:19px;font-weight:800;color:var(--vivo)}
+.pte td.pte-obj .num{color:var(--navy);font-weight:800}
+/* KPIs embebidos en el objetivo semanal: tarjetas compactas con acento lateral de estado
+   (misma tipografía «rendimiento» y colores del semáforo, menos aire que las del Cierre) */
+#kpisSem{grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:12px}
+#kpisSem .kpi{padding:14px 16px;border-radius:10px;border-top:1px solid var(--border);border-left:4px solid var(--muted-light)}
+#kpisSem .kpi.s-ok{border-top-color:var(--border);border-left-color:var(--ok);background:linear-gradient(90deg,rgba(28,157,85,.08),#fff 46%)}
+#kpisSem .kpi.s-mid{border-top-color:var(--border);border-left-color:var(--mid);background:linear-gradient(90deg,rgba(199,119,0,.08),#fff 46%)}
+#kpisSem .kpi.s-bad{border-top-color:var(--border);border-left-color:var(--bad);background:linear-gradient(90deg,rgba(192,38,31,.09),#fff 46%)}
+#kpisSem .kpi-val{font-size:34px;margin:6px 0 1px}
+#kpisSem .kpi-name{font-size:11px;letter-spacing:1.2px}
+#kpisSem .kpi-unit{font-size:11px}
+#kpisSem .kpi-obj{margin-top:8px;font-size:12px}
+#kpisSem .kpi-foot{padding-top:8px}
+#kpisSem .kpi-delta{font-size:12px;padding-top:8px}
+#kpisSem .kpi-rank{font-size:11.5px;margin-top:4px}
 .pte-h .muted{font-weight:400;text-transform:none;letter-spacing:0;font-family:var(--font-b);font-size:13px}
 .pte-sub{font-family:var(--font-c);font-size:12px;margin-top:2px;color:var(--muted)}
 .pte table th .pprov,.pte table th .pok{margin-left:5px;vertical-align:baseline}
@@ -3554,20 +3573,20 @@ async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem
     {key:'tph', name:'Tickets por hora', tgt:obj.tickets_hora}, {key:'vh', name:'Venta por hora', tgt:null},
   ];
   const noCompH = !!(cerr && cerr.base==='contratadas');
-  const cell=(k, src, ref)=>{ const x=src?src[k]:NaN; if(!isFinite(x)) return '<td><span class="muted">—</span></td>';
+  const cell=(k, src, ref, cls)=>{ const td='<td'+(cls?' class="'+cls+'"':'')+'>'; const x=src?src[k]:NaN; if(!isFinite(x)) return td+'<span class="muted">—</span></td>';
     const comparable = ref && isFinite(ref[k]) && ref[k] && !(noCompH && (k==='tph'||k==='vh'));
     const d=comparable?deltaHtml(x,ref[k]):null;
-    return '<td><span class="num">'+kpiFmt(k,x)+'</span>'+(d?'<div class="pte-sub">'+d+' vs. cerrado</div>':(ref&&!comparable&&(k==='tph'||k==='vh')?'<div class="pte-sub" title="El cierre usa horas contratadas">no comparable</div>':''))+'</td>'; };
+    return td+'<span class="num">'+kpiFmt(k,x)+'</span>'+(d?'<div class="pte-sub">'+d+' vs. cerrado</div>':(ref&&!comparable&&(k==='tph'||k==='vh')?'<div class="pte-sub" title="El cierre usa horas contratadas">no comparable</div>':''))+'</td>'; };
   const mesLbl=objMesLbl(mesISO).split(' ')[0];
   $('puenteBox').innerHTML = '<div class="card pad pte">'
     +'<div class="pte-h">Indicadores del mes en curso<span class="muted">el acumulado de las semanas publicadas, contra el último cierre y el objetivo</span></div>'
     +'<div class="tbl-wrap"><table style="min-width:560px"><thead><tr><th class="L">Indicador</th>'
     +'<th>'+esc(semLbl)+'<span class="pprov">prov</span></th>'
-    +'<th>'+esc(mesLbl)+' acumulado'+(acum?' · '+acum.nsem+' sem':'')+'<span class="pprov">prov</span>'
+    +'<th class="pte-acum">'+esc(mesLbl)+' acumulado'+(acum?' · '+acum.nsem+' sem':'')+'<span class="pprov">prov</span>'
     +(acum&&acum.nH&&acum.nH<acum.nsem?'<div class="pte-sub" style="text-transform:none;letter-spacing:0" title="Solo las semanas con equipo guardado entran en tickets y venta por hora">hs. asignadas en '+acum.nH+' de '+acum.nsem+'</div>':'')+'</th>'
     +'<th>'+(cerr?esc(cerr.label)+' cerrado':'Mes cerrado')+'<span class="pok">oficial</span></th><th>Objetivo '+esc(fmt)+'</th></tr></thead><tbody>'
-    +rows.map(r=>'<tr><td class="L">'+r.name+'</td>'+cell(r.key,cur,cerr)+cell(r.key,acum,cerr)+cell(r.key,cerr,null)
-      +'<td>'+(r.tgt?'<span class="num">'+kpiFmt(r.key,r.tgt)+'</span>':'<span class="muted">—</span>')+'</td></tr>').join('')
+    +rows.map(r=>'<tr><td class="L">'+r.name+'</td>'+cell(r.key,cur,cerr)+cell(r.key,acum,cerr,'pte-acum')+cell(r.key,cerr,null)
+      +'<td class="pte-obj">'+(r.tgt?'<span class="num">'+kpiFmt(r.key,r.tgt)+'</span>':'<span class="muted">—</span>')+'</td></tr>').join('')
     +'</tbody></table></div>'
     +'<p class="hint" style="margin:10px 0 0">Las columnas provisorias salen de la venta cargada por semana y de las horas asignadas al equipo'
     +(cerr&&cerr.base==='contratadas'?' (el mes cerrado no tiene equipo guardado y usa horas contratadas: tickets y venta por hora no son comparables del todo)':'')
