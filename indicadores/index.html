@@ -2552,6 +2552,70 @@ function veParseEquipoPMS(wb, X){
   return equipo.length ? equipo : null;
 }
 // parsea la matriz del Excel: autodetecta la fila de encabezado y las columnas
+/* Planilla resumen con los DÍAS EN COLUMNAS (la que arma el encargado a mano):
+   una fila por vendedor; arriba una fila con «lunes / martes / miércoles…» (celdas
+   combinadas: el nombre está solo en la 1ª columna de su bloque) y debajo los
+   sub-encabezados unidades · ticket · Importe de cada bloque. Devuelve el mismo
+   formato que veParse, con `dias` por vendedor. Va ANTES del genérico: el genérico
+   encontraría «Vendedor»+«Importe» y tomaría SOLO el primer día. */
+function veParseMatrizDias(m){
+  // fila de encabezados: la que tiene "Vendedor"
+  let hr=-1, cv=-1;
+  for(let i=0;i<Math.min(m.length,10);i++){
+    const j=(m[i]||[]).findIndex(x=>/^vendedor/i.test(veStr(x)));
+    if(j>=0){ hr=i; cv=j; break; }
+  }
+  if(hr<1) return null;                     // los días tienen que estar ARRIBA
+  // fila de días: la anterior (o dos arriba si hay una fila de título en el medio)
+  let bloques=[];
+  for(const df of [hr-1, hr-2]){
+    if(df<0) break;
+    const diasRow=m[df]||[];
+    bloques=[];
+    for(let j=cv+1;j<Math.max(diasRow.length,(m[hr]||[]).length);j++){
+      const d=veDow(diasRow[j]);
+      if(VE_DOW_SET[d]) bloques.push({d, ini:j});
+    }
+    if(bloques.length>=2) break;            // con 1 solo día no es este formato
+  }
+  if(bloques.length<2) return null;
+  const nCols=Math.max((m[hr]||[]).length, bloques[bloques.length-1].ini+3);
+  bloques.forEach((b,i)=>{ b.fin=(i+1<bloques.length?bloques[i+1].ini:nCols)-1; });
+  // sub-columnas de cada bloque por nombre; el importe suele ser la última
+  const hdr=(m[hr]||[]).map(x=>veNormU(x));
+  bloques.forEach(b=>{
+    for(let j=b.ini;j<=b.fin;j++){
+      const h=hdr[j]||'';
+      if(b.imp==null && /IMPORTE|VENTA|MONTO/.test(h)) b.imp=j;
+      if(b.tk==null && /TICKET|COMPROB/.test(h)) b.tk=j;
+      if(b.un==null && /UNIDAD/.test(h)) b.un=j;
+    }
+    if(b.imp==null) b.imp=b.fin;
+  });
+  const ord={}; VE_DOW.forEach((d,i)=>ord[d]=i);
+  const oi=d=>(ord[d]!=null?ord[d]:9);
+  const vend=[];
+  for(let i=hr+1;i<m.length;i++){
+    const r=m[i]||[];
+    const nombre=veStr(r[cv]);
+    if(!nombre || /^total/i.test(nombre)) continue;
+    let venta=0, tk=0, un=0; const dias=[];
+    bloques.forEach(b=>{
+      const v=veNum(r[b.imp]); venta+=v;
+      if(b.tk!=null) tk+=veNum(r[b.tk]);
+      if(b.un!=null) un+=veNum(r[b.un]);
+      if(v) dias.push({d:b.d, v:Math.round(v)});
+    });
+    if(!venta && !tk && !un) continue;
+    dias.sort((a,b2)=>oi(a.d)-oi(b2.d));
+    vend.push({nombre, venta:Math.round(venta), tickets:Math.round(tk), unidades:Math.round(un), dias});
+  }
+  if(!vend.length) return null;
+  vend.sort((a,b)=>b.venta-a.venta);
+  const total={ venta:vend.reduce((a,x)=>a+x.venta,0), tickets:vend.reduce((a,x)=>a+x.tickets,0), unidades:vend.reduce((a,x)=>a+x.unidades,0) };
+  return {vendedores:vend, total};
+}
+
 function veParse(matrix){
   const norm=s=>String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
   let hdr=-1, cols=null;
@@ -4042,7 +4106,17 @@ async function veArchivo(file){
       }
     }
     if(!data){
-      // 3º genérico: la primera hoja con columnas reconocibles (vendedor + venta)
+      // 3º planilla resumen con los DÍAS EN COLUMNAS (bloques lunes/martes/… arriba)
+      for(const name of wb.SheetNames){
+        const m=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,defval:''});
+        data=veParseMatrizDias(m);
+        if(data){ info='Leído como <b>planilla por día</b> (días en columnas: '
+          +[...new Set(data.vendedores.reduce((a,x)=>a.concat((x.dias||[]).map(d=>d.d)),[]))].join('/')
+          +'). Los días se guardan como de la semana elegida.'; break; }
+      }
+    }
+    if(!data){
+      // 4º genérico: la primera hoja con columnas reconocibles (vendedor + venta)
       for(const name of wb.SheetNames){
         const m=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,defval:''});
         data=veParse(m); if(data) break;

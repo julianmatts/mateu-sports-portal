@@ -577,8 +577,12 @@ entran acá: ven su objetivo en Indicadores.
   y hasta SIN encabezados: `veParseDetallado(m, sucFija)` + `veDetectarColumnas(m,
   sinSuc)` asumen la sucursal de la sesión, se quedan solo con los días de la semana
   elegida y traen el día a día por vendedor; va ANTES del genérico porque el genérico
-  la leería mal); (3) genérico (columnas vendedor/venta y, si vienen, tickets/unidades
-  — sin días). Muestra
+  la leería mal); (3) **planilla por día** (27/08/2026, la que arma el encargado a
+  mano: días en COLUMNAS — fila de «lunes/martes/…» en celdas combinadas arriba y
+  sub-encabezados unidades·ticket·Importe por bloque, una fila por vendedor —
+  `veParseMatrizDias`; suma los bloques y arma `dias`; va antes del genérico, que
+  tomaría solo el primer día); (4) genérico (columnas vendedor/venta y, si vienen,
+  tickets/unidades — sin días). Muestra
   ranking por venta con barra de participación, avance del equipo **vs. la Meta de la
   semana**, y UPT/ticket promedio por vendedor cuando el Excel trae tickets/unidades.
   Firebase: reusa `recepciones-mateu`, nodo `ventaEquipo/<slug>/<semanaISO>` (agrupado
