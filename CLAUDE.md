@@ -376,6 +376,10 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   `DEST_MAP_F8`, pliega acentos). Estados: Exacto / Con diferencia / No ejecutado.
   El control se agrupa por la **sucursal que ENVÍA**; 100% = mandó todo exacto.
   Calendario por sucursal×fecha + tarjetas + tabla con filtros y **⇩ Excel**.
+  **«Enviados sin F8»**: transferencias no pedidas en ningún F8 — chip en los
+  números del cruce (clic lo lista), opción en el filtro de casos y línea 📤 por
+  sucursal en las tarjetas. Incluye TODO lo transferido (también cupones/perchas):
+  es la foto fiel del export.
 - **Firebase** (`turnero-mateu`, nodo `equipo/`): `f8s/<id>` (objeto por id, alta
   con PATCH — así las subidas simultáneas no se pisan), `ctrl` (registro manual,
   legacy) y `transf` (export vigente `{archivo,subido,por,filas:[[o,c,d,art,env]]}`).
