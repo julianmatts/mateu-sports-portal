@@ -373,10 +373,13 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   **Destino `Todo <sucursal>` sin unidades** = mandar todo lo que haya: entra al
   cruce con control laxo (hubo envío → «Hecho», cuenta como exacto sin comparar
   cantidades; nada → «No ejecutado»); plan mostrado como «Todo» (regla de Juli 26/08).
-- **Transferencias (.csv ;-separado, latin1)**: export con fila de encabezado
-  `…;Enviado;Recibido;Días proc.`; viene CON o SIN columna Id.item → las columnas
-  se detectan por contenido (las dos con prefijo `NN-` = origen y destino, el código
-  entre ellas). Queda **guardado en Firebase**: lo sube uno y lo ven todos; subir
+- **Transferencias (.csv ;-separado, latin1)**: el sistema lo exporta en VARIAS
+  variantes (con/sin fila de encabezado `…;Enviado;…`, con/sin Id.item, y el orden
+  origen/código/destino cambia). Las columnas se detectan por **contenido puro**:
+  sucursales = prefijo `NN-` (1ª origen, 2ª destino), código = la columna con letras
+  que no es sucursal, enviado = la del rótulo «Enviado» o la primera decimal
+  (`1,00`/`1.00`) tras código y destino, Id.item = enteros largos; filas «Total» se
+  saltean. Queda **guardado en Firebase**: lo sube uno y lo ven todos; subir
   otro lo reemplaza («✕ quitar» lo borra).
 - **Cruce**: clave `origen+código+destino` (normalización `nrmF8`/`nrmT` con mapa
   `DEST_MAP_F8`, pliega acentos). Estados: Exacto / Con diferencia / No ejecutado.
