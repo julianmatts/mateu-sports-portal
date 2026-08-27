@@ -285,7 +285,11 @@ al vendedor de su comprobante; aditivo, no cambia ningún número): lo consume l
 `indicadores/` — participación + mix propio por vendedor, referente ★ y sugerencias de
 mentoreo (el que domina el rubro le tira tips al que lo tiene flojo). Oculta en Ecommerce
 y en períodos sin el dato. Los KPIs usan la tipografía «rendimiento» (Saira itálica 800,
-la de meses de stock) con el color del semáforo en el número. **Solo Ecommerce y Outlet
+la de meses de stock) con el color del semáforo en el número; al scrollear pasadas
+las tarjetas aparece la **mini-barra fija** `#kpiBar` (`kpiBarScroll`, lee las
+tarjetas ya renderizadas, clic = volver). Los filtros (mes/sucursal/semana) usan el
+**dropdown propio** `dropSel()` (el `<select>` queda oculto como estado y dispara
+su `change` normal; `pintarZonas` mueve el wrapper). **Solo Ecommerce y Outlet
 Gonnet abren los domingos**: `pesosSinDomingo()` anula el domingo de la matriz de pesos
 para el resto (importa con la curva promedio, fallback de Diagonal 80). El objetivo
 semanal se abre además **por día** (tira «Objetivo por día» del local con real y % cuando

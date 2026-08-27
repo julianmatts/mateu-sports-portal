@@ -66,6 +66,20 @@ a{color:inherit}
   padding:8px 11px;cursor:pointer;white-space:nowrap}
 .msdrop-opt:hover{background:var(--off)}
 .msdrop-opt.on{background:rgba(204,0,0,.07);color:var(--red);font-weight:700;box-shadow:inset 3px 0 0 var(--red)}
+/* ===== mini-barra de KPIs fija (aparece al scrollear pasadas las tarjetas) ===== */
+.kpi-bar{position:fixed;left:0;right:0;z-index:45;background:rgba(255,255,255,.95);
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  border-bottom:2px solid var(--red);box-shadow:0 4px 14px rgba(11,21,39,.10);cursor:pointer;
+  transform:translateY(-10px);opacity:0;pointer-events:none;transition:opacity .18s,transform .18s}
+.kpi-bar.show{transform:none;opacity:1;pointer-events:auto}
+.kpi-bar-in{max-width:1240px;margin:0 auto;padding:8px 14px;display:flex;align-items:center;gap:20px;overflow-x:auto;scrollbar-width:none}
+.kpi-bar-in::-webkit-scrollbar{display:none}
+.kb-per{font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);flex:0 0 auto}
+.kb-item{display:flex;align-items:baseline;gap:6px;flex:0 0 auto;white-space:nowrap}
+.kb-item .n{font-family:var(--font-c);font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+.kb-item b{font-family:'Saira',var(--font-c),sans-serif;font-style:italic;font-weight:800;font-size:19px;line-height:1;color:var(--navy)}
+.kb-item.s-ok b{color:var(--ok)} .kb-item.s-mid b{color:var(--mid)} .kb-item.s-bad b{color:var(--bad)}
+@media(max-width:640px){ .kpi-bar-in{gap:14px;padding:7px 10px} .kb-item b{font-size:16px} .kb-per{display:none} }
 .tb-fix{font-family:var(--font-c);font-size:15px;font-weight:600;letter-spacing:.4px;color:var(--navy);background:#fff;
   border:1px solid var(--border);border-radius:8px;padding:10px 15px;box-shadow:var(--shadow)}
 .tb-dias{font-family:var(--font-c);font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
@@ -408,6 +422,7 @@ tr.team:hover td.td-lead{background:rgba(224,164,0,.18)}
 @media print{
   #toolbar, .menu-open, #notifWidget, .drawer, .drawer-scrim, .zona-nav, .zona-jump{display:none!important}
   .zona-ctrl select, .zona-ctrl .lbl, .zona-cargando{display:none!important}
+  .kpi-bar{display:none!important}
   body{background:#fff}
   .top{position:static;border-bottom:3px solid var(--red)}
   .top-in{padding:8px 0;grid-template-columns:1fr}
@@ -586,6 +601,10 @@ footer b{color:var(--navy)}
     <span class="top-spacer" aria-hidden="true"></span>
   </div>
 </div>
+
+<!-- Mini-barra de KPIs: aparece pegada al header cuando las tarjetas KPI salen de
+     pantalla al scrollear; clic = volver a las tarjetas. La pinta kpiBarScroll(). -->
+<div class="kpi-bar" id="kpiBar" role="button" tabindex="0" title="Volver a los indicadores"></div>
 
 <!-- Barra de filtros / acciones: fuera del header, dentro de la pantalla -->
 <div class="toolbar" id="toolbar">
@@ -1084,6 +1103,40 @@ function cerrarDrops(){ document.querySelectorAll('.msdrop.open').forEach(w=>w.c
 document.addEventListener('click', cerrarDrops);
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') cerrarDrops(); });
 
+/* --- mini-barra de KPIs fija (#kpiBar): aparece pegada al header cuando la grilla
+   #kpis quedó scrolleada arriba del viewport. Lee las tarjetas ya renderizadas (así
+   Meses de stock, que llega async, entra solo cuando está) y hereda el color del
+   semáforo. Clic = volver a las tarjetas. --- */
+let _kbVisible=false;
+function kpiBarHtml(){
+  const g=$('kpis'); if(!g) return '';
+  const items=[...g.querySelectorAll('.kpi')].map(k=>{
+    const n=(k.querySelector('.kpi-name')||{textContent:''}).textContent.replace(/\*/g,'').trim();
+    const v=(k.querySelector('.kpi-val')||{textContent:''}).textContent.trim();
+    const cls=['s-ok','s-mid','s-bad'].find(c=>k.classList.contains(c))||'';
+    return {n,v,cls};
+  }).filter(x=>x.v && x.v!=='…' && x.v!=='—');
+  if(!items.length) return '';
+  const ctx=(typeof per!=='undefined'&&per?perLabel(per):'')+((typeof semSel!=='undefined'&&semSel)?' · Sem '+semSel:'');
+  return '<div class="kpi-bar-in">'+(ctx?'<span class="kb-per">'+esc(ctx)+'</span>':'')
+    + items.map(x=>'<span class="kb-item '+x.cls+'"><span class="n">'+esc(x.n)+'</span><b>'+esc(x.v)+'</b></span>').join('')
+    +'</div>';
+}
+function kpiBarScroll(){
+  const bar=$('kpiBar'), g=$('kpis'), cont=$('content');
+  if(!bar) return;
+  const activo = g && cont && cont.style.display!=='none' && g.offsetParent!==null;
+  if(!activo){ if(_kbVisible){ bar.classList.remove('show'); _kbVisible=false; } return; }
+  const top=document.querySelector('.top'), hTop=top?top.getBoundingClientRect().bottom:0;
+  const mostrar = g.getBoundingClientRect().bottom < hTop+8;
+  if(mostrar){
+    if(!_kbVisible){ const h=kpiBarHtml(); if(!h) return; bar.innerHTML=h; _kbVisible=true; bar.classList.add('show'); }
+    bar.style.top=Math.max(hTop,0)+'px';
+  } else if(_kbVisible){ bar.classList.remove('show'); _kbVisible=false; }
+}
+window.addEventListener('scroll', kpiBarScroll, {passive:true});
+window.addEventListener('resize', kpiBarScroll);
+
 const kpis = o => ({ upt:o.unidades_netas/o.tickets, tph:o.tickets/o[hbase], tp:o.importe_neto/o.tickets,
   pup:o.importe_neto/o.unidades_netas, vh:o.importe_neto/o[hbase] });
 const suma = arr => arr.reduce((a,s)=>({ tickets:a.tickets+s.tickets, unidades_netas:a.unidades_netas+s.unidades_netas,
@@ -1133,6 +1186,18 @@ async function boot(){
   $('selPer').value = per;
   $('selPer').onchange = e => { per = e.target.value; open=new Set(); openPersons=new Set(); semSel=null; render(); };
   dropSel($('selPer'));
+  // clic (o Enter) en la mini-barra de KPIs: volver a las tarjetas
+  const kb=$('kpiBar');
+  if(kb){
+    const ir=()=>{ const g=$('kpis'); if(!g) return;
+      const hTop=(document.querySelector('.top')||{getBoundingClientRect:()=>({bottom:0})}).getBoundingClientRect().bottom;
+      const y=Math.max(window.scrollY+g.getBoundingClientRect().top-hTop-72,0);
+      // navegadores viejos (Win7) ignoran el objeto de opciones: fallback al salto directo
+      if('scrollBehavior' in document.documentElement.style) window.scrollTo({top:y, behavior:'smooth'});
+      else window.scrollTo(0,y); };
+    kb.onclick=ir;
+    kb.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); ir(); } };
+  }
 
   // controles según rol
   if(esGerencia){
@@ -1421,6 +1486,7 @@ async function render(){
   renderNotas();
   if(ecom){ renderCanales(); }
   else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderRubros(); renderSem(); renderObjetivo(); renderBarrida(); }
+  _kbVisible=false; $('kpiBar').classList.remove('show'); kpiBarScroll();   // re-evaluar la mini-barra con la vista nueva
 }
 
 function mostrarEmpty(msg){
