@@ -347,6 +347,16 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   la tarjeta lo muestra como `#233282` y el export lo lleva en su columna.
 - Validado 21/08/2026 con el archivo real de Diagonal 80: 4.191 artículos, 2.175
   ubicados, 30 estanterías, re-importación idempotente.
+- **Stock por talle (27/08/2026, opcional)**: el modal de mapeo del export plano
+  tiene columna **«Talle» opcional** (autodetectada por encabezado `TALLE`/`Talla`/
+  `Size`; en archivos sin encabezado se elige a mano). Si el export viene abierto
+  por talle (una fila por artículo+talle), el stock se agrupa por código como
+  siempre y además se guarda el desglose en `talles: [{t,c}]` (array — los talles
+  «7.5» tienen punto, ilegal como clave Firebase). La tarjeta lo muestra como chips
+  (`40 2 · 41 1`; talle en 0 = chip apagado con el número en rojo) y el export ⇩
+  Excel suma la columna «Talles». **Sin la columna se carga solo el total como
+  siempre**; una carga sin talle borra el desglose anterior (no se muestran talles
+  viejos como vigentes). La planilla de Drive no cambia.
 - **Lista de retiro con talles del F8 (27/08/2026)**: al importar el F8 en la Lista
   de retiro, el parser captura la **curva de talles** (las columnas entre la cabecera
   y el TOTAL, solo en el formato con columna DESTINO; el formato matriz no las trae)

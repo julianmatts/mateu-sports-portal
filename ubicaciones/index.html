@@ -175,6 +175,17 @@ img,svg{ max-width:100%; } /* ningún medio empuja el ancho en pantallas chicas 
   color:var(--gray-600); white-space:nowrap;
 }
 .art-desc{ font-size:13px; color:var(--gray-600); margin:2px 0 8px; }
+/* stock por talle (solo si la carga del día vino abierta por talle) */
+.talle-chips{ display:flex; flex-wrap:wrap; gap:4px; margin:-4px 0 8px; }
+.talle-chip{
+  font-family:var(--font-c); font-size:12px; font-weight:600; letter-spacing:.3px;
+  background:var(--bg); border:1px solid var(--gray-200); border-radius:3px; padding:2px 7px;
+  color:var(--gray-600); white-space:nowrap;
+}
+.talle-chip b{ color:var(--navy); }
+.talle-chip.cero{ opacity:.5; }
+.talle-chip.cero b{ color:var(--red); }
+body.puesto .talle-chip{ font-size:15px; padding:4px 10px; }
 .ubi-chips{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 .ubi-chip{
   display:inline-flex; align-items:center; gap:6px; background:var(--navy); color:#fff;
@@ -1810,13 +1821,20 @@ function f8Imprimir(id){
 function exportarExcel(){
   const arts = articulosLista().sort((a,b)=>(a.codigo||'').localeCompare(b.codigo||''));
   if(!arts.length){ toast('No hay artículos para exportar.'); return; }
-  const filas = [['Código','Id.item','Descripción','Stock','Ubicaciones','Sin ubicar','Última carga']];
+  const conTalle = arts.some(a=>Array.isArray(a.talles) && a.talles.length);
+  const filas = [conTalle
+    ? ['Código','Id.item','Descripción','Stock','Talles','Ubicaciones','Sin ubicar','Última carga']
+    : ['Código','Id.item','Descripción','Stock','Ubicaciones','Sin ubicar','Última carga']];
   arts.forEach(a=>{
     const ubis = Object.values(a.ubicaciones||{}).map(u=>nombreUbicacion(u)).join(' / ');
-    filas.push([a.codigo, a.articulo||'', a.descripcion||'', a.stock, ubis, ubis?'':'SÍ', fmtFecha(a.ultimaCarga)]);
+    const base = [a.codigo, a.articulo||'', a.descripcion||'', a.stock];
+    if(conTalle) base.push(tallesStockTxt(a.talles));
+    filas.push(base.concat([ubis, ubis?'':'SÍ', fmtFecha(a.ultimaCarga)]));
   });
   const ws = XLSX.utils.aoa_to_sheet(filas);
-  ws['!cols'] = [{wch:20},{wch:10},{wch:42},{wch:8},{wch:42},{wch:9},{wch:16}];
+  ws['!cols'] = conTalle
+    ? [{wch:20},{wch:10},{wch:42},{wch:8},{wch:28},{wch:42},{wch:9},{wch:16}]
+    : [{wch:20},{wch:10},{wch:42},{wch:8},{wch:42},{wch:9},{wch:16}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Ubicaciones');
   const info = SUCURSAL_BY_SLUG[SUC];
@@ -2427,6 +2445,10 @@ function artCardHtml(a){
       (sinUbi?'<span class="sin-ubi-tag">Sin ubicar</span>':'')+
       '<span class="art-stock">Stock: '+esc(a.stock)+'</span></div>'+
     '<div class="art-desc">'+esc(a.descripcion||'')+'</div>'+
+    (Array.isArray(a.talles) && a.talles.length
+      ? '<div class="talle-chips" title="Stock por talle (según la última carga)">'+
+          a.talles.map(x=>'<span class="talle-chip'+(+x.c>0?'':' cero')+'">'+esc(x.t)+' <b>'+(+x.c||0)+'</b></span>').join('')+'</div>'
+      : '')+
     '<div class="ubi-chips">'+
       uids.map(uid=>{
         const u=ubis[uid];
@@ -2719,11 +2741,12 @@ const RX_COD  = /^(c[oó]d(igo)?|art[ií]culo|sku|referencia|ref)/i;
 const RX_DESC = /(descrip|detalle|nombre|denominaci)/i;
 const RX_STK  = /(stock|cantidad|existencia|unidades|^cant)/i;
 const RX_UBI  = /ubicaci/i;
+const RX_TALLE = /^tall[ea]s?\b|^size\b/i;
 
 function detectarEncabezado(rows){
   for(let i=0; i<Math.min(rows.length, 25); i++){
     const row = rows[i]||[];
-    let iCod=-1, iDesc=-1, iStk=-1, iUbi=-1;
+    let iCod=-1, iDesc=-1, iStk=-1, iUbi=-1, iTalle=-1;
     row.forEach((c,j)=>{
       const t = String(c||'').trim();
       if(!t) return;
@@ -2731,8 +2754,9 @@ function detectarEncabezado(rows){
       if(iDesc<0 && RX_DESC.test(t)) iDesc=j;
       if(iStk<0  && RX_STK.test(t))  iStk=j;
       if(iUbi<0  && RX_UBI.test(t))  iUbi=j;
+      if(iTalle<0 && RX_TALLE.test(t)) iTalle=j;
     });
-    if(iCod>=0 && iStk>=0) return {fila:i, iCod, iDesc, iStk, iUbi};
+    if(iCod>=0 && iStk>=0) return {fila:i, iCod, iDesc, iStk, iUbi, iTalle};
   }
   return null;
 }
@@ -2812,6 +2836,15 @@ function idxCol(hdr, rx){ return (hdr||[]).findIndex(c=>rx.test(String(c||'').tr
 function esNA(v){ const s=String(v==null?'':v).trim(); return !s || s==='#N/A' || s==='#REF!' || s==='#VALUE!'; }
 function limpiarId(v){ const s=String(v==null?'':v).trim(); return /^\d+(\.0+)?$/.test(s) ? String(parseInt(s,10)) : s; }
 function numStock(v){ const n=parseFloat(String(v).replace(',','.')); return isNaN(n)?0:n; }
+// "40.0" (número de Excel) → "40"; conserva "7.5", "S", "35-40"
+function nrmTalle(v){ const s=String(v==null?'':v).trim(); return /^\d+(\.0+)?$/.test(s) ? String(parseInt(s,10)) : s; }
+// stock por talle explícito («40×2 · 41×0»), para preview y export;
+// acepta el objeto del parseo ({talle:cant}) o el array guardado ([{t,c}])
+function tallesStockTxt(tt){
+  if(!tt) return '';
+  const es = Array.isArray(tt) ? tt.map(x=>[x.t,x.c]) : Object.entries(tt);
+  return es.sort((a,b)=>pickingTalleCmp(a[0],b[0])).map(([t,c])=>t+'×'+(+c||0)).join(' · ');
+}
 
 function hojasDrive(wb){
   return wb.SheetNames.filter(n=>{
@@ -2961,6 +2994,8 @@ function abrirModalMapeo(wb, hojaElegida){
     '<div class="fld"><label>Columna código</label><span id="wrapCod"></span></div>'+
     '<div class="fld"><label>Columna descripción</label><span id="wrapDesc"></span></div>'+
     '<div class="fld"><label>Columna stock</label><span id="wrapStk"></span></div>'+
+    '<div class="fld"><label>Columna talle (opcional)</label><span id="wrapTalle"></span>'+
+      '<div class="hint" style="margin-top:4px">Si el export viene abierto por talle (una fila por artículo y talle), el stock se agrupa por artículo y la tarjeta muestra el disponible de cada talle. Sin esta columna, se carga solo el total como siempre.</div></div>'+
     '<div class="fld"><label>Columna Id.item (opcional)</label><span id="wrapArt"></span>'+
       '<div class="hint" style="margin-top:4px">El número interno del sistema (p.ej. 104585): sirve para buscar y escanear. Si no viene, se conserva el que ya estaba guardado.</div></div>'+
     '<div class="fld"><label>Columna ubicación (opcional)</label><span id="wrapUbi"></span>'+
@@ -2975,13 +3010,14 @@ function abrirModalMapeo(wb, hojaElegida){
   if(selHoja) selHoja.addEventListener('change', ()=> abrirModalMapeo(wb, selHoja.value));
   if($('mapDrive')) $('mapDrive').addEventListener('click', e=>{ e.preventDefault(); abrirModalDrive(wb); });
 
-  function refrescarSelects(iCod,iDesc,iStk,iUbi,iArt){
+  function refrescarSelects(iCod,iDesc,iStk,iUbi,iArt,iTalle){
     $('wrapCod').innerHTML  = selCol('mapCod',  iCod);
     $('wrapDesc').innerHTML = selCol('mapDesc', iDesc);
     $('wrapStk').innerHTML  = selCol('mapStk',  iStk);
+    $('wrapTalle').innerHTML= selCol('mapTalle', iTalle!=null?iTalle:-1, true);
     $('wrapArt').innerHTML  = selCol('mapArt',  iArt!=null?iArt:-1, true);
     $('wrapUbi').innerHTML  = selCol('mapUbi',  iUbi, true);
-    ['mapCod','mapDesc','mapStk','mapArt','mapUbi'].forEach(id=> $(id).addEventListener('change', preview));
+    ['mapCod','mapDesc','mapStk','mapTalle','mapArt','mapUbi'].forEach(id=> $(id).addEventListener('change', preview));
     preview();
   }
 
@@ -2989,7 +3025,8 @@ function abrirModalMapeo(wb, hojaElegida){
     const f = parseInt($('mapFila').value,10);   // -1 = sin encabezados: los datos arrancan en la fila 0
     const iCod=parseInt($('mapCod').value,10), iDesc=parseInt($('mapDesc').value,10),
           iStk=parseInt($('mapStk').value,10), iUbi=parseInt($('mapUbi').value,10),
-          iArt=parseInt(($('mapArt')||{value:'-1'}).value,10);
+          iArt=parseInt(($('mapArt')||{value:'-1'}).value,10),
+          iTalle=parseInt(($('mapTalle')||{value:'-1'}).value,10);
     const porCodigo = {};
     let filasLeidas = 0;
     for(let i=f+1; i<rows.length; i++){
@@ -3003,6 +3040,14 @@ function abrirModalMapeo(wb, hojaElegida){
       if(!porCodigo[codigo]) porCodigo[codigo] = {codigo, descripcion:desc, stock:0, ubis:[]};
       if(!porCodigo[codigo].descripcion && desc) porCodigo[codigo].descripcion = desc;
       porCodigo[codigo].stock += isNaN(stock)?0:stock;
+      // con columna talle mapeada, además del total se guarda el desglose
+      if(iTalle>=0){
+        const tl = nrmTalle(r[iTalle]);
+        if(tl){
+          const tt = porCodigo[codigo].talles || (porCodigo[codigo].talles = {});
+          tt[tl] = (tt[tl]||0) + (isNaN(stock)?0:stock);
+        }
+      }
       if(iArt>=0 && !porCodigo[codigo].articulo){
         const av=String(r[iArt]==null?'':r[iArt]).trim(); if(av) porCodigo[codigo].articulo=av;
       }
@@ -3012,19 +3057,21 @@ function abrirModalMapeo(wb, hojaElegida){
         }
       }
     }
-    return {lista:Object.values(porCodigo), filasLeidas, conUbi:iUbi>=0};
+    return {lista:Object.values(porCodigo), filasLeidas, conUbi:iUbi>=0, conTalle:iTalle>=0};
   }
 
   function preview(){
-    const {lista, filasLeidas, conUbi} = parsearConMapeo();
+    const {lista, filasLeidas, conUbi, conTalle} = parsearConMapeo();
     const ubicados = conUbi ? lista.filter(a=>a.ubis.length).length : 0;
     $('mapPreview').innerHTML = !lista.length
       ? '<div class="hint" style="color:var(--red)">No se leyó ningún artículo con este mapeo.</div>'
       : '<div class="hint" style="margin:4px 0">'+filasLeidas+' filas leídas → <b>'+lista.length+' artículos</b>'+
           (filasLeidas>lista.length?' (agrupados por código, stock sumado)':'')+
+          (conTalle?' · <b>abierto por talle</b>':'')+
           (conUbi?' · <b>'+ubicados+'</b> con ubicación en la planilla':'')+'</div>'+
-        '<div class="table-wrap"><table class="prev"><tr><th>Código</th><th>Descripción</th><th>Stock</th>'+(conUbi?'<th>Ubicación</th>':'')+'</tr>'+
+        '<div class="table-wrap"><table class="prev"><tr><th>Código</th><th>Descripción</th><th>Stock</th>'+(conTalle?'<th>Talles</th>':'')+(conUbi?'<th>Ubicación</th>':'')+'</tr>'+
         lista.slice(0,5).map(a=>'<tr><td>'+esc(a.codigo)+'</td><td>'+esc(a.descripcion.slice(0,45))+'</td><td>'+a.stock+'</td>'+
+          (conTalle?'<td>'+esc(tallesStockTxt(a.talles))+'</td>':'')+
           (conUbi?'<td>'+esc(a.ubis.map(u=>'Est '+u.est+(u.mod!==null?' · Mod '+u.mod:'')).join(' / '))+'</td>':'')+'</tr>').join('')+
         '</table></div>';
   }
@@ -3032,10 +3079,10 @@ function abrirModalMapeo(wb, hojaElegida){
   $('mapFila').addEventListener('change', ()=>{
     // al cambiar la fila, re-detectar: con -1 (sin encabezados) por contenido
     const f=parseInt($('mapFila').value,10);
-    const d2=(f===-1 ? detectarColumnasDatos(rows) : null) || {iCod:0,iDesc:1,iStk:2,iUbi:-1,iArt:-1};
-    refrescarSelects(Math.max(d2.iCod,0), Math.max(d2.iDesc,0), Math.max(d2.iStk,0), d2.iUbi!=null?d2.iUbi:-1, d2.iArt!=null?d2.iArt:-1);
+    const d2=(f===-1 ? detectarColumnasDatos(rows) : null) || {iCod:0,iDesc:1,iStk:2,iUbi:-1,iArt:-1,iTalle:-1};
+    refrescarSelects(Math.max(d2.iCod,0), Math.max(d2.iDesc,0), Math.max(d2.iStk,0), d2.iUbi!=null?d2.iUbi:-1, d2.iArt!=null?d2.iArt:-1, d2.iTalle!=null?d2.iTalle:-1);
   });
-  refrescarSelects(Math.max(det.iCod,0), Math.max(det.iDesc,0), Math.max(det.iStk,0), det.iUbi!=null?det.iUbi:-1, det.iArt!=null?det.iArt:-1);
+  refrescarSelects(Math.max(det.iCod,0), Math.max(det.iDesc,0), Math.max(det.iStk,0), det.iUbi!=null?det.iUbi:-1, det.iArt!=null?det.iArt:-1, det.iTalle!=null?det.iTalle:-1);
 
   $('mapCancelar').addEventListener('click', cerrarModal);
   $('mapConfirmar').addEventListener('click', async ()=>{
@@ -3080,6 +3127,12 @@ async function sincronizarStock(lista){
       fechaAlta: p && p.fechaAlta ? p.fechaAlta : now,
     };
     if(p && p.ubicaciones) rec.ubicaciones = p.ubicaciones;
+    // desglose por talle: solo si ESTA carga vino abierta por talle (una carga
+    // sin talle lo deja sin desglose, para no mostrar talles viejos como vigentes)
+    if(art.talles){
+      const arr = Object.entries(art.talles).sort((x,y)=>pickingTalleCmp(x[0],y[0])).map(([t,c])=>({t,c}));
+      if(arr.length) rec.talles = arr;
+    }
     // Id.item del sistema (lo trae la planilla de Drive); se conserva si ya estaba
     if(art.articulo) rec.articulo = String(art.articulo); else if(p && p.articulo) rec.articulo = p.articulo;
     if(p) actualizados++; else nuevos.push(rec);
