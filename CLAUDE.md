@@ -397,10 +397,22 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   selector en Control F8 (exacta/±10/±20/±30, default ±10%), compartida en
   `equipo/config/tolerancia`; línea con envío dentro del margen = cumplida
   (badge «±Tolerancia»); enviar cero nunca se tolera. El reporte declara la vara.
+- **Circuito F8 → sucursal (27/08/2026)**: al subir un F8 se REPARTE por sucursal
+  de origen a `equipo/f8suc/<slug>/<f8id>` (mapa `SLUG_EQ` canónico→slug del
+  Portal) con aviso opcional por directo de la Bandeja. La sucursal lo ve en
+  **Mi Sucursal → «F8 para armar»** (`secF8` en `indicadores/`): visto al abrirlo,
+  descarga en planilla, y **confirmación artículo por artículo** (✓ enviado / ✗ +
+  motivo de `MOTIVOS_F8`). En equipo/: tabla «Seguimiento del circuito»
+  (recibido/visto/descargado/confirmado) y el cruce suma dos estados: 
+  **Justificado** (✗ con motivo, sin transferencia — cuenta para la efectividad) y
+  **⚠ CRÍTICO** (✓ de la sucursal SIN transferencia real = intento de engaño).
+  Mail real a la sucursal: pendiente de un template propio de EmailJS (el del
+  turnero tiene texto fijo de turnos); hook en `notificarF8`.
 - **Firebase** (`turnero-mateu`, nodo `equipo/`): `f8s/<id>` (objeto por id, alta
   con PATCH — así las subidas simultáneas no se pisan), `ctrl` (registro manual,
-  legacy) y `transf` (export vigente `{archivo,subido,por,filas:[[o,c,d,art,env]]}`).
-  Eliminar un F8: botón 🗑 en el Historial (PATCH null).
+  legacy), `transf` (export vigente `{archivo,subido,por,filas:[[o,c,d,art,env]]}`),
+  `f8suc/<slug>/<f8id>` (reparto + tracking + conf), `config` (tolerancia) y
+  `reporteSem/<semana>`. Eliminar un F8: botón 🗑 en el Historial (PATCH null).
 
 ## Evaluaciones de Supervisor
 
