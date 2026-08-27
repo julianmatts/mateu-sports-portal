@@ -2700,7 +2700,7 @@ function veDetailHtml(ve, metaVal, prevVe){
       // fila oculta: KPIs + comparativa vs semana anterior + insight + día a día
       const notaMin = x.minimo>0 ? 'Mínimo: <b>'+objMoney(x.minimo)+'</b>'+(x.meta?' · Meta: <b>'+objMoney(x.meta)+'</b>':'') : null;
       h+='<tr class="vedias" style="display:none"><td colspan="'+nCols+'" class="L" style="background:#f8f9fe;padding:10px 14px 12px">'
-        + eqDetalleHtml(x.nombre, x, prevM(x.nombre), diasSet, notaMin, null, x.meta||0) + '</td></tr>';
+        + eqDetalleHtml(x.nombre, x, prevM(x.nombre), diasSet, notaMin, null, x.meta||0, x.horas||0) + '</td></tr>';
     }
   });
   h+='<tr class="team" style="cursor:default"><td class="L">Total equipo</td>';
@@ -2808,6 +2808,9 @@ function eqSanea(equipo){
     const day=(p.h&&p.h[d])||[]; return [0,1,2].map(t=>Number(day[t])||0); })}));
 }
 const eqHorasPersona = p => p.h.reduce((a,day)=>a+day.reduce((x,y)=>x+y,0),0);
+// horas asignadas de UNA persona solo en los días indicados ('lu','ma'…); sin días → semana entera
+const eqHorasPersonaDias = (p,dias) => { const todos=!dias||!dias.size;
+  return p.h.reduce((a,day,i)=>(todos||dias.has(EQ_DOW[i]))?a+day.reduce((x,y)=>x+(+y||0),0):a,0); };
 // reparto: peso(t,d) se divide entre las horas del equipo en ese turno-día
 function eqShares(equipo, pesos){
   const P=[pesos.t1||[],pesos.t2||[],pesos.t3||[]];
@@ -3269,7 +3272,7 @@ function eqPrevMatcher(prevVe){
 }
 // contenido del desplegable por vendedor: KPIs con flechas vs. semana anterior,
 // insight a trabajar (o felicitación si mejoró en todo) y el día a día
-function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias, metaInd){
+function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias, metaInd, horasInd){
   let h='';
   if(notaMin) h+='<div style="font-size:12px;color:var(--muted,#6B7A99);margin-bottom:8px">'+notaMin+'</div>';
   if(!cur || !(cur.venta>0)){
@@ -3304,6 +3307,10 @@ function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias, metaInd){
     + (k.tickets? chip('Tickets', fmtN(k.tickets), null):'')
     + (k.upt!=null? chip('UPT', fmt2(k.upt), dUpt):'')
     + (k.tp!=null? chip('Ticket prom.', objMoney(k.tp), dTp):'')
+    // por hora asignada, con las horas de los días ya cargados (sin comparativa:
+    // las horas de la semana anterior de la persona no viajan en ventaEquipo)
+    + (horasInd>0 && k.tickets ? chip('Tickets/h', fmt2(k.tickets/horasInd), null):'')
+    + (horasInd>0 && k.venta ? chip('Venta/h', objMoney(Math.round(k.venta/horasInd)), null):'')
     + '</div>';
   // mix por rubro de la semana (la estadística detallada lo trae; otros formatos no)
   if(cur.rubros){
@@ -3398,6 +3405,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
     rows.push({ nombre:p.nombre, horas:eqHorasPersona(p), share:shares[i],
       meta:metaVal*shares[i], min:minVal*shares[i],
       objDias: metaVal ? sharesDia[i].map(s=>metaVal*s) : null,
+      horasSem: eqHorasPersonaDias(p, diasSet),   // horas de los días ya cargados (tickets/h justos a mitad de semana)
       venta:(r&&r.monto)||0, src:r&&r.src, veRow:(r&&r.ix>=0)?ve.vendedores[r.ix]:null, fuera:false });
   });
   sueltos.forEach(x=>rows.push({nombre:x.nombre, horas:0, share:0, meta:0, min:0, venta:x.venta, src:'excel', veRow:x, fuera:true}));
@@ -3443,7 +3451,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
       ? 'Mínimo: <b>'+objMoney(row.min)+'</b> · Meta: <b>'+objMoney(row.meta)+'</b> · participa el '+(row.share*100).toFixed(1)+'% de la meta del equipo'
       : (row.fuera?'No está en el equipo de esta semana — si corresponde, sumalo desde ✎ Equipo y horas.':null);
     h+='<tr class="vedias" style="display:none"><td colspan="'+nCols+'" class="L" style="background:#f8f9fe;padding:10px 14px 12px">'
-      + eqDetalleHtml(row.nombre, cur, prevM(row.nombre), diasSet, notaMin, row.objDias, (!row.fuera&&row.share)?row.meta:0) + '</td></tr>';
+      + eqDetalleHtml(row.nombre, cur, prevM(row.nombre), diasSet, notaMin, row.objDias, (!row.fuera&&row.share)?row.meta:0, row.fuera?0:(row.horasSem||0)) + '</td></tr>';
   });
   // total
   const totHs=equipo.reduce((a,p)=>a+eqHorasPersona(p),0), totSh=shares.reduce((a,x)=>a+x,0);
