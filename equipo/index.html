@@ -173,6 +173,10 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
 
 <!-- DASHBOARD -->
 <div class="view active" id="view-dashboard">
+  <div id="rep-banner" style="display:none;background:rgba(204,0,0,.06);border:1px solid rgba(204,0,0,.25);border-left:4px solid var(--red);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-family:var(--font-c);font-size:13px">
+    📋 <strong>Cierre de semana:</strong> todavía no se envió el reporte del Control F8.
+    <a href="#" onclick="reporteSemanal();return false" style="color:var(--red);font-weight:700">Generar y enviar →</a>
+  </div>
   <div class="week-bar">
     <div class="week-label">SEMANA <span id="dash-wk-num">—</span></div>
     <div style="display:flex;gap:8px;align-items:center">
@@ -230,6 +234,7 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
         <option value="calendar">Vista calendario</option>
         <option value="cards">Vista por sucursal</option>
       </select>
+      <button class="btn" onclick="reporteSemanal()" style="font-size:12px">📋 Reporte semanal</button>
     </div>
   </div>
   <div style="display:flex;gap:16px;margin-bottom:18px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">
@@ -355,6 +360,8 @@ const BRAND_MAP=[['ADI','Adidas'],['NIK','Nike'],['PUM','Puma'],['RUG','RUGE-EDL
 const FB_F8S='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/f8s.json';
 const FB_CTRL='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/ctrl.json';
 const FB_TRANSF='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/transf.json';
+const FB_REP='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/reporteSem/';
+const MENSAJES_URL='https://mensajes-mateu-default-rtdb.firebaseio.com';
 let _F8S=null, _CTRL=null;
 // Los F8s viven en Firebase como OBJETO por id (cada alta es un PATCH que no pisa
 // a las demás: David y Daniel pueden subir a la vez). Acá se manejan como array.
@@ -900,7 +907,71 @@ function quitarTransf(){
   renderCalendar();
   showToast('Transferencias quitadas ✓');
 }
-let _cruceResults=[];
+// ── Reporte semanal: ranking de cumplimiento para la Bandeja / WhatsApp ──
+let _repTexto='';
+function datosReporte(){
+  if(!transfIndex||!transfIndex.size)return null;
+  const cal=calcControlReal('');
+  if(!cal||!cal.dates.length)return null;
+  const porSuc={};
+  for(const k in cal.cells){
+    const suc=k.split('|')[0];const c=cal.cells[k];
+    if(!porSuc[suc])porSuc[suc]={suc,ok:0,diff:0,no_ej:0,total:0};
+    const s=porSuc[suc];s.ok+=c.ok;s.diff+=c.diff;s.no_ej+=c.no_ej;s.total+=c.total;
+  }
+  const data=Object.values(porSuc).map(s=>({...s,pct:s.total?Math.round(s.ok/s.total*100):0}));
+  data.sort((a,b)=>b.pct-a.pct||b.total-a.total);
+  return {data,fechas:cal.dates};
+}
+function reporteTexto(){
+  const d=datosReporte();if(!d)return null;
+  const m=_transfMeta||{};
+  const fmt=s=>`• ${s.suc} — ${s.pct}% (${s.ok}✓ · ${s.diff}~ · ${s.no_ej}✗ de ${s.total})`;
+  const verdes=d.data.filter(s=>s.pct>=80),ambar=d.data.filter(s=>s.pct>0&&s.pct<80),rojos=d.data.filter(s=>s.pct===0);
+  const fF8=d.fechas.map(x=>{const p=x.split('-');return p[2]+'/'+p[1];}).join(' y ');
+  let t=`📋 CONTROL F8 — CIERRE SEMANAL\nF8s del ${fF8} · cruce contra ${m.archivo||'el export vigente'}${m.subido?' ('+m.subido+')':''}\nEfectividad = % de pedidos enviados exactos por cada sucursal.\n`;
+  if(verdes.length)t+=`\n🟢 CUMPLIERON (80% o más)\n${verdes.map(fmt).join('\n')}\n`;
+  if(ambar.length)t+=`\n🟡 A MEJORAR (1–79%)\n${ambar.map(fmt).join('\n')}\n`;
+  if(rojos.length)t+=`\n🔴 NO CUMPLIERON (0% — no enviaron nada exacto)\n${rojos.map(fmt).join('\n')}\n`;
+  buildF8Cruce();let n=0,u=0;for(const[key,v] of transfIndex){if(!f8CruceIndex.has(key)){n++;u+=Math.round(v.enviado);}}
+  t+=`\n📤 Además se enviaron sin F8: ${n.toLocaleString()} artículos · ${u.toLocaleString()} u.\n\n— Área de Producto · Portal Mateu Sports`;
+  return t;
+}
+function reporteSemanal(){
+  const t=reporteTexto();
+  if(!t){showToast('Cargá F8s y el export de transferencias primero',true);return;}
+  _repTexto=t;
+  let ov=document.getElementById('rep-overlay');
+  if(!ov){ov=document.createElement('div');ov.id='rep-overlay';document.body.appendChild(ov);}
+  ov.style.cssText='position:fixed;inset:0;background:rgba(11,21,39,.55);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML=`<div style="background:#fff;border-radius:12px;max-width:580px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+    <div style="padding:13px 20px;background:var(--navy);color:#fff;font-family:var(--font-d);font-size:20px;letter-spacing:1px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--red)">Reporte semanal — Control F8 <span style="cursor:pointer;font-size:24px;line-height:1" onclick="document.getElementById('rep-overlay').remove()">×</span></div>
+    <pre style="margin:0;padding:16px 20px;overflow:auto;font-family:var(--font-c);font-size:13px;line-height:1.55;white-space:pre-wrap">${t.replace(/</g,'&lt;')}</pre>
+    <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn" onclick="copiarReporte()">⧉ Copiar texto</button>
+      <button class="btn" onclick="publicarReporte()" style="background:var(--red);border-color:var(--red);color:#fff">📣 Publicar en la Bandeja</button>
+    </div></div>`;
+}
+function copiarReporte(){navigator.clipboard.writeText(_repTexto).then(()=>showToast('Reporte copiado ✓')).catch(()=>showToast('No se pudo copiar',true));}
+async function publicarReporte(){
+  if(!confirm('¿Publicar el reporte en la Bandeja del portal? Lo van a ver todas las cuentas (sucursales incluidas).'))return;
+  try{
+    const r=await fetch(MENSAJES_URL+'/avisos.json',{method:'POST',body:JSON.stringify({de:sesionMail()||'equipo@mateu.com.ar',texto:_repTexto,ts:Date.now()}),headers:{'Content-Type':'application/json'}});
+    if(!r.ok)throw 0;
+    fetch(FB_REP+weekKey(0)+'.json',{method:'PUT',body:JSON.stringify({enviado:Date.now(),por:sesionMail()}),headers:{'Content-Type':'application/json'}});
+    const ov=document.getElementById('rep-overlay');if(ov)ov.remove();
+    const b=document.getElementById('rep-banner');if(b)b.style.display='none';
+    showToast('Reporte publicado en la Bandeja ✓');
+  }catch(e){showToast('No se pudo publicar',true);}
+}
+async function chequearReporteSemanal(){
+  // Viernes a domingo: si el reporte de la semana no salió, recordarlo con el banner
+  if(![5,6,0].includes(new Date().getDay()))return;
+  try{
+    const f=await (await fetch(FB_REP+weekKey(0)+'.json')).json();
+    if(!f){const b=document.getElementById('rep-banner');if(b)b.style.display='block';}
+  }catch(e){}
+}
 function verSinF8(){
   const s=document.getElementById('f-tipo-cruce');
   s.value=s.value==='sin_f8'?'':'sin_f8';
@@ -1045,6 +1116,7 @@ function showToast(msg,err=false){
 loadEquipo().then(()=>{
   renderDashboard();
   if(transfIndex&&transfIndex.size){pintarTransfStatus();document.getElementById('cruce-filters').style.display='flex';renderCruce();}
+  chequearReporteSemanal();
   setTimeout(pollEquipo,5000);
 });
 </script>
