@@ -10,6 +10,7 @@
 <title>Dashboard Área de Producto — Mateu Sports</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@300;400;500;600;700&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
 :root{--navy:#0B1527;--navy-mid:#1a2f55;--navy-light:#e8edf8;--red:#CC0000;--red-light:#fff0f0;--white:#ffffff;--off:#f5f7fc;--muted:#6B7A99;--muted-light:#b0bcd4;--card:#ffffff;--border:#dce3f0;--green:#00a86b;--yellow:#e6900a;--font-d:'Bebas Neue',sans-serif;--font-c:'Barlow Condensed',sans-serif;--font-b:'Barlow',sans-serif;--shadow:0 1px 4px rgba(11,21,39,.08);--shadow-md:0 4px 16px rgba(11,21,39,.12)}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -376,6 +377,9 @@ const USUARIOS_URL='https://discontinuos-mateu-default-rtdb.firebaseio.com/usuar
 // slug del Portal por nombre canónico de sucursal (salida de nrmF8) — para repartir el F8
 const SLUG_EQ={'plaza italia':'plaza','mateu kids':'kids','outlet calle 55':'calle-55','outlet gonnet':'gonnet','outlet av. 44':'av-44','aurelius calle 12':'aurelius-12','aurelius calle 5':'aurelius-5','aurelius city bell':'aurelius-cb','aurelius calle 10':'aurelius-10','adidas av. 7':'adidas','adidas calle 12':'adidas-12','adidas originals':'originals','calle 12':'calle-12','calle 47':'calle-47','calle 49':'calle-49','city bell':'city-bell','los hornos':'los-hornos','berisso':'berisso','ensenada':'ensenada','ecommerce':'ecommerce','diagonal 80':'diagonal','deposito':'deposito'};
 const MOTIVOS_F8=['Se vendió antes de armar el envío','Producto fallado / no está en condiciones','No se encontró en el local','El stock del sistema no coincide (no lo tenemos)','Otro motivo'];
+// Mail real del aviso de F8 (EmailJS, mismo servicio SMTP del turnero + template propio)
+const EJS_KEY='ScAxpzSsbZQPE3nJ3', EJS_SERVICE='service_jed8vnr', EJS_TEMPLATE_F8='template_s38ov8s';
+if(window.emailjs)try{emailjs.init({publicKey:EJS_KEY});}catch(e){}
 // Tolerancia compartida: margen (±%) para dar por cumplida una línea con cantidad distinta
 // (entre el F8 y el envío el artículo pudo venderse o estar fallado). La setea gerencia
 // y la ven todos igual, así el reporte usa una única vara.
@@ -443,15 +447,14 @@ async function repartirF8(entry,prevs){
   const slugs=Object.keys(porSlug);
   if(sinSlug.size)showToast('Sin sucursal en el portal (no se reparte): '+[...sinSlug].join(', '),true);
   if(slugs.length&&confirm('F8 repartido a '+slugs.length+' sucursal(es): cada una ya lo ve en Mi Sucursal.\n\n¿Avisarles ahora por la Bandeja del portal?')){
-    notificarF8(porSlug,entry).then(n=>showToast('Avisos enviados a '+n+' cuenta(s) ✓'));
+    notificarF8(porSlug,entry).then(r=>showToast('Avisos enviados: '+r+' ✓'));
   }
 }
 async function notificarF8(porSlug,entry){
-  // Aviso por directo de la Bandeja a las cuentas de cada sucursal.
-  // Mail real: pendiente de un template propio en EmailJS (el del turnero tiene texto
-  // fijo de turnos); cuando exista, enganchar acá emailjs.send con los mismos destinos.
-  const de=sesionMail()||'equipo@mateu.com.ar';const ts=Date.now();let n=0;
+  // Aviso doble por cada cuenta de la sucursal: directo de la Bandeja + mail real (EmailJS)
+  const de=sesionMail()||'equipo@mateu.com.ar';const ts=Date.now();let n=0,mailsOk=0;
   const p=String(entry.date).split('-');const f=(p[2]||'')+'/'+(p[1]||'');
+  const NOMBRE_SLUG={};for(const canon in SLUG_EQ)NOMBRE_SLUG[SLUG_EQ[canon]]=sucBonito(canon);
   for(const slug in porSlug){
     const mails=await emailsDeSucursal(slug);
     const arts=porSlug[slug].length;
@@ -460,9 +463,13 @@ async function notificarF8(porSlug,entry){
       if((a||'').toLowerCase()===de.toLowerCase())continue;
       await fetch(MENSAJES_URL+'/directos/'+convKeyDe(de,a)+'.json',{method:'POST',body:JSON.stringify({de,texto,ts}),headers:{'Content-Type':'application/json'}}).catch(()=>null);
       n++;
+      if(window.emailjs)try{
+        await emailjs.send(EJS_SERVICE,EJS_TEMPLATE_F8,{to_email:a,sucursal:NOMBRE_SLUG[slug]||slug,fecha:f,operador:entry.operator,arts});
+        mailsOk++;
+      }catch(e){console.warn('mail F8 a '+a+' falló',e);}
     }
   }
-  return n;
+  return n+' directo'+(n===1?'':'s')+' por la Bandeja'+(mailsOk?' · '+mailsOk+' mail'+(mailsOk===1?'':'s'):'');
 }
 function renderSeguimiento(){
   const box=document.getElementById('segF8');if(!box)return;
