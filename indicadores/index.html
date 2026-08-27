@@ -4111,7 +4111,12 @@ function veSumarDias(iso, n){ const d=new Date(iso+'T00:00:00Z'); d.setUTCDate(d
    "Día" es solo el número del día). */
 const VE_RUBROS = ['CALZADO','INDUMENTARIA','ACCESORIOS','VARIOS','CONCEPTOS','OTROS'];
 const VE_DOW_SET = {Lu:1,Ma:1,Mi:1,Ju:1,Vi:1,Sa:1,Do:1};
-const veDow = v => { const n=veNormU(v); return n ? n.charAt(0)+n.slice(1).toLowerCase() : ''; };   // "SÁ" -> "Sa"
+// Día de semana normalizado a la forma corta de VE_DOW ("Lu"…"Do"). El export puede
+// traerlo corto ("Sá"), de 3 letras ("Lun") o completo ("Lunes", "Miércoles"):
+// todas las variantes caen al mismo código; lo demás vuelve capitalizado tal cual.
+const VE_DOW_ALIAS={LU:'Lu',LUN:'Lu',LUNES:'Lu',MA:'Ma',MAR:'Ma',MARTES:'Ma',MI:'Mi',MIE:'Mi',MIERCOLES:'Mi',
+  JU:'Ju',JUE:'Ju',JUEVES:'Ju',VI:'Vi',VIE:'Vi',VIERNES:'Vi',SA:'Sa',SAB:'Sa',SABADO:'Sa',DO:'Do',DOM:'Do',DOMINGO:'Do'};
+const veDow = v => { const n=veNormU(v); return VE_DOW_ALIAS[n] || (n ? n.charAt(0)+n.slice(1).toLowerCase() : ''); };
 /* Sin fila de encabezado (la vista "Venta semanal portal" del sistema exporta los datos pelados):
    reconoce cada columna por su contenido sobre una muestra de filas. Devuelve {hr, c} o null. */
 function veDetectarColumnas(matrix, sinSuc){
@@ -4166,7 +4171,7 @@ function veParseDetallado(matrix, sucFija){
       const vend=row.findIndex(x=>/VENDEDOR/.test(x));
       if(suc>=0 || (sucFija && vend>=0)){
         hr=i; c={suc, nro, cant, imp,
-          dow: row.findIndex(x=>/^DIA SEMANA/.test(x)), dia: row.findIndex(x=>x==='DIA'||x==='FECHA'),
+          dow: row.findIndex(x=>/^DIA( DE)?( LA)? ?SEM/.test(x)), dia: row.findIndex(x=>x==='DIA'||x==='FECHA'),
           vend, art: row.findIndex(x=>/^(ARTICULO|DESCRIPCION)/.test(x)), rubro: row.indexOf('RUBRO')};
         break;
       }
