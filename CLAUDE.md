@@ -327,6 +327,12 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
 
 - **Export plano** (una hoja: Código · Descripción · Stock · Ubicación opcional
   «EST n - MOD n» o «En-Mn»): modal de mapeo de columnas (`abrirModalMapeo`).
+  Puede venir **SIN fila de encabezados** (el stock pelado de Diagonal: Id.item ·
+  SKU · Descripción · Stock): `detectarColumnasDatos` reconoce las columnas por
+  contenido (números grandes = Id.item, chicos = stock, texto con espacios =
+  descripción, texto corto = SKU), el selector de fila tiene la opción «Sin
+  encabezados» y hay columna **Id.item opcional** (→ `articulo`). La carga solo
+  actualiza stock/descripción y preserva ubicaciones y lo demás ya asignado.
 - **Planilla de Drive de la sucursal** (modelo «UBICACION DEPOSITO», el que usa
   Diagonal 80): hojas `UBICACION CALZADO / INDUMENTARIA / ACCESORIOS` (grilla por
   casillero `E#-M#` con columnas UBICACIÓN · Contador · Articulo (Id.item) · Codigo
