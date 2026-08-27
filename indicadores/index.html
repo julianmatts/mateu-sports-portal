@@ -161,6 +161,9 @@ a{color:inherit}
   font-weight:600;margin-bottom:5px}
 .sec-title{font-family:var(--font-d);font-size:32px;letter-spacing:.5px;line-height:1;margin-bottom:8px}
 .sec-title em{color:var(--red);font-style:normal}
+/* subtítulo dentro de una sección (los indicadores embebidos en el objetivo) */
+.sub-title{font-family:var(--font-d);font-size:23px;letter-spacing:.5px;line-height:1;margin:0 0 6px;font-weight:400}
+.sub-title em{color:var(--red);font-style:normal}
 .sec-head{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:8px}
 .sec-head .sec-title{margin-bottom:0}
 .sec-head .seg{margin-left:auto}
@@ -199,6 +202,7 @@ a{color:inherit}
 /* «El puente»: semana · mes en curso acumulado · mes cerrado · objetivo */
 #puenteBox{margin-top:16px}
 .pte-h{font-family:var(--font-c);font-weight:700;font-size:15px;letter-spacing:.6px;text-transform:uppercase;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:12px;color:var(--navy)}
+.pte .num{font-family:'Saira',var(--font-c),sans-serif;font-style:italic;font-weight:700;font-size:15px}
 .pte-h .muted{font-weight:400;text-transform:none;letter-spacing:0;font-family:var(--font-b);font-size:13px}
 .pte-sub{font-family:var(--font-c);font-size:12px;margin-top:2px;color:var(--muted)}
 .pte table th .pprov,.pte table th .pok{margin-left:5px;vertical-align:baseline}
@@ -643,6 +647,8 @@ footer b{color:var(--navy)}
       <h2 class="sec-title">Objetivo <em>del mes</em></h2>
       <p class="hint">La meta mensual de tu sucursal. Mientras el mes está abierto, el avance suma la venta de las semanas ya publicadas.</p>
       <div class="card pad" id="objetivoMesCard"></div>
+      <!-- indicadores del mes en curso: acumulado de las semanas (el puente), pintado por renderKpisSemana -->
+      <div id="puenteBox" style="display:none"></div>
     </section>
 
     <section class="sec" id="secObjetivo" style="display:none">
@@ -650,17 +656,15 @@ footer b{color:var(--navy)}
       <h2 class="sec-title">Objetivo <em>de la semana</em></h2>
       <p class="hint">La meta de venta que puso gerencia para tu sucursal, con el mínimo y el <b>120%</b> (meta × 1,2: el gran objetivo). Elegí la semana para ver otras. A medida que se cargue la venta, vas viendo el avance.</p>
       <div class="card pad" id="objetivoCard"></div>
+      <!-- indicadores de la semana elegida: viven DENTRO del objetivo semanal (no en sección propia) -->
+      <div id="kpisSemBox" style="display:none;margin-top:18px">
+        <h3 class="sub-title">Indicadores <em>de la semana</em></h3>
+        <p class="hint" style="margin:0 0 10px">Con la venta de la semana elegida y las horas asignadas al equipo, contra el objetivo de tu línea, el último cierre y la semana anterior.</p>
+        <div class="kpis" id="kpisSem"></div>
+        <div class="diag" id="diagSem" style="display:none;margin-top:12px"></div>
+      </div>
       <input type="file" id="veFile" accept=".xlsx,.xls" style="display:none">
       <input type="file" id="eqFile" accept=".xlsx,.xls" style="display:none">
-    </section>
-
-    <section class="sec" id="secKpisSem" style="display:none">
-      <div class="sec-label">Resumen</div>
-      <h2 class="sec-title">Indicadores <em>de la semana</em></h2>
-      <p class="hint">Los mismos indicadores del cierre, calculados con la venta de la semana elegida y las horas que asignaste al equipo. Cada uno se compara con el objetivo de tu línea, con el último mes cerrado y con la semana anterior.</p>
-      <div class="kpis" id="kpisSem"></div>
-      <div id="puenteBox"></div>
-      <div class="diag" id="diagSem" style="display:none"></div>
     </section>
 
     <section class="sec" id="secBarrida" style="display:none">
@@ -1476,7 +1480,7 @@ async function render(){
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
   $('secCanales').style.display = ecom?'':'none';
-  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secObjetivo','secObjetivoMes','secKpisSem'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
+  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secObjetivo','secObjetivoMes'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
   const seg=document.querySelector('.seg'); if(seg) seg.style.display = ecom?'none':'flex';
   renderKPIs();
   renderDiagnostico();
@@ -1492,8 +1496,8 @@ async function render(){
 function mostrarEmpty(msg){
   // Objetivo / Reposición se muestran igual si hay slug (las pinta su propio render)
   const conSlug = !!slugActual();
-  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secObjetivo','secObjetivoMes','secKpisSem']
-    .filter(id=>!(conSlug && /^sec(Barrida|Objetivo|KpisSem)/.test(id))).forEach(id=>$(id).style.display='none');
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secObjetivo','secObjetivoMes']
+    .filter(id=>!(conSlug && /^sec(Barrida|Objetivo)/.test(id))).forEach(id=>$(id).style.display='none');
   pintarZonas();
   $('cobNota').style.display='none';
   $('diagBox').style.display='none';
@@ -3486,14 +3490,17 @@ function ritmoHtml(r){
 }
 let _kpisSemToken=0;
 async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem, ritmo){
-  const sec=$('secKpisSem'); if(!sec) return;
+  // los indicadores viven DENTRO de los objetivos: la semana en #kpisSemBox (sección
+  // Objetivo de la semana) y el acumulado del mes en #puenteBox (Objetivo del mes)
+  const kbox=$('kpisSemBox'), pte=$('puenteBox'); if(!kbox) return;
+  const ocultarKpis=()=>{ kbox.style.display='none'; if(pte) pte.style.display='none'; const dg=$('diagSem'); if(dg) dg.style.display='none'; pintarZonas(); };
   const token=++_kpisSemToken, target=sucName;
-  if(!veTotales(ve)){ sec.style.display='none'; pintarZonas(); return; }
+  if(!veTotales(ve)){ ocultarKpis(); return; }
   // equipo vigente (el de la semana o el último guardado) para esta semana y la anterior
   const [vig, vigP] = await Promise.all([equipoVigente(slug, sem), prevSem?equipoVigente(slug, prevSem):null]);
   if(token!==_kpisSemToken || sucName!==target) return;
   const cur=kpisSemanaViva(ve, vig.eq);
-  if(!cur){ sec.style.display='none'; pintarZonas(); return; }
+  if(!cur){ ocultarKpis(); return; }
   const prev=kpisSemanaViva(prevVe, vigP&&vigP.eq);
   const hsNota = (vig.eq && !vig.propio) ? ' · equipo de Sem '+objSemNum(vig.sem) : '';
   // mes en curso acumulado: semanas publicadas del mismo mes (mismo criterio que «Objetivo del mes»)
@@ -3553,7 +3560,7 @@ async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem
     return '<td><span class="num">'+kpiFmt(k,x)+'</span>'+(d?'<div class="pte-sub">'+d+' vs. cerrado</div>':(ref&&!comparable&&(k==='tph'||k==='vh')?'<div class="pte-sub" title="El cierre usa horas contratadas">no comparable</div>':''))+'</td>'; };
   const mesLbl=objMesLbl(mesISO).split(' ')[0];
   $('puenteBox').innerHTML = '<div class="card pad pte">'
-    +'<div class="pte-h">El puente<span class="muted">lo que está pasando, contra el último cierre y el objetivo</span></div>'
+    +'<div class="pte-h">Indicadores del mes en curso<span class="muted">el acumulado de las semanas publicadas, contra el último cierre y el objetivo</span></div>'
     +'<div class="tbl-wrap"><table style="min-width:560px"><thead><tr><th class="L">Indicador</th>'
     +'<th>'+esc(semLbl)+'<span class="pprov">prov</span></th>'
     +'<th>'+esc(mesLbl)+' acumulado'+(acum?' · '+acum.nsem+' sem':'')+'<span class="pprov">prov</span>'
@@ -3590,14 +3597,16 @@ async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem
     box.className='diag d-'+tone;
     box.innerHTML='<div class="ic">'+(tone==='ok'?'✅':'💡')+'</div><div><div class="tt">'+tt+'</div><div>'+txt+'</div></div>';
     box.style.display='';
+    box.style.marginTop='12px';
   }
-  sec.style.display='';
+  $('kpisSemBox').style.display='';
+  if(pte) pte.style.display='';
   pintarZonas();
 }
 
 async function renderObjetivo(){
   const sec=$('secObjetivo'), secMes=$('secObjetivoMes'); if(!sec) return;
-  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; const ks=$('secKpisSem'); if(ks) ks.style.display='none'; const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); };
+  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; ['kpisSemBox','puenteBox','diagSem'].forEach(id=>{ const x=$(id); if(x) x.style.display='none'; }); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); };
   if(!OBJETIVOS_URL){ ocultar(); return; }
   const slug = slugActual();
   if(!slug){ ocultar(); return; }

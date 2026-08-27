@@ -220,14 +220,18 @@ salto «Ir a: En curso · Cierre» (sticky en Mi Sucursal; dentro de la barra de
 Cadena). `pintarZonas()` pone las fechas en los títulos (`_zonaSem`/`_zonaMes`, que setean
 `renderObjetivo` / `renderObjCadena` / `objetivoMesHtml`) y oculta la banda viva si no tiene
 secciones (Ecommerce). Regla: todo número vivo lleva el pill `.pprov`; los cerrados, nunca.
-**Indicadores de la semana** (`secKpisSem`, `renderKpisSemana`): UPT, ticket promedio,
+**Indicadores de la semana** (`renderKpisSemana`; desde el 26/08 NO son sección propia:
+viven **dentro de «Objetivo de la semana»** en `#kpisSemBox`, y el acumulado del mes —
+la ex tabla «El puente», hoy «Indicadores del mes en curso» — vive **dentro de «Objetivo
+del mes»** en `#puenteBox`): UPT, ticket promedio,
 tickets/hora y venta/hora de la semana elegida con la venta de `ventaEquipo` y las horas
 asignadas del equipo (solo los días que ya tienen venta: `eqHorasDias`), cada uno vs. el
 objetivo de la línea, vs. el mes cerrado (`kpisCerrado`: con horas asignadas si ese
 período tiene equipo guardado; si no, tickets/venta por hora se marcan «no comparable») y
-vs. la semana anterior; abajo **«El puente»** (semana · mes en curso acumulado · mes
-cerrado · objetivo — el acumulado calcula tickets/venta por hora solo con las semanas que
-tienen horas, `kpisAcum`) y un insight corto de la semana. En Cadena, la tabla del objetivo
+vs. la semana anterior; el acumulado (semana · mes en curso acumulado · mes
+cerrado · objetivo) calcula tickets/venta por hora solo con las semanas que
+tienen horas (`kpisAcum`), y hay un insight corto de la semana. Los KPIs del mes cerrado
+quedan como sección aparte en la zona Cierre. En Cadena, la tabla del objetivo
 semanal suma **UPT sem. y Ticket prom. sem.** por sucursal con su % vs. el cierre, y el
 agregado de la línea. La Reposición avisa «hace N semanas» si el análisis tiene ≥7 días.
 **Afinado 23/08 (tarde):** la cabecera de «En curso» es del **mes abierto** («Agosto 2026 ·
