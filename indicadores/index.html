@@ -3296,6 +3296,13 @@ function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias, metaInd, h
   const dVenta = (pv>0) ? k.venta/pv-1 : null; if(dVenta!=null) deltas.push(['venta',dVenta]);
   const dUpt = (k.upt!=null && kp && kp.upt>0) ? k.upt/kp.upt-1 : null; if(dUpt!=null) deltas.push(['upt',dUpt]);
   const dTp  = (k.tp!=null && kp && kp.tp>0) ? k.tp/kp.tp-1 : null; if(dTp!=null) deltas.push(['tp',dTp]);
+  // tickets/hora: no hay semana anterior comparable (las horas de la persona no
+  // viajan), así que se compara contra el OBJETIVO de la línea y entra al insight
+  // solo si está claramente abajo (<85% del objetivo)
+  const objFmt=OBJ[(DET_FULL&&DET_FULL.formato)||formatoDe(sucName)]||{};
+  const tphInd=(horasInd>0 && k.tickets)? k.tickets/horasInd : null;
+  const dTph=(tphInd!=null && objFmt.tickets_hora)? tphInd/objFmt.tickets_hora-1 : null;
+  if(dTph!=null && dTph< -0.15) deltas.push(['tph',dTph]);
   const arrow=d=> d==null?'' : ' <b style="color:'+(d>=0?'var(--ok,#16a34a)':'#dc2626')+';font-size:11px">'+(d>=0?'▲':'▼')+(d>0?'+':'')+Math.round(d*100)+'%</b>';
   const chip=(lbl,val,d,c)=>'<span style="border:1px solid var(--border,#e6ebf5);border-radius:8px;padding:5px 10px;background:#fff;font-size:12.5px;white-space:nowrap">'
     +'<span style="font-family:var(--font-c,inherit);font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted,#6B7A99)">'+lbl+'</span> <b class="kv-num" style="font-size:15px'+(c?';color:'+c:'')+'">'+val+'</b>'+arrow(d)+'</span>';
@@ -3323,8 +3330,7 @@ function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias, metaInd, h
     }
   }
   let ins;
-  if(!prevX) ins='Sin datos de la semana anterior para comparar.';
-  else if(!deltas.length) ins='La semana anterior no tiene indicadores comparables.';
+  if(!deltas.length) ins = prevX ? 'La semana anterior no tiene indicadores comparables.' : 'Sin datos de la semana anterior para comparar.';
   else if(deltas.every(([,d])=>d>=0)){
     const pila=String(nombre||'').trim().split(/\s+/)[0];
     ins='🎉 <b>¡Felicitaciones'+(pila?', '+esc(pila.charAt(0).toUpperCase()+pila.slice(1).toLowerCase()):'')+'!</b> Mejora en todos los indicadores vs. la semana pasada'
@@ -3334,9 +3340,12 @@ function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias, metaInd, h
     const txt={
       upt:'el <b>UPT</b>: se venden pocas unidades por ticket — trabajar el segundo artículo y los accesorios en el mostrador',
       tp:'el <b>ticket promedio</b>: sumar unidades y apuntar a artículos de más valor en cada venta',
-      venta:'la <b>venta</b>, comparada a la misma altura de la semana pasada — foco en cerrar más tickets'
+      venta:'la <b>venta</b>, comparada a la misma altura de la semana pasada — foco en cerrar más tickets',
+      tph:'los <b>tickets por hora</b>: pocas ventas por hora de piso — abordar a más clientes y no dejar pasar entradas'
     }[pk];
-    ins='Punto a trabajar: '+txt+' <b>('+(pd>0?'+':'')+Math.round(pd*100)+'% vs. semana anterior)</b>.';
+    ins='Punto a trabajar: '+txt+' <b>('+(pk==='tph'
+      ? fmt2(tphInd)+' vs. objetivo '+fmt2(objFmt.tickets_hora)+' de tu línea'
+      : (pd>0?'+':'')+Math.round(pd*100)+'% vs. semana anterior')+')</b>.';
   }
   h+='<div style="font-size:12.5px;margin-bottom:10px">'+ins+'</div>';
   // día a día: la venta del vendedor + su objetivo del día (cuando la meta está repartida)
