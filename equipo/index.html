@@ -234,6 +234,12 @@ select,input[type=date],input[type=text]{background:var(--white);border:1px soli
         <option value="calendar">Vista calendario</option>
         <option value="cards">Vista por sucursal</option>
       </select>
+      <select id="sel-tol" onchange="cambiarTol(this.value)" style="font-size:12px" title="Margen para dar por cumplida una línea aunque la cantidad no sea exacta (artículos vendidos o fallados entre el F8 y el envío)">
+        <option value="0">Tolerancia: exacta</option>
+        <option value="10">Tolerancia ±10%</option>
+        <option value="20">Tolerancia ±20%</option>
+        <option value="30">Tolerancia ±30%</option>
+      </select>
       <button class="btn" onclick="reporteSemanal()" style="font-size:12px">📋 Reporte semanal</button>
     </div>
   </div>
@@ -361,6 +367,18 @@ const FB_F8S='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/f8s.json'
 const FB_CTRL='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/ctrl.json';
 const FB_TRANSF='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/transf.json';
 const FB_REP='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/reporteSem/';
+const FB_CONFIG='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/config.json';
+// Tolerancia compartida: margen (±%) para dar por cumplida una línea con cantidad distinta
+// (entre el F8 y el envío el artículo pudo venderse o estar fallado). La setea gerencia
+// y la ven todos igual, así el reporte usa una única vara.
+let TOL=10;
+const dentroTol=(plan,env)=>env>0&&Math.abs(env-plan)<=Math.ceil(plan*TOL/100);
+function cambiarTol(v){
+  TOL=+v||0;
+  fetch(FB_CONFIG,{method:'PATCH',body:JSON.stringify({tolerancia:TOL}),headers:{'Content-Type':'application/json'}});
+  if(transfIndex)renderCruce();
+  showToast('Tolerancia: '+(TOL?('±'+TOL+'%'):'exacta')+' ✓');
+}
 const MENSAJES_URL='https://mensajes-mateu-default-rtdb.firebaseio.com';
 let _F8S=null, _CTRL=null;
 // Los F8s viven en Firebase como OBJETO por id (cada alta es un PATCH que no pisa
@@ -386,12 +404,14 @@ const setCtrl=d=>{ _CTRL=d; fetch(FB_CTRL,{method:'PUT',body:JSON.stringify(d),h
 let _F8S_HASH='', _CTRL_HASH='';
 async function loadEquipo(){
   try{
-    const [r1,r2,r3]=await Promise.all([fetch(FB_F8S),fetch(FB_CTRL),fetch(FB_TRANSF)]);
-    const [d1,d2,d3]=await Promise.all([r1.json(),r2.json(),r3.json()]);
+    const [r1,r2,r3,r4]=await Promise.all([fetch(FB_F8S),fetch(FB_CTRL),fetch(FB_TRANSF),fetch(FB_CONFIG)]);
+    const [d1,d2,d3,d4]=await Promise.all([r1.json(),r2.json(),r3.json(),r4.json()]);
     _F8S=normF8s(d1);
     _CTRL=d2||[];
     _F8S_HASH=JSON.stringify(_F8S); _CTRL_HASH=JSON.stringify(_CTRL);
     cargarTransfGuardadas(d3);
+    if(d4&&typeof d4.tolerancia==='number')TOL=d4.tolerancia;
+    const selTol=document.getElementById('sel-tol');if(selTol)selTol.value=String(TOL);
   }catch(e){ _F8S=[]; _CTRL=[]; }
 }
 async function pollEquipo(){
@@ -536,7 +556,9 @@ function calcControlReal(opFilter){
       if(!cells[key])cells[key]={ok:0,diff:0,no_ej:0,total:0,plan:0,transf:0,operator:f.operator};
       const c=cells[key];c.total++;c.plan+=Math.round(+L.t||0);c.transf+=sent;
       if(L.todo){if(sent>0)c.ok++;else c.no_ej++;} // «Todo» sin cantidad: hubo envío = hecho
-      else if(sent===0)c.no_ej++;else if(sent===Math.round(+L.t))c.ok++;else c.diff++;
+      else if(sent===0)c.no_ej++;
+      else if(sent===Math.round(+L.t)||dentroTol(Math.round(+L.t),sent))c.ok++;
+      else c.diff++;
       if(c.operator!==f.operator)c.operator='Ambos';
     }
   }
@@ -929,7 +951,7 @@ function reporteTexto(){
   const fmt=s=>`• ${s.suc} — ${s.pct}% (${s.ok}✓ · ${s.diff}~ · ${s.no_ej}✗ de ${s.total})`;
   const verdes=d.data.filter(s=>s.pct>=80),ambar=d.data.filter(s=>s.pct>0&&s.pct<80),rojos=d.data.filter(s=>s.pct===0);
   const fF8=d.fechas.map(x=>{const p=x.split('-');return p[2]+'/'+p[1];}).join(' y ');
-  let t=`📋 CONTROL F8 — CIERRE SEMANAL\nF8s del ${fF8} · cruce contra ${m.archivo||'el export vigente'}${m.subido?' ('+m.subido+')':''}\nEfectividad = % de pedidos enviados exactos por cada sucursal.\n`;
+  let t=`📋 CONTROL F8 — CIERRE SEMANAL\nF8s del ${fF8} · cruce contra ${m.archivo||'el export vigente'}${m.subido?' ('+m.subido+')':''}\nEfectividad = % de pedidos cumplidos por cada sucursal (tolerancia ${TOL?('±'+TOL+'%'):'exacta'}).\n`;
   if(verdes.length)t+=`\n🟢 CUMPLIERON (80% o más)\n${verdes.map(fmt).join('\n')}\n`;
   if(ambar.length)t+=`\n🟡 A MEJORAR (1–79%)\n${ambar.map(fmt).join('\n')}\n`;
   if(rojos.length)t+=`\n🔴 NO CUMPLIERON (0% — no enviaron nada exacto)\n${rojos.map(fmt).join('\n')}\n`;
@@ -982,7 +1004,7 @@ function exportCruce(){
   if(!_cruceResults.length){showToast('No hay resultados para exportar',true);return;}
   const ESTADO={ok:'Exacto',diferencia:'Con diferencia',no_ejecutado:'No ejecutado',sin_f8:'Enviado sin F8'};
   const aoa=[['Código','Artículo','Marca','Rubro','Sucursal que envía','Destino','F8 Plan','Transferido','Diferencia','Estado','Operador']];
-  for(const r of _cruceResults)aoa.push([r.codigo,r.desc,r.marca,r.rubro,sucBonito(nrmF8(r.origen_f8)),sucBonito(nrmF8(r.destino_f8)),r.sinCant?'Todo':(r.estado==='sin_f8'?'':r.plan),r.transferido,(r.sinCant||r.estado==='sin_f8')?'':r.diff,(r.sinCant&&r.estado==='ok')?'Hecho':(ESTADO[r.estado]||r.estado),r.operator]);
+  for(const r of _cruceResults)aoa.push([r.codigo,r.desc,r.marca,r.rubro,sucBonito(nrmF8(r.origen_f8)),sucBonito(nrmF8(r.destino_f8)),r.sinCant?'Todo':(r.estado==='sin_f8'?'':r.plan),r.transferido,(r.sinCant||r.estado==='sin_f8')?'':r.diff,(r.sinCant&&r.estado==='ok')?'Hecho':(r.tol?'Dentro de tolerancia':(ESTADO[r.estado]||r.estado)),r.operator]);
   const ws=XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols']=[{wch:18},{wch:34},{wch:14},{wch:13},{wch:20},{wch:20},{wch:9},{wch:11},{wch:10},{wch:14},{wch:9}];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Control F8');
@@ -1031,13 +1053,17 @@ function renderCruce(){
       const plan=Math.round(f8.plan);if(plan<=0&&!f8.sinCant)continue;
       const desc=f8.desc.replace(/^%%%/,'');const marca=tData?tData.marca:'';
       if(busq&&!desc.toLowerCase().includes(busq)&&!key.toLowerCase().includes(busq)&&!marca.toLowerCase().includes(busq))continue;
-      // «Todo» sin cantidad pedida: control laxo — hubo envío = Hecho, sin comparar unidades
-      let estado;
+      // «Todo» sin cantidad pedida: control laxo — hubo envío = Hecho, sin comparar unidades.
+      // Con cantidad: exacto, o dentro de la tolerancia (artículos vendidos/fallados en el medio)
+      let estado,tol=false;
       if(f8.sinCant)estado=transferido>0?'ok':'no_ejecutado';
-      else if(transferido===0)estado='no_ejecutado';else if(transferido===plan)estado='ok';else estado='diferencia';
+      else if(transferido===0)estado='no_ejecutado';
+      else if(transferido===plan)estado='ok';
+      else if(dentroTol(plan,transferido)){estado='ok';tol=true;}
+      else estado='diferencia';
       if(tipoF&&estado!==tipoF)continue;
       const parts=key.split('||');
-      results.push({codigo:parts[1],origen_f8:f8.origen_raw,destino_f8:f8.destino_raw,desc,marca,rubro:f8.rubro,operator:f8.operator,plan,transferido,diff:f8.sinCant?0:transferido-plan,estado,sinCant:!!f8.sinCant});
+      results.push({codigo:parts[1],origen_f8:f8.origen_raw,destino_f8:f8.destino_raw,desc,marca,rubro:f8.rubro,operator:f8.operator,plan,transferido,diff:f8.sinCant?0:transferido-plan,estado,sinCant:!!f8.sinCant,tol});
     }
   }
   const ORDER={no_ejecutado:0,diferencia:1,ok:2,sin_f8:3};
@@ -1048,7 +1074,7 @@ function renderCruce(){
   const kpis=document.getElementById('cruce-kpis');kpis.style.display='grid';
   const enCruce=tipoF==='sin_f8'?'—':results.length.toLocaleString();
   kpis.style.gridTemplateColumns='repeat(auto-fit,minmax(150px,1fr))';
-  kpis.innerHTML=[['🔴','No ejecutados',tipoF==='sin_f8'?'—':ne.toLocaleString(),'en F8 sin transfer.',''],['🟡','Con diferencia',tipoF==='sin_f8'?'—':df.toLocaleString(),'cantidad distinta',''],['🟢','Exactos',tipoF==='sin_f8'?'—':ok.toLocaleString(),'plan = transfer.',''],['📊','Total cruzado',enCruce,'líneas F8',''],['📤','Enviados sin F8',sinF8N.toLocaleString(),sinF8U.toLocaleString()+' u. sin pedido — clic para ver','verSinF8()']].map(([ic,k,v,s,click])=>`<div class="summary-stat"${click?` style="cursor:pointer" onclick="${click}"`:''}><div class="summary-icon">${ic}</div><div><div class="summary-val">${v}</div><div class="summary-key">${k}</div><div style="font-family:var(--font-c);font-size:10px;color:var(--muted-light);margin-top:2px">${s}</div></div></div>`).join('');
+  kpis.innerHTML=[['🔴','No ejecutados',tipoF==='sin_f8'?'—':ne.toLocaleString(),'en F8 sin transfer.',''],['🟡','Con diferencia',tipoF==='sin_f8'?'—':df.toLocaleString(),'cantidad distinta',''],['🟢','Cumplidos',tipoF==='sin_f8'?'—':ok.toLocaleString(),TOL?('exacto o ±'+TOL+'%'):'plan = transfer.',''],['📊','Total cruzado',enCruce,'líneas F8',''],['📤','Enviados sin F8',sinF8N.toLocaleString(),sinF8U.toLocaleString()+' u. sin pedido — clic para ver','verSinF8()']].map(([ic,k,v,s,click])=>`<div class="summary-stat"${click?` style="cursor:pointer" onclick="${click}"`:''}><div class="summary-icon">${ic}</div><div><div class="summary-val">${v}</div><div class="summary-key">${k}</div><div style="font-family:var(--font-c);font-size:10px;color:var(--muted-light);margin-top:2px">${s}</div></div></div>`).join('');
   const BADGE={ok:'<span class="cruce-badge cruce-ok">Exacto</span>',no_ejecutado:'<span class="cruce-badge cruce-no-ej">No ejecutado</span>',diferencia:'<span class="cruce-badge cruce-diff">Diferencia</span>',sin_f8:'<span class="cruce-badge" style="background:rgba(120,90,220,.12);color:#6d4fd0;border:1px solid rgba(120,90,220,.35)">Sin F8</span>'};
   const OPT={David:'<span class="op-tag op-david">David</span>',Daniel:'<span class="op-tag op-daniel">Daniel</span>'};
   const show=results.slice(0,300);
@@ -1064,7 +1090,7 @@ function renderCruce(){
       const ds=r.diff===0?'color:var(--muted)':r.diff>0?'color:var(--green)':'color:var(--red)';
       const dt=(r.sinCant||r.estado==='sin_f8')?'—':(r.diff===0?'—':(r.diff>0?'+':'')+r.diff);
       const planTxt=r.sinCant?'<span style="font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Todo</span>':(r.plan||'—');
-      const badge=(r.sinCant&&r.estado==='ok')?'<span class="cruce-badge cruce-ok">Hecho</span>':(BADGE[r.estado]||'');
+      const badge=(r.sinCant&&r.estado==='ok')?'<span class="cruce-badge cruce-ok">Hecho</span>':(r.tol?'<span class="cruce-badge cruce-ok" style="opacity:.8">±Tolerancia</span>':(BADGE[r.estado]||''));
       return`<tr><td style="font-family:var(--font-c);font-size:11px;color:var(--muted)">${r.codigo}</td><td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.desc}">${r.desc}</td><td style="font-family:var(--font-c);font-size:12px">${r.marca}</td><td style="font-family:var(--font-c);font-size:11px;color:var(--muted)">${r.rubro}</td><td style="font-family:var(--font-c);font-size:11px;font-weight:600">${r.origen_f8||'—'}</td><td style="font-family:var(--font-c);font-size:11px;font-weight:600">${r.destino_f8||'—'}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;color:var(--muted)">${planTxt}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;color:var(--navy)">${r.transferido||'—'}</td><td style="text-align:center;font-family:var(--font-d);font-size:18px;${ds}">${dt}</td><td>${badge} ${OPT[r.operator]||''}</td></tr>`;
     }).join('');
   }
