@@ -44,6 +44,28 @@ a{color:inherit}
 .tb-sel{background:#fff;color:var(--navy);border:1px solid var(--border);border-radius:8px;font-family:var(--font-c);
   font-size:14px;letter-spacing:.4px;padding:10px 13px;cursor:pointer;min-width:170px;box-shadow:var(--shadow)}
 .tb-sel:hover{border-color:var(--navy-mid)}
+/* ===== dropdown propio para los filtros (mes / sucursal / semana): el listado
+   abierto de un <select> nativo no se puede estilar, así que el select queda
+   oculto como estado y se dibuja un botón + panel con la estética del portal ===== */
+.msdrop{position:relative;display:inline-block;max-width:100%}
+.msdrop>select{display:none}
+.msdrop-btn{display:inline-flex;align-items:center;justify-content:space-between;gap:10px;
+  background:#fff;color:var(--navy);border:1px solid var(--border);border-radius:8px;
+  font-family:var(--font-c);font-size:14px;font-weight:600;letter-spacing:.4px;
+  padding:9px 12px;cursor:pointer;box-shadow:var(--shadow);min-width:150px;max-width:100%}
+.msdrop-btn:hover{border-color:var(--navy-mid)}
+.msdrop-btn .chev{font-style:normal;color:var(--muted);font-size:11px;transition:transform .15s;flex:0 0 auto}
+.msdrop.open .msdrop-btn{border-color:var(--navy);box-shadow:var(--shadow-md)}
+.msdrop.open .msdrop-btn .chev{transform:rotate(180deg)}
+.msdrop-panel{position:absolute;top:calc(100% + 6px);left:0;min-width:100%;background:#fff;
+  border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-md);z-index:80;
+  max-height:320px;overflow:auto;display:none;padding:5px}
+.msdrop.open .msdrop-panel{display:block}
+.msdrop-opt{display:block;width:100%;text-align:left;background:none;border:0;border-radius:7px;
+  font-family:var(--font-c);font-size:13.5px;font-weight:500;letter-spacing:.3px;color:var(--navy);
+  padding:8px 11px;cursor:pointer;white-space:nowrap}
+.msdrop-opt:hover{background:var(--off)}
+.msdrop-opt.on{background:rgba(204,0,0,.07);color:var(--red);font-weight:700;box-shadow:inset 3px 0 0 var(--red)}
 .tb-fix{font-family:var(--font-c);font-size:15px;font-weight:600;letter-spacing:.4px;color:var(--navy);background:#fff;
   border:1px solid var(--border);border-radius:8px;padding:10px 15px;box-shadow:var(--shadow)}
 .tb-dias{font-family:var(--font-c);font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
@@ -1008,6 +1030,60 @@ const kM   = n => '$'+((isFinite(n)?n:0)/1e6).toLocaleString('es-AR',{maximumFra
 const $ = id => document.getElementById(id);
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+/* --- dropdown propio de los filtros (ver CSS .msdrop) ---
+   dropSel(sel) es idempotente: la primera vez envuelve el <select> (que queda oculto
+   como estado) con un botón + panel; las siguientes solo re-sincroniza etiqueta y
+   opciones. Elegir una opción setea el value del select y dispara su 'change', así
+   los onchange existentes siguen funcionando igual. */
+function dropSel(sel){
+  if(!sel) return;
+  if(!sel._msdrop){
+    const wrap=document.createElement('span'); wrap.className='msdrop';
+    sel.parentNode.insertBefore(wrap, sel); wrap.appendChild(sel);
+    const btn=document.createElement('button'); btn.type='button'; btn.className='msdrop-btn';
+    const panel=document.createElement('div'); panel.className='msdrop-panel';
+    wrap.appendChild(btn); wrap.appendChild(panel);
+    sel._msdrop=wrap; wrap._btn=btn; wrap._panel=panel;
+    btn.onclick=e=>{
+      e.stopPropagation();
+      const abierto=wrap.classList.contains('open');
+      cerrarDrops();
+      if(abierto) return;
+      dropSync(sel); wrap.classList.add('open');
+      panel.style.left=''; panel.style.right='';
+      const r=panel.getBoundingClientRect();
+      if(r.right>window.innerWidth-8){ panel.style.left='auto'; panel.style.right='0'; }
+      const on=panel.querySelector('.on'); if(on) on.scrollIntoView({block:'nearest'});
+    };
+    btn.onkeydown=e=>{   // flechas = igual que el select nativo (cambia y dispara change)
+      if(e.key!=='ArrowDown' && e.key!=='ArrowUp') return;
+      e.preventDefault();
+      const i=sel.selectedIndex+(e.key==='ArrowDown'?1:-1);
+      if(i<0||i>=sel.options.length) return;
+      sel.selectedIndex=i; dropSync(sel);
+      sel.dispatchEvent(new Event('change',{bubbles:true}));
+    };
+  }
+  dropSync(sel);
+}
+function dropSync(sel){
+  const wrap=sel._msdrop, btn=wrap._btn, panel=wrap._panel;
+  const cur=sel.options[sel.selectedIndex];
+  btn.innerHTML='<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(cur?cur.text:'')+'</span><i class="chev">▾</i>';
+  const al=sel.getAttribute('aria-label'); if(al) btn.setAttribute('aria-label', al);
+  panel.innerHTML=[...sel.options].map((o,i)=>'<button type="button" class="msdrop-opt'+(i===sel.selectedIndex?' on':'')+'" data-i="'+i+'">'+esc(o.text)+'</button>').join('');
+  panel.querySelectorAll('.msdrop-opt').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    wrap.classList.remove('open');
+    if(+b.dataset.i===sel.selectedIndex) return;
+    sel.selectedIndex=+b.dataset.i; dropSync(sel);
+    sel.dispatchEvent(new Event('change',{bubbles:true}));
+  });
+}
+function cerrarDrops(){ document.querySelectorAll('.msdrop.open').forEach(w=>w.classList.remove('open')); }
+document.addEventListener('click', cerrarDrops);
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') cerrarDrops(); });
+
 const kpis = o => ({ upt:o.unidades_netas/o.tickets, tph:o.tickets/o[hbase], tp:o.importe_neto/o.tickets,
   pup:o.importe_neto/o.unidades_netas, vh:o.importe_neto/o[hbase] });
 const suma = arr => arr.reduce((a,s)=>({ tickets:a.tickets+s.tickets, unidades_netas:a.unidades_netas+s.unidades_netas,
@@ -1056,6 +1132,7 @@ async function boot(){
   $('selPer').innerHTML = PERIODOS.map(p=>`<option value="${p.id}">${esc(p.label)}</option>`).join('');
   $('selPer').value = per;
   $('selPer').onchange = e => { per = e.target.value; open=new Set(); openPersons=new Set(); semSel=null; render(); };
+  dropSel($('selPer'));
 
   // controles según rol
   if(esGerencia){
@@ -1214,7 +1291,8 @@ function pintarZonas(){
   if(tV) tV.innerHTML = esc(objMesLbl(mesTit))+'<em>mes abierto</em>';
   pintarResumenVivo();
   const host=$(cad?'selPerHostCad':'selPerHost'), sel=$('selPer');
-  if(host && sel && sel.parentNode!==host) host.appendChild(sel);
+  const mov=sel && sel._msdrop ? sel._msdrop : sel;   // si está envuelto, se mueve el wrapper
+  if(host && mov && mov.parentNode!==host) host.appendChild(mov);
   const zv=$(cad?'zonaVivaCad':'zonaViva');
   if(zv){
     const ld=$(cad?'vivaLoadCad':'vivaLoad');
@@ -1282,6 +1360,7 @@ async function render(){
     $('selSuc').innerHTML = '<option value="__cadena">▦ Todas las sucursales (comparar)</option>'
       + todas.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');
     $('selSuc').value = vistaCadena ? '__cadena' : sucName;
+    dropSel($('selSuc'));
   }
 
   if(!esGerencia) $('sucFix').textContent = sucName || nombreBonito(SESSION.sucursal||SESSION.outlet_id) || '—';
@@ -2080,7 +2159,7 @@ async function renderObjCadena(){
   }
   html+='<p class="hint" style="margin-top:12px"><a href="../objetivos/" style="color:var(--red,#CC0000);font-weight:600;text-decoration:none">Abrir Objetivos de Venta →</a> para cargar o corregir las metas de la semana. <b>⇧ Cargar venta de la semana</b> sube la estadística de venta detallada del sistema (todas las sucursales, por día y vendedor) y la publica como venta provisoria para que cada sucursal la vea en Mi Sucursal.</p>';
   $('objCadCard').innerHTML=html;
-  const sel=$('objCadSemSel'); if(sel) sel.onchange=e=>{ objCadSem=e.target.value; renderObjCadena(); };
+  const sel=$('objCadSemSel'); if(sel){ sel.onchange=e=>{ objCadSem=e.target.value; renderObjCadena(); }; dropSel(sel); }
   const up=$('veCadUpload'); if(up) up.onclick=()=>$('veCadFile').click();
   const sv=$('veCadSave'); if(sv) sv.onclick=veCadPublicar;
   const cn=$('veCadCancel'); if(cn) cn.onclick=()=>{ _veCadPreview=null; renderObjCadena(); };
@@ -3561,7 +3640,7 @@ async function renderObjetivo(){
   $('objetivoCard').innerHTML=html;
   sec.style.display='';   // puede venir oculta por mostrarEmpty() (sucursal sin indicadores)
   if(_objPintado){ _objPintado(); _objPintado=null; }   // libera la descarga del stock
-  const selEl=$('objSemSel'); if(selEl) selEl.onchange = e => { objSem = e.target.value; _eqEdit=null; _eqRealDraft=null; renderObjetivo(); };
+  const selEl=$('objSemSel'); if(selEl){ selEl.onchange = e => { objSem = e.target.value; _eqEdit=null; _eqRealDraft=null; renderObjetivo(); }; dropSel(selEl); }
   // «Cómo viene el equipo»: abierto la primera vez que se ve la semana; después recuerda cómo lo dejó el usuario
   const det=$('objetivoCard').querySelector('details.bgrupo');
   if(det){ const key=slug+'|'+sem; det.ontoggle=()=>{ _eqOpenState[key]=det.open; }; try{ localStorage.setItem('ind_eq_visto_'+key,'1'); }catch(e){} }
