@@ -389,6 +389,10 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   números del cruce (clic lo lista), opción en el filtro de casos y línea 📤 por
   sucursal en las tarjetas. Incluye TODO lo transferido (también cupones/perchas):
   es la foto fiel del export.
+  **Reporte semanal**: botón «📋 Reporte semanal» en Control F8 → ranking 🟢/🟡/🔴
+  por efectividad, con «⧉ Copiar» (WhatsApp) y «📣 Publicar en la Bandeja»
+  (`mensajes-mateu/avisos`); banner recordatorio vie-dom si la semana no salió
+  (flag `equipo/reporteSem/<semanaISO>`).
 - **Firebase** (`turnero-mateu`, nodo `equipo/`): `f8s/<id>` (objeto por id, alta
   con PATCH — así las subidas simultáneas no se pisan), `ctrl` (registro manual,
   legacy) y `transf` (export vigente `{archivo,subido,por,filas:[[o,c,d,art,env]]}`).
