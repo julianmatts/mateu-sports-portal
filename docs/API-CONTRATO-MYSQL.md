@@ -267,7 +267,130 @@ GET /v1/indicadores/{periodo}/sucursal/{sucursalId}  → UNA sucursal, CON perso
 
 ---
 
-## 6. Qué hace el Portal una vez que la API está lista
+## 6. Módulo — Ventas de la semana en curso (Panel General y Mi Sucursal)
+
+**Qué es:** la zona **«En curso»** de Indicadores muestra la venta provisoria de la
+semana: total por sucursal en el **Panel General** (vista de todas las sucursales,
+gerencia) y el detalle por vendedor con día a día en **Mi Sucursal** (home del
+encargado). Hoy ese dato entra **a mano**: gerencia sube el export detallado del
+sistema («⇧ Cargar venta de la semana») o Juli corre `scripts/cargar-venta-semana.py`,
+y queda en Firebase (`recepciones-mateu`, nodo `ventaEquipo/<slug>/<lunesISO>`).
+
+**Esta API reemplaza esa carga manual**: si MySQL tiene las líneas de venta del día,
+el Portal lee la semana en vivo directo de acá y nadie sube más el Excel. Solo migra
+la **venta**; los objetivos (Meta/Mínimo/120), el equipo con sus horas y todo lo que
+tipea la gente siguen en Firebase.
+
+### Semana y sucursales
+
+- La semana es **retail: lunes a domingo**. `{lunesISO}` = fecha del lunes
+  (`2026-08-24`). Entran solo los comprobantes con fecha dentro de ese rango.
+- Cada sucursal se identifica por su **slug** (el mismo del Portal). Mapa código
+  `NN` del sistema → slug (idéntico a `PFX_SLUG` de `cargar-venta-semana.py`):
+
+  | NN | slug | NN | slug | NN | slug |
+  |---|---|---|---|---|---|
+  | 01 | `plaza` | 09 | `adidas` | 16 | `berisso` |
+  | 02 | `kids` | 10 | `diagonal` | 17 | `aurelius-cb` |
+  | 03 | `calle-55` | 11 | `ensenada` | 18 | `aurelius-5` |
+  | 04 | `aurelius-12` | 12 | `calle-12` | 19 | `calle-49` |
+  | 06 | `city-bell` | 13 | `los-hornos` | 20 | `av-44` |
+  | 07 | `aurelius-10` | 14 | `gonnet` | 21 | `adidas-12` |
+  | 08 | `calle-47` | 15 | `originals` | 99 | `ecommerce` |
+
+  El `05` (Depósito) **no** es una sucursal de venta: se excluye.
+
+### Criterios por línea (OBLIGATORIOS, en el server)
+
+Son los criterios de Juli; los aplican igual el ETL mensual y la carga semanal
+(`criterio_linea` / `veCriterioLinea`). Cada línea aporta `(cantidad, importe)`
+según su rubro (en MAYÚSCULAS, sin el prefijo `NN-`) y artículo:
+
+| Rubro | Regla |
+|---|---|
+| `OTROS` | no suma nada |
+| `VARIOS` | artículo `REDONDEO` → nada; el resto → cantidad + importe |
+| `CONCEPTOS` | artículo que empieza con `CREDITO A FAVOR` → cantidad + importe; que empieza con `INGRESO CUPON` o contiene `LLAVERO COMPRA GRANDE` → nada; que empieza con `CONCEPTOS VARIOS` → nada; el resto (promos/descuentos, envío) → **solo importe** |
+| todo lo demás | cantidad + importe |
+
+**Agregación por comprobante** (clave `sucursal + nro de comprobante`, atómico):
+- `venta` y `unidades` del comprobante = Σ de sus líneas según la tabla de arriba.
+  Los importes negativos (notas de crédito, devoluciones) **restan tal cual**.
+- **Ticket** = comprobante **que NO es nota de crédito** (`Nc…`) y con cantidad > 0.
+- **Vendedor del comprobante** = el de la línea de mayor `|importe|` (vacío →
+  `"SIN ASIGNAR"`).
+- El comprobante entero se atribuye a ese vendedor y al día de su fecha.
+
+### Endpoints
+
+```
+GET /v1/ventas/semana/{lunesISO}                    → TODAS las sucursales, solo totales (Panel General)
+GET /v1/ventas/semana/{lunesISO}/sucursal/{slug}    → UNA sucursal, con vendedores (Mi Sucursal)
+```
+
+- **Seguridad igual que Indicadores (§5):** el endpoint de totales es solo para
+  `admin`/`supervisor`; el de sucursal valida que la sesión pueda ver ese `slug`
+  (sucursal/outlet solo la suya). El detalle por vendedor de una sucursal **nunca**
+  viaja en el endpoint de totales.
+- Semana sin ventas todavía → **200** con `sucursales: {}` / `vendedores: []` (no 404).
+- El dato es "en vivo": alcanza con que refleje MySQL al momento del request (con el
+  `Cache-Control: max-age=300` de §2 alcanza y sobra). `actualizado` = timestamp ISO
+  de hasta cuándo están cargadas las ventas.
+
+### `GET /v1/ventas/semana/{lunesISO}`  (solo totales)
+
+```jsonc
+{
+  "semana": "2026-08-24",
+  "actualizado": "2026-08-27T18:40:00Z",
+  "sucursales": {
+    "plaza":  { "venta": 98411230, "tickets": 812, "unidades": 1540 },
+    "gonnet": { "venta": 121004500, "tickets": 1103, "unidades": 2411 }
+    // ... una entrada por slug con venta en la semana
+  }
+}
+```
+
+### `GET /v1/ventas/semana/{lunesISO}/sucursal/{slug}`  (con vendedores)
+
+Shape idéntico al payload `ventaEquipo` que el módulo ya consume hoy:
+
+```jsonc
+{
+  "semana": "2026-08-24",
+  "actualizado": "2026-08-27T18:40:00Z",
+  "vendedores": [
+    {
+      "nombre": "BENITEZ BRIANT NAHUEL",
+      "venta": 18922400,          // Σ importe de sus comprobantes (redondeado, puede ser negativo)
+      "tickets": 151,
+      "unidades": 302,
+      "dias": [                    // día a día, solo días con importe ≠ 0, en orden Lu→Do
+        { "d": "Lu", "v": 2410000 },
+        { "d": "Ma", "v": 3180500 }
+        // "d" ∈ "Lu"|"Ma"|"Mi"|"Ju"|"Vi"|"Sa"|"Do"
+      ],
+      "rubros": {                  // importe por rubro (clave = rubro sin "NN-", solo ≠ 0); opcional
+        "CALZADO": 12400000,
+        "INDUMENTARIA": 5222400
+      }
+    }
+    // ... ordenados por venta descendente
+  ],
+  "total": { "venta": 121004500, "tickets": 1103, "unidades": 2411 }
+}
+```
+
+**Notas**
+- `venta`/`unidades` redondeados a entero; `tickets` entero por definición.
+- `rubros` alimenta el «Mix de la semana» de cada vendedor: mandar el rubro **crudo**
+  del sistema (el Portal ya lo colapsa a Calzado/Indumentaria/Accesorios).
+- No incluir `metaTienda`/`minimoTienda` (vienen de Firebase `objetivos/`; el Portal
+  ya los resuelve por su lado).
+
+---
+
+## 7. Qué hace el Portal una vez que la API está lista
 
 Por cada módulo, el cambio en el frontend es acotado:
 1. Agregar `const API_BASE = "https://…"` (+ header de auth si aplica).
@@ -276,6 +399,9 @@ Por cada módulo, el cambio en el frontend es acotado:
 3. Mantener el **empty state** cuando la respuesta viene vacía (sin dato para el período).
 4. Meses de Stock: como el shape es idéntico, se puede setear `window.STOCK_DATA`
    con la respuesta y el resto del módulo funciona sin tocar.
+5. Ventas de la semana (§6): Indicadores pasa a leer estos endpoints en vez de
+   `ventaEquipo` en Firebase; el botón «⇧ Cargar venta de la semana» y el script
+   quedan como plan B por si la API se cae.
 
 **Eso lo hacemos nosotros en este repo, módulo por módulo, cuando el endpoint
 correspondiente esté disponible.** No hace falta que todo salga junto: se puede ir
@@ -283,14 +409,16 @@ uno por uno (piloto = Meses de Stock).
 
 ---
 
-## 7. Checklist para el dev de la API
+## 8. Checklist para el dev de la API
 
 - [ ] HTTPS + CORS al dominio del Portal (incluye preflight `OPTIONS`).
 - [ ] Rutas bajo `/v1/`.
 - [ ] `GET /v1/meses-stock` con el shape de §4 y las reglas de agregación (¡sin dividir marcas /2!).
 - [ ] `GET /v1/indicadores/periodos`, `/objetivos`, `/{periodo}/cadena`, `/{periodo}/sucursal/{id}` con los shapes de §5.
 - [ ] `cadena` NUNCA incluye `vendedores`; el endpoint de sucursal SÍ.
+- [ ] `GET /v1/ventas/semana/{lunesISO}` y `.../sucursal/{slug}` con los shapes de §6, aplicando los **criterios por línea** y la agregación por comprobante tal cual (ticket = comprobante no-Nc con cantidad > 0; vendedor = línea de mayor |importe|).
+- [ ] El endpoint de totales de ventas NUNCA incluye vendedores; el de sucursal valida el slug de la sesión.
 - [ ] Sin dato → 200 con estructura vacía, no 404.
 - [ ] Definir esquema de auth con Juli (§3) y pasar la `API_BASE`.
-- [ ] Confirmar que las **claves de sucursal** coinciden con las que ya usa el Portal (`"NN-Nombre"`).
+- [ ] Confirmar que las **claves de sucursal** coinciden con las que ya usa el Portal (`"NN-Nombre"` en Indicadores/Meses de Stock, slug en Ventas — §6 trae la tabla NN→slug).
 ```
