@@ -9,6 +9,12 @@ frontend cambia solo de *dónde* lee el dato; la lógica de render no se toca.
 > `index.html` self-contained que ya parsean esta estructura. Cambiar nombres de
 > campos o anidamiento obliga a reescribir el frontend.
 
+> **⚡ Fase 1 (decisión de Juli, 28/08/2026): se arranca por UNA sola API — la de
+> ventas para Panel General / Mi Sucursal**, que reemplaza los Excel de venta.
+> Está especificada autocontenida en **`docs/API-VENTAS-FASE1.md`**: empezá por
+> ahí. El resto de este documento (Meses de Stock, Indicadores cerrados, etc.)
+> queda para fases siguientes.
+
 ---
 
 ## 1. Arquitectura y reparto de trabajo
