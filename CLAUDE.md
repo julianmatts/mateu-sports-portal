@@ -687,7 +687,9 @@ entran acá: ven su objetivo en Indicadores.
   por sucursal vs. meta (avisa cuántos comprobantes descarta de otros días, sucursales
   sin slug —05-Depósito— y metas sin venta) y
   **publica en un solo PATCH multi-path** a `ventaEquipo/<slug>/<lunesISO>` (mismo
-  payload que el script). La tabla de la cadena muestra esa venta como **«prov»**
+  payload que el script). **Si el archivo cubre varias semanas publicadas** (export del mes
+  entero), Publicar carga **todas las semanas juntas** en el mismo PATCH (29/08/2026); el
+  selector de semana solo elige cuál se previsualiza. La tabla de la cadena muestra esa venta como **«prov»**
   mientras no esté el real oficial (gerencia baja `ventaEquipo/<slug>/<sem>/total`
   de cada sucursal). El script Python queda como plan B.
 - **Base «Horas asignadas» + justificaciones (03/08/2026)**: el toggle de KPIs de

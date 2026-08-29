@@ -4396,31 +4396,40 @@ async function veCadArchivo(file){
     }
     if(!res){ alert('No reconocí el formato. Esperaba la estadística de venta detallada del sistema, con las columnas Sucursal · Día semana · Día · Vendedor · Nro.comprobante · Artículo · Rubro · Cantidad · Importe (todas las sucursales juntas).'); return; }
     _veCadPreview={sem:null, res, fileName:file.name};
-    // voy a la última semana publicada que el archivo cubre: por fecha completa si la hay,
-    // si no por los pares (día de semana, día del mes)
+    // TODAS las semanas publicadas que el archivo cubre (un export del mes entero trae
+    // varias: se publican todas juntas): por fecha completa si la hay, si no por los
+    // pares (día de semana, día del mes). Me paro en la última para previsualizar.
     const w=await fetchObjetivoWeeks().catch(()=>null);
     const cubre = sem => res.conFecha
       ? (sem<=res.hasta && veSumarDias(sem,6)>=res.desde)
       : res.pares.some(p=> +veSumarDias(sem, VE_DOW.indexOf(p.dow)).slice(8,10)===p.dia && VE_DOW.indexOf(p.dow)>=0);
-    const k=(w||[]).find(cubre); if(k) objCadSem=k;
+    const semanas=(w||[]).filter(cubre).sort();
+    _veCadPreview.semanas=semanas;
+    if(semanas.length) objCadSem=semanas[semanas.length-1];
     renderObjCadena();
   }catch(e){ alert('Error leyendo el Excel: '+(e.message||e)); }
 }
-// publicar la previsualización: un PATCH multi-path a ventaEquipo (21 sucursales de una)
+// publicar la previsualización: un PATCH multi-path a ventaEquipo (21 sucursales de una).
+// Si el archivo cubre varias semanas publicadas (export del mes entero), se cargan TODAS
+// en el mismo PATCH — no solo la elegida en el selector.
 async function veCadPublicar(){
   const p=_veCadPreview; if(!p || !p.sem) return;
-  const agg=veAgregarSemana(p.res, p.sem);
-  if(!agg.nIn || !Object.keys(agg.porSlug).length){ alert('Ninguna venta del archivo cae en la semana elegida.'); return; }
+  const sems=(p.semanas && p.semanas.length ? p.semanas : [p.sem]);
+  const aggs={};
+  sems.forEach(s=>{ const a=veAgregarSemana(p.res, s); if(a.nIn && Object.keys(a.porSlug).length) aggs[s]=a; });
+  const lista=Object.keys(aggs).sort();
+  if(!lista.length){ alert(sems.length>1 ? 'Ninguna venta del archivo cae en las semanas publicadas.' : 'Ninguna venta del archivo cae en la semana elegida.'); return; }
   const btn=$('veCadSave'); if(btn){ btn.disabled=true; btn.textContent='Publicando…'; }
   const base=OBJETIVOS_URL.replace(/\/+$/,'');
-  const ahora=new Date().toISOString(), por=(SESSION.email||'')+' ('+agg.etiqueta+')';
+  const ahora=new Date().toISOString();
   const updates={};
-  Object.keys(agg.porSlug).forEach(slug=>{ const s=agg.porSlug[slug];
-    updates[slug+'/'+p.sem]={semana:p.sem, actualizado:ahora, por, vendedores:s.vendedores, total:s.total, metaTienda:0, minimoTienda:0}; });
+  lista.forEach(sem=>{ const agg=aggs[sem], por=(SESSION.email||'')+' ('+agg.etiqueta+')';
+    Object.keys(agg.porSlug).forEach(slug=>{ const s=agg.porSlug[slug];
+      updates[slug+'/'+sem]={semana:sem, actualizado:ahora, por, vendedores:s.vendedores, total:s.total, metaTienda:0, minimoTienda:0}; }); });
   try{
     const r=await fetch(base+'/ventaEquipo.json',{method:'PATCH',body:JSON.stringify(updates)});
     if(!r.ok) throw new Error('HTTP '+r.status);
-    Object.keys(agg.porSlug).forEach(slug=>{ delete _veCache[slug+'|'+p.sem]; delete _veTotCache[slug+'|'+p.sem]; });
+    lista.forEach(sem=>Object.keys(aggs[sem].porSlug).forEach(slug=>{ delete _veCache[slug+'|'+sem]; delete _veTotCache[slug+'|'+sem]; }));
     _veCadPreview=null;
     renderObjCadena();
   }catch(e){ alert('No se pudo publicar: '+(e.message||e)); if(btn){ btn.disabled=false; btn.textContent='Publicar'; } }
@@ -4450,13 +4459,19 @@ function veCadPreviewHtml(sem, por){
     ? (res.desde===res.hasta ? 'el '+objSemLbl(res.desde) : 'del '+objSemLbl(res.desde)+' al '+objSemLbl(res.hasta))
     : (res.pares.length ? '('+res.pares.map(x=>x.dow+' '+x.dia).join(' · ')+'; el archivo no trae mes ni año)' : '');
   const diasTxt = agg.pares.map(x=>x.dow+' '+x.dia).join(' · ');
+  const sems=(p.semanas||[]), multi=sems.length>1;
   let h='<div style="background:'+(vacio?'#fef2f2':'var(--mid-bg,#fdf3e3)')+';border:1px solid '+(vacio?'#fecaca':'#f0d8a8')+';border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:13px">'
     +'<b>'+esc(p.fileName)+'</b>: '+res.nComp.toLocaleString('es-AR')+' comprobantes'+(rango?' '+rango:'')+'.';
+  if(multi){
+    const porSem=sems.map(s=>{ const a=veAgregarSemana(res, s); return objSemTag(s)+' ('+a.nIn.toLocaleString('es-AR')+')'; });
+    h+='<br>Cubre <b>'+sems.length+' semanas publicadas</b>: '+esc(porSem.join(' · '))+' — al publicar se cargan <b>todas juntas</b>; con el selector elegís cuál previsualizar abajo.';
+  }
   if(vacio){
     h+='<br>⚠️ <b>Ninguna venta del archivo cae en la '+esc(objSemTag(sem))+'</b> (lunes '+esc(objSemLbl(sem))+'). Elegí en el selector la semana que corresponde al archivo.';
   }else{
     h+='<br>Para la <b>'+esc(objSemTag(sem))+'</b> ('+esc(objSemLbl(sem))+') tomo <b>'+esc(diasTxt)+'</b>: '+agg.nIn.toLocaleString('es-AR')+' comprobantes'
-      +(agg.nOut?' (descarto '+agg.nOut.toLocaleString('es-AR')+' de otros días)':'')+' en <b>'+filas.length+'</b> sucursales. Si está bien, publicá: cada sucursal va a ver su venta provisoria de esa semana en Mi Sucursal.';
+      +(agg.nOut && !multi?' (descarto '+agg.nOut.toLocaleString('es-AR')+' de otros días)':'')+' en <b>'+filas.length+'</b> sucursales. Si está bien, publicá: '
+      +(multi?'se cargan las '+sems.length+' semanas y cada':'cada')+' sucursal va a ver su venta provisoria en Mi Sucursal.';
   }
   h+=(agg.saltadas.length?'<br>Salteo (sin sucursal en el Portal): '+esc(agg.saltadas.join(', ')):'')
     +(!vacio && sinVenta.length?'<br>Con meta pero sin venta en el archivo: '+esc(sinVenta.join(', ')):'')
@@ -4472,7 +4487,7 @@ function veCadPreviewHtml(sem, por){
       +'<tr style="font-weight:700"><td class="L">Total</td><td>'+filas.reduce((a,r)=>a+r.n,0)+'</td><td><span class="num">'+objMoney(T.venta)+'</span></td><td><span class="num">'+T.tickets.toLocaleString('es-AR')+'</span></td><td><span class="num">'+T.unidades.toLocaleString('es-AR')+'</span></td><td><span class="num">'+(T.meta?objMoney(T.meta):'—')+'</span></td><td><b style="color:'+pctCol(T)+'">'+(T.meta?Math.round(T.venta/T.meta*100)+'%':'—')+'</b></td></tr>'
       +'</tbody></table></div>';
   }
-  h+='<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="veCadSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)"'+(vacio?' disabled':'')+'>Publicar</button>'
+  h+='<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="veCadSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)"'+(vacio&&!multi?' disabled':'')+'>'+(multi?'Publicar '+sems.length+' semanas':'Publicar')+'</button>'
     +'<button type="button" id="veCadCancel" class="tb-btn">Cancelar</button></div>';
   return h;
 }
