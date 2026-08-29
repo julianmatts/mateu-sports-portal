@@ -687,13 +687,18 @@ entran acá: ven su objetivo en Indicadores.
   por sucursal vs. meta (avisa cuántos comprobantes descarta de otros días, sucursales
   sin slug —05-Depósito— y metas sin venta) y
   **publica en un solo PATCH multi-path** a `ventaEquipo/<slug>/<lunesISO>` (mismo
-  payload que el script). **Si el archivo cubre varias semanas publicadas** (export del mes
-  entero), Publicar carga **todas las semanas juntas** en el mismo PATCH (29/08/2026); el
-  selector de semana solo elige cuál se previsualiza. Una semana **no vigente cubierta a
-  medias** (días de la semana fuera del rango del archivo — típico de un export por mes
-  calendario que corta las semanas retail de los bordes) se alerta y se **excluye** de la
-  publicación, para no pisar una semana ya cargada completa (`veSemanasCobertura`); un día
-  sin venta DENTRO del rango (feriado/domingo) no cuenta como faltante.
+  payload que el script). **Dos botones, un mismo input** (`veCadElegir`, 29/08/2026):
+  «⇧ Cargar venta de la semana» (sección Objetivo de la semana) toma **SOLO la semana
+  elegida** en el selector aunque el archivo traiga el mes entero; «⇧ **Cargar venta del
+  mes**» (bloque Objetivo del mes de la vista Cadena) sube el export del arranque del mes
+  a hoy y publica **todas las semanas publicadas que cubre, juntas** en el mismo PATCH.
+  En el modo mes, una semana **no vigente cubierta a medias** (días de la semana fuera del
+  rango del archivo — típico de un export por mes calendario que corta las semanas retail
+  de los bordes) se alerta y se **excluye** de la publicación, para no pisar una semana ya
+  cargada completa (`veSemanasCobertura`); un día sin venta DENTRO del rango
+  (feriado/domingo) no cuenta como faltante; la vigente publica con los días que tenga.
+  Un `.xls` que llega al tope de 65.536 filas se detecta como truncado: alerta 🛑 y
+  Publicar bloqueado (pedir `.xlsx`/CSV).
   ⚠️ Criterios de calendario: hasta agosto 2026 el objetivo MENSUAL se armó por **mes
   calendario** y el semanal por **semanas retail** (no cierran entre sí); desde septiembre
   2026 se unifica todo en calendario retail. La tabla de la cadena muestra esa venta como **«prov»**
