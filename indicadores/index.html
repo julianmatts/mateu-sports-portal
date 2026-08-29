@@ -4367,7 +4367,8 @@ function veParseDetallado(matrix, sucFija){
   const fechas=comps.map(x=>x.fecha).filter(Boolean).sort();
   const ordD={}; VE_DOW.forEach((d,i)=>ordD[d]=i);
   const paresSet=new Set(comps.filter(x=>x.dow&&x.dia).map(x=>x.dow+'|'+x.dia));
-  const pares=Array.from(paresSet).map(k=>{ const q=k.split('|'); return {dow:q[0], dia:+q[1]}; }).sort((a,b)=>(ordD[a.dow]!=null?ordD[a.dow]:9)-(ordD[b.dow]!=null?ordD[b.dow]:9));
+  // orden cronológico (por día del mes) — solo afecta cómo se listan en el resumen
+  const pares=Array.from(paresSet).map(k=>{ const q=k.split('|'); return {dow:q[0], dia:+q[1]}; }).sort((a,b)=>(a.dia-b.dia) || (ordD[a.dow]!=null?ordD[a.dow]:9)-(ordD[b.dow]!=null?ordD[b.dow]:9));
   return {comps, anio, mes, nComp:comps.length, desde:fechas[0]||null, hasta:fechas[fechas.length-1]||null, pares, conFecha:!!fechas.length, diasISO:Array.from(new Set(fechas))};
 }
 // ¿el archivo trae ventas del día i (0=Lu…6=Do) de la semana `sem`?
@@ -4453,9 +4454,10 @@ async function veCadArchivo(file){
     for(const name of wb.SheetNames){
       const m=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,defval:''});
       res=veParseDetallado(m);
-      // el .xls viejo (BIFF) corta en 65.536 filas: un export del mes con todas las
-      // sucursales lo supera y llega mutilado (sucursales/días enteros afuera)
-      if(res){ trunco = m.length>=65500; break; }
+      // SOLO el .xls viejo (BIFF) corta en 65.536 filas: un export del mes con todas
+      // las sucursales lo supera y llega mutilado (sucursales/días enteros afuera).
+      // CSV y .xlsx no tienen ese tope: un archivo grande ahí es normal, no truncado.
+      if(res){ trunco = /\.xls$/i.test(file.name||'') && m.length>=65500; break; }
     }
     if(!res){ alert('No reconocí el formato. Esperaba la estadística de venta detallada del sistema, con las columnas Sucursal · Día semana · Día · Vendedor · Nro.comprobante · Artículo · Rubro · Cantidad · Importe (todas las sucursales juntas).'); return; }
     _veCadPreview={sem:null, res, fileName:file.name, trunco, modo:_veCadModo};
