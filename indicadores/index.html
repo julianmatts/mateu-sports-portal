@@ -4336,7 +4336,35 @@ function veParseDetallado(matrix, sucFija){
   const ordD={}; VE_DOW.forEach((d,i)=>ordD[d]=i);
   const paresSet=new Set(comps.filter(x=>x.dow&&x.dia).map(x=>x.dow+'|'+x.dia));
   const pares=Array.from(paresSet).map(k=>{ const q=k.split('|'); return {dow:q[0], dia:+q[1]}; }).sort((a,b)=>(ordD[a.dow]!=null?ordD[a.dow]:9)-(ordD[b.dow]!=null?ordD[b.dow]:9));
-  return {comps, anio, mes, nComp:comps.length, desde:fechas[0]||null, hasta:fechas[fechas.length-1]||null, pares, conFecha:!!fechas.length};
+  return {comps, anio, mes, nComp:comps.length, desde:fechas[0]||null, hasta:fechas[fechas.length-1]||null, pares, conFecha:!!fechas.length, diasISO:Array.from(new Set(fechas))};
+}
+// ¿el archivo trae ventas del día i (0=Lu…6=Do) de la semana `sem`?
+// Sin fecha completa compara el par (día de semana, día del mes), como enSemana().
+function veDiaCubierto(res, sem, i){
+  const iso=veSumarDias(sem,i);
+  if(res.conFecha) return res.diasISO.indexOf(iso)>=0;
+  return res.pares.some(p=>p.dow===VE_DOW[i] && p.dia===+iso.slice(8,10));
+}
+/* Reparte las semanas cubiertas entre publicables e incompletas. Una semana NO vigente
+   con días sin venta FUERA del rango efectivo del archivo (los bordes de un export del
+   mes: arranca o termina a mitad de semana) está cubierta a medias — publicarla pisaría
+   la semana ya cargada completa con datos parciales, así que se alerta y se excluye.
+   Un día sin venta DENTRO del rango (feriado, domingo cerrado) no cuenta como faltante.
+   La semana vigente se publica siempre con los días que tenga (está en curso). */
+function veSemanasCobertura(res, sems){
+  const d=new Date(), hoy=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const dias=[];
+  sems.forEach(sem=>{ for(let i=0;i<7;i++) dias.push({sem, i, iso:veSumarDias(sem,i), ok:veDiaCubierto(res,sem,i)}); });
+  const idx=dias.map((x,j)=>x.ok?j:-1).filter(j=>j>=0);
+  const lo=idx.length?idx[0]:0, hi=idx.length?idx[idx.length-1]:-1;
+  const ok=[], malas=[];
+  sems.forEach(sem=>{
+    const vigente = hoy>=sem && hoy<=veSumarDias(sem,6);
+    const faltan=dias.filter((x,j)=>x.sem===sem && !x.ok && (j<lo || j>hi)).map(x=>VE_DOW[x.i]+' '+(+x.iso.slice(8,10)));
+    if(!vigente && faltan.length) malas.push({sem, faltan});
+    else ok.push(sem);
+  });
+  return {ok, malas};
 }
 /* se queda con los comprobantes de la semana [sem, sem+6] y arma los payloads por slug
    (mismo formato que guarda el encargado / el script). Sin fecha completa, compara el par
@@ -4389,13 +4417,16 @@ async function veCadArchivo(file){
   try{
     const XLSX=await loadXLSX();
     const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
-    let res=null;
+    let res=null, trunco=false;
     for(const name of wb.SheetNames){
       const m=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,defval:''});
-      res=veParseDetallado(m); if(res) break;
+      res=veParseDetallado(m);
+      // el .xls viejo (BIFF) corta en 65.536 filas: un export del mes con todas las
+      // sucursales lo supera y llega mutilado (sucursales/días enteros afuera)
+      if(res){ trunco = m.length>=65500; break; }
     }
     if(!res){ alert('No reconocí el formato. Esperaba la estadística de venta detallada del sistema, con las columnas Sucursal · Día semana · Día · Vendedor · Nro.comprobante · Artículo · Rubro · Cantidad · Importe (todas las sucursales juntas).'); return; }
-    _veCadPreview={sem:null, res, fileName:file.name};
+    _veCadPreview={sem:null, res, fileName:file.name, trunco};
     // TODAS las semanas publicadas que el archivo cubre (un export del mes entero trae
     // varias: se publican todas juntas): por fecha completa si la hay, si no por los
     // pares (día de semana, día del mes). Me paro en la última para previsualizar.
@@ -4414,7 +4445,9 @@ async function veCadArchivo(file){
 // en el mismo PATCH — no solo la elegida en el selector.
 async function veCadPublicar(){
   const p=_veCadPreview; if(!p || !p.sem) return;
-  const sems=(p.semanas && p.semanas.length ? p.semanas : [p.sem]);
+  // solo las semanas bien cubiertas (las incompletas ya se alertaron en la previsualización)
+  const sems=(p.semanas && p.semanas.length ? veSemanasCobertura(p.res, p.semanas).ok : [p.sem]);
+  if(!sems.length){ alert('Las semanas que cubre el archivo están incompletas: no hay nada para publicar.'); return; }
   const aggs={};
   sems.forEach(s=>{ const a=veAgregarSemana(p.res, s); if(a.nIn && Object.keys(a.porSlug).length) aggs[s]=a; });
   const lista=Object.keys(aggs).sort();
@@ -4460,18 +4493,25 @@ function veCadPreviewHtml(sem, por){
     : (res.pares.length ? '('+res.pares.map(x=>x.dow+' '+x.dia).join(' · ')+'; el archivo no trae mes ni año)' : '');
   const diasTxt = agg.pares.map(x=>x.dow+' '+x.dia).join(' · ');
   const sems=(p.semanas||[]), multi=sems.length>1;
+  const cob=sems.length?veSemanasCobertura(res, sems):{ok:[sem], malas:[]};
   let h='<div style="background:'+(vacio?'#fef2f2':'var(--mid-bg,#fdf3e3)')+';border:1px solid '+(vacio?'#fecaca':'#f0d8a8')+';border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:13px">'
     +'<b>'+esc(p.fileName)+'</b>: '+res.nComp.toLocaleString('es-AR')+' comprobantes'+(rango?' '+rango:'')+'.';
+  if(p.trunco) h+='<br>🛑 <b>El archivo llegó al tope de 65.536 filas del formato .xls viejo: está CORTADO</b> (faltan sucursales y/o días enteros). Bajalo del sistema como <b>.xlsx</b> — o en partes — y volvé a subirlo antes de publicar.';
   if(multi){
     const porSem=sems.map(s=>{ const a=veAgregarSemana(res, s); return objSemTag(s)+' ('+a.nIn.toLocaleString('es-AR')+')'; });
-    h+='<br>Cubre <b>'+sems.length+' semanas publicadas</b>: '+esc(porSem.join(' · '))+' — al publicar se cargan <b>todas juntas</b>; con el selector elegís cuál previsualizar abajo.';
+    h+='<br>Cubre <b>'+sems.length+' semanas publicadas</b>: '+esc(porSem.join(' · '))+' — al publicar se cargan '
+      +(cob.malas.length?'<b>las '+cob.ok.length+' completas</b> juntas':'<b>todas juntas</b>')+'; con el selector elegís cuál previsualizar abajo.';
   }
+  cob.malas.forEach(m=>{
+    h+='<br>⚠️ La <b>'+esc(objSemTag(m.sem))+'</b> (lunes '+esc(objSemLbl(m.sem))+') está cubierta a medias: el archivo no trae '
+      +esc(m.faltan.join(' · '))+' — <b>no se publica</b>, para no pisar la semana ya cargada con datos parciales.';
+  });
   if(vacio){
     h+='<br>⚠️ <b>Ninguna venta del archivo cae en la '+esc(objSemTag(sem))+'</b> (lunes '+esc(objSemLbl(sem))+'). Elegí en el selector la semana que corresponde al archivo.';
   }else{
     h+='<br>Para la <b>'+esc(objSemTag(sem))+'</b> ('+esc(objSemLbl(sem))+') tomo <b>'+esc(diasTxt)+'</b>: '+agg.nIn.toLocaleString('es-AR')+' comprobantes'
       +(agg.nOut && !multi?' (descarto '+agg.nOut.toLocaleString('es-AR')+' de otros días)':'')+' en <b>'+filas.length+'</b> sucursales. Si está bien, publicá: '
-      +(multi?'se cargan las '+sems.length+' semanas y cada':'cada')+' sucursal va a ver su venta provisoria en Mi Sucursal.';
+      +(cob.ok.length>1?'se cargan las '+cob.ok.length+' semanas y cada':'cada')+' sucursal va a ver su venta provisoria en Mi Sucursal.';
   }
   h+=(agg.saltadas.length?'<br>Salteo (sin sucursal en el Portal): '+esc(agg.saltadas.join(', ')):'')
     +(!vacio && sinVenta.length?'<br>Con meta pero sin venta en el archivo: '+esc(sinVenta.join(', ')):'')
@@ -4487,7 +4527,7 @@ function veCadPreviewHtml(sem, por){
       +'<tr style="font-weight:700"><td class="L">Total</td><td>'+filas.reduce((a,r)=>a+r.n,0)+'</td><td><span class="num">'+objMoney(T.venta)+'</span></td><td><span class="num">'+T.tickets.toLocaleString('es-AR')+'</span></td><td><span class="num">'+T.unidades.toLocaleString('es-AR')+'</span></td><td><span class="num">'+(T.meta?objMoney(T.meta):'—')+'</span></td><td><b style="color:'+pctCol(T)+'">'+(T.meta?Math.round(T.venta/T.meta*100)+'%':'—')+'</b></td></tr>'
       +'</tbody></table></div>';
   }
-  h+='<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="veCadSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)"'+(vacio&&!multi?' disabled':'')+'>'+(multi?'Publicar '+sems.length+' semanas':'Publicar')+'</button>'
+  h+='<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="veCadSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)"'+((p.trunco || (sems.length?!cob.ok.length:vacio))?' disabled':'')+'>'+(cob.ok.length>1?'Publicar '+cob.ok.length+' semanas':'Publicar')+'</button>'
     +'<button type="button" id="veCadCancel" class="tb-btn">Cancelar</button></div>';
   return h;
 }

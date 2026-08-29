@@ -689,7 +689,14 @@ entran acá: ven su objetivo en Indicadores.
   **publica en un solo PATCH multi-path** a `ventaEquipo/<slug>/<lunesISO>` (mismo
   payload que el script). **Si el archivo cubre varias semanas publicadas** (export del mes
   entero), Publicar carga **todas las semanas juntas** en el mismo PATCH (29/08/2026); el
-  selector de semana solo elige cuál se previsualiza. La tabla de la cadena muestra esa venta como **«prov»**
+  selector de semana solo elige cuál se previsualiza. Una semana **no vigente cubierta a
+  medias** (días de la semana fuera del rango del archivo — típico de un export por mes
+  calendario que corta las semanas retail de los bordes) se alerta y se **excluye** de la
+  publicación, para no pisar una semana ya cargada completa (`veSemanasCobertura`); un día
+  sin venta DENTRO del rango (feriado/domingo) no cuenta como faltante.
+  ⚠️ Criterios de calendario: hasta agosto 2026 el objetivo MENSUAL se armó por **mes
+  calendario** y el semanal por **semanas retail** (no cierran entre sí); desde septiembre
+  2026 se unifica todo en calendario retail. La tabla de la cadena muestra esa venta como **«prov»**
   mientras no esté el real oficial (gerencia baja `ventaEquipo/<slug>/<sem>/total`
   de cada sucursal). El script Python queda como plan B.
 - **Base «Horas asignadas» + justificaciones (03/08/2026)**: el toggle de KPIs de
