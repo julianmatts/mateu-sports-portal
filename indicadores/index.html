@@ -2069,8 +2069,10 @@ async function objMesCadenaHtml(sem, weeks){
   let h='<div>'
     +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
     +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">Objetivo del mes — '+esc(objMesLbl(per))+' · '+esc(lblLinea)+'</div>'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
     +(provisorio?'<span class="pprov" style="margin-left:0">avance parcial · '+nSem+' sem</span>':'')
-    +'</div>';
+    +'<button type="button" class="tb-btn" onclick="veCadElegir(\'mes\')" title="Subir la estadística de venta detallada del sistema con todas las sucursales, desde el arranque del mes hasta hoy: publica de una todas las semanas del mes que el archivo cubre completas (la vigente, con los días que tenga)">⇧ Cargar venta del mes</button>'
+    +'</div></div>';
   h+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">';
   if(T.real){
     h+='<div style="font-family:var(--font-d,inherit);font-size:32px;line-height:.9;letter-spacing:.5px;color:'+col+'">'+objMoney(T.real)+'</div>'
@@ -2189,7 +2191,7 @@ async function renderObjCadena(){
   let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
     +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">'+(hayReal?'Venta de la semana · ':'Meta de la semana · ')+esc(lblLinea)+' · '+esc(objSemTag(sem))+(hayProv&&!_veCadPreview?pillProv:'')+'</div>'
     +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-    +'<button type="button" id="veCadUpload" class="tb-btn" title="Subir la estadística de venta detallada del sistema con todas las sucursales (por día, vendedor y comprobante)">⇧ Cargar venta de la semana</button></div></div>';
+    +'<button type="button" id="veCadUpload" class="tb-btn" title="Subir la estadística de venta detallada del sistema con todas las sucursales (por día, vendedor y comprobante). Toma SOLO la semana elegida en el selector; para cargar el mes entero usá ⇧ Cargar venta del mes, en Objetivo del mes">⇧ Cargar venta de la semana</button></div></div>';
 
   if(_veCadPreview){
     html+=veCadPreviewHtml(sem, por);
@@ -2285,7 +2287,7 @@ async function renderObjCadena(){
   html+='<p class="hint" style="margin-top:12px"><a href="../objetivos/" style="color:var(--red,#CC0000);font-weight:600;text-decoration:none">Abrir Objetivos de Venta →</a> para cargar o corregir las metas de la semana. <b>⇧ Cargar venta de la semana</b> sube la estadística de venta detallada del sistema (todas las sucursales, por día y vendedor) y la publica como venta provisoria para que cada sucursal la vea en Mi Sucursal.</p>';
   $('objCadCard').innerHTML=html;
   const sel=$('objCadSemSel'); if(sel){ sel.onchange=e=>{ objCadSem=e.target.value; renderObjCadena(); }; dropSel(sel); }
-  const up=$('veCadUpload'); if(up) up.onclick=()=>$('veCadFile').click();
+  const up=$('veCadUpload'); if(up) up.onclick=()=>veCadElegir('sem');
   const rec=$('chkRecordar'); if(rec) rec.onclick=recordarFaltantes;
   const sv=$('veCadSave'); if(sv) sv.onclick=veCadPublicar;
   const cn=$('veCadCancel'); if(cn) cn.onclick=()=>{ _veCadPreview=null; renderObjCadena(); };
@@ -4178,7 +4180,11 @@ async function veGuardar(){
    publica ventaEquipo/<slug>/<semana> de cada sucursal en un solo PATCH: es el "real
    provisorio" que ven las sucursales y el dashboard de Objetivos. NO toca el real oficial
    de objetivos/semanas (ese lo completa el HISTÓRICO del Excel PMS). */
-let _veCadPreview = null;          // {sem, res, fileName} pendiente de publicar
+let _veCadPreview = null;          // {sem, res, fileName, semanas, modo} pendiente de publicar
+// dos botones, un mismo input de archivo: 'sem' (Objetivo de la semana: toma SOLO la
+// semana elegida) o 'mes' (Objetivo del mes: publica todas las semanas que cubre)
+let _veCadModo = 'sem';
+function veCadElegir(modo){ _veCadModo=modo; const f=$('veCadFile'); if(f) f.click(); }
 const _veTotCache = {};            // "slug|sem" -> Promise<total|null> (solo gerencia: avance provisorio de la cadena)
 const VE_DOW = ['Lu','Ma','Mi','Ju','Vi','Sa','Do'];
 // código NN del sistema -> slug del Portal (Diagonal 80 no tiene datos de Indicadores pero sí objetivo)
@@ -4426,17 +4432,17 @@ async function veCadArchivo(file){
       if(res){ trunco = m.length>=65500; break; }
     }
     if(!res){ alert('No reconocí el formato. Esperaba la estadística de venta detallada del sistema, con las columnas Sucursal · Día semana · Día · Vendedor · Nro.comprobante · Artículo · Rubro · Cantidad · Importe (todas las sucursales juntas).'); return; }
-    _veCadPreview={sem:null, res, fileName:file.name, trunco};
-    // TODAS las semanas publicadas que el archivo cubre (un export del mes entero trae
-    // varias: se publican todas juntas): por fecha completa si la hay, si no por los
-    // pares (día de semana, día del mes). Me paro en la última para previsualizar.
+    _veCadPreview={sem:null, res, fileName:file.name, trunco, modo:_veCadModo};
+    // semanas publicadas que el archivo cubre (por fecha completa si la hay, si no por
+    // los pares día de semana + día del mes). En modo 'mes' se publican TODAS juntas;
+    // en modo 'sem' solo se usa para pararse en la última (se publica la elegida).
     const w=await fetchObjetivoWeeks().catch(()=>null);
     const cubre = sem => res.conFecha
       ? (sem<=res.hasta && veSumarDias(sem,6)>=res.desde)
       : res.pares.some(p=> +veSumarDias(sem, VE_DOW.indexOf(p.dow)).slice(8,10)===p.dia && VE_DOW.indexOf(p.dow)>=0);
-    const semanas=(w||[]).filter(cubre).sort();
-    _veCadPreview.semanas=semanas;
-    if(semanas.length) objCadSem=semanas[semanas.length-1];
+    const cubiertas=(w||[]).filter(cubre).sort();
+    _veCadPreview.semanas = _veCadModo==='mes' ? cubiertas : [];
+    if(cubiertas.length) objCadSem=cubiertas[cubiertas.length-1];
     renderObjCadena();
   }catch(e){ alert('Error leyendo el Excel: '+(e.message||e)); }
 }
