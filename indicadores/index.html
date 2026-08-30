@@ -2102,8 +2102,9 @@ async function objMesCadenaHtml(sem, weeks){
     const porSem=await Promise.all(sems.map(async (sd,wi)=>{
       if(!sd || !sd.porSlug) return {sub:0, hay:false, prov:false};
       let sub=0, hay=false, prov=false; const faltan=[];
-      Object.keys(sd.porSlug).forEach(sl=>{
-        if(!slugsOk.has(sl)) return;
+      // se recorren las sucursales con meta del MES, no las de la semana: una sucursal
+      // sin entrada en esa semana (p.ej. Diagonal en la S33) igual suma su provisorio
+      slugsOk.forEach(sl=>{
         const v=sd.porSlug[sl];
         if(v && +v.real>0){ sub+=+v.real; hay=true; const a=(acc[sl]=acc[sl]||{real:0,nSem:0}); a.real+=+v.real; a.nSem++; } else faltan.push(sl);
       });
@@ -5280,8 +5281,8 @@ function renderRankChips(){
   const chips = [''].concat(RK_LINEAS.filter(f=>presentes.has(f)));
   $('rkChips').innerHTML = chips.map(f=>`<button class="rk-chip${rkTipo===f?' on':''}" data-f="${esc(f)}">${f===''?'Todas':esc(fmtLabel(f))}</button>`).join('');
   $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderObjCadena(); renderKpisCadena(); renderRanking(); renderCadenaTabla(); });
-  const kchips = RK_KPIS.map(k=>`<button class="rk-chip${rkKpiSel===k.k?' on':''}" data-k="${k.k}">${esc(k.short)}</button>`).join('')
-    + `<button class="rk-chip${rkKpiSel==='todos'?' on':''}" data-k="todos">Todos</button>`;
+  const kchips = `<button class="rk-chip${rkKpiSel==='todos'?' on':''}" data-k="todos">Todos</button>`
+    + RK_KPIS.map(k=>`<button class="rk-chip${rkKpiSel===k.k?' on':''}" data-k="${k.k}">${esc(k.short)}</button>`).join('');
   $('rkKpiChips').innerHTML = kchips;
   $('rkKpiChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkKpiSel=b.dataset.k; renderRanking(); });
 }
