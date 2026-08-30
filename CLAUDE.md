@@ -224,8 +224,14 @@ la elección en localStorage `ind_zona_tab` (default: En curso) y `pintarZonas()
 el display de las zonas + el estado `.on`; sin secciones vivas (Ecommerce) se fuerza
 Cierre y la pestaña viva se oculta. La **impresión/PDF saca las dos zonas juntas** igual
 (`@media print` fuerza `display:block`, salvo `.zona.z-empty`). La mini-barra `#kpiBar`
-lee la grilla de la pestaña activa (`kpiBarGrid`: En curso → `#kpisSem` con contexto
-«Sem N · provisorio»; Cierre → `#kpis`/`#kpisCad`; Cadena en curso no tiene tarjetas).
+lee la grilla de la pestaña activa (`kpiBarGrid`: En curso → `#kpisSem`/`#kpisSemCad`
+con contexto «Sem N · provisorio»; Cierre → `#kpis`/`#kpisCad`). En Cadena, la sección
+«Resumen · Indicadores de la semana» (`#kpisSemCadBox`, la pinta `pintarKpisSemCad`
+desde `pintarObjCad`) agrega los cuatro KPIs de la semana a la línea filtrada
+(numeradores/denominadores sumados; UPT y ticket prom. en la pasada 1, tickets/venta
+por hora con las horas asignadas de los equipos en la pasada 2) vs. el mes cerrado —
+las ex cajitas «UPT semana / Ticket prom. / Tickets/h» de la tarjeta del objetivo,
+que ahora solo conserva Mínimo y ★ 120%.
 `pintarZonas()` pone las fechas en los títulos (`_zonaSem`/`_zonaMes`, que setean
 `renderObjetivo` / `renderObjCadena` / `objetivoMesHtml`).
 Regla: todo número vivo lleva el pill `.pprov`; los cerrados, nunca.
