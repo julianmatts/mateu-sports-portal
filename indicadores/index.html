@@ -157,6 +157,7 @@ a{color:inherit}
 /* ===== LAYOUT ===== */
 .wrap{max-width:1240px;margin:0 auto;padding:8px 24px 70px}
 .sec{padding-top:44px}
+.zona-viva .sec.sec-cont{padding-top:16px}   /* continuación de la sección anterior (Indicadores de la semana bajo Objetivo de la semana) */
 .sec-label{font-family:var(--font-c);font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:var(--red);
   font-weight:600;margin-bottom:5px}
 .sec-title{font-family:var(--font-d);font-size:32px;letter-spacing:.5px;line-height:1;margin-bottom:8px}
@@ -385,6 +386,7 @@ tr.team:hover td.td-lead{background:rgba(224,164,0,.18)}
   background:var(--red);border-radius:999px;padding:2px 9px}
 .rk-kpi-sub{font-family:var(--font-b);font-size:12.5px;color:var(--muted);margin:3px 0 4px}
 .rk-bar-sep{margin-left:10px;padding-left:12px;border-left:1px solid var(--border)}
+.rk-filtro{display:flex;align-items:center;gap:12px}
 .rk-insight{font-family:var(--font-b);font-size:13px;color:var(--navy);background:#f2f5fc;border-left:3px solid var(--navy-mid);
   border-radius:6px;padding:8px 11px;margin:8px 0 4px}
 .rk-insight b{color:var(--navy)}
@@ -713,18 +715,6 @@ footer b{color:var(--navy)}
     </header>
     <div class="zona-cargando" id="vivaLoad">Cargando la semana en curso…</div>
 
-    <!-- Resumen en curso: los cuatro indicadores de la semana elegida, con la misma
-         jerarquía que «Los cuatro indicadores» del Cierre (promovido a sección propia
-         con las pestañas; antes vivía dentro de «Objetivo de la semana»). Lo pinta
-         renderKpisSemana; sin venta cargada muestra el empty state. -->
-    <section class="sec" id="kpisSemBox" style="display:none">
-      <div class="sec-label">Resumen</div>
-      <h2 class="sec-title">Indicadores <em>de la semana</em></h2>
-      <p class="hint">Con la venta de la semana elegida y las horas asignadas al equipo, contra el objetivo de tu línea, el último cierre y la semana anterior.</p>
-      <div class="kpis" id="kpisSem"></div>
-      <div class="diag" id="diagSem" style="display:none;margin-top:12px"></div>
-    </section>
-
     <section class="sec" id="secObjetivoMes" style="display:none">
       <div class="sec-label">Objetivo de venta</div>
       <h2 class="sec-title">Objetivo <em>del mes</em></h2>
@@ -739,9 +729,19 @@ footer b{color:var(--navy)}
       <h2 class="sec-title">Objetivo <em>de la semana</em></h2>
       <p class="hint">La meta de venta que puso gerencia para tu sucursal, con el mínimo y el <b>120%</b> (meta × 1,2: el gran objetivo). Elegí la semana para ver otras. A medida que se cargue la venta, vas viendo el avance.</p>
       <div class="card pad" id="objetivoCard"></div>
-      <!-- los indicadores de la semana viven en la sección «Resumen» de arriba (#kpisSemBox) -->
       <input type="file" id="veFile" accept=".xlsx,.xls,.csv" style="display:none">
       <input type="file" id="eqFile" accept=".xlsx,.xls" style="display:none">
+    </section>
+
+    <!-- Indicadores de la semana: los cuatro KPIs de la semana elegida, pegados a
+         «Objetivo de la semana» como continuación de esa sección (pedido de Juli
+         29/08; antes iban arriba de todo como «Resumen»). Lo pinta renderKpisSemana;
+         sin venta cargada muestra el empty state. -->
+    <section class="sec sec-cont" id="kpisSemBox" style="display:none">
+      <h2 class="sec-title" style="font-size:22px">Indicadores <em>de la semana</em></h2>
+      <p class="hint">Con la venta de la semana elegida y las horas asignadas al equipo, contra el objetivo de tu línea, el último cierre y la semana anterior.</p>
+      <div class="kpis" id="kpisSem"></div>
+      <div class="diag" id="diagSem" style="display:none;margin-top:12px"></div>
     </section>
 
     <section class="sec" id="secF8" style="display:none">
@@ -890,10 +890,9 @@ footer b{color:var(--navy)}
         <button class="ztab viva" data-tab="viva" aria-pressed="false"><span class="dot"></span>En curso<em>provisorio</em></button>
         <button class="ztab cierre" data-tab="cierre" aria-pressed="false">✓ Cierre<em>oficial</em></button>
       </div>
-      <span class="rk-bar-lbl rk-bar-sep">Línea</span>
-      <div class="rk-chips" id="rkChips"></div>
-      <span class="rk-bar-lbl rk-bar-sep" id="rkKpiLbl">KPI</span>
-      <div class="rk-chips" id="rkKpiChips"></div>
+      <!-- rótulo + chips agrupados: al envolver la barra, cada filtro salta de línea ENTERO -->
+      <div class="rk-filtro rk-bar-sep"><span class="rk-bar-lbl">Línea</span><div class="rk-chips" id="rkChips"></div></div>
+      <div class="rk-filtro rk-bar-sep" id="rkKpiGrp"><span class="rk-bar-lbl">KPI</span><div class="rk-chips" id="rkKpiChips"></div></div>
     </div>
 
     <!-- ===== ZONA EN CURSO (cadena): objetivo del mes y de la semana, todas las sucursales ===== -->
@@ -904,16 +903,6 @@ footer b{color:var(--navy)}
       <div class="zona-strip" id="vivaStripCad" style="flex-basis:100%"></div>
     </header>
     <div class="zona-cargando" id="vivaLoadCad">Cargando la semana en curso…</div>
-
-    <!-- Resumen en curso (cadena): los cuatro indicadores de la semana agregados a
-         todas las sucursales, misma jerarquía que «KPIs generales» del Cierre.
-         Los pinta pintarKpisSemCad con los datos de pintarObjCad. -->
-    <section class="sec" id="kpisSemCadBox" style="display:none">
-      <div class="sec-label">Resumen</div>
-      <h2 class="sec-title" id="kpisSemCadTitle">Indicadores <em>de la semana</em></h2>
-      <p class="hint">Los cuatro indicadores de la semana elegida, de todas las sucursales juntas (se suman numerador y denominador, nunca se promedian ratios; respeta el filtro por línea): con la venta provisoria cargada y las horas asignadas de los equipos, contra el último mes cerrado.</p>
-      <div class="kpis" id="kpisSemCad"></div>
-    </section>
 
     <section class="sec" id="secObjMesCadena" style="display:none">
       <div class="sec-label">Objetivo de venta</div>
@@ -928,6 +917,16 @@ footer b{color:var(--navy)}
       <p class="hint">La meta semanal de cada sucursal y el avance contra la venta real. Verde = llegó a la meta, ámbar = pasó el mínimo, rojo = abajo del mínimo. Para cargar o corregir metas, entrá al módulo Objetivos.</p>
       <div class="card pad" id="objCadCard"></div>
       <input type="file" id="veCadFile" accept=".xlsx,.xls,.csv" style="display:none">
+    </section>
+
+    <!-- Indicadores de la semana (cadena): los cuatro indicadores agregados a todas
+         las sucursales, pegados a «Objetivo de la semana» como continuación (pedido
+         de Juli 29/08; antes iban arriba de todo como «Resumen»). Los pinta
+         pintarKpisSemCad con los datos de pintarObjCad. -->
+    <section class="sec sec-cont" id="kpisSemCadBox" style="display:none">
+      <h2 class="sec-title" id="kpisSemCadTitle" style="font-size:22px">Indicadores <em>de la semana</em></h2>
+      <p class="hint">Los cuatro indicadores de la semana elegida, de todas las sucursales juntas (se suman numerador y denominador, nunca se promedian ratios; respeta el filtro por línea): con la venta provisoria cargada y las horas asignadas de los equipos, contra el último mes cerrado.</p>
+      <div class="kpis" id="kpisSemCad"></div>
     </section>
     </div><!-- /zonaVivaCad -->
 
@@ -1550,9 +1549,7 @@ function pintarZonas(){
       if(b.dataset.tab==='viva') b.style.display = hay?'':'none';
     });
     // el filtro KPI solo filtra el ranking del Cierre: en la pestaña En curso no hace nada
-    if(cad){ const show = tab==='cierre' ? '' : 'none';
-      const kl=$('rkKpiLbl'); if(kl) kl.style.display=show;
-      const kc=$('rkKpiChips'); if(kc) kc.style.display=show; }
+    if(cad){ const kg=$('rkKpiGrp'); if(kg) kg.style.display = tab==='cierre' ? 'flex' : 'none'; }
   }
 }
 function actualizarFiltroBanner(){
