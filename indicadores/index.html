@@ -245,7 +245,7 @@ a{color:inherit}
 .ztab:hover{border-color:var(--navy-mid)}
 .ztab.viva.on{color:#fff;background:var(--vivo);border-color:var(--vivo)}
 .ztab.cierre.on{color:#fff;background:var(--navy);border-color:var(--navy)}
-.rk-bar .zona-tabs{position:static;background:none;padding:0;margin:0 0 0 auto}
+.rk-bar .zona-tabs{position:static;background:none;padding:0;margin:0}
 /* placeholder de la banda viva: se ve desde el primer pintado, mientras Firebase carga,
    para que el Cierre (estático, instantáneo) nunca aparezca primero y "salte" la página */
 .zona-cargando{padding:26px 0 10px;color:var(--muted);font-size:14px;display:flex;align-items:center;gap:10px}
@@ -882,15 +882,18 @@ footer b{color:var(--navy)}
          que solo piden su slug. -->
     <!-- Filtro por línea/tipo de sucursal: aplica a TODA la vista cadena
          (objetivo, KPIs generales, ranking y tabla comparativa). -->
+    <!-- Orden: primero la pestaña (qué línea de tiempo), después los filtros.
+         Línea aplica a toda la vista; KPI solo filtra el ranking del Cierre,
+         por eso el grupo KPI se oculta en la pestaña En curso (pintarZonas). -->
     <div class="rk-bar" id="rkBar">
-      <span class="rk-bar-lbl">Línea</span>
-      <div class="rk-chips" id="rkChips"></div>
-      <span class="rk-bar-lbl rk-bar-sep">KPI</span>
-      <div class="rk-chips" id="rkKpiChips"></div>
       <div class="zona-tabs" id="zonaJumpCad">
         <button class="ztab viva" data-tab="viva" aria-pressed="false"><span class="dot"></span>En curso<em>provisorio</em></button>
         <button class="ztab cierre" data-tab="cierre" aria-pressed="false">✓ Cierre<em>oficial</em></button>
       </div>
+      <span class="rk-bar-lbl rk-bar-sep">Línea</span>
+      <div class="rk-chips" id="rkChips"></div>
+      <span class="rk-bar-lbl rk-bar-sep" id="rkKpiLbl">KPI</span>
+      <div class="rk-chips" id="rkKpiChips"></div>
     </div>
 
     <!-- ===== ZONA EN CURSO (cadena): objetivo del mes y de la semana, todas las sucursales ===== -->
@@ -1503,6 +1506,10 @@ function pintarZonas(){
       b.setAttribute('aria-pressed', on?'true':'false');
       if(b.dataset.tab==='viva') b.style.display = hay?'':'none';
     });
+    // el filtro KPI solo filtra el ranking del Cierre: en la pestaña En curso no hace nada
+    if(cad){ const show = tab==='cierre' ? '' : 'none';
+      const kl=$('rkKpiLbl'); if(kl) kl.style.display=show;
+      const kc=$('rkKpiChips'); if(kc) kc.style.display=show; }
   }
 }
 function actualizarFiltroBanner(){
@@ -4370,6 +4377,7 @@ async function veArchivo(file){
           data={vendedores:mio.vendedores, total:mio.total};
           info='Leído como <b>estadística detallada</b> ('+esc(agg.etiqueta)+', con día a día por vendedor).'
             +(agg.nOut>0?' Se descartaron '+agg.nOut+' comprobantes de días fuera de la semana.':'')
+            +(agg.omniN?' Se excluyó <b>WEB MATEU</b> ('+objMoney(agg.omniV)+'): venta de ecom facturada en la sucursal, no cuenta para el objetivo.':'')
             +(Object.keys(agg.porSlug).length>1?' El archivo traía varias sucursales: se tomó solo la tuya.':'');
           break;
         }
@@ -4619,9 +4627,12 @@ function veAgregarSemana(res, sem){
   const hasta=veSumarDias(sem,6), esperado={};
   VE_DOW.forEach((d,i)=>{ esperado[d]=+veSumarDias(sem,i).slice(8,10); });
   const enSemana = x => x.fecha ? (x.fecha>=sem && x.fecha<=hasta) : (x.dow && x.dia ? esperado[x.dow]===x.dia : true);
-  const sucV=new Map(), dowSet=new Set(); let ncPos=0, nIn=0, nOut=0;
+  const sucV=new Map(), dowSet=new Set(); let ncPos=0, nIn=0, nOut=0, omniN=0, omniV=0;
   res.comps.forEach(x=>{
     if(!enSemana(x)){ nOut++; return; }
+    // omnicanalidad: WEB MATEU solo es vendedor real en Ecommerce (99); en una sucursal
+    // física es venta de ecom facturada ahí y NO cuenta para sus objetivos (Juli 29/08)
+    if(veNormU(x.vend)==='WEB MATEU' && !/^99/.test(String(x.suc||''))){ omniN++; omniV+=x.imp; return; }
     nIn++;
     const esNc=/^Nc/.test(x.nro); if(esNc && x.imp>0) ncPos++;
     let vs=sucV.get(x.suc); if(!vs){ vs=new Map(); sucV.set(x.suc,vs); }
@@ -4655,7 +4666,7 @@ function veAgregarSemana(res, sem){
   const pares=Array.from(dowSet).map(k=>{ const q=k.split('|'); return {dow:q[0], dia:+q[1]}; }).sort((a,b)=>oi(a.dow)-oi(b.dow));
   const dows=pares.map(p=>p.dow);
   const etiqueta = dows.length ? 'estadística '+dows[0]+'-'+dows[dows.length-1] : 'estadística';
-  return {porSlug, saltadas, etiqueta, pares, ncPos, nIn, nOut};
+  return {porSlug, saltadas, etiqueta, pares, ncPos, nIn, nOut, omniN, omniV:Math.round(omniV)};
 }
 // leer el Excel elegido por gerencia -> previsualizar en la vista Cadena
 async function veCadArchivo(file){
@@ -4760,7 +4771,8 @@ function veCadPreviewHtml(sem, por){
       +(agg.nOut && !multi?' (descarto '+agg.nOut.toLocaleString('es-AR')+' de otros días)':'')+' en <b>'+filas.length+'</b> sucursales. Si está bien, publicá: '
       +(cob.ok.length>1?'se cargan las '+cob.ok.length+' semanas y cada':'cada')+' sucursal va a ver su venta provisoria en Mi Sucursal.';
   }
-  h+=(agg.saltadas.length?'<br>Salteo (sin sucursal en el Portal): '+esc(agg.saltadas.join(', ')):'')
+  h+=(agg.omniN?'<br>Omnicanalidad: excluyo '+agg.omniN+' comprobantes de <b>WEB MATEU</b> en sucursales físicas ('+objMoney(agg.omniV)+') — es venta de ecom facturada en la sucursal y no cuenta para sus objetivos.':'')
+    +(agg.saltadas.length?'<br>Salteo (sin sucursal en el Portal): '+esc(agg.saltadas.join(', ')):'')
     +(!vacio && sinVenta.length?'<br>Con meta pero sin venta en el archivo: '+esc(sinVenta.join(', ')):'')
     +(agg.ncPos?'<br>⚠️ '+agg.ncPos+' notas de crédito con importe positivo (se esperaba negativo).':'')
     +'</div>';
