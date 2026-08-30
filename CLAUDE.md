@@ -245,11 +245,31 @@ KPIs generales.
 `pintarZonas()` pone las fechas en los títulos (`_zonaSem`/`_zonaMes`, que setean
 `renderObjetivo` / `renderObjCadena` / `objetivoMesHtml`).
 Regla: todo número vivo lleva el pill `.pprov`; los cerrados, nunca.
+**Disposición canónica (30/08/2026, pedido de Juli — las cuatro vistas alineadas):**
+En curso (sucursal y Cadena): Objetivo del mes → Indicadores del mes en curso
+(`#puenteBox` / `#puenteBoxCad`, secciones `.sec-cont`) → Objetivo de la semana →
+Indicadores de la semana (`#kpisSemBox` / `#kpisSemCadBox`, `.sec-cont`) → operativas
+(sucursal: F8 para armar + Reposición; Cadena: F8 control). Cierre (ambas): **Objetivo
+del mes cerrado** (`secObjMesCierre`/`renderObjMesCierre` con la meta de
+`objetivos/meses` vs. la venta neta oficial; en Cadena `secObjMesCadCierre`/
+`renderObjMesCadCierre`, mismo universo meta↔venta por línea) → KPIs → **La venta
+semana a semana** (subida al 3.º lugar en sucursal, decisión A1) → el resto del
+análisis. La **tira resumen se repartió por período**: chip «Mes %» arriba de Objetivo
+del mes (`#vivaStripMes[Cad]`), chips Hoy/Semana/Ritmo/UPT/Ticket prom. arriba de
+Objetivo de la semana (`#vivaStripSem[Cad]`); el **selector de semana** vive en el
+`sec-head` de «Objetivo de la semana» (ya no en la cabecera de la banda). El Cierre de
+Cadena suma el **switch «Mes / Sem 1…N»** (`kpiSegCad`/`semSelCad`/`cadSucVista`,
+decisión D1: filtra KPIs generales y Comparación; horas del mes repartidas por semana,
+banner `#filtroBannerCad`), y la zona viva de Cadena un **insight corto agregado**
+(`#diagSemCad` en `pintarKpisSemCad`, decisión E1: % de meta, sucursales en ritmo,
+KPI más flojo). «La venta semana a semana» (las dos vistas) muestra el **% vs. la
+meta PMS semanal** adentro de cada barra y como columna (`semLunesISO`/`metaSemana`:
+lunes desde el rango del ETL + metas de `objetivos/semanas`, cache async). Los F8 de
+«F8 para armar» arrancan **cerrados** (sin `open`).
 **Indicadores de la semana** (`renderKpisSemana`; sección `#kpisSemBox` que desde el
 30/08 va **pegada debajo de «Objetivo de la semana»** como continuación — clase
 `.sec-cont`, título chico, sin label «Resumen»; lo mismo `#kpisSemCadBox` en Cadena.
-El orden de la zona viva es: Objetivo del mes → Objetivo de la semana → Indicadores
-de la semana. Sin venta cargada muestra un empty state en vez de desaparecer. El
+Sin venta cargada muestra un empty state en vez de desaparecer. El
 acumulado del mes — la ex tabla «El puente», hoy **«Indicadores del mes en curso»,
 tarjetas KPI con el mismo formato que las de la semana** (30/08: acumulado, % del
 objetivo con semáforo, delta y valor del cerrado, sparkline semana a semana y nota de
