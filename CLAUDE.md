@@ -218,7 +218,8 @@ ETL). El **selector de período vive en la cabecera de Cierre** (`#selPer` se mu
 `#selPerHost` de la vista activa en `pintarZonas()`), no en la barra global.
 **Pestañas (29/08/2026, reemplazan al nav «Ir a»):** se ve **UNA zona por vez** con el
 segmented `.zona-tabs` («● En curso · provisorio» azul / «✓ Cierre · oficial» navy;
-sticky arriba en Mi Sucursal, a la derecha de la rk-bar en Cadena). `setZonaTab()` guarda
+sticky arriba en Mi Sucursal; en Cadena va PRIMERO en la rk-bar — pestaña → Línea → KPI,
+y el grupo KPI solo se muestra en Cierre porque únicamente filtra el ranking). `setZonaTab()` guarda
 la elección en localStorage `ind_zona_tab` (default: En curso) y `pintarZonas()` aplica
 el display de las zonas + el estado `.on`; sin secciones vivas (Ecommerce) se fuerza
 Cierre y la pestaña viva se oculta. La **impresión/PDF saca las dos zonas juntas** igual
