@@ -226,7 +226,7 @@ Cierre y la pestaña viva se oculta. La **impresión/PDF saca las dos zonas junt
 (`@media print` fuerza `display:block`, salvo `.zona.z-empty`). La mini-barra `#kpiBar`
 lee la grilla de la pestaña activa (`kpiBarGrid`: En curso → `#kpisSem`/`#kpisSemCad`
 con contexto «Sem N · provisorio»; Cierre → `#kpis`/`#kpisCad`). En Cadena, la sección
-«Resumen · Indicadores de la semana» (`#kpisSemCadBox`, la pinta `pintarKpisSemCad`
+«Indicadores de la semana» (`#kpisSemCadBox`, la pinta `pintarKpisSemCad`
 desde `pintarObjCad`) agrega los cuatro KPIs de la semana a la línea filtrada
 (numeradores/denominadores sumados; UPT y ticket prom. en la pasada 1, tickets/venta
 por hora con las horas asignadas de los equipos en la pasada 2) vs. el mes cerrado —
@@ -245,12 +245,16 @@ KPIs generales.
 `pintarZonas()` pone las fechas en los títulos (`_zonaSem`/`_zonaMes`, que setean
 `renderObjetivo` / `renderObjCadena` / `objetivoMesHtml`).
 Regla: todo número vivo lleva el pill `.pprov`; los cerrados, nunca.
-**Indicadores de la semana** (`renderKpisSemana`; desde el 29/08 son la **sección
-«Resumen · Indicadores de la semana»** — `#kpisSemBox`, arriba de todo en la zona viva,
-misma jerarquía que «Los cuatro indicadores» del Cierre; sin venta cargada muestra un
-empty state en vez de desaparecer. El acumulado del mes — la ex tabla «El puente», hoy
-«Indicadores del mes en curso» — sigue **dentro de «Objetivo
-del mes»** en `#puenteBox`): UPT, ticket promedio,
+**Indicadores de la semana** (`renderKpisSemana`; sección `#kpisSemBox` que desde el
+30/08 va **pegada debajo de «Objetivo de la semana»** como continuación — clase
+`.sec-cont`, título chico, sin label «Resumen»; lo mismo `#kpisSemCadBox` en Cadena.
+El orden de la zona viva es: Objetivo del mes → Objetivo de la semana → Indicadores
+de la semana. Sin venta cargada muestra un empty state en vez de desaparecer. El
+acumulado del mes — la ex tabla «El puente», hoy **«Indicadores del mes en curso»,
+tarjetas KPI con el mismo formato que las de la semana** (30/08: acumulado, % del
+objetivo con semáforo, delta y valor del cerrado, sparkline semana a semana y nota de
+horas; la columna «Sem N» de la tabla vieja no se repite porque son las tarjetas de la
+semana) — sigue **dentro de «Objetivo del mes»** en `#puenteBox`): UPT, ticket promedio,
 tickets/hora y venta/hora de la semana elegida con la venta de `ventaEquipo` y las horas
 asignadas del equipo (solo los días que ya tienen venta: `eqHorasDias`), cada uno vs. el
 objetivo de la línea, vs. el mes cerrado (`kpisCerrado`: con horas asignadas si ese

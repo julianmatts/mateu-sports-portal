@@ -722,7 +722,7 @@ footer b{color:var(--navy)}
       <h2 class="sec-title">Objetivo <em>del mes</em></h2>
       <p class="hint">La meta mensual de tu sucursal. Mientras el mes está abierto, el avance suma la venta de las semanas ya publicadas.</p>
       <div class="card pad" id="objetivoMesCard"></div>
-      <!-- indicadores del mes en curso: acumulado de las semanas (el puente), pintado por renderKpisSemana -->
+      <!-- indicadores del mes en curso: acumulado de las semanas en tarjetas KPI (ex tabla «puente»), pintado por renderKpisSemana -->
       <div id="puenteBox" style="display:none"></div>
     </section>
 
@@ -4086,48 +4086,50 @@ async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem
       +'<div class="kpi-foot"><div class="kpi-delta">'+cerrStr+'</div><div class="kpi-rank">'+prevStr+'</div></div></div>';
   }).join('');
 
-  // el puente
-  const rows=[
-    {key:'upt', name:'UPT', tgt:obj.upt}, {key:'tp', name:'Ticket promedio', tgt:obj.ticket_promedio},
-    {key:'tph', name:'Tickets por hora', tgt:obj.tickets_hora}, {key:'vh', name:'Venta por hora', tgt:null},
-  ];
+  // Indicadores del mes en curso: mismas tarjetas que las de la semana (pedido de
+  // Juli 29/08; antes era la tabla «puente»). Se conserva todo el dato de la tabla
+  // —acumulado, % del objetivo con semáforo, delta y valor del mes cerrado (o su
+  // «no comparable» por hs. contratadas), la mini-tendencia semana a semana y la
+  // nota de horas asignadas—. La única columna que no se repite es «Sem N»: son
+  // exactamente las tarjetas de «Indicadores de la semana» de abajo.
   const noCompH = !!(cerr && cerr.base==='contratadas');
-  const sinCerr = !cerr;
-  const cell=(k, src, cls, subs)=>{ const td='<td'+(cls?' class="'+cls+'"':'')+'>'; const x=src?src[k]:NaN;
-    return !isFinite(x) ? td+'<span class="muted">—</span></td>'
-      : td+'<span class="num">'+kpiFmt(k,x)+'</span>'+(subs||'')+'</td>'; };
-  // sub-líneas del acumulado (la columna protagonista): % del objetivo con semáforo,
-  // delta vs. cerrado y la mini-tendencia con el valor de cada semana publicada
-  const subsAcum=r=>{
-    const x=acum?acum[r.key]:NaN; if(!isFinite(x)) return '';
-    let s='';
-    if(r.tgt){ const pct=x/r.tgt*100; s+='<div class="pte-sub"><span class="cum-'+semaforo(pct)+'">'+Math.round(pct)+'% del objetivo</span></div>'; }
-    const comparable = cerr && isFinite(cerr[r.key]) && cerr[r.key] && !(noCompH && (r.key==='tph'||r.key==='vh'));
-    const d=comparable?deltaHtml(x,cerr[r.key]):null;
-    if(d) s+='<div class="pte-sub">'+d+' vs. cerrado</div>';
-    else if(cerr && !comparable && (r.key==='tph'||r.key==='vh')) s+='<div class="pte-sub" title="El cierre usa horas contratadas">no comparable</div>';
-    const serie=delMes.map((w,i)=>({sem:objSemNum(w), val:vivas[i]?vivas[i][r.key]:NaN})).filter(p=>isFinite(p.val));
-    if(serie.length>=2){
-      const sp=sparkBars(serie, r.tgt||NaN).replace('var(--red)','var(--vivo)');   // la última semana en azul «en curso», no en rojo
-      if(sp) s+='<div class="pte-spark" title="'+esc(serie.map(p=>'Sem '+p.sem+': '+kpiFmt(r.key,p.val)).join(' · ')+(r.tgt?' · objetivo '+kpiFmt(r.key,r.tgt):''))+'">'+sp+'</div>';
-    }
-    return s;
-  };
   const mesLbl=objMesLbl(mesISO).split(' ')[0];
-  $('puenteBox').innerHTML = '<div class="card pad pte">'
-    +'<div class="pte-h">Indicadores del mes en curso<span class="muted">el acumulado de las semanas publicadas, contra el último cierre y el objetivo</span></div>'
-    +'<div class="tbl-wrap"><table style="min-width:560px"><thead><tr><th class="L">Indicador</th>'
-    +'<th>'+esc(semLbl)+'<span class="pprov">prov</span></th>'
-    +'<th class="pte-acum">'+esc(mesLbl)+' acumulado'+(acum?' · '+acum.nsem+' sem':'')+'<span class="pprov">prov</span>'
-    +(acum&&acum.nH&&acum.nH<acum.nsem?'<div class="pte-sub" style="text-transform:none;letter-spacing:0" title="Solo las semanas con equipo guardado entran en tickets y venta por hora">hs. asignadas en '+acum.nH+' de '+acum.nsem+'</div>':'')+'</th>'
-    +'<th>'+(cerr?esc(cerr.label)+' cerrado':'Mes cerrado')+'<span class="pok">oficial</span></th><th title="Objetivo de tu línea (formato '+esc(fmt)+')">Objetivo '+esc(fmt)+'</th></tr></thead><tbody>'
-    +rows.map((r,ri)=>'<tr><td class="L">'+r.name+'</td>'+cell(r.key,cur)+cell(r.key,acum,'pte-acum',subsAcum(r))
-      +(sinCerr ? (ri===0?'<td class="pte-vacio" rowspan="'+rows.length+'">Todavía no hay un mes cerrado del ETL para comparar. El primer cierre aparece acá como dato oficial.</td>':'') : cell(r.key,cerr))
-      +'<td class="pte-obj">'+(r.tgt?'<span class="num">'+kpiFmt(r.key,r.tgt)+'</span>':'<span class="muted">—</span>')+'</td></tr>').join('')
-    +'</tbody></table></div>'
-    +'<p class="hint" style="margin:10px 0 0">Las columnas provisorias salen de la venta cargada por semana y de las horas asignadas al equipo'
-    +(cerr&&cerr.base==='contratadas'?' (el mes cerrado no tiene equipo guardado y usa horas contratadas: tickets y venta por hora no son comparables del todo)':'')
-    +'. Cuando el ETL cierre '+esc(mesLbl)+', estos números pasan a la zona Cierre como dato oficial.</p></div>';
+  const acumTag=esc(mesLbl)+' acumulado'+(acum&&acum.nsem?' · '+acum.nsem+' sem':'');
+  const hsMes=(acum&&acum.nH&&acum.nH<acum.nsem)?' · hs. asignadas en '+acum.nH+' de '+acum.nsem+' sem':'';
+  $('puenteBox').innerHTML =
+    '<h2 class="sec-title" style="font-size:22px;margin:22px 0 8px">Indicadores <em>del mes en curso</em></h2>'
+    +'<p class="hint">El acumulado de las semanas publicadas de '+esc(mesLbl)+', contra el objetivo de tu línea y el último cierre. En tickets y venta por hora entran solo las semanas con equipo guardado.</p>'
+    +'<div class="kpis">'+defs.map(d=>{
+      const x=acum?acum[d.key]:NaN;
+      if(!isFinite(x)){
+        return '<div class="kpi"><div class="kpi-name">'+d.name+'<span class="pprov">prov</span></div><div class="kpi-val">—</div><div class="kpi-unit">'+(d.hs?'sin horas asignadas':'sin dato')+' · '+acumTag+'</div>'
+          +(d.hs?'<div class="kpi-foot"><div class="kpi-empty">Ninguna semana publicada del mes tiene un equipo con horas guardado.</div></div>':'')+'</div>';
+      }
+      let objHtml='<span class="tgt">sin objetivo de formato</span>', semClass='';
+      if(d.tgt){
+        const pct=x/d.tgt*100, sm=semaforo(pct); semClass='s-'+sm;
+        objHtml='<span class="dot"></span><span class="cum-'+sm+'">'+Math.round(pct)+'% del objetivo</span> <span class="tgt">('+kpiFmt(d.key,d.tgt)+')</span>';
+      }
+      const noComp = noCompH && d.hs;
+      const dC=(cerr && !noComp)?deltaHtml(x,cerr[d.key]):null;
+      const cerrStr = dC ? dC+' vs. '+esc(cerr.label)+' <span class="muted">cerrado</span> <b>'+kpiFmt(d.key,cerr[d.key])+'</b>'
+        : noComp ? '<span class="muted" title="'+esc(cerr.label)+' no tiene equipo guardado: su base es horas contratadas, no comparable con las asignadas">'+esc(cerr.label)+' cerrado <b>'+kpiFmt(d.key,cerr[d.key])+'</b> · base hs. contratadas, no comparable</span>'
+        : '<span class="muted">sin mes cerrado para comparar</span>';
+      // mini-tendencia semana a semana (la del acumulado de la tabla vieja)
+      const serie=delMes.map((w,i)=>({sem:objSemNum(w), val:vivas[i]?vivas[i][d.key]:NaN})).filter(p=>isFinite(p.val));
+      let sparkStr='';
+      if(serie.length>=2){
+        const sp=sparkBars(serie, d.tgt||NaN).replace('var(--red)','var(--vivo)');   // la última semana en azul «en curso», no en rojo
+        if(sp) sparkStr='<div class="pte-spark" style="margin:0" title="'+esc(serie.map(p=>'Sem '+p.sem+': '+kpiFmt(d.key,p.val)).join(' · ')+(d.tgt?' · objetivo '+kpiFmt(d.key,d.tgt):''))+'">'+sp+'</div>';
+      }
+      return '<div class="kpi '+semClass+'"><div class="kpi-name">'+d.name+'<span class="pprov">prov</span></div>'
+        +'<div class="kpi-val">'+kpiFmt(d.key,x)+'</div><div class="kpi-unit">'+d.unit.split(' · ')[0]+' · '+acumTag+(d.hs?hsMes:'')+'</div>'
+        +'<div class="kpi-obj">'+objHtml+'</div>'
+        +'<div class="kpi-foot"><div class="kpi-delta">'+cerrStr+'</div><div class="kpi-rank">'+sparkStr+'</div></div></div>';
+    }).join('')+'</div>'
+    +'<p class="hint" style="margin:10px 0 0">Números provisorios: salen de la venta cargada por semana y de las horas asignadas al equipo'
+    +(noCompH?' (el mes cerrado no tiene equipo guardado y usa horas contratadas: tickets y venta por hora no son comparables del todo)':'')
+    +'. Cuando el ETL cierre '+esc(mesLbl)+', estos números pasan a la zona Cierre como dato oficial.</p>';
 
   // insight corto y operativo de la semana
   const box=$('diagSem');
