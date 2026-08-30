@@ -377,9 +377,11 @@ tr.team:hover td.td-lead{background:rgba(224,164,0,.18)}
   background:var(--card);color:var(--navy);cursor:pointer;white-space:nowrap;transition:all .12s}
 .rk-chip:hover{border-color:var(--navy-mid)}
 .rk-chip.on{background:var(--navy);color:#fff;border-color:var(--navy)}
-.rk-kpi{margin-top:22px}
-.rk-kpi.primary{background:var(--card);border:1px solid var(--border);border-top:3px solid var(--red);
+/* cada KPI del ranking en su propia área enmarcada (30/08, pedido de Juli): tarjeta
+   con borde superior navy; la Prioridad conserva su marco rojo y el badge */
+.rk-kpi{margin-top:22px;background:var(--card);border:1px solid var(--border);border-top:3px solid var(--navy);
   border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)}
+.rk-kpi.primary{border-top-color:var(--red)}
 .rk-kpi-h{font-family:var(--font-d);font-size:23px;letter-spacing:.02em;color:var(--navy);display:flex;align-items:baseline;gap:10px}
 .rk-kpi.primary .rk-kpi-h{color:var(--red)}
 .rk-kpi-tag{font-family:var(--font-c);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#fff;
@@ -408,7 +410,7 @@ tr.team:hover td.td-lead{background:rgba(224,164,0,.18)}
 .rk-row.lead .rk-nm{font-weight:700}
 .rk-nm{font-weight:600;color:var(--navy);font-size:14px;line-height:1.25}
 .rk-nm .rk-detail{display:block;font-weight:400;font-size:12px;color:var(--muted);font-family:var(--font-c)}
-.rk-val{font-family:var(--font-d);font-size:21px;color:var(--navy);text-align:right;line-height:1}
+.rk-val{font-family:'Saira',var(--font-c),sans-serif;font-style:italic;font-weight:800;font-size:19px;color:var(--navy);text-align:right;line-height:1}
 .rk-cmp{text-align:right;font-family:var(--font-c);font-size:14px}
 .rk-cmp .cum-ok{color:var(--ok)} .rk-cmp .cum-mid{color:var(--mid)} .rk-cmp .cum-bad{color:var(--bad)}
 .rk-cmp .base{display:block;font-size:11px;color:var(--muted-light);text-transform:uppercase;letter-spacing:.04em}
@@ -755,6 +757,25 @@ footer b{color:var(--navy)}
       <div class="diag" id="diagSem" style="display:none;margin-top:12px"></div>
     </section>
 
+    <!-- La venta semana a semana del MES EN CURSO (30/08): mismas barras que el Cierre,
+         con la venta provisoria por semana (ventaEquipo) y el % vs. la meta PMS.
+         La pinta renderSemViva (desde renderKpisSemana); sin 2 semanas con venta no aparece. -->
+    <section class="sec" id="secSemViva" style="display:none">
+      <div class="sec-label">Evolución</div>
+      <h2 class="sec-title">La venta <em>semana a semana</em> <span class="pprov">prov</span></h2>
+      <p class="hint">Cómo viene la venta del mes abierto, semana a semana (venta provisoria cargada), contra la meta PMS de cada semana.</p>
+      <div class="card pad" id="semVivaBox"></div>
+    </section>
+
+    <!-- Quién vende cada rubro del MES EN CURSO (30/08): mix por rubro acumulado de la
+         venta provisoria por vendedor (rubros de ventaEquipo). renderRubrosViva. -->
+    <section class="sec" id="secRubrosViva" style="display:none">
+      <div class="sec-label">Mix por rubro</div>
+      <h2 class="sec-title">Quién vende <em>cada rubro</em> <span class="pprov">prov</span></h2>
+      <p class="hint">Con la venta provisoria del mes: qué parte de la venta de cada rubro puso cada vendedor (participación) y qué % de su propia venta es ese rubro (mix). ★ = el que más participa del rubro.</p>
+      <div class="card pad" id="rubrosVivaBox"></div>
+    </section>
+
     <section class="sec" id="secF8" style="display:none">
       <div class="sec-label">Área de Producto</div>
       <h2 class="sec-title">F8 <em>para armar</em></h2>
@@ -967,6 +988,17 @@ footer b{color:var(--navy)}
       <div class="kpis" id="kpisSemCad"></div>
       <!-- insight corto agregado de la semana (E1, 30/08), lo pinta pintarKpisSemCad -->
       <div class="diag" id="diagSemCad" style="display:none;margin-top:12px"></div>
+    </section>
+
+    <!-- Ranking provisorio del MES EN CURSO (30/08, pedido de Juli): las sucursales de
+         la línea comparadas con el acumulado provisorio, un bloque enmarcado por KPI
+         (mismos rk-kpi del Cierre). Cada fila aclara cuántas semanas tiene cargadas.
+         Responde a los chips de Línea y de KPI. Lo pinta pintarRankingViva. -->
+    <section class="sec" id="secRankingViva" style="display:none">
+      <div class="sec-label">Gerencia</div>
+      <h2 class="sec-title" id="rankVivaTitle">Ranking <em>del mes en curso</em> <span class="pprov">prov</span></h2>
+      <p class="hint">Cada sucursal con su acumulado provisorio del mes abierto, contra el objetivo de <b>su formato</b>. Todo es provisorio y puede cubrir distinta cantidad de semanas: cada fila lo aclara. Tickets y venta por hora usan las horas asignadas de los equipos guardados. Enfocá un KPI con los chips de arriba.</p>
+      <div id="rankVivaBody"></div>
     </section>
 
     <!-- F8 para armar en modo CONTROL (30/08): quién está al día con los F8 que le
@@ -1620,8 +1652,9 @@ function pintarZonas(){
       b.setAttribute('aria-pressed', on?'true':'false');
       if(b.dataset.tab==='viva') b.style.display = hay?'':'none';
     });
-    // el filtro KPI solo filtra el ranking del Cierre: en la pestaña En curso no hace nada
-    if(cad){ const kg=$('rkKpiGrp'); if(kg) kg.style.display = tab==='cierre' ? 'flex' : 'none'; }
+    // el filtro KPI filtra el ranking de las DOS pestañas (Cierre y, desde el 30/08,
+    // el ranking provisorio del mes en curso): siempre visible en Cadena
+    if(cad){ const kg=$('rkKpiGrp'); if(kg) kg.style.display='flex'; }
   }
 }
 function actualizarFiltroBanner(){
@@ -1740,7 +1773,7 @@ async function render(){
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
   $('secCanales').style.display = ecom?'':'none';
-  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secF8','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
+  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secF8','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secSemViva','secRubrosViva'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
   const seg=document.querySelector('.seg'); if(seg) seg.style.display = ecom?'none':'flex';
   renderKPIs();
   renderDiagnostico();
@@ -1757,8 +1790,8 @@ async function render(){
 function mostrarEmpty(msg){
   // Objetivo / Reposición se muestran igual si hay slug (las pinta su propio render)
   const conSlug = !!slugActual();
-  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secF8','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secObjMesCierre']
-    .filter(id=>!(conSlug && /^(sec(Barrida|Objetivo)|kpisSemBox|puenteBox)/.test(id))).forEach(id=>$(id).style.display='none');
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secF8','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secObjMesCierre','secSemViva','secRubrosViva']
+    .filter(id=>!(conSlug && /^(sec(Barrida|Objetivo|SemViva|RubrosViva)|kpisSemBox|puenteBox)/.test(id))).forEach(id=>$(id).style.display='none');
   pintarZonas();
   $('cobNota').style.display='none';
   $('diagBox').style.display='none';
@@ -2571,7 +2604,7 @@ async function cargarMesCad(sem, weeks, todas){
 }
 function pintarPuenteCad(){
   const box=$('puenteBoxCad'); if(!box) return;
-  const off=()=>{ box.style.display='none'; box.innerHTML=''; };
+  const off=()=>{ box.style.display='none'; box.innerHTML=''; pintarRankingViva(); };
   const d=_mesCadData;
   if(!vistaCadena || !d){ off(); return; }
   if(_zonaMes && d.mes!==_zonaMes){ off(); return; }   // cambió el mes elegido: no pintar el acumulado viejo
@@ -2633,10 +2666,61 @@ function pintarPuenteCad(){
     +'<p class="hint">El acumulado de las semanas publicadas de '+esc(mesLbl)+', sumando numerador y denominador de las sucursales de la línea, contra el último cierre'+(rkTipo?' y el objetivo de la línea':'')+'. En tickets y venta por hora entran solo las semanas con equipos guardados.</p>'
     +'<div class="kpis">'+cards+'</div>';
   box.style.display='';
+  pintarRankingViva();
+}
+/* --- Ranking provisorio del MES EN CURSO en Cadena (30/08, pedido de Juli): cada KPI
+   en su bloque enmarcado (mismos .rk-kpi del Cierre), con las sucursales de la línea
+   ordenadas por su acumulado provisorio y el % vs. el objetivo de SU formato. Cada
+   fila aclara cuántas semanas tiene cargadas (pueden diferir). Usa _mesCadData y
+   responde a los chips de Línea y de KPI. Ecommerce no rankea (sin horas de piso). --- */
+function pintarRankingViva(){
+  const sec=$('secRankingViva'), body=$('rankVivaBody'); if(!sec||!body) return;
+  const d=_mesCadData;
+  if(!vistaCadena || !d || (_zonaMes && d.mes!==_zonaMes)){ sec.style.display='none'; return; }
+  const por={};
+  d.filas.forEach(f=>{
+    const full=SLUG_SUC[f.slug]||OUTLET_SUC[f.slug]; if(!full || full===ECOM) return;
+    const fmt=f.fmt||formatoDe(full);
+    if(rkTipo && fmt!==rkTipo) return;
+    const o=por[f.slug]||(por[f.slug]={slug:f.slug, nombre:full.replace(/^\d+-\s*/,''), fmt, tk:0,un:0,vt:0,h:0,htk:0,hvt:0,nsem:0});
+    o.tk+=f.tk; o.un+=f.un; o.vt+=f.vt; o.nsem++;
+    if(f.horas>0){ o.h+=f.horas; o.htk+=f.tk; o.hvt+=f.vt; }
+  });
+  const rows=Object.values(por).filter(o=>o.tk>0).map(o=>({...o,
+    upt:o.tk?o.un/o.tk:NaN, tp:o.tk?o.vt/o.tk:NaN,
+    tph:o.h?o.htk/o.h:NaN, vh:o.h?o.hvt/o.h:NaN}));
+  if(rows.length<2){ sec.style.display='none'; return; }
+  const tit=$('rankVivaTitle'); if(tit) tit.innerHTML=(rkTipo
+    ? 'Ranking del mes en curso · <em>'+esc(fmtLabel(rkTipo))+'</em>'
+    : 'Ranking <em>del mes en curso</em>')+' <span class="pprov">prov</span>';
+  const kpisDef = rkKpiSel==='todos' ? RK_KPIS : RK_KPIS.filter(x=>x.k===rkKpiSel);
+  body.innerHTML = kpisDef.map(kpi=>{
+    const rs=rows.filter(r=>isFinite(r[kpi.k])&&r[kpi.k]>0).sort((a,b)=>b[kpi.k]-a[kpi.k]);
+    if(!rs.length) return '';
+    const max=rs[0][kpi.k]||1;
+    const filas=rs.map((r,i)=>{
+      const tgt=kpi.obj?(OBJ[r.fmt]||{})[kpi.obj]:null;
+      const pctO=tgt?r[kpi.k]/tgt*100:null;
+      const bar='<div style="height:6px;background:#e8ecf5;border-radius:4px;overflow:hidden;margin-top:5px;max-width:220px"><i style="display:block;height:100%;width:'+Math.max(4,Math.round(r[kpi.k]/max*100))+'%;background:'+(pctO==null?'var(--vivo)':pctO>=100?'var(--ok,#16a34a)':pctO>=85?'#d97706':'#dc2626')+'"></i></div>';
+      const det=r.nsem+' sem cargada'+(r.nsem===1?'':'s')+(( kpi.k==='tph'||kpi.k==='vh') && r.h?' · '+fmtN(Math.round(r.h))+' h asignadas':'');
+      return '<div class="rk-row'+(i===0?' lead':'')+'"><div class="rk-pos">'+(i+1)+'</div>'
+        +'<div class="rk-nm">'+esc(r.nombre)+'<span class="rk-detail">'+det+'</span>'+bar+'</div>'
+        +'<div class="rk-val">'+kpi.fmt(r[kpi.k])+'</div>'
+        +'<div class="rk-cmp">'+(pctO!=null?'<span class="cum-'+semaforo(pctO)+'">'+Math.round(pctO)+'% obj</span>':'<span class="muted">sin obj.</span>')+'</div></div>';
+    }).join('');
+    const sinDato=rows.length-rs.length;
+    return '<div class="rk-kpi'+(kpi.primary?' primary':'')+'">'
+      +'<div class="rk-kpi-h">'+esc(kpi.label)+(kpi.primary?'<span class="rk-kpi-tag">Prioridad</span>':'')+'<span class="pprov">prov</span></div>'
+      +'<div class="rk-kpi-sub">'+esc(kpi.sub)+' Acumulado provisorio del mes abierto.</div>'
+      +filas
+      +(sinDato?'<p class="hint" style="margin:8px 0 0">'+sinDato+' sucursal'+(sinDato===1?'':'es')+' sin dato para este KPI'+((kpi.k==='tph'||kpi.k==='vh')?' (sin equipo con horas guardado)':'')+'.</p>':'')
+      +'</div>';
+  }).join('') || '<p class="muted" style="padding:12px 0">Sin datos provisorios para este KPI.</p>';
+  sec.style.display='';
 }
 async function renderObjCadena(){
   const sec=$('secObjCadena'), secMes=$('secObjMesCadena'); if(!sec) return;
-  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; const kb=$('kpisSemCadBox'); if(kb) kb.style.display='none'; const pb=$('puenteBoxCad'); if(pb) pb.style.display='none'; const ld=$('vivaLoadCad'); if(ld) ld.style.display='none'; pintarZonas(); };
+  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; ['kpisSemCadBox','puenteBoxCad','secRankingViva'].forEach(id=>{ const x=$(id); if(x) x.style.display='none'; }); const ld=$('vivaLoadCad'); if(ld) ld.style.display='none'; pintarZonas(); };
   if(!OBJETIVOS_URL || !esGerencia){ ocultar(); return; }
   if(!$('objCadCard').innerHTML){
     $('objCadCard').innerHTML='<p class="empty" style="margin:6px 0">Cargando objetivo…</p>';
@@ -4364,6 +4448,86 @@ function ritmoHtml(r){
     +'<span>⏱</span><span>Ritmo: al cierre del <b>'+(DOW_NOMBRE[r.ult]||r.ult)+'</b> ('+r.ndias+' día'+(r.ndias===1?'':'s')+') lo esperado era el <b>'+Math.round(r.share*100)+'%</b> de la meta ('+objMoney(Math.round(r.esperado))+') · '
     +'vas <b>'+signo+objMoney(Math.abs(Math.round(r.dif)))+'</b> '+(r.dif>=0?'arriba':'abajo')+' (<b>'+p+'%</b> del ritmo)</span></div>';
 }
+/* --- «La venta semana a semana» del MES EN CURSO (30/08, pedido de Juli: las
+   secciones del análisis también para el mes vigente, en tanto haya datos). Mismas
+   barras que el Cierre pero con la venta provisoria por semana (ventaEquipo) y el %
+   vs. la meta PMS (misma cache metaSemana: acá el lunes ES la clave de la semana). --- */
+function renderSemViva(slug, delMes, semsMes){
+  const sec=$('secSemViva'), box=$('semVivaBox'); if(!sec||!box) return;
+  const dd=x=>String(x.getUTCDate()).padStart(2,'0')+'/'+String(x.getUTCMonth()+1).padStart(2,'0');
+  const semanas=delMes.map((w,i)=>{
+    const t=veTotales(semsMes[i]&&semsMes[i].ve);
+    if(!t || !((+t.venta||0)>0)) return null;
+    const p=w.split('-').map(Number), d0=new Date(Date.UTC(p[0],p[1]-1,p[2])), d1=new Date(d0.getTime()+6*86400000);
+    return {w, n:objSemNum(w), rango:dd(d0)+'–'+dd(d1), venta:+t.venta||0, tickets:+t.tickets||0, unidades:+t.unidades||0};
+  }).filter(Boolean);
+  if(semanas.length<2){ sec.style.display='none'; return; }
+  const metaDe=s=> OBJETIVOS_URL ? metaSemana('suc|'+slug+'|'+s.w,
+    ()=>fetchObjetivoData(slug,s.w).then(v=>v&&+v.meta),
+    ()=>{ if(!vistaCadena && slugActual()===slug) renderSemViva(slug, delMes, semsMes); }) : null;
+  const pctDe=s=>{ const m=metaDe(s); return (typeof m==='number'&&m)?s.venta/m*100:null; };
+  const totV=semanas.reduce((a,s)=>a+s.venta,0), maxV=Math.max(...semanas.map(s=>s.venta))||1;
+  const peak=semanas.reduce((a,b)=>b.venta>a.venta?b:a);
+  const W=760,H=200,P={t:24,b:46}, n=semanas.length, bw=W/n, Y=v=>H-P.b-(v/maxV)*(H-P.t-P.b);
+  const bars=semanas.map((s,i)=>{ const x=i*bw, yy=Y(s.venta), pct=pctDe(s);
+    const pctTxt=(pct!=null && (H-P.b-yy)>=28)
+      ? `<text x="${(x+bw/2).toFixed(1)}" y="${(yy+18).toFixed(1)}" text-anchor="middle" font-family="Barlow Condensed" font-weight="700" font-size="13" fill="${s===peak?'#fff':'var(--navy)'}" style="pointer-events:none">${Math.round(pct)}%</text>` : '';
+    return `<g><rect x="${(x+bw*0.16).toFixed(1)}" y="${yy.toFixed(1)}" width="${(bw*0.68).toFixed(1)}" height="${(H-P.b-yy).toFixed(1)}" rx="4" fill="${s===peak?'var(--vivo)':'#c3cfe8'}"><title>Sem ${s.n} · ${esc(s.rango)} · ${kM(s.venta)} · ${fmtN(s.tickets)} tickets${pct!=null?' · '+Math.round(pct)+'% de la meta PMS':''} · provisorio</title></rect>${pctTxt}
+      <text x="${(x+bw/2).toFixed(1)}" y="${(yy-7).toFixed(1)}" text-anchor="middle" font-family="Bebas Neue" font-size="16" fill="var(--navy)">${kM(s.venta)}</text>
+      <text x="${(x+bw/2).toFixed(1)}" y="${H-P.b+17}" text-anchor="middle" font-family="Barlow Condensed" font-size="12" font-weight="600" fill="var(--navy)">Sem ${s.n}</text>
+      <text x="${(x+bw/2).toFixed(1)}" y="${H-P.b+32}" text-anchor="middle" font-family="Barlow Condensed" font-size="10.5" fill="var(--muted)">${esc(s.rango)}</text></g>`;
+  }).join('');
+  const hayMeta=semanas.some(s=>pctDe(s)!=null);
+  const tabla=`<div class="tbl-wrap" style="margin-top:14px"><table style="min-width:0">
+    <thead><tr><th class="L">Semana</th><th>Tickets</th><th>UPT</th><th>Ticket prom.</th><th>Venta<span class="pprov">prov</span></th>${hayMeta?'<th title="Venta de la semana contra la META publicada en Objetivos (PMS semanal)">% de la meta</th>':''}<th>% del mes</th></tr></thead><tbody>`+
+    semanas.map(s=>{ const upt=s.tickets?s.unidades/s.tickets:0, tp=s.tickets?s.venta/s.tickets:0, pc=totV?s.venta/totV*100:0;
+      return `<tr><td class="L">Sem ${s.n} <span class="muted" style="font-size:12px">${esc(s.rango)}</span></td>
+        <td>${s.tickets?'<span class="num">'+fmtN(s.tickets)+'</span>':'<span class="muted">—</span>'}</td>
+        <td>${upt?'<span class="num">'+fmt2(upt)+'</span>':'<span class="muted">—</span>'}</td>
+        <td>${tp?'<span class="num">'+fmtM(tp)+'</span>':'<span class="muted">—</span>'}</td>
+        <td><span class="num">${kM(s.venta)}</span></td>
+        ${hayMeta?'<td>'+metaPctCell(pctDe(s))+'</td>':''}
+        <td class="muted">${fmt2(pc)}%</td></tr>`; }).join('')+`</tbody></table></div>`;
+  box.innerHTML = `<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:520px;height:auto" role="img" aria-label="Venta provisoria por semana del mes en curso">${bars}</svg></div>`
+    + tabla
+    + '<p class="hint" style="margin:10px 0 0">Venta provisoria cargada por semana (la última puede estar incompleta). El dato oficial de cada semana llega con el cierre del mes.</p>';
+  sec.style.display='';
+}
+/* --- «Quién vende cada rubro» del MES EN CURSO (30/08): mix por rubro acumulado de
+   la venta provisoria por vendedor (los `rubros` que guarda ventaEquipo). --- */
+function renderRubrosViva(semsMes){
+  const sec=$('secRubrosViva'), box=$('rubrosVivaBox'); if(!sec||!box) return;
+  const porV={}, totR={};
+  semsMes.forEach(s=>(((s.ve&&s.ve.vendedores)||[])).forEach(x=>{
+    const rb=x.rubros; if(!rb || typeof rb!=='object') return;
+    const key=eqNorm(String(x.nombre||'')); if(!key) return;
+    const o=porV[key]||(porV[key]={nombre:x.nombre, rubros:{}, tot:0});
+    Object.keys(rb).forEach(r=>{ const v=+rb[r]||0; if(v<=0) return;
+      o.rubros[r]=(o.rubros[r]||0)+v; o.tot+=v; totR[r]=(totR[r]||0)+v; });
+  }));
+  const cols=['CALZADO','INDUMENTARIA','ACCESORIOS'].filter(r=>totR[r]>0);
+  const vends=Object.values(porV).filter(o=>o.tot>0).sort((a,b)=>b.tot-a.tot);
+  if(!cols.length || vends.length<2){ sec.style.display='none'; return; }
+  const lead={}; cols.forEach(r=>{ lead[r]=Math.max(...vends.map(o=>o.rubros[r]||0)); });
+  const totAll=cols.reduce((a,r)=>a+totR[r],0);
+  const trs=vends.map(o=>{
+    const cel=cols.map(r=>{ const v=o.rubros[r]||0;
+      if(!v) return '<td><span class="muted">—</span></td>';
+      const part=totR[r]?v/totR[r]*100:0, mix=o.tot?v/o.tot*100:0, ld=(v===lead[r]);
+      return '<td'+(ld?' class="td-lead"':'')+'>'+(ld?'<span class="lead-star">★</span>':'')
+        +'<b>'+Math.round(part)+'%</b> <span class="muted" style="font-size:11px">del rubro</span>'
+        +'<div class="pte-sub">'+Math.round(mix)+'% de su venta</div></td>';
+    }).join('');
+    return '<tr><td class="L">'+esc(titleCase(o.nombre))+'</td>'+cel+'<td style="text-align:right"><span class="num">'+kM(o.tot)+'</span></td></tr>';
+  }).join('');
+  const foot='<tr style="font-weight:700;border-top:2px solid var(--line,#dce3f0)"><td class="L">Mix de la sucursal</td>'
+    +cols.map(r=>'<td><b>'+Math.round(totAll?totR[r]/totAll*100:0)+'%</b> <span class="muted" style="font-size:11px">de la venta</span></td>').join('')
+    +'<td style="text-align:right"><span class="num">'+kM(totAll)+'</span></td></tr>';
+  box.innerHTML='<div class="tbl-wrap"><table style="min-width:620px"><thead><tr><th class="L">Vendedor</th>'
+    +cols.map(r=>'<th>'+esc(titleCase(r))+'</th>').join('')+'<th>Venta rubros<span class="pprov">prov</span></th></tr></thead><tbody>'+trs+foot+'</tbody></table></div>'
+    +'<p class="hint" style="margin:8px 0 0">Acumulado de las semanas publicadas del mes con la venta provisoria (solo los rubros de producto). El mix oficial con referentes y sugerencias de mentoreo llega con el cierre.</p>';
+  sec.style.display='';
+}
 let _kpisSemToken=0;
 let _pteEqOpen=false;   // cómo dejó el usuario el desplegable «Cómo viene el equipo» del mes en esta visita
 async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem, ritmo){
@@ -4372,6 +4536,7 @@ async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem
   // sección queda con su empty state (no desaparece: es la cara de la pestaña).
   const kbox=$('kpisSemBox'), pte=$('puenteBox'); if(!kbox) return;
   const kpisVacios=msg=>{ if(pte) pte.style.display='none'; const dg=$('diagSem'); if(dg) dg.style.display='none';
+    ['secSemViva','secRubrosViva'].forEach(id=>{ const x=$(id); if(x) x.style.display='none'; });
     $('kpisSem').innerHTML='<div class="empty" style="grid-column:1/-1">'+msg+'</div>';
     kbox.style.display=''; pintarZonas(); };
   const token=++_kpisSemToken, target=sucName;
@@ -4507,6 +4672,9 @@ async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem
     +'. Cuando el ETL cierre '+esc(mesLbl)+', estos números pasan a la zona Cierre como dato oficial.</p>'
     +puenteEqHtml;
   const pteDet=$('pteEqDet'); if(pteDet) pteDet.ontoggle=()=>{ _pteEqOpen=pteDet.open; };
+  // secciones del mes en curso que salen de la misma data (venta provisoria por semana)
+  renderSemViva(slug, delMes, semsMes);
+  renderRubrosViva(semsMes);
 
   // insight corto y operativo de la semana
   const box=$('diagSem');
@@ -4541,7 +4709,7 @@ async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem
 
 async function renderObjetivo(){
   const sec=$('secObjetivo'), secMes=$('secObjetivoMes'); if(!sec) return;
-  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; ['kpisSemBox','puenteBox','diagSem'].forEach(id=>{ const x=$(id); if(x) x.style.display='none'; }); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); };
+  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; ['kpisSemBox','puenteBox','diagSem','secSemViva','secRubrosViva'].forEach(id=>{ const x=$(id); if(x) x.style.display='none'; }); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); };
   if(!OBJETIVOS_URL){ ocultar(); return; }
   const slug = slugActual();
   if(!slug){ ocultar(); return; }
@@ -6072,7 +6240,7 @@ function renderRankChips(){
   const kchips = `<button class="rk-chip${rkKpiSel==='todos'?' on':''}" data-k="todos">Todos</button>`
     + RK_KPIS.map(k=>`<button class="rk-chip${rkKpiSel===k.k?' on':''}" data-k="${k.k}">${esc(k.short)}</button>`).join('');
   $('rkKpiChips').innerHTML = kchips;
-  $('rkKpiChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkKpiSel=b.dataset.k; renderRanking(); });
+  $('rkKpiChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkKpiSel=b.dataset.k; renderRankChips(); renderRanking(); pintarRankingViva(); });
 }
 function rkRow(r, i, kpi, avg, best){
   const v=r.k[kpi.k], dif=(isFinite(avg)&&avg)?((v/avg-1)*100):NaN;

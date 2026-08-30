@@ -266,6 +266,20 @@ KPI más flojo). «La venta semana a semana» (las dos vistas) muestra el **% vs
 meta PMS semanal** adentro de cada barra y como columna (`semLunesISO`/`metaSemana`:
 lunes desde el rango del ETL + metas de `objetivos/semanas`, cache async). Los F8 de
 «F8 para armar» arrancan **cerrados** (sin `open`).
+**Análisis del mes EN CURSO (30/08 tarde, pedido de Juli — siempre que haya venta
+provisoria cargada):** la zona viva de sucursal suma **«La venta semana a semana»
+prov** (`secSemViva`/`renderSemViva`: barras por semana del mes abierto con el % vs.
+la meta PMS; pico en azul `--vivo`, ≥2 semanas con venta) y **«Quién vende cada rubro»
+prov** (`secRubrosViva`/`renderRubrosViva`: participación+mix acumulados desde los
+`rubros` de ventaEquipo; solo CALZADO/INDUMENTARIA/ACCESORIOS). Cobertura, heatmap y
+plantilla NO tienen versión viva (no hay dato horario ni dotación hasta el ETL). La
+zona viva de Cadena suma el **«Ranking del mes en curso» prov**
+(`secRankingViva`/`pintarRankingViva`: un bloque `.rk-kpi` enmarcado por KPI con las
+sucursales de la línea, % vs. el objetivo de su formato y **cuántas semanas cargadas
+tiene cada una**; usa `_mesCadData`, Ecommerce no rankea); por eso los **chips de KPI
+se ven en las dos pestañas** de Cadena (filtran ambos rankings). Estética del ranking
+del Cierre: **todos los bloques `.rk-kpi` enmarcados** (borde superior navy; Prioridad
+rojo) y los valores `.rk-val` en tipografía «rendimiento» (Saira itálica 800).
 **Indicadores de la semana** (`renderKpisSemana`; sección `#kpisSemBox` que desde el
 30/08 va **pegada debajo de «Objetivo de la semana»** como continuación — clase
 `.sec-cont`, título chico, sin label «Resumen»; lo mismo `#kpisSemCadBox` en Cadena.
