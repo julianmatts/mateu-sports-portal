@@ -353,6 +353,10 @@ tr:last-child td{border-bottom:none}
 .bgrupo>summary b{font-family:var(--font-d);font-size:20px;font-weight:400;letter-spacing:.5px}
 .bgrupo .tbl-wrap{border:0;border-top:1px solid var(--border);border-radius:0}
 .bgrupo table{min-width:640px}
+/* detalle por sucursal: columnas ordenables por clic */
+th[data-col]{cursor:pointer;user-select:none}
+th[data-col]:hover{color:var(--red)}
+th[data-col] .th-dir{margin-left:3px;color:var(--red);font-size:11px}
 /* tabla cadena: destacados */
 td.td-lead{background:rgba(224,164,0,.12)}
 td.td-lead .num{font-weight:700}
@@ -2145,14 +2149,14 @@ async function objMesCadenaHtml(sem, weeks){
     const trsM=ord.map(r=>{
       const p=r.meta?r.real/r.meta:0;
       const c = !r.real ? 'var(--mid)' : r.real>=r.meta ? 'var(--ok,#16a34a)' : r.real>=r.minimo ? '#d97706' : '#dc2626';
-      return '<tr><td class="L">'+esc(r.nombre)+'</td>'
+      return '<tr data-nombre="'+esc(r.nombre)+'" data-meta="'+r.meta+'"'+(r.real?' data-real="'+r.real+'" data-pct="'+p+'"':'')+'><td class="L">'+esc(r.nombre)+'</td>'
         +'<td><span class="num">'+objMoney(r.meta)+'</span></td>'
         +'<td><span class="num">'+(r.real?objMoney(r.real):'—')+'</span>'+(r.prov?'<span class="pprov" style="margin-left:4px" title="Avance parcial del mes: suma del real oficial y la venta provisoria de las semanas ya cargadas ('+r.nSem+' sem)">'+r.nSem+' sem</span>':'')+'</td>'
         +'<td><b style="color:'+c+'">'+(r.real?Math.round(p*100)+'%':'—')+'</b></td></tr>';
     }).join('');
     h+='<details class="bgrupo" id="objMesCadDet" style="margin:12px 0 0"'+(_objMesCadOpen?' open':'')+'>'
       +'<summary>Detalle por sucursal · '+filas.length+'</summary>'
-      +'<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L">Sucursal</th><th>Meta</th><th>Real</th><th>%</th></tr></thead><tbody>'+trsM+'</tbody></table></div>'
+      +'<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L" data-col="nombre">Sucursal</th><th data-col="meta">Meta</th><th data-col="real">Real</th><th data-col="pct">%</th></tr></thead><tbody>'+trsM+'</tbody></table></div>'
       +'</details>';
   }
   h+='</div>';
@@ -2162,6 +2166,39 @@ async function objMesCadenaHtml(sem, weeks){
 let objCadSem = null;              // semana elegida en la vista cadena (lunesISO); null = la última
 let _objCadOpen = true;            // desplegable «Detalle por sucursal» del objetivo semanal (abierto por defecto)
 let _objMesCadOpen = false;        // ídem del objetivo del mes (arranca comprimido)
+const _objCadSort = {col:null, dir:-1};    // orden elegido en la tabla semanal (null = el default: % de cumplimiento)
+const _objMesCadSort = {col:null, dir:-1}; // ídem en la tabla del mes
+/* Ordenar por columna las tablas de detalle por sucursal: los th con data-col se
+   clickean (numéricas arrancan de mayor a menor, Sucursal alfabético; segundo clic
+   invierte); los valores van en data-* de cada tr y las filas sin dato quedan al
+   final. Se llama tras cada repintado para re-aplicar el orden elegido. */
+function tablaOrdenable(det, estado){
+  if(!det) return;
+  const ths=[...det.querySelectorAll('thead th[data-col]')];
+  const marcar=()=>ths.forEach(t=>{ let m=t.querySelector('.th-dir');
+    if(!m){ m=document.createElement('span'); m.className='th-dir'; t.appendChild(m); }
+    m.textContent = t.dataset.col===estado.col ? (estado.dir>0?'↑':'↓') : ''; });
+  const aplicar=()=>{
+    if(!estado.col) return marcar();
+    const tb=det.querySelector('tbody'); if(!tb) return;
+    const filas=[...tb.children];
+    filas.sort((a,b)=>{
+      if(estado.col==='nombre') return estado.dir*String(a.dataset.nombre||'').localeCompare(String(b.dataset.nombre||''));
+      const va=parseFloat(a.dataset[estado.col]), vb=parseFloat(b.dataset[estado.col]);
+      const ha=isFinite(va), hb=isFinite(vb);
+      if(ha!==hb) return ha?-1:1;
+      return ha ? estado.dir*(va-vb) : String(a.dataset.nombre||'').localeCompare(String(b.dataset.nombre||''));
+    });
+    filas.forEach(f=>tb.appendChild(f));
+    marcar();
+  };
+  ths.forEach(t=>{ t.onclick=()=>{
+    if(estado.col===t.dataset.col) estado.dir=-estado.dir;
+    else { estado.col=t.dataset.col; estado.dir = t.dataset.col==='nombre' ? 1 : -1; }
+    aplicar();
+  }; if(!/ordenar/.test(t.title)) t.title=(t.title?t.title+' · ':'')+'Clic para ordenar por esta columna'; });
+  aplicar();
+}
 let _objCadToken = 0;              // corta pasadas viejas si el usuario cambió de semana/vista
 let _objCadDetalle = false;        // false = pasada 1 (sin Ritmo/Tickets-h todavía)
 async function renderObjCadena(){
@@ -2333,7 +2370,13 @@ async function renderObjCadena(){
       const c = !r.real ? 'var(--mid)' : r.real>=r.meta ? 'var(--ok,#16a34a)' : r.real>=r.minimo ? '#d97706' : '#dc2626';
       const kc=(val,ref,fmtF)=> !isFinite(val) ? '<td><span class="muted">—</span></td>'
         : '<td><span class="num">'+fmtF(val)+'</span>'+((isFinite(ref)&&ref)?'<div class="pte-sub">'+(deltaHtml(val,ref)||'')+'</div>':'')+'</td>';
-      return '<tr><td class="L">'+esc(r.nombre)+'</td>'
+      // valores para ordenar por columna (tablaOrdenable); sin dato = sin atributo → al final
+      const dat=' data-nombre="'+esc(r.nombre)+'" data-meta="'+r.meta+'"'
+        +(r.real?' data-real="'+r.real+'" data-pct="'+p+'"':'')
+        +(r.ritmo&&!r.ritmo.completa?' data-ritmo="'+r.ritmo.idx+'"':'')
+        +(isFinite(r.upt)?' data-upt="'+r.upt+'"':'')+(isFinite(r.tp)?' data-tp="'+r.tp+'"':'')
+        +(r.tph?' data-tph="'+r.tph+'"':'');
+      return '<tr'+dat+'><td class="L">'+esc(r.nombre)+'</td>'
         +'<td><span class="num">'+objMoney(r.meta)+'</span></td>'
         +'<td><span class="num">'+(r.real?objMoney(r.real):'—')+(r.prov?'<span class="pprov" style="margin-left:4px" title="Venta provisoria de la semana (ventaEquipo), no el real oficial">prov</span>':'')+'</span></td>'
         +'<td><b style="color:'+c+'">'+(r.real?Math.round(p*100)+'%':'—')+'</b></td>'
@@ -2348,11 +2391,11 @@ async function renderObjCadena(){
     // detalle por sucursal: desplegable (recuerda cómo lo dejó el usuario en la visita)
     html+='<details class="bgrupo" id="objCadDet" style="margin:2px 0 0"'+(_objCadOpen?' open':'')+'>'
       +'<summary>Detalle por sucursal · '+rows.length+'</summary>'
-      +'<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L">Sucursal</th><th>Meta</th><th>Real</th><th>%</th>'
-      +(hayR?'<th title="Venta vs. lo esperado a esta altura de la semana según la curva de venta por día de cada sucursal">Ritmo<span class="pprov">prov</span></th>':'')
-      +'<th title="Unidades por ticket de la semana (venta cargada) · % vs. el mes cerrado">UPT sem.<span class="pprov">prov</span></th>'
-      +'<th title="Ticket promedio de la semana (venta cargada) · % vs. el mes cerrado">Ticket prom. sem.<span class="pprov">prov</span></th>'
-      +(hayH?'<th title="Tickets por hora asignada del equipo de la semana (o del último equipo guardado)'+(hbase==='h_act'?' · % vs. el mes cerrado con horas asignadas':'')+'">Tickets/h sem.<span class="pprov">prov</span></th>':'')
+      +'<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L" data-col="nombre">Sucursal</th><th data-col="meta">Meta</th><th data-col="real">Real</th><th data-col="pct">%</th>'
+      +(hayR?'<th data-col="ritmo" title="Venta vs. lo esperado a esta altura de la semana según la curva de venta por día de cada sucursal">Ritmo<span class="pprov">prov</span></th>':'')
+      +'<th data-col="upt" title="Unidades por ticket de la semana (venta cargada) · % vs. el mes cerrado">UPT sem.<span class="pprov">prov</span></th>'
+      +'<th data-col="tp" title="Ticket promedio de la semana (venta cargada) · % vs. el mes cerrado">Ticket prom. sem.<span class="pprov">prov</span></th>'
+      +(hayH?'<th data-col="tph" title="Tickets por hora asignada del equipo de la semana (o del último equipo guardado)'+(hbase==='h_act'?' · % vs. el mes cerrado con horas asignadas':'')+'">Tickets/h sem.<span class="pprov">prov</span></th>':'')
       +'</tr></thead><tbody>'+trs+'</tbody></table></div>'
       +((hayProv||hayK)?'<div style="padding:2px 15px 12px"><p class="hint" style="margin-top:8px">«prov» = dato de la semana en curso cargado desde «Cargar venta de la semana» (o por el encargado). El real oficial se completa desde el HISTÓRICO del Excel PMS en el módulo Objetivos. <b>Ritmo</b> = venta vs. lo esperado a esta altura de la semana (curva por día de cada sucursal). UPT, ticket promedio'+(hbase==='h_act'?' y tickets por hora':'')+' de la semana llevan debajo el % contra '+esc(perLabel(per))+' (cierre)'+(hbase!=='h_act'?'; tickets por hora no se compara con el cierre en base horas contratadas':'')+'.</p></div>':'')
       +'</details>';
@@ -2367,6 +2410,7 @@ async function renderObjCadena(){
   const dS=$('objCadDet'); if(dS) dS.ontoggle=()=>{ _objCadOpen=dS.open; };
   // mesHtml se calcula una sola vez por render: al repintar (pasada 2) se fuerza el estado vigente
   const dM=$('objMesCadDet'); if(dM){ dM.open=_objMesCadOpen; dM.ontoggle=()=>{ _objMesCadOpen=dM.open; }; }
+  tablaOrdenable(dS, _objCadSort); tablaOrdenable(dM, _objMesCadSort);
   sec.style.display='';
   const ldc=$('vivaLoadCad'); if(ldc) ldc.style.display='none';
   pintarZonas();
