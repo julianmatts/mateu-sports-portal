@@ -915,6 +915,8 @@ footer b{color:var(--navy)}
       <h2 class="sec-title" id="objMesCadTitle">Objetivo <em>del mes</em></h2>
       <p class="hint">La meta mensual de todas las sucursales juntas (respeta el filtro por línea). Mientras el mes está abierto, el avance suma las semanas ya publicadas.</p>
       <div class="card pad" id="objMesCadCard"></div>
+      <!-- indicadores del mes en curso agregados (mismas tarjetas que Mi Sucursal), pintado por pintarPuenteCad -->
+      <div id="puenteBoxCad" style="display:none"></div>
     </section>
 
     <section class="sec" id="secObjCadena" style="display:none">
@@ -933,6 +935,16 @@ footer b{color:var(--navy)}
       <h2 class="sec-title" id="kpisSemCadTitle" style="font-size:22px">Indicadores <em>de la semana</em></h2>
       <p class="hint">Los cuatro indicadores de la semana elegida, de todas las sucursales juntas (se suman numerador y denominador, nunca se promedian ratios; respeta el filtro por línea): con la venta provisoria cargada y las horas asignadas de los equipos, contra el último mes cerrado.</p>
       <div class="kpis" id="kpisSemCad"></div>
+    </section>
+
+    <!-- F8 para armar en modo CONTROL (30/08): quién está al día con los F8 que le
+         repartió el Área de Producto y quién los tiene sin confirmar. Respeta el
+         filtro por línea. Lo pinta pintarF8Cad. -->
+    <section class="sec" id="secF8Cad" style="display:none">
+      <div class="sec-label">Área de Producto</div>
+      <h2 class="sec-title" id="f8CadTitle">F8 para armar <em>· control</em></h2>
+      <p class="hint">Quién está al día con los F8 repartidos y quién los tiene <b>sin confirmar</b> (la confirmación artículo por artículo la hace cada sucursal en Mi Sucursal o en el Buscador de Artículos). El circuito completo — cruce con transferencias, justificados y críticos — vive en <b>Área de Producto → Control F8</b>.</p>
+      <div class="card pad" id="f8CadCard"></div>
     </section>
     </div><!-- /zonaVivaCad -->
 
@@ -1631,6 +1643,7 @@ async function render(){
     const pcc=$('printCtxCad'); if(pcc) pcc.textContent='Panel General · todas las sucursales · cierre '+perLabel(per);
     pintarZonas();
     renderObjCadena();   // async: Firebase; pinta cuando llega
+    renderF8Cad();       // async: control del circuito F8 (Firebase equipo/f8suc)
     renderKpisCadena();
     renderSemCad();
     renderRanking();
@@ -2382,9 +2395,99 @@ function pintarKpisSemCad(o){
    +card('Venta por hora', o.H.h?o.H.vt/o.H.h:NaN, fmtM, hUnit, compH?o.KC.vt/o.KC.h:NaN, hFoot);
   pintarZonas();
 }
+/* --- «Indicadores del mes en curso» de la vista Cadena (30/08): el acumulado de las
+   semanas publicadas del mes abierto, agregado a la línea filtrada (numeradores y
+   denominadores sumados), con las mismas tarjetas que Mi Sucursal. Baja ventaEquipo
+   + equipo vigente de cada sucursal por semana (cacheado por promesa, solo gerencia)
+   en una pasada de fondo; los chips de línea repintan desde el cache. SIN el
+   desplegable de equipo: eso es análisis de UNA sucursal (vista sucursal). --- */
+let _mesCadToken=0, _mesCadData=null;   // {mes, delMes, filas:[{slug,fmt,w,tk,un,vt,horas}]}
+async function cargarMesCad(sem, weeks, todas){
+  const mesISO=_zonaMes||String(sem).slice(0,7);
+  if(_mesCadData && _mesCadData.mes===mesISO){ pintarPuenteCad(); return; }
+  const token=++_mesCadToken;
+  const delMes=weeks.filter(w=>String(w).slice(0,7)===mesISO).sort();
+  const filas=[];
+  await Promise.all(delMes.map(w=>Promise.all(todas.map(async r=>{
+    try{
+      const [ve,vig]=await Promise.all([fetchVentaEquipo(r.slug,w), equipoVigente(r.slug,w)]);
+      const t=veTotales(ve); if(!t||!(+t.tickets>0)) return;
+      const horas=vig&&vig.eq?eqHorasDias(vig.eq, eqDiasSet(ve)):0;
+      filas.push({slug:r.slug, fmt:r.fmt, w, tk:+t.tickets||0, un:+t.unidades||0, vt:+t.venta||0, horas});
+    }catch(e){}
+  }))));
+  if(token!==_mesCadToken || !vistaCadena) return;
+  _mesCadData={mes:mesISO, delMes, filas};
+  pintarPuenteCad();
+}
+function pintarPuenteCad(){
+  const box=$('puenteBoxCad'); if(!box) return;
+  const off=()=>{ box.style.display='none'; box.innerHTML=''; };
+  const d=_mesCadData;
+  if(!vistaCadena || !d){ off(); return; }
+  if(_zonaMes && d.mes!==_zonaMes){ off(); return; }   // cambió el mes elegido: no pintar el acumulado viejo
+  const filas=rkTipo? d.filas.filter(f=>f.fmt===rkTipo) : d.filas;
+  // agregado por semana: numeradores y denominadores sumados, nunca promedio de ratios
+  const byW={};
+  filas.forEach(f=>{ const o=byW[f.w]||(byW[f.w]={tk:0,un:0,vt:0,h:0,htk:0,hvt:0});
+    o.tk+=f.tk; o.un+=f.un; o.vt+=f.vt;
+    if(f.horas>0){ o.h+=f.horas; o.htk+=f.tk; o.hvt+=f.vt; } });
+  const semList=d.delMes.filter(w=>byW[w]&&byW[w].tk>0);
+  if(!semList.length){ off(); return; }
+  const A=semList.reduce((a,w)=>{const o=byW[w]; a.tk+=o.tk; a.un+=o.un; a.vt+=o.vt; return a;},{tk:0,un:0,vt:0});
+  const conH=semList.filter(w=>byW[w].h>0);
+  const AH=conH.reduce((a,w)=>{const o=byW[w]; a.tk+=o.htk; a.vt+=o.hvt; a.h+=o.h; return a;},{tk:0,vt:0,h:0});
+  // cierre agregado de la línea, mismo criterio que las tarjetas de la semana (sin Ecommerce;
+  // tickets/venta por hora del cierre solo en base horas asignadas)
+  const cadC=(CAD&&CAD.sucursales||[]).filter(x=>x.sucursal!==ECOM && (!rkTipo || (x.formato||formatoDe(x.sucursal))===rkTipo));
+  const KC=cadC.reduce((a,x)=>({tk:a.tk+x.tickets, un:a.un+x.unidades_netas, vt:a.vt+x.importe_neto, h:a.h+(x.h_act||0)}),{tk:0,un:0,vt:0,h:0});
+  const compH = hbase==='h_act' && KC.h>0;
+  const cerrLbl=mesCorto(per);
+  const obj = rkTipo ? (OBJ[rkTipo]||{}) : {};
+  const mesLbl=objMesLbl(d.mes).split(' ')[0];
+  const acumTag=esc(mesLbl)+' acumulado · '+semList.length+' sem';
+  const hsMes = conH.length && conH.length<semList.length ? ' · hs. asignadas en '+conH.length+' de '+semList.length+' sem' : '';
+  const defs=[
+    {name:'UPT',             val:A.tk?A.un/A.tk:NaN,  ref:KC.tk?KC.un/KC.tk:NaN, tgt:obj.upt,             f:fmt2, unit:'unidades por ticket', k:'upt'},
+    {name:'Ticket promedio', val:A.tk?A.vt/A.tk:NaN,  ref:KC.tk?KC.vt/KC.tk:NaN, tgt:obj.ticket_promedio, f:fmtM, unit:'venta por ticket',    k:'tp'},
+    {name:'Tickets por hora',val:AH.h?AH.tk/AH.h:NaN, ref:compH?KC.tk/KC.h:NaN,  tgt:obj.tickets_hora,    f:fmt2, unit:'por hora asignada', hs:true, k:'tph'},
+    {name:'Venta por hora',  val:AH.h?AH.vt/AH.h:NaN, ref:compH?KC.vt/KC.h:NaN,  tgt:null,                f:fmtM, unit:'por hora asignada', hs:true, k:'vh'},
+  ];
+  const cards=defs.map(dd=>{
+    if(!isFinite(dd.val)){
+      return '<div class="kpi"><div class="kpi-name">'+dd.name+'<span class="pprov">prov</span></div><div class="kpi-val">—</div><div class="kpi-unit">'+(dd.hs?'sin horas asignadas':'sin dato')+' · '+acumTag+'</div>'
+        +(dd.hs?'<div class="kpi-foot"><div class="kpi-empty">Ninguna sucursal de la línea tiene equipos con horas guardados en las semanas del mes.</div></div>':'')+'</div>';
+    }
+    let objHtml, semClass='';
+    if(dd.tgt){ const pct=dd.val/dd.tgt*100, sm=semaforo(pct); semClass='s-'+sm;
+      objHtml='<span class="dot"></span><span class="cum-'+sm+'">'+Math.round(pct)+'% del objetivo</span> <span class="tgt">('+dd.f(dd.tgt)+')</span>';
+    } else objHtml='<span class="tgt">'+(rkTipo?'sin objetivo de formato':'con una línea filtrada se compara contra su objetivo')+'</span>';
+    const dC=(isFinite(dd.ref)&&dd.ref)?deltaHtml(dd.val,dd.ref):null;
+    const cerrStr = dC ? dC+' vs. '+esc(cerrLbl)+' <span class="muted">cerrado</span> <b>'+dd.f(dd.ref)+'</b>'
+      : (dd.hs && KC.tk && !compH) ? '<span class="muted" title="El cierre en base horas contratadas no es comparable con las horas asignadas de los equipos">'+esc(cerrLbl)+' cerrado · base hs. contratadas, no comparable</span>'
+      : '<span class="muted">sin cierre para comparar</span>';
+    const serie=semList.map(w=>{ const o=byW[w];
+      const val = dd.k==='upt'?(o.tk?o.un/o.tk:NaN) : dd.k==='tp'?(o.tk?o.vt/o.tk:NaN) : dd.k==='tph'?(o.h?o.htk/o.h:NaN) : (o.h?o.hvt/o.h:NaN);
+      return {sem:objSemNum(w), val}; }).filter(p=>isFinite(p.val));
+    let sparkStr='';
+    if(serie.length>=2){
+      const sp=sparkBars(serie, dd.tgt||NaN).replace('var(--red)','var(--vivo)');
+      if(sp) sparkStr='<div class="pte-spark" style="margin:0" title="'+esc(serie.map(p=>'Sem '+p.sem+': '+dd.f(p.val)).join(' · ')+(dd.tgt?' · objetivo '+dd.f(dd.tgt):''))+'">'+sp+'</div>';
+    }
+    return '<div class="kpi '+semClass+'"><div class="kpi-name">'+dd.name+'<span class="pprov">prov</span></div>'
+      +'<div class="kpi-val">'+dd.f(dd.val)+'</div><div class="kpi-unit">'+dd.unit+' · '+acumTag+(dd.hs?hsMes:'')+'</div>'
+      +'<div class="kpi-obj">'+objHtml+'</div>'
+      +'<div class="kpi-foot"><div class="kpi-delta">'+cerrStr+'</div><div class="kpi-rank">'+sparkStr+'</div></div></div>';
+  }).join('');
+  box.innerHTML =
+    '<h2 class="sec-title" style="font-size:22px;margin:22px 0 8px">'+(rkTipo?'Indicadores del mes en curso · <em>'+esc(fmtLabel(rkTipo))+'</em>':'Indicadores <em>del mes en curso</em>')+'</h2>'
+    +'<p class="hint">El acumulado de las semanas publicadas de '+esc(mesLbl)+', sumando numerador y denominador de las sucursales de la línea, contra el último cierre'+(rkTipo?' y el objetivo de la línea':'')+'. En tickets y venta por hora entran solo las semanas con equipos guardados.</p>'
+    +'<div class="kpis">'+cards+'</div>';
+  box.style.display='';
+}
 async function renderObjCadena(){
   const sec=$('secObjCadena'), secMes=$('secObjMesCadena'); if(!sec) return;
-  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; const kb=$('kpisSemCadBox'); if(kb) kb.style.display='none'; const ld=$('vivaLoadCad'); if(ld) ld.style.display='none'; pintarZonas(); };
+  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; const kb=$('kpisSemCadBox'); if(kb) kb.style.display='none'; const pb=$('puenteBoxCad'); if(pb) pb.style.display='none'; const ld=$('vivaLoadCad'); if(ld) ld.style.display='none'; pintarZonas(); };
   if(!OBJETIVOS_URL || !esGerencia){ ocultar(); return; }
   if(!$('objCadCard').innerHTML){
     $('objCadCard').innerHTML='<p class="empty" style="margin:6px 0">Cargando objetivo…</p>';
@@ -2447,6 +2550,7 @@ async function renderObjCadena(){
     _objCadDetalle = true;
     pintarObjCad();
     alertasRitmo(sem, todas).catch(()=>{});   // jueves+: aviso automático a las que van abajo del ritmo
+    cargarMesCad(sem, weeks, todas).catch(()=>{});   // Indicadores del mes en curso (acumulado agregado, de fondo)
   })();
   _objCadDetalle = false;
   function pintarObjCad(){
@@ -2467,6 +2571,7 @@ async function renderObjCadena(){
   const cardMes=$('objMesCadCard');
   if(cardMes){ cardMes.innerHTML=(mesHtml||'')+(prevMes?veCadPreviewHtml(sem, por):''); }
   if(secMes) secMes.style.display = (mesHtml||prevMes) ? '' : 'none';
+  pintarPuenteCad();   // Indicadores del mes en curso: repinta desde el cache con el filtro por línea
 
   const selHtml='<select id="objCadSemSel" style="font-family:var(--font-b,inherit);font-size:13px;color:var(--navy,#0B1527);'
     +'background:#fff;border:1px solid var(--line,#dce3f0);border-radius:7px;padding:6px 9px;cursor:pointer">'
@@ -4024,6 +4129,7 @@ function ritmoHtml(r){
     +'vas <b>'+signo+objMoney(Math.abs(Math.round(r.dif)))+'</b> '+(r.dif>=0?'arriba':'abajo')+' (<b>'+p+'%</b> del ritmo)</span></div>';
 }
 let _kpisSemToken=0;
+let _pteEqOpen=false;   // cómo dejó el usuario el desplegable «Cómo viene el equipo» del mes en esta visita
 async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem, ritmo){
   // la semana vive en la sección «Resumen» de la zona En curso (#kpisSemBox) y el
   // acumulado del mes en #puenteBox (Objetivo del mes). Sin venta cargada, la
@@ -4044,10 +4150,11 @@ async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem
   // mes en curso acumulado: semanas publicadas del mismo mes (mismo criterio que «Objetivo del mes»)
   const mesISO = _zonaMes || String(sem).slice(0,7);
   const delMes=(weeks||[]).filter(w=>String(w).slice(0,7)===mesISO).sort();
-  const [cerr, ...vivas] = await Promise.all([kpisCerrado(slug)].concat(delMes.map(async w=>{
+  const [cerr, ...semsMes] = await Promise.all([kpisCerrado(slug)].concat(delMes.map(async w=>{
     const [vw,ew] = (w===sem) ? [ve,vig] : await Promise.all([fetchVentaEquipo(slug,w), equipoVigente(slug,w)]);
-    return kpisSemanaViva(vw, ew&&ew.eq);
+    return {k:kpisSemanaViva(vw, ew&&ew.eq), ve:vw};
   })));
+  const vivas=semsMes.map(s=>s.k);
   if(token!==_kpisSemToken || sucName!==target) return;
   _resumenVivo.upt=cur.upt; _resumenVivo.tp=cur.tp; pintarResumenVivo();
   const acum=kpisAcum(vivas);
@@ -4096,6 +4203,38 @@ async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem
   const mesLbl=objMesLbl(mesISO).split(' ')[0];
   const acumTag=esc(mesLbl)+' acumulado'+(acum&&acum.nsem?' · '+acum.nsem+' sem':'');
   const hsMes=(acum&&acum.nH&&acum.nH<acum.nsem)?' · hs. asignadas en '+acum.nH+' de '+acum.nsem+' sem':'';
+  // «Cómo viene el equipo» del MES (30/08, pedido de Juli): el acumulado por vendedor
+  // de las semanas publicadas — SOLO en la vista de una sucursal (en la vista de todas
+  // se haría eterno; ahí no va). Merge por nombre normalizado entre semanas.
+  const porVend={};
+  semsMes.forEach((s,i)=>{ ((s.ve&&s.ve.vendedores)||[]).forEach(x=>{
+    const key=eqNorm(String(x.nombre||'')); if(!key) return;
+    const o=porVend[key]||(porVend[key]={nombre:x.nombre, venta:0, tickets:0, unidades:0, sems:new Set()});
+    o.venta+=+x.venta||0; o.tickets+=+x.tickets||0; o.unidades+=+x.unidades||0;
+    if((+x.venta||0)>0) o.sems.add(delMes[i]);
+  }); });
+  const vends=Object.values(porVend).filter(o=>o.venta>0).sort((a,b)=>b.venta-a.venta);
+  let puenteEqHtml='';
+  if(vends.length){
+    const totV=vends.reduce((a,o)=>a+o.venta,0);
+    const trsEq=vends.map(o=>{
+      const part=totV?o.venta/totV*100:0;
+      const uptV=o.tickets?o.unidades/o.tickets:NaN, tpV=o.tickets?o.venta/o.tickets:NaN;
+      return '<tr><td class="L">'+esc(titleCase(o.nombre))+'</td>'
+        +'<td><span class="num">'+objMoney(Math.round(o.venta))+'</span></td>'
+        +'<td><div style="display:flex;align-items:center;gap:8px"><div style="flex:0 0 90px;height:7px;background:#eef0f7;border-radius:4px;overflow:hidden"><i style="display:block;height:100%;width:'+Math.min(100,Math.round(part))+'%;background:var(--vivo)"></i></div><span class="num" style="font-size:13px">'+Math.round(part)+'%</span></div></td>'
+        +'<td>'+(o.tickets?'<span class="num">'+o.tickets+'</span>':'<span class="muted">—</span>')+'</td>'
+        +'<td>'+(isFinite(uptV)?'<span class="num">'+fmt2(uptV)+'</span>':'<span class="muted">—</span>')+'</td>'
+        +'<td>'+(isFinite(tpV)?'<span class="num">'+fmtM(tpV)+'</span>':'<span class="muted">—</span>')+'</td>'
+        +'<td><span class="num">'+o.sems.size+'</span><span class="muted" style="font-size:11px"> de '+delMes.length+'</span></td></tr>';
+    }).join('');
+    puenteEqHtml='<details class="bgrupo" id="pteEqDet" style="margin-top:14px"'+(_pteEqOpen?' open':'')+'>'
+      +'<summary>Cómo viene el equipo · '+esc(mesLbl)+' · '+vends.length+' vendedor'+(vends.length===1?'':'es')+'</summary>'
+      +'<div style="padding:12px 14px"><div class="tbl-wrap"><table style="min-width:560px"><thead><tr>'
+      +'<th class="L">Vendedor</th><th>Venta '+esc(mesLbl)+'<span class="pprov">prov</span></th><th>Participación</th><th>Tickets</th><th>UPT</th><th>Ticket prom.</th><th>Semanas</th>'
+      +'</tr></thead><tbody>'+trsEq+'</tbody></table></div>'
+      +'<p class="hint" style="margin:8px 0 0">Acumulado de las semanas publicadas del mes con la venta provisoria cargada por semana. El detalle fino — horas, objetivo individual, día a día — vive en «Cómo viene el equipo» del Objetivo de la semana.</p></div></details>';
+  }
   $('puenteBox').innerHTML =
     '<h2 class="sec-title" style="font-size:22px;margin:22px 0 8px">Indicadores <em>del mes en curso</em></h2>'
     +'<p class="hint">El acumulado de las semanas publicadas de '+esc(mesLbl)+', contra el objetivo de tu línea y el último cierre. En tickets y venta por hora entran solo las semanas con equipo guardado.</p>'
@@ -4129,7 +4268,9 @@ async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem
     }).join('')+'</div>'
     +'<p class="hint" style="margin:10px 0 0">Números provisorios: salen de la venta cargada por semana y de las horas asignadas al equipo'
     +(noCompH?' (el mes cerrado no tiene equipo guardado y usa horas contratadas: tickets y venta por hora no son comparables del todo)':'')
-    +'. Cuando el ETL cierre '+esc(mesLbl)+', estos números pasan a la zona Cierre como dato oficial.</p>';
+    +'. Cuando el ETL cierre '+esc(mesLbl)+', estos números pasan a la zona Cierre como dato oficial.</p>'
+    +puenteEqHtml;
+  const pteDet=$('pteEqDet'); if(pteDet) pteDet.ontoggle=()=>{ _pteEqOpen=pteDet.open; };
 
   // insight corto y operativo de la semana
   const box=$('diagSem');
@@ -4896,6 +5037,73 @@ function bMacro(r){
 const EQUIPO_F8_URL='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/f8suc';
 const MOTIVOS_F8=['Se vendió antes de armar el envío','Producto fallado / no está en condiciones','No se encontró en el local','El stock del sistema no coincide (no lo tenemos)','Otro motivo'];
 let _f8SucDocs=null, _f8ConfDraft={};
+/* --- «F8 para armar» de la vista Cadena (30/08): modo CONTROL — quién está al día
+   con los F8 repartidos por el Área de Producto y quién los tiene sin confirmar.
+   Baja equipo/f8suc completo una vez (solo gerencia, cacheado en _f8CadDocs);
+   los chips de línea repintan desde el cache. --- */
+let _f8CadDocs=null;
+async function renderF8Cad(){
+  const sec=$('secF8Cad'); if(!sec) return;
+  sec.style.display='none';
+  if(!vistaCadena || !esGerencia) return;
+  if(!_f8CadDocs){
+    try{ _f8CadDocs=await (await fetch(EQUIPO_F8_URL+'.json')).json(); }catch(e){ return; }
+  }
+  pintarF8Cad();
+}
+function pintarF8Cad(){
+  const sec=$('secF8Cad'), card=$('f8CadCard'); if(!sec||!card) return;
+  const docs=_f8CadDocs;
+  if(!vistaCadena || !docs || !Object.keys(docs).length){ sec.style.display='none'; pintarZonas(); return; }
+  const fmtF=f=>{const p=String(f||'').split('-');return p.length===3?p[2]+'/'+p[1]:f;};
+  const diasDesde=f=>{const p=String(f||'').split('-').map(Number);
+    return p.length===3?Math.max(0,Math.round((Date.now()-Date.UTC(p[0],p[1]-1,p[2]))/86400000)):null;};
+  const rows=[];
+  Object.keys(docs).forEach(slug=>{
+    const full=SLUG_SUC[slug]||OUTLET_SUC[slug];
+    if(rkTipo && (!full || formatoDe(full)!==rkTipo)) return;
+    const lista=Object.values(docs[slug]||{}).filter(Boolean);
+    if(!lista.length) return;
+    rows.push({slug, nombre:full?full.replace(/^\d+-\s*/,''):nombreBonito(slug),
+      tot:lista.length, pend:lista.filter(d=>!(d.conf&&d.conf.lineas))});
+  });
+  const tit=$('f8CadTitle'); if(tit) tit.innerHTML = rkTipo
+    ? 'F8 para armar · <em>'+esc(fmtLabel(rkTipo))+'</em>'
+    : 'F8 para armar <em>· control</em>';
+  if(!rows.length){ sec.style.display='none'; pintarZonas(); return; }
+  rows.sort((a,b)=>b.pend.length-a.pend.length || a.nombre.localeCompare(b.nombre));
+  const alDia=rows.filter(r=>!r.pend.length), conPend=rows.filter(r=>r.pend.length);
+  const nPend=conPend.reduce((a,r)=>a+r.pend.length,0);
+  const chip=(ok,txt,title)=>'<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid '+(ok?'#bfe6cf':'#f0d8a8')+';background:'+(ok?'var(--ok-bg)':'var(--mid-bg)')+';color:'+(ok?'var(--ok)':'#8a5a00')+';border-radius:20px;padding:4px 12px;font-family:var(--font-c);font-size:12px;font-weight:700;letter-spacing:.4px;cursor:default" title="'+esc(title||'')+'">'+txt+'</span>';
+  let html='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+    +'<span style="font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">Circuito F8</span>'
+    +chip(true,'✓ Al día <b>'+alDia.length+'/'+rows.length+'</b>', alDia.length?alDia.map(r=>r.nombre).join(' · '):'Ninguna sucursal tiene todos sus F8 confirmados')
+    +(conPend.length
+      ?chip(false,'Sin confirmar <b>'+nPend+' F8</b> en '+conPend.length+' suc.', conPend.map(r=>r.nombre+' ('+r.pend.length+')').join(' · '))
+      :'<span class="muted" style="font-size:12px">✓ todas confirmaron sus F8</span>')
+    +'</div>';
+  if(conPend.length){
+    const trs=[];
+    conPend.forEach(r=>{
+      r.pend.slice().sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha))).forEach(d=>{
+        const dias=diasDesde(d.fecha), tot=(d.lineas||[]).length;
+        const estado = d.descargado?'<span style="color:var(--ok)">⇩ Descargado</span>'
+          : d.visto?'<span style="color:#8a5a00">👁 Visto</span>'
+          : '<span style="color:#dc2626;font-weight:700">Sin abrir</span>';
+        trs.push('<tr><td class="L">'+esc(r.nombre)+'</td>'
+          +'<td class="L">F8 del '+esc(fmtF(d.fecha))+(d.operador?' · '+esc(d.operador):'')+'</td>'
+          +'<td><span class="num">'+tot+'</span></td>'
+          +'<td>'+(dias!=null?('<b style="color:'+(dias>=5?'#dc2626':dias>=3?'#d97706':'var(--navy)')+'">'+(dias===0?'hoy':dias===1?'ayer':'hace '+dias+' días')+'</b>'):'<span class="muted">—</span>')+'</td>'
+          +'<td class="L">'+estado+'</td></tr>');
+      });
+    });
+    html+='<div class="tbl-wrap"><table style="min-width:560px"><thead><tr><th class="L">Sucursal</th><th class="L">F8 pendiente</th><th>Artículos</th><th>Recibido</th><th class="L">Estado</th></tr></thead><tbody>'+trs.join('')+'</tbody></table></div>';
+  }
+  html+='<p class="hint" style="margin:'+(conPend.length?'10px':'2px')+' 0 0"><a href="../equipo/" style="color:var(--red,#CC0000);font-weight:600;text-decoration:none">Abrir Área de Producto →</a> para el seguimiento completo del circuito (visto, descargado, confirmado y el cruce contra las transferencias reales).</p>';
+  card.innerHTML=html;
+  sec.style.display='';
+  pintarZonas();
+}
 async function renderF8Suc(){
   const sec=$('secF8'); if(!sec) return;
   sec.style.display='none';
@@ -5578,7 +5786,7 @@ function renderRankChips(){
   const presentes = new Set((CAD.sucursales||[]).filter(s=>s.sucursal!==ECOM && s.horas_contr>0).map(s=>s.formato||formatoDe(s.sucursal)));
   const chips = [''].concat(RK_LINEAS.filter(f=>presentes.has(f)));
   $('rkChips').innerHTML = chips.map(f=>`<button class="rk-chip${rkTipo===f?' on':''}" data-f="${esc(f)}">${f===''?'Todas':esc(fmtLabel(f))}</button>`).join('');
-  $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderObjCadena(); renderKpisCadena(); renderSemCad(); renderRanking(); renderCadenaTabla(); renderAnalisisCad(); });
+  $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderObjCadena(); pintarF8Cad(); renderKpisCadena(); renderSemCad(); renderRanking(); renderCadenaTabla(); renderAnalisisCad(); });
   const kchips = `<button class="rk-chip${rkKpiSel==='todos'?' on':''}" data-k="todos">Todos</button>`
     + RK_KPIS.map(k=>`<button class="rk-chip${rkKpiSel===k.k?' on':''}" data-k="${k.k}">${esc(k.short)}</button>`).join('');
   $('rkKpiChips').innerHTML = kchips;

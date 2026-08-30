@@ -254,7 +254,14 @@ acumulado del mes — la ex tabla «El puente», hoy **«Indicadores del mes en 
 tarjetas KPI con el mismo formato que las de la semana** (30/08: acumulado, % del
 objetivo con semáforo, delta y valor del cerrado, sparkline semana a semana y nota de
 horas; la columna «Sem N» de la tabla vieja no se repite porque son las tarjetas de la
-semana) — sigue **dentro de «Objetivo del mes»** en `#puenteBox`): UPT, ticket promedio,
+semana) — sigue **dentro de «Objetivo del mes»** en `#puenteBox`, y desde el 30/08
+**también existe en la vista Cadena** (`#puenteBoxCad`, `cargarMesCad`/`pintarPuenteCad`:
+baja ventaEquipo+equipo de cada sucursal por semana de fondo, agrega numeradores y
+denominadores por línea filtrada; % del objetivo solo con una línea elegida). El
+`#puenteBox` de sucursal suma además el desplegable **«Cómo viene el equipo · mes»**
+(acumulado por vendedor de las semanas publicadas: venta, participación, tickets, UPT,
+ticket prom., semanas con venta) — SOLO en la vista de una sucursal, no en Cadena
+(pedido de Juli: en el agregado se hace eterno)): UPT, ticket promedio,
 tickets/hora y venta/hora de la semana elegida con la venta de `ventaEquipo` y las horas
 asignadas del equipo (solo los días que ya tienen venta: `eqHorasDias`), cada uno vs. el
 objetivo de la línea, vs. el mes cerrado (`kpisCerrado`: con horas asignadas si ese
@@ -468,7 +475,12 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   «F8s» (badge de pendientes; el puesto no la ve): cruza el F8 con el stock local
   (Id.item, respaldo código) y ordena el picking por estantería/módulo, con
   imprimir/descargar; la confirmación ✓/✗+motivo también se puede hacer ahí
-  (misma escritura en `f8suc`).
+  (misma escritura en `f8suc`). **Control en el Panel General (30/08)**: la vista
+  Cadena de `indicadores/` suma la sección «F8 para armar · control» (`secF8Cad`,
+  `renderF8Cad`/`pintarF8Cad`): baja `equipo/f8suc` completo (solo gerencia) y
+  muestra quién está al día y quién tiene F8 sin confirmar (tabla: sucursal, F8,
+  artículos, hace cuántos días, estado sin abrir/visto/descargado), con el filtro
+  por línea. El detalle sigue en equipo/.
 - **Firebase** (`turnero-mateu`, nodo `equipo/`): `f8s/<id>` (objeto por id, alta
   con PATCH — así las subidas simultáneas no se pisan), `ctrl` (registro manual,
   legacy), `transf` (export vigente `{archivo,subido,por,filas:[[o,c,d,art,env]]}`),
