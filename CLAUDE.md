@@ -695,10 +695,11 @@ entran acá: ven su objetivo en Indicadores.
   (auto-selecciona la última publicada que el archivo cubre; si ninguna venta cae en
   la semana, bloquea Publicar). `veCriterioLinea` normaliza el rubro sin el «NN-». `veParseDetallado` (comprobantes) + `veAgregarSemana` (filtro + payloads)
   = port de `cargar-venta-semana.py`; mantener los criterios en sintonía.
-  **Omnicanalidad (29/08/2026)**: el vendedor **WEB MATEU** solo cuenta en Ecommerce
-  (99); en una sucursal física (Calle 12, Aurelius Calle 12, …) es venta de ecom
-  facturada ahí y `veAgregarSemana` la EXCLUYE (no cuenta para los objetivos de la
-  sucursal; la previsualización avisa cuánto excluyó). Ojo: el ETL mensual y el
+  **Omnicanalidad (29/08/2026)**: los vendedores **WEB MATEU / WEB AURELIUS** en una
+  sucursal física (Calle 12, Aurelius Calle 12, …) son venta de ecom facturada ahí:
+  `veAgregarSemana` los **REASIGNA a Ecommerce** (la física queda igual que el
+  sistema y la venta no se pierde; la previsualización avisa cuánto movió). En
+  Ecommerce (99) son sus vendedores reales y quedan. Ojo: el ETL mensual y el
   script Python todavía no aplican esta regla. Previsualiza
   por sucursal vs. meta (avisa cuántos comprobantes descarta de otros días, sucursales
   sin slug —05-Depósito— y metas sin venta) y

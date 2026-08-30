@@ -905,6 +905,16 @@ footer b{color:var(--navy)}
     </header>
     <div class="zona-cargando" id="vivaLoadCad">Cargando la semana en curso…</div>
 
+    <!-- Resumen en curso (cadena): los cuatro indicadores de la semana agregados a
+         todas las sucursales, misma jerarquía que «KPIs generales» del Cierre.
+         Los pinta pintarKpisSemCad con los datos de pintarObjCad. -->
+    <section class="sec" id="kpisSemCadBox" style="display:none">
+      <div class="sec-label">Resumen</div>
+      <h2 class="sec-title" id="kpisSemCadTitle">Indicadores <em>de la semana</em></h2>
+      <p class="hint">Los cuatro indicadores de la semana elegida, de todas las sucursales juntas (se suman numerador y denominador, nunca se promedian ratios; respeta el filtro por línea): con la venta provisoria cargada y las horas asignadas de los equipos, contra el último mes cerrado.</p>
+      <div class="kpis" id="kpisSemCad"></div>
+    </section>
+
     <section class="sec" id="secObjMesCadena" style="display:none">
       <div class="sec-label">Objetivo de venta</div>
       <h2 class="sec-title" id="objMesCadTitle">Objetivo <em>del mes</em></h2>
@@ -1204,11 +1214,10 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape') cerrarDrops(); })
    semáforo. Clic = volver a las tarjetas. --- */
 let _kbVisible=false;
 // grilla de KPIs activa según la vista (Mi Sucursal o todas las sucursales) y la
-// pestaña (En curso → tarjetas de la semana; Cierre → las del mes cerrado).
-// La vista Cadena no tiene tarjetas KPI en curso: ahí la barra queda quieta.
+// pestaña (En curso → tarjetas de la semana; Cierre → las del mes cerrado)
 function kpiBarGrid(){
   const cad=(typeof vistaCadena!=='undefined' && vistaCadena);
-  if(typeof zonaTab!=='undefined' && zonaTab==='viva') return cad?null:$('kpisSem');
+  if(typeof zonaTab!=='undefined' && zonaTab==='viva') return cad?$('kpisSemCad'):$('kpisSem');
   return cad?$('kpisCad'):$('kpis');
 }
 function kpiBarHtml(){
@@ -2301,9 +2310,42 @@ function tablaOrdenable(det, estado){
 }
 let _objCadToken = 0;              // corta pasadas viejas si el usuario cambió de semana/vista
 let _objCadDetalle = false;        // false = pasada 1 (sin Ritmo/Tickets-h todavía)
+/* --- tarjetas «Resumen · Indicadores de la semana» de la zona En curso de Cadena:
+   los cuatro indicadores agregados a la línea filtrada (numeradores y denominadores
+   sumados), contra el mes cerrado. Los datos vienen de pintarObjCad: K/conK de la
+   pasada 1 (venta), H/conH de la pasada 2 (horas asignadas de los equipos). --- */
+function pintarKpisSemCad(o){
+  const box=$('kpisSemCadBox'), grid=$('kpisSemCad'); if(!box||!grid) return;
+  const tit=$('kpisSemCadTitle');
+  if(tit) tit.innerHTML = rkTipo ? 'Indicadores de la semana · <em>'+esc(fmtLabel(rkTipo))+'</em>' : 'Indicadores <em>de la semana</em>';
+  box.style.display='';
+  if(!(o.K.tk>0)){
+    grid.innerHTML='<div class="empty" style="grid-column:1/-1">Todavía no hay venta cargada para '+esc(objSemTag(o.sem))+': los indicadores aparecen apenas se cargue (⇧ Cargar venta de la semana, o cada encargado en Mi Sucursal).</div>';
+    pintarZonas(); return;
+  }
+  const semLbl='Sem '+objSemNum(o.sem), cerrLbl=esc(mesCorto(per))+' <span class="muted">cerrado</span>';
+  const card=(name,val,fmtF,unit,ref,foot)=>{
+    const d=(isFinite(val)&&isFinite(ref)&&ref)?deltaHtml(val,ref):null;
+    return '<div class="kpi"><div class="kpi-name">'+name+'<span class="pprov">prov</span></div>'
+      +'<div class="kpi-val">'+(isFinite(val)?fmtF(val):'—')+'</div><div class="kpi-unit">'+unit+'</div>'
+      +'<div class="kpi-foot"><div class="kpi-delta">'+(d? d+' vs. '+cerrLbl : '<span class="muted">'+foot+'</span>')+'</div></div></div>';
+  };
+  const nSuc=o.rows.length, vta=' · '+o.nK+' de '+nSuc+' suc. con venta';
+  const hUnit='por hora asignada · '+semLbl+(o.nH?' · '+o.nH+' de '+nSuc+' suc. con equipo':'');
+  const hFoot=!_objCadDetalle?'calculando con el equipo de cada sucursal…'
+    : !o.H.h?'sin equipos con horas guardados esta semana'
+    : 'no comparable con el cierre en base horas contratadas';
+  const compH = hbase==='h_act' && o.KC.h;
+  grid.innerHTML =
+    card('UPT', o.K.un/o.K.tk, fmt2, 'unidades por ticket · '+semLbl+vta, o.KC.tk?o.KC.un/o.KC.tk:NaN, 'sin cierre para comparar')
+   +card('Ticket promedio', o.K.vt/o.K.tk, fmtM, 'venta por ticket · '+semLbl+vta, o.KC.tk?o.KC.vt/o.KC.tk:NaN, 'sin cierre para comparar')
+   +card('Tickets por hora', o.H.h?o.H.tk/o.H.h:NaN, fmt2, hUnit, compH?o.KC.tk/o.KC.h:NaN, hFoot)
+   +card('Venta por hora', o.H.h?o.H.vt/o.H.h:NaN, fmtM, hUnit, compH?o.KC.vt/o.KC.h:NaN, hFoot);
+  pintarZonas();
+}
 async function renderObjCadena(){
   const sec=$('secObjCadena'), secMes=$('secObjMesCadena'); if(!sec) return;
-  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; const ld=$('vivaLoadCad'); if(ld) ld.style.display='none'; pintarZonas(); };
+  const ocultar=()=>{ sec.style.display='none'; if(secMes) secMes.style.display='none'; const kb=$('kpisSemCadBox'); if(kb) kb.style.display='none'; const ld=$('vivaLoadCad'); if(ld) ld.style.display='none'; pintarZonas(); };
   if(!OBJETIVOS_URL || !esGerencia){ ocultar(); return; }
   if(!$('objCadCard').innerHTML){
     $('objCadCard').innerHTML='<p class="empty" style="margin:6px 0">Cargando objetivo…</p>';
@@ -2403,8 +2445,10 @@ async function renderObjCadena(){
     html+=veCadPreviewHtml(sem, por);
   }else if(!todas.length){
     html+='<p class="empty" style="margin:6px 0">El objetivo de esta semana aún no está cargado. Probá con otra semana.</p>';
+    const kb=$('kpisSemCadBox'); if(kb) kb.style.display='none';
   }else if(!rows.length){
     html+='<p class="empty" style="margin:6px 0">Sin metas cargadas para la línea '+esc(fmtLabel(rkTipo))+' esta semana.</p>';
+    const kb=$('kpisSemCadBox'); if(kb) kb.style.display='none';
   }else{
     const T=rows.reduce((a,r)=>({meta:a.meta+r.meta, minimo:a.minimo+r.minimo, s120:a.s120+r.s120, real:a.real+r.real}),{meta:0,minimo:0,s120:0,real:0});
     const pct=T.meta?T.real/T.meta:0, w=Math.min(100,Math.round(pct*100));
@@ -2427,24 +2471,20 @@ async function renderObjCadena(){
     html+='<div style="position:relative;height:10px;background:#eef0f7;border-radius:6px;overflow:hidden;margin:10px 0 14px">'
       +'<i style="position:absolute;left:0;top:0;bottom:0;border-radius:6px;width:'+w+'%;background:'+col+';display:block"></i></div>';
     if(hayProv && ritmoT) html+=ritmoHtml(ritmoT).replace('Ritmo:', 'Ritmo '+esc(lblLinea)+' ('+conR.length+' de '+rows.length+' suc. con la semana en curso):');
-    // UPT / ticket promedio de la semana para la línea (suma de numeradores y denominadores)
+    // indicadores de la semana para la línea (suma de numeradores y denominadores):
+    // se muestran como tarjetas grandes en la sección «Resumen» de la zona En curso
     const conK=rows.filter(r=>r.tk>0);
     const K=conK.reduce((a,r)=>({tk:a.tk+r.tk, un:a.un+r.un, vt:a.vt+r.vt}),{tk:0,un:0,vt:0});
     const cadC=(CAD&&CAD.sucursales||[]).filter(x=>x.sucursal!==ECOM && (!rkTipo || (x.formato||formatoDe(x.sucursal))===rkTipo));
     const KC=cadC.reduce((a,x)=>({tk:a.tk+x.tickets, un:a.un+x.unidades_netas, vt:a.vt+x.importe_neto, h:a.h+(x.h_act||0)}),{tk:0,un:0,vt:0,h:0});
     const conH=_objCadDetalle ? rows.filter(r=>r.horas>0) : [];
-    const H=conH.reduce((a,r)=>({tk:a.tk+r.tk, h:a.h+r.horas}),{tk:0,h:0});
+    const H=conH.reduce((a,r)=>({tk:a.tk+r.tk, h:a.h+r.horas, vt:a.vt+(r.vt||0)}),{tk:0,h:0,vt:0});
     if(K.tk>0){ _resumenVivo.upt=K.un/K.tk; _resumenVivo.tp=K.vt/K.tk; }
     pintarResumenVivo();
-    const kpiBox=(lbl,val,ref,fmtF)=>{ const d=(isFinite(ref)&&ref)?deltaHtml(val,ref):null;
-      return '<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">'+lbl+'<span class="pprov">prov</span></div>'
-        +'<div class="num" style="font-size:21px;font-weight:800;margin-top:2px">'+fmtF(val)+(d?' <span class="pte-sub" style="display:inline;font-style:normal;font-weight:400">'+d+' vs. '+esc(mesCorto(per))+'</span>':'')+'</div></div>'; };
+    pintarKpisSemCad({sem, rows, K, KC, H, nK:conK.length, nH:conH.length});
     html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
       +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Mínimo '+esc(lblLinea)+'</div><div style="font-size:18px;font-weight:700;margin-top:2px">'+objMoney(T.minimo)+'</div></div>'
       +'<div class="box120" style="border-radius:9px;padding:10px 12px" title="Meta × 1,2: el gran objetivo de la semana"><div class="b120-l">★ 120% '+esc(lblLinea)+'</div><div class="b120-v">'+objMoney(T.s120)+'</div></div>'
-      +(K.tk>0 ? kpiBox('UPT semana', K.un/K.tk, KC.tk?KC.un/KC.tk:NaN, fmt2)
-                +kpiBox('Ticket prom. semana', K.vt/K.tk, KC.tk?KC.vt/KC.tk:NaN, fmtM) : '')
-      +(H.h>0 ? kpiBox('Tickets/h semana', H.tk/H.h, (hbase==='h_act'&&KC.h)?KC.tk/KC.h:NaN, fmt2).replace('</div></div>', (conH.length<rows.length?' <span class="pte-sub" style="display:inline">'+conH.length+' de '+rows.length+' suc. con equipo</span>':'')+'</div></div>') : '')
       +'</div>';
     // semáforo de datos de la semana (necesita la pasada 2: equipo por sucursal)
     if(_objCadDetalle){
@@ -4377,7 +4417,7 @@ async function veArchivo(file){
           data={vendedores:mio.vendedores, total:mio.total};
           info='Leído como <b>estadística detallada</b> ('+esc(agg.etiqueta)+', con día a día por vendedor).'
             +(agg.nOut>0?' Se descartaron '+agg.nOut+' comprobantes de días fuera de la semana.':'')
-            +(agg.omniN?' Se excluyó <b>WEB MATEU</b> ('+objMoney(agg.omniV)+'): venta de ecom facturada en la sucursal, no cuenta para el objetivo.':'')
+            +(agg.omniN?' La venta web facturada en tu sucursal (WEB MATEU / WEB AURELIUS, '+objMoney(agg.omniV)+') se reasigna a Ecommerce: no cuenta para tu objetivo.':'')
             +(Object.keys(agg.porSlug).length>1?' El archivo traía varias sucursales: se tomó solo la tuya.':'');
           break;
         }
@@ -4630,12 +4670,14 @@ function veAgregarSemana(res, sem){
   const sucV=new Map(), dowSet=new Set(); let ncPos=0, nIn=0, nOut=0, omniN=0, omniV=0;
   res.comps.forEach(x=>{
     if(!enSemana(x)){ nOut++; return; }
-    // omnicanalidad: WEB MATEU solo es vendedor real en Ecommerce (99); en una sucursal
-    // física es venta de ecom facturada ahí y NO cuenta para sus objetivos (Juli 29/08)
-    if(veNormU(x.vend)==='WEB MATEU' && !/^99/.test(String(x.suc||''))){ omniN++; omniV+=x.imp; return; }
+    // omnicanalidad: WEB MATEU / WEB AURELIUS en una sucursal física es venta de ecom
+    // facturada ahí → se REASIGNA a Ecommerce (así la física coincide con el sistema
+    // y la venta no se pierde). En Ecommerce (99) son sus vendedores reales. (Juli 29/08)
+    let suc=x.suc;
+    if(/^WEB (MATEU|AURELIUS)$/.test(veNormU(x.vend)) && !/^99/.test(String(suc||''))){ omniN++; omniV+=x.imp; suc=ECOM; }
     nIn++;
     const esNc=/^Nc/.test(x.nro); if(esNc && x.imp>0) ncPos++;
-    let vs=sucV.get(x.suc); if(!vs){ vs=new Map(); sucV.set(x.suc,vs); }
+    let vs=sucV.get(suc); if(!vs){ vs=new Map(); sucV.set(suc,vs); }
     let v=vs.get(x.vend); if(!v){ v={venta:0,tickets:0,unidades:0,dias:{}}; vs.set(x.vend,v); }
     v.venta+=x.imp; v.unidades+=x.cant; if(!esNc && x.cant>0) v.tickets++;
     if(x.imp){ v.dias[x.dow]=(v.dias[x.dow]||0)+x.imp; }
@@ -4771,7 +4813,7 @@ function veCadPreviewHtml(sem, por){
       +(agg.nOut && !multi?' (descarto '+agg.nOut.toLocaleString('es-AR')+' de otros días)':'')+' en <b>'+filas.length+'</b> sucursales. Si está bien, publicá: '
       +(cob.ok.length>1?'se cargan las '+cob.ok.length+' semanas y cada':'cada')+' sucursal va a ver su venta provisoria en Mi Sucursal.';
   }
-  h+=(agg.omniN?'<br>Omnicanalidad: excluyo '+agg.omniN+' comprobantes de <b>WEB MATEU</b> en sucursales físicas ('+objMoney(agg.omniV)+') — es venta de ecom facturada en la sucursal y no cuenta para sus objetivos.':'')
+  h+=(agg.omniN?'<br>Omnicanalidad: reasigno a <b>Ecommerce</b> '+agg.omniN+' comprobantes de venta web (WEB MATEU / WEB AURELIUS) facturados en sucursales físicas ('+objMoney(agg.omniV)+') — no cuentan para el objetivo de la sucursal.':'')
     +(agg.saltadas.length?'<br>Salteo (sin sucursal en el Portal): '+esc(agg.saltadas.join(', ')):'')
     +(!vacio && sinVenta.length?'<br>Con meta pero sin venta en el archivo: '+esc(sinVenta.join(', ')):'')
     +(agg.ncPos?'<br>⚠️ '+agg.ncPos+' notas de crédito con importe positivo (se esperaba negativo).':'')
