@@ -2074,8 +2074,8 @@ async function objMesCadenaHtml(sem, weeks){
     const v=data.porSlug[slug]||{}, meta=+v.meta||0;
     if(!meta) return null;
     const full=SLUG_SUC[slug]||OUTLET_SUC[slug]||slug;
-    return {slug, fmt:formatoDe(full), meta,
-      minimo:+v.minimo||Math.round(meta/1.2), s120:+v.s120||Math.round(meta*1.2), real:+v.real||0};
+    return {slug, nombre:(SLUG_SUC[slug]||OUTLET_SUC[slug])?full.replace(/^\d+-\s*/,''):nombreBonito(slug), fmt:formatoDe(full), meta,
+      minimo:+v.minimo||Math.round(meta/1.2), s120:+v.s120||Math.round(meta*1.2), real:+v.real||0, prov:false, nSem:0};
   }).filter(Boolean).filter(r=>!rkTipo || r.fmt===rkTipo);
   if(!filas.length) return '';
   const lblLinea = rkTipo ? fmtLabel(rkTipo) : 'total sucursales';
@@ -2088,21 +2088,23 @@ async function objMesCadenaHtml(sem, weeks){
     const slugsOk=new Set(filas.map(r=>r.slug));
     // por semana: real oficial donde está; para las sucursales sin oficial, la venta
     // provisoria cargada (ventaEquipo) — así la semana recién subida ya suma al mes
+    const acc={};   // slug → suma del mes (para el detalle por sucursal desplegable)
     const porSem=await Promise.all(sems.map(async (sd,wi)=>{
       if(!sd || !sd.porSlug) return {sub:0, hay:false, prov:false};
       let sub=0, hay=false, prov=false; const faltan=[];
       Object.keys(sd.porSlug).forEach(sl=>{
         if(!slugsOk.has(sl)) return;
         const v=sd.porSlug[sl];
-        if(v && +v.real>0){ sub+=+v.real; hay=true; } else faltan.push(sl);
+        if(v && +v.real>0){ sub+=+v.real; hay=true; const a=(acc[sl]=acc[sl]||{real:0,nSem:0}); a.real+=+v.real; a.nSem++; } else faltan.push(sl);
       });
       const tots=await Promise.all(faltan.map(sl=>fetchVentaEquipoTotal(sl, delMes[wi])));
-      tots.forEach(t=>{ const n=(t&&+t.venta)||0; if(n>0){ sub+=n; hay=true; prov=true; } });
+      tots.forEach((t,i)=>{ const n=(t&&+t.venta)||0; if(n>0){ sub+=n; hay=true; prov=true; const a=(acc[faltan[i]]=acc[faltan[i]]||{real:0,nSem:0}); a.real+=n; a.nSem++; } });
       return {sub, hay, prov};
     }));
     let sum=0;
     porSem.forEach(x=>{ if(x.hay){ sum+=x.sub; nSem++; if(x.prov) provisorio=true; } });
     if(sum>0){ T.real=Math.round(sum); provisorio=true; }
+    filas.forEach(r=>{ const a=acc[r.slug]; if(a){ r.real=Math.round(a.real); r.prov=true; r.nSem=a.nSem; } });
   }
   if(vistaCadena){ _resumenVivo.mes={real:T.real, meta:T.meta}; pintarResumenVivo(); }
   const pct=T.meta?T.real/T.meta:0, w=Math.min(100,Math.round(pct*100));
@@ -2131,11 +2133,29 @@ async function objMesCadenaHtml(sem, weeks){
     +'<div style="border:1px solid var(--line,#e6ebf5);border-radius:9px;padding:8px 11px"><div style="font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid)">Mínimo '+esc(lblLinea)+'</div><div style="font-size:16px;font-weight:700;margin-top:2px">'+objMoney(T.minimo)+'</div></div>'
     +'<div class="box120" style="border-radius:9px;padding:8px 11px" title="Meta × 1,2: el gran objetivo de la semana"><div class="b120-l">★ 120% '+esc(lblLinea)+'</div><div class="b120-v">'+objMoney(T.s120)+'</div></div>'
     +'</div>';
+  // detalle por sucursal (desplegable): la venta del mes de cada una, como en la semana
+  {
+    const ord=filas.slice().sort((a,b)=> (b.real?b.real/b.meta:-1)-(a.real?a.real/a.meta:-1) || a.nombre.localeCompare(b.nombre));
+    const trsM=ord.map(r=>{
+      const p=r.meta?r.real/r.meta:0;
+      const c = !r.real ? 'var(--mid)' : r.real>=r.meta ? 'var(--ok,#16a34a)' : r.real>=r.minimo ? '#d97706' : '#dc2626';
+      return '<tr><td class="L">'+esc(r.nombre)+'</td>'
+        +'<td><span class="num">'+objMoney(r.meta)+'</span></td>'
+        +'<td><span class="num">'+(r.real?objMoney(r.real):'—')+'</span>'+(r.prov?'<span class="pprov" style="margin-left:4px" title="Avance parcial del mes: suma del real oficial y la venta provisoria de las semanas ya cargadas ('+r.nSem+' sem)">'+r.nSem+' sem</span>':'')+'</td>'
+        +'<td><b style="color:'+c+'">'+(r.real?Math.round(p*100)+'%':'—')+'</b></td></tr>';
+    }).join('');
+    h+='<details class="bgrupo" id="objMesCadDet" style="margin:12px 0 0"'+(_objMesCadOpen?' open':'')+'>'
+      +'<summary>Detalle por sucursal · '+filas.length+'</summary>'
+      +'<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L">Sucursal</th><th>Meta</th><th>Real</th><th>%</th></tr></thead><tbody>'+trsM+'</tbody></table></div>'
+      +'</details>';
+  }
   h+='</div>';
   return h;
 }
 
 let objCadSem = null;              // semana elegida en la vista cadena (lunesISO); null = la última
+let _objCadOpen = true;            // desplegable «Detalle por sucursal» del objetivo semanal (abierto por defecto)
+let _objMesCadOpen = false;        // ídem del objetivo del mes (arranca comprimido)
 let _objCadToken = 0;              // corta pasadas viejas si el usuario cambió de semana/vista
 let _objCadDetalle = false;        // false = pasada 1 (sin Ritmo/Tickets-h todavía)
 async function renderObjCadena(){
@@ -2319,13 +2339,17 @@ async function renderObjCadena(){
         +'</tr>';
     }).join('');
     const hayK=rows.some(r=>r.tk>0);
-    html+='<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L">Sucursal</th><th>Meta</th><th>Real</th><th>%</th>'
+    // detalle por sucursal: desplegable (recuerda cómo lo dejó el usuario en la visita)
+    html+='<details class="bgrupo" id="objCadDet" style="margin:2px 0 0"'+(_objCadOpen?' open':'')+'>'
+      +'<summary>Detalle por sucursal · '+rows.length+'</summary>'
+      +'<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L">Sucursal</th><th>Meta</th><th>Real</th><th>%</th>'
       +(hayR?'<th title="Venta vs. lo esperado a esta altura de la semana según la curva de venta por día de cada sucursal">Ritmo<span class="pprov">prov</span></th>':'')
       +'<th title="Unidades por ticket de la semana (venta cargada) · % vs. el mes cerrado">UPT sem.<span class="pprov">prov</span></th>'
       +'<th title="Ticket promedio de la semana (venta cargada) · % vs. el mes cerrado">Ticket prom. sem.<span class="pprov">prov</span></th>'
       +(hayH?'<th title="Tickets por hora asignada del equipo de la semana (o del último equipo guardado)'+(hbase==='h_act'?' · % vs. el mes cerrado con horas asignadas':'')+'">Tickets/h sem.<span class="pprov">prov</span></th>':'')
-      +'</tr></thead><tbody>'+trs+'</tbody></table></div>';
-    if(hayProv||hayK) html+='<p class="hint" style="margin-top:8px">«prov» = dato de la semana en curso cargado desde «Cargar venta de la semana» (o por el encargado). El real oficial se completa desde el HISTÓRICO del Excel PMS en el módulo Objetivos. <b>Ritmo</b> = venta vs. lo esperado a esta altura de la semana (curva por día de cada sucursal). UPT, ticket promedio'+(hbase==='h_act'?' y tickets por hora':'')+' de la semana llevan debajo el % contra '+esc(perLabel(per))+' (cierre)'+(hbase!=='h_act'?'; tickets por hora no se compara con el cierre en base horas contratadas':'')+'.</p>';
+      +'</tr></thead><tbody>'+trs+'</tbody></table></div>'
+      +((hayProv||hayK)?'<div style="padding:2px 15px 12px"><p class="hint" style="margin-top:8px">«prov» = dato de la semana en curso cargado desde «Cargar venta de la semana» (o por el encargado). El real oficial se completa desde el HISTÓRICO del Excel PMS en el módulo Objetivos. <b>Ritmo</b> = venta vs. lo esperado a esta altura de la semana (curva por día de cada sucursal). UPT, ticket promedio'+(hbase==='h_act'?' y tickets por hora':'')+' de la semana llevan debajo el % contra '+esc(perLabel(per))+' (cierre)'+(hbase!=='h_act'?'; tickets por hora no se compara con el cierre en base horas contratadas':'')+'.</p></div>':'')
+      +'</details>';
   }
   html+='<p class="hint" style="margin-top:12px"><a href="../objetivos/" style="color:var(--red,#CC0000);font-weight:600;text-decoration:none">Abrir Objetivos de Venta →</a> para cargar o corregir las metas de la semana. <b>⇧ Cargar venta de la semana</b> sube la estadística de venta detallada del sistema (todas las sucursales, por día y vendedor) y la publica como venta provisoria para que cada sucursal la vea en Mi Sucursal.</p>';
   $('objCadCard').innerHTML=html;
@@ -2334,6 +2358,9 @@ async function renderObjCadena(){
   const rec=$('chkRecordar'); if(rec) rec.onclick=recordarFaltantes;
   const sv=$('veCadSave'); if(sv) sv.onclick=veCadPublicar;
   const cn=$('veCadCancel'); if(cn) cn.onclick=()=>{ _veCadPreview=null; renderObjCadena(); };
+  const dS=$('objCadDet'); if(dS) dS.ontoggle=()=>{ _objCadOpen=dS.open; };
+  // mesHtml se calcula una sola vez por render: al repintar (pasada 2) se fuerza el estado vigente
+  const dM=$('objMesCadDet'); if(dM){ dM.open=_objMesCadOpen; dM.ontoggle=()=>{ _objMesCadOpen=dM.open; }; }
   sec.style.display='';
   const ldc=$('vivaLoadCad'); if(ldc) ldc.style.display='none';
   pintarZonas();
