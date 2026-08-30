@@ -2073,6 +2073,39 @@ function fetchObjetivoMesFull(per){
 /* Bloque "Objetivo del mes" de la vista cadena: agregado de todas las
    sucursales (respeta el filtro por línea). Avance del mes abierto = suma de
    las semanas del mes ya publicadas con venta real («x sem»). */
+/* Regla vigente HASTA agosto 2026: el avance del objetivo MENSUAL es mes CALENDARIO
+   (arranca el día 1 aunque caiga jueves), mientras el semanal es retail. Las semanas
+   de borde (la del arranque y la del cierre del mes) aportan SOLO sus días dentro del
+   mes, tomados del día a día de ventaEquipo. DESDE septiembre 2026 se unifica todo en
+   calendario retail: la semana con días del mes siguiente es la 1era del mes siguiente
+   (= la semana pertenece al mes de su domingo) y no hay bordes. */
+function objSemanasDelMes(weeks, per){
+  if(per>='2026-09')
+    return (weeks||[]).filter(w=>veSumarDias(w,6).slice(0,7)===per).map(w=>({sem:w, borde:false}));
+  const y=+per.slice(0,4), mo=+per.slice(5,7);
+  const primero=per+'-01', ultimo=per+'-'+String(new Date(Date.UTC(y,mo,0)).getUTCDate()).padStart(2,'0');
+  return (weeks||[]).filter(w=>w<=ultimo && veSumarDias(w,6)>=primero)
+    .map(w=>({sem:w, borde: w<primero || veSumarDias(w,6)>ultimo}));
+}
+// venta de una semana de borde DENTRO del mes: suma los días del payload que caen en él
+function veVentaDiasMes(ve, sem, per){
+  if(!ve || !ve.vendedores) return 0;
+  let s=0;
+  ve.vendedores.forEach(v=>(v.dias||[]).forEach(x=>{
+    const i=VE_DOW.indexOf(x.d);
+    if(i>=0 && veSumarDias(sem,i).slice(0,7)===per) s+=(+x.v||0);
+  }));
+  return Math.round(s);
+}
+// etiqueta corta del pedazo de borde que entra al mes ("01–02/08")
+function objBordeLbl(sem, per){
+  const y=+per.slice(0,4), mo=+per.slice(5,7);
+  const primero=per+'-01', ultimo=per+'-'+String(new Date(Date.UTC(y,mo,0)).getUTCDate()).padStart(2,'0');
+  const fin=veSumarDias(sem,6);
+  const d1=sem<primero?primero:sem, d2=fin>ultimo?ultimo:fin;
+  const f=x=>x.slice(8,10)+'/'+x.slice(5,7);
+  return d1===d2 ? f(d1) : f(d1).slice(0,2)+'–'+f(d2);
+}
 async function objMesCadenaHtml(sem, weeks){
   let per = String(sem||'').slice(0,7);
   // mes + puntero al último publicado en paralelo (una ida y vuelta menos)
@@ -2091,9 +2124,11 @@ async function objMesCadenaHtml(sem, weeks){
   const lblLinea = rkTipo ? fmtLabel(rkTipo) : 'total sucursales';
   const T=filas.reduce((a,r)=>({meta:a.meta+r.meta, minimo:a.minimo+r.minimo, s120:a.s120+r.s120, real:a.real+r.real}),{meta:0,minimo:0,s120:0,real:0});
   // mes abierto (sin real oficial): sumar las semanas publicadas del mes
-  let provisorio=false, nSem=0;
+  let provisorio=false, nSem=0; const bordesLbl=[];
   if(!T.real){
-    const delMes=(weeks||[]).filter(w=>String(w).slice(0,7)===per);
+    const semMes=objSemanasDelMes(weeks, per);
+    const delMes=semMes.filter(x=>!x.borde).map(x=>x.sem);
+    const bordes=semMes.filter(x=>x.borde).map(x=>x.sem);
     const sems=await Promise.all(delMes.map(fetchObjetivoSemana));
     const slugsOk=new Set(filas.map(r=>r.slug));
     // por semana: real oficial donde está; para las sucursales sin oficial, la venta
@@ -2112,8 +2147,18 @@ async function objMesCadenaHtml(sem, weeks){
       tots.forEach((t,i)=>{ const n=(t&&+t.venta)||0; if(n>0){ sub+=n; hay=true; prov=true; const a=(acc[faltan[i]]=acc[faltan[i]]||{real:0,nSem:0}); a.real+=n; a.nSem++; } });
       return {sub, hay, prov};
     }));
+    // semanas de borde (mes calendario): aportan solo sus días dentro del mes
+    const porBorde=await Promise.all(bordes.map(async b=>{
+      const ns=await Promise.all(Array.from(slugsOk).map(async sl=>{
+        const n=veVentaDiasMes(await fetchVentaEquipo(sl,b), b, per);
+        if(n>0){ const a=(acc[sl]=acc[sl]||{real:0,nSem:0}); a.real+=n; }
+        return n;
+      }));
+      return {sem:b, sub:ns.reduce((a,x)=>a+x,0)};
+    }));
     let sum=0;
     porSem.forEach(x=>{ if(x.hay){ sum+=x.sub; nSem++; if(x.prov) provisorio=true; } });
+    porBorde.forEach(x=>{ if(x.sub>0){ sum+=x.sub; provisorio=true; bordesLbl.push(objBordeLbl(x.sem, per)); } });
     if(sum>0){ T.real=Math.round(sum); provisorio=true; }
     filas.forEach(r=>{ const a=acc[r.slug]; if(a){ r.real=Math.round(a.real); r.prov=true; r.nSem=a.nSem; } });
   }
@@ -2124,7 +2169,7 @@ async function objMesCadenaHtml(sem, weeks){
     +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
     +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">Objetivo del mes — '+esc(objMesLbl(per))+' · '+esc(lblLinea)+'</div>'
     +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-    +(provisorio?'<span class="pprov" style="margin-left:0">avance parcial · '+nSem+' sem</span>':'')
+    +(provisorio?'<span class="pprov" style="margin-left:0" title="Hasta agosto 2026 el objetivo mensual es mes calendario: las semanas de borde suman solo sus días dentro del mes">avance parcial · '+nSem+' sem'+(bordesLbl.length?' + '+esc(bordesLbl.join(' + ')):'')+'</span>':'')
     +'<button type="button" class="tb-btn" onclick="veCadElegir(\'mes\')" title="Subir la estadística de venta detallada del sistema con todas las sucursales, desde el arranque del mes hasta hoy: publica de una todas las semanas del mes que el archivo cubre completas (la vigente, con los días que tenga)">⇧ Cargar venta del mes</button>'
     +'</div></div>';
   h+='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px">';
@@ -3666,16 +3711,21 @@ async function objetivoMesHtml(slug, sem, weeks, ve){
   if(!real){
     // sumar las semanas del mes (cada fetch es por slug y queda cacheado):
     // real oficial donde está; si no, la venta provisoria cargada (ventaEquipo)
-    const delMes=(weeks||[]).filter(w=>String(w).slice(0,7)===per);
-    const [vs, tots]=await Promise.all([
+    const semMes=objSemanasDelMes(weeks, per);
+    const delMes=semMes.filter(x=>!x.borde).map(x=>x.sem);
+    const bordes=semMes.filter(x=>x.borde).map(x=>x.sem);
+    const [vs, tots, bs]=await Promise.all([
       Promise.all(delMes.map(w=>fetchObjetivoData(slug,w))),
-      Promise.all(delMes.map(w=>fetchVentaEquipoTotal(slug,w)))
+      Promise.all(delMes.map(w=>fetchVentaEquipoTotal(slug,w))),
+      // semanas de borde (mes calendario hasta ago-2026): solo sus días dentro del mes
+      Promise.all(bordes.map(async b=>veVentaDiasMes(await fetchVentaEquipo(slug,b), b, per)))
     ]);
     let sum=0, hay=false;
     vs.forEach((v,i)=>{
       if(v && v.real>0){ sum+=v.real; hay=true; }
       else{ const t=tots[i], n=(t&&+t.venta)||0; if(n>0){ sum+=n; hay=true; provisorio=true; } }
     });
+    bs.forEach(n=>{ if(n>0){ sum+=n; hay=true; provisorio=true; } });
     if(hay){ real=Math.round(sum); provisorio=true; }
   }
   const pct=(real&&meta)?real/meta:0;
