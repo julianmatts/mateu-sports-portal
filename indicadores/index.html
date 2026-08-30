@@ -456,20 +456,42 @@ tr.team:hover td.td-lead{background:rgba(224,164,0,.18)}
 
 /* ===== IMPRESIÓN / PDF ===== */
 @media print{
+  @page{ size:A4; margin:11mm 10mm 13mm }
+  /* los semáforos, barras y pills son el mensaje: imprimir los colores tal cual */
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{background:#fff;font-size:12.5px}
+  /* chrome de pantalla afuera: controles, navegación y ayudas no van al papel */
   #toolbar, .menu-open, #notifWidget, .drawer, .drawer-scrim, .zona-nav, .zona-jump{display:none!important}
   .zona-ctrl select, .zona-ctrl .lbl, .zona-cargando{display:none!important}
-  .kpi-bar{display:none!important}
-  body{background:#fff}
+  .kpi-bar, .mtu-fab, .mtu-scrim, .notif-toast, .hint a, .rk-bar{display:none!important}
+  button, select, input, textarea{display:none!important}
+  /* los dropdowns propios quedan como texto plano: dicen qué semana/mes se imprime */
+  .msdrop-btn{display:inline-flex!important;border:0!important;background:none!important;box-shadow:none!important;padding:0!important;color:inherit;font-weight:700}
+  .msdrop-btn .chev, .msdrop-panel{display:none!important}
   .top{position:static;border-bottom:3px solid var(--red)}
   .top-in{padding:8px 0;grid-template-columns:1fr}
   .print-ctx{display:block!important;text-align:center;font-family:var(--font-c);font-weight:600;letter-spacing:1px;
-    text-transform:uppercase;color:var(--muted);font-size:13px;padding:10px 0 0}
-  .wrap{padding:0}
-  .sec{padding-top:18px;break-inside:avoid}
-  .card,.kpi,.tbl-wrap,.diag{break-inside:avoid;box-shadow:none}
-  .kpis{grid-template-columns:repeat(4,1fr)}
+    text-transform:uppercase;color:var(--muted);font-size:12px;padding:10px 0 0}
+  .wrap{padding:0;max-width:none}
+  /* la banda «En curso» en versión papel: fondo blanco, borde fino, acentos intactos */
+  .zona-viva{background:#fff;border:1.5px solid var(--vivo-line);border-radius:12px;padding:0 16px 16px;margin-top:14px}
+  .zona-head{padding:12px 0 8px}
+  .zona-title{font-size:26px}
+  .sec{padding-top:14px}
+  .sec-label,.sec-title{break-after:avoid}
+  .kpi,.diag{break-inside:avoid}
+  .card,.kpi,.tbl-wrap,.diag{box-shadow:none;border:1px solid var(--border)}
+  .kpis{grid-template-columns:repeat(4,1fr);gap:10px}
+  /* tablas compactas; si una corta de página, repite el encabezado y no parte filas */
+  table{font-size:11px}
+  thead{display:table-header-group}
+  tr{break-inside:avoid}
+  .tbl-wrap{overflow:visible}
   .hint{color:#555}
   a[href]:after{content:''}
+  /* los desplegables cerrados imprimen solo su título, sin la flechita de pantalla */
+  details>summary{list-style:none}
+  details>summary::-webkit-details-marker{display:none}
 }
 
 /* ===== PLANTILLA / DOTACIÓN ===== */
@@ -831,6 +853,7 @@ footer b{color:var(--navy)}
 
   <!-- Vista CADENA (solo gerencia) -->
   <div id="cadenaView" style="display:none">
+    <div class="print-ctx" id="printCtxCad"></div>
     <!-- Objetivo de la semana: total cadena + por sucursal. Gerencia baja la semana
          completa de Firebase (objetivos/semanas/<sem>), a diferencia de las sucursales
          que solo piden su slug. -->
@@ -1257,6 +1280,15 @@ async function boot(){
   $('veFile').onchange = e => { const f=e.target.files&&e.target.files[0]; e.target.value=''; veArchivo(f); };
   $('veCadFile').onchange = e => { const f=e.target.files&&e.target.files[0]; e.target.value=''; veCadArchivo(f); };
   $('eqFile').onchange = e => { const f=e.target.files&&e.target.files[0]; e.target.value=''; eqArchivoPMS(f); };
+  // ⎙ PDF: mientras dura la impresión, el contexto del encabezado lleva la fecha
+  // (hay un print-ctx por vista: #printCtx en Mi Sucursal, #printCtxCad en Cadena)
+  let _printCtxPrev=null;
+  window.addEventListener('beforeprint', ()=>{ if(_printCtxPrev!=null) return;
+    const pc=$(vistaCadena?'printCtxCad':'printCtx'); if(!pc) return;
+    _printCtxPrev=[pc, pc.textContent];
+    pc.textContent=(pc.textContent?pc.textContent+' · ':'')+'impreso el '+new Date().toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  });
+  window.addEventListener('afterprint', ()=>{ if(_printCtxPrev){ _printCtxPrev[0].textContent=_printCtxPrev[1]; } _printCtxPrev=null; });
   $('btnPrint').onclick = ()=> window.print();
   $('btnCopiar').onclick = copiarResumen;
   $('selSuc').onchange = e => {
@@ -1486,6 +1518,7 @@ async function render(){
   if(vistaCadena){
     $('content').style.display='none';
     $('cadenaView').style.display='block';
+    const pcc=$('printCtxCad'); if(pcc) pcc.textContent='Panel General · todas las sucursales · cierre '+perLabel(per);
     pintarZonas();
     renderObjCadena();   // async: Firebase; pinta cuando llega
     renderKpisCadena();
