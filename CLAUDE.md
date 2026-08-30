@@ -215,14 +215,24 @@ de la semana + equipo, **Indicadores de la semana** y Reposición — todo Fireb
 abiertos) y **«Cierre»** (`#zonaCierre` / `#zonaCierreCad`, pill «✓ oficial»: los cuatro
 indicadores con el switch Mes/Sem 1…4 y todo el análisis del último mes cerrado — JSON del
 ETL). El **selector de período vive en la cabecera de Cierre** (`#selPer` se mueve al
-`#selPerHost` de la vista activa en `pintarZonas()`), no en la barra global. Hay nav de
-salto «Ir a: En curso · Cierre» (sticky en Mi Sucursal; dentro de la barra de chips en
-Cadena). `pintarZonas()` pone las fechas en los títulos (`_zonaSem`/`_zonaMes`, que setean
-`renderObjetivo` / `renderObjCadena` / `objetivoMesHtml`) y oculta la banda viva si no tiene
-secciones (Ecommerce). Regla: todo número vivo lleva el pill `.pprov`; los cerrados, nunca.
-**Indicadores de la semana** (`renderKpisSemana`; desde el 26/08 NO son sección propia:
-viven **dentro de «Objetivo de la semana»** en `#kpisSemBox`, y el acumulado del mes —
-la ex tabla «El puente», hoy «Indicadores del mes en curso» — vive **dentro de «Objetivo
+`#selPerHost` de la vista activa en `pintarZonas()`), no en la barra global.
+**Pestañas (29/08/2026, reemplazan al nav «Ir a»):** se ve **UNA zona por vez** con el
+segmented `.zona-tabs` («● En curso · provisorio» azul / «✓ Cierre · oficial» navy;
+sticky arriba en Mi Sucursal, a la derecha de la rk-bar en Cadena). `setZonaTab()` guarda
+la elección en localStorage `ind_zona_tab` (default: En curso) y `pintarZonas()` aplica
+el display de las zonas + el estado `.on`; sin secciones vivas (Ecommerce) se fuerza
+Cierre y la pestaña viva se oculta. La **impresión/PDF saca las dos zonas juntas** igual
+(`@media print` fuerza `display:block`, salvo `.zona.z-empty`). La mini-barra `#kpiBar`
+lee la grilla de la pestaña activa (`kpiBarGrid`: En curso → `#kpisSem` con contexto
+«Sem N · provisorio»; Cierre → `#kpis`/`#kpisCad`; Cadena en curso no tiene tarjetas).
+`pintarZonas()` pone las fechas en los títulos (`_zonaSem`/`_zonaMes`, que setean
+`renderObjetivo` / `renderObjCadena` / `objetivoMesHtml`).
+Regla: todo número vivo lleva el pill `.pprov`; los cerrados, nunca.
+**Indicadores de la semana** (`renderKpisSemana`; desde el 29/08 son la **sección
+«Resumen · Indicadores de la semana»** — `#kpisSemBox`, arriba de todo en la zona viva,
+misma jerarquía que «Los cuatro indicadores» del Cierre; sin venta cargada muestra un
+empty state en vez de desaparecer. El acumulado del mes — la ex tabla «El puente», hoy
+«Indicadores del mes en curso» — sigue **dentro de «Objetivo
 del mes»** en `#puenteBox`): UPT, ticket promedio,
 tickets/hora y venta/hora de la semana elegida con la venta de `ventaEquipo` y las horas
 asignadas del equipo (solo los días que ya tienen venta: `eqHorasDias`), cada uno vs. el
@@ -248,7 +258,7 @@ si la semana no tiene equipo con horas, usa el último guardado anterior (nota �
 — así tickets/hora de la semana y de la anterior siempre salen; Cadena suma la columna
 «Tickets/h sem.» (delta vs. cierre solo en base «Horas asignadas»). El desplegable «Cómo viene
 el equipo» abre solo la primera vez que se ve esa semana (`ind_eq_visto_<slug>|<sem>` en
-localStorage; `_eqOpenState` recuerda el toggle dentro de la visita). Nav «Ir a» oculto <640 px.
+localStorage; `_eqOpenState` recuerda el toggle dentro de la visita).
 
 `indicadores/` es un `index.html` self-contained que **lee la sesión del Portal**
 (no tiene login propio) y es la **pantalla de inicio de los roles `sucursal` y

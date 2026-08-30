@@ -161,9 +161,6 @@ a{color:inherit}
   font-weight:600;margin-bottom:5px}
 .sec-title{font-family:var(--font-d);font-size:32px;letter-spacing:.5px;line-height:1;margin-bottom:8px}
 .sec-title em{color:var(--red);font-style:normal}
-/* subtítulo dentro de una sección (los indicadores embebidos en el objetivo) */
-.sub-title{font-family:var(--font-d);font-size:23px;letter-spacing:.5px;line-height:1;margin:0 0 6px;font-weight:400}
-.sub-title em{color:var(--red);font-style:normal}
 .sec-head{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:8px}
 .sec-head .sec-title{margin-bottom:0}
 .sec-head .seg{margin-left:auto}
@@ -239,14 +236,16 @@ a{color:inherit}
 .pte td.pte-vacio{font-family:var(--font-b);font-size:12px;color:var(--muted);text-align:center;max-width:180px;white-space:normal;line-height:1.45}
 .pte table th .pprov,.pte table th .pok{margin-left:5px;vertical-align:baseline}
 .pok{display:inline-block;vertical-align:middle;font-family:var(--font-c);font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--ok);background:var(--ok-bg);border:1px solid #bfe6cf;border-radius:20px;padding:1px 7px;margin-left:6px;line-height:1.5}
-/* nav de salto entre zonas (Mi Sucursal: sticky bajo el header; Cadena: dentro de la barra de chips) */
-.zona-nav{position:sticky;top:var(--rk-top,64px);z-index:30;display:flex;align-items:center;gap:8px;background:var(--off);padding:10px 0 8px;margin-bottom:-6px}
-.zona-nav .lbl{font-family:var(--font-c);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);font-weight:600;margin-right:2px}
-.zona-jump a{font-family:var(--font-c);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;text-decoration:none;padding:6px 12px;border-radius:20px;border:1px solid var(--border);background:#fff;color:var(--navy);white-space:nowrap;transition:border .12s}
-.zona-jump a.viva{color:var(--vivo);border-color:var(--vivo-line);background:var(--vivo-pill)}
-.zona-jump a:hover{border-color:var(--navy-mid)}
-.zona-jump{display:flex;gap:6px;flex-wrap:wrap}
-.rk-bar .zona-jump{margin-left:auto}
+/* pestañas En curso / Cierre: se ve UNA zona por vez; la pestaña activa queda
+   sticky y hace de indicador de contexto (azul ● provisorio / navy ✓ oficial) */
+.zona-tabs{position:sticky;top:var(--rk-top,64px);z-index:30;display:flex;align-items:center;gap:8px;background:var(--off);padding:10px 0 8px;margin-bottom:-6px}
+.ztab{font-family:var(--font-c);font-size:12.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:#fff;color:var(--muted);white-space:nowrap;display:inline-flex;align-items:center;gap:7px;transition:border .12s,background .12s,color .12s}
+.ztab .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+.ztab em{font-style:normal;font-weight:600;font-size:10px;letter-spacing:1.2px;opacity:.65}
+.ztab:hover{border-color:var(--navy-mid)}
+.ztab.viva.on{color:#fff;background:var(--vivo);border-color:var(--vivo)}
+.ztab.cierre.on{color:#fff;background:var(--navy);border-color:var(--navy)}
+.rk-bar .zona-tabs{position:static;background:none;padding:0;margin:0 0 0 auto}
 /* placeholder de la banda viva: se ve desde el primer pintado, mientras Firebase carga,
    para que el Cierre (estático, instantáneo) nunca aparezca primero y "salte" la página */
 .zona-cargando{padding:26px 0 10px;color:var(--muted);font-size:14px;display:flex;align-items:center;gap:10px}
@@ -262,7 +261,7 @@ a{color:inherit}
 .ritmo{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;line-height:1.45;border-radius:9px;padding:8px 12px;margin:-4px 0 14px}
 .ritmo.r-ok{background:var(--ok-bg);color:#14663a} .ritmo.r-mid{background:var(--mid-bg);color:#7a5310} .ritmo.r-bad{background:var(--bad-bg);color:#7a1a15}
 .ritmo b{font-weight:700}
-@media(max-width:640px){ .zona-title{font-size:28px} .zona-title em{display:block;margin:6px 0 0} .zona-viva{padding:0 14px 18px} .zona-nav{display:none} }
+@media(max-width:640px){ .zona-title{font-size:28px} .zona-title em{display:block;margin:6px 0 0} .zona-viva{padding:0 14px 18px} .ztab{padding:6px 11px;font-size:11.5px} .ztab em{display:none} }
 .hint{font-size:13px;color:var(--muted);margin:0 0 20px;max-width:680px;line-height:1.6}
 .hint b{color:var(--navy);font-weight:600}
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
@@ -465,8 +464,12 @@ tr.team:hover td.td-lead{background:rgba(224,164,0,.18)}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   body{background:#fff;font-size:12.5px}
   /* chrome de pantalla afuera: controles, navegación y ayudas no van al papel */
-  #toolbar, .menu-open, #notifWidget, .drawer, .drawer-scrim, .zona-nav, .zona-jump{display:none!important}
+  #toolbar, .menu-open, #notifWidget, .drawer, .drawer-scrim, .zona-tabs{display:none!important}
   .zona-ctrl select, .zona-ctrl .lbl, .zona-cargando{display:none!important}
+  /* al papel van las DOS zonas juntas (en pantalla las pestañas muestran una por vez);
+     una zona viva sin secciones (Ecommerce) sigue afuera */
+  .zona-viva,.zona-cierre{display:block!important}
+  .zona.z-empty{display:none!important}
   .kpi-bar, .mtu-fab, .mtu-scrim, .notif-toast, .hint a, .rk-bar{display:none!important}
   button, select, input, textarea{display:none!important}
   /* los dropdowns propios quedan como texto plano: dicen qué semana/mes se imprime */
@@ -695,7 +698,11 @@ footer b{color:var(--navy)}
   <div id="content" style="display:none">
     <div class="print-ctx" id="printCtx"></div>
 
-    <nav class="zona-nav zona-jump" id="zonaNav" aria-label="Ir a"><span class="lbl">Ir a</span><a href="#zonaViva" class="viva">● En curso</a><a href="#zonaCierre">Cierre</a></nav>
+    <!-- Pestañas En curso / Cierre: una zona por vez (setZonaTab / pintarZonas) -->
+    <nav class="zona-tabs" id="zonaNav" aria-label="En curso o Cierre">
+      <button class="ztab viva" data-tab="viva" aria-pressed="false"><span class="dot"></span>En curso<em>provisorio</em></button>
+      <button class="ztab cierre" data-tab="cierre" aria-pressed="false">✓ Cierre<em>oficial</em></button>
+    </nav>
 
     <!-- ===== ZONA EN CURSO: objetivo del mes y de la semana, equipo, indicadores de la semana, reposición (Firebase, provisorio) ===== -->
     <div class="zona zona-viva" id="zonaViva">
@@ -705,6 +712,18 @@ footer b{color:var(--navy)}
       <div class="zona-strip" id="vivaStrip" style="flex-basis:100%"></div>
     </header>
     <div class="zona-cargando" id="vivaLoad">Cargando la semana en curso…</div>
+
+    <!-- Resumen en curso: los cuatro indicadores de la semana elegida, con la misma
+         jerarquía que «Los cuatro indicadores» del Cierre (promovido a sección propia
+         con las pestañas; antes vivía dentro de «Objetivo de la semana»). Lo pinta
+         renderKpisSemana; sin venta cargada muestra el empty state. -->
+    <section class="sec" id="kpisSemBox" style="display:none">
+      <div class="sec-label">Resumen</div>
+      <h2 class="sec-title">Indicadores <em>de la semana</em></h2>
+      <p class="hint">Con la venta de la semana elegida y las horas asignadas al equipo, contra el objetivo de tu línea, el último cierre y la semana anterior.</p>
+      <div class="kpis" id="kpisSem"></div>
+      <div class="diag" id="diagSem" style="display:none;margin-top:12px"></div>
+    </section>
 
     <section class="sec" id="secObjetivoMes" style="display:none">
       <div class="sec-label">Objetivo de venta</div>
@@ -720,13 +739,7 @@ footer b{color:var(--navy)}
       <h2 class="sec-title">Objetivo <em>de la semana</em></h2>
       <p class="hint">La meta de venta que puso gerencia para tu sucursal, con el mínimo y el <b>120%</b> (meta × 1,2: el gran objetivo). Elegí la semana para ver otras. A medida que se cargue la venta, vas viendo el avance.</p>
       <div class="card pad" id="objetivoCard"></div>
-      <!-- indicadores de la semana elegida: viven DENTRO del objetivo semanal (no en sección propia) -->
-      <div id="kpisSemBox" style="display:none;margin-top:18px">
-        <h3 class="sub-title">Indicadores <em>de la semana</em></h3>
-        <p class="hint" style="margin:0 0 10px">Con la venta de la semana elegida y las horas asignadas al equipo, contra el objetivo de tu línea, el último cierre y la semana anterior.</p>
-        <div class="kpis" id="kpisSem"></div>
-        <div class="diag" id="diagSem" style="display:none;margin-top:12px"></div>
-      </div>
+      <!-- los indicadores de la semana viven en la sección «Resumen» de arriba (#kpisSemBox) -->
       <input type="file" id="veFile" accept=".xlsx,.xls,.csv" style="display:none">
       <input type="file" id="eqFile" accept=".xlsx,.xls" style="display:none">
     </section>
@@ -874,7 +887,10 @@ footer b{color:var(--navy)}
       <div class="rk-chips" id="rkChips"></div>
       <span class="rk-bar-lbl rk-bar-sep">KPI</span>
       <div class="rk-chips" id="rkKpiChips"></div>
-      <div class="zona-jump" id="zonaJumpCad"><a href="#zonaVivaCad" class="viva">● En curso</a><a href="#zonaCierreCad">Cierre</a></div>
+      <div class="zona-tabs" id="zonaJumpCad">
+        <button class="ztab viva" data-tab="viva" aria-pressed="false"><span class="dot"></span>En curso<em>provisorio</em></button>
+        <button class="ztab cierre" data-tab="cierre" aria-pressed="false">✓ Cierre<em>oficial</em></button>
+      </div>
     </div>
 
     <!-- ===== ZONA EN CURSO (cadena): objetivo del mes y de la semana, todas las sucursales ===== -->
@@ -1184,18 +1200,28 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape') cerrarDrops(); })
    Meses de stock, que llega async, entra solo cuando está) y hereda el color del
    semáforo. Clic = volver a las tarjetas. --- */
 let _kbVisible=false;
-// grilla de KPIs activa según la vista (Mi Sucursal o todas las sucursales)
-function kpiBarGrid(){ return (typeof vistaCadena!=='undefined' && vistaCadena) ? $('kpisCad') : $('kpis'); }
+// grilla de KPIs activa según la vista (Mi Sucursal o todas las sucursales) y la
+// pestaña (En curso → tarjetas de la semana; Cierre → las del mes cerrado).
+// La vista Cadena no tiene tarjetas KPI en curso: ahí la barra queda quieta.
+function kpiBarGrid(){
+  const cad=(typeof vistaCadena!=='undefined' && vistaCadena);
+  if(typeof zonaTab!=='undefined' && zonaTab==='viva') return cad?null:$('kpisSem');
+  return cad?$('kpisCad'):$('kpis');
+}
 function kpiBarHtml(){
   const g=kpiBarGrid(); if(!g) return '';
   const items=[...g.querySelectorAll('.kpi')].map(k=>{
-    const n=(k.querySelector('.kpi-name')||{textContent:''}).textContent.replace(/\*/g,'').trim();
+    // solo los nodos de texto del nombre: afuera el pill «prov» y los asteriscos
+    const ne=k.querySelector('.kpi-name');
+    const n=ne?[...ne.childNodes].filter(x=>x.nodeType===3).map(x=>x.textContent).join('').replace(/\*/g,'').trim():'';
     const v=(k.querySelector('.kpi-val')||{textContent:''}).textContent.trim();
     const cls=['s-ok','s-mid','s-bad'].find(c=>k.classList.contains(c))||'';
     return {n,v,cls};
   }).filter(x=>x.v && x.v!=='…' && x.v!=='—');
   if(!items.length) return '';
-  const ctx=(typeof per!=='undefined'&&per?perLabel(per):'')+((typeof semSel!=='undefined'&&semSel)?' · Sem '+semSel:'');
+  const ctx=(typeof zonaTab!=='undefined' && zonaTab==='viva')
+    ? ((typeof _zonaSem!=='undefined' && _zonaSem)?objSemTag(_zonaSem):'Semana en curso')+' · provisorio'
+    : (typeof per!=='undefined'&&per?perLabel(per):'')+((typeof semSel!=='undefined'&&semSel)?' · Sem '+semSel:'');
   return '<div class="kpi-bar-in">'+(ctx?'<span class="kb-per">'+esc(ctx)+'</span>':'')
     + items.map(x=>'<span class="kb-item '+x.cls+'"><span class="n">'+esc(x.n)+'</span><b>'+esc(x.v)+'</b></span>').join('')
     +'</div>';
@@ -1435,6 +1461,19 @@ function pintarResumenVivo(){
   if(isFinite(R.tp)) chips.push('<span class="zs" title="Ticket promedio de la semana (provisorio)">Ticket prom. <b>'+fmtM(R.tp)+'</b></span>');
   el.innerHTML=chips.join('');
 }
+/* --- pestañas En curso / Cierre: se ve UNA zona por vez. La pestaña activa
+   queda sticky y hace de indicador de contexto (azul ● provisorio / navy
+   ✓ oficial). La elección se recuerda en localStorage; si la zona viva no
+   tiene secciones (Ecommerce, sin Firebase) se fuerza el Cierre. --- */
+let zonaTab=(()=>{ try{ return localStorage.getItem('ind_zona_tab')==='cierre'?'cierre':'viva'; }catch(e){ return 'viva'; } })();
+function setZonaTab(t){
+  if(t!==zonaTab){ zonaTab=t; try{ localStorage.setItem('ind_zona_tab',t); }catch(e){} }
+  pintarZonas();
+  // la zona nueva arranca desde su cabecera; re-evaluar la mini-barra de KPIs
+  window.scrollTo(0,0);
+  _kbVisible=false; const kb=$('kpiBar'); if(kb) kb.classList.remove('show'); kpiBarScroll();
+}
+document.querySelectorAll('.ztab').forEach(b=>{ b.onclick=()=>setZonaTab(b.dataset.tab); });
 function pintarZonas(){
   const cad=vistaCadena;
   const p=PERIODOS.find(x=>x.id===per)||{};
@@ -1450,12 +1489,20 @@ function pintarZonas(){
   const host=$(cad?'selPerHostCad':'selPerHost'), sel=$('selPer');
   const mov=sel && sel._msdrop ? sel._msdrop : sel;   // si está envuelto, se mueve el wrapper
   if(host && mov && mov.parentNode!==host) host.appendChild(mov);
-  const zv=$(cad?'zonaVivaCad':'zonaViva');
+  const zv=$(cad?'zonaVivaCad':'zonaViva'), zc=$(cad?'zonaCierreCad':'zonaCierre');
   if(zv){
     const ld=$(cad?'vivaLoadCad':'vivaLoad');
     const hay=[...zv.querySelectorAll('section')].some(x=>x.style.display!=='none') || (ld && ld.style.display!=='none');
-    zv.style.display=hay?'':'none';
-    const nav=$(cad?'zonaJumpCad':'zonaNav'); if(nav) nav.style.display=hay?'':'none';
+    zv.classList.toggle('z-empty', !hay);   // en impresión salen las dos zonas, salvo una viva vacía
+    const tab = hay ? zonaTab : 'cierre';
+    zv.style.display = (hay && tab==='viva') ? '' : 'none';
+    if(zc) zc.style.display = (tab==='cierre') ? '' : 'none';
+    document.querySelectorAll('.ztab').forEach(b=>{
+      const on = b.dataset.tab===tab;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on?'true':'false');
+      if(b.dataset.tab==='viva') b.style.display = hay?'':'none';
+    });
   }
 }
 function actualizarFiltroBanner(){
@@ -1569,7 +1616,7 @@ async function render(){
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
   $('secCanales').style.display = ecom?'':'none';
-  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secF8','secObjetivo','secObjetivoMes'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
+  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secF8','secObjetivo','secObjetivoMes','kpisSemBox'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
   const seg=document.querySelector('.seg'); if(seg) seg.style.display = ecom?'none':'flex';
   renderKPIs();
   renderDiagnostico();
@@ -1585,8 +1632,8 @@ async function render(){
 function mostrarEmpty(msg){
   // Objetivo / Reposición se muestran igual si hay slug (las pinta su propio render)
   const conSlug = !!slugActual();
-  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secF8','secObjetivo','secObjetivoMes']
-    .filter(id=>!(conSlug && /^sec(Barrida|Objetivo)/.test(id))).forEach(id=>$(id).style.display='none');
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secF8','secObjetivo','secObjetivoMes','kpisSemBox']
+    .filter(id=>!(conSlug && /^(sec(Barrida|Objetivo)|kpisSemBox)/.test(id))).forEach(id=>$(id).style.display='none');
   pintarZonas();
   $('cobNota').style.display='none';
   $('diagBox').style.display='none';
@@ -3886,17 +3933,20 @@ function ritmoHtml(r){
 }
 let _kpisSemToken=0;
 async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem, ritmo){
-  // los indicadores viven DENTRO de los objetivos: la semana en #kpisSemBox (sección
-  // Objetivo de la semana) y el acumulado del mes en #puenteBox (Objetivo del mes)
+  // la semana vive en la sección «Resumen» de la zona En curso (#kpisSemBox) y el
+  // acumulado del mes en #puenteBox (Objetivo del mes). Sin venta cargada, la
+  // sección queda con su empty state (no desaparece: es la cara de la pestaña).
   const kbox=$('kpisSemBox'), pte=$('puenteBox'); if(!kbox) return;
-  const ocultarKpis=()=>{ kbox.style.display='none'; if(pte) pte.style.display='none'; const dg=$('diagSem'); if(dg) dg.style.display='none'; pintarZonas(); };
+  const kpisVacios=msg=>{ if(pte) pte.style.display='none'; const dg=$('diagSem'); if(dg) dg.style.display='none';
+    $('kpisSem').innerHTML='<div class="empty" style="grid-column:1/-1">'+msg+'</div>';
+    kbox.style.display=''; pintarZonas(); };
   const token=++_kpisSemToken, target=sucName;
-  if(!veTotales(ve)){ ocultarKpis(); return; }
+  if(!veTotales(ve)){ kpisVacios('Todavía no hay venta cargada para esta semana: los indicadores aparecen apenas se cargue (gerencia con «⇧ Cargar venta de la semana», o el encargado en «Cómo viene el equipo»).'); return; }
   // equipo vigente (el de la semana o el último guardado) para esta semana y la anterior
   const [vig, vigP] = await Promise.all([equipoVigente(slug, sem), prevSem?equipoVigente(slug, prevSem):null]);
   if(token!==_kpisSemToken || sucName!==target) return;
   const cur=kpisSemanaViva(ve, vig.eq);
-  if(!cur){ ocultarKpis(); return; }
+  if(!cur){ kpisVacios('La venta cargada de esta semana no alcanza para calcular los indicadores (faltan tickets o unidades).'); return; }
   const prev=kpisSemanaViva(prevVe, vigP&&vigP.eq);
   const hsNota = (vig.eq && !vig.propio) ? ' · equipo de Sem '+objSemNum(vig.sem) : '';
   // mes en curso acumulado: semanas publicadas del mismo mes (mismo criterio que «Objetivo del mes»)
