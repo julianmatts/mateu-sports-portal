@@ -232,6 +232,16 @@ desde `pintarObjCad`) agrega los cuatro KPIs de la semana a la línea filtrada
 por hora con las horas asignadas de los equipos en la pasada 2) vs. el mes cerrado —
 las ex cajitas «UPT semana / Ticket prom. / Tickets/h» de la tarjeta del objetivo,
 que ahora solo conserva Mínimo y ★ 120%.
+**Cierre de Cadena con análisis (29/08/2026):** además de KPIs generales / Ranking /
+Comparación, el Cierre de la vista Cadena suma la tarjeta **«Venta neta»** del mes
+(`cadAggFiltrada` ahora devuelve `venta`; sparkline con `serieCadena('venta')`),
+**«La venta semana a semana»** agregada (`renderSemCad`, suma las `semanas` de
+`cadena.json`; sin el filtro por semana de la vista sucursal) y **«Cobertura vs.
+demanda» + «Tickets por hora y día»** agregados (`renderAnalisisCad`: baja el detalle
+de cada sucursal de la línea — cacheado, solo gerencia — y suma las curvas horarias;
+el gráfico de cobertura se compartió en `covChart()`). Todo respeta el filtro por
+línea (los chips repintan también estas secciones) y excluye Ecommerce, como los
+KPIs generales.
 `pintarZonas()` pone las fechas en los títulos (`_zonaSem`/`_zonaMes`, que setean
 `renderObjetivo` / `renderObjCadena` / `objetivoMesHtml`).
 Regla: todo número vivo lleva el pill `.pprov`; los cerrados, nunca.

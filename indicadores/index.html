@@ -943,8 +943,17 @@ footer b{color:var(--navy)}
     <section class="sec" id="secKpiCadena">
       <div class="sec-label">Resumen</div>
       <h2 class="sec-title" id="kpiCadTitle">KPIs generales <em>· todas las sucursales</em></h2>
-      <p class="hint">Los cuatro indicadores de todas las sucursales juntas (sin Ecommerce): se suman numerador y denominador, nunca se promedian ratios. Meses de stock suma el stock y las ventas de todas las sucursales.</p>
+      <p class="hint">Los indicadores de todas las sucursales juntas (sin Ecommerce): se suman numerador y denominador, nunca se promedian ratios. Meses de stock suma el stock y las ventas de todas las sucursales.</p>
       <div class="kpis" id="kpisCad"></div>
+    </section>
+
+    <!-- La venta semana a semana agregada: mismas barras que la vista sucursal,
+         sumando las semanas de cadena.json (lo pinta renderSemCad). -->
+    <section class="sec" id="secSemCad" style="display:none">
+      <div class="sec-label">Tráfico</div>
+      <h2 class="sec-title" id="semCadTitle">La venta <em>semana a semana</em></h2>
+      <p class="hint">La venta neta de cada semana retail del mes, de todas las sucursales juntas (respeta el filtro por línea; sin Ecommerce, como los KPIs generales).</p>
+      <div class="card pad" id="semCadAnalisis"></div>
     </section>
 
     <section class="sec" id="secRanking">
@@ -971,6 +980,31 @@ footer b{color:var(--navy)}
           </tr></thead>
           <tbody id="tbodyCad"></tbody>
         </table>
+      </div>
+    </section>
+
+    <!-- Cobertura y heatmap agregados: suman las curvas horarias de los detalles de
+         cada sucursal (solo gerencia baja los 20 archivos; lo pinta renderAnalisisCad). -->
+    <section class="sec" id="secCovCad" style="display:none">
+      <div class="sec-label">Dotación</div>
+      <h2 class="sec-title" id="covCadTitle">Cobertura vs. <em>demanda</em></h2>
+      <p class="hint">Barras: tickets promedio por hora en un día abierto, sumados en todas las sucursales de la línea. Línea: personal en piso según los horarios contratados. Donde la barra sube y la línea baja, hay demanda sin atender. Sin Ecommerce (no tiene piso).</p>
+      <div class="card pad">
+        <div id="covCad"></div>
+        <div class="legend">
+          <span style="color:var(--red)">▮ Tickets por hora</span>
+          <span>— Personas en piso</span>
+          <span id="covCadMax"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="secHeatCad" style="display:none">
+      <div class="sec-label">Tráfico</div>
+      <h2 class="sec-title" id="heatCadTitle">Tickets por <em>hora y día</em></h2>
+      <p class="hint">Todos los tickets del mes por día y hora, sumados en las sucursales de la línea (sin Ecommerce). El rojo marca los picos: ahí van las horas del equipo.</p>
+      <div class="card pad" style="overflow-x:auto"><div class="heat" id="heatCad"></div>
+        <div class="legend"><span>▮ Menos tickets</span><span style="color:var(--red)">▮ Pico de demanda</span></div>
       </div>
     </section>
     </div><!-- /zonaCierreCad -->
@@ -1595,8 +1629,10 @@ async function render(){
     pintarZonas();
     renderObjCadena();   // async: Firebase; pinta cuando llega
     renderKpisCadena();
+    renderSemCad();
     renderRanking();
     renderCadenaTabla();
+    renderAnalisisCad(); // async: suma los detalles de las sucursales (cobertura + heatmap)
     return;
   }
   $('cadenaView').style.display='none';
@@ -2560,9 +2596,14 @@ async function renderObjCadena(){
 
 /* --- KPIs generales de la cadena: mismos cuatro indicadores, agregados.
        Respetan el filtro por línea (rkTipo) de la barra de chips. --- */
+function cadRowsFiltradas(cad){
+  return ((cad&&cad.sucursales)||[]).filter(s=>s.sucursal!==ECOM && (!rkTipo || (s.formato||formatoDe(s.sucursal))===rkTipo));
+}
 function cadAggFiltrada(cad){
-  const l=(cad.sucursales||[]).filter(s=>s.sucursal!==ECOM && (!rkTipo || (s.formato||formatoDe(s.sucursal))===rkTipo));
-  return l.length ? kpis(suma(l)) : null;
+  const l=cadRowsFiltradas(cad);
+  if(!l.length) return null;
+  const s=suma(l);
+  return Object.assign(kpis(s), {venta:s.importe_neto});   // venta neta del mes (para la tarjeta y su sparkline)
 }
 function serieCadena(metric){
   return PERIODOS.slice().sort((a,b)=>a.id.localeCompare(b.id)).map(p=>{
@@ -2582,6 +2623,7 @@ function renderKpisCadena(){
     {key:'upt', name:'UPT',              val:fmt2(k.upt), unit:'unidades por ticket'},
     {key:'tph', name:'Tickets por hora', val:fmt2(k.tph), unit:'por hora de piso'},
     {key:'tp',  name:'Ticket promedio',  val:fmtM(k.tp),  unit:'venta neta por ticket'},
+    {key:'venta', name:'Venta neta',     val:kM(k.venta), unit:'importe neto del mes'},
   ];
   box.innerHTML = defs.map(d=>{
     const dp = kp? deltaHtml(k[d.key], kp[d.key]) : null;
@@ -5133,6 +5175,13 @@ function renderCov(){
   $('covLegPiso').style.display='';
   const d=DET.cobertura.slice().sort((a,b)=>a.hora-b.hora);
   if(!d.length || !d.some(x=>x.dot>0)){ $('cov').innerHTML='<p class="muted" style="padding:16px 0">Sin horarios de piso para esta sucursal.</p>'; $('covMax').textContent=''; return; }
+  const g=covChart(d);
+  $('cov').innerHTML=g.svg;
+  $('covMax').innerHTML=g.picoHtml;
+}
+/* gráfico barras (tickets/hora) + línea (dotación): lo usan la vista sucursal
+   (renderCov) y el agregado de todas las sucursales (renderAnalisisCad) */
+function covChart(d){
   const W=880,H=230,P={t:16,r:44,b:28,l:34};
   const maxT=Math.max(...d.map(x=>x.tickets_dia)), maxD=Math.max(...d.map(x=>x.dot));
   const bw=(W-P.l-P.r)/d.length, x=i=>P.l+i*bw, yT=v=>H-P.b-(v/maxT)*(H-P.t-P.b), yD=v=>H-P.b-(v/maxD)*(H-P.t-P.b);
@@ -5142,13 +5191,13 @@ function renderCov(){
   const labs=d.map((p,i)=>`<text x="${x(i)+bw/2}" y="${H-9}" text-anchor="middle" fill="var(--muted)" font-size="11" font-family="Barlow Condensed">${p.hora}</text>`).join('');
   const ratio=d.map(p=>({h:p.hora, r:p.dot?p.tickets_dia/p.dot:0})), maxR=Math.max(...ratio.map(r=>r.r));
   const strip=ratio.map((r,i)=>`<rect x="${x(i)+4}" y="${H-P.b+2}" width="${bw-8}" height="3" fill="${r.r>=maxR*0.85?'var(--bad)':r.r>=maxR*0.6?'var(--mid)':'#dbe1ee'}"/>`).join('');
-  $('cov').innerHTML=`<svg viewBox="0 0 ${W} ${H+6}" style="width:100%;height:auto" role="img" aria-label="Tickets y dotación por hora">
+  const svg=`<svg viewBox="0 0 ${W} ${H+6}" style="width:100%;height:auto" role="img" aria-label="Tickets y dotación por hora">
       <line x1="${P.l}" y1="${H-P.b}" x2="${W-P.r}" y2="${H-P.b}" stroke="var(--border)"/>${bars}${strip}
       <polyline points="${line}" fill="none" stroke="var(--navy)" stroke-width="1.6"/>${dots}${labs}
       <text x="6" y="${P.t+10}" fill="var(--muted)" font-size="10" font-family="Barlow Condensed">${fmt2(maxT)}</text>
       <text x="${W-38}" y="${P.t+10}" fill="var(--muted)" font-size="10" font-family="Barlow Condensed">${fmt2(maxD)} p.</text></svg>`;
   const pico=ratio.reduce((a,b)=>b.r>a.r?b:a);
-  $('covMax').innerHTML=`<span style="color:var(--navy)">Hora más exigida: ${pico.h}h · ${fmt2(pico.r)} tickets por persona</span>`;
+  return {svg, picoHtml:`<span style="color:var(--navy)">Hora más exigida: ${pico.h}h · ${fmt2(pico.r)} tickets por persona</span>`};
 }
 
 /* --- plantilla / dotación --- */
@@ -5375,6 +5424,96 @@ function renderNotas(){
 }
 
 /* --- vista cadena (gerencia) --- */
+/* La venta semana a semana agregada: suma las semanas de cadena.json de las
+   sucursales de la línea (sin Ecommerce, como los KPIs generales). Sin el filtro
+   por semana de la vista sucursal: acá las barras son solo lectura. */
+function renderSemCad(){
+  const sec=$('secSemCad'), box=$('semCadAnalisis'); if(!sec||!box) return;
+  const l=CAD?cadRowsFiltradas(CAD):[];
+  const porN={};
+  l.forEach(s=>(s.semanas||[]).forEach(w=>{
+    const a=porN[w.n]=porN[w.n]||{n:w.n, rango:w.rango, tickets:0, unidades_netas:0, importe_neto:0};
+    a.tickets+=w.tickets||0; a.unidades_netas+=w.unidades_netas||0; a.importe_neto+=w.importe_neto||0;
+    if(!a.rango && w.rango) a.rango=w.rango;
+  }));
+  const sem=Object.values(porN).sort((a,b)=>a.n-b.n);
+  if(sem.length<2){ sec.style.display='none'; return; }
+  sec.style.display='';
+  const tit=$('semCadTitle'); if(tit) tit.innerHTML='La venta <em>semana a semana'+(rkTipo?' · '+esc(fmtLabel(rkTipo)):'')+'</em>';
+  const totV=sem.reduce((a,w)=>a+w.importe_neto,0), maxV=Math.max(...sem.map(w=>w.importe_neto))||1;
+  const peak=sem.reduce((a,b)=>b.importe_neto>a.importe_neto?b:a);
+  const low =sem.reduce((a,b)=>b.importe_neto<a.importe_neto?b:a);
+  const W=760,H=200,P={t:24,b:46};
+  const n=sem.length, bw=(W)/n, Y=v=>H-P.b-(v/maxV)*(H-P.t-P.b);
+  const bars=sem.map((w,i)=>{ const x=i*bw, yy=Y(w.importe_neto);
+    return `<g><rect x="${(x+bw*0.16).toFixed(1)}" y="${yy.toFixed(1)}" width="${(bw*0.68).toFixed(1)}" height="${(H-P.b-yy).toFixed(1)}" rx="4" fill="${w===peak?'var(--red)':'#c3cfe8'}"><title>Sem ${w.n} · ${esc(w.rango||'')} · ${kM(w.importe_neto)} · ${fmtN(w.tickets)} tickets</title></rect>
+      <text x="${(x+bw/2).toFixed(1)}" y="${(yy-7).toFixed(1)}" text-anchor="middle" font-family="Bebas Neue" font-size="16" fill="var(--navy)">${kM(w.importe_neto)}</text>
+      <text x="${(x+bw/2).toFixed(1)}" y="${H-P.b+17}" text-anchor="middle" font-family="Barlow Condensed" font-size="12" font-weight="600" fill="var(--navy)">Sem ${w.n}</text>
+      <text x="${(x+bw/2).toFixed(1)}" y="${H-P.b+32}" text-anchor="middle" font-family="Barlow Condensed" font-size="10.5" fill="var(--muted)">${esc(w.rango||'')}</text></g>`;
+  }).join('');
+  const svg=`<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:520px;height:auto" role="img" aria-label="Venta neta por semana, todas las sucursales">${bars}</svg></div>`;
+  const tabla=`<div class="tbl-wrap" style="margin-top:14px"><table style="min-width:0">
+    <thead><tr><th class="L">Semana</th><th>Tickets</th><th>UPT</th><th>Ticket prom.</th><th>Venta neta</th><th>% del mes</th></tr></thead><tbody>`+
+    sem.map(w=>{ const upt=w.tickets?w.unidades_netas/w.tickets:0, tp=w.tickets?w.importe_neto/w.tickets:0, pc=totV?w.importe_neto/totV*100:0;
+      return `<tr><td class="L">Sem ${w.n} <span class="muted" style="font-size:12px">${esc(w.rango||'')}</span></td>
+        <td><span class="num">${fmtN(w.tickets)}</span></td><td><span class="num">${fmt2(upt)}</span></td>
+        <td><span class="num">${fmtM(tp)}</span></td><td><span class="num">${kM(w.importe_neto)}</span></td>
+        <td class="muted">${fmt2(pc)}%</td></tr>`; }).join('')+`</tbody></table></div>`;
+  const pkShare=totV?peak.importe_neto/totV*100:0, vsLow=low.importe_neto?(peak.importe_neto/low.importe_neto-1)*100:0;
+  const nota=`<p class="eq-note" style="margin-top:14px">La semana más fuerte fue la <b>Sem ${peak.n} (${esc(peak.rango||'')})</b> con <b>${kM(peak.importe_neto)}</b>, el <b>${fmt2(pkShare)}%</b> del mes`+
+    (low!==peak?` — <b>${fmt2(vsLow)}%</b> más que la más floja (Sem ${low.n}, ${kM(low.importe_neto)})`:'')+`.</p>`;
+  box.innerHTML = svg + tabla + nota;
+}
+/* Cobertura vs. demanda + heatmap agregados: baja el detalle de cada sucursal de la
+   línea (cacheado por detalleDe; solo gerencia llega acá) y suma las curvas horarias.
+   Ecommerce queda afuera (no tiene piso y vende 0-24). */
+let _covCadToken=0;
+async function renderAnalisisCad(){
+  const secC=$('secCovCad'), secH=$('secHeatCad'); if(!secC||!secH) return;
+  const l=CAD?cadRowsFiltradas(CAD):[];
+  if(!l.length){ secC.style.display='none'; secH.style.display='none'; return; }
+  const token=++_covCadToken, perTok=per;
+  secC.style.display=''; secH.style.display='';
+  const linLbl=rkTipo?' · '+esc(fmtLabel(rkTipo)):'';
+  const titC=$('covCadTitle'); if(titC) titC.innerHTML='Cobertura vs. <em>demanda'+linLbl+'</em>';
+  const titH=$('heatCadTitle'); if(titH) titH.innerHTML='Tickets por <em>hora y día'+linLbl+'</em>';
+  $('covCad').innerHTML='<p class="muted" style="padding:16px 0">Sumando las '+l.length+' sucursales…</p>';
+  $('covCadMax').textContent='';
+  const dets=(await Promise.all(l.map(s=>detalleDe(perTok, s.sucursal)))).filter(Boolean);
+  if(token!==_covCadToken || per!==perTok || !vistaCadena) return;
+  if(!dets.length){ secC.style.display='none'; secH.style.display='none'; return; }
+  // cobertura: Σ tickets promedio por hora y Σ personas en piso, hora a hora
+  const cov={};
+  dets.forEach(d=>(d.cobertura||[]).forEach(p=>{
+    const a=cov[p.hora]=cov[p.hora]||{hora:p.hora, tickets_dia:0, dot:0};
+    a.tickets_dia+=p.tickets_dia||0; a.dot+=p.dot||0;
+  }));
+  const dArr=Object.values(cov).sort((a,b)=>a.hora-b.hora);
+  if(!dArr.length || !dArr.some(x=>x.dot>0)){ secC.style.display='none'; }
+  else{
+    const g=covChart(dArr);
+    $('covCad').innerHTML=g.svg;
+    $('covCadMax').innerHTML=g.picoHtml;
+  }
+  // heatmap: Σ tickets por día × hora (9-19, el horario de los locales)
+  const h0=9, h1=19, nH=h1-h0+1, map={}; let max=0;
+  dets.forEach(d=>(d.heatmap||[]).forEach(x=>{
+    if(x.hora<h0||x.hora>h1) return;
+    const k=x.dia_semana+'-'+x.hora; map[k]=(map[k]||0)+(x.tickets||0); if(map[k]>max) max=map[k];
+  }));
+  if(!max){ secH.style.display='none'; }
+  else{
+    let html='<div></div>'+Array.from({length:nH},(_,i)=>`<div>${i+h0}h</div>`).join('');
+    DIAS.forEach(dd=>{ html+=`<div style="justify-content:flex-start">${dd}</div>`;
+      for(let hh=h0;hh<=h1;hh++){ const v=map[dd+'-'+hh]||0, a=max?v/max:0;
+        const bg=a===0?'#eef1f8':`rgba(204,0,0,${(0.14+a*0.86).toFixed(2)})`;
+        const col=a>0.5?'#fff':'var(--navy)';
+        html+=`<div class="cell" style="background:${bg};color:${col}" title="${dd} ${hh}h · ${v} tickets">${v||''}</div>`; } });
+    const grid=$('heatCad');
+    grid.style.gridTemplateColumns=`44px repeat(${nH},1fr)`;
+    grid.innerHTML=html;
+  }
+}
 let sortCad={k:'venta',dir:-1};
 function renderCadenaTabla(){
   // el filtro de Línea (chips del ranking) también aplica a esta tabla.
@@ -5434,7 +5573,7 @@ function renderRankChips(){
   const presentes = new Set((CAD.sucursales||[]).filter(s=>s.sucursal!==ECOM && s.horas_contr>0).map(s=>s.formato||formatoDe(s.sucursal)));
   const chips = [''].concat(RK_LINEAS.filter(f=>presentes.has(f)));
   $('rkChips').innerHTML = chips.map(f=>`<button class="rk-chip${rkTipo===f?' on':''}" data-f="${esc(f)}">${f===''?'Todas':esc(fmtLabel(f))}</button>`).join('');
-  $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderObjCadena(); renderKpisCadena(); renderRanking(); renderCadenaTabla(); });
+  $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderObjCadena(); renderKpisCadena(); renderSemCad(); renderRanking(); renderCadenaTabla(); renderAnalisisCad(); });
   const kchips = `<button class="rk-chip${rkKpiSel==='todos'?' on':''}" data-k="todos">Todos</button>`
     + RK_KPIS.map(k=>`<button class="rk-chip${rkKpiSel===k.k?' on':''}" data-k="${k.k}">${esc(k.short)}</button>`).join('');
   $('rkKpiChips').innerHTML = kchips;
