@@ -1686,7 +1686,13 @@ function viewCalendario(){
     <span class="calstate" id="calState">${d.actualizado?('Última edición '+esc(String(d.actualizado).replace('T',' ').slice(0,16))):''}</span>
     <div style="flex:1"></div>
     <button class="btn btn-outline btn-sm" id="calPrint">🖨 Imprimir</button>
-    <button class="btn btn-navy btn-sm" id="calExcel">⇩ Excel</button>
+    <div class="ddwrap">
+      <button class="btn btn-navy btn-sm" id="calExcel">⇩ Excel ▾</button>
+      <div class="ddmenu" id="ddCalExcel">
+        <button type="button" data-sc="suc">⇩ Solo ${esc(sucLabel(slug))} <span>calendario del mes + detalle filtrable</span></button>
+        <button type="button" data-sc="todas">⇩ Todas las sucursales <span>una hoja por sucursal + resumen del cierre semanal</span></button>
+      </div>
+    </div>
   </div>`;
 
   // el control real es SEMANAL: la idea es que no junten todo el mes para el final
@@ -1739,7 +1745,7 @@ function confSemHtml(slug){
   for(let i=0;i<6;i++){ sems.push(s0); const p=s0.split('-').map(Number); const d=new Date(p[0],p[1]-1,p[2]-7); s0=calISO(d); }
   const filas=sems.map(sm=>{
     const c=calConfSem(slug,sm), n=calDiasSemana(slug,sm);
-    const tag = c&&c.estado==='sin' ? '<span class="tag activo">Confirmada · sin novedades</span>'
+    const tag = c&&c.estado&&c.estado==='sin'&&!n ? '<span class="tag activo">Confirmada · sin novedades</span>'
       : c&&c.estado ? '<span class="tag aprob">Confirmada</span>'
       : sm===hoy ? '<span class="tag pend">En curso, sin confirmar</span>'
       : '<span class="tag rech">No confirmada</span>';
@@ -1752,56 +1758,206 @@ function confSemHtml(slug){
     <div class="tblwrap"><table class="grid"><thead><tr><th>Semana</th><th class="num">Días con novedades</th><th>Estado</th><th>Confirmó</th></tr></thead><tbody>${filas}</tbody></table></div>`;
 }
 
-/* --- Excel con el mismo formato del original: por cada día, su columna de nota --- */
-async function calExportar(){
-  if(typeof ExcelJS==='undefined'){ toast('Excel no disponible','err'); return; }
-  const slug=state.calSuc, per=state.calMes;
-  try{
-    const wb=new ExcelJS.Workbook(); wb.creator='Mateu Sports — RRHH';
-    const ws=wb.addWorksheet(calMesLabel(per), {pageSetup:{orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0}});
-    // 7 pares de columnas (día + novedad), como el Excel que usan hoy
-    ws.columns=Array.from({length:14},(_,i)=> i%2===0 ? {width:5} : {width:26});
-    const hr=ws.getRow(1);
-    CAL_DOW.forEach((d,i)=>{
-      const c1=i*2+1;
-      ws.mergeCells(1,c1,1,c1+1);
-      const c=hr.getCell(c1); c.value=d;
-      c.font={name:'Arial',size:10,bold:true,color:{argb:'FFFFFFFF'}};
-      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF0B1527'}};
-      c.alignment={horizontal:'center',vertical:'middle'};
-      c.border={bottom:{style:'thin',color:{argb:'FFCC0000'}}};
-    });
-    hr.height=20;
-    const celdas=calCeldas(per);
-    for(let w=0; w<celdas.length/7; w++){
-      const row=ws.addRow([]);
-      row.height=46;
-      for(let i=0;i<7;i++){
-        const d=celdas[w*7+i]; const c1=i*2+1;
-        const cd=row.getCell(c1), cn=row.getCell(c1+1);
-        if(d!==null){
-          cd.value=d; cd.font={name:'Arial',size:12,bold:true,color:{argb:'FF0B1527'}};
-          cd.alignment={horizontal:'center',vertical:'top'};
-          const fer=calFeriado(per,d), txt=calTexto(slug,per,d);
-          cn.value=[fer?fer.toUpperCase():'', txt].filter(Boolean).join(' — ');
-          cn.font={name:'Arial',size:9}; cn.alignment={wrapText:true,vertical:'top'};
-        }
-        [cd,cn].forEach(c=>{ c.border={top:{style:'hair',color:{argb:'FFDCE3F0'}},bottom:{style:'hair',color:{argb:'FFDCE3F0'}},
-          left:{style:'hair',color:{argb:'FFDCE3F0'}},right:{style:'hair',color:{argb:'FFDCE3F0'}}}; });
+/* --- Excel del calendario, pensado para RRHH -------------------------------
+   Tres piezas en un mismo libro:
+     · una hoja por sucursal con el calendario del mes (grilla lunes→domingo,
+       el número del día arriba y la novedad abajo, feriados y fines de semana
+       marcados) — la foto que reemplaza al Excel que mandaban;
+     · «Detalle», la lista plana (sucursal · fecha · día · semana · novedad)
+       con autofiltro: es con lo que RRHH realmente trabaja;
+     · «Resumen» (al exportar todas), el cierre semanal de cada sucursal.
+   --------------------------------------------------------------------------- */
+const XC = { navy:'FF0B1527', red:'FFCC0000', linea:'FFDCE3F0', finde:'FFF2F5FA',
+             fuera:'FFF7F9FD', ferBg:'FFFFF7ED', ferTx:'FF9A3412', muted:'FF6B7A99',
+             okBg:'FFE7F6EC', okTx:'FF166534', badBg:'FFFDECEC', badTx:'FF991B1B' };
+const xcBorde = (c)=>({top:{style:'thin',color:{argb:c||XC.linea}},bottom:{style:'thin',color:{argb:c||XC.linea}},
+                       left:{style:'thin',color:{argb:c||XC.linea}},right:{style:'thin',color:{argb:c||XC.linea}}});
+const xcFill = argb => ({type:'pattern',pattern:'solid',fgColor:{argb}});
+const xcHoja = n => String(n).replace(/[\\/*?:\[\]]/g,'-').slice(0,31);
+const CAL_DOW_CORTO = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+
+// membrete común de todas las hojas
+function xcMembrete(ws, cols, titulo, sub){
+  ws.mergeCells(1,1,1,cols);
+  const t=ws.getCell(1,1); t.value=titulo;
+  t.font={name:'Arial',size:15,bold:true,color:{argb:XC.navy}};
+  t.alignment={vertical:'middle'};
+  ws.getRow(1).height=26;
+  ws.mergeCells(2,1,2,cols);
+  const st=ws.getCell(2,1); st.value=sub;
+  st.font={name:'Arial',size:9,italic:true,color:{argb:XC.muted}};
+  ws.getRow(2).height=14;
+  ws.getRow(3).height=6;   // aire
+}
+
+// una hoja con el calendario del mes de una sucursal
+function calHojaMes(wb, slug, per){
+  const ws = wb.addWorksheet(xcHoja(sucLabel(slug)), {
+    views:[{state:'frozen', ySplit:5}],
+    pageSetup:{orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0,
+               margins:{left:.3,right:.3,top:.4,bottom:.4,header:.2,footer:.2}}
+  });
+  for(let i=1;i<=7;i++) ws.getColumn(i).width=25;
+  const d=calDatos(slug,per);
+  const sems=calSemDelMes(per);
+  const conf=sems.map(sm=>{ const c=calConfSem(slug,sm); return c&&c.estado ? (c.estado==='sin'?'sin novedades':'confirmada') : 'sin confirmar'; });
+  xcMembrete(ws, 7, sucLabel(slug)+' · Novedades de '+calMesLabel(per),
+    'Mateu Sports · RRHH — generado el '+fechaLabel(hoyISO())+(d.por?' · última edición de '+d.por:'')
+    +' · semanas: '+sems.map((sm,i)=>calSemLbl(sm)+' ('+conf[i]+')').join(' | '));
+
+  // encabezado de días
+  const hr=ws.getRow(4);
+  CAL_DOW_CORTO.forEach((n,i)=>{
+    const c=hr.getCell(i+1); c.value=n.toUpperCase();
+    c.font={name:'Arial',size:10,bold:true,color:{argb:'FFFFFFFF'}};
+    c.fill=xcFill(XC.navy); c.alignment={horizontal:'center',vertical:'middle'};
+    c.border={bottom:{style:'medium',color:{argb:XC.red}}};
+  });
+  hr.height=20;
+
+  // cada semana ocupa dos filas: el número del día y, debajo, la novedad
+  const celdas=calCeldas(per);
+  for(let w=0; w<celdas.length/7; w++){
+    const rNum=ws.addRow([]), rTxt=ws.addRow([]);
+    rNum.height=17; rTxt.height=64;
+    for(let i=0;i<7;i++){
+      const dia=celdas[w*7+i];
+      const cn=rNum.getCell(i+1), ct=rTxt.getCell(i+1);
+      const finde = i>=5;
+      if(dia===null){
+        [cn,ct].forEach(c=>{ c.fill=xcFill(XC.fuera); c.border=xcBorde(); });
+        continue;
       }
+      const fer=calFeriado(per,dia), txt=calTexto(slug,per,dia);
+      cn.value=dia;
+      cn.font={name:'Arial',size:12,bold:true,color:{argb:fer?XC.ferTx:XC.navy}};
+      cn.alignment={horizontal:'left',vertical:'middle',indent:1};
+      cn.fill=xcFill(fer?XC.ferBg:(finde?XC.finde:'FFFFFFFF'));
+      cn.border={top:xcBorde().top,left:xcBorde().left,right:xcBorde().right};
+      ct.value = fer ? {richText:[{font:{name:'Arial',size:8,bold:true,color:{argb:XC.ferTx}}, text:fer.toUpperCase()+(txt?'\n':'')},
+                                  {font:{name:'Arial',size:9,color:{argb:XC.navy}}, text:txt||''}]}
+                     : txt||'';
+      if(!fer){ ct.font={name:'Arial',size:9,color:{argb:XC.navy}}; }
+      ct.alignment={wrapText:true,vertical:'top',indent:1};
+      ct.fill=xcFill(fer?XC.ferBg:(finde?XC.finde:'FFFFFFFF'));
+      ct.border={bottom:xcBorde().bottom,left:xcBorde().left,right:xcBorde().right};
     }
-    const fr=ws.addRow([]);
-    fr.getCell(1).value=sucLabel(slug); fr.getCell(1).font={name:'Arial',size:11,bold:true};
-    ws.mergeCells(fr.number,5,fr.number,10);
-    const fc=fr.getCell(5); fc.value=calMesLabel(per);
-    fc.font={name:'Arial',size:11,bold:true}; fc.alignment={horizontal:'center'};
+  }
+  // pie
+  const pie=ws.addRow([]); pie.height=18;
+  ws.mergeCells(pie.number,1,pie.number,4);
+  const pc=ws.getCell(pie.number,1); pc.value=sucLabel(slug);
+  pc.font={name:'Arial',size:11,bold:true,color:{argb:XC.navy}};
+  ws.mergeCells(pie.number,5,pie.number,7);
+  const pm=ws.getCell(pie.number,5); pm.value=calMesLabel(per);
+  pm.font={name:'Arial',size:11,bold:true,color:{argb:XC.navy}}; pm.alignment={horizontal:'right'};
+  return ws;
+}
+
+// filas planas de una sucursal (para la hoja Detalle)
+function calFilasDetalle(slug, per){
+  const [y,m]=per.split('-').map(Number), tot=new Date(y,m,0).getDate(), out=[];
+  for(let dia=1; dia<=tot; dia++){
+    const txt=calTexto(slug,per,dia); if(!String(txt).trim()) continue;
+    const f=new Date(y,m-1,dia);
+    out.push({suc:sucLabel(slug), fecha:f, dow:CAL_DOW_CORTO[(f.getDay()+6)%7],
+              sem:calSemLbl(calISO(calLunesDe(f))), fer:calFeriado(per,dia)||'', txt:String(txt).trim()});
+  }
+  return out;
+}
+// las semanas (lunes ISO) que tocan un mes
+function calSemDelMes(per){
+  const [y,m]=per.split('-').map(Number), tot=new Date(y,m,0).getDate();
+  const out=[];
+  for(let d=1; d<=tot; d++){ const sm=calISO(calLunesDe(new Date(y,m-1,d))); if(!out.includes(sm)) out.push(sm); }
+  return out;
+}
+
+function calHojaDetalle(wb, filas, per){
+  const ws=wb.addWorksheet('Detalle', {views:[{state:'frozen', ySplit:4}],
+    pageSetup:{orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0}});
+  ws.columns=[{width:22},{width:12},{width:12},{width:18},{width:16},{width:70}];
+  xcMembrete(ws, 6, 'Novedades de '+calMesLabel(per)+' · detalle',
+    filas.length+' día(s) con novedades · generado el '+fechaLabel(hoyISO())+' · usá los filtros de la fila de abajo');
+  const head=['Sucursal','Fecha','Día','Semana','Feriado','Novedad'];
+  const hr=ws.getRow(4);
+  head.forEach((h,i)=>{ const c=hr.getCell(i+1); c.value=h;
+    c.font={name:'Arial',size:10,bold:true,color:{argb:'FFFFFFFF'}};
+    c.fill=xcFill(XC.navy); c.alignment={vertical:'middle'};
+    c.border={bottom:{style:'thin',color:{argb:XC.red}}}; });
+  hr.height=20;
+  filas.sort((a,b)=> cmp(a.suc,b.suc) || (a.fecha-b.fecha));
+  filas.forEach(f=>{
+    const r=ws.addRow([f.suc, f.fecha, f.dow, f.sem, f.fer, f.txt]);
+    r.getCell(2).numFmt='dd/mm/yyyy';
+    r.height=Math.min(60, 14+Math.floor(f.txt.length/62)*12);
+    r.eachCell(c=>{ c.font={name:'Arial',size:9.5}; c.alignment={vertical:'top',wrapText:true};
+      c.border={bottom:{style:'hair',color:{argb:XC.linea}}}; });
+    if(f.fer) r.getCell(5).font={name:'Arial',size:9,bold:true,color:{argb:XC.ferTx}};
+  });
+  if(filas.length) ws.autoFilter={from:{row:4,column:1}, to:{row:4+filas.length,column:6}};
+  return ws;
+}
+
+function calHojaResumen(wb, slugs, per){
+  const sems=calSemDelMes(per);
+  const ws=wb.addWorksheet('Resumen', {views:[{state:'frozen', xSplit:1, ySplit:4}],
+    pageSetup:{orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0}});
+  ws.columns=[{width:24},{width:14}].concat(sems.map(()=>({width:20})));
+  const nCols=2+sems.length;
+  const faltan=slugs.filter(sl=>sems.some(sm=>{ const c=calConfSem(sl,sm); return !(c&&c.estado); }));
+  xcMembrete(ws, nCols, 'Cierre semanal · '+calMesLabel(per),
+    slugs.length+' sucursales · '+faltan.length+' con alguna semana sin confirmar · generado el '+fechaLabel(hoyISO()));
+  const hr=ws.getRow(4);
+  ['Sucursal','Días cargados'].concat(sems.map(sm=>'Semana '+calSemLbl(sm))).forEach((h,i)=>{
+    const c=hr.getCell(i+1); c.value=h;
+    c.font={name:'Arial',size:10,bold:true,color:{argb:'FFFFFFFF'}};
+    c.fill=xcFill(XC.navy); c.alignment={vertical:'middle',wrapText:true};
+    c.border={bottom:{style:'thin',color:{argb:XC.red}}}; });
+  hr.height=26;
+  slugs.forEach(sl=>{
+    const r=ws.addRow([sucLabel(sl), calCargado(sl,per)].concat(sems.map(sm=>{
+      const c=calConfSem(sl,sm), n=calDiasSemana(sl,sm);
+      return c&&c.estado ? (c.estado==='sin' && !n ? 'Confirmada · sin novedades' : 'Confirmada · '+n+' día(s)')
+           : (n? 'SIN CONFIRMAR · '+n+' día(s)' : 'SIN CONFIRMAR · sin cargar');
+    })));
+    r.height=16;
+    r.eachCell((c,i)=>{ c.font={name:'Arial',size:9.5}; c.border={bottom:{style:'hair',color:{argb:XC.linea}}};
+      if(i>2){ const v=String(c.value||'');
+        const ok=v.indexOf('Confirmada')===0;
+        c.fill=xcFill(ok?XC.okBg:XC.badBg);
+        c.font={name:'Arial',size:9,bold:!ok,color:{argb:ok?XC.okTx:XC.badTx}};
+        c.alignment={horizontal:'center'}; }
+      if(i===2) c.alignment={horizontal:'center'};
+    });
+  });
+  return ws;
+}
+
+async function calExportar(scope){
+  if(typeof ExcelJS==='undefined'){ toast('Excel no disponible','err'); return; }
+  const per=state.calMes;
+  const slugs = scope==='todas'
+    ? calSucsOperativas().concat(sucsVisibles().filter(x=>['administracion','externos','deposito'].includes(x) && calCargado(x,per)))
+    : [state.calSuc];
+  if(!slugs.length){ toast('No hay sucursales para exportar','err'); return; }
+  toast('Generando el Excel…');
+  try{
+    const wb=new ExcelJS.Workbook();
+    wb.creator='Mateu Sports — RRHH';
+    wb.title='Novedades '+calMesLabel(per);
+    if(scope==='todas') calHojaResumen(wb, slugs, per);
+    const filas=[];
+    slugs.forEach(sl=>{ calHojaMes(wb, sl, per); filas.push(...calFilasDetalle(sl, per)); });
+    calHojaDetalle(wb, filas, per);
     const buf=await wb.xlsx.writeBuffer();
     const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-    a.download='Calendario '+per+' '+sucLabel(slug)+'.xlsx'; a.click();
+    a.download='Novedades '+per+' - '+(scope==='todas'?'todas las sucursales':sucLabel(state.calSuc).replace(/[\\/:*?"<>|]/g,''))+'.xlsx';
+    a.click();
     setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-    toast('Excel generado','ok');
-  }catch(e){ console.error(e); toast('No se pudo exportar','err'); }
+    toast('Excel generado'+(scope==='todas'?' · '+slugs.length+' sucursales':''),'ok');
+  }catch(e){ console.error(e); toast('No se pudo exportar: '+(e.message||e),'err'); }
 }
 
 /* --- recordatorio por la Bandeja a las sucursales que no confirmaron la semana --- */
@@ -2043,7 +2199,10 @@ function wire(){
   if($('calNext')) $('calNext').onclick=()=>{ state.calMes=calShift(state.calMes, 1); render(); };
   if($('calHoy')) $('calHoy').onclick=()=>{ state.calMes=periodoActual(); render(); };
   if($('calPrint')) $('calPrint').onclick=()=>window.print();
-  if($('calExcel')) $('calExcel').onclick=calExportar;
+  const ddx=$('ddCalExcel');
+  if($('calExcel')) $('calExcel').onclick=e=>{ e.stopPropagation(); ddx.classList.toggle('on'); };
+  if(ddx){ ddx.querySelectorAll('[data-sc]').forEach(b=> b.onclick=()=>{ ddx.classList.remove('on'); calExportar(b.dataset.sc); });
+    document.addEventListener('click', ()=>ddx.classList.remove('on'), {once:true}); }
   if($('calRecordar')) $('calRecordar').onclick=calRecordar;
   if(state.tab==='calendario' && !_calAvisoHecho){ _calAvisoHecho=true; calAvisoViernes(); }
   document.querySelectorAll('#calGrid textarea[data-cd]').forEach(ta=>{

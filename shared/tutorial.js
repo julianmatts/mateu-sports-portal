@@ -196,7 +196,7 @@
       { ic:'📁', t:'Legajos', d:'La ficha de cada persona. La dotación se puede importar directo desde Indicadores.' },
       { ic:'🤒', t:'Ausentismo y licencias', d:'Registrá ausencias y licencias y mirá el índice por sucursal.' },
       { ic:'🕘', t:'Compensatorios y horas', d:'Los días de compensatorio y las horas extra a favor de cada persona, como dos conceptos separados. Cargás el valor de la hora y el portal calcula el valorizado (lo que sale pagarlo en plata). Los encargados piden desde Mi Sucursal tomarse el tiempo o cobrarlo; vos aprobás (se descuenta solo, y el pago se puede pasar a Novedades de nómina) o rechazás sugiriendo otro día.' },
-      { ic:'📆', t:'Calendario', d:'El calendario de novedades de cada sucursal, con el mismo formato del Excel que mandaban los encargados. Arriba, el semáforo de la SEMANA en curso: quiénes ya la confirmaron y quiénes no. Los viernes sale solo el aviso a RRHH y al supervisor con las que faltan. Lo podés corregir cualquier día, imprimir y bajar en Excel.' },
+      { ic:'📆', t:'Calendario', d:'El calendario de novedades de cada sucursal, con el mismo formato del Excel que mandaban los encargados. Arriba, el semáforo de la SEMANA en curso: quiénes ya la confirmaron y quiénes no. Los viernes sale solo el aviso a RRHH y al supervisor con las que faltan. Lo podés corregir cualquier día, imprimir y bajarlo en Excel: una hoja por sucursal con el calendario, la hoja «Detalle» con autofiltro para trabajar y el resumen del cierre semanal.' },
       { ic:'🧾', t:'Novedades de nómina', d:'Lo que hay que informar para la liquidación de cada mes.' },
       { ic:'🔄', t:'Rotación', d:'Altas, bajas y rotación por sucursal a lo largo del tiempo.' }
     ]},

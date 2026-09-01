@@ -1082,9 +1082,17 @@ con la sucursal y el mes). Mismo formato, en grande y en el portal:
   editable (RRHH corrige cualquier día), con el semáforo **de la semana en curso**
   («N de M sucursales ya la confirmaron», marcando las que no cargaron nada) + botón
   «📣 Recordar a las que faltan», la tabla **«Cierre semanal»** de las últimas 6 semanas
-  de esa sucursal, **🖨 Imprimir** (`@media print`, A4 apaisado) y **⇩ Excel** (ExcelJS,
-  replica el par día/nota del original y le agrega la columna de nota del domingo, que
-  el Excel viejo no tenía).
+  de esa sucursal, **🖨 Imprimir** (`@media print`, A4 apaisado) y **⇩ Excel**.
+- **El Excel** (ExcelJS, menú con «solo esta sucursal» / «todas»): un libro con
+  **una hoja por sucursal** — calendario real de 7 columnas donde cada semana ocupa
+  dos filas (el número del día arriba, la novedad abajo, con wrap), membrete, feriados
+  en ámbar, fines de semana grisados, días fuera del mes apagados, apaisado y ajustado
+  a una página —, la hoja **«Detalle»** (Sucursal · Fecha real · Día · Semana · Feriado
+  · Novedad) **con autofiltro**, que es con lo que RRHH realmente trabaja, y — al
+  exportar todas — la hoja **«Resumen»** con el cierre semanal de cada sucursal
+  (confirmada / sin novedades / SIN CONFIRMAR, en verde y rojo). Helpers: `calHojaMes`,
+  `calHojaDetalle`, `calHojaResumen`, paleta en `XC`. Exportar las 21 sucursales tarda
+  ~5 s (hay un toast «Generando el Excel…»).
 - **Aviso automático de los viernes** (`calAvisoViernes`, se dispara al abrir la pestaña
   — no hay backend con cron, mismo patrón que `alertasRitmo` de Indicadores): manda por
   la Bandeja el resumen de las sucursales que no confirmaron la semana a **RRHH y al
