@@ -444,6 +444,26 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   separador por piso), la pestaña Estanterías (cabecera por piso), los recorridos
   de F8/retiro y las impresiones/auditoría. Sucursal nueva con más de un
   depósito = agregar su entrada al mapa.
+- **«Yo repongo» (01/09/2026)**: se vendió un artículo que estaba exhibido y el
+  vendedor se hace cargo de reponerlo en la exhibición. Botón `🔄 Yo repongo` en la
+  tarjeta (al lado de «Comentar», en todos los modos): abre una hoja con **dónde está
+  en el depósito** (ubicaciones + stock + talles), avisa si quedó en cero, y firma —
+  en el **puesto** eligiendo el perfil como en Comentar, en sucursal con el perfil
+  activo. Queda pendiente en una lista compartida de la sucursal (botón con badge al
+  lado del historial; en el quiosco va arriba a la derecha) hasta que alguien toca
+  **«✓ Repuesto»**, desde el drawer o desde la propia tarjeta; el ✕ lo saca si se
+  tomó por error. Un pendiente por artículo. Firebase: nodo `reposicion/<id>` de la
+  sucursal `{artKey,codigo,descripcion,ubic,por,avatar,ts,hecho:{por,ts}}`, se baja
+  en cada poll junto con las consultas y `podarConsultas` borra los repuestos de más
+  de 7 días. Decisión de Juli: pizarra simple, sin vencimientos ni aviso al encargado
+  (eso queda para más adelante si hace falta controlar el cumplimiento).
+- **Búsquedas guardadas solas (01/09/2026)**: el historial de consultas ya no depende
+  de tocar la tarjeta. Toda búsqueda queda registrada a los 1,4 s de dejar de tipear
+  (desde 3 caracteres): un solo resultado → el artículo; varios → el texto y cuántos
+  dio; sin resultados → también (sirve para saber qué piden y no está). Mientras se
+  sigue tipeando se refina la MISMA fila (`zap` → `zapatilla run`, ventana de 3 min) y
+  se mantiene el dedupe de 10 min por perfil. Tocar una búsqueda del historial la
+  repite en el buscador.
 - **Artículos nuevos sin ubicar** (prioridad del depósito): «nuevo» = `fechaAlta`
   posterior a la **primera carga** de la sucursal (cada carga graba un único
   timestamp; así el día 1 no se marca todo) y ≤ `NUEVO_DIAS` (7). Se destacan con

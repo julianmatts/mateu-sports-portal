@@ -388,6 +388,20 @@ table.prev th{ background:var(--bg); font-family:var(--font-c); letter-spacing:.
   cursor:pointer; padding:4px 6px;
 }
 .fb-add:hover{ color:var(--navy); }
+/* «Yo repongo»: el vendedor se hace cargo de reponer en la exhibición lo que vendió */
+.fb-add.rep{ color:var(--red-soft, var(--red)); }
+.fb-chip.rep{ background:#fff6e8; border-color:#e8c48a; color:#8a5a12; }
+.fb-chip.rep b{ color:#8a5a12; }
+.fb-done{
+  border:1px solid var(--green, #3aa03a); background:var(--green-bg, #eef8ee); color:#2c7a2c;
+  border-radius:4px; padding:4px 8px; cursor:pointer;
+  font-family:var(--font-c); font-size:12px; font-weight:700; letter-spacing:.3px;
+}
+.art-card.repone{ box-shadow:inset 3px 0 0 #e0a53c; }
+.rep-item .info b{ font-family:var(--font-c); letter-spacing:.5px; }
+.rep-item.hecho{ opacity:.55; }
+.rep-item .ubi{ font-size:11px; color:var(--gray-600); }
+.rep-acc{ display:flex; gap:6px; flex-shrink:0; }
 .fb-grupo{
   font-family:var(--font-c); font-size:11px; font-weight:700; letter-spacing:1.5px;
   text-transform:uppercase; color:var(--gray-400); margin:14px 0 8px;
@@ -725,6 +739,7 @@ body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
           <span class="arrow">▾</span>
         </div>
         <button class="hist-btn" id="btnHistorial" title="Historial de consultas de hoy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 1.9"/></svg></button>
+        <button class="hist-btn" id="btnRepone" title="Reposición del salón: lo que se vendió de la exhibición y falta reponer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-13.7-5.7L3 8.5"/><path d="M4 13a8 8 0 0 0 13.7 5.7L21 15.5"/><path d="M3 4.5v4h4"/><path d="M21 19.5v-4h-4"/></svg><span class="pick-badge" id="reponeBadge">0</span></button>
         <button class="hist-btn" id="btnPicking" title="Lista de retiro (recorrido por el depósito)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 13 1.6 1.6L14 11.2"/><path d="M9 17.5h6"/></svg><span class="pick-badge" id="pickBadge">0</span></button>
       </div>
       <!-- herramientas de la lista SIN UBICAR (se ven cuando la lista está abierta) -->
@@ -775,6 +790,18 @@ body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
       <button class="icon-btn" id="histCerrar" title="Cerrar">✕</button>
     </div>
     <div class="hist-list" id="histList"></div>
+  </div>
+</div>
+
+<!-- Reposición del salón (drawer lateral) -->
+<div class="hist-overlay" id="repOverlay">
+  <div class="hist-drawer">
+    <div class="hist-head">
+      <span class="tt">Reposición del salón</span>
+      <span class="cnt" id="repCnt"></span>
+      <button class="icon-btn" id="repCerrar" title="Cerrar">✕</button>
+    </div>
+    <div class="hist-list" id="repList"></div>
   </div>
 </div>
 
@@ -1243,6 +1270,7 @@ function montarQuiosco(){
     const cal = document.querySelector('.msh-cal');
     if(!cal) return false;
     cal.prepend($('btnPicking'));
+    cal.prepend($('btnRepone'));
     cal.prepend($('btnHistorial'));
     return true;
   };
@@ -1288,7 +1316,7 @@ function iniciarScanBridge(){
    de perfiles estilo Netflix (mismo estado que el protector de pantalla por
    inactividad). Deja el puesto listo para que el próximo elija su cara. */
 function entrarModoMostrador(){
-  cerrarSheet(); cerrarModal(); cerrarHistorial();
+  cerrarSheet(); cerrarModal(); cerrarHistorial(); cerrarRepone();
   cambiarPerfil();
 }
 
@@ -1302,7 +1330,7 @@ function resetInactividad(){
   clearTimeout(inactTimer);
   inactTimer = setTimeout(()=>{
     if(MODE!=='sucursal' || !PERFIL) return;
-    cerrarSheet(); cerrarModal(); cerrarHistorial();
+    cerrarSheet(); cerrarModal(); cerrarHistorial(); cerrarRepone();
     cambiarPerfil();
   }, INACTIVIDAD_MS);
 }
@@ -1394,6 +1422,9 @@ function wireStatic(){
   $('sheetOverlay').addEventListener('click', e=>{ if(e.target===$('sheetOverlay')) cerrarSheet(); });
   $('modalOverlay').addEventListener('click', e=>{ if(e.target===$('modalOverlay')) cerrarModal(); });
   $('btnHistorial').addEventListener('click', abrirHistorial);
+  $('btnRepone').addEventListener('click', abrirRepone);
+  $('repCerrar').addEventListener('click', cerrarRepone);
+  $('repOverlay').addEventListener('click', e=>{ if(e.target===$('repOverlay')) cerrarRepone(); });
   $('btnPicking').addEventListener('click', abrirPicking);
   $('suPrint').addEventListener('click', e=>{ e.stopPropagation(); imprimirSinUbicar(); });
   $('histCerrar').addEventListener('click', cerrarHistorial);
@@ -1412,9 +1443,10 @@ function wireStatic(){
 let lastRev = null, lastFullTs = 0;
 async function refrescarDatos(){
   if(!SUC) return false;
-  const [meta, consultas] = await Promise.all([
+  const [meta, consultas, reposicion] = await Promise.all([
     fetchJSON(sucPath()+'/meta.json').catch(()=>undefined),
     fetchJSON(sucPath()+'/consultas/'+hoyKey()+'.json').catch(()=>undefined),
+    fetchJSON(sucPath()+'/reposicion.json').catch(()=>undefined),
   ]);
   if(meta===undefined && consultas===undefined){
     // puede ser base vacía o sin conexión: probamos un fetch que distinga
@@ -1428,11 +1460,12 @@ async function refrescarDatos(){
       fetchJSON(sucPath()+'/estanterias.json').catch(()=>null),
       fetchJSON(sucPath()+'/feedback.json').catch(()=>null),
     ]);
-    DATA = { articulos:articulos||{}, estanterias:estanterias||{}, meta:meta||{}, consultas:consultas||{}, feedback:feedback||{}, __full:true };
+    DATA = { articulos:articulos||{}, estanterias:estanterias||{}, meta:meta||{}, consultas:consultas||{}, feedback:feedback||{}, reposicion:reposicion||{}, __full:true };
     lastRev = rev; lastFullTs = Date.now();
   } else {
     DATA.meta = meta||{};
     DATA.consultas = consultas||{};
+    DATA.reposicion = reposicion||{};
   }
   lastSyncTs = Date.now();
   const hash = JSON.stringify(DATA);
@@ -1449,6 +1482,8 @@ async function pollLoop(){
     const cambio = await refrescarDatos();
     if(cambio && !hayUiBloqueante()) renderVistaActiva();
     if(cambio && $('histOverlay').classList.contains('show')) renderHistorial();
+    if(cambio && $('repOverlay').classList.contains('show')) renderRepone();
+    if(cambio) reponeBadge();
     renderStatusbar();
   }catch(e){}
   pollTimer = setTimeout(pollLoop, POLL_MS);
@@ -1456,7 +1491,7 @@ async function pollLoop(){
 
 function iniciarPolling(){
   detenerPolling();
-  refrescarDatos().then(()=>{ renderVistaActiva(); renderStatusbar(); podarConsultas(); });
+  refrescarDatos().then(()=>{ renderVistaActiva(); renderStatusbar(); reponeBadge(); podarConsultas(); });
   pollTimer = setTimeout(pollLoop, POLL_MS);
   if(!window.__syncTicker) window.__syncTicker = setInterval(renderSyncLabel, 1000);
 }
@@ -2072,7 +2107,7 @@ document.addEventListener('keydown', e=>{
 function procesarEscaneo(codigo){
   // con la Lista de retiro abierta, los escaneos se suman ahí
   if(pickingAbierto()){ pickingAgregar(codigo); return; }
-  cerrarSheet(); cerrarModal(); cerrarHistorial();
+  cerrarSheet(); cerrarModal(); cerrarHistorial(); cerrarRepone();
   if(tabActiva!=='buscar') setTab('buscar');
   searchQuery = codigo;
   $('searchInput').value = codigo;
@@ -2446,6 +2481,12 @@ function podarConsultas(){
   fetchJSON(sucPath()+'/consultas.json?shallow=true').then(dias=>{
     Object.keys(dias||{}).forEach(d=>{ if(!validas.has(d)) delJSON(sucPath()+'/consultas/'+d+'.json'); });
   }).catch(()=>{});
+  fetchJSON(sucPath()+'/reposicion.json').then(reps=>{
+    const lim = Date.now()-7*86400000;
+    const patch = {};
+    Object.keys(reps||{}).forEach(id=>{ const r=reps[id]; if(r && r.hecho && (r.hecho.ts||0) < lim) patch[id]=null; });
+    if(Object.keys(patch).length) patchJSON(sucPath()+'/reposicion.json', patch);
+  }).catch(()=>{});
   fetchJSON(sucPath()+'/movimientos.json').then(movs=>{
     const lim = Date.now()-30*86400000;
     const patch = {};
@@ -2501,11 +2542,15 @@ function artCardHtml(a){
   fbItems.forEach(i=>{ porTipo[i.tipo]=(porTipo[i.tipo]||0)+1; });
   const fbChips = FEEDBACK_TIPOS.filter(t=>porTipo[t.id])
     .map(t=>'<span class="fb-chip">'+t.emoji+' '+t.label+' <b>'+porTipo[t.id]+'</b></span>').join('');
-  const fbRow = (fbChips || puedeComentar)
-    ? '<div class="fb-row">'+fbChips+(puedeComentar?'<button class="fb-add" data-fb="1">💬 Comentar</button>':'')+'</div>'
-    : '';
+  // «Yo repongo»: se vendió de la exhibición y alguien se hace cargo de reponerlo
+  const rep = repDeArticulo(a.key);
+  const repHtml = rep
+    ? '<span class="fb-chip rep" title="Se hizo cargo '+esc(rep.por)+' · '+fmtHora(rep.ts)+'">🔄 Repone <b>'+esc(rep.por)+'</b></span>'+
+      '<button class="fb-done" data-rephecho="'+esc(rep.id)+'">✓ Repuesto</button>'
+    : '<button class="fb-add rep" data-repone="1">🔄 Yo repongo</button>';
+  const fbRow = '<div class="fb-row">'+fbChips+(puedeComentar?'<button class="fb-add" data-fb="1">💬 Comentar</button>':'')+repHtml+'</div>';
   const nuevo = sinUbi && esNuevo(a);
-  return '<div class="art-card'+(sinUbi?' sin-ubicar':'')+(nuevo?' nuevo':'')+'" data-art="'+esc(a.key)+'">'+
+  return '<div class="art-card'+(sinUbi?' sin-ubicar':'')+(nuevo?' nuevo':'')+(rep?' repone':'')+'" data-art="'+esc(a.key)+'">'+
     '<div class="art-top"><button class="art-cod" data-histart="'+esc(a.key)+'" title="Ver historial de movimientos">'+esc(a.codigo)+'</button>'+
       (a.articulo?'<span class="hint" title="Id.item">#'+esc(a.articulo)+'</span>':'')+
       (nuevo?'<span class="nuevo-tag" title="Entró en una carga reciente y todavía no tiene lugar">⚡ Nuevo · '+edadAlta(a.fechaAlta)+'</span>':'')+
@@ -2536,6 +2581,10 @@ function wireArtCards(cont, opts){
     if(fbBtn) fbBtn.addEventListener('click', ()=> abrirSheetFeedback(key));
     const histBtn = card.querySelector('[data-histart]');
     if(histBtn) histBtn.addEventListener('click', ()=> verHistorialArticulo(key));
+    const repBtn = card.querySelector('[data-repone]');
+    if(repBtn) repBtn.addEventListener('click', ()=> abrirSheetRepone(key));
+    const repOk = card.querySelector('[data-rephecho]');
+    if(repOk) repOk.addEventListener('click', ()=> marcarRepuesto(repOk.dataset.rephecho));
     if(opts && opts.consulta){
       // tocar la card = "esta fue mi consulta" → queda en el historial del día
       card.style.cursor = 'pointer';
@@ -2780,6 +2829,147 @@ async function quitarFeedback(artKey, itemId){
     abrirSheetFeedback(artKey);
     renderVistaActiva(); bumpRev();
   }catch(e){ toast('No se pudo borrar.'); }
+}
+
+/* ============================================================
+   REPOSICIÓN DEL SALÓN — "Yo repongo"
+   Se vendió un artículo que estaba exhibido: el vendedor toca
+   «Yo repongo», firma con su nombre y queda pendiente hasta que
+   vuelve y lo marca repuesto. Compartido por sucursal
+   (reposicion/<id> en Firebase): lo ve todo el salón.
+   ============================================================ */
+
+function reposiciones(){
+  return Object.keys(DATA.reposicion||{})
+    .map(id=>({id, ...DATA.reposicion[id]}))
+    .sort((a,b)=>(b.ts||0)-(a.ts||0));
+}
+function repPendientes(){ return reposiciones().filter(r=>!r.hecho); }
+// pendiente de este artículo (uno por artículo: no se pisan dos vendedores)
+function repDeArticulo(artKey){ return repPendientes().find(r=>r.artKey===artKey) || null; }
+
+function reponeBadge(){
+  const b = $('reponeBadge'); if(!b) return;
+  const n = repPendientes().length;
+  b.textContent = n; b.style.display = n ? 'block' : 'none';
+}
+
+/* Hoja para hacerse cargo: muestra dónde está en el depósito (que es lo que
+   el vendedor necesita para ir a buscarlo) y con qué nombre firma. */
+function abrirSheetRepone(artKey){
+  const a = DATA.articulos[artKey]; if(!a) return;
+  if(repDeArticulo(artKey)){ abrirRepone(); return; }   // ya hay alguien a cargo
+  const ubis = Object.values(a.ubicaciones||{});
+  const sinStock = !(+a.stock > 0);
+  // en el puesto se elige el nombre (como en Comentar); en la sucursal firma el perfil activo
+  const esPuesto = MODE==='puesto';
+  const quienes = esPuesto ? perfilesOrdenados() : [];
+  $('sheetBody').innerHTML =
+    '<div class="sheet-title">🔄 '+esc(a.codigo)+'</div>'+
+    '<div class="sheet-sub">'+esc(a.descripcion||'')+'</div>'+
+    (sinStock
+      ? '<div class="fb-grupo menos">⚠ No queda stock en el depósito</div>'+
+        '<div class="hint" style="margin-bottom:6px">Igual podés anotarlo, pero avisale al encargado: hay que pedirlo a otra sucursal.</div>'
+      : '')+
+    '<div class="fb-grupo">📍 Dónde está en el depósito</div>'+
+    '<div class="hint" style="margin-bottom:6px">'+
+      (ubis.length ? ubis.map(u=>esc(nombreUbicacion(u))).join(' · ')
+                   : 'Sin ubicación asignada — está en SIN UBICAR.')+
+      ' · Stock: '+esc(a.stock)+'</div>'+
+    (Array.isArray(a.talles) && a.talles.length
+      ? '<div class="talle-chips" style="margin-bottom:6px">'+a.talles.map(x=>
+          '<span class="talle-chip'+(+x.c>0?'':' cero')+'">'+esc(x.t)+' <b>'+(+x.c||0)+'</b></span>').join('')+'</div>'
+      : '')+
+    (esPuesto
+      ? '<div class="fb-grupo">👤 ¿Quién repone?</div>'+
+        (quienes.length
+          ? '<div class="fb-quien-row">'+quienes.map(p=>
+              '<button class="fb-quien'+(FB_PERFIL&&FB_PERFIL.id===p.id?' sel':'')+'" data-repquien="'+esc(p.id)+'">'+
+              avatarHtml(p)+esc(p.nombre)+'</button>').join('')+'</div>'
+          : '<div class="hint">La sucursal todavía no tiene perfiles creados.</div>')
+      : '')+
+    '<button class="sheet-opt sug" data-repok="1" style="margin-top:12px">🔄 Me hago cargo de reponerlo</button>';
+  $('sheetOverlay').classList.add('show');
+  $('sheetBody').querySelectorAll('[data-repquien]').forEach(b=> b.addEventListener('click', ()=>{
+    const id = b.dataset.repquien;
+    FB_PERFIL = PERFILES[id] ? {id, ...PERFILES[id]} : null;
+    abrirSheetRepone(artKey);   // re-render para marcar la selección
+  }));
+  $('sheetBody').querySelector('[data-repok]').addEventListener('click', ()=> tomarReposicion(artKey));
+}
+
+async function tomarReposicion(artKey){
+  const a = DATA.articulos[artKey]; if(!a) return;
+  if(MODE==='puesto' && !FB_PERFIL){ toast('Primero elegí quién repone 👆'); return; }
+  if(repDeArticulo(artKey)){ toast('Ya hay alguien a cargo de ese artículo.'); return; }
+  const firmante = MODE==='puesto' ? FB_PERFIL : PERFIL;
+  const rec = {
+    artKey, codigo:a.codigo, descripcion:(a.descripcion||'').slice(0,60),
+    ubic: Object.values(a.ubicaciones||{}).map(u=>nombreUbicacion(u)).join(' · ') || null,
+    por: MODE==='puesto' ? FB_PERFIL.nombre : nombreOperador(),
+    avatar: (firmante && firmante.avatar) || null,
+    ts: Date.now(),
+  };
+  const id = newId('r');
+  try{
+    await putJSON(sucPath()+'/reposicion/'+id+'.json', rec);
+    if(!DATA.reposicion) DATA.reposicion = {};
+    DATA.reposicion[id] = rec; lastHash='';
+    cerrarSheet(); renderVistaActiva(); reponeBadge(); bumpRev();
+    toast('Anotado ✓ Cuando lo repongas, marcalo como repuesto.');
+  }catch(e){ toast('No se pudo guardar. Probá de nuevo.'); }
+}
+
+async function marcarRepuesto(id){
+  const r = (DATA.reposicion||{})[id]; if(!r || r.hecho) return;
+  const hecho = { por: MODE==='puesto' ? ((FB_PERFIL&&FB_PERFIL.nombre)||r.por) : nombreOperador(), ts: Date.now() };
+  try{
+    await patchJSON(sucPath()+'/reposicion/'+id+'.json', {hecho});
+    DATA.reposicion[id] = Object.assign({}, r, {hecho}); lastHash='';
+    if($('repOverlay').classList.contains('show')) renderRepone();
+    renderVistaActiva(); reponeBadge(); bumpRev();
+    toast('Repuesto en la exhibición ✓');
+  }catch(e){ toast('No se pudo guardar. Probá de nuevo.'); }
+}
+
+// se equivocó de artículo o lo tomó otro: sacarlo de la lista
+async function soltarReposicion(id){
+  if(!(DATA.reposicion||{})[id]) return;
+  try{
+    await delJSON(sucPath()+'/reposicion/'+id+'.json');
+    delete DATA.reposicion[id]; lastHash='';
+    if($('repOverlay').classList.contains('show')) renderRepone();
+    renderVistaActiva(); reponeBadge(); bumpRev();
+  }catch(e){ toast('No se pudo borrar.'); }
+}
+
+function abrirRepone(){ cerrarSheet(); renderRepone(); $('repOverlay').classList.add('show'); }
+function cerrarRepone(){ $('repOverlay').classList.remove('show'); }
+
+function renderRepone(){
+  const lista = reposiciones();
+  const pend = lista.filter(r=>!r.hecho);
+  const hechas = lista.filter(r=>r.hecho).slice(0,15);
+  $('repCnt').textContent = pend.length ? pend.length+' pendiente'+(pend.length===1?'':'s') : '';
+  const item = r=>
+    '<div class="hist-item rep-item'+(r.hecho?' hecho':'')+'">'+
+      avatarHtml({nombre:r.por, avatar:r.avatar})+
+      '<div class="info"><div class="cod">'+esc(r.codigo)+'</div>'+
+      '<div class="desc">'+esc(r.descripcion||'')+'</div>'+
+      (r.ubic?'<div class="ubi">📍 '+esc(r.ubic)+'</div>':'<div class="ubi">Sin ubicar</div>')+
+      '<div class="quien">'+esc(r.por)+' · '+fmtHora(r.ts)+
+        (r.hecho?' → repuesto '+fmtHora(r.hecho.ts)+' por '+esc(r.hecho.por):'')+'</div></div>'+
+      (r.hecho ? '<div class="rep-acc"><span class="hora">✓</span></div>'
+               : '<div class="rep-acc"><button class="fb-done" data-rephecho="'+esc(r.id)+'">✓ Repuesto</button>'+
+                 '<button class="icon-btn lite" data-repdel="'+esc(r.id)+'" title="Sacar de la lista">✕</button></div>')+
+    '</div>';
+  $('repList').innerHTML =
+    (pend.length
+      ? pend.map(item).join('')
+      : '<div class="empty">No hay nada pendiente de reponer 🎉<br><span class="hint">Cuando vendas algo que estaba exhibido, buscalo y tocá «🔄 Yo repongo».</span></div>')+
+    (hechas.length ? '<div class="fb-grupo">Ya repuestos</div>'+hechas.map(item).join('') : '');
+  $('repList').querySelectorAll('[data-rephecho]').forEach(b=> b.addEventListener('click', ()=> marcarRepuesto(b.dataset.rephecho)));
+  $('repList').querySelectorAll('[data-repdel]').forEach(b=> b.addEventListener('click', ()=> soltarReposicion(b.dataset.repdel)));
 }
 
 /* ============================================================
