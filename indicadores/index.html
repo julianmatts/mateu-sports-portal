@@ -1496,9 +1496,9 @@ function precalentarObjetivo(){
     fetchEquipo(slug, sem); fetchEqPesos(slug); fetchVentaEquipo(slug, prevSem);
     // y lo del bloque "Objetivo del mes" (meta del mes + semanas del mes para el
     // avance): así la sección se arma en UNA ida y vuelta en vez de tres.
-    const per = sem.slice(0,7);
+    const per = objMesDeSemana(sem);
     fetchObjetivoMes(slug, per);
-    weeks.filter(w=>String(w).slice(0,7)===per).forEach(w=>fetchObjetivoData(slug, w));
+    weeks.filter(w=>objMesDeSemana(w)===per).forEach(w=>fetchObjetivoData(slug, w));
   }).catch(()=>{});
 }
 
@@ -2328,9 +2328,19 @@ function fetchObjetivoMesFull(per){
    mes, tomados del día a día de ventaEquipo. DESDE septiembre 2026 se unifica todo en
    calendario retail: la semana con días del mes siguiente es la 1era del mes siguiente
    (= la semana pertenece al mes de su domingo) y no hay bordes. */
+/* Mes retail de una semana: la semana pertenece al mes de su DOMINGO (mismo
+   criterio que el calendario del shell, `mesRetailDe`). Hasta ago-2026 el objetivo
+   MENSUAL se armó por mes calendario, así que para esos meses se mantiene el mes
+   del lunes; desde sep-2026 manda el domingo (p.ej. la Sem 36, 31/08–06/09, es de
+   SEPTIEMBRE, no de agosto). */
+function objMesDeSemana(iso){
+  const s=String(iso||''); if(s.length!==10) return s.slice(0,7);
+  const m=veSumarDias(s,6).slice(0,7);
+  return m>='2026-09' ? m : s.slice(0,7);
+}
 function objSemanasDelMes(weeks, per){
   if(per>='2026-09')
-    return (weeks||[]).filter(w=>veSumarDias(w,6).slice(0,7)===per).map(w=>({sem:w, borde:false}));
+    return (weeks||[]).filter(w=>objMesDeSemana(w)===per).map(w=>({sem:w, borde:false}));
   const y=+per.slice(0,4), mo=+per.slice(5,7);
   const primero=per+'-01', ultimo=per+'-'+String(new Date(Date.UTC(y,mo,0)).getUTCDate()).padStart(2,'0');
   return (weeks||[]).filter(w=>w<=ultimo && veSumarDias(w,6)>=primero)
@@ -2356,12 +2366,16 @@ function objBordeLbl(sem, per){
   return d1===d2 ? f(d1) : f(d1).slice(0,2)+'–'+f(d2);
 }
 async function objMesCadenaHtml(sem, weeks){
-  let per = String(sem||'').slice(0,7);
+  let per = objMesDeSemana(sem);
+  // el mes en curso lo manda la SEMANA elegida (mes retail), no el último mes
+  // publicado: si todavía no se cargó el objetivo del mes nuevo, la tarjeta cae al
+  // último publicado (y lo dice en su título), pero la banda «En curso» y el
+  // acumulado siguen siendo los del mes de la semana.
+  _zonaMes = per;
   // mes + puntero al último publicado en paralelo (una ida y vuelta menos)
   let [data, um] = await Promise.all([fetchObjetivoMesFull(per), fetchUltimoMes()]);
   if((!data || !data.porSlug) && um && um!==per){ per=um; data=await fetchObjetivoMesFull(um); }
   if(!data || !data.porSlug) return '';
-  _zonaMes = per;
   const filas = Object.keys(data.porSlug).map(slug=>{
     const v=data.porSlug[slug]||{}, meta=+v.meta||0;
     if(!meta) return null;
@@ -2578,7 +2592,7 @@ function pintarKpisSemCad(o){
    desplegable de equipo: eso es análisis de UNA sucursal (vista sucursal). --- */
 let _mesCadToken=0, _mesCadData=null;   // {mes, delMes, filas:[{slug,fmt,w,tk,un,vt,horas}]}
 async function cargarMesCad(sem, weeks, todas){
-  const mesISO=_zonaMes||String(sem).slice(0,7);
+  const mesISO=_zonaMes||objMesDeSemana(sem);
   if(_mesCadData && _mesCadData.mes===mesISO){ pintarPuenteCad(); return; }
   const token=++_mesCadToken;
   // feedback mientras baja el detalle de cada sucursal por semana (~1 request por suc.×sem)
@@ -2588,7 +2602,7 @@ async function cargarMesCad(sem, weeks, todas){
       +'<p class="hint" style="margin:0">Calculando el acumulado del mes con la venta de cada sucursal…</p>';
     boxL.style.display='';
   }
-  const delMes=weeks.filter(w=>String(w).slice(0,7)===mesISO).sort();
+  const delMes=weeks.filter(w=>objMesDeSemana(w)===mesISO).sort();
   const filas=[];
   await Promise.all(delMes.map(w=>Promise.all(todas.map(async r=>{
     try{
@@ -4263,12 +4277,14 @@ function eqEditorHtml(){
    publicadas (y lo del encargado de la semana activa como provisorio); cuando
    gerencia sube el Excel mensual con el real oficial, manda ese. */
 async function objetivoMesHtml(slug, sem, weeks, ve){
-  let per = String(sem||'').slice(0,7);
+  let per = objMesDeSemana(sem);
+  // igual que en Cadena: la banda «En curso» va por el mes retail de la semana
+  // elegida aunque la tarjeta caiga al último mes publicado.
+  _zonaMes = per;
   // mes + puntero al último publicado en paralelo (una ida y vuelta menos)
   let [m, um] = await Promise.all([fetchObjetivoMes(slug, per), fetchUltimoMes()]);
   if(!m && um && um!==per){ per=um; m=await fetchObjetivoMes(slug, um); }
   if(!m) return '';
-  _zonaMes = per;
   ve = await ve;   // acepta el valor o la promesa (para arrancar en paralelo)
   const meta=m.meta||0, minimo=m.minimo||Math.round(meta/1.2), s120=m.s120||Math.round(meta*1.2);
   let real=m.real||0, provisorio=false;
@@ -4549,8 +4565,8 @@ async function renderKpisSemana(slug, sem, v, ve, eqData, prevVe, weeks, prevSem
   const prev=kpisSemanaViva(prevVe, vigP&&vigP.eq);
   const hsNota = (vig.eq && !vig.propio) ? ' · equipo de Sem '+objSemNum(vig.sem) : '';
   // mes en curso acumulado: semanas publicadas del mismo mes (mismo criterio que «Objetivo del mes»)
-  const mesISO = _zonaMes || String(sem).slice(0,7);
-  const delMes=(weeks||[]).filter(w=>String(w).slice(0,7)===mesISO).sort();
+  const mesISO = _zonaMes || objMesDeSemana(sem);
+  const delMes=(weeks||[]).filter(w=>objMesDeSemana(w)===mesISO).sort();
   const [cerr, ...semsMes] = await Promise.all([kpisCerrado(slug)].concat(delMes.map(async w=>{
     const [vw,ew] = (w===sem) ? [ve,vig] : await Promise.all([fetchVentaEquipo(slug,w), equipoVigente(slug,w)]);
     return {k:kpisSemanaViva(vw, ew&&ew.eq), ve:vw};

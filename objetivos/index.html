@@ -1209,14 +1209,24 @@ async function abrirMesDash(per){
   try{ D.semanal = await acumuladoSemanal(per); }catch(e){ D.semanal=null; }
   if(state.tab==='mesdash') render();
 }
-/* Avance del mes en curso: suma la venta REAL de las semanas publicadas cuyo
-   lunes cae en el mes. Es provisorio — el real oficial del mes llega con el
+/* Mes retail de una semana: pertenece al mes de su DOMINGO (mismo criterio que el
+   calendario del shell y que Indicadores). Hasta ago-2026 el objetivo MENSUAL se
+   armó por mes calendario, así que para esos meses manda el lunes; desde sep-2026
+   manda el domingo (la Sem 36, 31/08–06/09, es de SEPTIEMBRE, no de agosto). */
+function mesDeSemana(iso){
+  const s=String(iso||''); if(s.length!==10) return s.slice(0,7);
+  const d=new Date(s+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+6);
+  const m=d.toISOString().slice(0,7);
+  return m>='2026-09' ? m : s.slice(0,7);
+}
+/* Avance del mes en curso: suma la venta REAL de las semanas publicadas que caen
+   en el mes retail. Es provisorio — el real oficial del mes llega con el
    Excel del mes siguiente. Solo lo usa gerencia (baja todas las semanas). */
 async function acumuladoSemanal(per){
   const semanas = await fbGet(ROOT+'/semanas'); if(!semanas) return null;
   const out={}; let nSem=0;
   Object.keys(semanas).forEach(iso=>{
-    if(String(iso).slice(0,7)!==per) return;
+    if(mesDeSemana(iso)!==per) return;
     const wk=semanas[iso]; if(!wk || !wk.porSlug) return;
     let hay=false;
     STORES.forEach(s=>{ const v=wk.porSlug[s.slug]; if(v && v.real>0){ out[s.slug]=(out[s.slug]||0)+r0(v.real); hay=true; } });

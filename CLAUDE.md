@@ -784,7 +784,13 @@ entran acá: ven su objetivo en Indicadores.
   Publicar bloqueado (pedir `.xlsx`/CSV).
   ⚠️ Criterios de calendario: hasta agosto 2026 el objetivo MENSUAL se armó por **mes
   calendario** y el semanal por **semanas retail** (no cierran entre sí); desde septiembre
-  2026 se unifica todo en calendario retail. La tabla de la cadena muestra esa venta como **«prov»**
+  2026 se unifica todo en calendario retail: **una semana pertenece al mes de su DOMINGO**
+  (igual que `mesRetailDe` del calendario del shell), así que la **Semana 36 (31/08–06/09)
+  es de septiembre**. El helper es `objMesDeSemana()` en `indicadores/` y `mesDeSemana()`
+  en `objetivos/` (desde `2026-09` manda el domingo; antes, el mes calendario del lunes).
+  Nunca derivar el mes con `sem.slice(0,7)`. La banda «En curso» y el acumulado del mes
+  van por el mes retail de la semana elegida aunque la tarjeta del objetivo mensual caiga
+  al último mes publicado (lo aclara en su título). La tabla de la cadena muestra esa venta como **«prov»**
   mientras no esté el real oficial (gerencia baja `ventaEquipo/<slug>/<sem>/total`
   de cada sucursal). El script Python queda como plan B.
 - **Base «Horas asignadas» + justificaciones (03/08/2026)**: el toggle de KPIs de
