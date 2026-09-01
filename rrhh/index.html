@@ -175,6 +175,17 @@ table.grid .sub{font-family:var(--font-c);font-size:12px;color:var(--muted)}
 .iconbtn:hover{border-color:var(--navy-mid);background:#f7f9fd}
 .iconbtn.danger:hover{border-color:var(--bad);color:var(--bad)}
 
+/* ===== MENÚ DESPLEGABLE (botón "+ Cargar") ===== */
+.ddwrap{position:relative;display:inline-block}
+.ddmenu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:50;background:#fff;border:1px solid var(--border);
+  border-radius:10px;box-shadow:var(--shadow-md);min-width:280px;overflow:hidden}
+.ddmenu.on{display:block}
+.ddmenu button{display:block;width:100%;text-align:left;background:none;border:0;padding:11px 14px;cursor:pointer;
+  font-family:var(--font-b);font-size:14px;color:var(--navy);border-bottom:1px solid var(--border)}
+.ddmenu button:last-child{border-bottom:0}
+.ddmenu button:hover{background:#f7f9fd}
+.ddmenu button span{display:block;font-family:var(--font-c);font-size:11.5px;color:var(--muted);margin-top:1px}
+
 /* ===== CALENDARIO DE NOVEDADES =====
    Réplica del Excel que hoy mandan los encargados: una grilla del mes,
    lunes a domingo, con texto libre por día. */
@@ -235,7 +246,7 @@ table.grid .sub{font-family:var(--font-c);font-size:12px;color:var(--muted)}
 <nav class="tabs" id="tabs">
   <button class="tab on" data-tab="legajos">Legajos <span class="badge" id="bLeg">0</span></button>
   <button class="tab" data-tab="ausencias">Ausentismo <span class="badge" id="bAus">0</span></button>
-  <button class="tab" data-tab="comp">Compensatorios <span class="badge" id="bComp">0</span></button>
+  <button class="tab" data-tab="comp">Compensatorios y horas <span class="badge" id="bComp">0</span></button>
   <button class="tab" data-tab="calendario">Calendario</button>
   <button class="tab" data-tab="novedades">Novedades de nómina</button>
   <button class="tab" data-tab="rotacion">Rotación</button>
@@ -333,7 +344,7 @@ const TIPOS_AUS = {
 // Compensatorios: días que la empresa le debe a la persona por haber trabajado
 // de más (feriado, domingo, inventario…). Se cargan acá y se descuentan cuando
 // se aprueba la solicitud del encargado.
-const MOTIVOS_COMP = ['Feriado trabajado','Domingo trabajado','Horas extra','Inventario / recuento','Evento / apertura','Cobertura de otra sucursal','Cambio de franco','Otro'];
+const MOTIVOS_COMP = ['Feriado trabajado','Domingo trabajado','Inventario / recuento','Evento / apertura','Cobertura de otra sucursal','Cambio de franco','Otro'];
 const MOTIVOS_BAJA = ['Renuncia','Despido','Fin de contrato','Acuerdo (art. 241)','Jubilación','Abandono','Otro'];
 const TIPOS_NOV = {
   horas_extra:{label:'Horas extra',unidad:'hs'},
@@ -343,6 +354,7 @@ const TIPOS_NOV = {
   presentismo:{label:'Presentismo',unidad:'$'},
   descuento:{label:'Descuento',unidad:'$'},
   ausencia:{label:'Ausencia (informativa)',unidad:'días'},
+  comp_pago:{label:'Compensatorio / horas cobradas',unidad:'$'},
   otro:{label:'Otro',unidad:'$'},
 };
 
@@ -392,6 +404,10 @@ let SOLIC = {};       // slug -> solicitudId -> solicitud del encargado
 // encargados). Agrupado por slug, como el resto.
 let CALEND = {};      // slug -> 'YYYY-MM' -> {dias:{'1':'texto',…}, actualizado, por}
 let FERIADOS = null;  // 'YYYY-MM-DD' -> título (del calendario retail del shell)
+// Confirmación semanal del calendario: el encargado cierra la semana desde Mi
+// Sucursal ('cargada' o 'sin' novedades). Sin esto se juntaba todo a fin de mes.
+let CALSEM = {};      // slug -> lunesISO -> {estado:'cargada'|'sin', dias, por, en}
+let CONFIG = {};      // rrhh/config: valorHora {general, horasDia, porLegajo}
 let state = { tab:'legajos', qLeg:'', fSuc:'', fEstado:'activo', fPuesto:'',
               qAus:'', aSuc:'', aTipo:'', aEstado:'', novPeriodo:periodoActual(),
               cSuc:'', cEstado:'pendiente', cVer:'con',
@@ -445,21 +461,24 @@ async function cargarFeriados(){
 }
 async function recargar(){
   try{
-    const [leg, aus, comp, sol, cal] = await Promise.all([
+    const [leg, aus, comp, sol, cal, cfg, csem] = await Promise.all([
       fbGet(ROOT+'/legajos'), fbGet(ROOT+'/ausencias'),
       fbGet(ROOT+'/compensatorios'), fbGet(ROOT+'/solicitudes_comp'),
-      fbGet(ROOT+'/calendario') ]);
+      fbGet(ROOT+'/calendario'), fbGet(ROOT+'/config'), fbGet(ROOT+'/calSemanas') ]);
     LEGAJOS = leg || {};
     AUSENCIAS = aus || {};
     COMPS = comp || {};
     SOLIC = sol || {};
     CALEND = cal || {};
+    CONFIG = cfg || {};
+    CALSEM = csem || {};
     // filtro de alcance para supervisores
     if(SCOPE){
       const f={}; Object.entries(LEGAJOS).forEach(([k,v])=>{ if(enAlcance(v.sucursal)) f[k]=v; }); LEGAJOS=f;
       const c={}; Object.entries(COMPS).forEach(([k,v])=>{ if(enAlcance(k)) c[k]=v; }); COMPS=c;
       const t={}; Object.entries(SOLIC).forEach(([k,v])=>{ if(enAlcance(k)) t[k]=v; }); SOLIC=t;
       const g={}; Object.entries(CALEND).forEach(([k,v])=>{ if(enAlcance(k)) g[k]=v; }); CALEND=g;
+      const w={}; Object.entries(CALSEM).forEach(([k,v])=>{ if(enAlcance(k)) w[k]=v; }); CALSEM=w;
     }
     await cargarNovedades();
   }catch(e){ console.error(e); toast('No se pudo leer Firebase','err'); }
@@ -529,7 +548,7 @@ function viewLegajos(){
     <div class="kpi"><div class="k">Sucursales con gente</div><div class="v">${new Set(activos.map(l=>l.sucursal)).size}</div></div>
     <div class="kpi ok"><div class="k">Antigüedad promedio</div><div class="v">${promedioAntiguedad(activos)}</div></div>
     <div class="kpi warn"><div class="k">Bajas (12 meses)</div><div class="v">${bajasUltimos12().length}</div></div>
-    <div class="kpi bad"><div class="k">Compensatorios pendientes</div><div class="v">${fmtDias(compTotalDeuda())}</div><div class="s">${compConSaldo().length} persona${compConSaldo().length===1?'':'s'} · ${solicitudes().filter(s=>(s.estado||'pendiente')==='pendiente').length} solicitud${solicitudes().filter(s=>(s.estado||'pendiente')==='pendiente').length===1?'':'es'} sin responder</div></div>
+    <div class="kpi bad"><div class="k">Compensatorios y horas</div><div class="v" style="font-size:26px">${fmtDias(compTotalDeuda())} · ${fmtHs(hsTotalDeuda())}</div><div class="s">${compConSaldo().length} persona${compConSaldo().length===1?'':'s'} · ${solicitudes().filter(s=>(s.estado||'pendiente')==='pendiente').length} solicitud${solicitudes().filter(s=>(s.estado||'pendiente')==='pendiente').length===1?'':'es'} sin responder</div></div>
   </div>`;
 
   const opsSuc = ['<option value="">Todas las sucursales</option>'].concat(sucsVisibles().sort((a,b)=>cmp(sucLabel(a),sucLabel(b))).map(s=>`<option value="${s}" ${state.fSuc===s?'selected':''}>${esc(sucLabel(s))}</option>`)).join('');
@@ -574,7 +593,7 @@ function viewLegajos(){
       </tr>`;
     }).join('');
     body = `<div class="tblwrap"><table class="grid"><thead><tr>
-      <th>Persona</th><th>Sucursal</th><th>Régimen</th><th>Ingreso</th><th>Antigüedad</th><th class="num" title="Días de compensatorio que la empresa le debe">Comp.</th><th>Estado</th><th></th>
+      <th>Persona</th><th>Sucursal</th><th>Régimen</th><th>Ingreso</th><th>Antigüedad</th><th class="num" title="Días de compensatorio y horas extra que la empresa le debe">Comp. / hs</th><th>Estado</th><th></th>
       </tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   return `<div class="sec-head"><div><h1>Legajos</h1><div class="sub">Ficha de cada persona: datos, contrato, sucursal y antigüedad.</div></div></div>${kpis}${toolbar}${body}`;
@@ -676,56 +695,116 @@ function viewAusencias(){
    solo lo suyo (misma seguridad blanda que Objetivos / Barrida).
    ============================================================ */
 const fmtDias = n => { const v=Math.round((Number(n)||0)*100)/100; return (v%1===0? String(v) : String(v).replace('.',','))+' d'; };
+const fmtHs   = n => { const v=Math.round((Number(n)||0)*100)/100; return (v%1===0? String(v) : String(v).replace('.',','))+' hs'; };
+const fmtCant = (n,k) => k==='hs' ? fmtHs(n) : fmtDias(n);
+// Los dos conceptos que se le deben a la gente. Se guardan en la MISMA ficha
+// (`movs`), separados por la clave `k`: sin `k` = compensatorio (los que ya
+// estaban cargados antes de separar horas extra).
+const CONCEPTOS = {
+  comp:{label:'Compensatorio', corto:'Compensatorio', unidad:'días', ic:'📆'},
+  hs:  {label:'Horas extra',   corto:'Horas extra',   unidad:'horas', ic:'⏱'},
+};
+const MOTIVOS_HS = ['Apertura / cierre','Inventario / recuento','Cobertura de franco','Descarga de mercadería','Evento / promoción','Refuerzo de temporada','Otro'];
 
 /* --- lectura --- */
-// Dónde vive la ficha de compensatorios de una persona. La `sucursal` del legajo
-// puede haber quedado vieja (p.ej. la gente que pasó a Diagonal 80), así que
-// manda el slug donde ya hay ficha; si no hay, el del legajo.
+// Dónde vive la ficha de una persona. La `sucursal` del legajo puede haber
+// quedado vieja (p.ej. la gente que pasó a Diagonal 80), así que manda el slug
+// donde ya hay ficha; si no hay, el del legajo.
 function compSlugDe(legId, fallback){
   if(fallback && COMPS[fallback] && COMPS[fallback][legId]) return fallback;
   const hit = Object.keys(COMPS).find(sl=>COMPS[sl] && COMPS[sl][legId]);
   return hit || fallback || null;
 }
 function compPersona(slug, legId){ return ((COMPS[slug]||{})[legId]) || null; }
-function compMovs(slug, legId){
+function movKind(m){ return m && m.k==='hs' ? 'hs' : 'comp'; }
+function compMovs(slug, legId, kind){
   const c=compPersona(slug,legId);
-  return Object.entries((c&&c.movs)||{}).map(([id,m])=>({id,...m})).sort((a,b)=>cmp(b.f||'',a.f||''));
+  let l = Object.entries((c&&c.movs)||{}).map(([id,m])=>({id,...m}));
+  if(kind) l = l.filter(m=>movKind(m)===kind);
+  return l.sort((a,b)=>cmp(b.f||'',a.f||''));
 }
-function compSaldo(slug, legId){ return compMovs(slug,legId).reduce((s,m)=>s+(Number(m.d)||0),0); }
-function compGanados(slug, legId){ return compMovs(slug,legId).filter(m=>Number(m.d)>0).reduce((s,m)=>s+Number(m.d),0); }
-function compUsados(slug, legId){ return -compMovs(slug,legId).filter(m=>Number(m.d)<0).reduce((s,m)=>s+Number(m.d),0); }
+const _suma = l => l.reduce((s,m)=>s+(Number(m.d)||0),0);
+function compSaldo(slug, legId){ return _suma(compMovs(slug,legId,'comp')); }   // días
+function hsSaldo(slug, legId){ return _suma(compMovs(slug,legId,'hs')); }       // horas
+function saldoDe(slug, legId, kind){ return kind==='hs' ? hsSaldo(slug,legId) : compSaldo(slug,legId); }
+function compGanados(slug, legId, kind){ return compMovs(slug,legId,kind||'comp').filter(m=>Number(m.d)>0).reduce((s,m)=>s+Number(m.d),0); }
+function compUsados(slug, legId, kind){ return -compMovs(slug,legId,kind||'comp').filter(m=>Number(m.d)<0).reduce((s,m)=>s+Number(m.d),0); }
+
 // solicitudes de todas las sucursales del alcance, la más nueva primero
+const solKind = x => x && x.k==='hs' ? 'hs' : 'comp';
+const solCant = x => Number(x && (x.cant!=null? x.cant : x.dias)) || 0;
+const solModo = x => x && x.modo==='cobrar' ? 'cobrar' : 'tomar';
 function solicitudes(){
   const out=[];
   Object.entries(SOLIC||{}).forEach(([slug,m])=>Object.entries(m||{}).forEach(([id,x])=>{ if(x) out.push({slug,id,...x}); }));
   return out.sort((a,b)=> cmp(b.en||'', a.en||''));
 }
-function compEnTramite(slug, legId){
-  return solicitudes().filter(x=>x.slug===slug && x.legajoId===legId && (x.estado||'pendiente')==='pendiente')
-    .reduce((s,x)=>s+(Number(x.dias)||0),0);
+function compEnTramite(slug, legId, kind){
+  return solicitudes().filter(x=>x.slug===slug && x.legajoId===legId && (x.estado||'pendiente')==='pendiente'
+      && (!kind || solKind(x)===kind))
+    .reduce((s,x)=>s+solCant(x),0);
 }
-// personas (de los legajos visibles) que tienen días a favor o una solicitud abierta
+
+/* --- valorizado: el valor de la hora lo carga RRHH ---
+   `rrhh/config/valorHora` = {general, horasDia, porLegajo:{legajoId:valor}}.
+   El importe de un pago se HORNEA en el movimiento (`vh` e `imp`), así el
+   histórico no cambia cuando después se actualiza el valor. */
+function valorHora(legId){
+  const c=(CONFIG&&CONFIG.valorHora)||{};
+  const pl=(c.porLegajo||{})[legId];
+  const v = (pl!=null && pl!=='') ? Number(pl) : Number(c.general||0);
+  return isFinite(v)? v : 0;
+}
+function horasPorDia(){ const v=Number(((CONFIG&&CONFIG.valorHora)||{}).horasDia); return v>0? v : 8; }
+function hayValorHora(){ return valorHora('__x__')>0 || Object.keys(((CONFIG&&CONFIG.valorHora)||{}).porLegajo||{}).length>0; }
+// cuánto sale pagar `cant` de `kind` a esa persona
+function valorizar(legId, cant, kind){
+  const vh=valorHora(legId); if(!vh) return 0;
+  const horas = kind==='hs' ? cant : cant*horasPorDia();
+  return horas*vh;
+}
+function valorizadoPersona(slug, legId){
+  return valorizar(legId, Math.max(0,compSaldo(slug,legId)), 'comp')
+       + valorizar(legId, Math.max(0,hsSaldo(slug,legId)), 'hs');
+}
+
+// personas (de los legajos visibles) con algo a favor o una solicitud abierta
 function compConSaldo(){
   return legajosOrden().filter(l=>(l.estado||'activo')!=='baja')
-    .map(l=>{ const sl=compSlugDe(l.id, l.sucursal); return {...l, cslug:sl, saldo:compSaldo(sl,l.id), tram:compEnTramite(sl,l.id)}; })
-    .filter(p=>p.saldo!==0 || p.tram>0);
+    .map(l=>{ const sl=compSlugDe(l.id, l.sucursal);
+      return {...l, cslug:sl, saldo:compSaldo(sl,l.id), hs:hsSaldo(sl,l.id),
+              tram:compEnTramite(sl,l.id,'comp'), tramHs:compEnTramite(sl,l.id,'hs')}; })
+    .filter(p=>p.saldo!==0 || p.hs!==0 || p.tram>0 || p.tramHs>0);
 }
 function compTotalDeuda(){ return compConSaldo().reduce((s,p)=>s+Math.max(0,p.saldo),0); }
-// celda de la nómina (pestaña Legajos)
+function hsTotalDeuda(){ return compConSaldo().reduce((s,p)=>s+Math.max(0,p.hs),0); }
+function valorizadoTotal(){ return compConSaldo().reduce((s,p)=>s+valorizadoPersona(p.cslug,p.id),0); }
+
+// celda de la nómina (pestaña Legajos): compensatorio + horas extra
 function compCelda(l){
   const sl=compSlugDe(l.id, l.sucursal);
-  const saldo=compSaldo(sl,l.id), tram=compEnTramite(sl,l.id);
-  if(!saldo && !tram) return '<span class="sub">—</span>';
-  return (saldo? `<b style="color:${saldo>0?'var(--bad)':'var(--muted)'}">${fmtDias(saldo)}</b>` : '<span class="sub">0 d</span>')
+  const d=compSaldo(sl,l.id), h=hsSaldo(sl,l.id);
+  const tram=compEnTramite(sl,l.id);
+  if(!d && !h && !tram) return '<span class="sub">—</span>';
+  const partes=[];
+  if(d) partes.push(`<b style="color:${d>0?'var(--bad)':'var(--muted)'}">${fmtDias(d)}</b>`);
+  if(h) partes.push(`<b style="color:${h>0?'var(--warn)':'var(--muted)'}">${fmtHs(h)}</b>`);
+  return (partes.join(' <span class="sub">·</span> ') || '<span class="sub">0</span>')
     + (tram? `<div class="sub">${fmtDias(tram)} en trámite</div>` : '');
 }
-// tipo de movimiento: alta (días ganados) · uso (día tomado) · ajuste (importación)
+
+// tipo de movimiento: alta (a favor) · uso (tomado) · pago (cobrado) · ajuste
 function movTipo(m){ return m.t || (Number(m.d)<0 ? 'uso' : 'alta'); }
 function movTipoTag(m){
   const t=movTipo(m);
-  return t==='uso' ? '<span class="tag rech">Tomado</span>'
-       : t==='ajuste' ? '<span class="tag otro">Ajuste</span>'
-       : '<span class="tag aprob">Ganado</span>';
+  return t==='uso'   ? '<span class="tag rech">Tomado</span>'
+       : t==='pago'  ? '<span class="tag vac">Cobrado</span>'
+       : t==='ajuste'? '<span class="tag otro">Ajuste</span>'
+       : '<span class="tag aprob">A favor</span>';
+}
+function movKindTag(m){
+  const k=movKind(m);
+  return `<span class="tag ${k==='hs'?'pt':'ft'}">${CONCEPTOS[k].corto}</span>`;
 }
 function movRango(m){
   if(!m.desde) return '';
@@ -736,6 +815,12 @@ function estadoCompTag(e){
   return e==='pendiente' ? '<span class="tag pend">Pendiente</span>'
        : e==='aprobada'  ? '<span class="tag aprob">Aprobada</span>'
        : '<span class="tag rech">Rechazada</span>';
+}
+// "1 d de compensatorio" / "3 hs extra a cobrar"
+function solPideTxt(x){
+  const k=solKind(x);
+  return fmtCant(solCant(x),k)+' de '+CONCEPTOS[k].label.toLowerCase()
+    + (solModo(x)==='cobrar' ? ' <b style="color:var(--exc)">a cobrar</b>' : '');
 }
 
 function viewComp(){
@@ -748,16 +833,19 @@ function viewComp(){
   });
   const conSaldo = compConSaldo();
   const personas = (state.cVer==='todos'
-      ? legajosOrden().filter(l=>(l.estado||'activo')!=='baja').map(l=>{ const sl=compSlugDe(l.id, l.sucursal); return {...l, cslug:sl, saldo:compSaldo(sl,l.id), tram:compEnTramite(sl,l.id)}; })
+      ? legajosOrden().filter(l=>(l.estado||'activo')!=='baja').map(l=>{ const sl=compSlugDe(l.id, l.sucursal);
+          return {...l, cslug:sl, saldo:compSaldo(sl,l.id), hs:hsSaldo(sl,l.id), tram:compEnTramite(sl,l.id,'comp'), tramHs:compEnTramite(sl,l.id,'hs')}; })
       : conSaldo)
     .filter(p=>!state.cSuc || (p.cslug||p.sucursal)===state.cSuc)
-    .sort((a,b)=> (b.saldo-a.saldo) || cmp(a.nombre||'', b.nombre||''));
+    .sort((a,b)=> (b.saldo-a.saldo) || (b.hs-a.hs) || cmp(a.nombre||'', b.nombre||''));
 
+  const vh=(CONFIG&&CONFIG.valorHora)||{};
   const kpis = `<div class="kpis">
-    <div class="kpi warn"><div class="k">Solicitudes pendientes</div><div class="v">${pend.length}</div><div class="s">${fmtDias(pend.reduce((s,x)=>s+(Number(x.dias)||0),0))} pedidos</div></div>
-    <div class="kpi bad"><div class="k">Días adeudados</div><div class="v">${fmtDias(compTotalDeuda())}</div><div class="s">saldo a favor de la gente</div></div>
-    <div class="kpi info"><div class="k">Personas con saldo</div><div class="v">${conSaldo.filter(p=>p.saldo>0).length}</div></div>
-    <div class="kpi ok"><div class="k">Sucursales con deuda</div><div class="v">${new Set(conSaldo.filter(p=>p.saldo>0).map(p=>p.cslug||p.sucursal)).size}</div></div>
+    <div class="kpi warn"><div class="k">Solicitudes pendientes</div><div class="v">${pend.length}</div><div class="s">${pend.filter(x=>solModo(x)==='cobrar').length} para cobrar</div></div>
+    <div class="kpi bad"><div class="k">Compensatorios</div><div class="v">${fmtDias(compTotalDeuda())}</div><div class="s">días a favor de la gente</div></div>
+    <div class="kpi info"><div class="k">Horas extra</div><div class="v">${fmtHs(hsTotalDeuda())}</div><div class="s">horas sin compensar ni cobrar</div></div>
+    <div class="kpi ok"><div class="k">Valorizado</div><div class="v" style="font-size:26px">${vh.general||Object.keys(vh.porLegajo||{}).length? fmtM(valorizadoTotal()) : '—'}</div>
+      <div class="s">${vh.general? 'valor hora '+fmtM(vh.general)+' · '+horasPorDia()+' hs/día' : 'cargá el valor de la hora'}</div></div>
   </div>`;
 
   const opsSuc = ['<option value="">Todas las sucursales</option>'].concat(sucsVisibles().sort((a,b)=>cmp(sucLabel(a),sucLabel(b))).map(x=>`<option value="${x}" ${state.cSuc===x?'selected':''}>${esc(sucLabel(x))}</option>`)).join('');
@@ -770,115 +858,133 @@ function viewComp(){
       <option value="" ${state.cEstado===''?'selected':''}>Todas las solicitudes</option>
     </select>
     <select class="sel" id="cVer" style="width:auto">
-      <option value="con" ${state.cVer==='con'?'selected':''}>Saldos: solo con días</option>
+      <option value="con" ${state.cVer==='con'?'selected':''}>Saldos: solo con días u horas</option>
       <option value="todos" ${state.cVer==='todos'?'selected':''}>Saldos: toda la nómina</option>
     </select>
     <div style="flex:1"></div>
-    <button class="btn btn-primary btn-sm" id="btnCompCarga">+ Cargar compensatorio</button>
-    <button class="btn btn-outline btn-sm" id="btnCompUso" title="Registrar un compensatorio que la persona ya se tomó">🕘 Registrar día tomado</button>
+    <div class="ddwrap">
+      <button class="btn btn-primary btn-sm" id="btnCompAdd">+ Cargar ▾</button>
+      <div class="ddmenu" id="ddCompAdd">
+        <button type="button" data-k="comp">📆 Compensatorio <span>días a favor por trabajar de más</span></button>
+        <button type="button" data-k="hs">⏱ Horas extra <span>horas sueltas, para compensar o cobrar</span></button>
+      </div>
+    </div>
+    <button class="btn btn-outline btn-sm" id="btnValorHora" title="Valor de la hora para calcular el valorizado">💲 Valor de la hora</button>
     <button class="btn btn-navy btn-sm" id="btnCompImp" title="Subir el Excel con los compensatorios pendientes de toda la cadena">⇧ Importar Excel</button>
   </div>`;
 
   let solBody;
   if(!list.length){
     solBody = `<div class="empty" style="padding:34px 20px"><div class="ic">🕘</div><div class="t">${todas.length?'Sin solicitudes con estos filtros':'Todavía no hay solicitudes'}</div>
-      <div class="s">Las piden los encargados desde <b>Mi Sucursal → Compensatorios del equipo</b>. Acá se aprueban o se rechazan.</div></div>`;
+      <div class="s">Las piden los encargados desde <b>Mi Sucursal → Compensatorios y horas</b>. Acá se aprueban o se rechazan.</div></div>`;
   } else {
     const rows = list.map(x=>{
       const l = LEGAJOS[x.legajoId] || {};
       const nombre = l.nombre || x.nombre || '—';
-      const saldo = compSaldo(x.slug, x.legajoId);
+      const k=solKind(x), cant=solCant(x), cobra=solModo(x)==='cobrar';
+      const saldo = saldoDe(x.slug, x.legajoId, k);
       const est = x.estado||'pendiente';
       const resp = x.resp||{};
       const sug = resp.sug && resp.sug.desde
         ? `<div class="sub" style="color:var(--info)">📆 Sugerido: ${fechaLabel(resp.sug.desde)}${resp.sug.hasta&&resp.sug.hasta!==resp.sug.desde?' → '+fechaLabel(resp.sug.hasta):''}${resp.sug.nota?' — '+esc(resp.sug.nota):''}</div>` : '';
       const nota = resp.nota? `<div class="sub">${esc(resp.nota)}</div>` : '';
+      const pagado = resp.imp? `<div class="sub" style="color:var(--exc)">Pagado ${fmtM(resp.imp)}</div>` : '';
       return `<tr>
         <td><div class="person"><span class="avatar">${esc(iniciales(nombre))}</span>
           <div><div class="nm">${esc(nombre)}</div><div class="sub">${esc(sucLabel(x.slug))}${l.puesto?' · '+esc(l.puesto):''}</div></div></div></td>
-        <td>${fechaLabel(x.desde)}${x.hasta&&x.hasta!==x.desde?' → '+fechaLabel(x.hasta):''}${x.motivo?`<div class="sub">${esc(x.motivo)}</div>`:''}</td>
-        <td class="num">${fmtDias(x.dias)}</td>
-        <td class="num">${fmtDias(saldo)}${est==='pendiente'&&Number(x.dias)>saldo?'<div class="sub" style="color:var(--bad)">no alcanza</div>':''}</td>
+        <td>${solPideTxt(x)}${x.motivo?`<div class="sub">${esc(x.motivo)}</div>`:''}</td>
+        <td>${cobra?'<span class="sub">—</span>':fechaLabel(x.desde)+(x.hasta&&x.hasta!==x.desde?' → '+fechaLabel(x.hasta):'')}</td>
+        <td class="num">${fmtCant(saldo,k)}${est==='pendiente'&&cant>saldo?'<div class="sub" style="color:var(--bad)">no alcanza</div>':''}</td>
         <td class="sub">${esc(x.por||'—')}<div class="sub">${esc(String(x.en||'').replace('T',' ').slice(0,16))}</div></td>
-        <td>${estadoCompTag(est)}${nota}${sug}${resp.por?`<div class="sub">por ${esc(resp.por)}</div>`:''}</td>
+        <td>${estadoCompTag(est)}${nota}${pagado}${sug}${resp.por?`<div class="sub">por ${esc(resp.por)}</div>`:''}</td>
         <td><div class="rowact">
           ${est==='pendiente'
-            ? `<button class="iconbtn" data-capr="${x.slug}|${x.id}" title="Aprobar y descontar del saldo">✓</button><button class="iconbtn danger" data-crech="${x.slug}|${x.id}" title="Rechazar (y sugerir otro día)">✕</button>`
+            ? `<button class="iconbtn" data-capr="${x.slug}|${x.id}" title="Aprobar">✓</button><button class="iconbtn danger" data-crech="${x.slug}|${x.id}" title="Rechazar (y sugerir otro día)">✕</button>`
             : `<button class="iconbtn" data-creab="${x.slug}|${x.id}" title="Volver a dejarla pendiente">↩</button>`}
           <button class="iconbtn" data-cmovs="${x.slug}|${x.legajoId}" title="Ver movimientos de la persona">🕘</button>
         </div></td>
       </tr>`;
     }).join('');
     solBody = `<div class="tblwrap"><table class="grid"><thead><tr>
-      <th>Persona</th><th>Día pedido</th><th class="num">Días</th><th class="num">Saldo</th><th>Solicitó</th><th>Estado</th><th></th>
+      <th>Persona</th><th>Pide</th><th>Día pedido</th><th class="num">Saldo</th><th>Solicitó</th><th>Estado</th><th></th>
       </tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
   let salBody;
   if(!personas.length){
-    salBody = `<div class="hintline">Todavía nadie tiene compensatorios cargados. Cargá el primero con <b>+ Cargar compensatorio</b>.</div>`;
+    salBody = `<div class="hintline">Todavía no hay nada cargado. Empezá con <b>+ Cargar</b>.</div>`;
   } else {
-    const rows = personas.map(p=>`<tr>
+    const rows = personas.map(p=>{
+      const val=valorizadoPersona(p.cslug,p.id);
+      return `<tr>
       <td><div class="person"><span class="avatar">${esc(iniciales(p.nombre))}</span>
         <div><div class="nm">${esc(p.nombre||'—')}</div><div class="sub">${esc(p.puesto||'—')}</div></div></div></td>
       <td>${esc(sucLabel(p.cslug||p.sucursal))}${p.cslug&&p.cslug!==p.sucursal?`<div class="sub">legajo: ${esc(sucLabel(p.sucursal))}</div>`:''}</td>
-      <td class="num">${fmtDias(compGanados(p.cslug,p.id))}</td>
-      <td class="num">${fmtDias(compUsados(p.cslug,p.id))}</td>
-      <td class="num">${p.tram? fmtDias(p.tram) : '<span class="sub">—</span>'}</td>
       <td class="num"><b style="color:${p.saldo>0?'var(--bad)':'var(--muted)'}">${fmtDias(p.saldo)}</b></td>
+      <td class="num"><b style="color:${p.hs>0?'var(--warn)':'var(--muted)'}">${fmtHs(p.hs)}</b></td>
+      <td class="num">${(p.tram||p.tramHs)? [p.tram?fmtDias(p.tram):'', p.tramHs?fmtHs(p.tramHs):''].filter(Boolean).join(' · ') : '<span class="sub">—</span>'}</td>
+      <td class="num">${val? fmtM(val) : '<span class="sub">—</span>'}</td>
       <td><div class="rowact">
-        <button class="iconbtn" data-cadd="${p.id}" title="Cargar días">➕</button>
+        <button class="iconbtn" data-cadd="${p.id}" title="Cargar compensatorio o horas">➕</button>
         <button class="iconbtn" data-cmovs="${p.cslug||p.sucursal}|${p.id}" title="Ver movimientos">🕘</button>
       </div></td>
-    </tr>`).join('');
+    </tr>`;}).join('');
     salBody = `<div class="tblwrap"><table class="grid"><thead><tr>
-      <th>Persona</th><th>Sucursal</th><th class="num">Ganados</th><th class="num">Tomados</th><th class="num">En trámite</th><th class="num">Saldo</th><th></th>
+      <th>Persona</th><th>Sucursal</th><th class="num">Compensatorio</th><th class="num">Horas extra</th><th class="num">En trámite</th><th class="num">Valorizado</th><th></th>
       </tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
-  return `<div class="sec-head"><div><h1>Compensatorios</h1><div class="sub">Días que la empresa le debe a cada persona y las solicitudes de los encargados para tomarlos.</div></div></div>
-    ${kpis}${toolbar}
+  const avisoVH = (CONFIG&&CONFIG.valorHora&&CONFIG.valorHora.general) ? '' :
+    `<div class="banner warn">💲 Todavía no cargaste el <b>valor de la hora</b>: sin eso no se puede valorizar lo que se paga en plata. Cargalo con <b>Valor de la hora</b>.</div>`;
+
+  return `<div class="sec-head"><div><h1>Compensatorios y horas</h1><div class="sub">Días de compensatorio y horas extra que la empresa le debe a cada persona: se compensan con tiempo o se cobran en plata.</div></div></div>
+    ${kpis}${avisoVH}${toolbar}
     <div class="card-h" style="margin-bottom:8px">Solicitudes de los encargados</div>
     ${solBody}
     <div class="card-h" style="margin:22px 0 8px">Saldo por persona</div>
     ${salBody}
     ${histUsoHtml()}
-    <div class="banner info" style="margin-top:16px">Al <b>aprobar</b> una solicitud se descuenta sola del saldo de la persona y le llega el aviso a la sucursal por la Bandeja. Al <b>rechazar</b> podés <b>sugerir otro día</b> para compensar: la sugerencia también le llega al encargado.</div>`;
+    <div class="banner info" style="margin-top:16px">Al <b>aprobar</b> una solicitud se descuenta sola del saldo y le llega el aviso a la sucursal por la Bandeja. Si la persona lo <b>cobra</b>, el importe sale del valor de la hora y se puede pasar directo a las <b>Novedades de nómina</b> del mes. Al <b>rechazar</b> podés <b>sugerir otro día</b> para compensar.</div>`;
 }
 
-/* --- historial de uso: cada compensatorio que se tomó, con su día ---
-   No se pierde aunque la solicitud se borre: el movimiento negativo queda
-   guardado en la ficha de la persona con la fecha del día tomado. --- */
+/* --- historial de usos y pagos: cuándo se tomó o se cobró cada cosa ---
+   No se pierde aunque la solicitud se borre: vive en el movimiento. --- */
 function usosLista(){
   const out=[];
   Object.entries(COMPS||{}).forEach(([slug,gente])=>Object.entries(gente||{}).forEach(([legId,pers])=>{
     Object.entries((pers&&pers.movs)||{}).forEach(([id,m])=>{
-      if(m && movTipo(m)==='uso') out.push({slug, legId, id, nombre:(LEGAJOS[legId]||{}).nombre || pers.nombre || '—', ...m});
+      const t=movTipo(m);
+      if(m && (t==='uso'||t==='pago')) out.push({slug, legId, id, nombre:(LEGAJOS[legId]||{}).nombre || pers.nombre || '—', ...m});
     });
   }));
   return out.sort((a,b)=> cmp(b.f||'', a.f||''));
 }
 function histUsoHtml(){
   const usos = usosLista().filter(u=>!state.cSuc || u.slug===state.cSuc);
-  const dias = usos.reduce((s,u)=>s+Math.abs(Number(u.d)||0),0);
-  if(!usos.length) return `<div class="card-h" style="margin:22px 0 8px">Historial de compensatorios tomados</div>
-    <div class="hintline">Todavía no se tomó ningún compensatorio${state.cSuc?' en '+esc(sucLabel(state.cSuc)):''}. Cuando se apruebe una solicitud, el día queda registrado acá.</div>`;
-  const filas = usos.map(u=>`<tr>
+  const tomados = usos.filter(u=>movTipo(u)==='uso'), pagos = usos.filter(u=>movTipo(u)==='pago');
+  const plata = pagos.reduce((s,u)=>s+(Number(u.imp)||0),0);
+  if(!usos.length) return `<div class="card-h" style="margin:22px 0 8px">Historial de compensatorios y horas</div>
+    <div class="hintline">Todavía no se tomó ni se cobró nada${state.cSuc?' en '+esc(sucLabel(state.cSuc)):''}. Cuando se apruebe una solicitud, queda registrado acá.</div>`;
+  const filas = usos.map(u=>{
+    const k=movKind(u), cant=Math.abs(Number(u.d)||0);
+    return `<tr>
       <td><div class="person"><span class="avatar">${esc(iniciales(u.nombre))}</span>
         <div><div class="nm">${esc(u.nombre)}</div><div class="sub">${esc(sucLabel(u.slug))}</div></div></div></td>
+      <td>${movKindTag(u)} ${movTipoTag(u)}</td>
       <td>${movRango(u) || fechaLabel(u.f)}</td>
-      <td class="num">${fmtDias(Math.abs(Number(u.d)||0))}</td>
+      <td class="num">${fmtCant(cant,k)}</td>
+      <td class="num">${u.imp? fmtM(u.imp) : '<span class="sub">—</span>'}${u.vh?`<div class="sub">${fmtM(u.vh)}/h</div>`:''}</td>
       <td class="sub">${esc(u.m||'')}</td>
       <td class="sub">${esc(u.por||'')}<div class="sub">${esc(String(u.en||'').replace('T',' ').slice(0,16))}</div></td>
-    </tr>`).join('');
-  return `<div class="card-h" style="margin:22px 0 8px">Historial de compensatorios tomados</div>
-    <div class="card-hs">${usos.length} compensatorio${usos.length===1?'':'s'} tomado${usos.length===1?'':'s'} · ${fmtDias(dias)} en total${state.cSuc?' · '+esc(sucLabel(state.cSuc)):''}. Queda registrado aunque después se borre la solicitud.</div>
+    </tr>`;}).join('');
+  return `<div class="card-h" style="margin:22px 0 8px">Historial de compensatorios y horas</div>
+    <div class="card-hs">${tomados.length} tomado${tomados.length===1?'':'s'} · ${pagos.length} cobrado${pagos.length===1?'':'s'}${plata?' ('+fmtM(plata)+')':''}${state.cSuc?' · '+esc(sucLabel(state.cSuc)):''}. Queda registrado aunque después se borre la solicitud.</div>
     <div class="tblwrap"><table class="grid"><thead><tr>
-      <th>Persona</th><th>Día tomado</th><th class="num">Días</th><th>Detalle</th><th>Aprobó</th>
+      <th>Persona</th><th>Concepto</th><th>Día</th><th class="num">Cantidad</th><th class="num">Importe</th><th>Detalle</th><th>Cargó</th>
       </tr></thead><tbody>${filas}</tbody></table></div>`;
 }
 
-/* --- escribir un movimiento (+ ganados / − tomados) --- */
+/* --- escribir un movimiento --- */
 async function guardarMovComp(slug, legId, mov){
   const l = LEGAJOS[legId] || {};
   slug = compSlugDe(legId, slug || l.sucursal);
@@ -903,127 +1009,244 @@ async function borrarMovComp(slug, legId, movId){
   }catch(e){ toast('No se pudo borrar','err'); }
 }
 
-/* --- cargar un movimiento a mano: días a favor o un día ya tomado ---
-   El circuito normal descuenta solo al aprobar la solicitud del encargado, pero
-   RRHH también tiene que poder registrar un compensatorio que ya se tomó (con la
-   fecha del día usado) para que no se pierda en el historial. --- */
-function formCompCarga(legajoPre, tipoPre){
-  const tipo0 = tipoPre==='uso' ? 'uso' : 'alta';
+/* --- el valor de la hora (para el valorizado) --- */
+function formValorHora(){
+  const c=(CONFIG&&CONFIG.valorHora)||{};
+  const exc=Object.entries(c.porLegajo||{});
+  const body=`
+    <div class="hintline">Con esto se calcula el <b>valorizado</b>: lo que sale pagar en plata un compensatorio o unas horas extra. Un día de compensatorio se paga como <b>horas por día × valor de la hora</b>.</div>
+    <div class="frow">
+      <div class="f"><label>Valor de la hora ($) *</label><input class="inp" id="vhGen" inputmode="decimal" value="${esc(c.general||'')}" placeholder="Ej: 4500"></div>
+      <div class="f"><label>Horas por día</label><input class="inp" id="vhDia" type="number" min="1" step="0.5" value="${esc(c.horasDia||8)}"></div>
+    </div>
+    <div class="card-h" style="font-size:16px;margin-top:14px">Excepciones por persona</div>
+    <div class="card-hs">Si alguien tiene otro valor de hora, cargalo acá y pisa al general.</div>
+    <div id="vhExc">${exc.length? exc.map(([id,v])=>`<div class="frow" data-exc="${esc(id)}" style="align-items:end">
+        <div class="f"><label>${esc((LEGAJOS[id]||{}).nombre||id)}</label><input class="inp vh-v" data-id="${esc(id)}" inputmode="decimal" value="${esc(v)}"></div>
+        <div class="f"><label>&nbsp;</label><button class="btn btn-outline" data-excdel="${esc(id)}">Quitar</button></div>
+      </div>`).join('') : '<div class="hintline">Sin excepciones: todos usan el valor general.</div>'}</div>
+    <div class="frow" style="align-items:end;margin-top:8px">
+      <div class="f"><label>Agregar excepción</label><select class="sel" id="vhLeg"><option value="">— Elegí a la persona —</option>${legajoSelectOptions('')}</select></div>
+      <div class="f"><label>Valor de la hora ($)</label><input class="inp" id="vhVal" inputmode="decimal"></div>
+    </div>
+    <div style="margin-top:6px"><button class="btn btn-outline btn-sm" id="vhAdd">+ Agregar excepción</button></div>`;
+  openModal('Valor de la hora', body, `<button class="btn btn-outline" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Guardar</button>`);
+  $('mCancel').onclick=closeModal;
+  const wire=()=>{ document.querySelectorAll('[data-excdel]').forEach(b=> b.onclick=()=>{ const w=b.closest('[data-exc]'); if(w) w.remove(); }); };
+  wire();
+  $('vhAdd').onclick=()=>{
+    const id=$('vhLeg').value, v=num($('vhVal').value);
+    if(!id){ toast('Elegí a la persona','err'); return; }
+    if(!(v>0)){ toast('Cargá el valor','err'); return; }
+    const cont=$('vhExc');
+    if(cont.querySelector('.hintline')) cont.innerHTML='';
+    if(cont.querySelector(`[data-exc="${id}"]`)){ toast('Ya tiene una excepción','err'); return; }
+    cont.insertAdjacentHTML('beforeend', `<div class="frow" data-exc="${esc(id)}" style="align-items:end">
+      <div class="f"><label>${esc((LEGAJOS[id]||{}).nombre||id)}</label><input class="inp vh-v" data-id="${esc(id)}" inputmode="decimal" value="${esc(v)}"></div>
+      <div class="f"><label>&nbsp;</label><button class="btn btn-outline" data-excdel="${esc(id)}">Quitar</button></div></div>`);
+    $('vhLeg').value=''; $('vhVal').value=''; wire();
+  };
+  $('mSave').onclick=async()=>{
+    const porLegajo={};
+    document.querySelectorAll('#vhExc .vh-v').forEach(i=>{ const v=num(i.value); if(v>0) porLegajo[i.dataset.id]=v; });
+    const data={ general:num($('vhGen').value), horasDia:Number($('vhDia').value)||8, porLegajo,
+                 actualizado:nowISO(), por:(SESSION.email||'') };
+    try{
+      if(HAS_DB) await fbPut(ROOT+'/config/valorHora', data);
+      CONFIG.valorHora=data; closeModal(); render(); toast('Valor de la hora guardado','ok');
+    }catch(e){ console.error(e); toast('No se pudo guardar','err'); }
+  };
+}
+
+/* --- cargar un movimiento a mano ---
+   Concepto (compensatorio en días / horas extra en horas) × movimiento
+   (a favor / tomado / cobrado). El circuito normal descuenta al aprobar la
+   solicitud del encargado, pero RRHH tiene que poder registrar lo que ya pasó. --- */
+function formCompCarga(legajoPre, kindPre, tipoPre){
+  const k0 = kindPre==='hs' ? 'hs' : 'comp';
+  const t0 = ['uso','pago'].includes(tipoPre) ? tipoPre : 'alta';
   const body = `
     <div class="hintline" id="cHint"></div>
     <div class="frow one"><div class="f"><label>Persona *</label><select class="sel" id="cLeg"><option value="">— Elegí a la persona —</option>${legajoSelectOptions(legajoPre||'')}</select></div></div>
     <div class="frow">
-      <div class="f"><label>Movimiento</label><select class="sel" id="cTipo">
-        <option value="alta" ${tipo0==='alta'?'selected':''}>➕ Días a favor (trabajó de más)</option>
-        <option value="uso" ${tipo0==='uso'?'selected':''}>➖ Día tomado (ya se lo usó)</option>
+      <div class="f"><label>Concepto</label><select class="sel" id="cKind">
+        <option value="comp" ${k0==='comp'?'selected':''}>📆 Compensatorio (días)</option>
+        <option value="hs" ${k0==='hs'?'selected':''}>⏱ Horas extra (horas)</option>
       </select></div>
-      <div class="f"><label>Días *</label><input class="inp" id="cDias" type="number" min="0.5" step="0.5" value="1"></div>
+      <div class="f"><label>Movimiento</label><select class="sel" id="cTipo">
+        <option value="alta" ${t0==='alta'?'selected':''}>➕ A favor (trabajó de más)</option>
+        <option value="uso" ${t0==='uso'?'selected':''}>➖ Compensado con tiempo</option>
+        <option value="pago" ${t0==='pago'?'selected':''}>💲 Cobrado en plata</option>
+      </select></div>
     </div>
     <div class="frow">
+      <div class="f"><label id="cLblCant">Días *</label><input class="inp" id="cDias" type="number" min="0.5" step="0.5" value="1"></div>
       <div class="f"><label id="cLblF">Fecha en que se generó</label><input class="inp" id="cFecha" type="date" value="${hoyISO()}"></div>
-      <div class="f" id="cHastaBox" style="display:none"><label>Hasta</label><input class="inp" id="cHasta" type="date" value="${hoyISO()}"></div>
     </div>
+    <div class="frow" id="cHastaRow" style="display:none">
+      <div class="f"><label>Hasta</label><input class="inp" id="cHasta" type="date" value="${hoyISO()}"></div>
+      <div class="f"></div>
+    </div>
+    <div class="frow" id="cPagoRow" style="display:none">
+      <div class="f"><label>Valor de la hora ($)</label><input class="inp" id="cVh" inputmode="decimal"></div>
+      <div class="f"><label>Importe a pagar</label><input class="inp" id="cImp" readonly style="background:#f7f9fd;font-weight:700"></div>
+    </div>
+    <div class="frow one" id="cNovRow" style="display:none"><div class="f"><label style="cursor:pointer">
+      <input type="checkbox" id="cNov" checked style="width:auto;margin-right:6px">Pasarlo a <b>Novedades de nómina</b> de <span id="cNovMes"></span></label></div></div>
     <div class="frow">
-      <div class="f" id="cMotivoBox"><label>Motivo</label><select class="sel" id="cMotivo">${selOptions(MOTIVOS_COMP, MOTIVOS_COMP[0])}</select></div>
+      <div class="f" id="cMotivoBox"><label>Motivo</label><select class="sel" id="cMotivo"></select></div>
       <div class="f"><label id="cLblDet">Detalle</label><input class="inp" id="cDet" placeholder="Ej: feriado 17/08, turno completo"></div>
     </div>
     <div id="cSaldoBox"></div>`;
-  openModal('Cargar compensatorio', body, `<button class="btn btn-outline" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Cargar</button>`);
+  openModal('Cargar compensatorio u horas', body, `<button class="btn btn-outline" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Cargar</button>`);
   $('mCancel').onclick=closeModal;
 
-  const esUso = ()=> $('cTipo').value==='uso';
+  const kind = ()=> $('cKind').value==='hs' ? 'hs' : 'comp';
+  const tipo = ()=> $('cTipo').value;
   const sync = ()=>{
-    const uso = esUso();
-    $('cHint').innerHTML = uso
-      ? 'Registrá un compensatorio que la persona <b>ya se tomó</b>: se descuenta del saldo y queda en el historial con la fecha del día usado.'
-      : 'Cargá los días que la persona <b>trabajó de más</b> y quedan a su favor. Después el encargado los pide desde su sucursal.';
-    $('cLblF').textContent = uso? 'Fecha en que se usó' : 'Fecha en que se generó';
-    $('cHastaBox').style.display = uso? '' : 'none';
-    $('cMotivoBox').style.display = uso? 'none' : '';
-    $('cLblDet').textContent = uso? 'Observaciones' : 'Detalle';
-    $('cDet').placeholder = uso? 'Ej: lo tomó el finde largo' : 'Ej: feriado 17/08, turno completo';
-    $('mSave').textContent = uso? 'Registrar el día tomado' : 'Cargar';
-    if(uso && $('cHasta').value < $('cFecha').value) $('cHasta').value = $('cFecha').value;
-    pintarSaldo();
+    const k=kind(), t=tipo(), esDias=k==='comp';
+    $('cHint').innerHTML = t==='alta'
+      ? (esDias ? 'Cargá los <b>días que quedan a favor</b> de la persona por haber trabajado de más. Después el encargado los pide desde su sucursal.'
+                : 'Cargá las <b>horas extra</b> que hizo. Se pueden compensar con tiempo o cobrar en plata.')
+      : t==='uso'
+      ? (esDias ? 'Registrá un compensatorio que la persona <b>ya se tomó</b>: se descuenta del saldo y queda en el historial con la fecha del día usado.'
+                : 'Registrá las horas que la persona <b>ya se tomó</b> a cuenta de sus horas extra.')
+      : 'Registrá que la persona <b>lo cobró en plata</b>: se descuenta del saldo y queda el importe en el historial.';
+    $('cLblCant').textContent = (esDias?'Días':'Horas') + (t==='alta'?' a favor':t==='uso'?' compensados':' a cobrar') + ' *';
+    $('cLblF').textContent = t==='alta' ? 'Fecha en que se generó' : t==='uso' ? (esDias?'Fecha en que se usó':'Día en que se compensó') : 'Fecha del pago';
+    $('cHastaRow').style.display = (t==='uso' && esDias) ? '' : 'none';
+    $('cPagoRow').style.display = t==='pago' ? '' : 'none';
+    $('cNovRow').style.display  = t==='pago' ? '' : 'none';
+    $('cMotivoBox').style.display = t==='alta' ? '' : 'none';
+    $('cLblDet').textContent = t==='alta' ? 'Detalle' : 'Observaciones';
+    $('cDet').placeholder = t==='alta' ? (esDias?'Ej: feriado 17/08, turno completo':'Ej: descarga de camión, 2 hs después del cierre') : 'Ej: lo cobró con la quincena';
+    $('mSave').textContent = t==='alta' ? 'Cargar' : t==='uso' ? 'Registrar lo compensado' : 'Registrar el pago';
+    const mots = esDias ? MOTIVOS_COMP : MOTIVOS_HS;
+    $('cMotivo').innerHTML = selOptions(mots, mots[0]);
+    $('cNovMes').textContent = periodoLabel(($('cFecha').value||hoyISO()).slice(0,7));
+    if($('cHasta').value < $('cFecha').value) $('cHasta').value=$('cFecha').value;
+    pintarPago(); pintarSaldo();
+  };
+  const pintarPago = ()=>{
+    if(tipo()!=='pago') return;
+    const legId=$('cLeg').value;
+    if(legId && !$('cVh').value) $('cVh').value = valorHora(legId) || '';
+    const vh=num($('cVh').value), cant=Number($('cDias').value)||0;
+    const horas = kind()==='hs' ? cant : cant*horasPorDia();
+    $('cImp').value = vh? fmtM(horas*vh) : '—';
   };
   const pintarSaldo = ()=>{
     const legId=$('cLeg').value, box=$('cSaldoBox');
     if(!legId){ box.innerHTML=''; return; }
-    const l=LEGAJOS[legId]||{}; const sl=compSlugDe(legId, l.sucursal);
-    const saldo=compSaldo(sl, legId), dias=Number($('cDias').value)||0;
-    const fin = esUso()? saldo-dias : saldo+dias;
-    box.innerHTML = `<div class="hintline">Saldo de <b>${esc(l.nombre||'')}</b>: <b>${fmtDias(saldo)}</b> → queda en <b style="color:${fin<0?'var(--bad)':'var(--ok)'}">${fmtDias(fin)}</b>.`
+    const l=LEGAJOS[legId]||{}, sl=compSlugDe(legId, l.sucursal), k=kind();
+    const saldo=saldoDe(sl, legId, k), cant=Number($('cDias').value)||0;
+    const fin = tipo()==='alta' ? saldo+cant : saldo-cant;
+    box.innerHTML = `<div class="hintline">${CONCEPTOS[k].label} de <b>${esc(l.nombre||'')}</b>: <b>${fmtCant(saldo,k)}</b> → queda en <b style="color:${fin<0?'var(--bad)':'var(--ok)'}">${fmtCant(fin,k)}</b>.`
       + (fin<0? ' ⚠️ Queda en negativo.' : '') + `</div>`;
   };
-  // los días de un rango de fechas se calculan solos
   const syncDias = ()=>{
-    if(!esUso()) return;
-    const d=diasEntre($('cFecha').value, $('cHasta').value);
-    if(d) $('cDias').value=d;
-    pintarSaldo();
+    if(tipo()==='uso' && kind()==='comp'){
+      const d=diasEntre($('cFecha').value, $('cHasta').value);
+      if(d) $('cDias').value=d;
+    }
+    $('cNovMes').textContent = periodoLabel(($('cFecha').value||hoyISO()).slice(0,7));
+    pintarPago(); pintarSaldo();
   };
-  $('cTipo').onchange=sync; $('cLeg').onchange=pintarSaldo; $('cDias').oninput=pintarSaldo;
-  $('cFecha').onchange=()=>{ if(esUso() && $('cHasta').value<$('cFecha').value) $('cHasta').value=$('cFecha').value; syncDias(); };
+  $('cKind').onchange=sync; $('cTipo').onchange=sync;
+  $('cLeg').onchange=()=>{ $('cVh').value=''; pintarPago(); pintarSaldo(); };
+  $('cDias').oninput=()=>{ pintarPago(); pintarSaldo(); };
+  $('cVh').oninput=pintarPago;
+  $('cFecha').onchange=()=>{ if($('cHasta').value<$('cFecha').value) $('cHasta').value=$('cFecha').value; syncDias(); };
   $('cHasta').onchange=syncDias;
   sync();
 
   $('mSave').onclick=async()=>{
     const legId=$('cLeg').value;
     if(!legId){ toast('Elegí a la persona','err'); return; }
-    const dias=Number($('cDias').value);
-    if(!(dias>0)){ toast('Los días tienen que ser mayores a cero','err'); return; }
-    const l=LEGAJOS[legId], det=$('cDet').value.trim(), uso=esUso();
+    const cant=Number($('cDias').value);
+    if(!(cant>0)){ toast('La cantidad tiene que ser mayor a cero','err'); return; }
+    const l=LEGAJOS[legId], det=$('cDet').value.trim(), k=kind(), t=tipo();
     const slugDest = compSlugDe(legId, l.sucursal);
     const desde=$('cFecha').value||hoyISO(), hasta=$('cHasta').value||desde;
-    if(uso && hasta<desde){ toast('La fecha "hasta" es anterior a "desde"','err'); return; }
-    const saldo=compSaldo(slugDest, legId);
-    if(uso && dias>saldo && !confirm('El saldo de '+(l.nombre||'')+' es '+fmtDias(saldo)+' y estás descontando '+fmtDias(dias)+'. Va a quedar en negativo. ¿Registrar igual?')) return;
-    const rango = fechaLabel(desde)+(hasta!==desde? ' → '+fechaLabel(hasta):'');
-    const motivo = uso? '' : $('cMotivo').value;
+    if(t==='uso' && k==='comp' && hasta<desde){ toast('La fecha "hasta" es anterior a "desde"','err'); return; }
+    const saldo=saldoDe(slugDest, legId, k);
+    if(t!=='alta' && cant>saldo && !confirm('El saldo de '+(l.nombre||'')+' es '+fmtCant(saldo,k)+' y estás descontando '+fmtCant(cant,k)+'. Va a quedar en negativo. ¿Registrar igual?')) return;
+    const rango = fechaLabel(desde)+(t==='uso'&&k==='comp'&&hasta!==desde? ' → '+fechaLabel(hasta):'');
+    const motivo = t==='alta' ? $('cMotivo').value : '';
+    let mov;
+    if(t==='alta'){
+      mov={ d:cant, k, f:desde, t:'alta', m:motivo+(det? ' — '+det : ''), por:(SESSION.email||''), en:nowISO() };
+    }else if(t==='uso'){
+      mov={ d:-cant, k, f:desde, t:'uso', desde, hasta:(k==='comp'?hasta:desde),
+            m:(k==='comp'?'Compensatorio tomado':'Horas compensadas')+' ('+rango+')'+(det? ' — '+det : ''),
+            por:(SESSION.email||''), en:nowISO() };
+    }else{
+      const vh=num($('cVh').value);
+      if(!(vh>0)){ toast('Cargá el valor de la hora para calcular el importe','err'); return; }
+      const horas = k==='hs' ? cant : cant*horasPorDia();
+      mov={ d:-cant, k, f:desde, t:'pago', vh, imp:horas*vh, periodo:desde.slice(0,7),
+            m:(k==='comp'?'Compensatorio cobrado':'Horas extra cobradas')+' ('+fmtCant(cant,k)+' × '+fmtM(vh)+'/h)'+(det? ' — '+det : ''),
+            por:(SESSION.email||''), en:nowISO() };
+    }
     try{
-      await guardarMovComp(slugDest, legId, uso
-        ? { d:-dias, f:desde, t:'uso', desde, hasta,
-            m:'Compensatorio tomado ('+rango+')'+(det? ' — '+det : ''),
-            por:(SESSION.email||''), en:nowISO() }
-        : { d:dias, f:desde, t:'alta',
-            m:motivo + (det? ' — '+det : ''),
-            por:(SESSION.email||''), en:nowISO() });
-      closeModal(); render(); toast(uso?'Día tomado registrado':'Compensatorio cargado','ok');
-      avisarSucursal(slugDest, uso
-        ? '🕘 Compensatorio tomado: '+(l.nombre||'')+' — '+rango+' ('+fmtDias(dias)+'). Saldo restante: '+fmtDias(compSaldo(slugDest,legId))+'.'
-        : '🕘 Compensatorio cargado: '+(l.nombre||'')+' suma '+fmtDias(dias)+' ('+motivo+'). Saldo actual: '+fmtDias(compSaldo(slugDest,legId))+'. Los días se piden desde Mi Sucursal → Compensatorios del equipo.');
+      await guardarMovComp(slugDest, legId, mov);
+      if(t==='pago' && $('cNov').checked) await novedadDePago(legId, mov).catch(()=>{});
+      closeModal(); render();
+      toast(t==='alta'?'Cargado':t==='uso'?'Compensación registrada':'Pago registrado','ok');
+      const saldoFin=saldoDe(slugDest, legId, k);
+      avisarSucursal(slugDest,
+        t==='alta' ? (k==='hs'?'⏱ Horas extra cargadas: ':'🕘 Compensatorio cargado: ')+(l.nombre||'')+' suma '+fmtCant(cant,k)+' ('+motivo+'). Saldo: '+fmtCant(saldoFin,k)+'.'
+        : t==='uso' ? '🕘 '+(k==='hs'?'Horas compensadas':'Compensatorio tomado')+': '+(l.nombre||'')+' — '+rango+' ('+fmtCant(cant,k)+'). Saldo restante: '+fmtCant(saldoFin,k)+'.'
+        : '💲 '+(k==='hs'?'Horas extra cobradas':'Compensatorio cobrado')+': '+(l.nombre||'')+' — '+fmtCant(cant,k)+'. Saldo restante: '+fmtCant(saldoFin,k)+'.');
     }catch(e){ console.error(e); toast('No se pudo guardar','err'); }
   };
+}
+
+// pasa un pago a las Novedades de nómina del período (para el estudio contable)
+async function novedadDePago(legId, mov){
+  const per = mov.periodo || String(mov.f||hoyISO()).slice(0,7);
+  const k = movKind(mov);
+  const data = { legajoId:legId, tipo:'comp_pago', valor:String(Math.round(mov.imp||0)),
+    detalle:(k==='hs'?'Horas extra':'Compensatorio')+' '+fmtCant(Math.abs(Number(mov.d)||0),k)+' × '+fmtM(mov.vh||0)+'/h',
+    creado:nowISO(), actualizado:nowISO() };
+  const path = ROOT+'/novedades/'+per;
+  if(HAS_DB){ const r=await fbPost(path, data); if(per===state.novPeriodo) NOVEDADES[r.name]=data; }
+  else if(per===state.novPeriodo){ NOVEDADES['local-'+Object.keys(NOVEDADES).length]=data; }
 }
 
 /* --- historial de movimientos de una persona --- */
 function verMovsComp(slug, legId){
   const l = LEGAJOS[legId] || compPersona(slug,legId) || {};
   const movs = compMovs(slug, legId);
-  const filas = movs.map(m=>`<tr>
+  const filas = movs.map(m=>{
+    const k=movKind(m), cant=Number(m.d)||0;
+    return `<tr>
       <td>${fechaLabel(m.f)}</td>
-      <td>${movTipoTag(m)}</td>
-      <td class="num"><b style="color:${Number(m.d)>0?'var(--ok)':'var(--bad)'}">${Number(m.d)>0?'+':''}${fmtDias(m.d)}</b></td>
+      <td>${movKindTag(m)} ${movTipoTag(m)}</td>
+      <td class="num"><b style="color:${cant>0?'var(--ok)':'var(--bad)'}">${cant>0?'+':'−'}${fmtCant(Math.abs(cant),k)}</b></td>
+      <td class="num">${m.imp? fmtM(m.imp) : '<span class="sub">—</span>'}</td>
       <td class="sub">${esc(m.m||'')}${movRango(m)&&movTipo(m)==='uso'?`<div class="sub">día tomado: ${movRango(m)}</div>`:''}</td>
       <td class="sub">${esc(m.por||'')}${m.en?`<div class="sub">${esc(String(m.en).replace('T',' ').slice(0,16))}</div>`:''}</td>
       <td><button class="iconbtn danger" data-cdelmov="${slug}|${legId}|${m.id}" title="Borrar">🗑</button></td>
-    </tr>`).join('');
+    </tr>`;}).join('');
   const usos = movs.filter(m=>movTipo(m)==='uso');
   const tabla = movs.length
-    ? `<div class="tblwrap"><table class="grid"><thead><tr><th>Fecha</th><th>Tipo</th><th class="num">Días</th><th>Detalle</th><th>Cargó</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`
-      + (usos.length? `<div class="hintline">Se tomó ${usos.length} compensatorio${usos.length===1?'':'s'}: ${usos.map(m=>movRango(m)||fechaLabel(m.f)).join(' · ')}.</div>` : '')
+    ? `<div class="tblwrap"><table class="grid"><thead><tr><th>Fecha</th><th>Concepto</th><th class="num">Cantidad</th><th class="num">Importe</th><th>Detalle</th><th>Cargó</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`
+      + (usos.length? `<div class="hintline">Compensado con tiempo ${usos.length} vez${usos.length===1?'':'es'}: ${usos.map(m=>movRango(m)||fechaLabel(m.f)).join(' · ')}.</div>` : '')
     : '<div class="hintline">Sin movimientos todavía.</div>';
-  openModal('Compensatorios · '+(l.nombre||''),
+  const vh=valorHora(legId);
+  openModal('Compensatorios y horas · '+(l.nombre||''),
     `<div class="dl-grid">
-       <div class="dl-item"><div class="l">Ganados</div><div class="v">${fmtDias(compGanados(slug,legId))}</div></div>
-       <div class="dl-item"><div class="l">Tomados</div><div class="v">${fmtDias(compUsados(slug,legId))}</div></div>
-       <div class="dl-item"><div class="l">En trámite</div><div class="v">${fmtDias(compEnTramite(slug,legId))}</div></div>
-       <div class="dl-item"><div class="l">Saldo</div><div class="v" style="color:${compSaldo(slug,legId)>0?'var(--bad)':'var(--muted)'}">${fmtDias(compSaldo(slug,legId))}</div></div>
+       <div class="dl-item"><div class="l">Compensatorio</div><div class="v" style="color:${compSaldo(slug,legId)>0?'var(--bad)':'var(--muted)'}">${fmtDias(compSaldo(slug,legId))}</div></div>
+       <div class="dl-item"><div class="l">Horas extra</div><div class="v" style="color:${hsSaldo(slug,legId)>0?'var(--warn)':'var(--muted)'}">${fmtHs(hsSaldo(slug,legId))}</div></div>
+       <div class="dl-item"><div class="l">En trámite</div><div class="v">${[compEnTramite(slug,legId,'comp')?fmtDias(compEnTramite(slug,legId,'comp')):'', compEnTramite(slug,legId,'hs')?fmtHs(compEnTramite(slug,legId,'hs')):''].filter(Boolean).join(' · ')||'—'}</div></div>
+       <div class="dl-item"><div class="l">Valorizado</div><div class="v">${vh? fmtM(valorizadoPersona(slug,legId)) : '—'}</div>${vh?`<div class="l">${fmtM(vh)}/h</div>`:''}</div>
      </div><div style="margin-top:12px">${tabla}</div>`,
-    `<button class="btn btn-outline" id="mAdd">➕ Cargar días</button><button class="btn btn-outline" id="mUso">🕘 Registrar día tomado</button><button class="btn btn-primary" id="mCancel">Cerrar</button>`);
+    `<button class="btn btn-outline" id="mAdd">➕ Cargar</button><button class="btn btn-outline" id="mUso">🕘 Compensado</button><button class="btn btn-outline" id="mPago">💲 Cobrado</button><button class="btn btn-primary" id="mCancel">Cerrar</button>`);
   $('mCancel').onclick=closeModal;
   $('mAdd').onclick=()=>formCompCarga(legId);
-  $('mUso').onclick=()=>formCompCarga(legId,'uso');
+  $('mUso').onclick=()=>formCompCarga(legId,null,'uso');
+  $('mPago').onclick=()=>formCompCarga(legId,null,'pago');
   document.querySelectorAll('[data-cdelmov]').forEach(b=> b.onclick=()=>{ const [sl,lg,mv]=b.dataset.cdelmov.split('|'); borrarMovComp(sl,lg,mv); });
 }
 
@@ -1036,49 +1259,74 @@ async function guardarSolic(slug, id, data){
 function formAprobar(slug, id){
   const x = solicitudDe(slug,id); if(!x) return;
   const l = LEGAJOS[x.legajoId]||{};
-  const saldo = compSaldo(slug, x.legajoId);
-  const falta = Number(x.dias) > saldo;
+  const k = solKind(x), cant = solCant(x), cobra = solModo(x)==='cobrar';
+  const saldo = saldoDe(slug, x.legajoId, k);
+  const falta = cant > saldo;
   const rango = fechaLabel(x.desde)+(x.hasta&&x.hasta!==x.desde?' → '+fechaLabel(x.hasta):'');
-  const body = `<div class="hintline">Aprobás el compensatorio de <b>${esc(l.nombre||x.nombre||'')}</b> (${esc(sucLabel(slug))}): <b>${rango}</b>, ${fmtDias(x.dias)}.</div>
+  const vh = valorHora(x.legajoId);
+  const body = `<div class="hintline">Aprobás ${CONCEPTOS[k].label.toLowerCase()} de <b>${esc(l.nombre||x.nombre||'')}</b> (${esc(sucLabel(slug))}): <b>${fmtCant(cant,k)}</b>${cobra?' <b style="color:var(--exc)">a cobrar en plata</b>':' — <b>'+rango+'</b>'}.</div>
     <div class="dl-grid">
-      <div class="dl-item"><div class="l">Saldo actual</div><div class="v">${fmtDias(saldo)}</div></div>
-      <div class="dl-item"><div class="l">Se descuenta</div><div class="v">−${fmtDias(x.dias)}</div></div>
-      <div class="dl-item"><div class="l">Saldo después</div><div class="v" style="color:${saldo-Number(x.dias)<0?'var(--bad)':'var(--ok)'}">${fmtDias(saldo-Number(x.dias))}</div></div>
+      <div class="dl-item"><div class="l">Saldo actual</div><div class="v">${fmtCant(saldo,k)}</div></div>
+      <div class="dl-item"><div class="l">Se descuenta</div><div class="v">−${fmtCant(cant,k)}</div></div>
+      <div class="dl-item"><div class="l">Saldo después</div><div class="v" style="color:${saldo-cant<0?'var(--bad)':'var(--ok)'}">${fmtCant(saldo-cant,k)}</div></div>
     </div>
     ${falta?'<div class="banner warn" style="margin-top:12px">⚠️ El saldo no alcanza: si aprobás igual, la persona queda en negativo.</div>':''}
+    ${cobra?`<div class="frow" style="margin-top:12px">
+      <div class="f"><label>Valor de la hora ($) *</label><input class="inp" id="rVh" inputmode="decimal" value="${esc(vh||'')}"></div>
+      <div class="f"><label>Importe a pagar</label><input class="inp" id="rImp" readonly style="background:#f7f9fd;font-weight:700"></div>
+    </div>
+    <div class="frow one"><div class="f"><label style="cursor:pointer"><input type="checkbox" id="rNov" checked style="width:auto;margin-right:6px">Pasarlo a <b>Novedades de nómina</b> de ${esc(periodoLabel(hoyISO().slice(0,7)))}</label></div></div>`:''}
     <div class="frow one" style="margin-top:12px"><div class="f"><label>Comentario para la sucursal (opcional)</label><input class="inp" id="rNota" placeholder="Ej: aprobado, avisale a la gente del turno"></div></div>`;
-  openModal('Aprobar compensatorio', body, `<button class="btn btn-outline" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Aprobar y descontar</button>`);
+  openModal('Aprobar '+CONCEPTOS[k].label.toLowerCase(), body, `<button class="btn btn-outline" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">${cobra?'Aprobar y pagar':'Aprobar y descontar'}</button>`);
   $('mCancel').onclick=closeModal;
+  const pintar=()=>{ if(!cobra) return; const v=num($('rVh').value);
+    const horas = k==='hs' ? cant : cant*horasPorDia();
+    $('rImp').value = v? fmtM(horas*v) : '—'; };
+  if(cobra){ $('rVh').oninput=pintar; pintar(); }
   $('mSave').onclick=async()=>{
     const nota=$('rNota').value.trim();
+    let mov, imp=0;
+    if(cobra){
+      const v=num($('rVh').value);
+      if(!(v>0)){ toast('Cargá el valor de la hora','err'); return; }
+      const horas = k==='hs' ? cant : cant*horasPorDia();
+      imp = horas*v;
+      mov={ d:-cant, k, f:hoyISO(), t:'pago', vh:v, imp, periodo:hoyISO().slice(0,7), sol:id,
+            m:(k==='hs'?'Horas extra cobradas':'Compensatorio cobrado')+' ('+fmtCant(cant,k)+' × '+fmtM(v)+'/h)',
+            por:(SESSION.email||''), en:nowISO() };
+    }else{
+      mov={ d:-cant, k, f:x.desde||hoyISO(), t:'uso', desde:x.desde||'', hasta:x.hasta||x.desde||'', sol:id,
+            m:(k==='hs'?'Horas compensadas':'Compensatorio tomado')+' ('+rango+')'+(x.motivo?' — '+x.motivo:''),
+            por:(SESSION.email||''), en:nowISO() };
+    }
     try{
-      await guardarMovComp(slug, x.legajoId, {
-        d:-Math.abs(Number(x.dias)||0), f:x.desde||hoyISO(), t:'uso',
-        desde:x.desde||'', hasta:x.hasta||x.desde||'',
-        m:'Compensatorio tomado ('+rango+')'+(x.motivo?' — '+x.motivo:''),
-        por:(SESSION.email||''), en:nowISO(), sol:id });
+      await guardarMovComp(slug, x.legajoId, mov);
+      if(cobra && $('rNov').checked) await novedadDePago(x.legajoId, mov).catch(()=>{});
       const limpio = {...x}; delete limpio.slug; delete limpio.id;
-      await guardarSolic(slug, id, {...limpio, estado:'aprobada', resp:{por:(SESSION.email||''), en:nowISO(), nota}});
-      closeModal(); render(); toast('Aprobada y descontada','ok');
-      avisarSucursal(slug, '✅ Compensatorio APROBADO: '+(l.nombre||x.nombre||'')+' — '+rango+' ('+fmtDias(x.dias)+'). Saldo restante: '+fmtDias(compSaldo(slug,x.legajoId))+'.'+(nota?' Nota: '+nota:''), x.por);
+      await guardarSolic(slug, id, {...limpio, estado:'aprobada', resp:{por:(SESSION.email||''), en:nowISO(), nota, ...(imp?{imp, vh:mov.vh}:{})}});
+      closeModal(); render(); toast(cobra?'Aprobada y pagada':'Aprobada y descontada','ok');
+      avisarSucursal(slug, (cobra?'💲 ':'✅ ')+CONCEPTOS[k].label+' APROBADO: '+(l.nombre||x.nombre||'')+' — '
+        +(cobra? fmtCant(cant,k)+' a cobrar ('+fmtM(imp)+')' : rango+' ('+fmtCant(cant,k)+')')
+        +'. Saldo restante: '+fmtCant(saldoDe(slug,x.legajoId,k),k)+'.'+(nota?' Nota: '+nota:''), x.por);
     }catch(e){ console.error(e); toast('No se pudo aprobar','err'); }
   };
 }
 function formRechazar(slug, id){
   const x = solicitudDe(slug,id); if(!x) return;
   const l = LEGAJOS[x.legajoId]||{};
+  const k = solKind(x), cobra = solModo(x)==='cobrar';
   const rango = fechaLabel(x.desde)+(x.hasta&&x.hasta!==x.desde?' → '+fechaLabel(x.hasta):'');
-  const body = `<div class="hintline">Rechazás el día pedido para <b>${esc(l.nombre||x.nombre||'')}</b> (${esc(sucLabel(slug))}): <b>${rango}</b>. El saldo <b>no</b> se toca.</div>
+  const body = `<div class="hintline">Rechazás ${fmtCant(solCant(x),k)} de ${CONCEPTOS[k].label.toLowerCase()} para <b>${esc(l.nombre||x.nombre||'')}</b> (${esc(sucLabel(slug))})${cobra?' <b>a cobrar</b>':': <b>'+rango+'</b>'}. El saldo <b>no</b> se toca.</div>
     <div class="frow one"><div class="f"><label>Motivo del rechazo *</label><input class="inp" id="rNota" placeholder="Ej: esa semana ya hay dos personas de licencia"></div></div>
-    <div class="frow one"><div class="f"><label><input type="checkbox" id="rSug" style="width:auto;margin-right:6px">Sugerir otro día para compensar</label></div></div>
+    <div class="frow one"><div class="f"><label><input type="checkbox" id="rSug" style="width:auto;margin-right:6px">Sugerir otro día ${k==='hs'?'u horas ':''}para compensar</label></div></div>
     <div id="rSugBox" style="display:none">
       <div class="frow">
         <div class="f"><label>Día sugerido (desde)</label><input class="inp" id="rDesde" type="date" value="${esc((x.desde||hoyISO()).slice(0,10))}"></div>
         <div class="f"><label>Hasta</label><input class="inp" id="rHasta" type="date" value="${esc((x.hasta||x.desde||hoyISO()).slice(0,10))}"></div>
       </div>
-      <div class="frow one"><div class="f"><label>Nota de la sugerencia</label><input class="inp" id="rSugNota" placeholder="Ej: mejor el martes, que hay más gente"></div></div>
+      <div class="frow one"><div class="f"><label>Nota de la sugerencia</label><input class="inp" id="rSugNota" placeholder="${k==='hs'?'Ej: que se tome 2 hs el martes, que hay más gente':'Ej: mejor el martes, que hay más gente'}"></div></div>
     </div>`;
-  openModal('Rechazar compensatorio', body, `<button class="btn btn-outline" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Rechazar</button>`);
+  openModal('Rechazar '+CONCEPTOS[k].label.toLowerCase(), body, `<button class="btn btn-outline" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Rechazar</button>`);
   $('mCancel').onclick=closeModal;
   $('rSug').onchange=()=>{ $('rSugBox').style.display = $('rSug').checked? '' : 'none'; };
   $('mSave').onclick=async()=>{
@@ -1091,15 +1339,15 @@ function formRechazar(slug, id){
       const limpio = {...x}; delete limpio.slug; delete limpio.id;
       await guardarSolic(slug, id, {...limpio, estado:'rechazada', resp:{por:(SESSION.email||''), en:nowISO(), nota, ...(sug?{sug}:{})}});
       closeModal(); render(); toast('Rechazada','ok');
-      avisarSucursal(slug, '❌ Compensatorio RECHAZADO: '+(l.nombre||x.nombre||'')+' — '+rango+'. Motivo: '+nota
-        + (sug? ' · 📆 Día sugerido para compensar: '+fechaLabel(sug.desde)+(sug.hasta&&sug.hasta!==sug.desde?' → '+fechaLabel(sug.hasta):'')+(sug.nota?' ('+sug.nota+')':'')+'. Si les sirve, volvé a pedirlo desde Mi Sucursal.' : ''), x.por);
+      avisarSucursal(slug, '❌ '+CONCEPTOS[k].label+' RECHAZADO: '+(l.nombre||x.nombre||'')+' — '+(cobra?fmtCant(solCant(x),k)+' a cobrar':rango)+'. Motivo: '+nota
+        + (sug? ' · 📆 Sugerido para compensar: '+fechaLabel(sug.desde)+(sug.hasta&&sug.hasta!==sug.desde?' → '+fechaLabel(sug.hasta):'')+(sug.nota?' ('+sug.nota+')':'')+'. Si les sirve, volvé a pedirlo desde Mi Sucursal.' : ''), x.por);
     }catch(e){ console.error(e); toast('No se pudo rechazar','err'); }
   };
 }
-// vuelve la solicitud a pendiente (y devuelve el día descontado si estaba aprobada)
+// vuelve la solicitud a pendiente (y devuelve lo descontado si estaba aprobada)
 async function reabrirSolic(slug, id){
   const x = solicitudDe(slug,id); if(!x) return;
-  if(!confirm('¿Volver a dejar la solicitud como pendiente?'+(x.estado==='aprobada'?' Se le devuelve al saldo el día descontado.':''))) return;
+  if(!confirm('¿Volver a dejar la solicitud como pendiente?'+(x.estado==='aprobada'?' Se le devuelve al saldo lo descontado.':''))) return;
   try{
     if(x.estado==='aprobada'){
       const c = compPersona(slug, x.legajoId);
@@ -1367,6 +1615,24 @@ function calCeldas(periodo){
   while(out.length%7) out.push(null);
   return out;
 }
+/* --- semanas (lunes a domingo) --- */
+const calZ = n => String(n).padStart(2,'0');
+const calISO = d => d.getFullYear()+'-'+calZ(d.getMonth()+1)+'-'+calZ(d.getDate());
+function calLunesDe(f){ const x=new Date(f); x.setHours(0,0,0,0); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; }
+function calSemActual(){ return calISO(calLunesDe(new Date())); }
+function calSemDias(sem){ const p=sem.split('-').map(Number); const o=[];
+  for(let i=0;i<7;i++) o.push(calISO(new Date(p[0],p[1]-1,p[2]+i))); return o; }
+function calSemLbl(sem){ const d=calSemDias(sem); const c=x=>x.slice(8,10)+'/'+x.slice(5,7); return c(d[0])+' al '+c(d[6]); }
+// sucursales que tienen que cargar novedades (las de salón; no depósito/admin/externos)
+function calSucsOperativas(){ return sucsVisibles().filter(x=>!['administracion','externos','deposito'].includes(x)); }
+function calConfSem(slug, sem){ return ((CALSEM[slug]||{})[sem]) || null; }
+// días con texto de esa semana (los días viven en el nodo del mes)
+function calDiasSemana(slug, sem){
+  return calSemDias(sem).filter(iso=>{
+    const t=((calDatos(slug, iso.slice(0,7)).dias)||{})[String(Number(iso.slice(8,10)))];
+    return String(t||'').trim();
+  }).length;
+}
 function calDatos(slug, periodo){ return ((CALEND[slug]||{})[periodo]) || {}; }
 function calTexto(slug, periodo, dia){ return ((calDatos(slug,periodo).dias)||{})[String(dia)] || ''; }
 function calCargado(slug, periodo){
@@ -1423,21 +1689,30 @@ function viewCalendario(){
     <button class="btn btn-navy btn-sm" id="calExcel">⇩ Excel</button>
   </div>`;
 
-  const resumen=`<div class="banner ${faltan.length?'warn':'info'}">
-    <b>${cargadas.length}</b> de ${vis.length} sucursales cargaron ${esc(calMesLabel(per))}.
-    ${faltan.length?`Sin novedades todavía: ${faltan.map(x=>esc(sucLabel(x))).join(' · ')}.`:'Están todas.'}
-    ${faltan.length?`<button class="btn btn-outline btn-sm" id="calRecordar" style="margin-left:8px">📣 Recordar a las que faltan</button>`:''}
+  // el control real es SEMANAL: la idea es que no junten todo el mes para el final
+  const sem=calSemActual(), ops=calSucsOperativas();
+  const confOk=ops.filter(x=>{ const c=calConfSem(x,sem); return c && c.estado; });
+  const sinConf=ops.filter(x=>{ const c=calConfSem(x,sem); return !(c && c.estado); });
+  const sinNada=sinConf.filter(x=>!calDiasSemana(x,sem));
+  const resumen=`<div class="banner ${sinConf.length?'warn':'info'}">
+    <b>Semana del ${esc(calSemLbl(sem))}:</b> <b>${confOk.length}</b> de ${ops.length} sucursales ya la confirmaron.
+    ${sinConf.length
+      ? `Falta: ${sinConf.map(x=>esc(sucLabel(x))+(calDiasSemana(x,sem)?'':' <span class="sub">(sin cargar nada)</span>')).join(' · ')}.`
+      : 'Están todas.'}
+    ${sinConf.length?`<button class="btn btn-outline btn-sm" id="calRecordar" style="margin-left:8px">📣 Recordar a las que faltan</button>`:''}
+    <div class="sub" style="margin-top:6px">En ${esc(calMesLabel(per))}: ${cargadas.length} de ${vis.length} sucursales tienen algo cargado.</div>
   </div>`;
 
   return `<div class="sec-head"><div><h1>Calendario de novedades</h1>
       <div class="sub">Lo que pasó en el mes, día por día: ausencias, horas extra, vacaciones, compensatorios, feriados. Mismo formato que el Excel que mandan los encargados.</div></div></div>
     ${resumen}${bar}${calGridHtml(slug, per, true)}
     <div class="calfoot"><span><b>${esc(sucLabel(slug))}</b>${d.por?' · última edición de '+esc(d.por):''}</span><span class="m">${esc(calMesLabel(per))}</span></div>
-    <div class="banner info" style="margin-top:14px">Los encargados lo cargan desde <b>Mi Sucursal → Novedades del mes</b>; acá lo ves y lo podés corregir. Se guarda solo al salir de cada casillero.</div>`;
+    ${confSemHtml(slug)}
+    <div class="banner info" style="margin-top:14px">Los encargados lo cargan <b>semana por semana</b> desde <b>Mi Sucursal → Novedades del mes</b> y la cierran con «Confirmar la semana» (o «Sin novedades» si no hubo nada). Acá lo ves completo y lo podés corregir cualquier día; se guarda solo al salir del casillero. Los <b>viernes</b> sale el aviso automático a RRHH y al supervisor con las que no confirmaron.</div>`;
 }
 
 /* --- guardado de un día (no re-renderiza: perdería el foco) --- */
-let _calTimer=null;
+let _calTimer=null, _calAvisoHecho=false;
 async function calGuardarDia(slug, periodo, dia, texto){
   const t=String(texto||'').trim();
   CALEND[slug]=CALEND[slug]||{};
@@ -1455,6 +1730,26 @@ async function calGuardarDia(slug, periodo, dia, texto){
     if(st){ st.textContent='✓ Guardado'; st.className='calstate ok';
       clearTimeout(_calTimer); _calTimer=setTimeout(()=>{ if($('calState')) $('calState').textContent='Última edición '+nodo.actualizado.replace('T',' ').slice(0,16); },2500); }
   }catch(e){ console.error(e); if(st){ st.textContent='✕ No se pudo guardar'; } toast('No se pudo guardar el día','err'); }
+}
+
+// las últimas semanas de la sucursal elegida, con su confirmación
+function confSemHtml(slug){
+  const hoy=calSemActual();
+  const sems=[]; let s0=hoy;
+  for(let i=0;i<6;i++){ sems.push(s0); const p=s0.split('-').map(Number); const d=new Date(p[0],p[1]-1,p[2]-7); s0=calISO(d); }
+  const filas=sems.map(sm=>{
+    const c=calConfSem(slug,sm), n=calDiasSemana(slug,sm);
+    const tag = c&&c.estado==='sin' ? '<span class="tag activo">Confirmada · sin novedades</span>'
+      : c&&c.estado ? '<span class="tag aprob">Confirmada</span>'
+      : sm===hoy ? '<span class="tag pend">En curso, sin confirmar</span>'
+      : '<span class="tag rech">No confirmada</span>';
+    return `<tr><td>${esc(calSemLbl(sm))}${sm===hoy?' <span class="sub">(actual)</span>':''}</td>
+      <td class="num">${n}</td><td>${tag}</td>
+      <td class="sub">${c&&c.en?esc(String(c.en).replace('T',' ').slice(0,16)):'—'}${c&&c.por?'<div class="sub">'+esc(c.por)+'</div>':''}</td></tr>`;
+  }).join('');
+  return `<div class="card-h" style="margin:22px 0 6px;font-size:17px">Cierre semanal de ${esc(sucLabel(slug))}</div>
+    <div class="card-hs">La sucursal confirma cada semana al terminarla. Así no se junta todo para fin de mes.</div>
+    <div class="tblwrap"><table class="grid"><thead><tr><th>Semana</th><th class="num">Días con novedades</th><th>Estado</th><th>Confirmó</th></tr></thead><tbody>${filas}</tbody></table></div>`;
 }
 
 /* --- Excel con el mismo formato del original: por cada día, su columna de nota --- */
@@ -1509,23 +1804,53 @@ async function calExportar(){
   }catch(e){ console.error(e); toast('No se pudo exportar','err'); }
 }
 
-/* --- recordatorio por la Bandeja a las sucursales que no cargaron el mes --- */
+/* --- recordatorio por la Bandeja a las sucursales que no confirmaron la semana --- */
 async function calRecordar(){
-  const vis=sucsVisibles();
-  const faltan=vis.filter(x=>!calCargado(x,state.calMes) && !['administracion','externos','deposito'].includes(x));
+  const sem=calSemActual();
+  const faltan=calSucsOperativas().filter(x=>{ const c=calConfSem(x,sem); return !(c && c.estado); });
   if(!faltan.length) return;
-  if(!confirm('Se les manda un directo por la Bandeja a '+faltan.length+' sucursal(es) que no cargaron '+calMesLabel(state.calMes)+':\n\n'
+  if(!confirm('Se les manda un directo por la Bandeja a '+faltan.length+' sucursal(es) que no confirmaron la semana del '+calSemLbl(sem)+':\n\n'
     +faltan.map(x=>'· '+sucLabel(x)).join('\n')+'\n\n¿Enviar?')) return;
   const btn=$('calRecordar'); if(btn){ btn.disabled=true; btn.textContent='Enviando…'; }
   let ok=0, sinCuenta=[];
   for(const slug of faltan){
     const mails=await mailsDeSlug(slug).catch(()=>[]);
     if(!mails.length){ sinCuenta.push(sucLabel(slug)); continue; }
-    await enviarDirectos(mails, '📆 Falta cargar las novedades de '+calMesLabel(state.calMes)
-      +'. Se completan en Mi Sucursal → «Novedades del mes» (el calendario del mes, día por día).').catch(()=>{});
+    await enviarDirectos(mails, '📆 Falta confirmar las novedades de la semana del '+calSemLbl(sem)
+      +'. Se cargan en Mi Sucursal → «Novedades del mes», día por día. Si no hubo nada, confirmalo igual con «Sin novedades».').catch(()=>{});
     ok++;
   }
   if(btn) btn.textContent='✓ Enviado a '+ok+(sinCuenta.length?' · sin cuenta: '+sinCuenta.join(', '):'');
+}
+
+/* --- aviso automático de los VIERNES a supervisión y RRHH con las sucursales
+   que todavía no confirmaron la semana. Se dispara al abrir la pestaña (no hay
+   backend con cron, es el mismo patrón que las alertas de ritmo de Indicadores)
+   y se marca con un flag para no repetirlo. --- */
+const CAL_AVISADOS = ['rrhh@mateu.com.ar','cristian.campion@mateu.com.ar'];
+async function calAvisoViernes(){
+  const hoy=new Date();
+  if(hoy.getDay()<5 && hoy.getDay()!==0) return;         // viernes, sábado o domingo
+  const sem=calSemActual();
+  const faltan=calSucsOperativas().filter(x=>{ const c=calConfSem(x,sem); return !(c && c.estado); });
+  if(!faltan.length) return;
+  const flag=ROOT+'/calAlertas/'+sem+'/__resumen';
+  try{
+    const ya=await fbGet(flag);
+    if(ya) return;
+    await fbPut(flag, {ts:Date.now(), por:(SESSION.email||''), faltan:faltan.length});
+    const texto='📆 Novedades de la semana del '+calSemLbl(sem)+': '+faltan.length+' de '
+      +calSucsOperativas().length+' sucursales todavía no confirmaron — '
+      +faltan.map(x=>sucLabel(x)+(calDiasSemana(x,sem)?'':' (sin cargar nada)')).join(' · ')
+      +'. Se ve en RRHH → Calendario.';
+    await enviarDirectos(CAL_AVISADOS, texto);
+    // y el recordatorio a cada sucursal que falta
+    for(const slug of faltan){
+      const mails=await mailsDeSlug(slug).catch(()=>[]);
+      if(mails.length) await enviarDirectos(mails, '📆 Se termina la semana y falta confirmar las novedades del '
+        +calSemLbl(sem)+'. Se cargan en Mi Sucursal → «Novedades del mes». Si no hubo nada, confirmalo con «Sin novedades».').catch(()=>{});
+    }
+  }catch(e){ /* best-effort */ }
 }
 
 /* ============================================================
@@ -1700,8 +2025,11 @@ function wire(){
 
   // ---- Compensatorios ----
   bindSel('cSuc','cSuc'); bindSel('cEstado','cEstado'); bindSel('cVer','cVer');
-  if($('btnCompCarga')) $('btnCompCarga').onclick=()=>formCompCarga(null);
-  if($('btnCompUso')) $('btnCompUso').onclick=()=>formCompCarga(null,'uso');
+  const dd=$('ddCompAdd');
+  if($('btnCompAdd')) $('btnCompAdd').onclick=e=>{ e.stopPropagation(); dd.classList.toggle('on'); };
+  if(dd){ dd.querySelectorAll('[data-k]').forEach(b=> b.onclick=()=>{ dd.classList.remove('on'); formCompCarga(null, b.dataset.k); });
+    document.addEventListener('click', ()=>dd.classList.remove('on'), {once:true}); }
+  if($('btnValorHora')) $('btnValorHora').onclick=formValorHora;
   if($('btnCompImp')) $('btnCompImp').onclick=abrirImportComp;
   document.querySelectorAll('[data-capr]').forEach(b=> b.onclick=()=>{ const [sl,id]=b.dataset.capr.split('|'); formAprobar(sl,id); });
   document.querySelectorAll('[data-crech]').forEach(b=> b.onclick=()=>{ const [sl,id]=b.dataset.crech.split('|'); formRechazar(sl,id); });
@@ -1717,6 +2045,7 @@ function wire(){
   if($('calPrint')) $('calPrint').onclick=()=>window.print();
   if($('calExcel')) $('calExcel').onclick=calExportar;
   if($('calRecordar')) $('calRecordar').onclick=calRecordar;
+  if(state.tab==='calendario' && !_calAvisoHecho){ _calAvisoHecho=true; calAvisoViernes(); }
   document.querySelectorAll('#calGrid textarea[data-cd]').forEach(ta=>{
     ta.onchange=()=>calGuardarDia(state.calSuc, state.calMes, ta.dataset.cd, ta.value);
   });
@@ -1847,12 +2176,12 @@ function detalleLegajo(id){
   const compSlug = compSlugDe(id, l.sucursal);
   const movsComp = compMovs(compSlug, id);
   const solComp = solicitudes().filter(x=>x.legajoId===id);
-  const compBox = `<div class="card" style="margin:14px 0 6px;background:var(--off)"><div class="card-h" style="font-size:17px">Compensatorios</div>
+  const compBox = `<div class="card" style="margin:14px 0 6px;background:var(--off)"><div class="card-h" style="font-size:17px">Compensatorios y horas</div>
     <div class="dl-grid">
-      <div class="dl-item"><div class="l">Ganados</div><div class="v">${fmtDias(compGanados(compSlug,id))}</div></div>
-      <div class="dl-item"><div class="l">Tomados</div><div class="v">${fmtDias(compUsados(compSlug,id))}</div></div>
-      <div class="dl-item"><div class="l">En trámite</div><div class="v">${fmtDias(compEnTramite(compSlug,id))}</div></div>
-      <div class="dl-item"><div class="l">Saldo pendiente</div><div class="v" style="color:${compSaldo(compSlug,id)>0?'var(--bad)':'var(--ok)'}">${fmtDias(compSaldo(compSlug,id))}</div></div>
+      <div class="dl-item"><div class="l">Compensatorio</div><div class="v" style="color:${compSaldo(compSlug,id)>0?'var(--bad)':'var(--ok)'}">${fmtDias(compSaldo(compSlug,id))}</div></div>
+      <div class="dl-item"><div class="l">Horas extra</div><div class="v" style="color:${hsSaldo(compSlug,id)>0?'var(--warn)':'var(--ok)'}">${fmtHs(hsSaldo(compSlug,id))}</div></div>
+      <div class="dl-item"><div class="l">En trámite</div><div class="v">${[compEnTramite(compSlug,id,'comp')?fmtDias(compEnTramite(compSlug,id,'comp')):'', compEnTramite(compSlug,id,'hs')?fmtHs(compEnTramite(compSlug,id,'hs')):''].filter(Boolean).join(' · ')||'—'}</div></div>
+      <div class="dl-item"><div class="l">Valorizado</div><div class="v">${valorHora(id)? fmtM(valorizadoPersona(compSlug,id)) : '—'}</div></div>
     </div>
     ${movsComp.length? `<div class="hintline" style="margin-top:10px">Último movimiento: ${fechaLabel(movsComp[0].f)} · ${Number(movsComp[0].d)>0?'+':''}${fmtDias(movsComp[0].d)} — ${esc(movsComp[0].m||'')}</div>`:'<div class="hintline" style="margin-top:10px">Sin movimientos cargados.</div>'}
     ${solComp.filter(x=>(x.estado||'pendiente')==='pendiente').length? `<div class="hintline" style="color:var(--warn)">Tiene ${solComp.filter(x=>(x.estado||'pendiente')==='pendiente').length} solicitud(es) esperando respuesta.</div>`:''}
@@ -1872,7 +2201,7 @@ function detalleLegajo(id){
       <button class="btn btn-outline btn-sm" id="dlEdit">✎ Editar</button>
       <button class="btn btn-outline btn-sm" id="dlAus">+ Ausencia</button>
       <button class="btn btn-outline btn-sm" id="dlNov">+ Novedad</button>
-      <button class="btn btn-outline btn-sm" id="dlComp">🕘 Compensatorios</button>
+      <button class="btn btn-outline btn-sm" id="dlComp">🕘 Compensatorios y horas</button>
     </div>`;
   openModal('Legajo', body, `<button class="btn btn-primary" id="mCancel">Cerrar</button>`);
   $('mCancel').onclick=closeModal;

@@ -813,20 +813,29 @@ footer b{color:var(--navy)}
 #secNov .calfoot{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:12px;
   font-family:var(--font-c,inherit);color:var(--muted,#6B7A99);font-size:13px}
 #secNov .calfoot .m{font-family:var(--font-d,inherit);font-size:20px;color:var(--navy,#0B1527);letter-spacing:.5px}
+#secNov .calgrid.semana .cald{min-height:150px}
+#secNov .calgrid.mes-ro{min-width:900px}
+#secNov .calgrid.mes-ro .cald{min-height:76px}
+#secNov .calgrid.mes-ro .cald .ro{min-height:34px;font-size:11.5px}
+#secNov .nov-aviso{border-radius:10px;padding:11px 14px;font-size:13.5px;line-height:1.45;margin-bottom:12px}
+#secNov .nov-aviso.ok{background:#e7f6ec;border:1px solid #b7e3c5;color:#166534}
+#secNov .nov-aviso.info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+#secNov .nov-aviso.warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412}
+#secNov .nov-aviso.bad{background:#fdecec;border:1px solid #f5b8b8;color:#991b1b}
 @media print{ #secNov .calbar{display:none} #secNov .cald{min-height:90px;break-inside:avoid} }
 </style>
 
     <section class="sec" id="secNov" style="display:none">
       <div class="sec-label">RRHH</div>
       <h2 class="sec-title">Novedades <em>del mes</em></h2>
-      <p class="hint">El calendario que hoy mandás en Excel, acá. Anotá día por día lo que pasó en la sucursal: <b>ausencias, horas extra, vacaciones, compensatorios, francos cambiados, reincorporaciones</b>. Se guarda solo al salir de cada casillero y lo ve RRHH en el acto — no hace falta mandar nada.</p>
+      <p class="hint">El calendario que hoy mandás en Excel, acá — pero <b>semana por semana</b>, no todo junto a fin de mes. Anotá día por día lo que pasó: <b>ausencias, horas extra, vacaciones, compensatorios, francos cambiados, reincorporaciones</b>. Se guarda solo al salir de cada casillero y lo ve RRHH en el acto. Al cerrar la semana <b>confirmala</b>; si no hubo nada, confirmalo igual con «Sin novedades».</p>
       <div class="card pad" id="novCard"></div>
     </section>
 
     <section class="sec" id="secComp" style="display:none">
       <div class="sec-label">RRHH</div>
-      <h2 class="sec-title">Compensatorios <em>del equipo</em></h2>
-      <p class="hint">Días que la empresa le debe a cada persona por haber trabajado de más (feriados, domingos, inventarios, horas extra). Pedí acá el día que se quiere tomar: la solicitud le queda <b>pendiente a RRHH y al supervisor</b>. Si la aprueban, el día se descuenta solo del saldo; si la rechazan, puede venir con un <b>día sugerido</b> para compensar.</p>
+      <h2 class="sec-title">Compensatorios y <em>horas</em></h2>
+      <p class="hint">Lo que la empresa le debe a cada persona: <b>días de compensatorio</b> (feriados, domingos, inventarios) y <b>horas extra</b> sueltas. Pedí acá que se lo tome como tiempo libre <b>o que lo cobre en plata</b>: la solicitud le queda <b>pendiente a RRHH y al supervisor</b>. Si la aprueban, se descuenta solo del saldo; si la rechazan, puede venir con un <b>día sugerido</b> para compensar.</p>
       <div class="card pad" id="compCard"></div>
     </section>
 
@@ -5705,22 +5714,27 @@ async function f8Confirmar(id){
    ============================================================ */
 const NOV_DOW = ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES','SÁBADO','DOMINGO'];
 const NOV_MESES = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-let _novMes = null;        // 'YYYY-MM' que se está viendo
-let _novData = null;       // {slug, mes, dias:{}}
-let _novFeriados = null;   // 'YYYY-MM-DD' -> título
+let _novSem = null;        // lunes ISO de la semana que se está viendo
+let _novData = null;       // {slug, sem, dias:{'YYYY-MM-DD':texto}, conf, mes:{…}}
+let _novFeriados = null;
 let _novTimer = null;
 
-function novMesActual(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+const novZ = n => String(n).padStart(2,'0');
+const novISO = d => d.getFullYear()+'-'+novZ(d.getMonth()+1)+'-'+novZ(d.getDate());
+function novHoyISO(){ return novISO(new Date()); }
+function novLunesDe(fecha){ const x=new Date(fecha); x.setHours(0,0,0,0); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; }
+function novSemActual(){ return novISO(novLunesDe(new Date())); }
+function novSemShift(sem, n){ const p=sem.split('-').map(Number); const d=new Date(p[0],p[1]-1,p[2]); d.setDate(d.getDate()+n*7); return novISO(d); }
+function novDiasSemana(sem){ const p=sem.split('-').map(Number); const out=[];
+  for(let i=0;i<7;i++){ const d=new Date(p[0],p[1]-1,p[2]+i); out.push(novISO(d)); } return out; }
+function novFechaLbl(iso){ const p=String(iso).split('-'); return p[2]+'/'+p[1]; }
 function novMesLbl(p){ const [y,m]=p.split('-'); return (NOV_MESES[+m]||m)+' '+y; }
-function novShift(p,n){ const [y,m]=p.split('-').map(Number); const d=new Date(y,m-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
-function novCeldas(p){
-  const [y,m]=p.split('-').map(Number);
-  const off=(new Date(y,m-1,1).getDay()+6)%7, dias=new Date(y,m,0).getDate(), out=[];
-  for(let i=0;i<off;i++) out.push(null);
-  for(let d=1;d<=dias;d++) out.push(d);
-  while(out.length%7) out.push(null);
-  return out;
-}
+function novSemLbl(sem){ const d=novDiasSemana(sem); return novFechaLbl(d[0])+' al '+novFechaLbl(d[6]); }
+// los meses que toca una semana (puede cruzar dos)
+function novMesesDe(sem){ return [...new Set(novDiasSemana(sem).map(d=>d.slice(0,7)))]; }
+// a partir del jueves ya apura: la semana se está terminando
+function novApura(){ const dow=new Date().getDay(); return dow===0 || dow>=4; }
+
 // feriados del calendario retail del shell, solo para marcarlos
 async function novCargarFeriados(anio){
   if(_novFeriados && _novFeriados._y===anio) return _novFeriados;
@@ -5728,7 +5742,7 @@ async function novCargarFeriados(anio){
   try{
     const j=await fetch('../shared/data/calendario-'+anio+'.json').then(r=>r.ok?r.json():null);
     (j&&j.eventos||[]).filter(e=>e.tipo==='feriado').forEach(ev=>{
-      const push=(d,t)=>{ mapa[d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')]=t; };
+      const push=(d,t)=>{ mapa[novISO(d)]=t; };
       if(ev.regla){
         const pri=new Date(anio,ev.regla.mes-1,1);
         const num=1+((ev.regla.dia-pri.getDay()+7)%7)+(ev.regla.semana-1)*7;
@@ -5746,54 +5760,92 @@ async function renderNov(){
   const sec=$('secNov'); if(!sec) return;
   sec.style.display='none';
   const slug=slugActual(); if(!slug || !RRHH_DB_URL) return;
-  if(!_novMes) _novMes=novMesActual();
-  await novCargar(slug,_novMes);
+  if(!_novSem) _novSem=novSemActual();
+  await novCargar(slug,_novSem);
   paintNov();
   pintarZonas();
+  novAvisarSiFalta();
 }
-async function novCargar(slug, mes){
-  const base=RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/calendario/'+encodeURIComponent(slug)+'/'+encodeURIComponent(mes);
-  const [d] = await Promise.all([
-    fetchJSON(base+'.json').catch(()=>null),
-    novCargarFeriados(Number(mes.slice(0,4))),
+async function novCargar(slug, sem){
+  const base=RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh';
+  const meses=novMesesDe(sem);
+  const [conf, ...mm] = await Promise.all([
+    fetchJSON(base+'/calSemanas/'+encodeURIComponent(slug)+'/'+encodeURIComponent(sem)+'.json').catch(()=>null),
+    ...meses.map(m=>fetchJSON(base+'/calendario/'+encodeURIComponent(slug)+'/'+encodeURIComponent(m)+'.json').catch(()=>null)),
+    novCargarFeriados(Number(sem.slice(0,4))),
   ]);
-  _novData={slug, mes, dias:(d&&d.dias)||{}, actualizado:(d&&d.actualizado)||'', por:(d&&d.por)||''};
+  const porMes={}, dias={};
+  meses.forEach((m,i)=>{ const d=mm[i]||{}; porMes[m]=d;
+    Object.entries(d.dias||{}).forEach(([n,t])=>{ dias[m+'-'+novZ(n)]=t; }); });
+  _novData={slug, sem, dias, conf:conf||null, porMes, meses};
 }
 
 function paintNov(){
   const sec=$('secNov'), card=$('novCard'); if(!sec||!card||!_novData) return;
-  const {slug, mes, dias}=_novData;
-  const edit=!esGerencia;
-  const hoy=(()=>{ const d=new Date(),z=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate()); })();
-  const cargados=Object.values(dias||{}).filter(t=>String(t).trim()).length;
+  const {slug, sem, dias, conf}=_novData;
+  const vigente = sem===novSemActual();
+  const edit = !esGerencia && vigente;
+  const hoy=novHoyISO();
+  const fechas=novDiasSemana(sem);
+  const conTexto=fechas.filter(f=>String(dias[f]||'').trim()).length;
+  const confirmada=!!(conf && conf.estado);
 
+  // barra
   let html='<div class="calbar">'
-    +'<div class="calnav"><button type="button" onclick="novMes(-1)" title="Mes anterior">‹</button>'
-    +'<div class="mes">'+esc(novMesLbl(mes))+'</div>'
-    +'<button type="button" onclick="novMes(1)" title="Mes siguiente">›</button></div>'
-    +'<span class="calstate" id="novState">'+(cargados? cargados+' día'+(cargados===1?'':'s')+' con novedades' : 'Sin novedades cargadas')+'</span>'
+    +'<div class="calnav"><button type="button" onclick="novSem(-1)" title="Semana anterior">‹</button>'
+    +'<div class="mes">'+esc(novSemLbl(sem))+'</div>'
+    +'<button type="button" onclick="novSem(1)" title="Semana siguiente"'+(vigente?' disabled style="opacity:.4"':'')+'>›</button>'
+    +(vigente?'':'<button type="button" onclick="novSem(0)" style="width:auto;padding:0 10px;font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px">SEMANA ACTUAL</button>')
+    +'</div>'
+    +'<span class="calstate" id="novState">'+(conTexto? conTexto+' día'+(conTexto===1?'':'s')+' con novedades' : 'Sin novedades cargadas')+'</span>'
     +'<div style="flex:1"></div>'
     +'<button type="button" class="btn" onclick="window.print()">🖨 Imprimir</button></div>';
-  html+='<div class="calwrap"><div class="calgrid" id="novGrid">'
+
+  // estado de la semana
+  if(!vigente){
+    html+='<div class="nov-aviso info">📅 Estás mirando una semana <b>cerrada</b> (solo lectura). Las novedades se cargan sobre la <b>semana en curso</b>.'
+      +(confirmada?' Se confirmó el '+esc(String(conf.en||'').replace('T',' ').slice(0,16))+(conf.por?' por '+esc(conf.por):'')+(conf.estado==='sin'?' — <b>sin novedades</b>.':'.'):' <b>No se confirmó.</b>')+'</div>';
+  }else if(confirmada){
+    html+='<div class="nov-aviso ok">✓ <b>Semana confirmada</b>'+(conf.estado==='sin'?' — sin novedades para informar':'')
+      +'. '+esc(String(conf.en||'').replace('T',' ').slice(0,16))+(conf.por?' · '+esc(conf.por):'')
+      +(edit?' Si pasa algo más, escribilo y se vuelve a confirmar solo.':'')+'</div>';
+  }else if(edit){
+    html+='<div class="nov-aviso '+(novApura()?'bad':'warn')+'">'
+      +(novApura()?'⚠️ <b>Se termina la semana y todavía no confirmaste las novedades.</b> ':'📝 <b>Cargá las novedades de esta semana.</b> ')
+      +'Anotá lo que pasó día por día y después tocá <b>Confirmar la semana</b>. '
+      +'<b>Si no hubo nada</b>, confirmalo igual con «Sin novedades» — así RRHH sabe que la semana está revisada.'
+      +'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'
+      +(conTexto
+        ? '<button type="button" class="btn btn-primary" onclick="novConfirmar(false)">✓ Confirmar la semana</button>'
+        : '<button type="button" class="btn btn-primary" onclick="novConfirmar(true)">✓ Confirmar: sin novedades</button>')
+      +'</div></div>';
+  }
+
+  // la semana, en 7 casilleros grandes
+  html+='<div class="calwrap"><div class="calgrid semana" id="novGrid">'
     + NOV_DOW.map(d=>'<div class="ch">'+d+'</div>').join('');
-  novCeldas(mes).forEach((d,i)=>{
-    if(d===null){ html+='<div class="cald off"></div>'; return; }
-    const iso=mes+'-'+String(d).padStart(2,'0');
+  fechas.forEach((iso,i)=>{
     const fer=(_novFeriados&&_novFeriados[iso])||'';
-    const txt=(dias||{})[String(d)]||'';
-    html+='<div class="cald'+((i%7)>=5?' fin':'')+(iso===hoy?' hoy':'')+'">'
-      +'<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap"><span class="n">'+d+'</span>'
+    const txt=dias[iso]||'';
+    const dia=Number(iso.slice(8,10));
+    html+='<div class="cald'+(i>=5?' fin':'')+(iso===hoy?' hoy':'')+'">'
+      +'<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap"><span class="n">'+dia+'</span>'
+      +'<span class="hint" style="margin:0;font-size:11px">'+esc(NOV_MESES[Number(iso.slice(5,7))].slice(0,3))+'</span>'
       +(fer?'<span class="fer" title="'+esc(fer)+'">'+esc(fer)+'</span>':'')+'</div>'
-      +(edit? '<textarea data-nd="'+d+'" placeholder="—" spellcheck="false">'+esc(txt)+'</textarea>'
+      +(edit? '<textarea data-nd="'+iso+'" placeholder="—" spellcheck="false">'+esc(txt)+'</textarea>'
             : '<div class="ro">'+esc(txt)+'</div>')
       +'</div>';
   });
   html+='</div></div>';
-  const sucLbl=String(sucName||nombreBonito(slug)||slug).replace(/^\d+-/,'');   // sin el prefijo NN- de los datos
-  html+='<div class="calfoot"><span><b>'+esc(sucLbl)+'</b>'
-    +(_novData.por?' · última edición de '+esc(_novData.por):'')+'</span>'
-    +'<span class="m">'+esc(novMesLbl(mes))+'</span></div>';
-  if(esGerencia) html='<p class="hint">Vista de gerencia: las novedades las carga la cuenta de la sucursal. Se ven y se editan en <b>RRHH → Calendario</b>.</p>'+html;
+
+  // el mes completo, de consulta
+  const mesRef=fechas[3].slice(0,7);
+  html+='<details class="bgrupo" style="margin-top:14px"><summary><b>Ver el mes completo</b> · '+esc(novMesLbl(mesRef))+' (solo lectura)</summary>'
+    + novMesHtml(mesRef) + '</details>';
+
+  html+='<div class="calfoot"><span><b>'+esc(String(sucName||nombreBonito(slug)||slug).replace(/^\d+-/,''))+'</b></span>'
+    +'<span class="m">Semana del '+esc(novSemLbl(sem))+'</span></div>';
+  if(esGerencia) html='<p class="hint">Vista de gerencia: las novedades las carga la cuenta de la sucursal, semana por semana. Se ven y se editan en <b>RRHH → Calendario</b>.</p>'+html;
   card.innerHTML=html;
   if(edit) card.querySelectorAll('#novGrid textarea[data-nd]').forEach(ta=>{
     ta.onchange=()=>novGuardar(ta.dataset.nd, ta.value);
@@ -5801,39 +5853,94 @@ function paintNov(){
   sec.style.display='';
 }
 
-async function novMes(n){
+// grilla mensual de solo lectura (para consultar lo ya cargado)
+function novMesHtml(mes){
+  const d=(_novData.porMes[mes]||{}).dias||{};
+  const [y,m]=mes.split('-').map(Number);
+  const off=(new Date(y,m-1,1).getDay()+6)%7, tot=new Date(y,m,0).getDate();
+  const celdas=[]; for(let i=0;i<off;i++) celdas.push(null);
+  for(let i=1;i<=tot;i++) celdas.push(i);
+  while(celdas.length%7) celdas.push(null);
+  let h='<div class="calwrap"><div class="calgrid mes-ro">'+NOV_DOW.map(x=>'<div class="ch">'+x+'</div>').join('');
+  celdas.forEach((n,i)=>{
+    if(n===null){ h+='<div class="cald off"></div>'; return; }
+    const iso=mes+'-'+novZ(n), fer=(_novFeriados&&_novFeriados[iso])||'';
+    h+='<div class="cald'+((i%7)>=5?' fin':'')+'"><div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap"><span class="n">'+n+'</span>'
+      +(fer?'<span class="fer">'+esc(fer)+'</span>':'')+'</div><div class="ro">'+esc(d[String(n)]||'')+'</div></div>';
+  });
+  return h+'</div></div>';
+}
+
+async function novSem(n){
   if(!_novData) return;
-  _novMes=novShift(_novData.mes, n);
+  _novSem = n===0 ? novSemActual() : novSemShift(_novData.sem, n);
   const card=$('novCard'); if(card) card.style.opacity='.5';
-  await novCargar(_novData.slug, _novMes);
+  await novCargar(_novData.slug, _novSem);
   if(card) card.style.opacity='';
   paintNov();
 }
-async function novGuardar(dia, texto){
+async function novGuardar(iso, texto){
   if(esGerencia || !_novData) return;
   const t=String(texto||'').trim();
-  if(t) _novData.dias[String(dia)]=t; else delete _novData.dias[String(dia)];
+  const mes=iso.slice(0,7), dia=String(Number(iso.slice(8,10)));
+  if(t) _novData.dias[iso]=t; else delete _novData.dias[iso];
+  _novData.porMes[mes]=_novData.porMes[mes]||{dias:{}};
+  _novData.porMes[mes].dias=_novData.porMes[mes].dias||{};
+  if(t) _novData.porMes[mes].dias[dia]=t; else delete _novData.porMes[mes].dias[dia];
   const st=$('novState'); if(st){ st.textContent='Guardando…'; st.className='calstate'; }
-  const base=RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/calendario/'+encodeURIComponent(_novData.slug)+'/'+encodeURIComponent(_novData.mes);
-  const z=n=>String(n).padStart(2,'0'), d=new Date();
-  const ahora=d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+'T'+z(d.getHours())+':'+z(d.getMinutes());
+  const base=RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/calendario/'+encodeURIComponent(_novData.slug)+'/'+encodeURIComponent(mes);
   try{
     await fetch(base+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({actualizado:ahora, por:(SESSION.email||'')})});
+      body:JSON.stringify({actualizado:compAhora(), por:(SESSION.email||'')})});
     const r=await fetch(base+'/dias/'+encodeURIComponent(dia)+'.json',
       {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(t||null)});
     if(!r.ok) throw new Error('HTTP '+r.status);
-    _novData.actualizado=ahora; _novData.por=(SESSION.email||'');
+    // si la semana ya estaba confirmada, se mantiene confirmada con el dato nuevo
+    if(_novData.conf && _novData.conf.estado) await novSetConf('cargada', true);
     if(st){ st.textContent='✓ Guardado'; st.className='calstate ok';
       clearTimeout(_novTimer);
-      _novTimer=setTimeout(()=>{ const e=$('novState'); if(!e) return;
-        const n=Object.values(_novData.dias||{}).filter(x=>String(x).trim()).length;
+      _novTimer=setTimeout(()=>{ const e=$('novState'); if(!e||!_novData) return;
+        const n=novDiasSemana(_novData.sem).filter(f=>String(_novData.dias[f]||'').trim()).length;
         e.textContent=n? n+' día'+(n===1?'':'s')+' con novedades':'Sin novedades cargadas'; e.className='calstate'; },2500); }
   }catch(e){
     console.error(e);
     if(st){ st.textContent='✕ No se pudo guardar'; }
-    alert('No se pudo guardar la novedad del día '+dia+': '+(e.message||e));
+    alert('No se pudo guardar la novedad: '+(e.message||e));
   }
+}
+async function novSetConf(estado, silencioso){
+  if(!_novData) return;
+  const n=novDiasSemana(_novData.sem).filter(f=>String(_novData.dias[f]||'').trim()).length;
+  const conf={estado, dias:n, por:(SESSION.email||''), en:compAhora()};
+  const url=RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/calSemanas/'+encodeURIComponent(_novData.slug)+'/'+encodeURIComponent(_novData.sem)+'.json';
+  await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(conf)});
+  _novData.conf=conf;
+  if(!silencioso) paintNov();
+}
+async function novConfirmar(sinNovedades){
+  if(esGerencia || !_novData) return;
+  if(sinNovedades && !confirm('¿Confirmás que esta semana NO hubo novedades para informar?\n\n(sin ausencias, horas extra, vacaciones, compensatorios ni cambios de franco)')) return;
+  try{
+    await novSetConf(sinNovedades? 'sin' : 'cargada');
+    enviarDirectosA(COMP_APROBADORES, '📆 Novedades de la semana del '+novSemLbl(_novData.sem)+' · '
+      +(sucName||nombreBonito(_novData.slug)||_novData.slug)+': '
+      +(sinNovedades? 'confirmadas SIN novedades.' : 'confirmadas ('+(_novData.conf.dias||0)+' día(s) con novedades).')).catch(()=>{});
+  }catch(e){ alert('No se pudo confirmar: '+(e.message||e)); }
+}
+/* Aviso a la propia sucursal cuando la semana está por terminar y no confirmó.
+   Una sola vez por semana (flag en Firebase), best-effort. */
+async function novAvisarSiFalta(){
+  if(esGerencia || !_novData || !novApura()) return;
+  if(_novData.sem!==novSemActual() || (_novData.conf && _novData.conf.estado)) return;
+  const base=RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/calAlertas/'+encodeURIComponent(_novData.sem)+'/'+encodeURIComponent(_novData.slug);
+  try{
+    const ya=await fetchJSON(base+'.json').catch(()=>null);
+    if(ya) return;
+    await fetch(base+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ts:Date.now(), por:(SESSION.email||'')})});
+    enviarDirectosA([SESSION.email], '📆 Recordatorio: falta confirmar las <b>novedades de la semana</b> del '
+      +novSemLbl(_novData.sem)+'. Se cargan en Mi Sucursal → «Novedades del mes». Si no hubo nada, confirmalo con «Sin novedades».').catch(()=>{});
+  }catch(e){}
 }
 
 /* ============================================================
@@ -5845,11 +5952,28 @@ async function novGuardar(dia, texto){
    al rechazar puede venir con un día sugerido. Gerencia lo ve de solo lectura.
    ============================================================ */
 let _compData = null;    // {slug, personas, sol}
-let _compForm = null;    // legajoId con el formulario de solicitud abierto
+let _compForm = null;    // {legId, kind} con el formulario abierto
 
+const CONC = { comp:{label:'Compensatorio', unidad:'días'}, hs:{label:'Horas extra', unidad:'horas'} };
 const compFmtDias = n => { const v=Math.round((Number(n)||0)*100)/100; return (v%1===0? String(v) : String(v).replace('.',','))+' d'; };
+const compFmtHs   = n => { const v=Math.round((Number(n)||0)*100)/100; return (v%1===0? String(v) : String(v).replace('.',','))+' hs'; };
+const compFmtCant = (n,k) => k==='hs' ? compFmtHs(n) : compFmtDias(n);
 const compFechaLbl = iso => { const p=String(iso||'').slice(0,10).split('-'); return p.length===3? p[2]+'/'+p[1]+'/'+p[0] : (iso||'—'); };
-function compMovsDe(pers){ return Object.values((pers&&pers.movs)||{}).filter(Boolean); }
+const compKindMov = m => m && m.k==='hs' ? 'hs' : 'comp';
+const compKindSol = x => x && x.k==='hs' ? 'hs' : 'comp';
+const compCantSol = x => Number(x && (x.cant!=null? x.cant : x.dias)) || 0;
+const compModoSol = x => x && x.modo==='cobrar' ? 'cobrar' : 'tomar';
+function compMovsDe(pers, kind){
+  let l=Object.values((pers&&pers.movs)||{}).filter(Boolean);
+  if(kind) l=l.filter(m=>compKindMov(m)===kind);
+  return l;
+}
+function compSaldoDe(pers, kind){ return compMovsDe(pers, kind||'comp').reduce((a,m)=>a+(Number(m.d)||0),0); }
+function compSolsDe(legId){ return Object.entries((_compData&&_compData.sol)||{}).map(([id,x])=>({id,...x})).filter(x=>x && x.legajoId===legId); }
+function compTramiteDe(legId, kind){
+  return compSolsDe(legId).filter(x=>(x.estado||'pendiente')==='pendiente' && (!kind || compKindSol(x)===kind))
+    .reduce((a,x)=>a+compCantSol(x),0);
+}
 function compTipoMov(m){ return m.t || (Number(m.d)<0 ? 'uso' : 'alta'); }
 function compRangoMov(m){
   if(!m.desde) return '';
@@ -5863,10 +5987,6 @@ function compHistorial(){
   });
   return out.sort((a,b)=> String(b.f||'').localeCompare(String(a.f||'')) || String(b.en||'').localeCompare(String(a.en||'')));
 }
-function compSaldoDe(pers){ return compMovsDe(pers).reduce((a,m)=>a+(Number(m.d)||0),0); }
-function compSolsDe(legId){ return Object.entries((_compData&&_compData.sol)||{}).map(([id,x])=>({id,...x})).filter(x=>x && x.legajoId===legId); }
-function compTramiteDe(legId){ return compSolsDe(legId).filter(x=>(x.estado||'pendiente')==='pendiente').reduce((a,x)=>a+(Number(x.dias)||0),0); }
-// días inclusivos entre dos fechas ISO
 function compDias(a,b){ if(!a||!b) return 0; const d=Math.round((new Date(b+'T00:00')-new Date(a+'T00:00'))/86400000)+1; return d>0?d:0; }
 function compHoyISO(){ const d=new Date(), z=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate()); }
 function compAhora(){ const d=new Date(), z=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+'T'+z(d.getHours())+':'+z(d.getMinutes()); }
@@ -5895,64 +6015,71 @@ function paintComp(){
   const {personas, sol} = _compData;
   const filas = Object.entries(personas).map(([id,pp])=>({
       id, nombre:(pp&&pp.nombre)||'—', puesto:(pp&&pp.puesto)||'',
-      saldo:compSaldoDe(pp), tramite:compTramiteDe(id)
+      comp:compSaldoDe(pp,'comp'), hs:compSaldoDe(pp,'hs'),
+      tramC:compTramiteDe(id,'comp'), tramH:compTramiteDe(id,'hs')
     }))
-    .filter(p=>p.saldo!==0 || p.tramite>0)
-    .sort((a,b)=> (b.saldo-a.saldo) || String(a.nombre).localeCompare(String(b.nombre),'es'));
+    .filter(p=>p.comp!==0 || p.hs!==0 || p.tramC>0 || p.tramH>0)
+    .sort((a,b)=> (b.comp-a.comp) || (b.hs-a.hs) || String(a.nombre).localeCompare(String(b.nombre),'es'));
   const sols = Object.entries(sol||{}).map(([id,x])=>({id,...x})).filter(Boolean)
     .sort((a,b)=>String(b.en||'').localeCompare(String(a.en||'')));
   const pendientes = sols.filter(x=>(x.estado||'pendiente')==='pendiente');
 
   if(!filas.length && !sols.length){ sec.style.display='none'; return; }
 
-  const totalSaldo = filas.reduce((a,p)=>a+Math.max(0,p.saldo),0);
+  const totC = filas.reduce((a,p)=>a+Math.max(0,p.comp),0);
+  const totH = filas.reduce((a,p)=>a+Math.max(0,p.hs),0);
   let html='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
-    +'<div style="font-size:15px"><b>'+compFmtDias(totalSaldo)+'</b> a favor del equipo · '+filas.length+' persona'+(filas.length===1?'':'s')
+    +'<div style="font-size:15px">A favor del equipo: <b>'+compFmtDias(totC)+'</b> de compensatorio · <b>'+compFmtHs(totH)+'</b> extra'
     +(pendientes.length?' · <b style="color:var(--vivo,#2563eb)">'+pendientes.length+' esperando respuesta</b>':'')+'</div>'
-    +'<div class="hint" style="margin:0">Los días los carga RRHH; el saldo se descuenta al aprobarse la solicitud.</div></div>';
+    +'<div class="hint" style="margin:0">Los carga RRHH; el saldo baja cuando se aprueba la solicitud.</div></div>';
 
   if(filas.length){
-    html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Persona</th><th class="L">Puesto</th><th>Saldo</th><th>En trámite</th><th>Disponible</th><th class="L"></th></tr></thead><tbody>';
+    html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Persona</th><th class="L">Puesto</th><th>Compensatorio</th><th>Horas extra</th><th>En trámite</th><th class="L"></th></tr></thead><tbody>';
     filas.forEach(p=>{
-      const disp=p.saldo-p.tramite;
+      const dispC=p.comp-p.tramC, dispH=p.hs-p.tramH;
+      let acc;
+      if(esGerencia) acc='<span class="hint" style="margin:0">solo lectura</span>';
+      else{
+        const bt=[];
+        if(dispC>0) bt.push('<button type="button" class="btn" onclick="compAbrirForm(\''+esc(p.id)+'\',\'comp\')">Pedir día</button>');
+        if(dispH>0) bt.push('<button type="button" class="btn" onclick="compAbrirForm(\''+esc(p.id)+'\',\'hs\')">Pedir horas</button>');
+        acc = bt.length? bt.join(' ') : '<span class="hint" style="margin:0">sin saldo disponible</span>';
+      }
       html+='<tr><td class="L"><b>'+esc(p.nombre)+'</b></td><td class="L">'+esc(p.puesto||'—')+'</td>'
-        +'<td>'+compFmtDias(p.saldo)+'</td>'
-        +'<td>'+(p.tramite? compFmtDias(p.tramite) : '—')+'</td>'
-        +'<td><b>'+compFmtDias(disp)+'</b></td>'
-        +'<td class="L">'+(esGerencia
-            ? '<span class="hint" style="margin:0">solo lectura</span>'
-            : (disp>0
-                ? '<button type="button" class="btn" onclick="compAbrirForm(\''+esc(p.id)+'\')">Solicitar día</button>'
-                : '<span class="hint" style="margin:0">sin días disponibles</span>'))
-        +'</td></tr>';
+        +'<td>'+compFmtDias(p.comp)+'</td>'
+        +'<td>'+compFmtHs(p.hs)+'</td>'
+        +'<td>'+((p.tramC||p.tramH)? [p.tramC?compFmtDias(p.tramC):'',p.tramH?compFmtHs(p.tramH):''].filter(Boolean).join(' · ') : '—')+'</td>'
+        +'<td class="L">'+acc+'</td></tr>';
     });
     html+='</tbody></table></div>';
-    if(_compForm && personas[_compForm]) html+=compFormHtml(_compForm);
+    if(_compForm && personas[_compForm.legId]) html+=compFormHtml(_compForm.legId, _compForm.kind);
   }
 
-  // Historial: cuándo se tomó cada compensatorio (y cuándo se cargaron los días).
-  // Vive en los movimientos de la ficha, así que no se pierde aunque la solicitud
-  // se borre o se responda de nuevo.
+  // Historial: cuándo se tomó o se cobró cada cosa. Vive en el movimiento, así que
+  // no se pierde aunque la solicitud se borre o se responda de nuevo.
   const hist = compHistorial();
   if(hist.length){
-    const usos = hist.filter(m=>compTipoMov(m)==='uso');
-    const diasUsados = usos.reduce((a,m)=>a+Math.abs(Number(m.d)||0),0);
+    const usos = hist.filter(m=>compTipoMov(m)==='uso'), pagos = hist.filter(m=>compTipoMov(m)==='pago');
     html+='<details class="bgrupo" style="margin-top:14px"><summary><b>Historial</b> · '
-      +(usos.length? usos.length+' compensatorio'+(usos.length===1?'':'s')+' tomado'+(usos.length===1?'':'s')+' ('+compFmtDias(diasUsados)+')' : 'sin días tomados todavía')
+      +(usos.length? usos.length+' compensado'+(usos.length===1?'':'s')+' con tiempo':'nada compensado todavía')
+      +(pagos.length? ' · '+pagos.length+' cobrado'+(pagos.length===1?'':'s'):'')
       +' · '+hist.length+' movimiento'+(hist.length===1?'':'s')+'</summary>';
-    html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Persona</th><th class="L">Día</th><th class="L">Movimiento</th><th>Días</th><th class="L">Detalle</th></tr></thead><tbody>';
+    html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Persona</th><th class="L">Día</th><th class="L">Concepto</th><th class="L">Movimiento</th><th>Cantidad</th><th class="L">Detalle</th></tr></thead><tbody>';
     hist.forEach(m=>{
-      const tipo=compTipoMov(m);
+      const tipo=compTipoMov(m), k=compKindMov(m);
       const chip = tipo==='uso'
-        ? '<span style="background:rgba(204,0,0,.1);color:#CC0000;border:1px solid rgba(204,0,0,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">TOMADO</span>'
+        ? '<span style="background:rgba(204,0,0,.1);color:#CC0000;border:1px solid rgba(204,0,0,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">COMPENSADO</span>'
+        : tipo==='pago'
+        ? '<span style="background:rgba(124,58,237,.1);color:#7c3aed;border:1px solid rgba(124,58,237,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">COBRADO</span>'
         : tipo==='ajuste'
         ? '<span style="background:rgba(107,122,153,.12);color:#6B7A99;border:1px solid rgba(107,122,153,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">AJUSTE</span>'
-        : '<span style="background:rgba(0,168,107,.1);color:#00a86b;border:1px solid rgba(0,168,107,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">GANADO</span>';
+        : '<span style="background:rgba(0,168,107,.1);color:#00a86b;border:1px solid rgba(0,168,107,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">A FAVOR</span>';
       const d=Number(m.d)||0;
       html+='<tr><td class="L"><b>'+esc(m.nombre)+'</b></td>'
         +'<td class="L">'+esc(compRangoMov(m) || compFechaLbl(m.f))+'</td>'
+        +'<td class="L">'+(k==='hs'?'Horas extra':'Compensatorio')+'</td>'
         +'<td class="L">'+chip+'</td>'
-        +'<td style="color:'+(d<0?'#CC0000':'#00a86b')+';font-weight:700">'+(d>0?'+':'')+compFmtDias(d)+'</td>'
+        +'<td style="color:'+(d<0?'#CC0000':'#00a86b')+';font-weight:700">'+(d>0?'+':'−')+compFmtCant(Math.abs(d),k)+'</td>'
         +'<td class="L">'+esc(m.m||'')+(m.por?'<div class="hint" style="margin:0">'+esc(m.por)+'</div>':'')+'</td></tr>';
     });
     html+='</tbody></table></div></details>';
@@ -5960,9 +6087,9 @@ function paintComp(){
 
   if(sols.length){
     html+='<details class="bgrupo" style="margin-top:14px"'+(pendientes.length?' open':'')+'><summary><b>Solicitudes</b> · '+sols.length+' en total'+(pendientes.length?' · '+pendientes.length+' sin responder':'')+'</summary>';
-    html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Persona</th><th class="L">Día pedido</th><th>Días</th><th class="L">Estado</th><th class="L">Respuesta</th><th class="L"></th></tr></thead><tbody>';
+    html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Persona</th><th class="L">Pide</th><th class="L">Día pedido</th><th class="L">Estado</th><th class="L">Respuesta</th><th class="L"></th></tr></thead><tbody>';
     sols.forEach(x=>{
-      const est=(x.estado||'pendiente');
+      const est=(x.estado||'pendiente'), k=compKindSol(x), cobra=compModoSol(x)==='cobrar';
       const rango=compFechaLbl(x.desde)+(x.hasta&&x.hasta!==x.desde?' → '+compFechaLbl(x.hasta):'');
       const badge = est==='pendiente'
         ? '<span style="background:rgba(37,99,235,.1);color:#2563eb;border:1px solid rgba(37,99,235,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">PENDIENTE</span>'
@@ -5977,57 +6104,78 @@ function paintComp(){
           +(r.sug.nota?' — '+esc(r.sug.nota):'')+'</div>'
           +(esGerencia?'':'<button type="button" class="btn" style="margin-top:6px" onclick="compPedirSugerido(\''+esc(x.id)+'\')">Pedir el día sugerido</button>');
       }
-      html+='<tr><td class="L"><b>'+esc(x.nombre||'—')+'</b></td><td class="L">'+esc(rango)+(x.motivo?'<div class="hint" style="margin:0">'+esc(x.motivo)+'</div>':'')+'</td>'
-        +'<td>'+compFmtDias(x.dias)+'</td><td class="L">'+badge+'</td><td class="L">'+resp+'</td>'
+      html+='<tr><td class="L"><b>'+esc(x.nombre||'—')+'</b></td>'
+        +'<td class="L">'+compFmtCant(compCantSol(x),k)+' de '+(k==='hs'?'horas extra':'compensatorio')
+        +(cobra?'<div class="hint" style="margin:0;color:#7c3aed;font-weight:700">a cobrar en plata</div>':'')+'</td>'
+        +'<td class="L">'+(cobra?'—':esc(rango))+(x.motivo?'<div class="hint" style="margin:0">'+esc(x.motivo)+'</div>':'')+'</td>'
+        +'<td class="L">'+badge+'</td><td class="L">'+resp+'</td>'
         +'<td class="L">'+(est==='pendiente'&&!esGerencia?'<button type="button" class="btn" onclick="compCancelar(\''+esc(x.id)+'\')">Cancelar</button>':'')+'</td></tr>';
     });
     html+='</tbody></table></div></details>';
   }
 
-  if(esGerencia) html='<p class="hint">Vista de gerencia: las solicitudes las manda la cuenta de la sucursal y se responden en <b>RRHH → Compensatorios</b>.</p>'+html;
+  if(esGerencia) html='<p class="hint">Vista de gerencia: las solicitudes las manda la cuenta de la sucursal y se responden en <b>RRHH → Compensatorios y horas</b>.</p>'+html;
   card.innerHTML=html;
   sec.style.display='';
   const d=$('compDesde'); if(d) d.focus();
 }
 
-function compFormHtml(legId){
+function compFormHtml(legId, kind){
   const p=_compData.personas[legId]||{};
-  const disp=compSaldoDe(p)-compTramiteDe(legId);
+  const k = kind==='hs' ? 'hs' : 'comp';
+  const disp=compSaldoDe(p,k)-compTramiteDe(legId,k);
   const hoy=compHoyISO();
+  const esDias = k==='comp';
   return '<div style="border:1px solid var(--line,#dce3f0);border-left:3px solid var(--vivo,#2563eb);border-radius:10px;padding:14px;margin-top:14px;background:#fff">'
-    +'<div style="font-weight:700;margin-bottom:8px">Solicitar compensatorio · '+esc(p.nombre||'')+' <span class="hint" style="margin:0">(disponible: '+compFmtDias(disp)+')</span></div>'
+    +'<div style="font-weight:700;margin-bottom:8px">Pedir '+(esDias?'compensatorio':'horas extra')+' · '+esc(p.nombre||'')
+    +' <span class="hint" style="margin:0">(disponible: '+compFmtCant(disp,k)+')</span></div>'
     +'<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">'
-    +'<label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#6B7A99)">Desde<input type="date" id="compDesde" value="'+hoy+'" onchange="compSyncDias()" style="border:1px solid var(--line,#dce3f0);border-radius:7px;padding:7px 9px;font-size:14px"></label>'
-    +'<label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#6B7A99)">Hasta<input type="date" id="compHasta" value="'+hoy+'" onchange="compSyncDias()" style="border:1px solid var(--line,#dce3f0);border-radius:7px;padding:7px 9px;font-size:14px"></label>'
-    +'<label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#6B7A99)">Días<input type="number" id="compDiasInp" min="0.5" step="0.5" value="1" style="width:90px;border:1px solid var(--line,#dce3f0);border-radius:7px;padding:7px 9px;font-size:14px"></label>'
-    +'<label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#6B7A99);flex:1;min-width:200px">Motivo / comentario<input type="text" id="compMotivo" placeholder="Ej: quiere el franco largo del finde" style="border:1px solid var(--line,#dce3f0);border-radius:7px;padding:7px 9px;font-size:14px"></label>'
+    +'<label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#6B7A99)">Qué quiere'
+    +'<select id="compModo" onchange="compSyncModo()" style="border:1px solid var(--line,#dce3f0);border-radius:7px;padding:7px 9px;font-size:14px">'
+    +'<option value="tomar">Tomarse '+(esDias?'el día':'las horas')+'</option>'
+    +'<option value="cobrar">Cobrarlo en plata</option></select></label>'
+    +'<label id="compLblDesde" style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#6B7A99)">Desde<input type="date" id="compDesde" value="'+hoy+'" onchange="compSyncDias()" style="border:1px solid var(--line,#dce3f0);border-radius:7px;padding:7px 9px;font-size:14px"></label>'
+    +'<label id="compLblHasta" style="display:'+(esDias?'flex':'none')+';flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#6B7A99)">Hasta<input type="date" id="compHasta" value="'+hoy+'" onchange="compSyncDias()" style="border:1px solid var(--line,#dce3f0);border-radius:7px;padding:7px 9px;font-size:14px"></label>'
+    +'<label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#6B7A99)">'+(esDias?'Días':'Horas')
+    +'<input type="number" id="compDiasInp" min="0.5" step="0.5" value="'+(esDias?1:Math.min(disp,2)||1)+'" style="width:90px;border:1px solid var(--line,#dce3f0);border-radius:7px;padding:7px 9px;font-size:14px"></label>'
+    +'<label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#6B7A99);flex:1;min-width:200px">Motivo / comentario<input type="text" id="compMotivo" placeholder="'+(esDias?'Ej: quiere el franco largo del finde':'Ej: se las toma el sábado a la mañana')+'" style="border:1px solid var(--line,#dce3f0);border-radius:7px;padding:7px 9px;font-size:14px"></label>'
     +'</div>'
     +'<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">'
-    +'<button type="button" class="btn btn-primary" id="compEnviar" onclick="compEnviarSolicitud(\''+esc(legId)+'\')">Enviar solicitud</button>'
+    +'<button type="button" class="btn btn-primary" id="compEnviar" onclick="compEnviarSolicitud(\''+esc(legId)+'\',\''+k+'\')">Enviar solicitud</button>'
     +'<button type="button" class="btn" onclick="compCerrarForm()">Cancelar</button>'
-    +'<span class="hint" style="margin:0">Le llega a RRHH y al supervisor por la Bandeja; te avisan por ahí cuando la respondan.</span></div></div>';
+    +'<span class="hint" style="margin:0">Le llega a RRHH y al supervisor por la Bandeja; te avisan por ahí cuando la respondan. El importe de un cobro lo calcula RRHH.</span></div></div>';
 }
-function compAbrirForm(legId){ _compForm=legId; paintComp(); }
+function compAbrirForm(legId, kind){ _compForm={legId, kind:kind==='hs'?'hs':'comp'}; paintComp(); }
 function compCerrarForm(){ _compForm=null; paintComp(); }
+function compSyncModo(){
+  const cobra=$('compModo').value==='cobrar';
+  const esDias=_compForm && _compForm.kind!=='hs';
+  $('compLblDesde').style.display = cobra? 'none':'flex';
+  $('compLblHasta').style.display = (cobra||!esDias)? 'none':'flex';
+}
 function compSyncDias(){
   const d=$('compDesde'), h=$('compHasta'), n=$('compDiasInp'); if(!d||!h||!n) return;
+  if(_compForm && _compForm.kind==='hs') return;             // en horas la cantidad se escribe
   if(h.value && d.value && h.value<d.value) h.value=d.value;
   const dd=compDias(d.value,h.value); if(dd) n.value=dd;
 }
-async function compEnviarSolicitud(legId){
+async function compEnviarSolicitud(legId, kind){
   if(esGerencia) return;
   const p=(_compData&&_compData.personas[legId])||null; if(!p) return;
-  const desde=$('compDesde').value, hasta=$('compHasta').value||$('compDesde').value;
-  const dias=Number($('compDiasInp').value);
+  const k = kind==='hs' ? 'hs' : 'comp';
+  const cobra = $('compModo').value==='cobrar';
+  const desde=cobra? '' : ($('compDesde').value||'');
+  const hasta=cobra? '' : ($('compHasta').value||desde);
+  const cant=Number($('compDiasInp').value);
   const motivo=($('compMotivo').value||'').trim();
-  if(!desde){ alert('Elegí el día que quiere tomarse.'); return; }
-  if(hasta<desde){ alert('La fecha "hasta" es anterior a "desde".'); return; }
-  if(!(dias>0)){ alert('Los días tienen que ser mayores a cero.'); return; }
-  const disp=compSaldoDe(p)-compTramiteDe(legId);
-  if(dias>disp && !confirm('Estás pidiendo '+compFmtDias(dias)+' y solo tiene '+compFmtDias(disp)+' disponibles. RRHH lo va a ver marcado como "no alcanza". ¿Mandarla igual?')) return;
+  if(!cobra && !desde){ alert('Elegí el día que se quiere tomar.'); return; }
+  if(!cobra && hasta && hasta<desde){ alert('La fecha "hasta" es anterior a "desde".'); return; }
+  if(!(cant>0)){ alert('La cantidad tiene que ser mayor a cero.'); return; }
+  const disp=compSaldoDe(p,k)-compTramiteDe(legId,k);
+  if(cant>disp && !confirm('Estás pidiendo '+compFmtCant(cant,k)+' y solo tiene '+compFmtCant(disp,k)+' disponibles. RRHH lo va a ver marcado como "no alcanza". ¿Mandarla igual?')) return;
   const btn=$('compEnviar'); if(btn){ btn.disabled=true; btn.textContent='Enviando…'; }
-  const payload={legajoId:legId, nombre:p.nombre||'', dias, desde, hasta, motivo,
-                 estado:'pendiente', por:(SESSION.email||''), en:compAhora()};
+  const payload={legajoId:legId, nombre:p.nombre||'', k, modo:(cobra?'cobrar':'tomar'), cant, dias:cant,
+                 desde, hasta, motivo, estado:'pendiente', por:(SESSION.email||''), en:compAhora()};
   try{
     const url=RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/solicitudes_comp/'+encodeURIComponent(_compData.slug)+'.json';
     const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
@@ -6035,11 +6183,12 @@ async function compEnviarSolicitud(legId){
     const {name}=await r.json();
     _compData.sol[name]=payload;
     _compForm=null;
-    const rango=compFechaLbl(desde)+(hasta!==desde?' → '+compFechaLbl(hasta):'');
+    const rango=cobra? 'a cobrar en plata' : compFechaLbl(desde)+(hasta!==desde?' → '+compFechaLbl(hasta):'');
     enviarDirectosA(COMP_APROBADORES,
-      '🕘 Solicitud de compensatorio · '+(sucName||nombreBonito(_compData.slug)||_compData.slug)+': '+(p.nombre||'')
-      +' pide '+compFmtDias(dias)+' — '+rango+(motivo?' ('+motivo+')':'')
-      +'. Se aprueba o se rechaza en RRHH → Compensatorios.').catch(()=>{});
+      (cobra?'💲':'🕘')+' Solicitud de '+(k==='hs'?'horas extra':'compensatorio')+' · '
+      +(sucName||nombreBonito(_compData.slug)||_compData.slug)+': '+(p.nombre||'')
+      +' pide '+compFmtCant(cant,k)+' — '+rango+(motivo?' ('+motivo+')':'')
+      +'. Se aprueba o se rechaza en RRHH → Compensatorios y horas.').catch(()=>{});
     paintComp();
     alert('Solicitud enviada. Le queda pendiente a RRHH y al supervisor.');
   }catch(e){
@@ -6050,7 +6199,7 @@ async function compEnviarSolicitud(legId){
 // vuelve a pedir el día que RRHH sugirió al rechazar
 function compPedirSugerido(solId){
   const x=(_compData&&_compData.sol[solId])||null; if(!x||!x.resp||!x.resp.sug) return;
-  _compForm=x.legajoId; paintComp();
+  compAbrirForm(x.legajoId, compKindSol(x));
   const d=$('compDesde'), h=$('compHasta'), m=$('compMotivo');
   if(d) d.value=x.resp.sug.desde||'';
   if(h) h.value=x.resp.sug.hasta||x.resp.sug.desde||'';
@@ -6062,7 +6211,7 @@ async function compCancelar(solId){
   if(esGerencia) return;
   const x=(_compData&&_compData.sol[solId])||null; if(!x) return;
   if((x.estado||'pendiente')!=='pendiente') return;
-  if(!confirm('¿Dar de baja la solicitud de '+(x.nombre||'')+' del '+compFechaLbl(x.desde)+'?')) return;
+  if(!confirm('¿Dar de baja la solicitud de '+(x.nombre||'')+(x.desde?' del '+compFechaLbl(x.desde):'')+'?')) return;
   try{
     const url=RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/solicitudes_comp/'+encodeURIComponent(_compData.slug)+'/'+encodeURIComponent(solId)+'.json';
     await fetch(url,{method:'DELETE'});

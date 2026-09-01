@@ -982,11 +982,15 @@ por talle; "Ingresar a stock" cuando está ok) → reparto.
   apertura con switch de criterio — ver algoritmo probado en el chat); aviso a Ariel/Luis
   por `mensajes-mateu` al terminar el control; otras marcas.
 
-## Compensatorios (RRHH + Mi Sucursal)
+## Compensatorios y horas (RRHH + Mi Sucursal)
 
-Circuito de los **días a favor** que la empresa le debe a cada persona por haber
-trabajado de más (feriado, domingo, inventario, horas extra). Vive en dos lugares
-y comparte el nodo `rrhh/` de **discontinuos-mateu**:
+Circuito de lo que la empresa le debe a cada persona por haber trabajado de más.
+Son **dos conceptos separados** (pedido de Juli 01/09/2026), en la misma ficha:
+**compensatorios en días** (feriado, domingo, inventario) y **horas extra en horas**.
+Cada movimiento lleva `k` (`comp` | `hs`; sin `k` = compensatorio, los viejos) y `t`
+(`alta` | `uso` | `pago` | `ajuste`). Cualquiera de los dos se puede **compensar con
+tiempo** (`uso`) o **cobrar en plata** (`pago`). Vive en dos lugares y comparte el
+nodo `rrhh/` de **discontinuos-mateu**:
 
 - **`rrhh/` — pestaña «Compensatorios»** (gerencia / RRHH / supervisor): carga los
   días a favor, ve el saldo por persona y **responde las solicitudes**. Aprobar
@@ -1035,12 +1039,22 @@ Alias de sucursal propios del Excel en `COMP_ALIAS_SUC` (`Diag 80`→diagonal,
 slug donde vive la ficha de compensatorios**, no el del legajo: `compSlugDe()`.
 La tabla de saldos avisa «legajo: <otra sucursal>» cuando difieren.
 
+**Valorizado — el valor de la hora lo carga RRHH** (botón «💲 Valor de la hora»):
+`rrhh/config/valorHora` = `{general, horasDia (default 8), porLegajo:{<legajoId>:valor}}`.
+Un día de compensatorio se paga como `horasDia × valor`. El importe de un pago se
+**hornea en el movimiento** (`vh` e `imp`), así el histórico no cambia cuando después
+se actualiza el valor. Al registrar un pago (a mano o al aprobar una solicitud de
+cobro) se puede **pasar a Novedades de nómina** del período con el concepto
+`comp_pago` (`novedadDePago`), que es lo que va al estudio contable. El encargado
+**no ve importes**: pide el cobro y RRHH lo valoriza.
+
 **Firebase** (nodo `rrhh/`, agrupado por slug para que cada sucursal baje solo lo
 suyo, misma seguridad blanda que Objetivos / Barrida):
 `rrhh/compensatorios/<slug>/<legajoId>` = `{nombre, puesto, movs:{<id>:{d,f,m,por,en,sol}}}`
 — el **saldo es la suma de `d`** (+ ganados, − tomados; no hay campo `saldo`) —
-y `rrhh/solicitudes_comp/<slug>/<id>` =
-`{legajoId, nombre, dias, desde, hasta, motivo, estado, por, en, resp:{por,en,nota,sug:{desde,hasta,nota}}}`.
+y `rrhh/solicitudes_comp/<slug>/<id>` = `{legajoId, nombre, k, modo:'tomar'|'cobrar',
+cant (y `dias` por compatibilidad), desde, hasta, motivo, estado, por, en,
+resp:{por,en,nota,imp,vh,sug:{desde,hasta,nota}}}`.
 
 **Avisos por la Bandeja** (`mensajes-mateu/directos`, best-effort): al solicitar le
 llega a `COMP_APROBADORES` (rrhh@ = RRHH y cristian.campion@ = supervisor,
@@ -1054,15 +1068,28 @@ grilla LUNES→DOMINGO, un par de columnas por día — número + texto libre �
 con la sucursal y el mes). Mismo formato, en grande y en el portal:
 
 - **`indicadores/` → «Novedades del mes»** (`secNov`, `renderNov`/`paintNov`, en la
-  banda «En curso»): el encargado escribe día por día lo que pasó (ausencias, horas
-  extra, vacaciones, compensatorios, francos, reincorporaciones). Se guarda solo al
-  salir de cada casillero (`onchange`, no re-renderiza para no perder el foco), con
-  navegación ‹ mes ›. Gerencia lo ve de solo lectura.
-- **`rrhh/` → pestaña «Calendario»**: la misma grilla por sucursal y mes, editable
-  (RRHH corrige), con el semáforo **«N de M sucursales cargaron el mes»** + botón
-  «📣 Recordar a las que faltan» (directos de la Bandeja), **🖨 Imprimir** (`@media
-  print`, A4 apaisado) y **⇩ Excel** (ExcelJS, replica el par día/nota del original y
-  le agrega la columna de nota del domingo, que el Excel viejo no tenía).
+  banda «En curso»): **solo la SEMANA EN CURSO es editable** (pedido de Juli 01/09/2026:
+  si pueden cargar el mes entero, esperan a fin de mes y anotan cosas en días que no
+  van). Los 7 casilleros lunes→domingo se guardan al salir del campo (`onchange`, no
+  re-renderiza para no perder el foco) y la semana puede cruzar dos meses (cada día se
+  escribe en el nodo de SU mes). Las semanas anteriores y el mes completo quedan de
+  solo lectura. Al terminar, el encargado **confirma la semana** — y si no hubo nada,
+  tiene que confirmarlo igual con **«Sin novedades»** (`rrhh/calSemanas/<slug>/<lunesISO>`
+  = `{estado:'cargada'|'sin', dias, por, en}`). Desde el **jueves** el aviso se pone rojo
+  y sale un recordatorio por la Bandeja (una vez por semana, flag en
+  `rrhh/calAlertas/<lunesISO>/<slug>`). Gerencia lo ve de solo lectura.
+- **`rrhh/` → pestaña «Calendario»**: la misma grilla por sucursal y **mes completo**,
+  editable (RRHH corrige cualquier día), con el semáforo **de la semana en curso**
+  («N de M sucursales ya la confirmaron», marcando las que no cargaron nada) + botón
+  «📣 Recordar a las que faltan», la tabla **«Cierre semanal»** de las últimas 6 semanas
+  de esa sucursal, **🖨 Imprimir** (`@media print`, A4 apaisado) y **⇩ Excel** (ExcelJS,
+  replica el par día/nota del original y le agrega la columna de nota del domingo, que
+  el Excel viejo no tenía).
+- **Aviso automático de los viernes** (`calAvisoViernes`, se dispara al abrir la pestaña
+  — no hay backend con cron, mismo patrón que `alertasRitmo` de Indicadores): manda por
+  la Bandeja el resumen de las sucursales que no confirmaron la semana a **RRHH y al
+  supervisor** (`CAL_AVISADOS`) y un recordatorio a cada sucursal que falta. Flag
+  `rrhh/calAlertas/<lunesISO>/__resumen` para no repetirlo.
 
 Los **feriados** salen del calendario retail del shell (`shared/data/calendario-<año>.json`,
 eventos con `tipo:'feriado'`; se resuelven fecha fija, rango y regla móvil) y se marcan
