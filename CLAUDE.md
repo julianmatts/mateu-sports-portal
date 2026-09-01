@@ -962,6 +962,38 @@ por talle; "Ingresar a stock" cuando está ok) → reparto.
   apertura con switch de criterio — ver algoritmo probado en el chat); aviso a Ariel/Luis
   por `mensajes-mateu` al terminar el control; otras marcas.
 
+## Compensatorios (RRHH + Mi Sucursal)
+
+Circuito de los **días a favor** que la empresa le debe a cada persona por haber
+trabajado de más (feriado, domingo, inventario, horas extra). Vive en dos lugares
+y comparte el nodo `rrhh/` de **discontinuos-mateu**:
+
+- **`rrhh/` — pestaña «Compensatorios»** (gerencia / RRHH / supervisor): carga los
+  días a favor, ve el saldo por persona y **responde las solicitudes**. Aprobar
+  escribe un movimiento negativo (descuenta solo del saldo); rechazar pide el
+  motivo y permite **sugerir otro día** para compensar. El botón ↩ vuelve la
+  solicitud a pendiente (y devuelve el día si estaba aprobada). La columna
+  **«Comp.»** de la nómina (pestaña Legajos) muestra el saldo y lo que está en
+  trámite de cada persona, y el detalle del legajo suma la caja «Compensatorios».
+- **`indicadores/` — sección «Compensatorios del equipo»** (`secComp`,
+  `renderComp`/`paintComp`, en la banda «En curso», junto a F8 y Reposición): el
+  encargado ve el saldo de su gente y **solicita el día**. Gerencia lo ve de solo
+  lectura. Una solicitud rechazada con día sugerido trae el botón «Pedir el día
+  sugerido», que reabre el formulario con esa fecha precargada. Las pendientes se
+  pueden cancelar.
+
+**Firebase** (nodo `rrhh/`, agrupado por slug para que cada sucursal baje solo lo
+suyo, misma seguridad blanda que Objetivos / Barrida):
+`rrhh/compensatorios/<slug>/<legajoId>` = `{nombre, puesto, movs:{<id>:{d,f,m,por,en,sol}}}`
+— el **saldo es la suma de `d`** (+ ganados, − tomados; no hay campo `saldo`) —
+y `rrhh/solicitudes_comp/<slug>/<id>` =
+`{legajoId, nombre, dias, desde, hasta, motivo, estado, por, en, resp:{por,en,nota,sug:{desde,hasta,nota}}}`.
+
+**Avisos por la Bandeja** (`mensajes-mateu/directos`, best-effort): al solicitar le
+llega a `COMP_APROBADORES` (rrhh@ = RRHH y cristian.campion@ = supervisor,
+constante en `indicadores/`); al responder, RRHH le avisa a las cuentas de la
+sucursal (resueltas contra `discontinuos-mateu/usuarios`) y a quien pidió.
+
 ## Reglas
 
 - Responder y comentar el código en **español**.

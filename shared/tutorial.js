@@ -44,6 +44,7 @@
       { ic:'🎯', t:'Objetivo de la semana y del mes', d:'Arriba de todo: la Meta de la semana con su Mínimo y su 120, la barra de avance contra la venta real y el objetivo del mes. Con el selector podés rever semanas anteriores.' },
       { ic:'👥', t:'Cómo viene el equipo', d:'Panel para el encargado: armá tu equipo, asigná las horas de venta por turno y día (el portal reparte la Meta entre las personas) y subí el Excel de venta por vendedor para ver el ranking del equipo.' },
       { ic:'📦', t:'Reposición disponible', d:'Cuando el depósito publica su análisis semanal, acá aparece lo que tu sucursal puede pedir, por artículo y talle.' },
+      { ic:'🕘', t:'Compensatorios del equipo', d:'Los días que la empresa le debe a cada persona (feriados, domingos, horas extra). Desde ahí pedís el día que se quiere tomar: la solicitud le queda pendiente a RRHH y al supervisor, y cuando la aprueban se descuenta solo del saldo. Si la rechazan, puede venir con un día sugerido.' },
       { ic:'🗓️', t:'Meses de stock y Plantilla', d:'Más abajo: la foto de stock, ventas y ratio por rubro, y la dotación de la sucursal por rol y régimen (full/part time).' },
       { ic:'🏢', t:'Todas las sucursales', d:'Con el selector de sucursal podés mirar cualquiera, y «Todas las sucursales (comparar)» las pone una al lado de la otra.', roles:['admin','supervisor'] }
     ]},
@@ -193,6 +194,7 @@
       { ic:'🧑‍💼', t:'Qué es', d:'El módulo de Recursos Humanos: legajos, ausentismo y licencias, novedades de nómina y rotación.' },
       { ic:'📁', t:'Legajos', d:'La ficha de cada persona. La dotación se puede importar directo desde Indicadores.' },
       { ic:'🤒', t:'Ausentismo y licencias', d:'Registrá ausencias y licencias y mirá el índice por sucursal.' },
+      { ic:'🕘', t:'Compensatorios', d:'Los días a favor de cada persona (feriados, domingos, horas extra): los cargás acá y aparecen en su fila de la nómina. Los encargados piden el día desde Mi Sucursal y vos aprobás (se descuenta solo del saldo) o rechazás, con la opción de sugerirle otro día para compensar.' },
       { ic:'🧾', t:'Novedades de nómina', d:'Lo que hay que informar para la liquidación de cada mes.' },
       { ic:'🔄', t:'Rotación', d:'Altas, bajas y rotación por sucursal a lo largo del tiempo.' }
     ]},

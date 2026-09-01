@@ -783,6 +783,13 @@ footer b{color:var(--navy)}
       <div class="card pad" id="f8SucCard"></div>
     </section>
 
+    <section class="sec" id="secComp" style="display:none">
+      <div class="sec-label">RRHH</div>
+      <h2 class="sec-title">Compensatorios <em>del equipo</em></h2>
+      <p class="hint">Días que la empresa le debe a cada persona por haber trabajado de más (feriados, domingos, inventarios, horas extra). Pedí acá el día que se quiere tomar: la solicitud le queda <b>pendiente a RRHH y al supervisor</b>. Si la aprueban, el día se descuenta solo del saldo; si la rechazan, puede venir con un <b>día sugerido</b> para compensar.</p>
+      <div class="card pad" id="compCard"></div>
+    </section>
+
     <section class="sec" id="secBarrida" style="display:none">
       <div class="sec-label">Depósito central</div>
       <h2 class="sec-title">Reposición <em>disponible</em></h2>
@@ -1233,6 +1240,14 @@ const BARRIDA_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
 // Objetivos de Venta: misma base (nodo `objetivos/…`). Cada sucursal baja solo su
 // objetivo. Vacío => la sección no aparece.
 const OBJETIVOS_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
+// RRHH: reusa discontinuos-mateu (nodo `rrhh/…`, la misma base del Portal). De ahí
+// salen los compensatorios de la sucursal (saldo por persona) y ahí se escriben las
+// solicitudes del encargado. Agrupado por slug: cada sucursal baja solo lo suyo.
+const RRHH_DB_URL = 'https://discontinuos-mateu-default-rtdb.firebaseio.com';
+// A quién le llega la solicitud de compensatorio (directos de la Bandeja del Portal):
+// rrhh@ es la cuenta de RRHH (Hernán) y cristian.campion@ la del supervisor. Son
+// los dos que la responden desde RRHH → Compensatorios.
+const COMP_APROBADORES = ['rrhh@mateu.com.ar','cristian.campion@mateu.com.ar'];
 
 const esGerencia = SESSION.rol === 'admin';
 let miSucursal = null;   // nombre en datos para roles de sucursal/outlet (null = sin dato)
@@ -1685,7 +1700,7 @@ async function render(){
     $('cadenaView').style.display='none';
     $('content').style.display='block';
     mostrarEmpty('Tu sucursal todavía no tiene datos de indicadores cargados.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); }
+    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderComp(); }
     return;
   }
 
@@ -1752,7 +1767,7 @@ async function render(){
     mostrarEmpty(Object.values(SOLO_OBJ_SUC).includes(sucName)
       ? '<b>'+esc(sucName)+'</b> todavía no tiene datos de indicadores cargados (sí su objetivo y equipo).'
       : 'No hay datos de <b>'+esc(sucName)+'</b> para '+esc(perLabel(per))+'.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); }
+    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderComp(); }
     return;
   }
   // la semana elegida tiene que existir en esta sucursal/período
@@ -1782,6 +1797,7 @@ async function render(){
   renderHeat();
   renderNotas();
   renderObjMesCierre();   // objetivo del mes cerrado, arriba de los KPIs (también en Ecommerce)
+  renderComp();           // compensatorios del equipo (RRHH): también en Ecommerce
   if(ecom){ renderCanales(); }
   else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderRubros(); renderSem(); renderObjetivo(); renderBarrida(); renderF8Suc(); }
   _kbVisible=false; $('kpiBar').classList.remove('show'); kpiBarScroll();   // re-evaluar la mini-barra con la vista nueva
@@ -5639,6 +5655,200 @@ async function f8Confirmar(id){
   d.conf=conf; delete _f8ConfDraft[id];
   paintF8Suc();
 }
+/* ============================================================
+   COMPENSATORIOS DEL EQUIPO (RRHH) — vista de la sucursal.
+   Lee el saldo de su gente de discontinuos-mateu `rrhh/compensatorios/<slug>`
+   (agrupado por slug: no baja el de las demás) y escribe las solicitudes del
+   encargado en `rrhh/solicitudes_comp/<slug>`. RRHH / el supervisor las
+   responden desde el módulo RRHH: al aprobar se descuenta el día del saldo,
+   al rechazar puede venir con un día sugerido. Gerencia lo ve de solo lectura.
+   ============================================================ */
+let _compData = null;    // {slug, personas, sol}
+let _compForm = null;    // legajoId con el formulario de solicitud abierto
+
+const compFmtDias = n => { const v=Math.round((Number(n)||0)*100)/100; return (v%1===0? String(v) : String(v).replace('.',','))+' d'; };
+const compFechaLbl = iso => { const p=String(iso||'').slice(0,10).split('-'); return p.length===3? p[2]+'/'+p[1]+'/'+p[0] : (iso||'—'); };
+function compMovsDe(pers){ return Object.values((pers&&pers.movs)||{}).filter(Boolean); }
+function compSaldoDe(pers){ return compMovsDe(pers).reduce((a,m)=>a+(Number(m.d)||0),0); }
+function compSolsDe(legId){ return Object.entries((_compData&&_compData.sol)||{}).map(([id,x])=>({id,...x})).filter(x=>x && x.legajoId===legId); }
+function compTramiteDe(legId){ return compSolsDe(legId).filter(x=>(x.estado||'pendiente')==='pendiente').reduce((a,x)=>a+(Number(x.dias)||0),0); }
+// días inclusivos entre dos fechas ISO
+function compDias(a,b){ if(!a||!b) return 0; const d=Math.round((new Date(b+'T00:00')-new Date(a+'T00:00'))/86400000)+1; return d>0?d:0; }
+function compHoyISO(){ const d=new Date(), z=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate()); }
+function compAhora(){ const d=new Date(), z=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+'T'+z(d.getHours())+':'+z(d.getMinutes()); }
+
+async function renderComp(){
+  const sec=$('secComp'); if(!sec) return;
+  sec.style.display='none';
+  const slug=slugActual(); if(!slug || !RRHH_DB_URL) return;
+  const base=RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh';
+  let personas=null, sol=null;
+  try{
+    [personas, sol] = await Promise.all([
+      fetchJSON(base+'/compensatorios/'+encodeURIComponent(slug)+'.json').catch(()=>null),
+      fetchJSON(base+'/solicitudes_comp/'+encodeURIComponent(slug)+'.json').catch(()=>null),
+    ]);
+  }catch(e){ return; }
+  if(slugActual()!==slug) return;                        // cambió de sucursal mientras cargaba
+  if(!personas && !sol) return;                          // RRHH todavía no cargó nada de esta sucursal
+  _compData={slug, personas:personas||{}, sol:sol||{}};
+  paintComp();
+  pintarZonas();
+}
+
+function paintComp(){
+  const sec=$('secComp'), card=$('compCard'); if(!sec||!card||!_compData) return;
+  const {personas, sol} = _compData;
+  const filas = Object.entries(personas).map(([id,pp])=>({
+      id, nombre:(pp&&pp.nombre)||'—', puesto:(pp&&pp.puesto)||'',
+      saldo:compSaldoDe(pp), tramite:compTramiteDe(id)
+    }))
+    .filter(p=>p.saldo!==0 || p.tramite>0)
+    .sort((a,b)=> (b.saldo-a.saldo) || String(a.nombre).localeCompare(String(b.nombre),'es'));
+  const sols = Object.entries(sol||{}).map(([id,x])=>({id,...x})).filter(Boolean)
+    .sort((a,b)=>String(b.en||'').localeCompare(String(a.en||'')));
+  const pendientes = sols.filter(x=>(x.estado||'pendiente')==='pendiente');
+
+  if(!filas.length && !sols.length){ sec.style.display='none'; return; }
+
+  const totalSaldo = filas.reduce((a,p)=>a+Math.max(0,p.saldo),0);
+  let html='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+    +'<div style="font-size:15px"><b>'+compFmtDias(totalSaldo)+'</b> a favor del equipo · '+filas.length+' persona'+(filas.length===1?'':'s')
+    +(pendientes.length?' · <b style="color:var(--vivo,#2563eb)">'+pendientes.length+' esperando respuesta</b>':'')+'</div>'
+    +'<div class="hint" style="margin:0">Los días los carga RRHH; el saldo se descuenta al aprobarse la solicitud.</div></div>';
+
+  if(filas.length){
+    html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Persona</th><th class="L">Puesto</th><th>Saldo</th><th>En trámite</th><th>Disponible</th><th class="L"></th></tr></thead><tbody>';
+    filas.forEach(p=>{
+      const disp=p.saldo-p.tramite;
+      html+='<tr><td class="L"><b>'+esc(p.nombre)+'</b></td><td class="L">'+esc(p.puesto||'—')+'</td>'
+        +'<td>'+compFmtDias(p.saldo)+'</td>'
+        +'<td>'+(p.tramite? compFmtDias(p.tramite) : '—')+'</td>'
+        +'<td><b>'+compFmtDias(disp)+'</b></td>'
+        +'<td class="L">'+(esGerencia
+            ? '<span class="hint" style="margin:0">solo lectura</span>'
+            : (disp>0
+                ? '<button type="button" class="btn" onclick="compAbrirForm(\''+esc(p.id)+'\')">Solicitar día</button>'
+                : '<span class="hint" style="margin:0">sin días disponibles</span>'))
+        +'</td></tr>';
+    });
+    html+='</tbody></table></div>';
+    if(_compForm && personas[_compForm]) html+=compFormHtml(_compForm);
+  }
+
+  if(sols.length){
+    html+='<details class="bgrupo" style="margin-top:14px"'+(pendientes.length?' open':'')+'><summary><b>Solicitudes</b> · '+sols.length+' en total'+(pendientes.length?' · '+pendientes.length+' sin responder':'')+'</summary>';
+    html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Persona</th><th class="L">Día pedido</th><th>Días</th><th class="L">Estado</th><th class="L">Respuesta</th><th class="L"></th></tr></thead><tbody>';
+    sols.forEach(x=>{
+      const est=(x.estado||'pendiente');
+      const rango=compFechaLbl(x.desde)+(x.hasta&&x.hasta!==x.desde?' → '+compFechaLbl(x.hasta):'');
+      const badge = est==='pendiente'
+        ? '<span style="background:rgba(37,99,235,.1);color:#2563eb;border:1px solid rgba(37,99,235,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">PENDIENTE</span>'
+        : est==='aprobada'
+        ? '<span style="background:rgba(0,168,107,.1);color:#00a86b;border:1px solid rgba(0,168,107,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">✓ APROBADA</span>'
+        : '<span style="background:rgba(204,0,0,.1);color:#CC0000;border:1px solid rgba(204,0,0,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">✕ RECHAZADA</span>';
+      const r=x.resp||{};
+      let resp = est==='pendiente' ? '<span class="hint" style="margin:0">esperando a RRHH / supervisión</span>' : esc(r.nota||'—');
+      if(r.sug && r.sug.desde){
+        resp += '<div style="margin-top:4px;color:#2563eb;font-weight:600">📆 Día sugerido: '+esc(compFechaLbl(r.sug.desde))
+          +(r.sug.hasta&&r.sug.hasta!==r.sug.desde?' → '+esc(compFechaLbl(r.sug.hasta)):'')
+          +(r.sug.nota?' — '+esc(r.sug.nota):'')+'</div>'
+          +(esGerencia?'':'<button type="button" class="btn" style="margin-top:6px" onclick="compPedirSugerido(\''+esc(x.id)+'\')">Pedir el día sugerido</button>');
+      }
+      html+='<tr><td class="L"><b>'+esc(x.nombre||'—')+'</b></td><td class="L">'+esc(rango)+(x.motivo?'<div class="hint" style="margin:0">'+esc(x.motivo)+'</div>':'')+'</td>'
+        +'<td>'+compFmtDias(x.dias)+'</td><td class="L">'+badge+'</td><td class="L">'+resp+'</td>'
+        +'<td class="L">'+(est==='pendiente'&&!esGerencia?'<button type="button" class="btn" onclick="compCancelar(\''+esc(x.id)+'\')">Cancelar</button>':'')+'</td></tr>';
+    });
+    html+='</tbody></table></div></details>';
+  }
+
+  if(esGerencia) html='<p class="hint">Vista de gerencia: las solicitudes las manda la cuenta de la sucursal y se responden en <b>RRHH → Compensatorios</b>.</p>'+html;
+  card.innerHTML=html;
+  sec.style.display='';
+  const d=$('compDesde'); if(d) d.focus();
+}
+
+function compFormHtml(legId){
+  const p=_compData.personas[legId]||{};
+  const disp=compSaldoDe(p)-compTramiteDe(legId);
+  const hoy=compHoyISO();
+  return '<div style="border:1px solid var(--line,#dce3f0);border-left:3px solid var(--vivo,#2563eb);border-radius:10px;padding:14px;margin-top:14px;background:#fff">'
+    +'<div style="font-weight:700;margin-bottom:8px">Solicitar compensatorio · '+esc(p.nombre||'')+' <span class="hint" style="margin:0">(disponible: '+compFmtDias(disp)+')</span></div>'
+    +'<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">'
+    +'<label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#6B7A99)">Desde<input type="date" id="compDesde" value="'+hoy+'" onchange="compSyncDias()" style="border:1px solid var(--line,#dce3f0);border-radius:7px;padding:7px 9px;font-size:14px"></label>'
+    +'<label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#6B7A99)">Hasta<input type="date" id="compHasta" value="'+hoy+'" onchange="compSyncDias()" style="border:1px solid var(--line,#dce3f0);border-radius:7px;padding:7px 9px;font-size:14px"></label>'
+    +'<label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#6B7A99)">Días<input type="number" id="compDiasInp" min="0.5" step="0.5" value="1" style="width:90px;border:1px solid var(--line,#dce3f0);border-radius:7px;padding:7px 9px;font-size:14px"></label>'
+    +'<label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#6B7A99);flex:1;min-width:200px">Motivo / comentario<input type="text" id="compMotivo" placeholder="Ej: quiere el franco largo del finde" style="border:1px solid var(--line,#dce3f0);border-radius:7px;padding:7px 9px;font-size:14px"></label>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">'
+    +'<button type="button" class="btn btn-primary" id="compEnviar" onclick="compEnviarSolicitud(\''+esc(legId)+'\')">Enviar solicitud</button>'
+    +'<button type="button" class="btn" onclick="compCerrarForm()">Cancelar</button>'
+    +'<span class="hint" style="margin:0">Le llega a RRHH y al supervisor por la Bandeja; te avisan por ahí cuando la respondan.</span></div></div>';
+}
+function compAbrirForm(legId){ _compForm=legId; paintComp(); }
+function compCerrarForm(){ _compForm=null; paintComp(); }
+function compSyncDias(){
+  const d=$('compDesde'), h=$('compHasta'), n=$('compDiasInp'); if(!d||!h||!n) return;
+  if(h.value && d.value && h.value<d.value) h.value=d.value;
+  const dd=compDias(d.value,h.value); if(dd) n.value=dd;
+}
+async function compEnviarSolicitud(legId){
+  if(esGerencia) return;
+  const p=(_compData&&_compData.personas[legId])||null; if(!p) return;
+  const desde=$('compDesde').value, hasta=$('compHasta').value||$('compDesde').value;
+  const dias=Number($('compDiasInp').value);
+  const motivo=($('compMotivo').value||'').trim();
+  if(!desde){ alert('Elegí el día que quiere tomarse.'); return; }
+  if(hasta<desde){ alert('La fecha "hasta" es anterior a "desde".'); return; }
+  if(!(dias>0)){ alert('Los días tienen que ser mayores a cero.'); return; }
+  const disp=compSaldoDe(p)-compTramiteDe(legId);
+  if(dias>disp && !confirm('Estás pidiendo '+compFmtDias(dias)+' y solo tiene '+compFmtDias(disp)+' disponibles. RRHH lo va a ver marcado como "no alcanza". ¿Mandarla igual?')) return;
+  const btn=$('compEnviar'); if(btn){ btn.disabled=true; btn.textContent='Enviando…'; }
+  const payload={legajoId:legId, nombre:p.nombre||'', dias, desde, hasta, motivo,
+                 estado:'pendiente', por:(SESSION.email||''), en:compAhora()};
+  try{
+    const url=RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/solicitudes_comp/'+encodeURIComponent(_compData.slug)+'.json';
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const {name}=await r.json();
+    _compData.sol[name]=payload;
+    _compForm=null;
+    const rango=compFechaLbl(desde)+(hasta!==desde?' → '+compFechaLbl(hasta):'');
+    enviarDirectosA(COMP_APROBADORES,
+      '🕘 Solicitud de compensatorio · '+(sucName||nombreBonito(_compData.slug)||_compData.slug)+': '+(p.nombre||'')
+      +' pide '+compFmtDias(dias)+' — '+rango+(motivo?' ('+motivo+')':'')
+      +'. Se aprueba o se rechaza en RRHH → Compensatorios.').catch(()=>{});
+    paintComp();
+    alert('Solicitud enviada. Le queda pendiente a RRHH y al supervisor.');
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent='Enviar solicitud'; }
+    alert('No se pudo enviar la solicitud: '+(e.message||e));
+  }
+}
+// vuelve a pedir el día que RRHH sugirió al rechazar
+function compPedirSugerido(solId){
+  const x=(_compData&&_compData.sol[solId])||null; if(!x||!x.resp||!x.resp.sug) return;
+  _compForm=x.legajoId; paintComp();
+  const d=$('compDesde'), h=$('compHasta'), m=$('compMotivo');
+  if(d) d.value=x.resp.sug.desde||'';
+  if(h) h.value=x.resp.sug.hasta||x.resp.sug.desde||'';
+  if(m) m.value='Día sugerido por RRHH'+(x.resp.sug.nota?' ('+x.resp.sug.nota+')':'');
+  compSyncDias();
+  const box=$('compEnviar'); if(box) box.scrollIntoView({block:'center',behavior:'smooth'});
+}
+async function compCancelar(solId){
+  if(esGerencia) return;
+  const x=(_compData&&_compData.sol[solId])||null; if(!x) return;
+  if((x.estado||'pendiente')!=='pendiente') return;
+  if(!confirm('¿Dar de baja la solicitud de '+(x.nombre||'')+' del '+compFechaLbl(x.desde)+'?')) return;
+  try{
+    const url=RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/solicitudes_comp/'+encodeURIComponent(_compData.slug)+'/'+encodeURIComponent(solId)+'.json';
+    await fetch(url,{method:'DELETE'});
+    delete _compData.sol[solId];
+    paintComp();
+  }catch(e){ alert('No se pudo cancelar: '+(e.message||e)); }
+}
+
 function fetchBarrida(slug){
   if(_barridaCache[slug]) return _barridaCache[slug];
   const base = BARRIDA_URL.replace(/\/+$/,'');
