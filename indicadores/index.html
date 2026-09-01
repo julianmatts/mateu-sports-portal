@@ -1408,9 +1408,9 @@ function rankDe(cad, metric, name){
 /* ============================ CARGA ============================ */
 async function boot(){
   precalentarObjetivo();   // Firebase del Objetivo en paralelo con los estáticos
-  // precalentar los fetch de Objetivos (semanas + puntero del mes): las promesas
-  // quedan cacheadas y la sección Objetivo no arranca de cero después del render
-  if(OBJETIVOS_URL){ try{ fetchObjetivoWeeks(); fetchUltimoMes(); }catch(e){} }
+  // precalentar los fetch de Objetivos (semanas): la promesa queda cacheada y la
+  // sección Objetivo no arranca de cero después del render
+  if(OBJETIVOS_URL){ try{ fetchObjetivoWeeks(); }catch(e){} }
   try{
     [PERIODOS, OBJ] = await Promise.all([
       fetchJSON(DATA+'/periodos.json').then(d=>d.periodos),
@@ -2221,15 +2221,6 @@ function fetchObjetivoMes(slug, per){
     .then(v=> (v && v.meta>0) ? v : null);
   return _objMesCache[key];
 }
-let _objUltimoMes = null;          // Promise<'YYYY-MM'|null> (puntero objetivos/ultimoMes)
-function fetchUltimoMes(){
-  if(_objUltimoMes) return _objUltimoMes;
-  const base = OBJETIVOS_URL.replace(/\/+$/,'');
-  _objUltimoMes = fetch(base+'/objetivos/ultimoMes.json')
-    .then(r=>r.ok?r.json():null).catch(()=>null)
-    .then(v=> (typeof v==='string' && /^\d{4}-\d{2}$/.test(v)) ? v : null);
-  return _objUltimoMes;
-}
 const OBJ_MESES_N = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const objMesLbl = per => { const p=String(per||'').split('-'); return (p.length===2 && OBJ_MESES_N[+p[1]-1]) ? OBJ_MESES_N[+p[1]-1]+' '+p[0] : String(per||''); };
 const objMoney = n => '$'+Math.round(n||0).toLocaleString('es-AR');
@@ -2338,6 +2329,20 @@ function objMesDeSemana(iso){
   const m=veSumarDias(s,6).slice(0,7);
   return m>='2026-09' ? m : s.slice(0,7);
 }
+/* Mes sin objetivo mensual publicado: se avisa, NO se muestra el del mes anterior
+   (pedido de Juli 01/09/2026 — mostrar la meta vieja rotulada con otro mes confundía).
+   `cargar` = botón de gerencia para subir igual la venta del mes. */
+function objMesSinDatoHtml(per, cargar){
+  return '<div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
+    +'<div style="font-family:var(--font-c,inherit);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">Objetivo del mes — '+esc(objMesLbl(per))+'</div>'
+    +(cargar?'<button type="button" class="tb-btn" onclick="veCadElegir(\'mes\')" title="Subir la estadística de venta detallada del sistema con todas las sucursales, desde el arranque del mes hasta hoy">⇧ Cargar venta del mes</button>':'')
+    +'</div>'
+    +'<div class="empty" style="padding:22px">El objetivo mensual de <b>'+esc(objMesLbl(per))+'</b> todavía no está cargado.'
+    +(cargar?' Se publica en <b>Objetivos → Mensual · cargar</b> (Excel «Objetivos Ventas Mensual»).'
+           :' Apenas gerencia lo publique, aparece acá con el avance del mes.')+'</div>'
+    +'</div>';
+}
 function objSemanasDelMes(weeks, per){
   if(per>='2026-09')
     return (weeks||[]).filter(w=>objMesDeSemana(w)===per).map(w=>({sem:w, borde:false}));
@@ -2366,16 +2371,15 @@ function objBordeLbl(sem, per){
   return d1===d2 ? f(d1) : f(d1).slice(0,2)+'–'+f(d2);
 }
 async function objMesCadenaHtml(sem, weeks){
-  let per = objMesDeSemana(sem);
-  // el mes en curso lo manda la SEMANA elegida (mes retail), no el último mes
-  // publicado: si todavía no se cargó el objetivo del mes nuevo, la tarjeta cae al
-  // último publicado (y lo dice en su título), pero la banda «En curso» y el
-  // acumulado siguen siendo los del mes de la semana.
+  const per = objMesDeSemana(sem);
+  // el mes en curso lo manda la SEMANA elegida (mes retail). Si ese mes todavía no
+  // tiene objetivo publicado se avisa; NO se cae al mes anterior.
   _zonaMes = per;
-  // mes + puntero al último publicado en paralelo (una ida y vuelta menos)
-  let [data, um] = await Promise.all([fetchObjetivoMesFull(per), fetchUltimoMes()]);
-  if((!data || !data.porSlug) && um && um!==per){ per=um; data=await fetchObjetivoMesFull(um); }
-  if(!data || !data.porSlug) return '';
+  const data = await fetchObjetivoMesFull(per);
+  if(!data || !data.porSlug){
+    if(vistaCadena){ _resumenVivo.mes=null; pintarResumenVivo(); }
+    return objMesSinDatoHtml(per, true);
+  }
   const filas = Object.keys(data.porSlug).map(slug=>{
     const v=data.porSlug[slug]||{}, meta=+v.meta||0;
     if(!meta) return null;
@@ -4277,14 +4281,15 @@ function eqEditorHtml(){
    publicadas (y lo del encargado de la semana activa como provisorio); cuando
    gerencia sube el Excel mensual con el real oficial, manda ese. */
 async function objetivoMesHtml(slug, sem, weeks, ve){
-  let per = objMesDeSemana(sem);
-  // igual que en Cadena: la banda «En curso» va por el mes retail de la semana
-  // elegida aunque la tarjeta caiga al último mes publicado.
+  const per = objMesDeSemana(sem);
+  // igual que en Cadena: el mes lo manda la semana elegida y, sin objetivo publicado,
+  // se avisa en vez de mostrar el del mes anterior.
   _zonaMes = per;
-  // mes + puntero al último publicado en paralelo (una ida y vuelta menos)
-  let [m, um] = await Promise.all([fetchObjetivoMes(slug, per), fetchUltimoMes()]);
-  if(!m && um && um!==per){ per=um; m=await fetchObjetivoMes(slug, um); }
-  if(!m) return '';
+  const m = await fetchObjetivoMes(slug, per);
+  if(!m){
+    if(!vistaCadena){ _resumenVivo.mes=null; pintarResumenVivo(); }
+    return objMesSinDatoHtml(per, false);
+  }
   ve = await ve;   // acepta el valor o la promesa (para arrancar en paralelo)
   const meta=m.meta||0, minimo=m.minimo||Math.round(meta/1.2), s120=m.s120||Math.round(meta*1.2);
   let real=m.real||0, provisorio=false;
