@@ -1047,6 +1047,30 @@ llega a `COMP_APROBADORES` (rrhh@ = RRHH y cristian.campion@ = supervisor,
 constante en `indicadores/`); al responder, RRHH le avisa a las cuentas de la
 sucursal (resueltas contra `discontinuos-mateu/usuarios`) y a quien pidió.
 
+## Calendario de novedades del mes
+
+Reemplaza el Excel que los encargados mandaban mes a mes (`Calendario 08-2026.xls`:
+grilla LUNES→DOMINGO, un par de columnas por día — número + texto libre — y el pie
+con la sucursal y el mes). Mismo formato, en grande y en el portal:
+
+- **`indicadores/` → «Novedades del mes»** (`secNov`, `renderNov`/`paintNov`, en la
+  banda «En curso»): el encargado escribe día por día lo que pasó (ausencias, horas
+  extra, vacaciones, compensatorios, francos, reincorporaciones). Se guarda solo al
+  salir de cada casillero (`onchange`, no re-renderiza para no perder el foco), con
+  navegación ‹ mes ›. Gerencia lo ve de solo lectura.
+- **`rrhh/` → pestaña «Calendario»**: la misma grilla por sucursal y mes, editable
+  (RRHH corrige), con el semáforo **«N de M sucursales cargaron el mes»** + botón
+  «📣 Recordar a las que faltan» (directos de la Bandeja), **🖨 Imprimir** (`@media
+  print`, A4 apaisado) y **⇩ Excel** (ExcelJS, replica el par día/nota del original y
+  le agrega la columna de nota del domingo, que el Excel viejo no tenía).
+
+Los **feriados** salen del calendario retail del shell (`shared/data/calendario-<año>.json`,
+eventos con `tipo:'feriado'`; se resuelven fecha fija, rango y regla móvil) y se marcan
+solos en la celda — el 17/08/2026 aparece como «Paso a la Inmortalidad de San Martín».
+
+**Firebase**: `rrhh/calendario/<slug>/<YYYY-MM>` = `{dias:{'1':'texto',…}, actualizado, por}`
+en discontinuos-mateu, agrupado por slug para que cada sucursal baje solo lo suyo.
+
 ## Reglas
 
 - Responder y comentar el código en **español**.

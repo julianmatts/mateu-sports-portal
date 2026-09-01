@@ -783,6 +783,46 @@ footer b{color:var(--navy)}
       <div class="card pad" id="f8SucCard"></div>
     </section>
 
+<style>
+/* ===== CALENDARIO DE NOVEDADES DEL MES (mismo formato que el Excel del encargado) ===== */
+#secNov .calbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+#secNov .calnav{display:flex;align-items:center;gap:8px}
+#secNov .calnav .mes{font-family:var(--font-d,inherit);font-size:24px;letter-spacing:.5px;min-width:200px;text-align:center;line-height:1}
+#secNov .calnav button{background:#fff;border:1.5px solid var(--line,#dce3f0);border-radius:8px;width:32px;height:32px;
+  cursor:pointer;font-size:16px;color:var(--navy,#0B1527);line-height:1}
+#secNov .calnav button:hover{border-color:var(--navy,#0B1527)}
+#secNov .calstate{font-family:var(--font-c,inherit);font-size:12px;color:var(--muted,#6B7A99)}
+#secNov .calstate.ok{color:#00a86b}
+#secNov .calwrap{overflow-x:auto}
+#secNov .calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;min-width:920px}
+#secNov .calgrid .ch{font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;
+  color:#fff;background:var(--navy,#0B1527);border-radius:6px;padding:8px;text-align:center}
+#secNov .cald{border:1px solid var(--line,#dce3f0);border-radius:8px;min-height:120px;padding:6px 8px;
+  display:flex;flex-direction:column;gap:4px;background:#fff}
+#secNov .cald.off{background:#f7f9fd;border-style:dashed}
+#secNov .cald.hoy{border-color:var(--red,#CC0000);box-shadow:0 0 0 2px rgba(204,0,0,.12)}
+#secNov .cald .n{font-family:var(--font-d,inherit);font-size:20px;line-height:1;color:var(--navy,#0B1527)}
+#secNov .cald.fin .n{color:var(--muted,#6B7A99)}
+#secNov .cald .fer{font-family:var(--font-c,inherit);font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+  color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:5px;padding:1px 6px;align-self:flex-start}
+#secNov .cald textarea{flex:1;border:0;outline:0;resize:none;font-family:inherit;font-size:12.5px;line-height:1.38;
+  color:var(--navy,#0B1527);background:transparent;width:100%;min-height:60px;padding:0}
+#secNov .cald textarea::placeholder{color:#c9d1e0}
+#secNov .cald textarea:focus{background:#fbfcff}
+#secNov .cald .ro{flex:1;font-size:12.5px;line-height:1.38;white-space:pre-wrap;min-height:60px}
+#secNov .calfoot{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:12px;
+  font-family:var(--font-c,inherit);color:var(--muted,#6B7A99);font-size:13px}
+#secNov .calfoot .m{font-family:var(--font-d,inherit);font-size:20px;color:var(--navy,#0B1527);letter-spacing:.5px}
+@media print{ #secNov .calbar{display:none} #secNov .cald{min-height:90px;break-inside:avoid} }
+</style>
+
+    <section class="sec" id="secNov" style="display:none">
+      <div class="sec-label">RRHH</div>
+      <h2 class="sec-title">Novedades <em>del mes</em></h2>
+      <p class="hint">El calendario que hoy mandás en Excel, acá. Anotá día por día lo que pasó en la sucursal: <b>ausencias, horas extra, vacaciones, compensatorios, francos cambiados, reincorporaciones</b>. Se guarda solo al salir de cada casillero y lo ve RRHH en el acto — no hace falta mandar nada.</p>
+      <div class="card pad" id="novCard"></div>
+    </section>
+
     <section class="sec" id="secComp" style="display:none">
       <div class="sec-label">RRHH</div>
       <h2 class="sec-title">Compensatorios <em>del equipo</em></h2>
@@ -1700,7 +1740,7 @@ async function render(){
     $('cadenaView').style.display='none';
     $('content').style.display='block';
     mostrarEmpty('Tu sucursal todavía no tiene datos de indicadores cargados.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderComp(); }
+    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderComp(); renderNov(); }
     return;
   }
 
@@ -1767,7 +1807,7 @@ async function render(){
     mostrarEmpty(Object.values(SOLO_OBJ_SUC).includes(sucName)
       ? '<b>'+esc(sucName)+'</b> todavía no tiene datos de indicadores cargados (sí su objetivo y equipo).'
       : 'No hay datos de <b>'+esc(sucName)+'</b> para '+esc(perLabel(per))+'.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderComp(); }
+    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderComp(); renderNov(); }
     return;
   }
   // la semana elegida tiene que existir en esta sucursal/período
@@ -1798,6 +1838,7 @@ async function render(){
   renderNotas();
   renderObjMesCierre();   // objetivo del mes cerrado, arriba de los KPIs (también en Ecommerce)
   renderComp();           // compensatorios del equipo (RRHH): también en Ecommerce
+  renderNov();            // novedades del mes (el calendario del encargado)
   if(ecom){ renderCanales(); }
   else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderRubros(); renderSem(); renderObjetivo(); renderBarrida(); renderF8Suc(); }
   _kbVisible=false; $('kpiBar').classList.remove('show'); kpiBarScroll();   // re-evaluar la mini-barra con la vista nueva
@@ -5655,6 +5696,146 @@ async function f8Confirmar(id){
   d.conf=conf; delete _f8ConfDraft[id];
   paintF8Suc();
 }
+/* ============================================================
+   NOVEDADES DEL MES — el calendario que el encargado mandaba en Excel.
+   Grilla LUNES→DOMINGO con texto libre por día; se guarda en
+   discontinuos-mateu `rrhh/calendario/<slug>/<YYYY-MM>/dias/<día>`
+   (agrupado por slug: cada sucursal baja solo lo suyo) y RRHH lo ve
+   en su pestaña Calendario. Gerencia lo ve de solo lectura.
+   ============================================================ */
+const NOV_DOW = ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES','SÁBADO','DOMINGO'];
+const NOV_MESES = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+let _novMes = null;        // 'YYYY-MM' que se está viendo
+let _novData = null;       // {slug, mes, dias:{}}
+let _novFeriados = null;   // 'YYYY-MM-DD' -> título
+let _novTimer = null;
+
+function novMesActual(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function novMesLbl(p){ const [y,m]=p.split('-'); return (NOV_MESES[+m]||m)+' '+y; }
+function novShift(p,n){ const [y,m]=p.split('-').map(Number); const d=new Date(y,m-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function novCeldas(p){
+  const [y,m]=p.split('-').map(Number);
+  const off=(new Date(y,m-1,1).getDay()+6)%7, dias=new Date(y,m,0).getDate(), out=[];
+  for(let i=0;i<off;i++) out.push(null);
+  for(let d=1;d<=dias;d++) out.push(d);
+  while(out.length%7) out.push(null);
+  return out;
+}
+// feriados del calendario retail del shell, solo para marcarlos
+async function novCargarFeriados(anio){
+  if(_novFeriados && _novFeriados._y===anio) return _novFeriados;
+  const mapa={_y:anio};
+  try{
+    const j=await fetch('../shared/data/calendario-'+anio+'.json').then(r=>r.ok?r.json():null);
+    (j&&j.eventos||[]).filter(e=>e.tipo==='feriado').forEach(ev=>{
+      const push=(d,t)=>{ mapa[d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')]=t; };
+      if(ev.regla){
+        const pri=new Date(anio,ev.regla.mes-1,1);
+        const num=1+((ev.regla.dia-pri.getDay()+7)%7)+(ev.regla.semana-1)*7;
+        if(num<=new Date(anio,ev.regla.mes,0).getDate()) push(new Date(anio,ev.regla.mes-1,num), ev.titulo);
+      }else if(ev.fecha_inicio&&ev.fecha_fin){
+        const a=ev.fecha_inicio.split('-').map(Number), b=ev.fecha_fin.split('-').map(Number);
+        for(let d=new Date(a[0],a[1]-1,a[2]); d<=new Date(b[0],b[1]-1,b[2]); d.setDate(d.getDate()+1)) push(new Date(d), ev.titulo);
+      }else if(ev.fecha){ const a=ev.fecha.split('-').map(Number); push(new Date(a[0],a[1]-1,a[2]), ev.titulo); }
+    });
+  }catch(e){}
+  _novFeriados=mapa; return mapa;
+}
+
+async function renderNov(){
+  const sec=$('secNov'); if(!sec) return;
+  sec.style.display='none';
+  const slug=slugActual(); if(!slug || !RRHH_DB_URL) return;
+  if(!_novMes) _novMes=novMesActual();
+  await novCargar(slug,_novMes);
+  paintNov();
+  pintarZonas();
+}
+async function novCargar(slug, mes){
+  const base=RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/calendario/'+encodeURIComponent(slug)+'/'+encodeURIComponent(mes);
+  const [d] = await Promise.all([
+    fetchJSON(base+'.json').catch(()=>null),
+    novCargarFeriados(Number(mes.slice(0,4))),
+  ]);
+  _novData={slug, mes, dias:(d&&d.dias)||{}, actualizado:(d&&d.actualizado)||'', por:(d&&d.por)||''};
+}
+
+function paintNov(){
+  const sec=$('secNov'), card=$('novCard'); if(!sec||!card||!_novData) return;
+  const {slug, mes, dias}=_novData;
+  const edit=!esGerencia;
+  const hoy=(()=>{ const d=new Date(),z=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate()); })();
+  const cargados=Object.values(dias||{}).filter(t=>String(t).trim()).length;
+
+  let html='<div class="calbar">'
+    +'<div class="calnav"><button type="button" onclick="novMes(-1)" title="Mes anterior">‹</button>'
+    +'<div class="mes">'+esc(novMesLbl(mes))+'</div>'
+    +'<button type="button" onclick="novMes(1)" title="Mes siguiente">›</button></div>'
+    +'<span class="calstate" id="novState">'+(cargados? cargados+' día'+(cargados===1?'':'s')+' con novedades' : 'Sin novedades cargadas')+'</span>'
+    +'<div style="flex:1"></div>'
+    +'<button type="button" class="btn" onclick="window.print()">🖨 Imprimir</button></div>';
+  html+='<div class="calwrap"><div class="calgrid" id="novGrid">'
+    + NOV_DOW.map(d=>'<div class="ch">'+d+'</div>').join('');
+  novCeldas(mes).forEach((d,i)=>{
+    if(d===null){ html+='<div class="cald off"></div>'; return; }
+    const iso=mes+'-'+String(d).padStart(2,'0');
+    const fer=(_novFeriados&&_novFeriados[iso])||'';
+    const txt=(dias||{})[String(d)]||'';
+    html+='<div class="cald'+((i%7)>=5?' fin':'')+(iso===hoy?' hoy':'')+'">'
+      +'<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap"><span class="n">'+d+'</span>'
+      +(fer?'<span class="fer" title="'+esc(fer)+'">'+esc(fer)+'</span>':'')+'</div>'
+      +(edit? '<textarea data-nd="'+d+'" placeholder="—" spellcheck="false">'+esc(txt)+'</textarea>'
+            : '<div class="ro">'+esc(txt)+'</div>')
+      +'</div>';
+  });
+  html+='</div></div>';
+  const sucLbl=String(sucName||nombreBonito(slug)||slug).replace(/^\d+-/,'');   // sin el prefijo NN- de los datos
+  html+='<div class="calfoot"><span><b>'+esc(sucLbl)+'</b>'
+    +(_novData.por?' · última edición de '+esc(_novData.por):'')+'</span>'
+    +'<span class="m">'+esc(novMesLbl(mes))+'</span></div>';
+  if(esGerencia) html='<p class="hint">Vista de gerencia: las novedades las carga la cuenta de la sucursal. Se ven y se editan en <b>RRHH → Calendario</b>.</p>'+html;
+  card.innerHTML=html;
+  if(edit) card.querySelectorAll('#novGrid textarea[data-nd]').forEach(ta=>{
+    ta.onchange=()=>novGuardar(ta.dataset.nd, ta.value);
+  });
+  sec.style.display='';
+}
+
+async function novMes(n){
+  if(!_novData) return;
+  _novMes=novShift(_novData.mes, n);
+  const card=$('novCard'); if(card) card.style.opacity='.5';
+  await novCargar(_novData.slug, _novMes);
+  if(card) card.style.opacity='';
+  paintNov();
+}
+async function novGuardar(dia, texto){
+  if(esGerencia || !_novData) return;
+  const t=String(texto||'').trim();
+  if(t) _novData.dias[String(dia)]=t; else delete _novData.dias[String(dia)];
+  const st=$('novState'); if(st){ st.textContent='Guardando…'; st.className='calstate'; }
+  const base=RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/calendario/'+encodeURIComponent(_novData.slug)+'/'+encodeURIComponent(_novData.mes);
+  const z=n=>String(n).padStart(2,'0'), d=new Date();
+  const ahora=d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+'T'+z(d.getHours())+':'+z(d.getMinutes());
+  try{
+    await fetch(base+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({actualizado:ahora, por:(SESSION.email||'')})});
+    const r=await fetch(base+'/dias/'+encodeURIComponent(dia)+'.json',
+      {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(t||null)});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    _novData.actualizado=ahora; _novData.por=(SESSION.email||'');
+    if(st){ st.textContent='✓ Guardado'; st.className='calstate ok';
+      clearTimeout(_novTimer);
+      _novTimer=setTimeout(()=>{ const e=$('novState'); if(!e) return;
+        const n=Object.values(_novData.dias||{}).filter(x=>String(x).trim()).length;
+        e.textContent=n? n+' día'+(n===1?'':'s')+' con novedades':'Sin novedades cargadas'; e.className='calstate'; },2500); }
+  }catch(e){
+    console.error(e);
+    if(st){ st.textContent='✕ No se pudo guardar'; }
+    alert('No se pudo guardar la novedad del día '+dia+': '+(e.message||e));
+  }
+}
+
 /* ============================================================
    COMPENSATORIOS DEL EQUIPO (RRHH) — vista de la sucursal.
    Lee el saldo de su gente de discontinuos-mateu `rrhh/compensatorios/<slug>`

@@ -175,6 +175,48 @@ table.grid .sub{font-family:var(--font-c);font-size:12px;color:var(--muted)}
 .iconbtn:hover{border-color:var(--navy-mid);background:#f7f9fd}
 .iconbtn.danger:hover{border-color:var(--bad);color:var(--bad)}
 
+/* ===== CALENDARIO DE NOVEDADES =====
+   Réplica del Excel que hoy mandan los encargados: una grilla del mes,
+   lunes a domingo, con texto libre por día. */
+.calbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.calnav{display:flex;align-items:center;gap:8px}
+.calnav .mes{font-family:var(--font-d);font-size:26px;letter-spacing:.5px;min-width:210px;text-align:center;line-height:1}
+.calnav button{background:#fff;border:1.5px solid var(--border);border-radius:8px;width:34px;height:34px;cursor:pointer;
+  font-size:16px;color:var(--navy);line-height:1}
+.calnav button:hover{border-color:var(--navy-mid)}
+.calstate{font-family:var(--font-c);font-size:12px;color:var(--muted);min-width:90px}
+.calstate.ok{color:var(--ok)}
+.calwrap{overflow-x:auto}
+.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;min-width:940px;background:var(--card);
+  border:1px solid var(--border);border-radius:12px;padding:10px;box-shadow:var(--shadow)}
+.calgrid .ch{font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;
+  color:#fff;background:var(--navy);border-radius:6px;padding:8px;text-align:center}
+.cald{border:1px solid var(--border);border-radius:8px;min-height:124px;padding:6px 8px;display:flex;flex-direction:column;gap:4px;background:#fff}
+.cald.off{background:#f7f9fd;border-style:dashed}
+.cald.hoy{border-color:var(--red);box-shadow:0 0 0 2px rgba(204,0,0,.12)}
+.cald .n{font-family:var(--font-d);font-size:21px;line-height:1;color:var(--navy)}
+.cald.fin .n{color:var(--muted)}
+.cald .fer{font-family:var(--font-c);font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+  color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:5px;padding:1px 6px;align-self:flex-start}
+.cald textarea{flex:1;border:0;outline:0;resize:none;font-family:var(--font-b);font-size:12.5px;line-height:1.38;
+  color:var(--navy);background:transparent;width:100%;min-height:62px;padding:0}
+.cald textarea::placeholder{color:#c9d1e0}
+.cald textarea:focus{background:#fbfcff}
+.cald .ro{flex:1;font-size:12.5px;line-height:1.38;white-space:pre-wrap;min-height:62px}
+.calfoot{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:12px;
+  font-family:var(--font-c);color:var(--muted);font-size:13px}
+.calfoot .m{font-family:var(--font-d);font-size:22px;color:var(--navy);letter-spacing:.5px}
+@media print{
+  .tabs,.toolbar,.calbar,.banner,.top,#toast,.msh-header,.msh-subbar{display:none!important}
+  main{max-width:none;padding:0}
+  .calwrap{overflow:visible}
+  .calgrid{border:0;box-shadow:none;gap:3px;min-width:0}
+  .cald{min-height:92px;break-inside:avoid}
+  .cald textarea,.cald .ro{min-height:46px;font-size:11px}
+  .sec-head h1{font-size:22px}
+  @page{size:A4 landscape;margin:9mm}
+}
+
 @media(max-width:560px){ .frow{grid-template-columns:1fr} .sec-head h1{font-size:26px} }
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
@@ -194,6 +236,7 @@ table.grid .sub{font-family:var(--font-c);font-size:12px;color:var(--muted)}
   <button class="tab on" data-tab="legajos">Legajos <span class="badge" id="bLeg">0</span></button>
   <button class="tab" data-tab="ausencias">Ausentismo <span class="badge" id="bAus">0</span></button>
   <button class="tab" data-tab="comp">Compensatorios <span class="badge" id="bComp">0</span></button>
+  <button class="tab" data-tab="calendario">Calendario</button>
   <button class="tab" data-tab="novedades">Novedades de nómina</button>
   <button class="tab" data-tab="rotacion">Rotación</button>
 </nav>
@@ -345,9 +388,14 @@ let NOVEDADES = {};   // id -> novedad (del período seleccionado)
 // solo lo suyo desde Mi Sucursal — misma seguridad blanda que Objetivos/Barrida).
 let COMPS = {};       // slug -> legajoId -> {nombre,puesto,movs:{id:{d,f,m,por,en,sol}}}
 let SOLIC = {};       // slug -> solicitudId -> solicitud del encargado
+// Calendario de novedades del mes por sucursal (el Excel que hoy mandan los
+// encargados). Agrupado por slug, como el resto.
+let CALEND = {};      // slug -> 'YYYY-MM' -> {dias:{'1':'texto',…}, actualizado, por}
+let FERIADOS = null;  // 'YYYY-MM-DD' -> título (del calendario retail del shell)
 let state = { tab:'legajos', qLeg:'', fSuc:'', fEstado:'activo', fPuesto:'',
               qAus:'', aSuc:'', aTipo:'', aEstado:'', novPeriodo:periodoActual(),
-              cSuc:'', cEstado:'pendiente', cVer:'con' };
+              cSuc:'', cEstado:'pendiente', cVer:'con',
+              calSuc:'', calMes:periodoActual() };
 
 /* ============================================================
    INIT
@@ -365,23 +413,53 @@ async function init(){
     $('cfgBanner').style.display='block';
     $('cfgBanner').innerHTML='⚙️ <b>Sin base configurada.</b> Pegá la URL de Firebase en <code>FIREBASE_DB_URL</code> para guardar los datos. Podés explorar en modo demo, pero no persiste.';
   }
+  cargarFeriados();
   await recargar();
   render();
 }
+/* Feriados del calendario retail del shell (shared/data/calendario-<año>.json).
+   Solo para marcarlos en la grilla; si falla, el calendario funciona igual. */
+async function cargarFeriados(){
+  try{
+    const anios=[...new Set([new Date().getFullYear(), Number(state.calMes.slice(0,4))])];
+    const mapa={};
+    for(const y of anios){
+      const j = await fetch('../shared/data/calendario-'+y+'.json').then(r=>r.ok?r.json():null).catch(()=>null);
+      (j&&j.eventos||[]).filter(e=>e.tipo==='feriado').forEach(ev=>{
+        const push=(d,t)=>{ const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); mapa[k]=t; };
+        if(ev.regla){
+          const pri=new Date(y, ev.regla.mes-1, 1);
+          const num=1+((ev.regla.dia-pri.getDay()+7)%7)+(ev.regla.semana-1)*7;
+          if(num<=new Date(y, ev.regla.mes, 0).getDate()) push(new Date(y, ev.regla.mes-1, num), ev.titulo);
+        }else if(ev.fecha_inicio && ev.fecha_fin){
+          const a=ev.fecha_inicio.split('-').map(Number), b=ev.fecha_fin.split('-').map(Number);
+          for(let d=new Date(a[0],a[1]-1,a[2]); d<=new Date(b[0],b[1]-1,b[2]); d.setDate(d.getDate()+1)) push(new Date(d), ev.titulo);
+        }else if(ev.fecha){
+          const a=ev.fecha.split('-').map(Number); push(new Date(a[0],a[1]-1,a[2]), ev.titulo);
+        }
+      });
+    }
+    FERIADOS=mapa;
+    if(state.tab==='calendario') render();
+  }catch(e){ FERIADOS={}; }
+}
 async function recargar(){
   try{
-    const [leg, aus, comp, sol] = await Promise.all([
+    const [leg, aus, comp, sol, cal] = await Promise.all([
       fbGet(ROOT+'/legajos'), fbGet(ROOT+'/ausencias'),
-      fbGet(ROOT+'/compensatorios'), fbGet(ROOT+'/solicitudes_comp') ]);
+      fbGet(ROOT+'/compensatorios'), fbGet(ROOT+'/solicitudes_comp'),
+      fbGet(ROOT+'/calendario') ]);
     LEGAJOS = leg || {};
     AUSENCIAS = aus || {};
     COMPS = comp || {};
     SOLIC = sol || {};
+    CALEND = cal || {};
     // filtro de alcance para supervisores
     if(SCOPE){
       const f={}; Object.entries(LEGAJOS).forEach(([k,v])=>{ if(enAlcance(v.sucursal)) f[k]=v; }); LEGAJOS=f;
       const c={}; Object.entries(COMPS).forEach(([k,v])=>{ if(enAlcance(k)) c[k]=v; }); COMPS=c;
       const t={}; Object.entries(SOLIC).forEach(([k,v])=>{ if(enAlcance(k)) t[k]=v; }); SOLIC=t;
+      const g={}; Object.entries(CALEND).forEach(([k,v])=>{ if(enAlcance(k)) g[k]=v; }); CALEND=g;
     }
     await cargarNovedades();
   }catch(e){ console.error(e); toast('No se pudo leer Firebase','err'); }
@@ -409,6 +487,7 @@ function render(){
   if(state.tab==='legajos') v.innerHTML = viewLegajos();
   else if(state.tab==='ausencias') v.innerHTML = viewAusencias();
   else if(state.tab==='comp') v.innerHTML = viewComp();
+  else if(state.tab==='calendario') v.innerHTML = viewCalendario();
   else if(state.tab==='novedades') v.innerHTML = viewNovedades();
   else if(state.tab==='rotacion') v.innerHTML = viewRotacion();
   wire();
@@ -1262,7 +1341,195 @@ async function avisarSucursal(slug, texto, extra){
 }
 
 /* ============================================================
-   TAB 4 — NOVEDADES DE NÓMINA
+   TAB 4 — CALENDARIO DE NOVEDADES
+   El Excel que hoy mandan los encargados mes a mes ("Calendario
+   08-2026.xls"): una grilla LUNES→DOMINGO con texto libre por día
+   (ausencias, horas extra, vacaciones, compensatorios, feriados,
+   reincorporaciones). Acá vive el mismo formato, en grande, con la
+   sucursal y el mes en el pie igual que el Excel. Lo carga el
+   encargado desde Mi Sucursal y RRHH lo ve/edita/exporta acá.
+   ============================================================ */
+const CAL_DOW = ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES','SÁBADO','DOMINGO'];
+function calMesLabel(p){ return periodoLabel(p); }
+function calShift(p, n){
+  const [y,m]=p.split('-').map(Number);
+  const d=new Date(y, m-1+n, 1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+// celdas de la grilla: los huecos del principio y del final quedan vacíos
+function calCeldas(periodo){
+  const [y,m]=periodo.split('-').map(Number);
+  const primero=new Date(y,m-1,1), dias=new Date(y,m,0).getDate();
+  const off=(primero.getDay()+6)%7;             // lunes = 0
+  const out=[];
+  for(let i=0;i<off;i++) out.push(null);
+  for(let d=1; d<=dias; d++) out.push(d);
+  while(out.length%7) out.push(null);
+  return out;
+}
+function calDatos(slug, periodo){ return ((CALEND[slug]||{})[periodo]) || {}; }
+function calTexto(slug, periodo, dia){ return ((calDatos(slug,periodo).dias)||{})[String(dia)] || ''; }
+function calCargado(slug, periodo){
+  const d=(calDatos(slug,periodo).dias)||{};
+  return Object.values(d).filter(t=>String(t).trim()).length;
+}
+function calFeriado(periodo, dia){
+  if(!FERIADOS) return '';
+  return FERIADOS[periodo+'-'+String(dia).padStart(2,'0')] || '';
+}
+
+// La grilla, compartida por la pestaña y la impresión. `edit` = celdas editables.
+function calGridHtml(slug, periodo, edit){
+  const hoy=hoyISO();
+  let html='<div class="calwrap"><div class="calgrid" id="calGrid">'
+    + CAL_DOW.map(d=>`<div class="ch">${d}</div>`).join('');
+  calCeldas(periodo).forEach((d,i)=>{
+    if(d===null){ html+='<div class="cald off"></div>'; return; }
+    const iso=periodo+'-'+String(d).padStart(2,'0');
+    const fer=calFeriado(periodo,d);
+    const txt=calTexto(slug,periodo,d);
+    const fin=(i%7)>=5;
+    html+=`<div class="cald${fin?' fin':''}${iso===hoy?' hoy':''}">`
+      + `<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap"><span class="n">${d}</span>`
+      + (fer?`<span class="fer" title="${esc(fer)}">${esc(fer)}</span>`:'') + `</div>`
+      + (edit
+          ? `<textarea data-cd="${d}" placeholder="—" spellcheck="false">${esc(txt)}</textarea>`
+          : `<div class="ro">${esc(txt)}</div>`)
+      + `</div>`;
+  });
+  return html+'</div></div>';
+}
+
+function viewCalendario(){
+  const vis=sucsVisibles().sort((a,b)=>cmp(sucLabel(a),sucLabel(b)));
+  if(!state.calSuc || !vis.includes(state.calSuc)) state.calSuc = vis[0]||'';
+  const slug=state.calSuc, per=state.calMes;
+  const cargadas=vis.filter(x=>calCargado(x,per)>0);
+  const faltan=vis.filter(x=>!calCargado(x,per) && !['administracion','externos','deposito'].includes(x));
+  const d=calDatos(slug,per);
+
+  const opsSuc=vis.map(x=>`<option value="${x}" ${slug===x?'selected':''}>${esc(sucLabel(x))}</option>`).join('');
+  const bar=`<div class="calbar">
+    <select class="sel" id="calSuc" style="width:auto;min-width:190px">${opsSuc}</select>
+    <div class="calnav">
+      <button type="button" id="calPrev" title="Mes anterior">‹</button>
+      <div class="mes">${esc(calMesLabel(per))}</div>
+      <button type="button" id="calNext" title="Mes siguiente">›</button>
+      <button type="button" id="calHoy" title="Ir al mes actual" style="width:auto;padding:0 10px;font-family:var(--font-c);font-size:12px;font-weight:700;letter-spacing:1px">HOY</button>
+    </div>
+    <span class="calstate" id="calState">${d.actualizado?('Última edición '+esc(String(d.actualizado).replace('T',' ').slice(0,16))):''}</span>
+    <div style="flex:1"></div>
+    <button class="btn btn-outline btn-sm" id="calPrint">🖨 Imprimir</button>
+    <button class="btn btn-navy btn-sm" id="calExcel">⇩ Excel</button>
+  </div>`;
+
+  const resumen=`<div class="banner ${faltan.length?'warn':'info'}">
+    <b>${cargadas.length}</b> de ${vis.length} sucursales cargaron ${esc(calMesLabel(per))}.
+    ${faltan.length?`Sin novedades todavía: ${faltan.map(x=>esc(sucLabel(x))).join(' · ')}.`:'Están todas.'}
+    ${faltan.length?`<button class="btn btn-outline btn-sm" id="calRecordar" style="margin-left:8px">📣 Recordar a las que faltan</button>`:''}
+  </div>`;
+
+  return `<div class="sec-head"><div><h1>Calendario de novedades</h1>
+      <div class="sub">Lo que pasó en el mes, día por día: ausencias, horas extra, vacaciones, compensatorios, feriados. Mismo formato que el Excel que mandan los encargados.</div></div></div>
+    ${resumen}${bar}${calGridHtml(slug, per, true)}
+    <div class="calfoot"><span><b>${esc(sucLabel(slug))}</b>${d.por?' · última edición de '+esc(d.por):''}</span><span class="m">${esc(calMesLabel(per))}</span></div>
+    <div class="banner info" style="margin-top:14px">Los encargados lo cargan desde <b>Mi Sucursal → Novedades del mes</b>; acá lo ves y lo podés corregir. Se guarda solo al salir de cada casillero.</div>`;
+}
+
+/* --- guardado de un día (no re-renderiza: perdería el foco) --- */
+let _calTimer=null;
+async function calGuardarDia(slug, periodo, dia, texto){
+  const t=String(texto||'').trim();
+  CALEND[slug]=CALEND[slug]||{};
+  CALEND[slug][periodo]=CALEND[slug][periodo]||{dias:{}};
+  const nodo=CALEND[slug][periodo];
+  nodo.dias=nodo.dias||{};
+  if(t) nodo.dias[String(dia)]=t; else delete nodo.dias[String(dia)];
+  nodo.actualizado=nowISO(); nodo.por=(SESSION.email||'');
+  const st=$('calState'); if(st){ st.textContent='Guardando…'; st.className='calstate'; }
+  try{
+    if(HAS_DB){
+      await fbPatch(ROOT+'/calendario/'+slug+'/'+periodo, {actualizado:nodo.actualizado, por:nodo.por});
+      await fbPut(ROOT+'/calendario/'+slug+'/'+periodo+'/dias/'+dia, t||null);
+    }
+    if(st){ st.textContent='✓ Guardado'; st.className='calstate ok';
+      clearTimeout(_calTimer); _calTimer=setTimeout(()=>{ if($('calState')) $('calState').textContent='Última edición '+nodo.actualizado.replace('T',' ').slice(0,16); },2500); }
+  }catch(e){ console.error(e); if(st){ st.textContent='✕ No se pudo guardar'; } toast('No se pudo guardar el día','err'); }
+}
+
+/* --- Excel con el mismo formato del original: por cada día, su columna de nota --- */
+async function calExportar(){
+  if(typeof ExcelJS==='undefined'){ toast('Excel no disponible','err'); return; }
+  const slug=state.calSuc, per=state.calMes;
+  try{
+    const wb=new ExcelJS.Workbook(); wb.creator='Mateu Sports — RRHH';
+    const ws=wb.addWorksheet(calMesLabel(per), {pageSetup:{orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0}});
+    // 7 pares de columnas (día + novedad), como el Excel que usan hoy
+    ws.columns=Array.from({length:14},(_,i)=> i%2===0 ? {width:5} : {width:26});
+    const hr=ws.getRow(1);
+    CAL_DOW.forEach((d,i)=>{
+      const c1=i*2+1;
+      ws.mergeCells(1,c1,1,c1+1);
+      const c=hr.getCell(c1); c.value=d;
+      c.font={name:'Arial',size:10,bold:true,color:{argb:'FFFFFFFF'}};
+      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF0B1527'}};
+      c.alignment={horizontal:'center',vertical:'middle'};
+      c.border={bottom:{style:'thin',color:{argb:'FFCC0000'}}};
+    });
+    hr.height=20;
+    const celdas=calCeldas(per);
+    for(let w=0; w<celdas.length/7; w++){
+      const row=ws.addRow([]);
+      row.height=46;
+      for(let i=0;i<7;i++){
+        const d=celdas[w*7+i]; const c1=i*2+1;
+        const cd=row.getCell(c1), cn=row.getCell(c1+1);
+        if(d!==null){
+          cd.value=d; cd.font={name:'Arial',size:12,bold:true,color:{argb:'FF0B1527'}};
+          cd.alignment={horizontal:'center',vertical:'top'};
+          const fer=calFeriado(per,d), txt=calTexto(slug,per,d);
+          cn.value=[fer?fer.toUpperCase():'', txt].filter(Boolean).join(' — ');
+          cn.font={name:'Arial',size:9}; cn.alignment={wrapText:true,vertical:'top'};
+        }
+        [cd,cn].forEach(c=>{ c.border={top:{style:'hair',color:{argb:'FFDCE3F0'}},bottom:{style:'hair',color:{argb:'FFDCE3F0'}},
+          left:{style:'hair',color:{argb:'FFDCE3F0'}},right:{style:'hair',color:{argb:'FFDCE3F0'}}}; });
+      }
+    }
+    const fr=ws.addRow([]);
+    fr.getCell(1).value=sucLabel(slug); fr.getCell(1).font={name:'Arial',size:11,bold:true};
+    ws.mergeCells(fr.number,5,fr.number,10);
+    const fc=fr.getCell(5); fc.value=calMesLabel(per);
+    fc.font={name:'Arial',size:11,bold:true}; fc.alignment={horizontal:'center'};
+    const buf=await wb.xlsx.writeBuffer();
+    const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='Calendario '+per+' '+sucLabel(slug)+'.xlsx'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    toast('Excel generado','ok');
+  }catch(e){ console.error(e); toast('No se pudo exportar','err'); }
+}
+
+/* --- recordatorio por la Bandeja a las sucursales que no cargaron el mes --- */
+async function calRecordar(){
+  const vis=sucsVisibles();
+  const faltan=vis.filter(x=>!calCargado(x,state.calMes) && !['administracion','externos','deposito'].includes(x));
+  if(!faltan.length) return;
+  if(!confirm('Se les manda un directo por la Bandeja a '+faltan.length+' sucursal(es) que no cargaron '+calMesLabel(state.calMes)+':\n\n'
+    +faltan.map(x=>'· '+sucLabel(x)).join('\n')+'\n\n¿Enviar?')) return;
+  const btn=$('calRecordar'); if(btn){ btn.disabled=true; btn.textContent='Enviando…'; }
+  let ok=0, sinCuenta=[];
+  for(const slug of faltan){
+    const mails=await mailsDeSlug(slug).catch(()=>[]);
+    if(!mails.length){ sinCuenta.push(sucLabel(slug)); continue; }
+    await enviarDirectos(mails, '📆 Falta cargar las novedades de '+calMesLabel(state.calMes)
+      +'. Se completan en Mi Sucursal → «Novedades del mes» (el calendario del mes, día por día).').catch(()=>{});
+    ok++;
+  }
+  if(btn) btn.textContent='✓ Enviado a '+ok+(sinCuenta.length?' · sin cuenta: '+sinCuenta.join(', '):'');
+}
+
+/* ============================================================
+   TAB 5 — NOVEDADES DE NÓMINA
    ============================================================ */
 function viewNovedades(){
   const list = novedadesOrden();
@@ -1314,7 +1581,7 @@ function viewNovedades(){
 }
 
 /* ============================================================
-   TAB 5 — ROTACIÓN
+   TAB 6 — ROTACIÓN
    ============================================================ */
 function bajasUltimos12(){
   const desde=new Date(); desde.setMonth(desde.getMonth()-12);
@@ -1441,6 +1708,18 @@ function wire(){
   document.querySelectorAll('[data-creab]').forEach(b=> b.onclick=()=>{ const [sl,id]=b.dataset.creab.split('|'); reabrirSolic(sl,id); });
   document.querySelectorAll('[data-cmovs]').forEach(b=> b.onclick=()=>{ const [sl,lg]=b.dataset.cmovs.split('|'); verMovsComp(sl,lg); });
   document.querySelectorAll('[data-cadd]').forEach(b=> b.onclick=()=>formCompCarga(b.dataset.cadd));
+
+  // ---- Calendario ----
+  const cS=$('calSuc'); if(cS) cS.onchange=()=>{ state.calSuc=cS.value; render(); };
+  if($('calPrev')) $('calPrev').onclick=()=>{ state.calMes=calShift(state.calMes,-1); render(); };
+  if($('calNext')) $('calNext').onclick=()=>{ state.calMes=calShift(state.calMes, 1); render(); };
+  if($('calHoy')) $('calHoy').onclick=()=>{ state.calMes=periodoActual(); render(); };
+  if($('calPrint')) $('calPrint').onclick=()=>window.print();
+  if($('calExcel')) $('calExcel').onclick=calExportar;
+  if($('calRecordar')) $('calRecordar').onclick=calRecordar;
+  document.querySelectorAll('#calGrid textarea[data-cd]').forEach(ta=>{
+    ta.onchange=()=>calGuardarDia(state.calSuc, state.calMes, ta.dataset.cd, ta.value);
+  });
 
   // ---- Novedades ----
   const nP=$('novPeriodo'); if(nP) nP.onchange=async()=>{ state.novPeriodo=nP.value; await cargarNovedades(); render(); };
