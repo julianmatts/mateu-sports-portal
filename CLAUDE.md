@@ -995,12 +995,24 @@ y comparte el nodo `rrhh/` de **discontinuos-mateu**:
   solicitud a pendiente (y devuelve el día si estaba aprobada). La columna
   **«Comp.»** de la nómina (pestaña Legajos) muestra el saldo y lo que está en
   trámite de cada persona, y el detalle del legajo suma la caja «Compensatorios».
+  El modal **«+ Cargar compensatorio»** tiene el selector *Movimiento*: `➕ Días a
+  favor` (fecha en que se generó) o `➖ Día tomado` (**fecha en que se usó**, con
+  desde/hasta, días autocalculados y el saldo proyectado) — así RRHH registra un
+  compensatorio que se tomó fuera del circuito de solicitudes. Atajo: el botón
+  «🕘 Registrar día tomado».
+- **Historial de uso**: cada movimiento guarda `t` (`alta`/`uso`/`ajuste`) y, en los
+  usos, `desde`/`hasta`. La pestaña cierra con **«Historial de compensatorios
+  tomados»** (`usosLista`/`histUsoHtml`, respeta el filtro por sucursal) y el 🕘 de
+  cada persona abre su ficha con la columna Tipo y el día tomado. **No se pierde
+  aunque se borre la solicitud**: el dato vive en el movimiento, no en la solicitud.
 - **`indicadores/` — sección «Compensatorios del equipo»** (`secComp`,
   `renderComp`/`paintComp`, en la banda «En curso», junto a F8 y Reposición): el
   encargado ve el saldo de su gente y **solicita el día**. Gerencia lo ve de solo
   lectura. Una solicitud rechazada con día sugerido trae el botón «Pedir el día
   sugerido», que reabre el formulario con esa fecha precargada. Las pendientes se
-  pueden cancelar.
+  pueden cancelar. El desplegable **«Historial»** (`compHistorial`) lista todos los
+  movimientos del equipo con su chip GANADO / TOMADO / AJUSTE y **el día en que se
+  tomó cada compensatorio**.
 
 **Carga masiva — «⇧ Importar Excel»** (pestaña Compensatorios): sube el Excel de
 Juli (`Compensatorios.xlsx`: una hoja con bloques por sucursal — encabezado
@@ -1012,7 +1024,9 @@ trae el **saldo**, no los movimientos: se publica un movimiento de **ajuste** po
 la diferencia contra el saldo actual, en un solo **PATCH multi-path** a
 `rrhh/compensatorios`. Previsualiza personas, saldos a actualizar, los que ya
 estaban igual y los que **no tienen legajo** en el portal. Si el Excel ubica a
-alguien en otra sucursal, le **mueve la ficha entera** (con su historial).
+alguien en otra sucursal, le **mueve la ficha entera** (con su historial) y ofrece
+el check **«Corregir también la sucursal del legajo»** (PATCH multi-path a
+`rrhh/legajos`), que es lo que mantiene la dotación al día.
 Alias de sucursal propios del Excel en `COMP_ALIAS_SUC` (`Diag 80`→diagonal,
 `ADIDAS`→adidas, `Aurelius`→aurelius-10); el resto sale de `RU_DIVISOR`.
 

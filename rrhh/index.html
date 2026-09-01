@@ -640,6 +640,18 @@ function compCelda(l){
   return (saldo? `<b style="color:${saldo>0?'var(--bad)':'var(--muted)'}">${fmtDias(saldo)}</b>` : '<span class="sub">0 d</span>')
     + (tram? `<div class="sub">${fmtDias(tram)} en trámite</div>` : '');
 }
+// tipo de movimiento: alta (días ganados) · uso (día tomado) · ajuste (importación)
+function movTipo(m){ return m.t || (Number(m.d)<0 ? 'uso' : 'alta'); }
+function movTipoTag(m){
+  const t=movTipo(m);
+  return t==='uso' ? '<span class="tag rech">Tomado</span>'
+       : t==='ajuste' ? '<span class="tag otro">Ajuste</span>'
+       : '<span class="tag aprob">Ganado</span>';
+}
+function movRango(m){
+  if(!m.desde) return '';
+  return fechaLabel(m.desde)+(m.hasta&&m.hasta!==m.desde? ' → '+fechaLabel(m.hasta):'');
+}
 function estadoCompTag(e){
   e = e||'pendiente';
   return e==='pendiente' ? '<span class="tag pend">Pendiente</span>'
@@ -684,6 +696,7 @@ function viewComp(){
     </select>
     <div style="flex:1"></div>
     <button class="btn btn-primary btn-sm" id="btnCompCarga">+ Cargar compensatorio</button>
+    <button class="btn btn-outline btn-sm" id="btnCompUso" title="Registrar un compensatorio que la persona ya se tomó">🕘 Registrar día tomado</button>
     <button class="btn btn-navy btn-sm" id="btnCompImp" title="Subir el Excel con los compensatorios pendientes de toda la cadena">⇧ Importar Excel</button>
   </div>`;
 
@@ -750,7 +763,40 @@ function viewComp(){
     ${solBody}
     <div class="card-h" style="margin:22px 0 8px">Saldo por persona</div>
     ${salBody}
+    ${histUsoHtml()}
     <div class="banner info" style="margin-top:16px">Al <b>aprobar</b> una solicitud se descuenta sola del saldo de la persona y le llega el aviso a la sucursal por la Bandeja. Al <b>rechazar</b> podés <b>sugerir otro día</b> para compensar: la sugerencia también le llega al encargado.</div>`;
+}
+
+/* --- historial de uso: cada compensatorio que se tomó, con su día ---
+   No se pierde aunque la solicitud se borre: el movimiento negativo queda
+   guardado en la ficha de la persona con la fecha del día tomado. --- */
+function usosLista(){
+  const out=[];
+  Object.entries(COMPS||{}).forEach(([slug,gente])=>Object.entries(gente||{}).forEach(([legId,pers])=>{
+    Object.entries((pers&&pers.movs)||{}).forEach(([id,m])=>{
+      if(m && movTipo(m)==='uso') out.push({slug, legId, id, nombre:(LEGAJOS[legId]||{}).nombre || pers.nombre || '—', ...m});
+    });
+  }));
+  return out.sort((a,b)=> cmp(b.f||'', a.f||''));
+}
+function histUsoHtml(){
+  const usos = usosLista().filter(u=>!state.cSuc || u.slug===state.cSuc);
+  const dias = usos.reduce((s,u)=>s+Math.abs(Number(u.d)||0),0);
+  if(!usos.length) return `<div class="card-h" style="margin:22px 0 8px">Historial de compensatorios tomados</div>
+    <div class="hintline">Todavía no se tomó ningún compensatorio${state.cSuc?' en '+esc(sucLabel(state.cSuc)):''}. Cuando se apruebe una solicitud, el día queda registrado acá.</div>`;
+  const filas = usos.map(u=>`<tr>
+      <td><div class="person"><span class="avatar">${esc(iniciales(u.nombre))}</span>
+        <div><div class="nm">${esc(u.nombre)}</div><div class="sub">${esc(sucLabel(u.slug))}</div></div></div></td>
+      <td>${movRango(u) || fechaLabel(u.f)}</td>
+      <td class="num">${fmtDias(Math.abs(Number(u.d)||0))}</td>
+      <td class="sub">${esc(u.m||'')}</td>
+      <td class="sub">${esc(u.por||'')}<div class="sub">${esc(String(u.en||'').replace('T',' ').slice(0,16))}</div></td>
+    </tr>`).join('');
+  return `<div class="card-h" style="margin:22px 0 8px">Historial de compensatorios tomados</div>
+    <div class="card-hs">${usos.length} compensatorio${usos.length===1?'':'s'} tomado${usos.length===1?'':'s'} · ${fmtDias(dias)} en total${state.cSuc?' · '+esc(sucLabel(state.cSuc)):''}. Queda registrado aunque después se borre la solicitud.</div>
+    <div class="tblwrap"><table class="grid"><thead><tr>
+      <th>Persona</th><th>Día tomado</th><th class="num">Días</th><th>Detalle</th><th>Aprobó</th>
+      </tr></thead><tbody>${filas}</tbody></table></div>`;
 }
 
 /* --- escribir un movimiento (+ ganados / − tomados) --- */
@@ -778,37 +824,96 @@ async function borrarMovComp(slug, legId, movId){
   }catch(e){ toast('No se pudo borrar','err'); }
 }
 
-/* --- cargar días a favor --- */
-function formCompCarga(legajoPre){
+/* --- cargar un movimiento a mano: días a favor o un día ya tomado ---
+   El circuito normal descuenta solo al aprobar la solicitud del encargado, pero
+   RRHH también tiene que poder registrar un compensatorio que ya se tomó (con la
+   fecha del día usado) para que no se pierda en el historial. --- */
+function formCompCarga(legajoPre, tipoPre){
+  const tipo0 = tipoPre==='uso' ? 'uso' : 'alta';
   const body = `
-    <div class="hintline">Cargá los días que la persona <b>trabajó de más</b> y quedan a su favor. Después el encargado los pide desde su sucursal.</div>
+    <div class="hintline" id="cHint"></div>
     <div class="frow one"><div class="f"><label>Persona *</label><select class="sel" id="cLeg"><option value="">— Elegí a la persona —</option>${legajoSelectOptions(legajoPre||'')}</select></div></div>
     <div class="frow">
-      <div class="f"><label>Días a favor *</label><input class="inp" id="cDias" type="number" min="0.5" step="0.5" value="1"></div>
-      <div class="f"><label>Fecha en que se generó</label><input class="inp" id="cFecha" type="date" value="${hoyISO()}"></div>
+      <div class="f"><label>Movimiento</label><select class="sel" id="cTipo">
+        <option value="alta" ${tipo0==='alta'?'selected':''}>➕ Días a favor (trabajó de más)</option>
+        <option value="uso" ${tipo0==='uso'?'selected':''}>➖ Día tomado (ya se lo usó)</option>
+      </select></div>
+      <div class="f"><label>Días *</label><input class="inp" id="cDias" type="number" min="0.5" step="0.5" value="1"></div>
     </div>
     <div class="frow">
-      <div class="f"><label>Motivo</label><select class="sel" id="cMotivo">${selOptions(MOTIVOS_COMP, MOTIVOS_COMP[0])}</select></div>
-      <div class="f"><label>Detalle</label><input class="inp" id="cDet" placeholder="Ej: feriado 17/08, turno completo"></div>
-    </div>`;
+      <div class="f"><label id="cLblF">Fecha en que se generó</label><input class="inp" id="cFecha" type="date" value="${hoyISO()}"></div>
+      <div class="f" id="cHastaBox" style="display:none"><label>Hasta</label><input class="inp" id="cHasta" type="date" value="${hoyISO()}"></div>
+    </div>
+    <div class="frow">
+      <div class="f" id="cMotivoBox"><label>Motivo</label><select class="sel" id="cMotivo">${selOptions(MOTIVOS_COMP, MOTIVOS_COMP[0])}</select></div>
+      <div class="f"><label id="cLblDet">Detalle</label><input class="inp" id="cDet" placeholder="Ej: feriado 17/08, turno completo"></div>
+    </div>
+    <div id="cSaldoBox"></div>`;
   openModal('Cargar compensatorio', body, `<button class="btn btn-outline" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Cargar</button>`);
   $('mCancel').onclick=closeModal;
+
+  const esUso = ()=> $('cTipo').value==='uso';
+  const sync = ()=>{
+    const uso = esUso();
+    $('cHint').innerHTML = uso
+      ? 'Registrá un compensatorio que la persona <b>ya se tomó</b>: se descuenta del saldo y queda en el historial con la fecha del día usado.'
+      : 'Cargá los días que la persona <b>trabajó de más</b> y quedan a su favor. Después el encargado los pide desde su sucursal.';
+    $('cLblF').textContent = uso? 'Fecha en que se usó' : 'Fecha en que se generó';
+    $('cHastaBox').style.display = uso? '' : 'none';
+    $('cMotivoBox').style.display = uso? 'none' : '';
+    $('cLblDet').textContent = uso? 'Observaciones' : 'Detalle';
+    $('cDet').placeholder = uso? 'Ej: lo tomó el finde largo' : 'Ej: feriado 17/08, turno completo';
+    $('mSave').textContent = uso? 'Registrar el día tomado' : 'Cargar';
+    if(uso && $('cHasta').value < $('cFecha').value) $('cHasta').value = $('cFecha').value;
+    pintarSaldo();
+  };
+  const pintarSaldo = ()=>{
+    const legId=$('cLeg').value, box=$('cSaldoBox');
+    if(!legId){ box.innerHTML=''; return; }
+    const l=LEGAJOS[legId]||{}; const sl=compSlugDe(legId, l.sucursal);
+    const saldo=compSaldo(sl, legId), dias=Number($('cDias').value)||0;
+    const fin = esUso()? saldo-dias : saldo+dias;
+    box.innerHTML = `<div class="hintline">Saldo de <b>${esc(l.nombre||'')}</b>: <b>${fmtDias(saldo)}</b> → queda en <b style="color:${fin<0?'var(--bad)':'var(--ok)'}">${fmtDias(fin)}</b>.`
+      + (fin<0? ' ⚠️ Queda en negativo.' : '') + `</div>`;
+  };
+  // los días de un rango de fechas se calculan solos
+  const syncDias = ()=>{
+    if(!esUso()) return;
+    const d=diasEntre($('cFecha').value, $('cHasta').value);
+    if(d) $('cDias').value=d;
+    pintarSaldo();
+  };
+  $('cTipo').onchange=sync; $('cLeg').onchange=pintarSaldo; $('cDias').oninput=pintarSaldo;
+  $('cFecha').onchange=()=>{ if(esUso() && $('cHasta').value<$('cFecha').value) $('cHasta').value=$('cFecha').value; syncDias(); };
+  $('cHasta').onchange=syncDias;
+  sync();
+
   $('mSave').onclick=async()=>{
     const legId=$('cLeg').value;
     if(!legId){ toast('Elegí a la persona','err'); return; }
     const dias=Number($('cDias').value);
     if(!(dias>0)){ toast('Los días tienen que ser mayores a cero','err'); return; }
-    const l=LEGAJOS[legId];
-    const motivo=$('cMotivo').value, det=$('cDet').value.trim();
+    const l=LEGAJOS[legId], det=$('cDet').value.trim(), uso=esUso();
+    const slugDest = compSlugDe(legId, l.sucursal);
+    const desde=$('cFecha').value||hoyISO(), hasta=$('cHasta').value||desde;
+    if(uso && hasta<desde){ toast('La fecha "hasta" es anterior a "desde"','err'); return; }
+    const saldo=compSaldo(slugDest, legId);
+    if(uso && dias>saldo && !confirm('El saldo de '+(l.nombre||'')+' es '+fmtDias(saldo)+' y estás descontando '+fmtDias(dias)+'. Va a quedar en negativo. ¿Registrar igual?')) return;
+    const rango = fechaLabel(desde)+(hasta!==desde? ' → '+fechaLabel(hasta):'');
+    const motivo = uso? '' : $('cMotivo').value;
     try{
-      const slugDest = compSlugDe(legId, l.sucursal);
-      await guardarMovComp(slugDest, legId, {
-        d:dias, f:$('cFecha').value||hoyISO(),
-        m:motivo + (det? ' — '+det : ''),
-        por:(SESSION.email||''), en:nowISO() });
-      closeModal(); render(); toast('Compensatorio cargado','ok');
-      avisarSucursal(slugDest, '🕘 Compensatorio cargado: '+(l.nombre||'')+' suma '+fmtDias(dias)+' ('+motivo+'). Saldo actual: '+fmtDias(compSaldo(slugDest,legId))+'. Los días se piden desde Mi Sucursal → Compensatorios del equipo.');
-    }catch(e){ console.error(e); toast('No se pudo cargar','err'); }
+      await guardarMovComp(slugDest, legId, uso
+        ? { d:-dias, f:desde, t:'uso', desde, hasta,
+            m:'Compensatorio tomado ('+rango+')'+(det? ' — '+det : ''),
+            por:(SESSION.email||''), en:nowISO() }
+        : { d:dias, f:desde, t:'alta',
+            m:motivo + (det? ' — '+det : ''),
+            por:(SESSION.email||''), en:nowISO() });
+      closeModal(); render(); toast(uso?'Día tomado registrado':'Compensatorio cargado','ok');
+      avisarSucursal(slugDest, uso
+        ? '🕘 Compensatorio tomado: '+(l.nombre||'')+' — '+rango+' ('+fmtDias(dias)+'). Saldo restante: '+fmtDias(compSaldo(slugDest,legId))+'.'
+        : '🕘 Compensatorio cargado: '+(l.nombre||'')+' suma '+fmtDias(dias)+' ('+motivo+'). Saldo actual: '+fmtDias(compSaldo(slugDest,legId))+'. Los días se piden desde Mi Sucursal → Compensatorios del equipo.');
+    }catch(e){ console.error(e); toast('No se pudo guardar','err'); }
   };
 }
 
@@ -818,13 +923,16 @@ function verMovsComp(slug, legId){
   const movs = compMovs(slug, legId);
   const filas = movs.map(m=>`<tr>
       <td>${fechaLabel(m.f)}</td>
+      <td>${movTipoTag(m)}</td>
       <td class="num"><b style="color:${Number(m.d)>0?'var(--ok)':'var(--bad)'}">${Number(m.d)>0?'+':''}${fmtDias(m.d)}</b></td>
-      <td class="sub">${esc(m.m||'')}</td>
-      <td class="sub">${esc(m.por||'')}</td>
+      <td class="sub">${esc(m.m||'')}${movRango(m)&&movTipo(m)==='uso'?`<div class="sub">día tomado: ${movRango(m)}</div>`:''}</td>
+      <td class="sub">${esc(m.por||'')}${m.en?`<div class="sub">${esc(String(m.en).replace('T',' ').slice(0,16))}</div>`:''}</td>
       <td><button class="iconbtn danger" data-cdelmov="${slug}|${legId}|${m.id}" title="Borrar">🗑</button></td>
     </tr>`).join('');
+  const usos = movs.filter(m=>movTipo(m)==='uso');
   const tabla = movs.length
-    ? `<div class="tblwrap"><table class="grid"><thead><tr><th>Fecha</th><th class="num">Días</th><th>Motivo</th><th>Cargó</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`
+    ? `<div class="tblwrap"><table class="grid"><thead><tr><th>Fecha</th><th>Tipo</th><th class="num">Días</th><th>Detalle</th><th>Cargó</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`
+      + (usos.length? `<div class="hintline">Se tomó ${usos.length} compensatorio${usos.length===1?'':'s'}: ${usos.map(m=>movRango(m)||fechaLabel(m.f)).join(' · ')}.</div>` : '')
     : '<div class="hintline">Sin movimientos todavía.</div>';
   openModal('Compensatorios · '+(l.nombre||''),
     `<div class="dl-grid">
@@ -833,9 +941,10 @@ function verMovsComp(slug, legId){
        <div class="dl-item"><div class="l">En trámite</div><div class="v">${fmtDias(compEnTramite(slug,legId))}</div></div>
        <div class="dl-item"><div class="l">Saldo</div><div class="v" style="color:${compSaldo(slug,legId)>0?'var(--bad)':'var(--muted)'}">${fmtDias(compSaldo(slug,legId))}</div></div>
      </div><div style="margin-top:12px">${tabla}</div>`,
-    `<button class="btn btn-outline" id="mAdd">➕ Cargar días</button><button class="btn btn-primary" id="mCancel">Cerrar</button>`);
+    `<button class="btn btn-outline" id="mAdd">➕ Cargar días</button><button class="btn btn-outline" id="mUso">🕘 Registrar día tomado</button><button class="btn btn-primary" id="mCancel">Cerrar</button>`);
   $('mCancel').onclick=closeModal;
   $('mAdd').onclick=()=>formCompCarga(legId);
+  $('mUso').onclick=()=>formCompCarga(legId,'uso');
   document.querySelectorAll('[data-cdelmov]').forEach(b=> b.onclick=()=>{ const [sl,lg,mv]=b.dataset.cdelmov.split('|'); borrarMovComp(sl,lg,mv); });
 }
 
@@ -865,8 +974,9 @@ function formAprobar(slug, id){
     const nota=$('rNota').value.trim();
     try{
       await guardarMovComp(slug, x.legajoId, {
-        d:-Math.abs(Number(x.dias)||0), f:x.desde||hoyISO(),
-        m:'Compensatorio tomado ('+rango+')',
+        d:-Math.abs(Number(x.dias)||0), f:x.desde||hoyISO(), t:'uso',
+        desde:x.desde||'', hasta:x.hasta||x.desde||'',
+        m:'Compensatorio tomado ('+rango+')'+(x.motivo?' — '+x.motivo:''),
         por:(SESSION.email||''), en:nowISO(), sol:id });
       const limpio = {...x}; delete limpio.slug; delete limpio.id;
       await guardarSolic(slug, id, {...limpio, estado:'aprobada', resp:{por:(SESSION.email||''), en:nowISO(), nota}});
@@ -979,11 +1089,14 @@ function planImportComp(parsed, fecha){
   Object.entries(LEGAJOS).forEach(([id,l])=>{
     const n=ruClean(l.legajo_nro); if(n) (porNro[n]=porNro[n]||[]).push({id,...l});
   });
-  const ajustes=[], iguales=[], sinLegajo=[], mudanzas=[];
+  const ajustes=[], iguales=[], sinLegajo=[], mudanzas=[], sucFix=[];
   parsed.filas.forEach(f=>{
     const cand = porNro[f.nro]||[];
     if(!cand.length || !f.slug){ sinLegajo.push(f); return; }
     const l = cand[0];
+    // el Excel es la foto actual de dónde trabaja cada uno: los legajos vienen del
+    // Registro Único y su `sucursal` se queda vieja con cada movimiento de gente
+    if(l.sucursal !== f.slug) sucFix.push({legajoId:l.id, nombre:l.nombre, de:l.sucursal||null, a:f.slug});
     const actual = compSlugDe(l.id, l.sucursal);
     const destino = f.slug;
     const saldo = actual? compSaldo(actual, l.id) : 0;
@@ -993,7 +1106,7 @@ function planImportComp(parsed, fecha){
     if(!delta && !mueve){ iguales.push({...f, legajoId:l.id, nombre:l.nombre}); return; }
     ajustes.push({...f, legajoId:l.id, nombre:l.nombre, puesto:l.puesto||'', origen:actual, destino, saldo, delta, mueve});
   });
-  return {ajustes, iguales, sinLegajo, sinSuc:parsed.sinSuc, fecha};
+  return {ajustes, iguales, sinLegajo, mudanzas, sucFix, sinSuc:parsed.sinSuc, fecha};
 }
 
 function abrirImportComp(){
@@ -1036,6 +1149,11 @@ async function previewImportComp(file){
     html += `<div class="banner warn">Sin legajo cargado en el portal (revisá el nro o dalos de alta): `
       + P.sinLegajo.map(f=>`<b>${esc(f.nombre)}</b> (leg. ${esc(f.nro)}${f.dias?', '+fmtDias(f.dias):''})`).join(' · ') + `</div>`;
   }
+  if(P.sucFix.length){
+    html += `<div class="banner info"><label style="display:block;cursor:pointer"><input type="checkbox" id="ciFixSuc" checked style="width:auto;margin-right:6px">
+      <b>Corregir también la sucursal del legajo</b> (${P.sucFix.length} persona${P.sucFix.length===1?'':'s'}): el Excel las ubica en otra sucursal que la que tiene su legajo. Se actualizan los legajos con la del Excel.</label>
+      <div class="sub" style="margin-top:6px">${P.sucFix.map(x=>`${esc(x.nombre)}: ${x.de?esc(sucLabel(x.de)):'<i>sin asignar</i>'} → <b>${esc(sucLabel(x.a))}</b>`).join(' · ')}</div></div>`;
+  }
   if(P.mudanzas && P.mudanzas.length){
     html += `<div class="banner info">${P.mudanzas.length} persona(s) cambian de sucursal según el Excel: se les mueve la ficha completa (con su historial).</div>`;
   }
@@ -1050,13 +1168,15 @@ async function previewImportComp(file){
       + `</tbody></table></div>`;
   }
   $('ciPrev').innerHTML=html;
-  $('mSave').disabled = !(P.ajustes.length);
+  $('mSave').disabled = !(P.ajustes.length || P.sucFix.length);
   $('mSave').onclick = publicarImportComp;
 }
 
 async function publicarImportComp(){
-  const P=COMP_IMP; if(!P || !P.ajustes.length) return;
-  if(!confirm('Se actualiza el saldo de '+P.ajustes.length+' persona(s) con los días del Excel. ¿Publicar?')) return;
+  const P=COMP_IMP; if(!P || !(P.ajustes.length || P.sucFix.length)) return;
+  const fixSuc = !!($('ciFixSuc') && $('ciFixSuc').checked) && P.sucFix.length;
+  if(!confirm('Se actualiza el saldo de '+P.ajustes.length+' persona(s) con los días del Excel'
+      + (fixSuc? ', y la sucursal del legajo de '+P.sucFix.length+'.' : '.')+'\n\n¿Publicar?')) return;
   const btn=$('mSave'); btn.disabled=true; btn.textContent='Publicando…';
   const stamp = Date.now().toString(36);
   const patch = {};
@@ -1073,14 +1193,20 @@ async function publicarImportComp(){
     if(a.delta){
       const mid = 'imp'+stamp+i.toString(36);
       patch[a.destino+'/'+a.legajoId+'/movs/'+mid] = {
-        d:a.delta, f:P.fecha,
+        d:a.delta, f:P.fecha, t:'ajuste',
         m:(a.saldo? 'Ajuste al saldo del Excel de compensatorios ('+fmtDias(a.saldo)+' → '+fmtDias(a.dias)+')'
                   : 'Saldo pendiente según el Excel de compensatorios'),
         por:(SESSION.email||''), en:nowISO(), imp:P.fecha };
     }
   });
   try{
-    if(HAS_DB) await fbPatch(ROOT+'/compensatorios', patch);
+    if(HAS_DB && Object.keys(patch).length) await fbPatch(ROOT+'/compensatorios', patch);
+    if(fixSuc){
+      const legPatch={};
+      P.sucFix.forEach(x=>{ legPatch[x.legajoId+'/sucursal']=x.a; legPatch[x.legajoId+'/actualizado']=nowISO(); });
+      if(HAS_DB) await fbPatch(ROOT+'/legajos', legPatch);
+      P.sucFix.forEach(x=>{ if(LEGAJOS[x.legajoId]){ LEGAJOS[x.legajoId].sucursal=x.a; LEGAJOS[x.legajoId].actualizado=nowISO(); } });
+    }
     // reflejar en memoria
     P.ajustes.forEach((a,i)=>{
       if(a.mueve){
@@ -1095,13 +1221,14 @@ async function publicarImportComp(){
       }
       if(a.delta){
         const c=COMPS[a.destino][a.legajoId]; c.movs=c.movs||{};
-        c.movs['imp'+stamp+i.toString(36)]={d:a.delta, f:P.fecha,
+        c.movs['imp'+stamp+i.toString(36)]={d:a.delta, f:P.fecha, t:'ajuste',
           m:(a.saldo? 'Ajuste al saldo del Excel de compensatorios ('+fmtDias(a.saldo)+' → '+fmtDias(a.dias)+')'
                     : 'Saldo pendiente según el Excel de compensatorios'),
           por:(SESSION.email||''), en:nowISO(), imp:P.fecha};
       }
     });
-    COMP_IMP=null; closeModal(); render(); toast('Compensatorios importados','ok');
+    COMP_IMP=null; closeModal(); render();
+    toast('Compensatorios importados'+(fixSuc?' · '+P.sucFix.length+' legajos con la sucursal corregida':''),'ok');
   }catch(e){
     console.error(e); btn.disabled=false; btn.textContent='Publicar';
     toast('No se pudo publicar: '+(e.message||e),'err');
@@ -1307,6 +1434,7 @@ function wire(){
   // ---- Compensatorios ----
   bindSel('cSuc','cSuc'); bindSel('cEstado','cEstado'); bindSel('cVer','cVer');
   if($('btnCompCarga')) $('btnCompCarga').onclick=()=>formCompCarga(null);
+  if($('btnCompUso')) $('btnCompUso').onclick=()=>formCompCarga(null,'uso');
   if($('btnCompImp')) $('btnCompImp').onclick=abrirImportComp;
   document.querySelectorAll('[data-capr]').forEach(b=> b.onclick=()=>{ const [sl,id]=b.dataset.capr.split('|'); formAprobar(sl,id); });
   document.querySelectorAll('[data-crech]').forEach(b=> b.onclick=()=>{ const [sl,id]=b.dataset.crech.split('|'); formRechazar(sl,id); });

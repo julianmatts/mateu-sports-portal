@@ -5669,6 +5669,19 @@ let _compForm = null;    // legajoId con el formulario de solicitud abierto
 const compFmtDias = n => { const v=Math.round((Number(n)||0)*100)/100; return (v%1===0? String(v) : String(v).replace('.',','))+' d'; };
 const compFechaLbl = iso => { const p=String(iso||'').slice(0,10).split('-'); return p.length===3? p[2]+'/'+p[1]+'/'+p[0] : (iso||'—'); };
 function compMovsDe(pers){ return Object.values((pers&&pers.movs)||{}).filter(Boolean); }
+function compTipoMov(m){ return m.t || (Number(m.d)<0 ? 'uso' : 'alta'); }
+function compRangoMov(m){
+  if(!m.desde) return '';
+  return compFechaLbl(m.desde)+(m.hasta&&m.hasta!==m.desde? ' → '+compFechaLbl(m.hasta) : '');
+}
+// todos los movimientos del equipo, el más nuevo primero
+function compHistorial(){
+  const out=[];
+  Object.entries((_compData&&_compData.personas)||{}).forEach(([id,pp])=>{
+    Object.entries((pp&&pp.movs)||{}).forEach(([mid,m])=>{ if(m) out.push({id, mid, nombre:(pp.nombre||'—'), ...m}); });
+  });
+  return out.sort((a,b)=> String(b.f||'').localeCompare(String(a.f||'')) || String(b.en||'').localeCompare(String(a.en||'')));
+}
 function compSaldoDe(pers){ return compMovsDe(pers).reduce((a,m)=>a+(Number(m.d)||0),0); }
 function compSolsDe(legId){ return Object.entries((_compData&&_compData.sol)||{}).map(([id,x])=>({id,...x})).filter(x=>x && x.legajoId===legId); }
 function compTramiteDe(legId){ return compSolsDe(legId).filter(x=>(x.estado||'pendiente')==='pendiente').reduce((a,x)=>a+(Number(x.dias)||0),0); }
@@ -5734,6 +5747,34 @@ function paintComp(){
     });
     html+='</tbody></table></div>';
     if(_compForm && personas[_compForm]) html+=compFormHtml(_compForm);
+  }
+
+  // Historial: cuándo se tomó cada compensatorio (y cuándo se cargaron los días).
+  // Vive en los movimientos de la ficha, así que no se pierde aunque la solicitud
+  // se borre o se responda de nuevo.
+  const hist = compHistorial();
+  if(hist.length){
+    const usos = hist.filter(m=>compTipoMov(m)==='uso');
+    const diasUsados = usos.reduce((a,m)=>a+Math.abs(Number(m.d)||0),0);
+    html+='<details class="bgrupo" style="margin-top:14px"><summary><b>Historial</b> · '
+      +(usos.length? usos.length+' compensatorio'+(usos.length===1?'':'s')+' tomado'+(usos.length===1?'':'s')+' ('+compFmtDias(diasUsados)+')' : 'sin días tomados todavía')
+      +' · '+hist.length+' movimiento'+(hist.length===1?'':'s')+'</summary>';
+    html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Persona</th><th class="L">Día</th><th class="L">Movimiento</th><th>Días</th><th class="L">Detalle</th></tr></thead><tbody>';
+    hist.forEach(m=>{
+      const tipo=compTipoMov(m);
+      const chip = tipo==='uso'
+        ? '<span style="background:rgba(204,0,0,.1);color:#CC0000;border:1px solid rgba(204,0,0,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">TOMADO</span>'
+        : tipo==='ajuste'
+        ? '<span style="background:rgba(107,122,153,.12);color:#6B7A99;border:1px solid rgba(107,122,153,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">AJUSTE</span>'
+        : '<span style="background:rgba(0,168,107,.1);color:#00a86b;border:1px solid rgba(0,168,107,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">GANADO</span>';
+      const d=Number(m.d)||0;
+      html+='<tr><td class="L"><b>'+esc(m.nombre)+'</b></td>'
+        +'<td class="L">'+esc(compRangoMov(m) || compFechaLbl(m.f))+'</td>'
+        +'<td class="L">'+chip+'</td>'
+        +'<td style="color:'+(d<0?'#CC0000':'#00a86b')+';font-weight:700">'+(d>0?'+':'')+compFmtDias(d)+'</td>'
+        +'<td class="L">'+esc(m.m||'')+(m.por?'<div class="hint" style="margin:0">'+esc(m.por)+'</div>':'')+'</td></tr>';
+    });
+    html+='</tbody></table></div></details>';
   }
 
   if(sols.length){
