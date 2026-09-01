@@ -1002,6 +1002,25 @@ y comparte el nodo `rrhh/` de **discontinuos-mateu**:
   sugerido», que reabre el formulario con esa fecha precargada. Las pendientes se
   pueden cancelar.
 
+**Carga masiva — «⇧ Importar Excel»** (pestaña Compensatorios): sube el Excel de
+Juli (`Compensatorios.xlsx`: una hoja con bloques por sucursal — encabezado
+`Legajo | <Sucursal> | Total`, una fila por persona con nro de legajo · nombre ·
+días pendientes, y una fila de subtotal; la sucursal siguiente viene en la columna
+del nombre con el legajo vacío). El cruce es por **`legajo_nro`**, no por nombre
+(el Excel los trae recortados: «Casao Kevin» vs «Casao Kevin Armando»). El Excel
+trae el **saldo**, no los movimientos: se publica un movimiento de **ajuste** por
+la diferencia contra el saldo actual, en un solo **PATCH multi-path** a
+`rrhh/compensatorios`. Previsualiza personas, saldos a actualizar, los que ya
+estaban igual y los que **no tienen legajo** en el portal. Si el Excel ubica a
+alguien en otra sucursal, le **mueve la ficha entera** (con su historial).
+Alias de sucursal propios del Excel en `COMP_ALIAS_SUC` (`Diag 80`→diagonal,
+`ADIDAS`→adidas, `Aurelius`→aurelius-10); el resto sale de `RU_DIVISOR`.
+
+⚠️ La `sucursal` del legajo puede estar vieja (los legajos vienen del Registro
+Único de julio y hubo movimientos, sobre todo a Diagonal 80). Por eso **manda el
+slug donde vive la ficha de compensatorios**, no el del legajo: `compSlugDe()`.
+La tabla de saldos avisa «legajo: <otra sucursal>» cuando difieren.
+
 **Firebase** (nodo `rrhh/`, agrupado por slug para que cada sucursal baje solo lo
 suyo, misma seguridad blanda que Objetivos / Barrida):
 `rrhh/compensatorios/<slug>/<legajoId>` = `{nombre, puesto, movs:{<id>:{d,f,m,por,en,sol}}}`

@@ -599,6 +599,14 @@ function viewAusencias(){
 const fmtDias = n => { const v=Math.round((Number(n)||0)*100)/100; return (v%1===0? String(v) : String(v).replace('.',','))+' d'; };
 
 /* --- lectura --- */
+// Dónde vive la ficha de compensatorios de una persona. La `sucursal` del legajo
+// puede haber quedado vieja (p.ej. la gente que pasó a Diagonal 80), así que
+// manda el slug donde ya hay ficha; si no hay, el del legajo.
+function compSlugDe(legId, fallback){
+  if(fallback && COMPS[fallback] && COMPS[fallback][legId]) return fallback;
+  const hit = Object.keys(COMPS).find(sl=>COMPS[sl] && COMPS[sl][legId]);
+  return hit || fallback || null;
+}
 function compPersona(slug, legId){ return ((COMPS[slug]||{})[legId]) || null; }
 function compMovs(slug, legId){
   const c=compPersona(slug,legId);
@@ -620,13 +628,14 @@ function compEnTramite(slug, legId){
 // personas (de los legajos visibles) que tienen días a favor o una solicitud abierta
 function compConSaldo(){
   return legajosOrden().filter(l=>(l.estado||'activo')!=='baja')
-    .map(l=>({...l, saldo:compSaldo(l.sucursal,l.id), tram:compEnTramite(l.sucursal,l.id)}))
+    .map(l=>{ const sl=compSlugDe(l.id, l.sucursal); return {...l, cslug:sl, saldo:compSaldo(sl,l.id), tram:compEnTramite(sl,l.id)}; })
     .filter(p=>p.saldo!==0 || p.tram>0);
 }
 function compTotalDeuda(){ return compConSaldo().reduce((s,p)=>s+Math.max(0,p.saldo),0); }
 // celda de la nómina (pestaña Legajos)
 function compCelda(l){
-  const saldo=compSaldo(l.sucursal,l.id), tram=compEnTramite(l.sucursal,l.id);
+  const sl=compSlugDe(l.id, l.sucursal);
+  const saldo=compSaldo(sl,l.id), tram=compEnTramite(sl,l.id);
   if(!saldo && !tram) return '<span class="sub">—</span>';
   return (saldo? `<b style="color:${saldo>0?'var(--bad)':'var(--muted)'}">${fmtDias(saldo)}</b>` : '<span class="sub">0 d</span>')
     + (tram? `<div class="sub">${fmtDias(tram)} en trámite</div>` : '');
@@ -648,16 +657,16 @@ function viewComp(){
   });
   const conSaldo = compConSaldo();
   const personas = (state.cVer==='todos'
-      ? legajosOrden().filter(l=>(l.estado||'activo')!=='baja').map(l=>({...l, saldo:compSaldo(l.sucursal,l.id), tram:compEnTramite(l.sucursal,l.id)}))
+      ? legajosOrden().filter(l=>(l.estado||'activo')!=='baja').map(l=>{ const sl=compSlugDe(l.id, l.sucursal); return {...l, cslug:sl, saldo:compSaldo(sl,l.id), tram:compEnTramite(sl,l.id)}; })
       : conSaldo)
-    .filter(p=>!state.cSuc || p.sucursal===state.cSuc)
+    .filter(p=>!state.cSuc || (p.cslug||p.sucursal)===state.cSuc)
     .sort((a,b)=> (b.saldo-a.saldo) || cmp(a.nombre||'', b.nombre||''));
 
   const kpis = `<div class="kpis">
     <div class="kpi warn"><div class="k">Solicitudes pendientes</div><div class="v">${pend.length}</div><div class="s">${fmtDias(pend.reduce((s,x)=>s+(Number(x.dias)||0),0))} pedidos</div></div>
     <div class="kpi bad"><div class="k">Días adeudados</div><div class="v">${fmtDias(compTotalDeuda())}</div><div class="s">saldo a favor de la gente</div></div>
     <div class="kpi info"><div class="k">Personas con saldo</div><div class="v">${conSaldo.filter(p=>p.saldo>0).length}</div></div>
-    <div class="kpi ok"><div class="k">Sucursales con deuda</div><div class="v">${new Set(conSaldo.filter(p=>p.saldo>0).map(p=>p.sucursal)).size}</div></div>
+    <div class="kpi ok"><div class="k">Sucursales con deuda</div><div class="v">${new Set(conSaldo.filter(p=>p.saldo>0).map(p=>p.cslug||p.sucursal)).size}</div></div>
   </div>`;
 
   const opsSuc = ['<option value="">Todas las sucursales</option>'].concat(sucsVisibles().sort((a,b)=>cmp(sucLabel(a),sucLabel(b))).map(x=>`<option value="${x}" ${state.cSuc===x?'selected':''}>${esc(sucLabel(x))}</option>`)).join('');
@@ -675,6 +684,7 @@ function viewComp(){
     </select>
     <div style="flex:1"></div>
     <button class="btn btn-primary btn-sm" id="btnCompCarga">+ Cargar compensatorio</button>
+    <button class="btn btn-navy btn-sm" id="btnCompImp" title="Subir el Excel con los compensatorios pendientes de toda la cadena">⇧ Importar Excel</button>
   </div>`;
 
   let solBody;
@@ -719,14 +729,14 @@ function viewComp(){
     const rows = personas.map(p=>`<tr>
       <td><div class="person"><span class="avatar">${esc(iniciales(p.nombre))}</span>
         <div><div class="nm">${esc(p.nombre||'—')}</div><div class="sub">${esc(p.puesto||'—')}</div></div></div></td>
-      <td>${esc(sucLabel(p.sucursal))}</td>
-      <td class="num">${fmtDias(compGanados(p.sucursal,p.id))}</td>
-      <td class="num">${fmtDias(compUsados(p.sucursal,p.id))}</td>
+      <td>${esc(sucLabel(p.cslug||p.sucursal))}${p.cslug&&p.cslug!==p.sucursal?`<div class="sub">legajo: ${esc(sucLabel(p.sucursal))}</div>`:''}</td>
+      <td class="num">${fmtDias(compGanados(p.cslug,p.id))}</td>
+      <td class="num">${fmtDias(compUsados(p.cslug,p.id))}</td>
       <td class="num">${p.tram? fmtDias(p.tram) : '<span class="sub">—</span>'}</td>
       <td class="num"><b style="color:${p.saldo>0?'var(--bad)':'var(--muted)'}">${fmtDias(p.saldo)}</b></td>
       <td><div class="rowact">
         <button class="iconbtn" data-cadd="${p.id}" title="Cargar días">➕</button>
-        <button class="iconbtn" data-cmovs="${p.sucursal}|${p.id}" title="Ver movimientos">🕘</button>
+        <button class="iconbtn" data-cmovs="${p.cslug||p.sucursal}|${p.id}" title="Ver movimientos">🕘</button>
       </div></td>
     </tr>`).join('');
     salBody = `<div class="tblwrap"><table class="grid"><thead><tr>
@@ -746,6 +756,7 @@ function viewComp(){
 /* --- escribir un movimiento (+ ganados / − tomados) --- */
 async function guardarMovComp(slug, legId, mov){
   const l = LEGAJOS[legId] || {};
+  slug = compSlugDe(legId, slug || l.sucursal);
   const id = 'm'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   COMPS[slug] = COMPS[slug] || {};
   COMPS[slug][legId] = COMPS[slug][legId] || {nombre:l.nombre||'', puesto:l.puesto||'', movs:{}};
@@ -790,12 +801,13 @@ function formCompCarga(legajoPre){
     const l=LEGAJOS[legId];
     const motivo=$('cMotivo').value, det=$('cDet').value.trim();
     try{
-      await guardarMovComp(l.sucursal, legId, {
+      const slugDest = compSlugDe(legId, l.sucursal);
+      await guardarMovComp(slugDest, legId, {
         d:dias, f:$('cFecha').value||hoyISO(),
         m:motivo + (det? ' — '+det : ''),
         por:(SESSION.email||''), en:nowISO() });
       closeModal(); render(); toast('Compensatorio cargado','ok');
-      avisarSucursal(l.sucursal, '🕘 Compensatorio cargado: '+(l.nombre||'')+' suma '+fmtDias(dias)+' ('+motivo+'). Saldo actual: '+fmtDias(compSaldo(l.sucursal,legId))+'. Los días se piden desde Mi Sucursal → Compensatorios del equipo.');
+      avisarSucursal(slugDest, '🕘 Compensatorio cargado: '+(l.nombre||'')+' suma '+fmtDias(dias)+' ('+motivo+'). Saldo actual: '+fmtDias(compSaldo(slugDest,legId))+'. Los días se piden desde Mi Sucursal → Compensatorios del equipo.');
     }catch(e){ console.error(e); toast('No se pudo cargar','err'); }
   };
 }
@@ -912,6 +924,188 @@ async function reabrirSolic(slug, id){
     await guardarSolic(slug, id, {...limpio, estado:'pendiente'});
     render(); toast('Vuelve a estar pendiente','ok');
   }catch(e){ console.error(e); toast('No se pudo reabrir','err'); }
+}
+
+/* --- Importar el Excel de compensatorios pendientes -----------------------
+   Formato del Excel de Juli (Compensatorios.xlsx): UNA hoja con bloques por
+   sucursal. La fila de encabezado es «Legajo | <1ª sucursal> | Total»; abajo
+   una fila por persona (nro de legajo · nombre · días pendientes) y una fila
+   de subtotal; el nombre de la sucursal siguiente viene en la columna del
+   nombre con el legajo vacío.
+   El cruce es por NRO DE LEGAJO (`legajo_nro`), que es exacto — los nombres
+   del Excel vienen recortados ("Casao Kevin" vs "Casao Kevin Armando").
+   El Excel trae el SALDO pendiente, no los movimientos: se publica como un
+   movimiento de AJUSTE por la diferencia, así queda el rastro de quién lo
+   cargó y cuándo, y no se pisa lo que ya se hubiera tomado en el portal.
+   ------------------------------------------------------------------------ */
+const COMP_ALIAS_SUC = {'diag 80':'diagonal','diagonal':'diagonal','adidas':'adidas','aurelius':'aurelius-10','ecommerce':'ecommerce','e commerce':'ecommerce'};
+function compSlugDivisor(txt){ const n=ruNormDiv(txt); return COMP_ALIAS_SUC[n] || RU_DIVISOR[n] || null; }
+let COMP_IMP = null;   // plan previsualizado
+
+function parseCompExcel(wb){
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const M = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:''});
+  // fila de encabezado: la que tiene la celda "Legajo"
+  let hr=-1, cL=-1, cT=-1;
+  for(let i=0;i<Math.min(M.length,30) && hr<0;i++){
+    (M[i]||[]).forEach((v,j)=>{ if(hr<0 && /^legajo/i.test(ruClean(v))){ hr=i; cL=j; } });
+  }
+  if(hr<0) throw new Error('No encontré la columna «Legajo». ¿Es el Excel de compensatorios?');
+  (M[hr]||[]).forEach((v,j)=>{ if(/^total/i.test(ruClean(v))) cT=j; });
+  const cN = cL+1;
+  if(cT<0) cT = cL+2;
+  const filas=[], sinSuc=new Set();
+  let sucTxt = ruClean(M[hr][cN]) || '';        // la 1ª sucursal viene en el encabezado
+  let slug = compSlugDivisor(sucTxt);
+  if(!slug && sucTxt) sinSuc.add(sucTxt);
+  for(let i=hr+1;i<M.length;i++){
+    const row = M[i]||[];
+    const nro = ruClean(row[cL]).replace(/\.0+$/,'');
+    const nom = ruClean(row[cN]);
+    if(nro && /^\d+$/.test(nro)){
+      filas.push({sucTxt, slug, nro, nombre:ruCap(nom), dias:Number(String(row[cT]).replace(',','.'))||0});
+    }else if(nom && !/^[\d.,]+$/.test(nom)){    // texto sin legajo = cabecera del bloque siguiente
+      sucTxt = nom; slug = compSlugDivisor(sucTxt);
+      if(!slug) sinSuc.add(sucTxt);
+    }
+    // fila con número y sin legajo = subtotal del bloque: se ignora
+  }
+  return {filas, sinSuc:[...sinSuc]};
+}
+
+// arma el plan: qué se ajusta, quién no matchea y quién cambió de sucursal
+function planImportComp(parsed, fecha){
+  const porNro={};
+  Object.entries(LEGAJOS).forEach(([id,l])=>{
+    const n=ruClean(l.legajo_nro); if(n) (porNro[n]=porNro[n]||[]).push({id,...l});
+  });
+  const ajustes=[], iguales=[], sinLegajo=[], mudanzas=[];
+  parsed.filas.forEach(f=>{
+    const cand = porNro[f.nro]||[];
+    if(!cand.length || !f.slug){ sinLegajo.push(f); return; }
+    const l = cand[0];
+    const actual = compSlugDe(l.id, l.sucursal);
+    const destino = f.slug;
+    const saldo = actual? compSaldo(actual, l.id) : 0;
+    const delta = f.dias - saldo;
+    const mueve = actual && actual!==destino && COMPS[actual] && COMPS[actual][l.id];
+    if(mueve) mudanzas.push({...f, legajoId:l.id, nombre:l.nombre, de:actual, a:destino});
+    if(!delta && !mueve){ iguales.push({...f, legajoId:l.id, nombre:l.nombre}); return; }
+    ajustes.push({...f, legajoId:l.id, nombre:l.nombre, puesto:l.puesto||'', origen:actual, destino, saldo, delta, mueve});
+  });
+  return {ajustes, iguales, sinLegajo, sinSuc:parsed.sinSuc, fecha};
+}
+
+function abrirImportComp(){
+  openModal('Importar compensatorios',
+    `<div class="hintline">Subí el Excel con los <b>compensatorios pendientes</b> de toda la cadena (bloques por sucursal, con el <b>nro de legajo</b>, el nombre y los días). El portal lo cruza por nro de legajo y deja el saldo de cada persona igual al del Excel.</div>
+     <div class="frow">
+       <div class="f"><label>Archivo (.xlsx)</label><input class="inp" type="file" id="ciFile" accept=".xlsx,.xls"></div>
+       <div class="f"><label>Fecha del ajuste</label><input class="inp" id="ciFecha" type="date" value="${hoyISO()}"></div>
+     </div>
+     <div id="ciPrev"></div>`,
+    `<button class="btn btn-outline" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave" disabled>Publicar</button>`);
+  $('mCancel').onclick=closeModal;
+  $('ciFile').onchange=e=>{ const f=e.target.files[0]; if(f) previewImportComp(f); };
+  $('ciFecha').onchange=()=>{ const f=$('ciFile').files[0]; if(f) previewImportComp(f); };
+}
+
+async function previewImportComp(file){
+  $('ciPrev').innerHTML='<div class="state"><div class="spinner"></div>Leyendo el Excel…</div>';
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(new Uint8Array(buf), {type:'array'});
+    const parsed = parseCompExcel(wb);
+    COMP_IMP = planImportComp(parsed, $('ciFecha').value||hoyISO());
+  }catch(err){
+    console.error(err);
+    $('ciPrev').innerHTML='<div class="banner warn" style="margin-top:12px">No se pudo leer el archivo: '+esc(err.message||err)+'</div>';
+    $('mSave').disabled=true; return;
+  }
+  const P=COMP_IMP;
+  const conDias = P.ajustes.filter(a=>a.dias>0).length;
+  const totalDias = P.ajustes.reduce((s,a)=>s+a.dias,0) + P.iguales.reduce((s,a)=>s+a.dias,0);
+  let html = `<div class="kpis" style="margin-top:14px">
+    <div class="kpi info"><div class="k">Personas en el Excel</div><div class="v">${P.ajustes.length+P.iguales.length+P.sinLegajo.length}</div><div class="s">${fmtDias(totalDias)} pendientes en total</div></div>
+    <div class="kpi ok"><div class="k">Saldos a actualizar</div><div class="v">${P.ajustes.length}</div><div class="s">${conDias} con días a favor</div></div>
+    <div class="kpi"><div class="k">Ya estaban igual</div><div class="v">${P.iguales.length}</div></div>
+    <div class="kpi ${P.sinLegajo.length?'bad':''}"><div class="k">Sin legajo en el portal</div><div class="v">${P.sinLegajo.length}</div></div>
+  </div>`;
+  if(P.sinSuc.length) html += `<div class="banner warn">No reconocí estas sucursales del Excel: <b>${esc(P.sinSuc.join(', '))}</b>. Esas personas quedan afuera.</div>`;
+  if(P.sinLegajo.length){
+    html += `<div class="banner warn">Sin legajo cargado en el portal (revisá el nro o dalos de alta): `
+      + P.sinLegajo.map(f=>`<b>${esc(f.nombre)}</b> (leg. ${esc(f.nro)}${f.dias?', '+fmtDias(f.dias):''})`).join(' · ') + `</div>`;
+  }
+  if(P.mudanzas && P.mudanzas.length){
+    html += `<div class="banner info">${P.mudanzas.length} persona(s) cambian de sucursal según el Excel: se les mueve la ficha completa (con su historial).</div>`;
+  }
+  const filas = P.ajustes.filter(a=>a.dias>0 || a.delta).sort((a,b)=>cmp(a.sucTxt,b.sucTxt)||cmp(a.nombre,b.nombre));
+  if(filas.length){
+    html += `<div class="tblwrap" style="max-height:320px;overflow:auto;margin-top:12px"><table class="grid"><thead><tr>
+      <th>Persona</th><th>Sucursal</th><th class="num">Saldo hoy</th><th class="num">Excel</th><th class="num">Ajuste</th></tr></thead><tbody>`
+      + filas.map(a=>`<tr><td class="nm">${esc(a.nombre)}<div class="sub">leg. ${esc(a.nro)}</div></td>
+        <td>${esc(sucLabel(a.destino))}${a.mueve?`<div class="sub">venía de ${esc(sucLabel(a.origen))}</div>`:''}</td>
+        <td class="num">${fmtDias(a.saldo)}</td><td class="num"><b>${fmtDias(a.dias)}</b></td>
+        <td class="num" style="color:${a.delta>0?'var(--ok)':a.delta<0?'var(--bad)':'var(--muted)'}">${a.delta>0?'+':''}${fmtDias(a.delta)}</td></tr>`).join('')
+      + `</tbody></table></div>`;
+  }
+  $('ciPrev').innerHTML=html;
+  $('mSave').disabled = !(P.ajustes.length);
+  $('mSave').onclick = publicarImportComp;
+}
+
+async function publicarImportComp(){
+  const P=COMP_IMP; if(!P || !P.ajustes.length) return;
+  if(!confirm('Se actualiza el saldo de '+P.ajustes.length+' persona(s) con los días del Excel. ¿Publicar?')) return;
+  const btn=$('mSave'); btn.disabled=true; btn.textContent='Publicando…';
+  const stamp = Date.now().toString(36);
+  const patch = {};
+  P.ajustes.forEach((a,i)=>{
+    // la ficha se muda de sucursal: se reescribe entera en el destino y se borra la vieja
+    if(a.mueve){
+      const vieja = COMPS[a.origen][a.legajoId] || {};
+      patch[a.origen+'/'+a.legajoId] = null;
+      patch[a.destino+'/'+a.legajoId] = {nombre:a.nombre, puesto:a.puesto, movs:{...(vieja.movs||{})}};
+    }else{
+      patch[a.destino+'/'+a.legajoId+'/nombre'] = a.nombre;
+      patch[a.destino+'/'+a.legajoId+'/puesto'] = a.puesto;
+    }
+    if(a.delta){
+      const mid = 'imp'+stamp+i.toString(36);
+      patch[a.destino+'/'+a.legajoId+'/movs/'+mid] = {
+        d:a.delta, f:P.fecha,
+        m:(a.saldo? 'Ajuste al saldo del Excel de compensatorios ('+fmtDias(a.saldo)+' → '+fmtDias(a.dias)+')'
+                  : 'Saldo pendiente según el Excel de compensatorios'),
+        por:(SESSION.email||''), en:nowISO(), imp:P.fecha };
+    }
+  });
+  try{
+    if(HAS_DB) await fbPatch(ROOT+'/compensatorios', patch);
+    // reflejar en memoria
+    P.ajustes.forEach((a,i)=>{
+      if(a.mueve){
+        const vieja = COMPS[a.origen][a.legajoId] || {};
+        delete COMPS[a.origen][a.legajoId];
+        COMPS[a.destino]=COMPS[a.destino]||{};
+        COMPS[a.destino][a.legajoId]={nombre:a.nombre, puesto:a.puesto, movs:{...(vieja.movs||{})}};
+      }else{
+        COMPS[a.destino]=COMPS[a.destino]||{};
+        COMPS[a.destino][a.legajoId]=COMPS[a.destino][a.legajoId]||{nombre:a.nombre, puesto:a.puesto, movs:{}};
+        COMPS[a.destino][a.legajoId].nombre=a.nombre; COMPS[a.destino][a.legajoId].puesto=a.puesto;
+      }
+      if(a.delta){
+        const c=COMPS[a.destino][a.legajoId]; c.movs=c.movs||{};
+        c.movs['imp'+stamp+i.toString(36)]={d:a.delta, f:P.fecha,
+          m:(a.saldo? 'Ajuste al saldo del Excel de compensatorios ('+fmtDias(a.saldo)+' → '+fmtDias(a.dias)+')'
+                    : 'Saldo pendiente según el Excel de compensatorios'),
+          por:(SESSION.email||''), en:nowISO(), imp:P.fecha};
+      }
+    });
+    COMP_IMP=null; closeModal(); render(); toast('Compensatorios importados','ok');
+  }catch(e){
+    console.error(e); btn.disabled=false; btn.textContent='Publicar';
+    toast('No se pudo publicar: '+(e.message||e),'err');
+  }
 }
 
 /* --- aviso por la Bandeja del Portal (mensajes-mateu/directos) ---
@@ -1113,6 +1307,7 @@ function wire(){
   // ---- Compensatorios ----
   bindSel('cSuc','cSuc'); bindSel('cEstado','cEstado'); bindSel('cVer','cVer');
   if($('btnCompCarga')) $('btnCompCarga').onclick=()=>formCompCarga(null);
+  if($('btnCompImp')) $('btnCompImp').onclick=abrirImportComp;
   document.querySelectorAll('[data-capr]').forEach(b=> b.onclick=()=>{ const [sl,id]=b.dataset.capr.split('|'); formAprobar(sl,id); });
   document.querySelectorAll('[data-crech]').forEach(b=> b.onclick=()=>{ const [sl,id]=b.dataset.crech.split('|'); formRechazar(sl,id); });
   document.querySelectorAll('[data-creab]').forEach(b=> b.onclick=()=>{ const [sl,id]=b.dataset.creab.split('|'); reabrirSolic(sl,id); });
@@ -1242,14 +1437,15 @@ function detalleLegajo(id){
       <div class="dl-item"><div class="l">Tomadas este año</div><div class="v">${tomadas} días</div></div>
       <div class="dl-item"><div class="l">Saldo</div><div class="v" style="color:${saldo<0?'var(--bad)':'var(--ok)'}">${saldo} días</div></div>
     </div></div>`;
-  const movsComp = compMovs(l.sucursal, id);
+  const compSlug = compSlugDe(id, l.sucursal);
+  const movsComp = compMovs(compSlug, id);
   const solComp = solicitudes().filter(x=>x.legajoId===id);
   const compBox = `<div class="card" style="margin:14px 0 6px;background:var(--off)"><div class="card-h" style="font-size:17px">Compensatorios</div>
     <div class="dl-grid">
-      <div class="dl-item"><div class="l">Ganados</div><div class="v">${fmtDias(compGanados(l.sucursal,id))}</div></div>
-      <div class="dl-item"><div class="l">Tomados</div><div class="v">${fmtDias(compUsados(l.sucursal,id))}</div></div>
-      <div class="dl-item"><div class="l">En trámite</div><div class="v">${fmtDias(compEnTramite(l.sucursal,id))}</div></div>
-      <div class="dl-item"><div class="l">Saldo pendiente</div><div class="v" style="color:${compSaldo(l.sucursal,id)>0?'var(--bad)':'var(--ok)'}">${fmtDias(compSaldo(l.sucursal,id))}</div></div>
+      <div class="dl-item"><div class="l">Ganados</div><div class="v">${fmtDias(compGanados(compSlug,id))}</div></div>
+      <div class="dl-item"><div class="l">Tomados</div><div class="v">${fmtDias(compUsados(compSlug,id))}</div></div>
+      <div class="dl-item"><div class="l">En trámite</div><div class="v">${fmtDias(compEnTramite(compSlug,id))}</div></div>
+      <div class="dl-item"><div class="l">Saldo pendiente</div><div class="v" style="color:${compSaldo(compSlug,id)>0?'var(--bad)':'var(--ok)'}">${fmtDias(compSaldo(compSlug,id))}</div></div>
     </div>
     ${movsComp.length? `<div class="hintline" style="margin-top:10px">Último movimiento: ${fechaLabel(movsComp[0].f)} · ${Number(movsComp[0].d)>0?'+':''}${fmtDias(movsComp[0].d)} — ${esc(movsComp[0].m||'')}</div>`:'<div class="hintline" style="margin-top:10px">Sin movimientos cargados.</div>'}
     ${solComp.filter(x=>(x.estado||'pendiente')==='pendiente').length? `<div class="hintline" style="color:var(--warn)">Tiene ${solComp.filter(x=>(x.estado||'pendiente')==='pendiente').length} solicitud(es) esperando respuesta.</div>`:''}
@@ -1276,7 +1472,7 @@ function detalleLegajo(id){
   $('dlEdit').onclick=()=>formLegajo(id);
   $('dlAus').onclick=()=>formAusencia(null, id);
   $('dlNov').onclick=()=>formNovedad(null, id);
-  $('dlComp').onclick=()=>verMovsComp(l.sucursal, id);
+  $('dlComp').onclick=()=>verMovsComp(compSlug||l.sucursal, id);
 }
 function vacacionesTomadas(legajoId){
   const y=new Date().getFullYear();
