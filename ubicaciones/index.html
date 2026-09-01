@@ -538,6 +538,10 @@ body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
 .hist-item .info{ flex:1; min-width:0; }
 .hist-item .cod{ font-family:var(--font-c); font-weight:700; font-size:15px; letter-spacing:.5px; color:var(--navy); }
 .hist-item .desc{ font-size:11px; color:var(--gray-600); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* entrada de búsqueda (varios resultados o ninguno): se distingue del artículo */
+.hist-item.es-busq{ background:var(--gray-50,#f7f8fb); }
+.hist-item .cod.busq{ font-family:var(--font-b); font-weight:600; font-size:14px; letter-spacing:0; }
+.hist-item .desc .sinres{ color:var(--red); font-weight:700; }
 .hist-item .quien{ font-size:10px; letter-spacing:.5px; text-transform:uppercase; color:var(--gray-400); font-family:var(--font-c); font-weight:600; }
 .hist-item .hora{ font-size:11px; color:var(--gray-400); white-space:nowrap; align-self:flex-start; }
 .art-card.flash{ outline:3px solid var(--red); }
@@ -1897,11 +1901,11 @@ function renderResultados(){
     ? notaScan + res.slice(0,100).map(a=>artCardHtml(a)).join('') + (res.length>100?'<div class="hint" style="text-align:center">Mostrando 100 de '+res.length+' resultados.</div>':'')
     : '<div class="empty">Sin resultados para “'+esc(searchQuery)+'”.</div>';
   wireArtCards(cont, {consulta:true});
-  // resultado único con código "completo" tipeado/escaneado → se registra solo
+  // TODA búsqueda queda registrada sola (no hace falta tocar el artículo)
   clearTimeout(autoRegTimer);
-  if(res.length===1 && q.length>=4){
-    const unico = res[0].key;
-    autoRegTimer = setTimeout(()=> registrarConsulta(unico), 1200);
+  if(q.length>=3){
+    const snap = {q:searchQuery.trim(), key:(res.length===1?res[0].key:null), n:res.length};
+    autoRegTimer = setTimeout(()=> registrarBusqueda(snap), 1400);
   }
 }
 
@@ -1912,22 +1916,71 @@ function renderResultados(){
    y puede retomar una búsqueda con un toque.
    ============================================================ */
 let autoRegTimer = null;
+// última entrada escrita por este puesto: sirve para ir REFINANDO la misma
+// fila mientras se sigue tipeando ("zap" → "zapa" → "zapatilla") en vez de
+// llenar el historial con cada tecla.
+let ultimaEntrada = null; // {id, q, ts}
 
-function registrarConsulta(artKey){
+// ¿la búsqueda nueva continúa a la última que guardó este puesto?
+function refinaUltima(q){
+  const prev = ultimaEntrada;
+  if(!prev || !q || !prev.q) return null;
+  if((Date.now()-prev.ts) >= 3*60*1000) return null;
+  if(!DATA.consultas[prev.id]) return null;
+  const a = q.toLowerCase(), b = prev.q.toLowerCase();
+  return (a.startsWith(b) || b.startsWith(a)) ? prev : null;
+}
+
+// Registro por artículo (clic en la tarjeta, escaneo con la lectora)
+function registrarConsulta(artKey, texto){
   const a = DATA.articulos[artKey]; if(!a || !SUC) return;
-  const por = nombreOperador();
-  // no repetir la misma consulta del mismo perfil en menos de 10 minutos
-  const repetida = Object.values(DATA.consultas||{}).some(c=>
-    c.key===artKey && c.por===por && (Date.now()-c.ts) < 10*60*1000);
-  if(repetida) return;
-  const entrada = {
+  guardarConsulta({
     key: artKey, codigo: a.codigo,
     descripcion: (a.descripcion||'').slice(0,60),
-    por, avatar: (MODE==='sucursal' && PERFIL && PERFIL.avatar) || null,
+    q: (texto||a.codigo||'').slice(0,60),
+  });
+}
+
+/* Registro automático de la búsqueda tipeada, con o sin resultado:
+   - un solo resultado → queda el artículo (como si lo hubieran tocado)
+   - varios resultados → queda el texto buscado y cuántos dio
+   - sin resultados → también queda (sirve para saber qué pide la gente y no está) */
+function registrarBusqueda(b){
+  if(!SUC || !b || !b.q) return;
+  if(b.key){ registrarConsulta(b.key, b.q); return; }
+  guardarConsulta({ key:null, q: b.q.slice(0,60), n: b.n });
+}
+
+/* Escribe la entrada en Firebase. Si es el refinamiento de la búsqueda anterior
+   (mismo puesto, texto que la continúa, menos de 3 minutos) pisa esa fila; si no,
+   no repite la misma consulta del mismo perfil dentro de los 10 minutos. */
+function guardarConsulta(base){
+  const entrada = Object.assign({
+    por: nombreOperador(),
+    avatar: (MODE==='sucursal' && PERFIL && PERFIL.avatar) || null,
     ts: Date.now(),
-  };
+  }, base);
+  const prev = refinaUltima(entrada.q);
+  if(prev){
+    // Firebase no borra claves ausentes en un PATCH: se mandan explícitas en null
+    const patch = Object.assign({key:null, codigo:null, descripcion:null, n:null}, entrada);
+    patchJSON(sucPath()+'/consultas/'+hoyKey()+'/'+prev.id+'.json', patch).catch(()=>{});
+    DATA.consultas[prev.id] = entrada; lastHash='';
+    ultimaEntrada = {id:prev.id, q:entrada.q||'', ts:entrada.ts};
+    if($('histOverlay').classList.contains('show')) renderHistorial();
+    return;
+  }
+  const repetida = Object.values(DATA.consultas||{}).some(c=>
+    c.por===entrada.por && (Date.now()-(c.ts||0)) < 10*60*1000 &&
+    (entrada.key ? c.key===entrada.key
+                 : (!c.key && (c.q||'').toLowerCase()===(entrada.q||'').toLowerCase())));
+  if(repetida) return;
   postJSON(sucPath()+'/consultas/'+hoyKey()+'.json', entrada)
-    .then(r=>{ if(r && r.name){ DATA.consultas[r.name]=entrada; lastHash=''; } })
+    .then(r=>{ if(r && r.name){
+      DATA.consultas[r.name]=entrada; lastHash='';
+      ultimaEntrada = {id:r.name, q:entrada.q||'', ts:entrada.ts};
+      if($('histOverlay').classList.contains('show')) renderHistorial();
+    }})
     .catch(()=>{});
 }
 
@@ -1943,27 +1996,41 @@ function renderHistorial(){
   const lista = consultasOrdenadas();
   $('histCnt').textContent = lista.length ? lista.length+' consulta'+(lista.length===1?'':'s') : '';
   $('histList').innerHTML = lista.length
-    ? lista.map(c=>
-        '<button class="hist-item" data-hist="'+esc(c.key)+'">'+
-          avatarHtml({nombre:c.por, avatar:c.avatar})+
-          '<div class="info"><div class="cod">'+esc(c.codigo)+'</div>'+
-          '<div class="desc">'+esc(c.descripcion||'')+'</div>'+
-          '<div class="quien">'+esc(c.por)+'</div></div>'+
-          '<div class="hora">'+fmtHora(c.ts)+'</div>'+
-        '</button>').join('')
-    : '<div class="empty">Todavía no hay consultas hoy.<br><span class="hint">Tocá un artículo en los resultados de búsqueda y queda guardado acá.</span></div>';
+    ? lista.map(c=> histItemHtml(c)).join('')
+    : '<div class="empty">Todavía no hay consultas hoy.<br><span class="hint">Cada búsqueda que se hace queda guardada acá sola.</span></div>';
   $('histList').querySelectorAll('[data-hist]').forEach(b=> b.addEventListener('click', ()=> irAConsulta(b.dataset.hist)));
 }
 
-function irAConsulta(artKey){
+function histItemHtml(c){
+  const cab = c.key
+    ? '<div class="cod">'+esc(c.codigo)+'</div>'+
+      '<div class="desc">'+esc(c.descripcion||'')+'</div>'
+    // búsqueda sin artículo único: queda el texto y cuántos resultados dio
+    : '<div class="cod busq">🔍 '+esc(c.q||'')+'</div>'+
+      '<div class="desc">'+(c.n ? c.n+' resultado'+(c.n===1?'':'s') : '<span class="sinres">sin resultados</span>')+'</div>';
+  // el artículo se encontró tipeando otra cosa (descripción, parte del código)
+  const buscado = (c.key && c.q && c.q.toLowerCase()!==(c.codigo||'').toLowerCase())
+    ? '<div class="desc">🔍 '+esc(c.q)+'</div>' : '';
+  return '<button class="hist-item'+(c.key?'':' es-busq')+'" data-hist="'+esc(c.id)+'">'+
+    avatarHtml({nombre:c.por, avatar:c.avatar})+
+    '<div class="info">'+cab+buscado+
+    '<div class="quien">'+esc(c.por)+'</div></div>'+
+    '<div class="hora">'+fmtHora(c.ts)+'</div>'+
+  '</button>';
+}
+
+function irAConsulta(id){
+  const c = (DATA.consultas||{})[id]; if(!c) return;
   cerrarHistorial();
-  const a = DATA.articulos[artKey];
-  if(!a){ toast('Ese artículo ya no está en el stock de hoy.'); return; }
-  searchQuery = a.codigo;
-  $('searchInput').value = a.codigo;
-  $('searchClear').style.display = 'block';
+  // entrada de búsqueda (sin artículo único): se repite la búsqueda tal cual
+  const texto = c.key ? ((DATA.articulos[c.key]||{}).codigo || c.q) : c.q;
+  if(c.key && !DATA.articulos[c.key]) toast('Ese artículo ya no está en el stock de hoy.');
+  searchQuery = texto || '';
+  $('searchInput').value = searchQuery;
+  $('searchClear').style.display = searchQuery ? 'block' : 'none';
   setTab('buscar');
-  const card = document.querySelector('#searchResults .art-card[data-art="'+CSS.escape(artKey)+'"]');
+  if(!c.key) return;
+  const card = document.querySelector('#searchResults .art-card[data-art="'+CSS.escape(c.key)+'"]');
   if(card){
     card.classList.add('flash');
     card.scrollIntoView({behavior:'smooth', block:'center'});
