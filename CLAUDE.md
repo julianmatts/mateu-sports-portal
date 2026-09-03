@@ -138,6 +138,14 @@ de información, limpia. Header navy con borde inferior rojo de 3px.
 Nota: `condiciones/` es más viejo y usa navy `#002366` + fuente Inter. Si se
 rediseña, alinear a los tokens de arriba; si no, dejarlo como está.
 
+## Reporte Mensual de stock — presentación pública
+
+La presentación del mes (`gestion-stock/?pres=YYYY-MM`, deck generado desde
+`gestionStock/<ym>` de Firebase) es **pública**: no pide sesión del Portal
+(pedido de Juli 03/09/2026: David comparte el link con gente que todavía no
+tiene usuario). En `init()` el chequeo de `?pres=` va ANTES del gate de sesión;
+el resto del módulo sigue gateado. El deck solo muestra agregados del mes.
+
 ## Meses de Stock — cómo regenerar `datos-meses-stock.js` desde el Excel
 
 El dashboard de Meses de Stock (`gestion-stock/`) no lee el Excel: lee

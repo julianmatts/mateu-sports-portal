@@ -2717,7 +2717,10 @@ async function gsRenderPresentacion(ym){
     document.body.innerHTML = '<div style="padding:40px;font-family:sans-serif">No hay datos cargados para '+esc(ymToLabel(ym))+'. <a href="./">Volver</a></div>';
     return;
   }
-  const logoEl = document.querySelector('.top-center img');
+  // El logo lo inyecta shared/header.js (defer); si todavía no montó, se espera
+  // a que cargue el DOM. Sin sesión el header igual se monta (no redirige).
+  if(document.readyState==='loading') await new Promise(r=> document.addEventListener('DOMContentLoaded', r, {once:true}));
+  const logoEl = document.querySelector('.msh-logo img, .top-center img');
   const html = gsPresHtml(ym, data, logoEl ? logoEl.src : '');
   document.open(); document.write(html); document.close();
 }
@@ -4692,11 +4695,14 @@ function msInit(){
 $('logoutBtn').addEventListener('click', logout);
 
 (function init(){
+  // Modo presentación: ?pres=YYYY-MM renderiza el deck del mes en lugar de la app.
+  // Es PÚBLICO (pedido de Juli 03/09/2026): David comparte el link con gente que
+  // todavía no tiene usuario del portal. Va ANTES del gate de sesión; el deck es
+  // solo lectura de los agregados del mes (sin datos por persona) y no monta la app.
+  const pres = new URLSearchParams(location.search).get('pres');
+  if(pres && /^\d{4}-\d{2}$/.test(pres)){ SESSION = readSession() || {}; gsRenderPresentacion(pres); return; }
   const s = readSession();
   if(!s || !(s.herramientas||[]).includes('gestion-stock')){ location.href='../'; return; }
-  // Modo presentación: ?pres=YYYY-MM renderiza el deck del mes en lugar de la app
-  const pres = new URLSearchParams(location.search).get('pres');
-  if(pres && /^\d{4}-\d{2}$/.test(pres)){ SESSION = s; gsRenderPresentacion(pres); return; }
   boot(s);
 })();
 </script>
