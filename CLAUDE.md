@@ -1126,6 +1126,29 @@ solos en la celda — el 17/08/2026 aparece como «Paso a la Inmortalidad de San
 **Firebase**: `rrhh/calendario/<slug>/<YYYY-MM>` = `{dias:{'1':'texto',…}, actualizado, por}`
 en discontinuos-mateu, agrupado por slug para que cada sucursal baje solo lo suyo.
 
+## Celular (03/09/2026)
+
+Juli usa el portal como app instalada en el iPhone (PWA, `manifest.json` con
+`display:standalone` + barra de estado `black-translucent`). Convenciones:
+
+- **Safe-area del header**: la regla va SIN `@media(display-mode:standalone)` y con
+  `html` delante (`html .top{padding-top:calc(12px + env(safe-area-inset-top,0px))}`).
+  Motivo: las media queries móviles de cada módulo (`.top{padding:10px 14px}`) venían
+  después y pisaban el padding-top → el botón Menú quedaba debajo de la hora del
+  teléfono. Con la especificidad extra gana siempre; en el navegador el inset es 0.
+  Todo módulo con header propio la lleva; `header.js` la trae para el resto. El
+  `<meta viewport>` lleva `viewport-fit=cover` en todos los módulos.
+- **Indicadores ≤640px** (bloque `/* CELULAR */` al final del CSS): la barra de la vista
+  «Todas las sucursales» (`.rk-bar`) se apila (pestañas / Línea / KPI) con los chips
+  deslizables de costado y deja de ser sticky; toolbar con selector y segmented a todo
+  el ancho; menos padding en tarjetas; la semana editable de «Novedades del mes» se
+  apila un día por fila (`data-dow` en cada `.cald`). Los widgets flotantes suman
+  `env(safe-area-inset-bottom)`.
+- **Portal ≤560px**: los tiles pasan a lista compacta (ícono a la izquierda, nombre +
+  descripción); ≤480px se oculta el rol del header (el saludo ya lo dice).
+- Para probar sin teléfono: Playwright con Chromium (`/opt/pw-browsers/chromium`),
+  viewport 390×844 e `isMobile:true`, sesión inyectada en `localStorage`.
+
 ## Reglas
 
 - Responder y comentar el código en **español**.

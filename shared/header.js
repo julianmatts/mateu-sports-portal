@@ -81,7 +81,7 @@
   var CSS = ''
   +'.msh-top{background:#0B1527;border-bottom:3px solid #CC0000;position:sticky;top:0;z-index:100}'
   +'.msh-top-in{max-width:1240px;margin:0 auto;padding:12px 12px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px}'
-  +'@media(display-mode:standalone){.msh-top-in{padding-top:calc(12px + env(safe-area-inset-top))}}'
+  +'html .msh-top-in{padding-top:calc(12px + env(safe-area-inset-top,0px))}'
   +'.msh-logo{grid-column:2;justify-self:center;display:inline-flex;align-items:center;text-decoration:none;line-height:0}'
   +'.msh-logo img{height:40px;filter:brightness(0) invert(1)}'
   +'.msh-cal{grid-column:3;justify-self:end;display:flex;align-items:center}'
@@ -90,6 +90,9 @@
   +'padding:11px 18px;cursor:pointer;box-shadow:0 3px 12px rgba(204,0,0,.35);transition:transform .14s,background .14s}'
   +'.msh-menu:hover{background:#a00000;transform:translateY(-1px)}'
   +'.msh-bars{font-size:18px;line-height:1}'
+  /* celular: header compacto (mismas medidas que Indicadores) */
+  +'@media(max-width:640px){.msh-top-in{padding:10px 12px;gap:8px}.msh-logo img{height:28px}'
+  +'.msh-menu{padding:9px 13px;font-size:13px;gap:7px;letter-spacing:1px}.msh-subbar{padding:8px 12px;gap:8px}}'
   /* barra secundaria opcional de los módulos (controles que vivían en el header viejo) */
   +'.msh-subbar{background:#fff;border-bottom:1px solid #dce3f0;padding:9px 22px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}'
   +'.msh-subbar .msh-sub-t{font-family:\'Barlow Condensed\',sans-serif;font-weight:600;font-size:15px;letter-spacing:.6px;text-transform:uppercase;color:#0B1527}'

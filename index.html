@@ -35,6 +35,7 @@
   --shadow:0 1px 4px rgba(11,21,39,.08);--shadow-md:0 8px 30px rgba(11,21,39,.18);
 }
 *{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
 body{background:var(--off);color:var(--navy);font-family:var(--font-b);min-height:100vh}
 
 /* ===== LOGIN ===== */
@@ -255,14 +256,24 @@ main{max-width:1080px;margin:0 auto;padding:40px 30px 60px}
 .notif-toast-more{color:var(--red)}
 .notif-toast-tx{font-size:13.5px;color:var(--muted);margin-top:2px;line-height:1.4;overflow:hidden;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-@media(max-width:560px){#notifWidget{right:16px;bottom:16px}}
+@media(max-width:560px){#notifWidget{right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px))}}
 
 footer{text-align:center;padding:24px;font-family:var(--font-c);font-size:11px;letter-spacing:1.5px;
   text-transform:uppercase;color:var(--muted-light)}
 
 @media(max-width:560px){
-  main{padding:28px 18px 48px}.top{padding:12px 14px}
-  .grid{grid-template-columns:1fr}.greet{font-size:28px}
+  main{padding:22px 14px 48px}.top{padding:12px 14px}
+  .greet{font-size:26px;overflow-wrap:anywhere}
+  /* celular: la grilla pasa a lista compacta (ícono a la izquierda, nombre + descripción
+     a la derecha); con ~19 herramientas, las tarjetas grandes obligaban a scrollear mucho */
+  .grid{grid-template-columns:1fr;gap:10px}
+  .tile .accent{height:3px}
+  .tile-body{display:grid;grid-template-columns:40px 1fr;column-gap:12px;align-items:center;padding:13px 40px 13px 14px}
+  .tile .ico{font-size:26px;margin:0;line-height:1;grid-row:1/span 2;align-self:center}
+  .tile .name{font-size:19px;grid-column:2}
+  .tile .desc{font-size:12.5px;margin-top:3px;line-height:1.35;grid-column:2}
+  .tile .go{top:50%;right:14px;transform:translateY(-50%)}
+  .tile:hover .go{transform:translateY(-50%) translateX(3px)}
 }
 /* Header compacto en mobile: el email largo + label desbordaban la barra */
 @media(max-width:680px){
@@ -271,15 +282,17 @@ footer{text-align:center;padding:24px;font-family:var(--font-c);font-size:11px;l
   .top-right{gap:9px}
   .who .n{display:none}            /* el email es muy largo para la barra; el saludo ya lo muestra */
   .who .r{font-size:11px}
-  .logout{padding:7px 11px;letter-spacing:.5px}
-  .gear-btn,.msg-btn{padding:7px 9px}
+  .logout{padding:7px 11px;letter-spacing:.5px;flex:0 0 auto}
+  .gear-btn,.msg-btn{padding:7px 9px;flex:0 0 auto}
+  .top-right{min-width:0;flex-wrap:nowrap}
+  .who{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
-/* Isla dinámica / notch: en la app INSTALADA (standalone) el header navy se
-   extiende bajo la barra de estado; el contenido se corre con el safe-area.
-   En el navegador no aplica (Safari maneja su propia barra). */
-@media(display-mode:standalone){
-  .top{padding-top:calc(12px + env(safe-area-inset-top))}
-}
+/* teléfono angosto: el rol tampoco entra al lado del calendario + botones; el saludo ya lo dice */
+@media(max-width:480px){ .who{display:none} .top img{height:26px} }
+/* Isla dinámica / notch: el header navy se extiende bajo la barra de estado (app
+   instalada); en el navegador el inset es 0. Con «html» delante gana a los padding
+   de las media queries móviles de arriba. */
+html .top{padding-top:calc(12px + env(safe-area-inset-top,0px))}
 </style>
 </head>
 <body>

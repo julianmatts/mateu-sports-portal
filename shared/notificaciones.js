@@ -86,7 +86,7 @@
     +'#notifWidget .notif-toast-hd{font-family:\'Barlow Condensed\',sans-serif;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--navy,#0B1527)}'
     +'#notifWidget .notif-toast-more{color:var(--red,#CC0000)}'
     +'#notifWidget .notif-toast-tx{font-size:13.5px;color:#6B7A99;margin-top:2px;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}'
-    +'@media(max-width:560px){#notifWidget{right:16px;bottom:16px}}'
+    +'@media(max-width:560px){#notifWidget{right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px))}}'
     +'@media print{#notifWidget{display:none!important}}';
   var st=document.createElement('style'); st.textContent=css; document.head.appendChild(st);
 

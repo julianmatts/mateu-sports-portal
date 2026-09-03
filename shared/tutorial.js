@@ -236,7 +236,7 @@
   +'transition:transform .14s,background .14s}'
   // con la campana de notificaciones: arriba de ella y con el eje centrado (campana 56px a right:22 → eje a 50px; el «?» de 46px necesita right:27)
   +'.mtu-fab.mtu-fab-campana{bottom:92px;right:27px}'
-  +'@media(max-width:560px){.mtu-fab.mtu-fab-campana{bottom:86px;right:21px}}'
+  +'@media(max-width:560px){.mtu-fab.mtu-fab-campana{bottom:calc(86px + env(safe-area-inset-bottom,0px));right:21px}}'
   +'.mtu-fab:hover{background:#CC0000;transform:translateY(-2px)}'
   +'.mtu-scrim{position:fixed;inset:0;background:rgba(11,21,39,.62);z-index:1300;display:flex;align-items:center;justify-content:center;'
   +'padding:16px;opacity:0;visibility:hidden;transition:opacity .22s}'
@@ -262,13 +262,13 @@
   +'.mtu-dot{width:8px;height:8px;border-radius:50%;background:#d7deec;border:none;padding:0;cursor:pointer;transition:background .14s,transform .14s}'
   +'.mtu-dot.on{background:#CC0000;transform:scale(1.25)}'
   +'.mtu-btn{font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:13.5px;letter-spacing:1.5px;text-transform:uppercase;'
-  +'border-radius:10px;padding:10px 16px;cursor:pointer;transition:all .14s;border:1px solid #d7deec;background:#fff;color:#0B1527}'
+  +'border-radius:10px;padding:10px 16px;cursor:pointer;transition:all .14s;border:1px solid #d7deec;background:#fff;color:#0B1527;white-space:nowrap;flex:0 0 auto}'
   +'.mtu-btn:hover{background:#f0f3fa}'
   +'.mtu-btn[disabled]{opacity:.35;cursor:default}'
   +'.mtu-btn[disabled]:hover{background:#fff}'
   +'.mtu-btn.pri{background:#CC0000;border-color:#CC0000;color:#fff;box-shadow:0 3px 12px rgba(204,0,0,.3)}'
   +'.mtu-btn.pri:hover{background:#a00000;border-color:#a00000}'
-  +'@media(max-width:560px){.mtu-body{padding:20px 16px 12px}.mtu-bd{font-size:14px}.mtu-foot{padding:12px 12px 14px;gap:8px}}';
+  +'@media(max-width:560px){.mtu-body{padding:20px 16px 12px}.mtu-bd{font-size:14px}.mtu-foot{padding:12px 12px 14px;gap:8px}.mtu-btn{padding:10px 12px;font-size:12.5px;letter-spacing:1px}}';
 
   function montar(){
     var slug = toolActual();
