@@ -481,11 +481,22 @@ function nombreTool(k, rol){
   return TOOLS[k] ? TOOLS[k].name : k;
 }
 
-function herramientasEfectivas(rol, herramientas){
+// Herramienta de inicio del usuario (campo `inicio`), solo si existe y la tiene asignada.
+function toolInicio(session){
+  if(!session || !session.inicio) return null;
+  const t = TOOLS[session.inicio];
+  return (t && (session.herramientas||[]).includes(session.inicio)) ? t : null;
+}
+function herramientasEfectivas(rol, herramientas, soloHerramientas){
   const h = (herramientas||[]).slice();
   // El admin (Juli) ve TODAS las herramientas sin cargarlas una por una: los
   // módulos ya le dan acceso total por rol, así que también le mostramos todos los tiles.
-  if(rol==='admin'){ Object.keys(TOOLS).forEach(k=>{ if(!h.includes(k)) h.push(k); }); return h; }
+  // Excepción: un admin con `soloHerramientas` (p.ej. producto@, que necesita el rol
+  // para el Control de Pedidos y el Dashboard de stock) ve SOLO las marcadas, en ese orden.
+  if(rol==='admin'){
+    if(soloHerramientas) return h;
+    Object.keys(TOOLS).forEach(k=>{ if(!h.includes(k)) h.push(k); }); return h;
+  }
   if(rol==='sucursal' || rol==='outlet'){
     if(!h.includes('marcas')) h.push('marcas');
     // Indicadores de Sucursal es la pantalla de inicio de estos roles: siempre disponible.
@@ -538,7 +549,7 @@ async function login(){
     if(!found || String(found.pin) !== pin){ showLoginErr(); btn.disabled=false; btn.textContent='Entrar'; return; }
     // `sucursales` (para rol supervisor) define qué sucursales ve/edita en
     // Evaluaciones. Alcance "blando" en el cliente, como el resto del portal.
-    const session = { email:found.email, rol:found.rol, herramientas:herramientasEfectivas(found.rol, found.herramientas), sucursal:found.sucursal||null, outlet_id:found.outlet_id||null, sucursales:found.sucursales||null };
+    const session = { email:found.email, rol:found.rol, herramientas:herramientasEfectivas(found.rol, found.herramientas, found.soloHerramientas), sucursal:found.sucursal||null, outlet_id:found.outlet_id||null, sucursales:found.sucursales||null, inicio:found.inicio||null, soloHerramientas:!!found.soloHerramientas };
     saveSession(session);
     render(session);
   } catch(e){
@@ -567,6 +578,14 @@ function render(session){
   // mostrador): nunca ve la grilla de tiles ni la bandeja.
   if(session && session.rol==='puesto'){
     location.replace('./ubicaciones/');
+    return;
+  }
+  // Pantalla inicial propia del usuario (campo `inicio` = clave de TOOLS, se carga en el ⚙):
+  // p.ej. producto@ aterriza en Área de Producto. Tiene que ser una herramienta que tenga.
+  // ?ver=bandeja y ?ver=portal no redirigen (Bandeja y grilla siguen accesibles desde el drawer).
+  const inicioTool = toolInicio(session);
+  if(inicioTool && !verBandeja && ver!=='portal'){
+    location.replace(inicioTool.url);
     return;
   }
   if(session && (session.rol==='sucursal' || session.rol==='outlet') && !verBandeja){
@@ -717,6 +736,15 @@ async function renderUsuariosView(container){
     const actuales = u.herramientas||[];
     return '<select class="sel" multiple size="4" data-herr="'+k+'" style="min-width:150px">'+
       HERRAMIENTAS_LIST.map(h=>'<option value="'+h.id+'"'+(actuales.includes(h.id)?' selected':'')+'>'+h.nombre+'</option>').join('')+
+      '</select>'+
+      // Solo para admin: por defecto ve todos los tiles; con el check, únicamente los marcados.
+      (u.rol==='admin' ? '<label style="display:block;margin-top:6px;font-size:12px;color:var(--muted)"><input type="checkbox" data-solo="'+k+'"'+(u.soloHerramientas?' checked':'')+'> Solo estas (no ver todas)</label>' : '');
+  }
+  // Pantalla inicial: a qué herramienta aterriza al entrar (vacío = la del rol).
+  function inicioSelectHtml(id, actual, attr){
+    return '<select class="sel" '+attr+' id="'+(id||'')+'" style="min-width:150px">'+
+      '<option value=""'+(!actual?' selected':'')+'>— (la del rol)</option>'+
+      HERRAMIENTAS_LIST.map(h=>'<option value="'+h.id+'"'+(actual===h.id?' selected':'')+'>'+h.nombre+'</option>').join('')+
       '</select>';
   }
 
@@ -747,12 +775,13 @@ async function renderUsuariosView(container){
       return (ra-rb) || (ua.email||'').localeCompare(ub.email||'');
     });
     body.innerHTML =
-      '<div class="card"><div class="table-wrap"><table class="settings-table"><thead><tr><th>Email</th><th>Rol</th><th>Sucursal/Outlet</th><th>Herramientas</th><th></th></tr></thead><tbody>'+
+      '<div class="card"><div class="table-wrap"><table class="settings-table"><thead><tr><th>Email</th><th>Rol</th><th>Sucursal/Outlet</th><th>Herramientas</th><th>Pantalla inicial</th><th></th></tr></thead><tbody>'+
       keys.map(k=>{
         const u = usuarios[k];
         const sucCell = u.rol==='supervisor' ? supervisorSucSelectHtml(k,u) : esc(u.sucursal||u.outlet_id||'—');
         return '<tr><td>'+esc(u.email)+'</td><td>'+esc(u.rol)+'</td><td>'+sucCell+'</td>'+
           '<td>'+herramientasSelectHtml(k,u)+'</td>'+
+          '<td>'+inicioSelectHtml('', u.inicio||'', 'data-inicio="'+k+'"')+'</td>'+
           '<td><button class="btn btn-outline btn-sm" data-guardar-herr="'+k+'">Guardar</button> <button class="btn btn-outline btn-sm" data-reset="'+k+'">Resetear PIN</button> <button class="btn btn-outline btn-sm" data-del="'+k+'">Eliminar</button></td></tr>';
       }).join('')+
       '</tbody></table></div></div>'+
@@ -765,6 +794,8 @@ async function renderUsuariosView(container){
         '<div class="fld"><label>Outlet (si rol=outlet)</label><select class="sel" id="nuOutlet" style="width:100%"><option value="">—</option>'+OUTLETS_LIST.map(o=>'<option value="'+o.id+'">'+o.nombre+'</option>').join('')+'</select></div>'+
         '<div class="fld fld-full"><label>Sucursales que supervisa (si rol=supervisor)</label><select class="sel" multiple size="5" id="nuSupSuc" style="width:100%">'+LOCALES_SUP.map(l=>'<option value="'+l.id+'">'+l.nombre+'</option>').join('')+'</select></div>'+
         '<div class="fld fld-full"><label>Herramientas</label><select class="sel" multiple size="6" id="nuHerramientas" style="width:100%">'+HERRAMIENTAS_LIST.map(h=>'<option value="'+h.id+'">'+h.nombre+'</option>').join('')+'</select></div>'+
+        '<div class="fld"><label>Pantalla inicial (vacío = la del rol)</label>'+inicioSelectHtml('nuInicio','','style="width:100%"')+'</div>'+
+        '<div class="fld"><label>Si es admin</label><label style="font-size:13px"><input type="checkbox" id="nuSolo"> Solo las herramientas marcadas (no ver todas)</label></div>'+
       '</div><br><button class="btn btn-primary" id="btnNuevoUsuario">Crear usuario (PIN inicial 1111)</button></div>';
 
     body.querySelectorAll('button[data-guardar-herr]').forEach(b=> b.addEventListener('click', async ()=>{
@@ -773,6 +804,12 @@ async function renderUsuariosView(container){
       const herramientas = Array.from(sel.selectedOptions).map(o=>o.value);
       b.disabled=true; b.textContent='Guardando…';
       const patch = {herramientas};
+      // Pantalla inicial y, en admins, si ve solo las marcadas. Vacío/false → null (borra el campo).
+      const iniSel = body.querySelector('select[data-inicio="'+k+'"]');
+      patch.inicio = (iniSel && iniSel.value) ? iniSel.value : null;
+      usuarios[k].inicio = patch.inicio || undefined;
+      const soloChk = body.querySelector('input[data-solo="'+k+'"]');
+      if(soloChk){ patch.soloHerramientas = soloChk.checked ? true : null; usuarios[k].soloHerramientas = soloChk.checked || undefined; }
       // Si es supervisor, guardamos también sus sucursales asignadas.
       const supSel = body.querySelector('select[data-supsuc="'+k+'"]');
       if(supSel){ patch.sucursales = Array.from(supSel.selectedOptions).map(o=>o.value); usuarios[k].sucursales = patch.sucursales; }
@@ -798,6 +835,8 @@ async function renderUsuariosView(container){
       if(!email){ alert('Falta el email.'); return; }
       const herramientas = Array.from($('nuHerramientas').selectedOptions).map(o=>o.value);
       const rec = {email, pin:'1111', rol, herramientas};
+      if($('nuInicio').value) rec.inicio = $('nuInicio').value;
+      if(rol==='admin' && $('nuSolo').checked) rec.soloHerramientas = true;
       if(rol==='sucursal' || rol==='deposito' || rol==='puesto') rec.sucursal = $('nuSucursal').value;
       if(rol==='outlet') rec.outlet_id = $('nuOutlet').value;
       if(rol==='supervisor') rec.sucursales = Array.from($('nuSupSuc').selectedOptions).map(o=>o.value);
@@ -1087,6 +1126,8 @@ function openMensajes(){ showView('mensajes'); renderMensajes(); }
 function volverAlInicio(){
   const s = CURRENT_SESSION;
   const desdeModulo = new URLSearchParams(location.search).get('ver')==='bandeja';
+  const ini = toolInicio(s);
+  if(ini && desdeModulo){ location.href=ini.url; return true; }
   if(s && (s.rol==='sucursal' || s.rol==='outlet' || desdeModulo)){ location.href='./indicadores/'; return true; }
   return false;
 }
@@ -1299,7 +1340,7 @@ document.addEventListener('click', e=>{
   const s = readSession();
   if(s && s.email){
     // Normaliza sesiones ya guardadas (usuarios que quedaron logueados antes de este cambio)
-    s.herramientas = herramientasEfectivas(s.rol, s.herramientas);
+    s.herramientas = herramientasEfectivas(s.rol, s.herramientas, s.soloHerramientas);
     saveSession(s);
     render(s);
   } else showLogin();

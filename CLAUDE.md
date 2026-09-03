@@ -125,6 +125,17 @@ y las listas de sucursales/outlets.
   usuario no tiene la herramienta asignada.
 - Gestión de usuarios (alta, herramientas, reseteo de PIN): ícono ⚙ del portal,
   visible solo para `julian@mateu.com.ar` (`ADMIN_SETTINGS_EMAIL`).
+- **Pantalla inicial y tiles acotados por usuario (03/09/2026)**: dos campos opcionales
+  del registro en `usuarios/`, editables desde el ⚙ (columna «Pantalla inicial» y check
+  «Solo estas» en admins, también en el alta). `inicio` = clave de `TOOLS` a la que el
+  Portal redirige al entrar (`toolInicio()` en `render()`; tiene que estar entre sus
+  herramientas; `?ver=bandeja` y `?ver=portal` no redirigen, y «← Volver» de la Bandeja
+  vuelve ahí). `soloHerramientas:true` = un **admin** ve SOLO las herramientas marcadas,
+  en ese orden, en vez de todas (`herramientasEfectivas`). Caso de uso: `producto@` es
+  admin (lo exigen el Control de Pedidos Semanales y el Dashboard de stock) pero su
+  Portal es Área de Producto + Marcas + Gestión de Stock + Pedidos Semanales, con Área
+  de Producto como inicio. Los campos se leen al loguearse (sesiones ya abiertas los
+  toman al volver a entrar).
 - El acceso a localStorage está envuelto en try/catch para no romper en
   previews sin storage. Mantener ese patrón.
 
