@@ -146,6 +146,18 @@ La presentación del mes (`gestion-stock/?pres=YYYY-MM`, deck generado desde
 tiene usuario). En `init()` el chequeo de `?pres=` va ANTES del gate de sesión;
 el resto del módulo sigue gateado. El deck solo muestra agregados del mes.
 
+**Diseño del deck (03/09/2026, `gsPresHtml` + `gsPresTot`):** navy/rojo de marca,
+números en Saira itálica 800 (la tipografía «rendimiento» del módulo), KPIs con
+conteo animado, delta ▲/▼ (más = peor, rojo) y **sparkline de los últimos 6 meses
+cargados** (`gsRenderPresentacion` baja los meses anteriores para la tendencia);
+paneles «Top 5» por indicador; tablas con barra proporcional al máximo de la columna
+y chips de variación; horas de descarga con guías de 55/80 hs y promedio; meses de
+stock como gráfico de zonas (escala 0–12, flecha si se pasa) + tabla. Animaciones
+por IntersectionObserver con fallback (Win7) y `prefers-reduced-motion`; imprime
+con todo visible. Para probar el diseño sin navegador ni sesión:
+`node scripts/gen-presentacion-stock.js 2026-09 salida.html` (ejecuta el script del
+módulo con un DOM simulado y datos reales de Firebase).
+
 ## Meses de Stock — cómo regenerar `datos-meses-stock.js` desde el Excel
 
 El dashboard de Meses de Stock (`gestion-stock/`) no lee el Excel: lee
