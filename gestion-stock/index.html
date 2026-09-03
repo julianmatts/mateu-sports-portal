@@ -2770,12 +2770,22 @@ async function confirmarCarga(parsed){
 
     // Serie histórica del gráfico "Evolución mensual": el mes que se carga se
     // hornea SIEMPRE desde los totales parseados del archivo (la fuente real).
-    // La hoja "Periodo Anual" del Excel solo completa otros meses, y sin pisar
-    // con ceros lo ya acumulado (antes reemplazaba el objeto entero por slug y
-    // una hoja vacía/desactualizada dejaba el gráfico clavado en un solo mes).
+    // La hoja "Periodo Anual" del Excel solo completa los meses que NO tienen
+    // una carga propia en el portal: un mes ya cargado manda siempre (en
+    // 09/2026 la hoja del Excel de septiembre trajo un AGOSTO inventado y pisó
+    // el real, que quedó más que duplicado en el gráfico). Tampoco pisa con
+    // ceros lo ya acumulado.
     {
       const ciclo = cicloFromYearMonth(anio, mes);
       const mesNombre = MS_MES_NUM[mes];
+      // Meses del ciclo que ya tienen carga en discontinuos/<ym> (MAYO..DICIEMBRE
+      // = año del ciclo; ENERO..ABRIL = año siguiente).
+      const cargados = new Set();
+      CICLO_MESES.forEach((m, idx)=>{
+        const y = idx < 8 ? parseInt(ciclo,10) : parseInt(ciclo,10)+1;
+        const mm = idx < 8 ? idx+5 : idx-7;
+        if(existentes.includes(y+'-'+String(mm).padStart(2,'0'))) cargados.add(m);
+      });
       let existente = {};
       try{ existente = await fetchJSON(FB+'/periodoAnual/'+ciclo+'.json') || {}; }catch(e){}
       const merged = Object.assign({}, existente);
@@ -2784,6 +2794,7 @@ async function confirmarCarga(parsed){
           const out = Object.assign({}, merged[slug] || {});
           CICLO_MESES.forEach(m=>{
             const v = parsed.periodoAnual.data[slug][m];
+            if(cargados.has(m)){ if(out[m]===undefined) out[m] = 0; return; }
             if(v) out[m] = v;
             else if(out[m]===undefined) out[m] = 0;
           });
