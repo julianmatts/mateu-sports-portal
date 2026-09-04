@@ -246,6 +246,7 @@ table.grid .sub{font-family:var(--font-c);font-size:12px;color:var(--muted)}
 <nav class="tabs" id="tabs">
   <button class="tab on" data-tab="legajos">Legajos <span class="badge" id="bLeg">0</span></button>
   <button class="tab" data-tab="ausencias">Ausentismo <span class="badge" id="bAus">0</span></button>
+  <button class="tab" data-tab="sanciones">Sanciones <span class="badge" id="bSan">0</span></button>
   <button class="tab" data-tab="comp">Compensatorios y horas <span class="badge" id="bComp">0</span></button>
   <button class="tab" data-tab="calendario">Calendario</button>
   <button class="tab" data-tab="novedades">Novedades de nómina</button>
@@ -396,6 +397,7 @@ const HAS_DB = !!FIREBASE_DB_URL;
 let LEGAJOS = {};     // id -> legajo
 let AUSENCIAS = {};   // id -> ausencia
 let NOVEDADES = {};   // id -> novedad (del período seleccionado)
+let SANCIONES = {};   // id -> sanción disciplinaria
 // Compensatorios (agrupados por slug de sucursal, para que cada sucursal baje
 // solo lo suyo desde Mi Sucursal — misma seguridad blanda que Objetivos/Barrida).
 let COMPS = {};       // slug -> legajoId -> {nombre,puesto,movs:{id:{d,f,m,por,en,sol}}}
@@ -409,7 +411,7 @@ let FERIADOS = null;  // 'YYYY-MM-DD' -> título (del calendario retail del shel
 let CALSEM = {};      // slug -> lunesISO -> {estado:'cargada'|'sin', dias, por, en}
 let CONFIG = {};      // rrhh/config: valorHora {general, horasDia, porLegajo}
 let state = { tab:'legajos', qLeg:'', fSuc:'', fEstado:'activo', fPuesto:'',
-              qAus:'', aSuc:'', aTipo:'', aEstado:'', novPeriodo:periodoActual(),
+              qAus:'', aSuc:'', aTipo:'', aEstado:'', qSan:'', snSuc:'', snTipo:'', novPeriodo:periodoActual(),
               cSuc:'', cEstado:'pendiente', cVer:'con',
               calSuc:'', calMes:periodoActual() };
 
@@ -461,12 +463,13 @@ async function cargarFeriados(){
 }
 async function recargar(){
   try{
-    const [leg, aus, comp, sol, cal, cfg, csem] = await Promise.all([
-      fbGet(ROOT+'/legajos'), fbGet(ROOT+'/ausencias'),
+    const [leg, aus, san, comp, sol, cal, cfg, csem] = await Promise.all([
+      fbGet(ROOT+'/legajos'), fbGet(ROOT+'/ausencias'), fbGet(ROOT+'/sanciones'),
       fbGet(ROOT+'/compensatorios'), fbGet(ROOT+'/solicitudes_comp'),
       fbGet(ROOT+'/calendario'), fbGet(ROOT+'/config'), fbGet(ROOT+'/calSemanas') ]);
     LEGAJOS = leg || {};
     AUSENCIAS = aus || {};
+    SANCIONES = san || {};
     COMPS = comp || {};
     SOLIC = sol || {};
     CALEND = cal || {};
@@ -495,6 +498,7 @@ function refrescarBadges(){
   const hoy = ausentesHoy().length;
   $('bAus').textContent = pend || hoy || Object.values(AUSENCIAS).length;
   $('bComp').textContent = solicitudes().filter(s=>(s.estado||'pendiente')==='pendiente').length;
+  const bs=$('bSan'); if(bs) bs.textContent = Object.keys(SANCIONES).length;
 }
 
 /* ============================================================
@@ -507,6 +511,7 @@ function render(){
   else if(state.tab==='ausencias') v.innerHTML = viewAusencias();
   else if(state.tab==='comp') v.innerHTML = viewComp();
   else if(state.tab==='calendario') v.innerHTML = viewCalendario();
+  else if(state.tab==='sanciones') v.innerHTML = viewSanciones();
   else if(state.tab==='novedades') v.innerHTML = viewNovedades();
   else if(state.tab==='rotacion') v.innerHTML = viewRotacion();
   wire();
@@ -525,6 +530,17 @@ function novedadesOrden(){
   return Object.entries(NOVEDADES).map(([id,n])=>({id,...n}))
     .sort((a,b)=> cmp((LEGAJOS[a.legajoId]||{}).nombre||'', (LEGAJOS[b.legajoId]||{}).nombre||''));
 }
+function sancionesOrden(){
+  return Object.entries(SANCIONES).map(([id,s])=>({id,...s}))
+    .sort((a,b)=> cmp(b.fecha||'', a.fecha||''));
+}
+const TIPOS_SAN = {
+  llamado:{label:'Llamado de atención', cls:'otro'},
+  apercibimiento:{label:'Apercibimiento', cls:'lic'},
+  suspension:{label:'Suspensión', cls:'falta'},
+  acta:{label:'Acta / notificación', cls:'vac'},
+  otro:{label:'Otro', cls:'otro'},
+};
 
 /* ============================================================
    TAB 1 — LEGAJOS
@@ -2179,6 +2195,13 @@ function wire(){
   document.querySelectorAll('[data-aprob]').forEach(b=> b.onclick=()=>setEstadoAus(b.dataset.aprob,'aprobada'));
   document.querySelectorAll('[data-rech]').forEach(b=> b.onclick=()=>setEstadoAus(b.dataset.rech,'rechazada'));
 
+  // ---- Sanciones ----
+  const qSan=$('qSan'); if(qSan) qSan.oninput=debounce(()=>{ state.qSan=qSan.value; render(); },200);
+  bindSel('snSuc','snSuc'); bindSel('snTipo','snTipo');
+  if($('btnNuevaSan')) $('btnNuevaSan').onclick=()=>formSancion(null);
+  document.querySelectorAll('[data-editsan]').forEach(b=> b.onclick=()=>formSancion(b.dataset.editsan));
+  document.querySelectorAll('[data-delsan]').forEach(b=> b.onclick=()=>borrarSancion(b.dataset.delsan));
+
   // ---- Compensatorios ----
   bindSel('cSuc','cSuc'); bindSel('cEstado','cEstado'); bindSel('cVer','cVer');
   const dd=$('ddCompAdd');
@@ -2321,6 +2344,7 @@ function detalleLegajo(id){
   const tomadas=vacacionesTomadas(id);
   const saldo=base-tomadas;
   const ausList=Object.entries(AUSENCIAS).map(([k,a])=>({id:k,...a})).filter(a=>a.legajoId===id).sort((a,b)=>cmp(b.desde||'',a.desde||''));
+  const sanList=Object.entries(SANCIONES).map(([k,s])=>({id:k,...s})).filter(s=>s.legajoId===id).sort((a,b)=>cmp(b.fecha||'',a.fecha||''));
   const items=[
     ['DNI', l.dni||'—'],['CUIL', l.cuil||'—'],['Sucursal', sucLabel(l.sucursal)],['Puesto', l.puesto||'—'],
     ['Régimen', l.regimen||'—'],['Categoría', l.categoria||'—'],['Ingreso', fechaLabel(l.ingreso)],['Antigüedad', antiguedadLabel(l)],
@@ -2349,16 +2373,21 @@ function detalleLegajo(id){
     <div class="tblwrap" style="margin-top:8px"><table class="grid"><thead><tr><th>Tipo</th><th>Período</th><th class="num">Días</th><th>Estado</th></tr></thead><tbody>
     ${ausList.map(a=>{const t=TIPOS_AUS[a.tipo]||TIPOS_AUS.otro; const est=(a.estado||'aprobada'); return `<tr><td><span class="tag ${t.cls}">${esc(t.label)}</span></td><td>${fechaLabel(a.desde)} → ${fechaLabel(a.hasta)}</td><td class="num">${fmtInt(a.dias||diasEntre(a.desde,a.hasta))}</td><td>${est==='pendiente'?'<span class="tag pend">Pendiente</span>':est==='rechazada'?'<span class="tag rech">Rechazada</span>':'<span class="tag aprob">Aprobada</span>'}</td></tr>`;}).join('')}
     </tbody></table></div>` : '<div class="hintline" style="margin-top:12px">Sin ausencias registradas.</div>';
+  const histSan = sanList.length? `<div class="card-h" style="font-size:16px;margin-top:12px">Sanciones</div>
+    <div class="tblwrap" style="margin-top:8px"><table class="grid"><thead><tr><th>Tipo</th><th>Fecha</th><th class="num">Días</th><th>Motivo</th></tr></thead><tbody>
+    ${sanList.map(s=>{const t=TIPOS_SAN[s.tipo]||TIPOS_SAN.otro; return `<tr><td><span class="tag ${t.cls}">${esc(t.label)}</span></td><td>${fechaLabel(s.fecha)}</td><td class="num">${s.tipo==='suspension'&&s.dias?fmtInt(s.dias):'—'}</td><td class="sub">${esc(s.motivo||'')}</td></tr>`;}).join('')}
+    </tbody></table></div>` : '';
 
   const body=`
     <div class="dl-head"><span class="avatar">${esc(iniciales(l.nombre))}</span>
       <div><div class="n">${esc(l.nombre)}</div><div class="r">${esc(l.puesto||'—')} · ${esc(sucLabel(l.sucursal))} ${l.estado==='baja'?'<span class="tag baja">Baja</span>':'<span class="tag activo">Activo</span>'}</div></div></div>
     <div class="dl-grid">${items.map(([k,v])=>`<div class="dl-item"><div class="l">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('')}</div>
     ${l.notas?`<div class="dl-item" style="margin-top:12px"><div class="l">Notas</div><div class="v" style="font-weight:400">${esc(l.notas)}</div></div>`:''}
-    ${vacBox}${compBox}${histAus}
+    ${vacBox}${compBox}${histAus}${histSan}
     <div class="mini-links">
       <button class="btn btn-outline btn-sm" id="dlEdit">✎ Editar</button>
       <button class="btn btn-outline btn-sm" id="dlAus">+ Ausencia</button>
+      <button class="btn btn-outline btn-sm" id="dlSan">+ Sanción</button>
       <button class="btn btn-outline btn-sm" id="dlNov">+ Novedad</button>
       <button class="btn btn-outline btn-sm" id="dlComp">🕘 Compensatorios y horas</button>
     </div>`;
@@ -2366,6 +2395,7 @@ function detalleLegajo(id){
   $('mCancel').onclick=closeModal;
   $('dlEdit').onclick=()=>formLegajo(id);
   $('dlAus').onclick=()=>formAusencia(null, id);
+  $('dlSan').onclick=()=>formSancion(null, id);
   $('dlNov').onclick=()=>formNovedad(null, id);
   $('dlComp').onclick=()=>verMovsComp(compSlug||l.sucursal, id);
 }
@@ -2431,6 +2461,103 @@ async function setEstadoAus(id, estado){
 async function borrarAusencia(id){
   if(!confirm('¿Eliminar esta ausencia?')) return;
   try{ if(HAS_DB) await fbDelete(ROOT+'/ausencias/'+id); delete AUSENCIAS[id]; render(); toast('Eliminada','ok'); }
+  catch(e){ toast('No se pudo eliminar','err'); }
+}
+
+/* ============================================================
+   SANCIONES — historial disciplinario (dato estructurado, liviano).
+   Los escaneos/actas se adjuntan cuando se active el archivo en R2.
+   ============================================================ */
+function viewSanciones(){
+  const list = sancionesOrden().filter(s=>{
+    if(state.snSuc){ const l=LEGAJOS[s.legajoId]; if(!l||l.sucursal!==state.snSuc) return false; }
+    if(state.snTipo && s.tipo!==state.snTipo) return false;
+    if(state.qSan){ const l=LEGAJOS[s.legajoId]||{}; const hay=((l.nombre||'')+' '+sucLabel(l.sucursal)+' '+(s.motivo||'')).toLowerCase(); if(!hay.includes(state.qSan.toLowerCase())) return false; }
+    return true;
+  });
+  const y=new Date().getFullYear();
+  const esteAnio=Object.values(SANCIONES).filter(s=>(s.fecha||'').startsWith(String(y))).length;
+  const susp=Object.values(SANCIONES).filter(s=>s.tipo==='suspension').length;
+  const personas=new Set(Object.values(SANCIONES).map(s=>s.legajoId)).size;
+  const kpis = `<div class="kpis">
+    <div class="kpi bad"><div class="k">Sanciones ${y}</div><div class="v">${esteAnio}</div></div>
+    <div class="kpi warn"><div class="k">Suspensiones</div><div class="v">${susp}</div></div>
+    <div class="kpi info"><div class="k">Personas sancionadas</div><div class="v">${personas}</div></div>
+    <div class="kpi"><div class="k">Registros (total)</div><div class="v">${Object.keys(SANCIONES).length}</div></div>
+  </div>`;
+  const opsSuc = ['<option value="">Todas las sucursales</option>'].concat(sucsVisibles().sort((a,b)=>cmp(sucLabel(a),sucLabel(b))).map(s=>`<option value="${s}" ${state.snSuc===s?'selected':''}>${esc(sucLabel(s))}</option>`)).join('');
+  const opsTipo = ['<option value="">Todos los tipos</option>'].concat(Object.entries(TIPOS_SAN).map(([k,v])=>`<option value="${k}" ${state.snTipo===k?'selected':''}>${esc(v.label)}</option>`)).join('');
+  const toolbar = `<div class="toolbar">
+    <div class="grow"><input class="inp" id="qSan" placeholder="Buscar por persona, sucursal o motivo…" value="${esc(state.qSan)}"></div>
+    <select class="sel" id="snSuc" style="width:auto">${opsSuc}</select>
+    <select class="sel" id="snTipo" style="width:auto">${opsTipo}</select>
+    <button class="btn btn-primary btn-sm" id="btnNuevaSan">+ Sanción</button>
+  </div>`;
+  let body;
+  if(!list.length){
+    body = `<div class="empty"><div class="ic">⚖️</div><div class="t">Sin sanciones cargadas</div>
+      <div class="s">Registrá un llamado de atención, apercibimiento o suspensión con <b>+ Sanción</b>.</div></div>`;
+  } else {
+    const rows = list.map(s=>{
+      const l=LEGAJOS[s.legajoId]||{}; const t=TIPOS_SAN[s.tipo]||TIPOS_SAN.otro;
+      return `<tr>
+        <td><div class="person"><span class="avatar">${esc(iniciales(l.nombre))}</span>
+          <div><div class="nm">${esc(l.nombre||'—')}</div><div class="sub">${esc(sucLabel(l.sucursal))}</div></div></div></td>
+        <td><span class="tag ${t.cls}">${esc(t.label)}</span></td>
+        <td>${fechaLabel(s.fecha)}</td>
+        <td class="num">${s.tipo==='suspension'&&s.dias?fmtInt(s.dias):'—'}</td>
+        <td class="sub">${esc(s.motivo||'')}</td>
+        <td><div class="rowact">
+          <button class="iconbtn" data-editsan="${s.id}" title="Editar">✎</button>
+          <button class="iconbtn danger" data-delsan="${s.id}" title="Eliminar">🗑</button>
+        </div></td>
+      </tr>`;
+    }).join('');
+    body = `<div class="tblwrap"><table class="grid"><thead><tr>
+      <th>Persona</th><th>Tipo</th><th>Fecha</th><th class="num">Días</th><th>Motivo</th><th></th>
+      </tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  const nota=`<div class="banner info" style="margin-top:16px">Las sanciones de cada persona también aparecen en su legajo (pestaña Legajos → clic en la fila). Los escaneos/actas se van a poder adjuntar cuando activemos el archivo en la nube.</div>`;
+  return `<div class="sec-head"><div><h1>Sanciones</h1><div class="sub">Historial disciplinario: llamados, apercibimientos y suspensiones por persona.</div></div></div>${kpis}${toolbar}${body}${list.length?nota:''}`;
+}
+function formSancion(id, legajoPre){
+  const s = id? {...SANCIONES[id]} : {tipo:'llamado', fecha:hoyISO(), legajoId:legajoPre||''};
+  const body=`
+    <div class="frow one"><div class="f"><label>Persona *</label><select class="sel" id="snLeg"><option value="">— Elegí a la persona —</option>${legajoSelectOptions(s.legajoId)}</select></div></div>
+    <div class="frow">
+      <div class="f"><label>Tipo</label><select class="sel" id="snTipoF">${selOptions(Object.entries(TIPOS_SAN).map(([k,v])=>[k,v.label]), s.tipo)}</select></div>
+      <div class="f"><label>Fecha</label><input class="inp" id="snFecha" type="date" value="${esc((s.fecha||'').slice(0,10))}"></div>
+    </div>
+    <div class="frow" id="snDiasRow" ${s.tipo==='suspension'?'':'style="display:none"'}>
+      <div class="f"><label>Días de suspensión</label><input class="inp" id="snDias" type="number" min="0" value="${s.dias||''}"></div>
+      <div class="f"></div>
+    </div>
+    <div class="frow one"><div class="f"><label>Motivo *</label><input class="inp" id="snMotivo" value="${esc(s.motivo||'')}" placeholder="Ej: ausencia sin aviso, incumplimiento…"></div></div>
+    <div class="frow one"><div class="f"><label>Notas / observaciones</label><textarea class="inp" id="snNotas" rows="2">${esc(s.notas||'')}</textarea></div></div>`;
+  openModal(id?'Editar sanción':'Nueva sanción', body, `<button class="btn btn-outline" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">${id?'Guardar':'Registrar'}</button>`);
+  $('snTipoF').onchange=()=>{ $('snDiasRow').style.display = $('snTipoF').value==='suspension'?'':'none'; };
+  $('mCancel').onclick=closeModal;
+  $('mSave').onclick=async()=>{
+    if(!$('snLeg').value){ toast('Elegí a la persona','err'); return; }
+    if(!$('snFecha').value){ toast('Poné la fecha','err'); return; }
+    if(!$('snMotivo').value.trim()){ toast('Cargá el motivo','err'); return; }
+    const data={ legajoId:$('snLeg').value, tipo:$('snTipoF').value, fecha:$('snFecha').value,
+      dias: $('snTipoF').value==='suspension' && $('snDias').value!==''? Number($('snDias').value):null,
+      motivo:$('snMotivo').value.trim(), notas:$('snNotas').value.trim(), actualizado:nowISO() };
+    if(!id) data.creado=nowISO();
+    await guardarSancion(id, data);
+  };
+}
+async function guardarSancion(id, data){
+  try{
+    if(HAS_DB){ if(id){ await fbPut(ROOT+'/sanciones/'+id, data); } else { const r=await fbPost(ROOT+'/sanciones', data); id=r.name; } }
+    else { id=id||('local-'+Object.keys(SANCIONES).length); }
+    SANCIONES[id]=data; closeModal(); render(); toast('Sanción guardada','ok');
+  }catch(e){ console.error(e); toast('No se pudo guardar','err'); }
+}
+async function borrarSancion(id){
+  if(!confirm('¿Eliminar esta sanción?')) return;
+  try{ if(HAS_DB) await fbDelete(ROOT+'/sanciones/'+id); delete SANCIONES[id]; render(); toast('Eliminada','ok'); }
   catch(e){ toast('No se pudo eliminar','err'); }
 }
 
