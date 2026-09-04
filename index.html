@@ -389,6 +389,17 @@ const FB_USUARIOS = FB + '/usuarios.json';
 
 // Único usuario que ve el ícono de ajustes (gestión de usuarios).
 const ADMIN_SETTINGS_EMAIL = 'julian@mateu.com.ar';
+// Perfiles FIJOS en el código (pedido de Juli 04/09/2026): pisan `herramientas`, `inicio` y
+// `soloHerramientas` del registro de Firebase al loguearse, así no dependen del ⚙.
+// producto@ es admin (lo exigen Pedidos Semanales y Gestión de Stock) pero su Portal son
+// estas cuatro herramientas, en este orden, con Área de Producto como pantalla inicial.
+const PERFILES_FIJOS = {
+  'producto@mateu.com.ar': { herramientas:['equipo','marcas','gestion-stock','pedidos-semanales'], inicio:'equipo', soloHerramientas:true },
+};
+function aplicarPerfilFijo(u){
+  const f = u && PERFILES_FIJOS[(u.email||'').toLowerCase()];
+  return f ? Object.assign({}, u, f) : u;
+}
 
 // Sucursales y outlets, para el alta de usuarios (mismas listas que usa Gestión de Stock).
 const SUCURSALES = [
@@ -555,6 +566,7 @@ async function login(){
     if(!found || String(found.pin) !== pin){ showLoginErr(); btn.disabled=false; btn.textContent='Entrar'; return; }
     // `sucursales` (para rol supervisor) define qué sucursales ve/edita en
     // Evaluaciones. Alcance "blando" en el cliente, como el resto del portal.
+    found = aplicarPerfilFijo(found);
     const session = { email:found.email, rol:found.rol, herramientas:ordenarInicio(herramientasEfectivas(found.rol, found.herramientas, found.soloHerramientas), found.inicio), sucursal:found.sucursal||null, outlet_id:found.outlet_id||null, sucursales:found.sucursales||null, inicio:found.inicio||null, soloHerramientas:!!found.soloHerramientas };
     saveSession(session);
     render(session);
@@ -785,7 +797,8 @@ async function renderUsuariosView(container){
       keys.map(k=>{
         const u = usuarios[k];
         const sucCell = u.rol==='supervisor' ? supervisorSucSelectHtml(k,u) : esc(u.sucursal||u.outlet_id||'—');
-        return '<tr><td>'+esc(u.email)+'</td><td>'+esc(u.rol)+'</td><td>'+sucCell+'</td>'+
+        const fijo = PERFILES_FIJOS[(u.email||'').toLowerCase()] ? '<div style="font-size:11px;color:var(--red);margin-top:4px">Herramientas e inicio fijos en el código (PERFILES_FIJOS)</div>' : '';
+        return '<tr><td>'+esc(u.email)+fijo+'</td><td>'+esc(u.rol)+'</td><td>'+sucCell+'</td>'+
           '<td>'+herramientasSelectHtml(k,u)+'</td>'+
           '<td>'+inicioSelectHtml('', u.inicio||'', 'data-inicio="'+k+'"')+'</td>'+
           '<td><button class="btn btn-outline btn-sm" data-guardar-herr="'+k+'">Guardar</button> <button class="btn btn-outline btn-sm" data-reset="'+k+'">Resetear PIN</button> <button class="btn btn-outline btn-sm" data-del="'+k+'">Eliminar</button></td></tr>';
@@ -1346,6 +1359,8 @@ document.addEventListener('click', e=>{
   const s = readSession();
   if(s && s.email){
     // Normaliza sesiones ya guardadas (usuarios que quedaron logueados antes de este cambio)
+    const fijo = PERFILES_FIJOS[(s.email||'').toLowerCase()];
+    if(fijo){ Object.assign(s, fijo); }
     s.herramientas = ordenarInicio(herramientasEfectivas(s.rol, s.herramientas, s.soloHerramientas), s.inicio);
     saveSession(s);
     render(s);
