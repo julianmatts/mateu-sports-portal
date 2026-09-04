@@ -305,6 +305,40 @@ html .top-in{padding-top:calc(12px + env(safe-area-inset-top,0px))}
 .cob-nota b{color:var(--navy)}
 .kpi-empty{color:var(--muted);font-size:13px;line-height:1.5;margin-top:8px}
 
+/* ===== EDITOR DE EQUIPO Y HORAS: una tarjeta por persona ===== */
+.eqe{display:flex;flex-direction:column;gap:12px}
+.eqe-p{background:#fff;border:1px solid var(--border);border-left:5px solid var(--eqc,var(--navy));border-radius:12px;overflow:hidden}
+.eqe-head{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fafbfe;border-bottom:1px solid #eef0f7}
+.eqe-av{width:36px;height:36px;border-radius:50%;background:var(--eqc,var(--navy));color:#fff;font-family:var(--font-c);font-weight:700;font-size:14px;letter-spacing:.5px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.eqe-num{font-family:var(--font-c);font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.eqe-head .eq-nom{flex:1;min-width:140px;max-width:300px;border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:14.5px;font-family:var(--font-b);font-weight:600;color:var(--navy)}
+.eqe-head .eq-nom:focus{outline:none;border-color:var(--eqc,var(--navy));box-shadow:0 0 0 3px rgba(11,21,39,.08)}
+.eqe-tot{margin-left:auto;display:inline-flex;align-items:baseline;gap:5px;font-family:var(--font-c);font-weight:700;font-size:16px;color:var(--eqc,var(--navy));background:#fff;border:1px solid var(--border);border-radius:999px;padding:4px 13px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.eqe-tot small{font-weight:500;color:var(--muted);font-size:11px;letter-spacing:.8px;text-transform:uppercase}
+.eqe-p.sin .eqe-tot{color:var(--muted)}
+.eqe-head .eq-del{padding:5px 9px!important}
+.eqe-body{overflow-x:auto}
+.eqe-grid{display:grid;grid-template-columns:78px repeat(7,minmax(46px,1fr)) 38px;gap:4px 6px;align-items:center;padding:8px 14px 12px;min-width:540px}
+.eqe-grid .dh{font-family:var(--font-c);font-size:11.5px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:center;padding:2px 0 3px;line-height:1.15}
+.eqe-grid .dh b{display:block;font-size:12.5px;color:var(--navy);letter-spacing:.5px}
+.eqe-grid .dh.wk,.eqe-grid .dh.wk b{color:#b3b8c9}
+.eqe-grid .tl{font-family:var(--font-c);font-size:13px;color:var(--navy);font-weight:600;white-space:nowrap}
+.eqe-grid .tl small{color:var(--muted);font-weight:400;font-size:11px;margin-left:3px}
+.eqe-grid .eq-h{width:100%;max-width:56px;margin:0 auto;display:block;text-align:center;border:1px solid var(--border);border-radius:7px;padding:6px 2px;font-size:13.5px;font-variant-numeric:tabular-nums;background:#fff;color:var(--navy);transition:background .12s,border-color .12s}
+.eqe-grid .eq-h.on{background:var(--eqbg,#f3f5fb);border-color:var(--eqc,var(--navy));font-weight:700}
+.eqe-grid .eq-h.do:not(.on){background:#f8f8fa;border-style:dashed}
+.eqe-grid .eq-h:focus{outline:none;border-color:var(--eqc,var(--navy));box-shadow:0 0 0 3px rgba(11,21,39,.08)}
+.eqe-grid .eq-rep{padding:4px 7px!important;font-size:11px!important;color:var(--muted)}
+.eqe-grid .eq-rep:hover{color:var(--navy)}
+@media(max-width:640px){
+  .eqe-head{flex-wrap:wrap;gap:8px 10px;padding:10px 12px}
+  .eqe-head .eq-nom{min-width:0;flex:1 1 100%;max-width:none;order:5}
+  .eqe-head .eqe-num{flex:1}
+  .eqe-tot{margin-left:0}
+  .eqe-grid{grid-template-columns:64px repeat(7,minmax(40px,1fr)) 34px;padding:8px 10px 10px;min-width:480px;gap:4px}
+  .eqe-grid .eq-h{padding:6px 0;font-size:13px}
+}
+
 /* ===== DESCOMPOSICIÓN ===== */
 .eq-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .eq-row + .eq-row{margin-top:18px;padding-top:18px;border-top:1px dashed var(--border)}
@@ -4373,31 +4407,40 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
 }
 
 /* --- editor de equipo y horas --- */
+// Paleta que distingue a cada persona en el editor (se repite cada 6).
+const EQ_COLORES=[['#0B1527','#eef0f6'],['#1d4ed8','#eaf0ff'],['#CC0000','#fdeeee'],['#0f766e','#e8f5f3'],['#6d28d9','#f1ebfd'],['#c2410c','#fdefe7']];
+const eqIniciales = n => { const w=String(n||'').trim().split(/\s+/).filter(Boolean); return w.length ? (w[0][0]+(w.length>1?w[w.length-1][0]:'')).toUpperCase() : '?'; };
 function eqEditorHtml(){
   const E=_eqEdit;
   let h='';
   if(E.copiadaDe) h+='<div style="background:#f8f9fe;border:1px solid var(--border);border-radius:9px;padding:8px 12px;margin-bottom:12px;font-size:12.5px">Arranqué con el equipo de la <b>'+esc(objSemTag(E.copiadaDe))+'</b> — ajustá lo que cambió y guardá.</div>';
-  h+='<p class="hint" style="margin:0 0 10px">Horas de venta por turno y día de cada persona (T1 9-13 · T2 13-16 · T3 16-20). El botón <b>⇉</b> repite el lunes en Ma-Sá. Sin horas = no reparte meta (vacaciones, licencia).</p>';
-  h+='<div class="tbl-wrap"><table style="min-width:720px"><thead><tr><th class="L" style="min-width:150px">Persona</th><th class="L">Turno</th>'
-    +EQ_DIAS.map(d=>'<th>'+d+'</th>').join('')+'<th></th><th>Total</th><th></th></tr></thead><tbody>';
+  h+='<p class="hint" style="margin:0 0 12px">Horas de venta por turno y día de cada persona (T1 9-13 · T2 13-16 · T3 16-20). El botón <b>⇉</b> repite el lunes en Ma-Sá. Sin horas = no reparte meta (vacaciones, licencia).</p>';
+  // fechas de la semana para la cabecera de días
+  let dias=[]; try{ const d0=new Date(E.sem+'T12:00:00'); dias=EQ_DIAS.map((d,i)=>{ const x=new Date(d0); x.setDate(d0.getDate()+i); return isFinite(x)?x.getDate():''; }); }catch(e){ dias=EQ_DIAS.map(()=>''); }
+  const cab='<div class="dh"></div>'+EQ_DIAS.map((d,i)=>'<div class="dh'+(i===6?' wk':'')+'">'+d+(dias[i]!==''?'<b>'+dias[i]+'</b>':'')+'</div>').join('')+'<div class="dh"></div>';
+  h+='<div class="eqe">';
   E.equipo.forEach((p,pi)=>{
+    const col=EQ_COLORES[pi%EQ_COLORES.length];
+    const tot=eqHorasPersona(p);
+    h+='<div class="eqe-p'+(tot>0?'':' sin')+'" style="--eqc:'+col[0]+';--eqbg:'+col[1]+'">';
+    h+='<div class="eqe-head"><span class="eqe-av eq-av" data-p="'+pi+'">'+esc(eqIniciales(p.nombre))+'</span>'
+      +'<span class="eqe-num">Vendedor '+(pi+1)+'</span>'
+      +'<input type="text" class="eq-nom" data-p="'+pi+'" value="'+esc(p.nombre)+'" placeholder="Nombre y apellido">'
+      +'<span class="eqe-tot"><b class="eq-tot" data-p="'+pi+'">'+fmt2(tot)+' h</b><small>semana</small></span>'
+      +'<button type="button" class="eq-del tb-btn" data-p="'+pi+'" title="Quitar del equipo" style="color:var(--bad,#c0261f)">✕</button></div>';
+    h+='<div class="eqe-body"><div class="eqe-grid">'+cab;
     EQ_TURNOS.forEach((T,t)=>{
-      h+='<tr>';
-      if(t===0) h+='<td class="L" rowspan="3" style="vertical-align:top"><input type="text" class="eq-nom" data-p="'+pi+'" value="'+esc(p.nombre)+'" placeholder="Nombre" style="width:140px;border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13.5px"></td>';
-      h+='<td class="L" style="white-space:nowrap;font-size:12px;color:var(--muted)">'+T.lbl+' <span style="font-size:10.5px">'+T.sub+'</span></td>';
+      h+='<div class="tl">'+T.lbl+'<small>'+T.sub+'</small></div>';
       for(let d=0;d<7;d++){
-        h+='<td style="padding:4px 3px"><input type="text" inputmode="decimal" class="eq-h" data-p="'+pi+'" data-d="'+d+'" data-t="'+t+'" value="'+(p.h[d][t]||'')+'" style="width:38px;text-align:center;border:1px solid var(--border);border-radius:5px;padding:4px 2px;font-size:12.5px"></td>';
+        const v=p.h[d][t]||0;
+        h+='<input type="text" inputmode="decimal" class="eq-h'+(v>0?' on':'')+(d===6?' do':'')+'" data-p="'+pi+'" data-d="'+d+'" data-t="'+t+'" value="'+(v||'')+'" title="'+T.lbl+' '+EQ_DIAS[d]+' · máx. '+T.max+' h">';
       }
-      h+='<td style="padding:4px 3px"><button type="button" class="eq-rep tb-btn" data-p="'+pi+'" data-t="'+t+'" title="Repetir Lu en Ma-Sá" style="padding:4px 8px;font-size:11px">⇉</button></td>';
-      if(t===0){
-        h+='<td rowspan="3" style="vertical-align:middle;font-weight:700" class="eq-tot" data-p="'+pi+'">'+fmt2(eqHorasPersona(p))+' h</td>'
-          +'<td rowspan="3" style="vertical-align:middle"><button type="button" class="eq-del tb-btn" data-p="'+pi+'" title="Quitar" style="padding:4px 9px;color:var(--bad,#c0261f)">✕</button></td>';
-      }
-      h+='</tr>';
+      h+='<button type="button" class="eq-rep tb-btn" data-p="'+pi+'" data-t="'+t+'" title="Repetir el lunes en Ma-Sá">⇉</button>';
     });
+    h+='</div></div></div>';
   });
-  h+='</tbody></table></div>';
-  h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px">'
+  h+='</div>';
+  h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px">'
     +'<button type="button" id="eqAdd" class="tb-btn">+ Agregar persona</button>'
     +'<button type="button" id="eqImportar" class="tb-btn">⇩ Importar de Plantilla</button>'
     +'<button type="button" id="eqImportPMS" class="tb-btn" title="Trae el equipo y las horas por turno de la hoja REAL del PMS semanal">⇧ Importar del Excel PMS</button>'
@@ -5044,13 +5087,18 @@ function eqWire(slug, sem, eqData){
   };
   // editor: inputs del borrador (sin re-render por tecla)
   if(_eqEdit && _eqEdit.slug===slug && _eqEdit.sem===sem){
-    card.querySelectorAll('.eq-nom').forEach(inp=>inp.oninput=()=>{ _eqEdit.equipo[+inp.dataset.p].nombre=inp.value; });
+    card.querySelectorAll('.eq-nom').forEach(inp=>inp.oninput=()=>{
+      _eqEdit.equipo[+inp.dataset.p].nombre=inp.value;
+      const av=card.querySelector('.eq-av[data-p="'+inp.dataset.p+'"]'); if(av) av.textContent=eqIniciales(inp.value);
+    });
     card.querySelectorAll('.eq-h').forEach(inp=>inp.oninput=()=>{
       const p=+inp.dataset.p, d=+inp.dataset.d, t=+inp.dataset.t;
       let x=parseFloat(String(inp.value).replace(',','.')); if(!isFinite(x)||x<0) x=0;
       if(x>EQ_TURNOS[t].max) x=EQ_TURNOS[t].max;
       _eqEdit.equipo[p].h[d][t]=x;
+      inp.classList.toggle('on', x>0);
       const tot=card.querySelector('.eq-tot[data-p="'+p+'"]'); if(tot) tot.textContent=fmt2(eqHorasPersona(_eqEdit.equipo[p]))+' h';
+      const cardP=inp.closest('.eqe-p'); if(cardP) cardP.classList.toggle('sin', !(eqHorasPersona(_eqEdit.equipo[p])>0));
     });
     card.querySelectorAll('.eq-rep').forEach(b=>b.onclick=()=>{
       const p=+b.dataset.p, t=+b.dataset.t, v0=_eqEdit.equipo[p].h[0][t];
