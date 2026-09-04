@@ -339,6 +339,42 @@ html .top-in{padding-top:calc(12px + env(safe-area-inset-top,0px))}
   .eqe-grid .eq-h{padding:6px 0;font-size:13px}
 }
 
+/* ===== EQUIPO (solo lectura): tarjeta por persona, mismo lenguaje que el editor ===== */
+.eqv{display:flex;flex-direction:column;gap:10px}
+.eqv-p{background:#fff;border:1px solid var(--border);border-left:5px solid var(--eqc,var(--navy));border-radius:12px;overflow:hidden}
+.eqv-p.fuera{--eqc:#9aa3b8;--eqbg:#f1f2f6}
+.eqv-head{display:flex;align-items:center;gap:10px 14px;padding:10px 14px;flex-wrap:wrap;cursor:pointer;user-select:none}
+.eqv-head.nodet{cursor:default}
+.eqv-p:not(.open) .eqv-head:not(.nodet):hover{background:#fafbfe}
+.eqv-who{display:flex;align-items:center;gap:10px;flex:1 1 210px;min-width:0}
+.eqv-nom{font-family:var(--font-c);font-size:16.5px;font-weight:700;color:var(--navy);line-height:1.1;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.eqv-sub{font-size:11.5px;color:var(--muted);margin-top:3px}
+.eqv-stats{display:flex;gap:6px 20px;flex-wrap:wrap;align-items:flex-end;margin-left:auto}
+.eqv-st{text-align:right;min-width:62px}
+.eqv-st .l{font-family:var(--font-c);font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.eqv-st .v{font-family:var(--font-c);font-size:16px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;line-height:1.15;white-space:nowrap}
+.eqv-st .v.big{font-size:19px;color:var(--eqc,var(--navy))}
+.eqv-st .v.dim{color:var(--muted);font-weight:500}
+.eqv-st .eq-real{width:110px;text-align:right;border:1px solid var(--border);border-radius:6px;padding:5px 7px;font-size:13px;font-family:var(--font-b)}
+.eqv-caret{display:inline-block;color:var(--red);font-size:13px;width:16px;text-align:center;transition:transform .15s;flex:0 0 auto}
+.eqv-p.open .eqv-caret{transform:rotate(90deg)}
+.eqv-bar{height:4px;background:#eef0f7}
+.eqv-bar i{display:block;height:100%;background:var(--eqc,var(--red));transition:width .3s}
+.eqv-det{display:none;background:#f8f9fe;border-top:1px solid #eef0f7;padding:10px 14px 12px}
+.eqv-p.open .eqv-det{display:block}
+.eqv-tot{background:var(--navy);color:#fff;border-radius:12px;padding:11px 16px;display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;margin-top:2px}
+.eqv-tot .eqv-nom{color:#fff;font-family:var(--font-d);font-size:20px;font-weight:400;letter-spacing:.5px}
+.eqv-tot .eqv-st .l{color:#aab6d0}
+.eqv-tot .eqv-st .v{color:#fff}
+.eqv-tot .eqv-st .v.big{color:#fff}
+@media(max-width:640px){
+  .eqv-head{padding:10px 12px}
+  .eqv-stats{margin-left:0;width:100%;justify-content:space-between;gap:6px 10px}
+  .eqv-st{min-width:0;text-align:left}
+  .eqv-caret{position:absolute;right:12px;top:14px}
+  .eqv-p{position:relative}
+}
+
 /* ===== DESCOMPOSICIÓN ===== */
 .eq-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .eq-row + .eq-row{margin-top:18px;padding-top:18px;border-top:1px dashed var(--border)}
@@ -3590,52 +3626,37 @@ function veDetailHtml(ve, metaVal, prevVe){
       +'<div style="position:relative;height:8px;background:#eef0f7;border-radius:5px;overflow:hidden;margin:0 0 14px">'
       +'<i style="position:absolute;left:0;top:0;bottom:0;border-radius:5px;width:'+w+'%;background:'+col+';display:block"></i></div>';
   }
-  h+='<div class="tbl-wrap"><table><thead><tr><th class="L">Vendedor</th>';
-  if(hayMeta) h+='<th>Horas venta</th><th>Su meta</th>';
-  h+='<th>Venta</th>';
-  if(hayMeta) h+='<th>% de su meta</th>';
-  h+='<th>Participación</th>';
-  if(hayTk) h+='<th>Tickets</th>';
-  if(hayTk&&hayUn) h+='<th>UPT</th>';
-  if(hayTk) h+='<th>Ticket prom.</th>';
-  h+='</tr></thead><tbody>';
-  const nCols = 2 + (hayMeta?3:0) + (hayTk?2:0) + (hayTk&&hayUn?1:0);
+  h+='<div class="eqv">';
   vs.forEach((x,i)=>{
     const part=totV?x.venta/totV:0, w=Math.round(part*100);
     const upt=x.tickets?x.unidades/x.tickets:null, tp=x.tickets?x.venta/x.tickets:null;
     const conDias = (x.dias && x.dias.length) || x.venta>0;
     const pctInd = x.pct || (x.meta?x.venta/x.meta:0);
-    h+='<tr'+(conDias?' class="vetr" style="cursor:pointer" title="Clic para ver KPIs y día a día"':'')+'>'
-      +'<td class="L">'+(conDias?'<span class="caret">▸</span>':'')+esc(x.nombre)
-      +(x.nota?' <span class="tag cover">'+esc(x.nota)+'</span>':'')+'</td>';
-    if(hayMeta) h+='<td>'+(x.horas?fmt2(x.horas)+' h':'—')+'</td><td>'+(x.meta?objMoney(x.meta):'—')+'</td>';
-    h+='<td><b>'+objMoney(x.venta)+'</b></td>';
-    if(hayMeta) h+='<td>'+(x.meta?'<b style="color:'+pctCol(pctInd)+'">'+Math.round(pctInd*100)+'%</b>':'—')+'</td>';
-    h+='<td><div style="display:flex;align-items:center;gap:8px;justify-content:flex-end"><span style="font-variant-numeric:tabular-nums">'+w+'%</span>'
-      +'<span style="display:inline-block;width:60px;height:6px;background:#eef0f7;border-radius:4px;overflow:hidden"><i style="display:block;height:100%;width:'+w+'%;background:var(--red)"></i></span></div></td>';
-    if(hayTk) h+='<td>'+fmtN(x.tickets||0)+'</td>';
-    if(hayTk&&hayUn) h+='<td>'+(upt!=null?fmt2(upt):'—')+'</td>';
-    if(hayTk) h+='<td>'+(tp!=null?objMoney(tp):'—')+'</td>';
-    h+='</tr>';
-    if(conDias){
-      // fila oculta: KPIs + comparativa vs semana anterior + insight + día a día
-      const notaMin = x.minimo>0 ? 'Mínimo: <b>'+objMoney(x.minimo)+'</b>'+(x.meta?' · Meta: <b>'+objMoney(x.meta)+'</b>':'') : null;
-      h+='<tr class="vedias" style="display:none"><td colspan="'+nCols+'" class="L" style="background:#f8f9fe;padding:10px 14px 12px">'
-        + eqDetalleHtml(x.nombre, x, prevM(x.nombre), diasSet, notaMin, null, x.meta||0, x.horas||0) + '</td></tr>';
-    }
+    const stats=[];
+    if(hayMeta){ stats.push({l:'Horas venta', v:x.horas?fmt2(x.horas)+' h':'—', cls:x.horas?'':'dim'}); stats.push({l:'Su meta', v:x.meta?objMoney(x.meta):'—', cls:x.meta?'':'dim'}); }
+    stats.push({l:'Venta', v:objMoney(x.venta), cls:'big'});
+    if(hayMeta) stats.push({l:'% de su meta', v:x.meta?Math.round(pctInd*100)+'%':'—', cls:x.meta?'':'dim', color:x.meta?pctCol(pctInd):null});
+    stats.push({l:'Participación', v:w+'%'});
+    if(hayTk) stats.push({l:'Tickets', v:fmtN(x.tickets||0)});
+    if(hayTk&&hayUn) stats.push({l:'UPT', v:upt!=null?fmt2(upt):'—', cls:upt!=null?'':'dim'});
+    if(hayTk) stats.push({l:'Ticket prom.', v:tp!=null?objMoney(tp):'—', cls:tp!=null?'':'dim'});
+    const notaMin = x.minimo>0 ? 'Mínimo: <b>'+objMoney(x.minimo)+'</b>'+(x.meta?' · Meta: <b>'+objMoney(x.meta)+'</b>':'') : null;
+    h+=eqCardHtml({ idx:i, nombre:x.nombre, tags:(x.nota?' <span class="tag cover">'+esc(x.nota)+'</span>':''), stats, part:totV?part:null,
+      detalle: conDias ? eqDetalleHtml(x.nombre, x, prevM(x.nombre), diasSet, notaMin, null, x.meta||0, x.horas||0) : null });
   });
-  h+='<tr class="team" style="cursor:default"><td class="L">Total equipo</td>';
+  const tst=[];
   if(hayMeta){ const hTot=(ve.total&&ve.total.horas)||vs.reduce((a,x)=>a+(x.horas||0),0);
     const pctTot = metaRef?totV/metaRef:0;
-    h+='<td>'+fmt2(hTot)+' h</td><td>'+(metaRef?objMoney(metaRef):'—')+'</td><td>'+objMoney(totV)+'</td>'
-      +'<td>'+(metaRef?'<b style="color:'+pctCol(pctTot)+'">'+Math.round(pctTot*100)+'%</b>':'—')+'</td><td>100%</td>';
-  } else {
-    h+='<td>'+objMoney(totV)+'</td><td>100%</td>';
-  }
-  if(hayTk) h+='<td>'+fmtN(totT)+'</td>';
-  if(hayTk&&hayUn){ const u=vs.reduce((a,x)=>a+(x.unidades||0),0); h+='<td>'+(totT?fmt2(u/totT):'—')+'</td>'; }
-  if(hayTk) h+='<td>'+(totT?objMoney(totV/totT):'—')+'</td>';
-  h+='</tr></tbody></table></div>';
+    tst.push({l:'Horas venta', v:fmt2(hTot)+' h'}); tst.push({l:'Meta', v:metaRef?objMoney(metaRef):'—'});
+    tst.push({l:'Venta', v:objMoney(totV), cls:'big'});
+    tst.push({l:'% de la meta', v:metaRef?Math.round(pctTot*100)+'%':'—', color:metaRef?pctCol(pctTot):null});
+  } else tst.push({l:'Venta', v:objMoney(totV), cls:'big'});
+  tst.push({l:'Participación', v:'100%'});
+  if(hayTk) tst.push({l:'Tickets', v:fmtN(totT)});
+  if(hayTk&&hayUn){ const u=vs.reduce((a,x)=>a+(x.unidades||0),0); tst.push({l:'UPT', v:totT?fmt2(u/totT):'—'}); }
+  if(hayTk) tst.push({l:'Ticket prom.', v:totT?objMoney(totV/totT):'—'});
+  h+=eqTotalCardHtml(tst);
+  h+='</div>';
   if(hayDias || vs.some(x=>x.venta>0)) h+='<p class="hint" style="margin-top:8px">Clic en un vendedor para ver sus KPIs, la comparativa con la semana pasada y su día a día.</p>';
   return h;
 }
@@ -4332,7 +4353,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
   const rows=[];
   equipo.forEach((p,i)=>{
     const r=matches[i];
-    rows.push({ nombre:p.nombre, horas:eqHorasPersona(p), share:shares[i],
+    rows.push({ idx:i, nombre:p.nombre, horas:eqHorasPersona(p), share:shares[i],
       meta:metaVal*shares[i], min:minVal*shares[i],
       objDias: metaVal ? sharesDia[i].map(s=>metaVal*s) : null,
       horasSem: eqHorasPersonaDias(p, diasSet),   // horas de los días ya cargados (tickets/h justos a mitad de semana)
@@ -4352,45 +4373,42 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
       +(_jvState.pend.length?' <button type="button" id="jvBtn" class="tb-btn" style="margin-left:6px;padding:3px 10px;font-size:11.5px">Justificar</button>':'')
       +'</div>';
   }
-  h+='<div class="tbl-wrap"><table><thead><tr><th class="L">Vendedor</th><th>Horas venta</th>'
-    +(metaVal?'<th>Su meta</th>':'')
-    +'<th>Venta</th>'+(metaVal?'<th>% de su meta</th>':'')+'<th>Participación</th></tr></thead><tbody>';
-  const nCols = 3 + (metaVal?2:0);
+  h+='<div class="eqv">';
   rows.forEach(row=>{
     const pct = (row.venta&&row.meta) ? row.venta/row.meta : 0;
     const part = totReal ? row.venta/totReal : 0, wp=Math.round(part*100);
     // datos para el desplegable: el registro del Excel (KPIs/día a día) o el real manual
     const cur = row.veRow ? (row.src==='manual' ? {...row.veRow, venta:row.venta} : row.veRow)
                           : (row.venta>0 ? {venta:row.venta} : null);
-    h+='<tr class="vetr" style="cursor:pointer" title="Clic para ver KPIs y día a día"><td class="L"><span class="caret">▸</span>'+esc(row.nombre)
-      +(row.fuera?' <span class="tag cover">fuera del equipo</span>':'')
-      +(row.src==='manual'?' <span class="tag" title="cargado a mano">✎</span>':'')+'</td>';
-    h+='<td>'+(row.horas?fmt2(row.horas)+' h':'—')+'</td>';
-    if(metaVal) h+='<td>'+(row.share?objMoney(row.meta):'—')+'</td>';
+    const tags=(row.fuera?' <span class="tag cover">fuera del equipo</span>':'')
+      +(row.src==='manual'?' <span class="tag" title="cargado a mano">✎</span>':'');
+    const stats=[{l:'Horas venta', v:row.horas?fmt2(row.horas)+' h':'—', cls:row.horas?'':'dim'}];
+    if(metaVal) stats.push({l:'Su meta', v:row.share?objMoney(row.meta):'—', cls:row.share?'':'dim'});
     if(editReal && !row.fuera){
       const k=eqKeyName(row.nombre), val=_eqRealDraft.real[k];
-      h+='<td><input type="text" inputmode="numeric" class="eq-real" data-k="'+esc(k)+'" value="'+(val>0?Math.round(val):'')+'" style="width:110px;text-align:right;border:1px solid var(--border);border-radius:6px;padding:5px 7px;font-size:13px" onclick="event.stopPropagation()"></td>';
+      stats.push({l:'Venta', v:'<input type="text" inputmode="numeric" class="eq-real" data-k="'+esc(k)+'" value="'+(val>0?Math.round(val):'')+'" onclick="event.stopPropagation()">'});
     } else {
-      h+='<td><b>'+(row.venta?objMoney(row.venta):'—')+'</b></td>';
+      stats.push({l:'Venta', v:row.venta?objMoney(row.venta):'—', cls:row.venta?'big':'dim'});
     }
-    if(metaVal) h+='<td>'+(row.venta&&row.meta?'<b style="color:'+pctCol(pct)+'">'+Math.round(pct*100)+'%</b>':'—')+'</td>';
-    h+='<td><div style="display:flex;align-items:center;gap:8px;justify-content:flex-end"><span style="font-variant-numeric:tabular-nums">'+wp+'%</span>'
-      +'<span style="display:inline-block;width:60px;height:6px;background:#eef0f7;border-radius:4px;overflow:hidden"><i style="display:block;height:100%;width:'+wp+'%;background:var(--red)"></i></span></div></td>';
-    h+='</tr>';
+    if(metaVal) stats.push({l:'% de su meta', v:(row.venta&&row.meta)?Math.round(pct*100)+'%':'—', cls:(row.venta&&row.meta)?'':'dim', color:(row.venta&&row.meta)?pctCol(pct):null});
+    stats.push({l:'Participación', v:(totReal?wp+'%':'—'), cls:totReal?'':'dim'});
     const notaMin = (!row.fuera && metaVal && row.share)
       ? 'Mínimo: <b>'+objMoney(row.min)+'</b> · Meta: <b>'+objMoney(row.meta)+'</b> · participa el '+(row.share*100).toFixed(1)+'% de la meta del equipo'
       : (row.fuera?'No está en el equipo de esta semana — si corresponde, sumalo desde ✎ Equipo y horas.':null);
-    h+='<tr class="vedias" style="display:none"><td colspan="'+nCols+'" class="L" style="background:#f8f9fe;padding:10px 14px 12px">'
-      + eqDetalleHtml(row.nombre, cur, prevM(row.nombre), diasSet, notaMin, row.objDias, (!row.fuera&&row.share)?row.meta:0, row.fuera?0:(row.horasSem||0)) + '</td></tr>';
+    h+=eqCardHtml({ idx:row.idx, nombre:row.nombre, tags, fuera:row.fuera,
+      sub:(!row.fuera && row.share)?'Participa el '+(row.share*100).toFixed(1)+'% de la meta del equipo':(row.fuera?'Vendió sin estar en el equipo de la semana':(row.horas?null:'Sin horas asignadas esta semana')),
+      stats, part: totReal?part:null,
+      detalle: eqDetalleHtml(row.nombre, cur, prevM(row.nombre), diasSet, notaMin, row.objDias, (!row.fuera&&row.share)?row.meta:0, row.fuera?0:(row.horasSem||0)) });
   });
   // total
   const totHs=equipo.reduce((a,p)=>a+eqHorasPersona(p),0), totSh=shares.reduce((a,x)=>a+x,0);
-  h+='<tr class="team" style="cursor:default"><td class="L">Total equipo</td><td>'+fmt2(totHs)+' h</td>';
-  if(metaVal) h+='<td>'+objMoney(metaVal*totSh)+'</td>';
-  h+='<td>'+(totReal?objMoney(totReal):'—')+'</td>';
-  if(metaVal) h+='<td>'+(totReal&&totSh?'<b style="color:'+pctCol(totReal/(metaVal*totSh))+'">'+Math.round(totReal/(metaVal*totSh)*100)+'%</b>':'—')+'</td>';
-  h+='<td>'+(totReal?'100%':'—')+'</td>';
-  h+='</tr></tbody></table></div>';
+  const tst=[{l:'Horas venta', v:fmt2(totHs)+' h'}];
+  if(metaVal) tst.push({l:'Meta', v:objMoney(metaVal*totSh)});
+  tst.push({l:'Venta', v:totReal?objMoney(totReal):'—', cls:'big'});
+  if(metaVal) tst.push({l:'% de la meta', v:(totReal&&totSh)?Math.round(totReal/(metaVal*totSh)*100)+'%':'—', color:(totReal&&totSh)?pctCol(totReal/(metaVal*totSh)):null});
+  tst.push({l:'Participación', v:totReal?'100%':'—'});
+  h+=eqTotalCardHtml(tst);
+  h+='</div>';
   h+='<p class="hint" style="margin-top:8px">Clic en un vendedor para ver sus KPIs, la comparativa con la semana pasada y su día a día.</p>';
   if(editReal){
     h+='<div style="display:flex;gap:8px;margin-top:12px"><button type="button" id="eqRealSave" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">Guardar reales</button>'
@@ -4404,6 +4422,26 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
       +(actu?'<span class="hint" style="margin:0">Equipo actualizado el '+esc(actu)+'.</span>':'')+'</div>';
   }
   return h;
+}
+
+/* --- tarjeta de una persona en la vista de solo lectura del equipo ---
+   o = {idx, nombre, tags, sub, stats:[{l,v,cls,color}], part, detalle, fuera} */
+function eqCardHtml(o){
+  const col = o.fuera ? ['#9aa3b8','#f1f2f6'] : EQ_COLORES[(o.idx||0)%EQ_COLORES.length];
+  let h='<div class="eqv-p'+(o.fuera?' fuera':'')+'" style="--eqc:'+col[0]+';--eqbg:'+col[1]+'">';
+  h+='<div class="eqv-head'+(o.detalle?'':' nodet')+'"'+(o.detalle?' title="Clic para ver KPIs y día a día"':'')+'>'
+    +'<div class="eqv-who"><span class="eqe-av">'+esc(eqIniciales(o.nombre))+'</span><div style="min-width:0"><div class="eqv-nom">'+esc(o.nombre)+(o.tags||'')+'</div>'+(o.sub?'<div class="eqv-sub">'+o.sub+'</div>':'')+'</div></div>'
+    +'<div class="eqv-stats">'+(o.stats||[]).map(st=>'<div class="eqv-st"><div class="l">'+st.l+'</div><div class="v'+(st.cls?' '+st.cls:'')+'"'+(st.color?' style="color:'+st.color+'"':'')+'>'+st.v+'</div></div>').join('')+'</div>'
+    +(o.detalle?'<span class="eqv-caret">▸</span>':'')
+    +'</div>';
+  if(o.part!=null) h+='<div class="eqv-bar" title="Participación en la venta del equipo: '+Math.round(o.part*100)+'%"><i style="width:'+Math.max(0,Math.min(100,Math.round(o.part*100)))+'%"></i></div>';
+  if(o.detalle) h+='<div class="eqv-det">'+o.detalle+'</div>';
+  return h+'</div>';
+}
+function eqTotalCardHtml(stats){
+  return '<div class="eqv-tot"><div class="eqv-nom">Total equipo</div><div class="eqv-stats">'
+    +stats.map(st=>'<div class="eqv-st"><div class="l">'+st.l+'</div><div class="v'+(st.cls?' '+st.cls:'')+'"'+(st.color?' style="color:'+st.color+'"':'')+'>'+st.v+'</div></div>').join('')
+    +'</div></div>';
 }
 
 /* --- editor de equipo y horas --- */
@@ -5031,6 +5069,10 @@ async function renderObjetivo(){
   const sv=$('veSave'); if(sv) sv.onclick = veGuardar;
   const cn=$('veCancel'); if(cn) cn.onclick = ()=>{ _vePreview=null; renderObjetivo(); };
   // desplegar el día a día de un vendedor
+  $('objetivoCard').querySelectorAll('.eqv-head:not(.nodet)').forEach(hd=>hd.onclick=ev=>{
+    if(ev.target.closest('input,button,a')) return;
+    hd.closest('.eqv-p').classList.toggle('open');
+  });
   $('objetivoCard').querySelectorAll('tr.vetr').forEach(tr=>tr.onclick=()=>{
     const nx=tr.nextElementSibling; if(!nx||!nx.classList.contains('vedias')) return;
     const abierto=nx.style.display!=='none';
