@@ -2314,27 +2314,22 @@ async function renderGestionStockPanel(container){
   const presUrl = data.presentacionUrl || (data.meta && data.meta.presentacionUrl) || '';
   const presHref = presUrl || ('?pres='+ym);
 
-  let html = '<div class="gs-hero">'+
-      '<div class="gs-hero-top">'+
-        '<div class="gs-hero-badge">Mateu Sports · '+ymToLabel(ym)+'</div>'+
-        '<div class="gs-hero-controls">'+
-          '<select class="sel" id="gsMesSel">'+mesesOptions+'</select>'+
-          '<a class="btn btn-ghost btn-sm" href="'+esc(presHref)+'" target="_blank" rel="noopener">🎞 Ver presentación</a>'+
-          (SESSION.rol==='admin' ? '<button class="btn btn-ghost btn-sm" id="gsBtnPresLink" title="Usar un link externo para la presentación de '+esc(ymToLabel(ym))+' en lugar de la generada (vacío = generada)">🔗</button>' : '')+
-          '<button class="btn btn-ghost btn-sm" id="gsBtnExportar">📤 Exportar</button>'+
-        '</div>'+
+  // La pestaña muestra la MISMA presentación pública del mes (?pres=YYYY-MM)
+  // embebida tal cual, con una barra fina de controles arriba (mes / abrir /
+  // exportar / cargar). El deck es una sola fuente de verdad (gsPresHtml).
+  const html = '<div class="gs-embed-bar" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+        '<span class="gs-hero-badge" style="margin:0">Mateu Sports · '+ymToLabel(ym)+'</span>'+
+        '<select class="sel" id="gsMesSel">'+mesesOptions+'</select>'+
       '</div>'+
-      '<div class="gs-hero-title">Reporte <span>Mensual</span></div>'+
-      '<div class="gs-hero-sub">Almacenes · Indicadores · Meses de stock</div>'+
-    '</div>';
-  if(container.dataset.showCarga==='1' && SESSION.rol==='admin') html += gsCargaHtml();
-  html += gsKpisClaveHtml(data);
-  html += gsTablaAlmacenes(data, miSlug);
-  html += gsTablaResumen(data, miSlug);
-  html += gsTablaHoras(data, miSlug);
-  html += gsTablaMesesRubro(data.mesesStock&&data.mesesStock.calzado, 'Meses de stock — Calzado', miSlug);
-  html += gsTablaMesesRubro(data.mesesStock&&data.mesesStock.indumentaria, 'Meses de stock — Indumentaria', miSlug);
-  html += gsTablaMesesRubro(data.mesesStock&&data.mesesStock.accesorios, 'Meses de stock — Accesorios', miSlug);
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+        '<a class="btn btn-ghost btn-sm" href="'+esc(presHref)+'" target="_blank" rel="noopener">🎞 Abrir en pantalla completa</a>'+
+        (SESSION.rol==='admin' ? '<button class="btn btn-ghost btn-sm" id="gsBtnPresLink" title="Usar un link externo para la presentación de '+esc(ymToLabel(ym))+' en lugar de la generada (vacío = generada)">🔗</button>' : '')+
+        '<button class="btn btn-ghost btn-sm" id="gsBtnExportar">📤 Exportar</button>'+
+      '</div>'+
+    '</div>'+
+    ((container.dataset.showCarga==='1' && SESSION.rol==='admin') ? gsCargaHtml() : '')+
+    '<iframe id="gsPresFrame" title="Reporte Mensual '+esc(ymToLabel(ym))+'" src="?pres='+encodeURIComponent(ym)+'" style="display:block;width:100%;height:calc(100vh - 160px);min-height:560px;border:0;border-radius:10px;background:#f5f7fc;box-shadow:0 1px 2px rgba(11,21,39,.06),0 10px 30px rgba(11,21,39,.08)"></iframe>';
 
   container.innerHTML = html;
   container.querySelector('#gsMesSel').addEventListener('change', e=>{ container.dataset.mes = e.target.value; renderGestionStockPanel(container); });
@@ -2350,7 +2345,6 @@ async function renderGestionStockPanel(container){
     renderGestionStockPanel(container);
   });
   if(container.dataset.showCarga==='1' && SESSION.rol==='admin') wireGsCarga(container);
-  gsAnimateBars(container);
 }
 
 function gsSheetHeaderRow(ws, r, nCols, titulo){
