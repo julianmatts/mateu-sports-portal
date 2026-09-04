@@ -2509,7 +2509,8 @@ function gsPresTot(data){
     const l = ms[r]||[]; const st = l.reduce((a,x)=>a+(x.stock||0),0), ve = l.reduce((a,x)=>a+(x.ventas||0),0);
     msTot[r] = ve>0 ? st/ve : null;
   });
-  return {at, rt, horasProm, msTot};
+  const disc = {}; Object.keys(res).forEach(k=>{ if(res[k] && res[k].discontinuos!==null && res[k].discontinuos!==undefined) disc[k] = res[k].discontinuos; });
+  return {at, rt, horasProm, msTot, disc};
 }
 
 function gsPresHtml(ym, data, logoSrc, hist){
@@ -2538,16 +2539,12 @@ function gsPresHtml(ym, data, logoSrc, hist){
   const cu = v => (v===null||v===undefined) ? '<b class="num">—</b>' : '<b class="num cu" data-n="'+v+'">'+n(v)+'</b>';
   const maxAbs = (obj, campo) => Math.max(1, ...Object.values(obj||{}).map(d=>Math.abs(d[campo]||0)));
   // Celda numérica con barra proporcional al máximo de la columna
-  const cell = (v, max, extra) => {
-    if(v===null||v===undefined) return '<td class="nc"><span class="dim">—</span></td>';
-    const w = Math.min(100, Math.abs(v)/max*100).toFixed(1);
-    return '<td class="nc'+(extra?' '+extra:'')+'"><span class="cb" style="--w:'+w+'%"></span><b>'+n(v)+'</b></td>';
-  };
+  const cell = (v, max, extra) => (v===null||v===undefined) ? '<td class="nc"><span class="dim">—</span></td>' : '<td class="nc'+(extra?' '+extra:'')+'"><b>'+n(v)+'</b></td>';
   // Var. de las notas del informe: más = peor (rojo), menos = mejor (verde)
   const chipD = d => {
     if(d===null||d===undefined) return '<span class="chip cz">—</span>';
     if(d===0) return '<span class="chip cz">=</span>';
-    return d>0 ? '<span class="chip cn">▲ '+fmtNum(d)+'</span>' : '<span class="chip cp">▼ '+fmtNum(-d)+'</span>';
+    return d>0 ? '<span class="chip cn">▲ +'+fmtNum(d)+'</span>' : '<span class="chip cp">▼ −'+fmtNum(-d)+'</span>';
   };
   const chip = nota => chipD(gsNotaDelta(nota));
   const varTd = nota => '<td class="vc">'+chip(nota)+'</td>';
@@ -2623,16 +2620,48 @@ function gsPresHtml(ym, data, logoSrc, hist){
   const mxI = {discontinuos:maxAbs(res,'discontinuos'), negativos:maxAbs(res,'negativos'), s13: Math.max(1, ...Object.values(res).map(d=>(d.stock1a3Calzado||0)+(d.stock1a3Ind||0)))};
   const indRows = slugs.filter(s=>res[s]).map((s,i)=>{
     const d = res[s];
-    const c = d.stock1a3Calzado||0, ind = d.stock1a3Ind||0, t = c+ind;
-    const stack = t ? '<td class="sc"><span class="st"><span class="st-c" style="--w:'+(c/mxI.s13*100).toFixed(1)+'%"></span><span class="st-i" style="--w:'+(ind/mxI.s13*100).toFixed(1)+'%"></span></span>'+
-      '<span class="st-v"><b class="c-calz">'+n(c)+'</b><b class="c-ind">'+n(ind)+'</b><b class="dim">'+n(t)+'</b></span></td>' : '<td class="sc"><span class="dim">—</span></td>';
+    const c = d.stock1a3Calzado, ind = d.stock1a3Ind;
+    const t = (c===null||c===undefined) && (ind===null||ind===undefined) ? null : (c||0)+(ind||0);
     return '<tr class="rv" style="--d:'+(i*35)+'ms"><td class="L">'+nomHtml(s)+'</td>'+
-      cell(d.discontinuos, mxI.discontinuos)+varTd(d.discontinuosNota)+stack+
-      cell(d.negativos, mxI.negativos)+varTd(d.negativosNota)+'</tr>';
+      cell(d.discontinuos)+varTd(d.discontinuosNota)+
+      cell(d.negativos)+varTd(d.negativosNota)+
+      cell(c,0,'sub')+cell(ind,0,'sub')+cell(t)+'</tr>';
   }).join('')+
   (Object.keys(res).length ? '<tr class="tot"><td class="L">Total sucursales</td><td class="nc"><b>'+n(rt.discontinuos)+'</b></td><td class="vc">'+chip(rt.discontinuosNota)+'</td>'+
-    '<td class="sc"><span class="st-v"><b class="c-calz">'+n(Object.values(res).reduce((a,d)=>a+(d.stock1a3Calzado||0),0))+'</b><b class="c-ind">'+n(Object.values(res).reduce((a,d)=>a+(d.stock1a3Ind||0),0))+'</b></span></td>'+
-    '<td class="nc"><b>'+n(rt.negativos)+'</b></td><td class="vc">'+chip(rt.negativosNota)+'</td></tr>' : '');
+    '<td class="nc"><b>'+n(rt.negativos)+'</b></td><td class="vc">'+chip(rt.negativosNota)+'</td>'+
+    '<td class="nc sub"><b>'+n(Object.values(res).reduce((a,d)=>a+(d.stock1a3Calzado||0),0))+'</b></td><td class="nc sub"><b>'+n(Object.values(res).reduce((a,d)=>a+(d.stock1a3Ind||0),0))+'</b></td>'+
+    '<td class="nc"><b>'+n(Object.values(res).reduce((a,d)=>a+(d.stock1a3Calzado||0)+(d.stock1a3Ind||0),0))+'</b></td></tr>' : '');
+  const tblLegend = '<div class="tl rv"><span><i class="chip cn">▲ +N</i> más que el informe anterior (empeoró)</span><span><i class="chip cp">▼ −N</i> menos que el informe anterior (mejoró)</span><span><i class="chip cz">=</i> sin cambios</span></div>';
+
+  // ---- Discontinuos mes a mes: quién repite ----
+  const mesLbl = ym2 => { const [y,m]=ym2.split('-'); return MESES_NOMBRE[parseInt(m,10)].slice(0,3)+' '+y.slice(2); };
+  let discMM = '';
+  if(hist.length>=2){
+    const meses = hist.map(h=>h.ym);
+    const filas = slugs.filter(sl=> hist.some(h=>h.tot.disc && h.tot.disc[sl])).map(sl=>{
+      const vals = hist.map(h=> (h.tot.disc && h.tot.disc[sl]!==undefined) ? h.tot.disc[sl] : null);
+      const con = vals.filter(v=>v!==null).length;
+      const rep = vals.filter(v=>v).length;
+      return {sl, vals, con, rep, ult: vals[vals.length-1]||0};
+    }).sort((a,b)=> b.rep-a.rep || b.ult-a.ult);
+    const mx = Math.max(1, ...filas.map(f=>Math.max(...f.vals.map(v=>v||0))));
+    const reinc = filas.filter(f=>f.con>=2 && f.rep===f.con).length;
+    const tots = hist.map(h=>h.tot.rt.discontinuos);
+    if(filas.length){
+      discMM = '<div class="tbl rv" style="margin-bottom:28px"><div class="tbl-h"><div><b>Discontinuos mes a mes</b><span>Artículos discontinuos por sucursal en cada informe cargado. Cuanto más oscura la celda, más artículos. <b class="c-red">'+reinc+'</b> sucursales repiten en todos los meses.</span></div></div>'+
+        '<table class="mm"><thead><tr><th class="L">Sucursal</th>'+meses.map(m=>'<th>'+esc(mesLbl(m))+'</th>').join('')+'<th>Repite</th><th>Var. último</th></tr></thead><tbody>'+
+        filas.map((f,i)=>{
+          const prev = f.vals.length>=2 ? f.vals[f.vals.length-2] : null;
+          const dlt = (prev===null||f.ult===null) ? null : f.ult-prev;
+          const todos = f.con>=2 && f.rep===f.con;
+          return '<tr class="rv'+(todos?' reinc':'')+'" style="--d:'+(i*25)+'ms"><td class="L">'+(todos?'<i class="dot"></i>':'')+nomHtml(f.sl)+'</td>'+
+            f.vals.map(v=> v===null ? '<td class="mc dim">—</td>' : '<td class="mc"><span class="heat" style="--a:'+(0.06+0.34*(v/mx)).toFixed(2)+'">'+n(v)+'</span></td>').join('')+
+            '<td class="mc"><span class="rep'+(todos?' bad':'')+'">'+f.rep+' de '+f.con+'</span></td><td class="vc">'+chipD(dlt)+'</td></tr>';
+        }).join('')+
+        '<tr class="tot"><td class="L">Total sucursales</td>'+tots.map(v=>'<td class="mc"><b>'+n(v)+'</b></td>').join('')+'<td class="mc"></td><td class="vc">'+chipD(tots.length>=2 && tots[tots.length-1]!==null && tots[tots.length-2]!==null ? tots[tots.length-1]-tots[tots.length-2] : null)+'</td></tr>'+
+        '</tbody></table></div>';
+    }
+  }
 
   // ---- Horas de descarga ----
   // 0 horas = centinela de "sin dato" en el origen (igual que en el parser)
@@ -2697,6 +2726,17 @@ function gsPresHtml(ym, data, logoSrc, hist){
   const mesesHtml = rubro('calzado','Calzado',1) + rubro('indumentaria','Indumentaria',2) + rubro('accesorios','Accesorios',3);
   const msLegend = '<div class="legend rv"><span><i class="z-low"></i>&lt; 3 meses — riesgo de faltante</span><span><i class="z-mid"></i>3 a 5 — saludable</span><span><i class="z-high"></i>≥ 6 — exceso de stock</span></div>';
 
+  // Sello Mateu (tipo certificado): anillo con texto + centro. id único por sello.
+  let selloN = 0;
+  const sello = (centro, ring, cls) => {
+    const id = 'sp'+(++selloN);
+    return '<svg class="sello '+(cls||'')+'" viewBox="0 0 160 160" aria-hidden="true"><defs><path id="'+id+'" d="M80,80 m-57,0 a57,57 0 1,1 114,0 a57,57 0 1,1 -114,0"/></defs>'+
+      '<circle cx="80" cy="80" r="76" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="80" cy="80" r="70" fill="none" stroke="currentColor" stroke-width="1"/>'+
+      '<circle cx="80" cy="80" r="45" fill="none" stroke="currentColor" stroke-width="1.5"/>'+
+      '<text class="sello-ring"><textPath href="#'+id+'" startOffset="0">'+esc(ring)+'</textPath></text>'+centro+'</svg>';
+  };
+  const ringTxt = 'MATEU SPORTS · GESTIÓN DE STOCK · '+label.toUpperCase()+' · ';
+  const selloSec = (num, txt) => sello('<text x="80" y="88" text-anchor="middle" class="sello-num">'+num+'</text><text x="80" y="104" text-anchor="middle" class="sello-sub">'+esc(txt||'Datos del mes')+'</text>', ringTxt);
   const fechaCarga = data.meta && data.meta.fecha ? new Date(data.meta.fecha).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '';
   const logoImg = cls => logoSrc ? '<img class="'+cls+'" src="'+logoSrc+'" alt="Mateu Sports">' : '';
 
@@ -2709,32 +2749,31 @@ function gsPresHtml(ym, data, logoSrc, hist){
 '.num small{font-family:var(--fc);font-style:normal;font-weight:600;font-size:.42em;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin-left:4px}',
 '.dim{color:var(--dim)}.c-grn{color:var(--grn-d)}.c-amb{color:var(--amb-d)}.c-red{color:var(--rojo)}.c-calz{color:var(--calz)}.c-ind{color:var(--ind)}',
 /* nav: transparente sobre la tapa, blanco al scrollear */
-'nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:14px 44px;background:linear-gradient(to bottom,rgba(7,14,27,.9),rgba(7,14,27,0));transition:background .35s,box-shadow .35s}',
+'nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:14px 44px;background:rgba(243,245,250,.9);transition:background .35s,box-shadow .35s}',
 'nav.scrolled{background:rgba(255,255,255,.94);backdrop-filter:blur(10px);box-shadow:0 1px 0 var(--line),0 6px 24px rgba(11,21,39,.06)}',
 '.prog{position:absolute;left:0;bottom:-1px;height:2px;width:100%;background:transparent}.prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--rojo),var(--rojo-2))}',
-'.nav-logo{height:28px;display:block;filter:brightness(0) invert(1);transition:filter .35s}nav.scrolled .nav-logo{filter:brightness(0);opacity:.85}',
+'.nav-logo{height:28px;display:block;filter:brightness(0);opacity:.85}',
 '.nav-links{display:flex;gap:6px;list-style:none;flex-wrap:wrap}',
-'.nav-links a{font-family:var(--fc);font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:rgba(255,255,255,.62);text-decoration:none;padding:6px 10px;border-radius:3px;transition:color .25s,background .25s}',
-'.nav-links a:hover{color:#fff}.nav-links a.act{color:#fff;background:rgba(255,255,255,.12)}.nav-links a.back{color:#FF6B6B}',
-'nav.scrolled .nav-links a{color:var(--mid)}nav.scrolled .nav-links a:hover{color:var(--txt)}nav.scrolled .nav-links a.act{color:var(--navy);background:var(--rojo-soft)}nav.scrolled .nav-links a.back{color:var(--rojo)}',
+'.nav-links a{font-family:var(--fc);font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:var(--mid);text-decoration:none;padding:6px 10px;border-radius:3px;transition:color .25s,background .25s}',
+'.nav-links a:hover{color:var(--txt)}.nav-links a.act{color:var(--navy);background:var(--rojo-soft)}.nav-links a.back{color:var(--rojo)}',
 /* tapa (hero) navy */
-'#hero{min-height:100vh;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:120px 44px 140px;text-align:center;color:#F4F6FB}',
-'.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse 70% 55% at 50% 30%,rgba(204,0,0,.2) 0%,transparent 65%),radial-gradient(ellipse 45% 45% at 12% 90%,rgba(204,0,0,.08) 0%,transparent 55%),linear-gradient(180deg,var(--navy-2) 0%,var(--navy) 100%)}',
-'.hero-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:64px 64px;mask-image:radial-gradient(ellipse 70% 70% at 50% 45%,#000 30%,transparent 100%);-webkit-mask-image:radial-gradient(ellipse 70% 70% at 50% 45%,#000 30%,transparent 100%)}',
+'#hero{min-height:100vh;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:120px 44px 140px;text-align:center;color:var(--navy)}',
+'.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse 70% 55% at 50% 30%,rgba(204,0,0,.07) 0%,transparent 65%),radial-gradient(ellipse 45% 45% at 12% 90%,rgba(11,21,39,.06) 0%,transparent 55%),linear-gradient(180deg,#FFFFFF 0%,var(--bg) 100%)}',
+'.hero-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(11,21,39,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(11,21,39,.06) 1px,transparent 1px);background-size:64px 64px;mask-image:radial-gradient(ellipse 70% 70% at 50% 45%,#000 30%,transparent 100%);-webkit-mask-image:radial-gradient(ellipse 70% 70% at 50% 45%,#000 30%,transparent 100%)}',
 '.hero-stripe{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent 0%,var(--rojo) 25%,var(--rojo-2) 50%,var(--rojo) 75%,transparent 100%)}',
-'.hero-diag{position:absolute;right:-12vw;top:-10vh;width:38vw;height:130vh;background:linear-gradient(115deg,transparent 0,transparent 48%,rgba(204,0,0,.09) 48%,rgba(204,0,0,.09) 52%,transparent 52%),linear-gradient(115deg,transparent 0,transparent 60%,rgba(255,255,255,.03) 60%,rgba(255,255,255,.03) 61%,transparent 61%);pointer-events:none}',
-'.hero-badge{position:relative;font-family:var(--fc);font-size:11px;letter-spacing:5px;text-transform:uppercase;color:#FF6B6B;border:1px solid rgba(255,107,107,.45);padding:7px 22px;margin-bottom:34px;opacity:0;animation:fadeUp .6s .2s forwards}',
+'.hero-diag{position:absolute;right:-12vw;top:-10vh;width:38vw;height:130vh;background:linear-gradient(115deg,transparent 0,transparent 48%,rgba(204,0,0,.07) 48%,rgba(204,0,0,.07) 52%,transparent 52%),linear-gradient(115deg,transparent 0,transparent 60%,rgba(11,21,39,.06) 60%,rgba(11,21,39,.06) 61%,transparent 61%);pointer-events:none}',
+'.hero-badge{position:relative;font-family:var(--fc);font-size:11px;letter-spacing:5px;text-transform:uppercase;color:var(--rojo);border:1px solid rgba(204,0,0,.4);padding:7px 22px;margin-bottom:34px;opacity:0;animation:fadeUp .6s .2s forwards}',
 '.hero-title{position:relative;font-family:var(--fd);font-size:clamp(64px,11.5vw,168px);line-height:.86;letter-spacing:1px;opacity:0;animation:fadeUp .8s .4s forwards}',
-'.hero-title em{color:#FF3B3B;font-style:normal;text-shadow:0 0 40px rgba(255,59,59,.35)}',
+'.hero-title em{color:var(--rojo);font-style:normal}',
 '.hero-mes{position:relative;margin-top:22px;font-family:var(--fd);font-size:clamp(28px,4.4vw,56px);letter-spacing:6px;opacity:0;animation:fadeUp .7s .6s forwards}',
-'.hero-mes span{color:rgba(244,246,251,.5);font-size:.55em;letter-spacing:5px;display:block;margin-top:6px;font-family:var(--fc);text-transform:uppercase}',
+'.hero-mes span{color:var(--dim);font-size:.55em;letter-spacing:5px;display:block;margin-top:6px;font-family:var(--fc);text-transform:uppercase}',
 '.hero-chips{position:relative;display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:34px;opacity:0;animation:fadeUp .7s .8s forwards}',
-'.hero-chips span{font-family:var(--fc);font-size:12px;letter-spacing:2px;text-transform:uppercase;color:rgba(244,246,251,.75);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);padding:7px 14px;border-radius:999px}',
-'.hero-chips b{color:#fff;font-family:var(--fn);font-style:italic;font-weight:800;font-size:14px;margin-right:4px}',
-'.hero-logo{position:relative;margin-top:46px;height:54px;display:block;filter:brightness(0) invert(1);opacity:0;animation:fadeUp .7s 1s forwards}',
+'.hero-chips span{font-family:var(--fc);font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--mid);background:#fff;border:1px solid var(--line);padding:7px 14px;border-radius:999px}',
+'.hero-chips b{color:var(--navy);font-family:var(--fn);font-style:italic;font-weight:800;font-size:14px;margin-right:4px}',
+'.hero-logo{position:relative;margin-top:46px;height:54px;display:block;filter:brightness(0);opacity:.9;opacity:0;animation:fadeUp .7s 1s forwards}',
 '.hero-scroll{position:absolute;bottom:32px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;opacity:0;animation:fadeUp .7s 1.5s forwards}',
-'.hero-scroll span{font-size:9px;letter-spacing:4px;text-transform:uppercase;color:rgba(244,246,251,.5)}',
-'.scroll-line{width:1px;height:40px;background:linear-gradient(to bottom,#FF3B3B,transparent);animation:scrollPulse 2s infinite}',
+'.hero-scroll span{font-size:9px;letter-spacing:4px;text-transform:uppercase;color:var(--dim)}',
+'.scroll-line{width:1px;height:40px;background:linear-gradient(to bottom,var(--rojo),transparent);animation:scrollPulse 2s infinite}',
 '@keyframes scrollPulse{0%,100%{opacity:.3}50%{opacity:1}}@keyframes fadeUp{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:translateY(0)}}',
 /* secciones */
 'section{padding:96px 44px;position:relative}section.alt{background:var(--bg-alt)}',
@@ -2768,7 +2807,7 @@ function gsPresHtml(ym, data, logoSrc, hist){
 '.cn{color:var(--rojo)}.cp{color:var(--grn-d)}.cz{color:var(--dim)}',
 '.trend{margin-top:16px;font-family:var(--fc);font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);text-align:right}',
 /* chips */
-'.chip{display:inline-block;white-space:nowrap;font-family:var(--fc);font-weight:700;font-size:12px;letter-spacing:1px;padding:3px 9px;border-radius:999px;min-width:44px;text-align:center;font-variant-numeric:tabular-nums}',
+'.chip{display:inline-block;white-space:nowrap;font-family:var(--fc);font-weight:700;font-size:13px;letter-spacing:1px;padding:3px 9px;border-radius:999px;min-width:44px;text-align:center;font-variant-numeric:tabular-nums}',
 '.chip.cn{background:rgba(204,0,0,.09);color:#B91C1C}.chip.cp{background:rgba(31,122,82,.12);color:var(--grn-d)}.chip.cz{background:var(--ink);color:var(--dim)}',
 /* paneles top5 */
 '.panels{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:36px}',
@@ -2787,7 +2826,9 @@ function gsPresHtml(ym, data, logoSrc, hist){
 /* tablas */
 '.tbl{overflow-x:auto}',
 'table{width:100%;border-collapse:separate;border-spacing:0;font-size:14px}',
-'thead th{position:sticky;top:0;z-index:2;background:var(--navy);padding:13px 12px;font-family:var(--fc);font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:rgba(255,255,255,.78);text-align:center;white-space:nowrap;border-bottom:3px solid var(--rojo)}',
+'thead th{background:var(--card-2);padding:10px 12px;font-family:var(--fc);font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--mid);text-align:center;white-space:nowrap;border-bottom:1px solid rgba(11,21,39,.18)}',
+'thead tr.g th{font-family:var(--fd);font-size:17px;letter-spacing:1.5px;color:var(--navy);padding:12px 12px 6px;border-bottom:1px solid var(--line)}thead tr.g th.L{vertical-align:bottom}',
+'thead tr.g th+th{border-left:1px solid var(--line)}tbody td.nc.sub{color:var(--mid);font-weight:700}',
 'th.L{text-align:left;padding-left:18px}',
 'td{padding:8px 12px;text-align:center;border-bottom:1px solid var(--line);vertical-align:middle;color:var(--mid)}',
 'tbody tr:nth-child(even) td{background:var(--card-2)}tbody tr:hover td{background:var(--rojo-soft)}',
@@ -2799,10 +2840,19 @@ function gsPresHtml(ym, data, logoSrc, hist){
 '.on td.nc .cb::after{width:var(--w)}',
 'td.nc b{position:relative;font-weight:800}',
 'td.vc{width:76px}',
-'tr.tot td{background:var(--navy)!important;color:#fff;border-top:2px solid var(--rojo);border-bottom:none;font-weight:800;padding:12px}',
-'tr.tot td.L,tr.tot td.nc{color:#fff}tr.tot td.L{color:#FF6B6B;letter-spacing:2px}',
-'tr.tot .chip.cz{background:rgba(255,255,255,.1);color:rgba(255,255,255,.7)}tr.tot .chip.cn{background:rgba(255,107,107,.18);color:#FF8A8A}tr.tot .chip.cp{background:rgba(74,222,128,.18);color:#6EE7A0}',
-'tr.tot .c-calz{color:#fff}tr.tot .c-ind{color:#C7D2EA}tr.tot .dim{color:rgba(255,255,255,.6)}',
+'tr.tot td{background:#EEF1F8!important;color:var(--navy);border-top:2px solid rgba(11,21,39,.25);border-bottom:none;font-weight:800;padding:12px}',
+'tr.tot td.L{letter-spacing:2px}tr.tot td.nc.sub{color:var(--navy)}',
+'.tl{display:flex;gap:22px;flex-wrap:wrap;margin-top:12px;font-family:var(--fc);font-size:12px;letter-spacing:.5px;color:var(--mid)}.tl i{font-style:normal;margin-right:6px}',
+'.tbl-h{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:16px 18px 12px;border-bottom:1px solid var(--line)}.tbl-h b{display:block;font-family:var(--fd);font-size:24px;letter-spacing:1px;color:var(--navy)}.tbl-h span{display:block;font-size:13px;color:var(--mid);margin-top:2px}.tbl-h span b{display:inline;font-family:var(--fn);font-style:italic;font-size:14px}',
+'table.mm td.mc{width:auto;min-width:72px;text-align:right;font-family:var(--fn);font-style:italic;font-weight:800;font-size:15px;color:var(--navy);font-variant-numeric:tabular-nums}',
+'.heat{display:inline-block;min-width:60px;padding:3px 8px;border-radius:3px;background:rgba(11,21,39,var(--a,.08))}',
+'.rep{font-family:var(--fc);font-weight:700;font-size:13px;letter-spacing:.5px;color:var(--mid)}.rep.bad{color:#B91C1C}',
+'.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--rojo);margin-right:7px;vertical-align:middle}',
+'.sello{width:118px;height:118px;color:var(--rojo);opacity:.8;transform:rotate(-8deg);mix-blend-mode:multiply;flex-shrink:0}',
+'.sello-ring{font-family:var(--fc);font-weight:700;font-size:10.5px;letter-spacing:2.6px;fill:currentColor}.sello-num{font-family:var(--fd);font-size:36px;fill:currentColor}.sello-sub{font-family:var(--fc);font-weight:700;font-size:8px;letter-spacing:1.8px;text-transform:uppercase;fill:currentColor}.sello-sub2{font-family:var(--fn);font-style:italic;font-weight:800;font-size:9px;fill:currentColor}',
+'.sello image{filter:brightness(0) invert(1) sepia(1) saturate(30) hue-rotate(-28deg) brightness(.62)}.sello-hero{position:relative;width:170px;height:170px;margin-top:44px;transform:rotate(-10deg);opacity:0;animation:selloIn .5s 1.2s cubic-bezier(.2,1.4,.4,1) forwards}',
+'@keyframes selloIn{from{opacity:0;transform:rotate(-10deg) scale(1.6)}to{opacity:.85;transform:rotate(-10deg) scale(1)}}',
+'footer .sello{width:74px;height:74px;opacity:.7}',
 'td.sc{min-width:220px;text-align:left}',
 '.st{display:block;height:8px;background:var(--ink);border-radius:2px;overflow:hidden;white-space:nowrap;font-size:0}',
 '.st span{display:inline-block;height:100%;width:0;transition:width 1s cubic-bezier(.2,.7,.2,1)}.on .st span{width:var(--w)}',
@@ -2813,7 +2863,6 @@ function gsPresHtml(ym, data, logoSrc, hist){
 'td.mc{width:90px}',
 '.pill{display:inline-block;font-family:var(--fn);font-style:italic;font-weight:800;font-size:15px;padding:3px 12px;border-radius:999px;min-width:58px;font-variant-numeric:tabular-nums}',
 '.pill.z-low{background:rgba(227,155,15,.16);color:var(--amb-d)}.pill.z-mid{background:rgba(11,21,39,.08);color:var(--navy)}.pill.z-high{background:rgba(204,0,0,.1);color:#B91C1C}',
-'tr.tot .pill.z-low{background:rgba(251,191,36,.25);color:#FDE68A}tr.tot .pill.z-mid{background:rgba(255,255,255,.16);color:#fff}tr.tot .pill.z-high{background:rgba(255,107,107,.25);color:#FCA5A5}',
 /* mini stats */
 '.mini{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:30px}',
 '.mi,.rk{padding:16px 18px;display:flex;flex-direction:column;gap:6px}',
@@ -2854,13 +2903,13 @@ function gsPresHtml(ym, data, logoSrc, hist){
 '.zc-scale i{position:absolute;top:12px;left:var(--x);transform:translateX(-50%);font-style:normal;font-family:var(--fc);font-size:11px;color:var(--mid);letter-spacing:1px}',
 '.zchart .zb-t::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(227,155,15,.1) 0,rgba(227,155,15,.1) var(--zl,37.5%),rgba(58,91,160,.09) var(--zl,37.5%),rgba(58,91,160,.09) var(--zm,75%),rgba(204,0,0,.07) var(--zm,75%));border-radius:2px}',
 /* pie navy */
-'footer{background:var(--navy-2);color:rgba(244,246,251,.55);padding:36px 44px;font-family:var(--fc);font-size:12px;letter-spacing:2.5px;text-transform:uppercase;border-top:3px solid var(--rojo);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}',
-'footer img{height:22px;filter:brightness(0) invert(1);opacity:.7}',
+'footer{background:#EAEEF6;color:var(--mid);padding:30px 44px;font-family:var(--fc);font-size:12px;letter-spacing:2.5px;text-transform:uppercase;border-top:1px solid rgba(11,21,39,.15);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}',
+'footer img{height:22px;filter:brightness(0);opacity:.7}',
 /* responsive */
 '@media(max-width:1100px){.kpis{grid-template-columns:repeat(3,1fr)}.rubro-b{grid-template-columns:1fr}.rubro-h{grid-template-columns:1fr}.rubro-k{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}}',
-'@media(max-width:760px){nav{padding:12px 18px}.nav-links{display:none}section{padding:64px 18px}.kpis{grid-template-columns:1fr 1fr}.panels{grid-template-columns:1fr}.kpi-v{font-size:42px}.hb{grid-template-columns:18px 100px 1fr 56px 34px}.hb-h{grid-template-columns:18px 100px 1fr 60px}.guides{left:calc(18px + 100px + 16px);right:70px}.zb{grid-template-columns:100px 1fr 48px}.sec-n{display:none}.sec-h{grid-template-columns:1fr}}',
-'@media(prefers-reduced-motion:reduce){.rv,.hb-f,.zb-f,.seg i,.st span,td.nc .cb::after{transition:none!important}.hero-badge,.hero-title,.hero-mes,.hero-chips,.hero-logo,.hero-scroll{animation:none!important;opacity:1!important}}',
-'@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}nav,.hero-scroll{display:none!important}#hero{min-height:auto;padding:60px 24px}section{padding:32px 24px;break-inside:auto}.rv{opacity:1!important;transform:none!important}.hb-f,.zb-f{width:var(--w)!important}.seg i,.st span{width:var(--w)!important}td.nc .cb::after{width:var(--w)!important}.kpi,.panel,.tbl,.zchart,.rubro{break-inside:avoid;box-shadow:none}.hero-badge,.hero-title,.hero-mes,.hero-chips,.hero-logo{animation:none!important;opacity:1!important}}'
+'@media(max-width:760px){nav{padding:12px 18px}.nav-links{display:none}section{padding:64px 18px}.kpis{grid-template-columns:1fr 1fr}.panels{grid-template-columns:1fr}.kpi-v{font-size:42px}.sello{width:84px;height:84px}.hb{grid-template-columns:18px 100px 1fr 56px 34px}.hb-h{grid-template-columns:18px 100px 1fr 60px}.guides{left:calc(18px + 100px + 16px);right:70px}.zb{grid-template-columns:100px 1fr 48px}.sec-h{grid-template-columns:1fr auto}}',
+'@media(prefers-reduced-motion:reduce){.rv,.hb-f,.zb-f,.seg i,.st span,td.nc .cb::after{transition:none!important}.hero-badge,.hero-title,.hero-mes,.hero-chips,.hero-logo,.hero-scroll,.sello-hero{animation:none!important;opacity:1!important}}',
+'@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}nav,.hero-scroll{display:none!important}#hero{min-height:auto;padding:60px 24px}section{padding:32px 24px;break-inside:auto}.rv{opacity:1!important;transform:none!important}.hb-f,.zb-f{width:var(--w)!important}.seg i,.st span{width:var(--w)!important}td.nc .cb::after{width:var(--w)!important}.kpi,.panel,.tbl,.zchart,.rubro{break-inside:avoid;box-shadow:none}.hero-badge,.hero-title,.hero-mes,.hero-chips,.hero-logo,.sello-hero{animation:none!important;opacity:1!important}}'
   ].join('');
 
   const JS = [
@@ -2902,40 +2951,42 @@ function gsPresHtml(ym, data, logoSrc, hist){
 '<h1 class="hero-title">Gestión de<br>Stock <em>Mensual</em></h1>'+
 '<div class="hero-mes">'+esc(label)+'<span>Almacenes · Indicadores · Descarga · Meses de stock</span></div>'+
 '<div class="hero-chips"><span><b>'+nSuc+'</b> sucursales</span><span><b>'+n(at.garantias)+'</b> garantías</span><span><b>'+n(at.diferencias)+'</b> diferencias</span><span><b>'+n(rt.discontinuos)+'</b> discontinuos</span>'+(fechaCarga?'<span>Cargado el '+fechaCarga+'</span>':'')+'</div>'+
-logoImg('hero-logo')+
+sello((logoSrc?'<image href="'+logoSrc+'" x="46" y="56" width="68" height="30" preserveAspectRatio="xMidYMid meet"/>':'<text x="80" y="82" text-anchor="middle" class="sello-num">M</text>')+'<text x="80" y="102" text-anchor="middle" class="sello-sub">Datos certificados</text>'+(fechaCarga?'<text x="80" y="114" text-anchor="middle" class="sello-sub2">'+fechaCarga+'</text>':''), 'MATEU SPORTS · ÁREA DE PRODUCTO · DATOS VERIFICADOS · ', 'sello-hero')+
 '<div class="hero-scroll"><span>Scroll</span><div class="scroll-line"></div></div></div></section>'+
 '<section id="kpis" class="alt"><div class="wrap blk">'+
-'<div class="sec-h"><div><div class="sec-lbl">Resumen ejecutivo</div><h2 class="sec-t">Los <em>números</em> del mes</h2></div><div class="sec-n">01</div></div>'+
+'<div class="sec-h"><div><div class="sec-lbl">Resumen ejecutivo</div><h2 class="sec-t">Los <em>números</em> del mes</h2></div>'+selloSec('01','Resumen')+'</div>'+
 '<div class="kpis">'+kpisHtml+'</div>'+(histLbl?'<div class="trend">Tendencia · '+histLbl+'</div>':'')+
 '</div></section>'+
 '<section id="almacenes"><div class="wrap blk">'+
-'<div class="sec-h"><div><div class="sec-lbl">Bloque 1</div><h2 class="sec-t">Almacenes por <em>sucursal</em></h2></div><div class="sec-n">02</div></div>'+
-'<p class="sec-p">Falta uno, garantías, diferencias y auditoría de cada sucursal, con la variación contra el informe anterior. Las barras muestran el peso de cada sucursal sobre el máximo de la columna.</p>'+
+'<div class="sec-h"><div><div class="sec-lbl">Bloque 1</div><h2 class="sec-t">Almacenes por <em>sucursal</em></h2></div>'+selloSec('02','Bloque 1')+'</div>'+
+'<p class="sec-p">Falta uno, garantías, diferencias y auditoría de cada sucursal. Cada indicador trae la cantidad del mes y la variación contra el informe anterior.</p>'+
 (topAlm?'<div class="panels">'+topAlm+'</div>':'')+
-'<div class="tbl rv"><table><thead><tr><th class="L">Sucursal</th>'+
-'<th>Falta uno</th><th>Var.</th><th>Garantías</th><th>Var.</th><th>Diferencias</th><th>Var.</th><th>Auditoría</th><th>Var.</th>'+
-'</tr></thead><tbody>'+almRows+'</tbody></table></div></div></section>'+
+'<div class="tbl rv"><table><thead><tr class="g"><th class="L" rowspan="2">Sucursal</th>'+
+'<th colspan="2">Falta uno</th><th colspan="2">Garantías</th><th colspan="2">Diferencias</th><th colspan="2">Auditoría</th></tr>'+
+'<tr><th>pares</th><th>vs. ant.</th><th>unid.</th><th>vs. ant.</th><th>unid.</th><th>vs. ant.</th><th>obs.</th><th>vs. ant.</th></tr>'+
+'</thead><tbody>'+almRows+'</tbody></table></div>'+tblLegend+'</div></section>'+
 '<section id="indicadores" class="alt"><div class="wrap blk">'+
-'<div class="sec-h"><div><div class="sec-lbl">Bloque 2</div><h2 class="sec-t">Indicadores por <em>sucursal</em></h2></div><div class="sec-n">03</div></div>'+
-'<p class="sec-p">Discontinuos y negativos con su variación, y el stock de 1 a 3 unidades abierto por calzado e indumentaria.</p>'+
+'<div class="sec-h"><div><div class="sec-lbl">Bloque 2</div><h2 class="sec-t">Indicadores por <em>sucursal</em></h2></div>'+selloSec('03','Bloque 2')+'</div>'+
+'<p class="sec-p">Artículos discontinuos y unidades en stock negativo por sucursal, con la variación contra el informe anterior, y el stock de 1 a 3 unidades abierto por calzado e indumentaria.</p>'+
 (topInd?'<div class="panels">'+topInd+'</div>':'')+
-'<div class="tbl rv"><table><thead><tr><th class="L">Sucursal</th>'+
-'<th>Discontinuos</th><th>Var.</th><th style="text-align:left">Stock 1–3 · calzado / indumentaria / total</th><th>Negativos</th><th>Var.</th>'+
-'</tr></thead><tbody>'+indRows+'</tbody></table></div>'+
-'<div class="lg-st"><span><i class="st-c"></i>Calzado</span><span><i class="st-i"></i>Indumentaria</span></div>'+
+discMM+
+'<div class="tbl rv"><table><thead><tr class="g"><th class="L" rowspan="2">Sucursal</th>'+
+'<th colspan="2">Discontinuos</th><th colspan="2">Negativos</th><th colspan="3">Stock de 1 a 3 unidades</th></tr>'+
+'<tr><th>artículos</th><th>vs. ant.</th><th>unid.</th><th>vs. ant.</th><th>calzado</th><th>indum.</th><th>total</th></tr>'+
+'</thead><tbody>'+indRows+'</tbody></table></div>'+tblLegend+
 '</div></section>'+
 '<section id="horas"><div class="wrap blk">'+
-'<div class="sec-h"><div><div class="sec-lbl">Eficiencia operativa</div><h2 class="sec-t">Horas de <em>descarga</em></h2></div><div class="sec-n">04</div></div>'+
+'<div class="sec-h"><div><div class="sec-lbl">Eficiencia operativa</div><h2 class="sec-t">Horas de <em>descarga</em></h2></div>'+selloSec('04','Descarga')+'</div>'+
 '<p class="sec-p">Horas promedio que tarda cada sucursal en descargar la mercadería recibida, de menor a mayor. Las guías marcan los umbrales de 55 y 80 horas y el promedio de todas las sucursales.</p>'+
 hrsStats+
 '<div class="panel rv" style="padding:18px 22px 14px">'+hrsChart+'</div>'+
 '<div class="legend rv"><span><i class="z-mid"></i>&lt; 55 hs — óptimo</span><span><i class="z-low"></i>55 a 79 hs — moderado</span><span><i class="z-high"></i>≥ 80 hs — crítico</span><span><i style="background:rgba(11,21,39,.14)"></i>S/D — sin dato</span></div>'+
 '</div></section>'+
 '<section id="meses" class="alt"><div class="wrap blk">'+
-'<div class="sec-h"><div><div class="sec-lbl">Bloque 3</div><h2 class="sec-t">Meses de <em>stock</em></h2></div><div class="sec-n">05</div></div>'+
+'<div class="sec-h"><div><div class="sec-lbl">Bloque 3</div><h2 class="sec-t">Meses de <em>stock</em></h2></div>'+selloSec('05','Bloque 3')+'</div>'+
 '<p class="sec-p">Ratio stock / ventas expresado en meses de cobertura: cuántos meses puede sostenerse el nivel actual de stock al ritmo de venta vigente. Ordenado de menor a mayor cobertura.</p>'+
 msLegend+'<div style="height:26px"></div>'+mesesHtml+'</div></section>'+
-'<footer>'+logoImg('')+'<p>Mateu Sports S.A. — Gestión de Stock Mensual · '+esc(label)+'</p><p>Documento comercial confidencial</p></footer>'+
+'<footer>'+logoImg('')+'<p>Mateu Sports S.A. — Gestión de Stock Mensual · '+esc(label)+'</p>'+selloSec('✓','Certificado')+'<p>Documento comercial confidencial</p></footer>'+
 '<script>'+JS+'<\/script></body></html>';
 }
 
