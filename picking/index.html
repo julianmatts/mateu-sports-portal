@@ -14,6 +14,8 @@
 <!-- Plano físico del depósito central (mapa + zonas de recorrido). Generado con
      scripts/gen-plano-deposito.js desde "plano deposito.xlsx". -->
 <script src="plano-deposito.js"></script>
+<!-- Render del mapa del depósito (lo comparte con el kiosco); auto-inyecta su CSS -->
+<script src="plano-mapa.js"></script>
 <style>
   :root{
     --navy:#0B1527;--navy-mid:#1a2f55;--red:#CC0000;--red-soft:#ff3b3b;--off:#f5f7fc;--card:#fff;--border:#dce3f0;
@@ -482,9 +484,20 @@ async function renderZonas(){
     }).join('');
     html+='</tbody></table></div>';
   }
+  // Mapa del depósito: resalta en verde las zonas que ya tienen marca/rubro asignado
+  if(window.PLANO_DEPOSITO && window.PLANO_DEPOSITO.plantas){
+    const asignadas=new Set();
+    combos.forEach(c=>{ const zid=DATA.asignZona[comboKey(c.marca,c.rubro)]; if(zid&&DATA.zonas[zid]&&DATA.zonas[zid].nombre) asignadas.add(DATA.zonas[zid].nombre); });
+    html+='<div class="sec-head" style="margin:24px 0 8px"><div><h1 style="font-size:22px">Mapa del depósito</h1><div class="sub">Planta baja y alta. Las zonas de reserva en verde ya tienen marca/rubro asignado. Tocá una zona para editar su orden de recorrido.</div></div></div>';
+    html+=(window.PlanoMapa?PlanoMapa.bloque({resaltar:asignadas}):'');
+  }
   $('view').innerHTML=html;
   $('btnZona').onclick=()=>editarZona(null);
   { const bp=$('btnPlano'); if(bp) bp.onclick=cargarZonasDelPlano; }
+  document.querySelectorAll('.mp-res[data-zl]').forEach(g=>g.onclick=()=>{
+    const nom=g.dataset.zl; const zid=Object.keys(DATA.zonas).find(id=>DATA.zonas[id] && DATA.zonas[id].nombre===nom);
+    if(zid) editarZona(zid); else toast('Cargá las zonas del plano para editar «'+nom+'»','warn');
+  });
   document.querySelectorAll('[data-ez]').forEach(b=>b.onclick=()=>editarZona(b.dataset.ez));
   document.querySelectorAll('[data-dz]').forEach(b=>b.onclick=async()=>{ const id=b.dataset.dz; if(!confirm('¿Eliminar la zona "'+(DATA.zonas[id]?DATA.zonas[id].nombre:'')+'"?')) return; try{ await fbDelete(ROOT+'/zonas/'+id); delete DATA.zonas[id]; render(); toast('Zona eliminada','ok'); }catch(e){ toast('No se pudo','bad'); } });
   document.querySelectorAll('[data-combo]').forEach(sel=>sel.onchange=async()=>{ const k=sel.dataset.combo, zid=sel.value;
