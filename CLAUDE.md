@@ -30,6 +30,7 @@ mateu-sports-portal/
 ├── barrida/            # Análisis de Reserva Depósito Central: cruce semanal (subir Excel) de la reserva del depósito central con las ventas por sucursal → alertas de reposición posible y de reserva parada. Firebase: reusa recepciones-mateu (nodo barrida/). Ver "Análisis de Reserva Depósito Central" abajo.
 ├── objetivos/          # Objetivos de Venta Semanal: gerencia carga el objetivo (Meta) de venta por sucursal por semana (subiendo el Excel "PMS Objetivos" o a mano) → dashboard vs. real; cada sucursal ve su objetivo en Indicadores. Firebase: reusa recepciones-mateu (nodo objetivos/). Ver "Objetivos de Venta Semanal" abajo.
 ├── capacitaciones/     # Academia de Ventas FUNCIONAL: cursos y programas del capacitador, avance por persona con quiz, certificados, equipo/ranking y encuestas. Ver "Academia de Ventas" abajo. (Las pantallas .dc.html son el prototipo original de Design; quedan de referencia.)
+├── tareas/             # Tareas de la Sucursal: Cambio de precios, Sectores de marcas, Limpieza (checklist) y Vidrieras (alerta por días sin cambios), con foto antes/después y comparativa. Firebase: reusa recepciones-mateu (nodo tareas/). Ver "Tareas de la Sucursal" abajo.
 ├── lib/                # código JS común versionado y testeable (hoy: evaluacion.js = cálculo puro de Evaluaciones + tests con node --test)
 └── shared/             # código común del shell (calendario retail, etc.)
 ```
@@ -1173,6 +1174,50 @@ solos en la celda — el 17/08/2026 aparece como «Paso a la Inmortalidad de San
 
 **Firebase**: `rrhh/calendario/<slug>/<YYYY-MM>` = `{dias:{'1':'texto',…}, actualizado, por}`
 en discontinuos-mateu, agrupado por slug para que cada sucursal baje solo lo suyo.
+
+## Tareas de la Sucursal (`tareas/`)
+
+`tareas/index.html` self-contained (lee la sesión del Portal, sin login propio). Es de
+**todas las cuentas de sucursal/outlet** (se les agrega sola en `herramientasEfectivas`,
+como Marcas; también al supervisor) y gerencia la usa como control. `deposito`/`puesto`
+no entran. Cuatro pestañas:
+
+- **Cambio de precios** y **Sectores de marcas**: tareas con título, marca, fecha
+  (vigencia / límite), detalle, estado pendiente/hecha, **foto ANTES y DESPUÉS** y quién
+  la hizo. Las publica **gerencia a una o varias sucursales** (chips de sucursales en el
+  formulario, un PATCH multi-path; aviso por directo de la Bandeja a cada cuenta) o la
+  propia sucursal se las anota. Vencida = fecha pasada sin marcar (rojo). Al marcar hecha
+  una tarea de gerencia, le llega un directo a quien la publicó (`creado.mail`).
+- **Limpieza**: checklist con frecuencia `diaria` / `semanal` / `mensual`; cada ítem
+  guarda `hechos/<período>` (`YYYY-MM-DD`, lunes ISO o `YYYY-MM`) con `{por,ts,antes,
+  despues}`. Puntitos de cumplimiento de los últimos períodos (neutros antes del alta).
+  Botón «Cargar checklist sugerido» (`LIMPIEZA_SUGERIDA`) cuando no hay nada. 📷 = foto
+  de antes (deja la entrada `pendiente:true`), ✨ = foto de después (marca hecho).
+- **Vidrieras**: una tarjeta por vidriera con el último cambio y los **días sin cambios**;
+  alerta (rojo + badge rojo en la pestaña + banner) al superar `config/global.diasVidriera`
+  (default `DIAS_VIDRIERA_DEF` = 15; gerencia lo ajusta con «ajustar» y puede darle un tope
+  propio a una vidriera en su edición), ámbar cuando está por vencer. «🔄 Registrar cambio»
+  pide la foto de después (la de antes se hereda del cambio anterior, se puede reemplazar)
+  + nota; historial de cambios con comparativa. **Aviso por la Bandeja** una vez cada 7
+  días por vidriera en alerta (flag `alertasVidriera/<slug>/<vid>`, se borra al registrar
+  el cambio) a las cuentas de la sucursal + `ALERTA_AVISADOS` (Cristian); se dispara al
+  abrir el módulo, como `alertasRitmo`.
+- **Comparativa antes/después** (`abrirCmp`): modal con modo **Deslizar** (slider con
+  `clip-path`) y **Lado a lado**; baja las fotos grandes recién ahí.
+- **Fotos**: se comprimen en el navegador (`comprimirFoto`: JPEG ≤1280px + miniatura
+  ≤360px) y el input lleva `capture="environment"` (celular → cámara). La grande va a
+  `tareas/fotos/<slug>/<id>` = `{data,ts,por}`; en el ítem solo viaja `{id,thumb,ts,por}`
+  → el listado es liviano. Al borrar tarea/vidriera se borran sus fotos.
+- **«Yo soy»** (cuenta de sucursal): nombre de quien opera, en localStorage
+  `tareas_yo_<slug>`; `firma()` = «Nombre (Usuario)». Gerencia firma con el usuario.
+- **Todas las sucursales** (gerencia, selector vacío): tabla sucursal × (precios y
+  sectores pendientes con ⚠ vencidas, limpieza hoy y semana x/y, vidrieras en alerta, máx.
+  días sin cambio) + KPIs, «+ Publicar tarea» a varias sucursales. El supervisor ve solo
+  su alcance (`session.sucursales`) si lo tiene cargado.
+- **Firebase**: `recepciones-mateu`, nodo `tareas/` (agrupado por slug, seguridad blanda):
+  `precios/<slug>/<id>`, `sectores/<slug>/<id>`, `limpieza/<slug>/<id>`,
+  `vidrieras/<slug>/<id>` (`cambios/<cid>`), `fotos/<slug>/<fid>`, `config/global`,
+  `alertasVidriera/<slug>/<vid>`. Íconos nuevos en `shared/iconos.js`: ⇄ ✨ 🪟.
 
 ## Celular (03/09/2026)
 

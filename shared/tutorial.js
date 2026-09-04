@@ -208,6 +208,17 @@
       { ic:'📬', t:'Avisos y ayuda', d:'Todo lo que requiere tu respuesta (solicitudes de compensatorios, semanas del calendario sin confirmar) te llega también a la Bandeja de mensajes del Portal: abrila desde el botón «Menú» de arriba a la izquierda. El logo del header vuelve al Portal. Este recorrido queda siempre disponible en el botón «?» de abajo a la derecha.' }
     ]},
 
+    tareas: { icono:'✅', nombre:'Tareas de la Sucursal', pasos:[
+      { ic:'✅', t:'Qué es', d:'Las tareas operativas del local en un solo lugar, en cuatro pestañas: Cambio de precios, Sectores de marcas, Limpieza y Vidrieras. Todo queda registrado con quién lo hizo, cuándo y, donde corresponde, la foto de antes y la de después.' },
+      { ic:'👤', t:'Decí quién sos', d:'La cuenta es de la sucursal: escribí tu nombre en «Yo soy» (arriba, se recuerda en este dispositivo) para que lo que marques quede firmado por vos.', roles:['sucursal','outlet'] },
+      { ic:'💲', t:'Cambio de precios', d:'Las remarcaciones que publica gerencia (con la marca y desde cuándo rigen) y las que te anotás vos. Sacá la foto de cómo está, hacé el cambio, sacá la de cómo quedó y tocá «✓ Hecha». Las que pasaron su vigencia sin hacerse se marcan en rojo.' },
+      { ic:'🏷️', t:'Sectores de marcas', d:'Armados y rearmados de sectores de exhibición: marca, dónde va y cómo tiene que quedar, con fecha límite. Mismo circuito: foto de antes, foto de después, hecha.' },
+      { ic:'🧹', t:'Limpieza', d:'El checklist del local con tareas diarias, semanales y mensuales (podés cargar el sugerido y ajustarlo). Cada día se marca lo que se hizo; los puntitos muestran el cumplimiento de los últimos días. 📷 guarda la foto de antes y ✨ la de después.' },
+      { ic:'🪟', t:'Vidrieras', d:'Cada vidriera del local con su último cambio y cuántos días lleva igual. Cuando la cambiás, «🔄 Registrar cambio» con la foto de cómo quedó (la de antes se toma sola del cambio anterior). Si pasa el tope de días sin cambios se pone en rojo y avisa por la Bandeja.' },
+      { ic:'⇄', t:'Antes / después', d:'Tocá cualquier par de fotos y se abre la comparativa: deslizá la barra para ver el antes y el después sobre la misma imagen, o mirá las dos lado a lado.' },
+      { ic:'🏢', t:'Todas las sucursales', d:'Gerencia ve el resumen de todas: pendientes de precios y sectores, la limpieza del día y las vidrieras en alerta por sucursal; desde ahí se publica una tarea a varias sucursales a la vez y se ajusta el tope de días de las vidrieras.', roles:['admin','supervisor'] }
+    ]},
+
     picking: { icono:'📋', nombre:'Picking', pasos:[
       { ic:'📋', t:'Qué es', d:'La preparación de los pedidos del Depósito Central: acá el encargado crea los pickings, sigue cómo avanzan y los controla. El operario los prepara físicamente desde la tablet (el kiosco), no desde acá.' },
       { ic:'📊', t:'Panel', d:'La pantalla que abre primero: el estado de todos los pickings (pendientes, en preparación, para control, finalizados y con diferencias), las unidades pendientes y pickeadas, la productividad por operario y los faltantes. Es tu tablero para ver dónde está trabada la operación.' },

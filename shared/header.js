@@ -56,7 +56,8 @@
     picking:            { name:'Picking',                    icon:'📋' },
     objetivos:          { name:'Objetivos de Venta',         icon:'🎯' },
     rrhh:               { name:'Recursos Humanos',           icon:'🧑‍💼' },
-    capacitaciones:     { name:'Capacitaciones',             icon:'🎓' }
+    capacitaciones:     { name:'Capacitaciones',             icon:'🎓' },
+    tareas:             { name:'Tareas de la Sucursal',      icon:'✅' }
   };
 
   // herramienta actual: config o carpeta de la URL (…/<slug>/…)
