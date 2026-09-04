@@ -60,6 +60,8 @@
     marcas: { icono:'🏷️', nombre:'Asignación de Marcas', pasos:[
       { ic:'🏷️', t:'Qué es', d:'La asignación de marcas por rubro a cada sucursal: define qué marcas trabaja cada local.' },
       { ic:'🧩', t:'Asignar', d:'Elegí el rubro y marcá qué marcas corresponden a cada sucursal. Los cambios se guardan en vivo y los ven todos.' },
+      { ic:'⇶', t:'Masivo', d:'En modo edición, el botón «Masivo» agrega o quita una marca en varias sucursales a la vez: elegís la acción, la marca y tildás las sucursales por canal. Queda pendiente hasta Guardar.' },
+      { ic:'🔍', t:'Filtrar una marca', d:'Con una marca elegida en el filtro, cada tarjeta muestra solo esa marca con sus meses de stock al lado, y las sucursales que no la trabajan quedan atenuadas.' },
       { ic:'👀', t:'Consultar', d:'Cualquier usuario con la herramienta ve la foto actual de la asignación, siempre actualizada.' }
     ]},
 

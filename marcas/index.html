@@ -379,6 +379,37 @@ a.cob-big:hover small { color: var(--navy); }
 .kpi-strip.strip-aurelius .kpi:not(.s-ok):not(.s-mid):not(.s-bad) .kpi-val { color: var(--aur-black); }
 .kpi-strip.strip-aurelius .kpi::after { background: rgba(204,0,0,.05); }
 
+/* operación masiva */
+.modal.mas { width: 720px; }
+.mas-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.mas-field { display: flex; flex-direction: column; }
+.mas-field.grow { flex: 1; min-width: 180px; }
+.mas-field .form-input { margin-bottom: 0; }
+.mas-seg { display: inline-flex; background: var(--off); border: 1px solid var(--border); border-radius: 9px; padding: 3px; gap: 2px; }
+.mas-seg-btn { font-family: var(--font-c); font-size: 13px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; padding: 7px 14px; border-radius: 7px; border: none; background: transparent; color: var(--muted); cursor: pointer; line-height: 1; }
+.mas-seg-btn.active { background: var(--navy); color: #fff; }
+.mas-seg-btn.active[data-acc="del"] { background: var(--red); }
+.mas-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 16px 0 6px; }
+.mas-quick { display: flex; gap: 10px; }
+.mas-link { background: none; border: none; padding: 0; cursor: pointer; font-family: var(--font-c); font-size: 12px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: var(--red); }
+.mas-link:hover { text-decoration: underline; }
+.mas-body { max-height: 46vh; overflow: auto; border: 1px solid var(--border); border-radius: 10px; padding: 4px 12px 10px; background: var(--gray-50); }
+.mas-canal { display: flex; align-items: center; gap: 10px; margin: 10px 0 5px; }
+.mas-canal b { font-family: var(--font-d); font-size: 17px; letter-spacing: .8px; color: var(--navy); }
+.mas-canal .mas-link { font-size: 11px; }
+.mas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 10px; }
+.mas-item { display: flex; align-items: center; gap: 7px; font-family: var(--font-c); font-size: 13.5px; font-weight: 600; color: var(--navy); padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+.mas-item:hover { background: #fff; }
+.mas-item input { accent-color: var(--navy); width: 15px; height: 15px; }
+.mas-item.off { color: var(--muted-light); cursor: default; }
+.mas-item.off:hover { background: transparent; }
+.mas-item small { font-family: var(--font-c); font-weight: 500; font-size: 11px; color: var(--muted-light); letter-spacing: .3px; margin-left: auto; white-space: nowrap; }
+.mas-item .tg { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; padding: 1px 6px; border-radius: 99px; background: var(--off); border: 1px solid var(--border); color: var(--muted); margin-left: auto; }
+.mas-item .tg.prio { background: var(--navy); color: #fff; border-color: var(--navy); }
+.mas-resumen { margin-right: auto; font-family: var(--font-c); font-size: 13px; font-weight: 600; color: var(--navy); letter-spacing: .2px; }
+.mas-resumen .n { font-family: var(--font-n); font-style: italic; font-weight: 800; font-size: 18px; color: var(--red); margin: 0 2px; }
+@media (max-width: 560px) { .mas-grid { grid-template-columns: 1fr; } .mas-body { max-height: 40vh; } }
+
 /* matriz: totales en Saira */
 .mtz-table td.num { font-family: var(--font-n); font-style: italic; font-weight: 800; font-size: 14px; color: var(--navy); }
 
@@ -462,6 +493,7 @@ a.cob-big:hover small { color: var(--navy); }
     <span class="edit-badge" id="editBadge">Modo edición</span>
     <button class="btn-hdr ghost" id="btnMatriz" onclick="openMatriz()">▦ Matriz</button>
     <button class="btn-hdr ghost" id="btnHistorial" onclick="openHistorial()">🕘 Historial</button>
+    <button class="btn-hdr" id="btnMasivo" onclick="openMasivo()" style="display:none;" title="Agregar o quitar una marca en varias sucursales a la vez">⇶ Masivo</button>
     <button class="btn-hdr" id="btnNuevaMarca" onclick="openNuevaMarcaModal()" style="display:none;">+ Nueva marca</button>
     <button class="btn-hdr navy" id="btnEdit" onclick="toggleEdit()">✏️ Editar asignación</button>
     <button class="btn-hdr primary" id="btnSave" onclick="saveChanges()" style="display:none">✓ Guardar</button>
@@ -526,6 +558,49 @@ a.cob-big:hover small { color: var(--navy); }
     <div id="modalDetalleBody"></div>
     <div class="modal-footer">
       <button class="btn-hdr" onclick="document.getElementById('modalDetalle').classList.remove('show')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal operación masiva: agregar o quitar una marca en varias sucursales -->
+<div class="modal-overlay" id="modalMasivo" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal mas" onclick="event.stopPropagation()">
+    <div class="modal-title">Operación masiva</div>
+    <div class="mas-row">
+      <div class="mas-field">
+        <label class="form-label">Acción</label>
+        <div class="mas-seg">
+          <button type="button" class="mas-seg-btn active" data-acc="add" onclick="masSetAccion('add')">+ Agregar</button>
+          <button type="button" class="mas-seg-btn" data-acc="del" onclick="masSetAccion('del')">– Quitar</button>
+        </div>
+      </div>
+      <div class="mas-field grow">
+        <label class="form-label">Marca</label>
+        <select class="form-input" id="masMarca" onchange="masRender()"></select>
+      </div>
+      <div class="mas-field" id="masTipoWrap">
+        <label class="form-label">Como</label>
+        <select class="form-input" id="masTipo">
+          <option value="">Tipo del catálogo</option>
+          <option value="prio">Prioritaria</option>
+          <option value="sec">Secundaria</option>
+          <option value="nino">Niño</option>
+          <option value="especial">Especial</option>
+        </select>
+      </div>
+    </div>
+    <div class="mas-head">
+      <label class="form-label" style="margin:0">Sucursales</label>
+      <div class="mas-quick">
+        <button type="button" class="mas-link" onclick="masSel('all')">Todas las posibles</button>
+        <button type="button" class="mas-link" onclick="masSel('none')">Ninguna</button>
+      </div>
+    </div>
+    <div id="masBody" class="mas-body"></div>
+    <div class="modal-footer">
+      <span class="mas-resumen" id="masResumen"></span>
+      <button class="btn-hdr" onclick="document.getElementById('modalMasivo').classList.remove('show')">Cancelar</button>
+      <button class="btn-hdr primary" id="masAplicar" onclick="masAplicar()">Aplicar</button>
     </div>
   </div>
 </div>
@@ -1164,6 +1239,7 @@ function applySessionUI() {
   document.getElementById('btnSave').style.display = 'none';
   document.getElementById('btnReset').style.display = 'none';
   document.getElementById('btnNuevaMarca').style.display = 'none';
+  document.getElementById('btnMasivo').style.display = 'none';
   document.getElementById('btnMatriz').style.display = 'none';
   document.getElementById('btnHistorial').style.display = 'none';
   document.getElementById('editBadge').classList.remove('show');
@@ -1182,6 +1258,7 @@ function toggleEdit() {
   document.getElementById('btnSave').style.display = 'block';
   document.getElementById('btnReset').style.display = 'block';
   document.getElementById('btnNuevaMarca').style.display = 'block';
+  document.getElementById('btnMasivo').style.display = 'block';
   render();
   if (document.getElementById('modalDetalle').classList.contains('show')) renderSucDetalleBody();
 }
@@ -1243,6 +1320,7 @@ async function saveChanges() {
   document.getElementById('btnSave').style.display = 'none';
   document.getElementById('btnReset').style.display = 'none';
   document.getElementById('btnNuevaMarca').style.display = 'none';
+  document.getElementById('btnMasivo').style.display = 'none';
   render();
   if (document.getElementById('modalDetalle').classList.contains('show')) renderSucDetalleBody();
 }
@@ -1263,6 +1341,7 @@ function resetAll() {
   document.getElementById('btnSave').style.display = 'none';
   document.getElementById('btnReset').style.display = 'none';
   document.getElementById('btnNuevaMarca').style.display = 'none';
+  document.getElementById('btnMasivo').style.display = 'none';
   render();
   if (document.getElementById('modalDetalle').classList.contains('show')) renderSucDetalleBody();
   showToast('Cambios descartados');
@@ -1315,6 +1394,95 @@ function addBrandToSuc(brandName) {
   document.getElementById('modalAsignar').classList.remove('show');
   render();
   showToast(`${brandName} agregada a ${suc.nombre}`);
+}
+
+/* ============================================================
+   OPERACIÓN MASIVA — agregar o quitar UNA marca en VARIAS sucursales
+   a la vez. Trabaja sobre los datos en memoria igual que agregar /
+   quitar en cada tarjeta: queda pendiente hasta «Guardar» (que arma el
+   diff para el historial y el sello por sucursal como siempre).
+   ============================================================ */
+let masAccion = 'add';
+function openMasivo() {
+  if(!isAdminSession() || !editMode) return;
+  masAccion = 'add';
+  document.querySelectorAll('.mas-seg-btn').forEach(b => b.classList.toggle('active', b.dataset.acc === masAccion));
+  // Marca: catálogo del rubro + lo que esté asignado aunque no esté en el catálogo
+  const sel = document.getElementById('masMarca');
+  const nombres = new Set(MARCAS_DISPONIBLES.map(m => m.n));
+  Object.values(DATA).forEach(c => c.sucursales.forEach(su => (su.brands || []).forEach(b => nombres.add(b.n))));
+  const prev = brandFilter && nombres.has(brandFilter) ? brandFilter : '';
+  sel.innerHTML = [...nombres].sort().map(n => '<option value="' + escapeHtml(n) + '"' + (n === prev ? ' selected' : '') + '>' + escapeHtml(n) + '</option>').join('');
+  document.getElementById('masTipo').value = '';
+  masRender();
+  document.getElementById('modalMasivo').classList.add('show');
+}
+function masSetAccion(a) {
+  masAccion = a;
+  document.querySelectorAll('.mas-seg-btn').forEach(b => b.classList.toggle('active', b.dataset.acc === a));
+  masRender();
+}
+// Lista de sucursales por canal: al agregar se pueden tildar las que NO la tienen,
+// al quitar las que SÍ la tienen; el resto queda apagado con el motivo.
+function masRender() {
+  const marca = document.getElementById('masMarca').value;
+  document.getElementById('masTipoWrap').style.display = masAccion === 'add' ? '' : 'none';
+  let h = '';
+  ['aurelius','linea','outlet','adidas'].forEach(key => {
+    const canal = DATA[key]; if (!canal) return;
+    const sucs = canal.sucursales.filter(su => canSeeSuc(su.id));
+    if (!sucs.length) return;
+    h += '<div class="mas-canal"><b>' + escapeHtml(canal.label) + '</b><button type="button" class="mas-link" onclick="masSel(\'' + key + '\')">Todas</button><button type="button" class="mas-link" onclick="masSel(\'-' + key + '\')">Ninguna</button></div><div class="mas-grid">';
+    sucs.forEach(su => {
+      const b = (su.brands || []).find(x => x.n === marca);
+      const posible = masAccion === 'add' ? !b : !!b;
+      const extra = b ? '<span class="tg ' + tagCls(b.t) + '">' + tipoLabel(b.t) + '</span>' : (masAccion === 'del' ? '<small>no la tiene</small>' : '');
+      h += '<label class="mas-item' + (posible ? '' : ' off') + '"><input type="checkbox" data-canal="' + key + '" value="' + su.id + '"' + (posible ? '' : ' disabled') + ' onchange="masResumen()">' + escapeHtml(su.nombre) + extra + '</label>';
+    });
+    h += '</div>';
+  });
+  document.getElementById('masBody').innerHTML = h || '<p class="disc-empty">No hay sucursales para operar.</p>';
+  masResumen();
+}
+function masSel(que) {
+  const boxes = document.querySelectorAll('#masBody input[type=checkbox]:not([disabled])');
+  boxes.forEach(cb => {
+    if (que === 'all') cb.checked = true;
+    else if (que === 'none') cb.checked = false;
+    else if (que.charAt(0) === '-') { if (cb.dataset.canal === que.slice(1)) cb.checked = false; }
+    else if (cb.dataset.canal === que) cb.checked = true;
+  });
+  masResumen();
+}
+function masSeleccion() {
+  return [...document.querySelectorAll('#masBody input[type=checkbox]:checked')].map(cb => cb.value);
+}
+function masResumen() {
+  const n = masSeleccion().length;
+  const marca = document.getElementById('masMarca').value;
+  const r = document.getElementById('masResumen');
+  r.innerHTML = n ? (masAccion === 'add' ? 'Agregar <b>' + escapeHtml(marca) + '</b> a<span class="n">' + n + '</span>sucursal' + (n === 1 ? '' : 'es') : 'Quitar <b>' + escapeHtml(marca) + '</b> de<span class="n">' + n + '</span>sucursal' + (n === 1 ? '' : 'es')) : 'Elegí al menos una sucursal';
+  document.getElementById('masAplicar').disabled = !n;
+  document.getElementById('masAplicar').style.opacity = n ? '' : '.5';
+}
+function masAplicar() {
+  if(!isAdminSession() || !editMode) return;
+  const marca = document.getElementById('masMarca').value;
+  const ids = masSeleccion();
+  if (!marca || !ids.length) return;
+  const tipoElegido = document.getElementById('masTipo').value;
+  const m = MARCAS_DISPONIBLES.find(x => x.n === marca);
+  const tipo = tipoElegido || (m ? m.t : 'sec');
+  let hechas = 0;
+  ids.forEach(id => {
+    const su = findSuc(id); if (!su) return;
+    const tiene = (su.brands || []).some(b => b.n === marca);
+    if (masAccion === 'add' && !tiene) { su.brands.push({n: marca, t: tipo}); hechas++; }
+    if (masAccion === 'del' && tiene) { su.brands = su.brands.filter(b => b.n !== marca); hechas++; }
+  });
+  document.getElementById('modalMasivo').classList.remove('show');
+  render();
+  showToast((masAccion === 'add' ? marca + ' agregada a ' : marca + ' quitada de ') + hechas + ' sucursal' + (hechas === 1 ? '' : 'es') + ' · falta Guardar');
 }
 
 function escapeHtml(str) {
