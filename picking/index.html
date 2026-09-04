@@ -11,6 +11,9 @@
 <!-- Header unificado del shell: barra Menú + logo + calendario retail + drawer -->
 <script src="../shared/header.js" defer></script>
 <script src="../shared/tutorial.js" defer></script>
+<!-- Plano físico del depósito central (mapa + zonas de recorrido). Generado con
+     scripts/gen-plano-deposito.js desde "plano deposito.xlsx". -->
+<script src="plano-deposito.js"></script>
 <style>
   :root{
     --navy:#0B1527;--navy-mid:#1a2f55;--red:#CC0000;--red-soft:#ff3b3b;--off:#f5f7fc;--card:#fff;--border:#dce3f0;
@@ -125,6 +128,7 @@ function fbKey(s){ return String(s||'').trim().replace(/[.#$/\[\]]/g,'~'); }
 async function fbGet(path,q){ const r=await fetch(fbUrl(path,q)); if(!r.ok) throw new Error('Firebase '+r.status); return r.json(); }
 async function fbPut(path,data){ const r=await fetch(fbUrl(path),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!r.ok) throw new Error('Firebase '+r.status); return r.json(); }
 async function fbPost(path,data){ const r=await fetch(fbUrl(path),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!r.ok) throw new Error('Firebase '+r.status); return r.json(); }
+async function fbPatch(path,data){ const r=await fetch(fbUrl(path),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!r.ok) throw new Error('Firebase '+r.status); return r.json(); }
 async function fbDelete(path){ const r=await fetch(fbUrl(path),{method:'DELETE'}); if(!r.ok) throw new Error('Firebase '+r.status); return true; }
 function nowISO(){ return new Date().toISOString().slice(0,19).replace('T',' '); }
 function toast(msg,kind){ const t=$('toast'); t.textContent=msg; t.className='toast show '+(kind||''); setTimeout(()=>{t.className='toast '+(kind||'');},2600); }
@@ -454,8 +458,10 @@ async function renderZonas(){
   $('view').innerHTML='<div class="state"><div class="spin"></div>Cargando zonas…</div>';
   let combos=[]; try{ combos=await cargarCombos(); }catch(e){}
   const zonas=Object.keys(DATA.zonas).map(id=>({id,...DATA.zonas[id]})).sort((a,b)=>num(a.orden)-num(b.orden));
+  const hayPlano = !!(window.PLANO_DEPOSITO && window.PLANO_DEPOSITO.zonas && window.PLANO_DEPOSITO.zonas.length);
   let html=seccionHead('Zonas del depósito','Definí las zonas (nombre + orden del recorrido) y a qué marca/rubro corresponde cada una.',
-    '<button class="btn btn-primary btn-sm" id="btnZona">+ Nueva zona</button>');
+    (hayPlano?'<button class="btn btn-outline btn-sm" id="btnPlano">🗺 Cargar zonas del plano</button> ':'')
+    +'<button class="btn btn-primary btn-sm" id="btnZona">+ Nueva zona</button>');
   html+='<div class="tbl-wrap" style="margin-bottom:20px"><table><thead><tr><th style="width:70px">Orden</th><th>Zona</th><th class="num">Combos</th><th style="width:90px"></th></tr></thead><tbody>';
   html+= zonas.length ? zonas.map(z=>{
     const usos=combos.filter(c=>DATA.asignZona[comboKey(c.marca,c.rubro)]===z.id).length;
@@ -478,6 +484,7 @@ async function renderZonas(){
   }
   $('view').innerHTML=html;
   $('btnZona').onclick=()=>editarZona(null);
+  { const bp=$('btnPlano'); if(bp) bp.onclick=cargarZonasDelPlano; }
   document.querySelectorAll('[data-ez]').forEach(b=>b.onclick=()=>editarZona(b.dataset.ez));
   document.querySelectorAll('[data-dz]').forEach(b=>b.onclick=async()=>{ const id=b.dataset.dz; if(!confirm('¿Eliminar la zona "'+(DATA.zonas[id]?DATA.zonas[id].nombre:'')+'"?')) return; try{ await fbDelete(ROOT+'/zonas/'+id); delete DATA.zonas[id]; render(); toast('Zona eliminada','ok'); }catch(e){ toast('No se pudo','bad'); } });
   document.querySelectorAll('[data-combo]').forEach(sel=>sel.onchange=async()=>{ const k=sel.dataset.combo, zid=sel.value;
@@ -496,6 +503,24 @@ function editarZona(id){
     try{ const rec={nombre,orden}; await fbPut(ROOT+'/zonas/'+zid, rec); DATA.zonas[zid]=rec; closeModal(); render(); toast('Zona guardada','ok'); }
     catch(e){ b.disabled=false; toast('No se pudo','bad'); }
   };
+}
+// Siembra las zonas reales del plano del depósito (góndolas + áreas de reserva),
+// con su rectángulo en el plano y el orden de recorrido. Merge: no pisa las zonas
+// cargadas a mano (usa los ids del plano) ni las asignaciones marca/rubro→zona.
+async function cargarZonasDelPlano(){
+  const P = window.PLANO_DEPOSITO;
+  if(!P || !P.zonas || !P.zonas.length){ toast('No hay plano cargado','bad'); return; }
+  const nuevas = P.zonas.filter(z=>!DATA.zonas[z.id]).length;
+  const total = P.zonas.length;
+  if(!confirm('Cargar '+total+' zonas del plano del depósito ('+nuevas+' nuevas, '+(total-nuevas)+' se actualizan).\n\nLas zonas que cargaste a mano y las asignaciones marca/rubro no se tocan. ¿Seguir?')) return;
+  const patch={};
+  P.zonas.forEach(z=>{ patch[z.id]={nombre:z.nombre, orden:z.orden, planta:z.planta, r0:z.r0, r1:z.r1, c0:z.c0, c1:z.c1}; });
+  const b=$('btnPlano'); if(b){ b.disabled=true; b.textContent='Cargando…'; }
+  try{
+    await fbPatch(ROOT+'/zonas', patch);
+    Object.assign(DATA.zonas, patch);
+    toast(total+' zonas cargadas del plano','ok'); render();
+  }catch(e){ if(b){ b.disabled=false; b.textContent='🗺 Cargar zonas del plano'; } toast('No se pudo cargar','bad'); }
 }
 
 /* ---- OPERARIOS ---- */
