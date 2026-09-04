@@ -669,6 +669,7 @@ body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
 }
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
+<script src="../shared/equipo.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <!-- Header unificado del shell: barra Menú + logo + calendario retail + drawer -->
 <script src="../shared/header.js" defer></script>
@@ -1169,6 +1170,7 @@ async function entrarSucursal(){
 async function cargarPerfiles(){
   try{
     PERFILES = await fetchJSON(sucPath()+'/perfiles.json') || {};
+    await sincronizarPerfilesPadron();
     hideErr();
   }catch(e){
     PERFILES = {};
@@ -1176,6 +1178,39 @@ async function cargarPerfiles(){
   }
 }
 
+/* Los perfiles salen del PADRÓN de la sucursal (shared/equipo.js → rrhh/equipo/<slug>,
+   el mismo que arma el encargado en Mi Sucursal → Mi equipo y valida RRHH). Cada
+   persona activa con rol operativo tiene su perfil con id = legajoId; avatares y
+   orden se conservan (por id, o por nombre para migrar los perfiles viejos). Los
+   perfiles marcados `manual` (creados a mano acá) se respetan. Sin padrón para la
+   sucursal, no se toca nada. */
+const _padronSyncDone = {};
+async function sincronizarPerfilesPadron(){
+  if(!SUC || !window.Equipo || _padronSyncDone[SUC]) return;
+  let gente; try{ gente = Equipo.activos(await Equipo.cargar(SUC)); }catch(e){ return; }
+  gente = gente.filter(p=>ROL_ORDEN_IND[p.rol]);
+  if(!gente.length) return;
+  _padronSyncDone[SUC]=true;
+  const viejos = Object.keys(PERFILES).map(id=>({id, ...PERFILES[id]}));
+  const porNombre = new Map(); viejos.forEach(v=>{ const k=Equipo.norm(v.nombre); if(k && !porNombre.has(k)) porNombre.set(k, v); });
+  const nuevos = {};
+  gente.forEach((p,i)=>{
+    const prev = PERFILES[p.id] || (()=>{ let v=null; Equipo.clavesDe(p).forEach(c=>{ if(!v && porNombre.has(c)) v=porNombre.get(c); }); return v; })();
+    nuevos[p.id] = { nombre:p.nombre, rol:p.rol, orden:(ROL_ORDEN_IND[p.rol]||9)*100+i, avatar:(prev&&prev.avatar)||null, legajo:true };
+  });
+  viejos.filter(v=>v.manual && !nuevos[v.id]).forEach(v=>{ nuevos[v.id]={...v}; delete nuevos[v.id].id; });
+  const limpio = o => JSON.stringify(Object.keys(o).sort().map(k=>[k,o[k]]));
+  if(limpio(nuevos)===limpio(PERFILES)) return;
+  try{
+    await putJSON(sucPath()+'/perfiles.json', nuevos);
+    PERFILES = nuevos;
+    // el perfil activo pudo cambiar de id (perfil viejo por nombre → legajoId)
+    if(PERFIL && !PERFILES[PERFIL.id]){
+      const k=Equipo.norm(PERFIL.nombre); const nid=Object.keys(PERFILES).find(id=>Equipo.norm(PERFILES[id].nombre)===k || gente.some(g=>g.id===id && Equipo.clavesDe(g).has(k)));
+      if(nid){ PERFIL={id:nid, ...PERFILES[nid]}; saveLS('ubic_perfil_'+SUC, nid); } else PERFIL=null;
+    }
+  }catch(e){ console.warn('perfiles desde el padrón', e); }
+}
 function perfilesOrdenados(){
   return Object.keys(PERFILES).map(id=>({id, ...PERFILES[id]}))
     .sort((a,b)=>(a.orden||99)-(b.orden||99) || (a.nombre||'').localeCompare(b.nombre||''));
@@ -4015,17 +4050,20 @@ async function renderPanelPerfiles(){
   const cont = $('view-perfiles');
   if(!canManage()){ cont.innerHTML='<div class="empty">Solo el encargado puede administrar perfiles.</div>'; return; }
   cont.innerHTML = '<div class="hint">Cargando perfiles…</div>';
+  _padronSyncDone[SUC]=false; if(window.Equipo) Equipo.limpiar(SUC);   // releer el padrón al abrir el panel
   await cargarPerfiles(); // refresco al abrir el panel (no se pollea)
   const lista = perfilesOrdenados();
-  const hayInd = !!SLUG_SUC_IND[SUC];
+  const hayInd = !!SLUG_SUC_IND[SUC] && !lista.some(p=>p.legajo);
+  const delPadron = lista.some(p=>p.legajo);
   cont.innerHTML =
-    '<button class="btn btn-navy btn-block" id="btnNuevoPerfil" style="margin-bottom:12px">+ Nuevo perfil</button>'+
+    (delPadron ? '<div class="hint" style="margin-bottom:10px">Los perfiles salen del <b>padrón de la sucursal</b> (Mi Sucursal → Mi equipo, validado por RRHH): altas y bajas se hacen ahí y aparecen acá solas. Acá solo se cambia el avatar.</div>' : '')+
+    '<button class="btn btn-navy btn-block" id="btnNuevoPerfil" style="margin-bottom:12px">+ Nuevo perfil'+(delPadron?' (a mano, fuera del padrón)':'')+'</button>'+
     (hayInd ? '<button class="btn btn-outline btn-block" id="btnImportarDot" style="margin-bottom:12px">⇩ Importar dotación desde Indicadores</button>' : '')+
     (lista.length ? '<div class="perfil-grid">'+lista.map(p=>
       '<div class="perfil-card">'+avatarHtml(p)+
-        '<div class="nm">'+esc(p.nombre)+'</div><div class="rl">'+esc(rolLabel(p.rol))+'</div>'+
-        '<button class="btn btn-outline btn-sm" data-edit="'+p.id+'">Editar</button> '+
-        '<button class="btn btn-outline btn-sm" data-del="'+p.id+'">✕</button>'+
+        '<div class="nm">'+esc(p.nombre)+'</div><div class="rl">'+esc(rolLabel(p.rol))+(p.legajo?' · padrón':'')+'</div>'+
+        '<button class="btn btn-outline btn-sm" data-edit="'+p.id+'">'+(p.legajo?'Avatar':'Editar')+'</button> '+
+        (p.legajo?'':'<button class="btn btn-outline btn-sm" data-del="'+p.id+'">✕</button>')+
       '</div>').join('')+'</div>'
     : '<div class="empty">No hay perfiles todavía.</div>');
   $('btnNuevoPerfil').addEventListener('click', ()=> abrirFormPerfil(null, false));
@@ -4075,14 +4113,14 @@ function abrirFormPerfil(perfilId, esPrimero){
     $('pfGuardar').disabled=true;
     try{
       if(perfilId){
-        const patch = {nombre, rol, avatar: avatarSel || null};
+        const patch = PERFILES[perfilId] && PERFILES[perfilId].legajo ? {avatar: avatarSel || null} : {nombre, rol, avatar: avatarSel || null};
         await patchJSON(sucPath()+'/perfiles/'+perfilId+'.json', patch);
         PERFILES[perfilId] = {...PERFILES[perfilId], ...patch};
         if(PERFIL && PERFIL.id===perfilId){ PERFIL={id:perfilId, ...PERFILES[perfilId]}; montarApp(); }
       } else {
         const id = newId('p');
         const lista = perfilesOrdenados();
-        const rec = {nombre, rol, orden:(lista.length?Math.max(...lista.map(x=>x.orden||0)):0)+1};
+        const rec = {nombre, rol, orden:(lista.length?Math.max(...lista.map(x=>x.orden||0)):0)+1, manual:true};
         if(avatarSel) rec.avatar = avatarSel;
         await putJSON(sucPath()+'/perfiles/'+id+'.json', rec);
         PERFILES[id]=rec;

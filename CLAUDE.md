@@ -1051,6 +1051,72 @@ por talle; "Ingresar a stock" cuando está ok) → reparto.
   apertura con switch de criterio — ver algoritmo probado en el chat); aviso a Ariel/Luis
   por `mensajes-mateu` al terminar el control; otras marcas.
 
+## Equipo de la sucursal — padrón único (`shared/equipo.js`, 04/09/2026)
+
+**Una sola lista de personas por sucursal para todos los módulos.** Fuente de verdad:
+`rrhh/legajos/<legajoId>` (discontinuos-mateu). Índice por sucursal para que cada local baje
+solo lo suyo: `rrhh/equipo/<slug>/<legajoId>` = resumen `{nombre, puesto, regimen, estado,
+alias[], pendiente, ingreso, legajo_nro}`. RRHH lo regenera entero tras cada escritura a
+legajos (`sincronizarEquipo()` → `Equipo.reconstruir`); las altas/bajas/alias hechas desde
+Mi Sucursal escriben legajo + índice en un PATCH multi-path.
+
+- **Identidad = `legajoId`, nunca el nombre.** El nombre con que aparece la persona en el
+  sistema de ventas («CASAO KEVIN ARMANDO M.») se guarda como **alias** del legajo, una vez,
+  con confirmación humana; desde ahí el cruce es exacto (`Equipo.resolver`: exacto por
+  nombre/alias normalizado → `{persona, exacto:true}`; si no, la mejor **sugerencia** difusa
+  — el algoritmo por tokens que antes usaba Indicadores en silencio — que hay que confirmar).
+  Nada se vincula solo.
+- **Helper** `shared/equipo.js` (`window.Equipo`, se incluye SIN `defer` antes de `iconos.js`):
+  `cargar(slug)` / `cargarTodas()` / `activos()`, `resolver` / `resolverTodos` / `clavesDe`,
+  `vincular(slug,id,nombreVentas)`, `alta(slug,{nombre,puesto,regimen,ingreso},por)` (entra
+  al padrón YA con `pendiente:true`, `origen:'sucursal'`), `editar`, `baja`, `reconstruir`,
+  `rolDe(puesto)` (encargado/vendedor/cajera/deposito/otro), `grupoDe`, `sectorDe`, `norm`.
+- **RRHH**: campo «Nombres en el sistema de ventas (alias)» en el legajo, tag «Por validar»
+  + ✓ para las altas de sucursal (guardar el form también valida), y **«⇄ Conciliar con
+  ventas»** (`abrirConciliar`): junta los nombres del ETL del último período + últimas 4
+  semanas de `ventaEquipo`, y por cada nombre que ningún legajo reconoce ofrece Vincular
+  (alias) / Crear legajo / Ignorar (`rrhh/aliasIgnorados/<norm_con_guiones>`); lote «Aplicar
+  las marcadas» para las sugerencias fuertes (score ≥3 en la misma sucursal). Aparte lista
+  **«Venden en otra sucursal que la de su legajo»** (identidad resuelta: cobertura → nada;
+  traslado → «Mover a X») y **legajos duplicados** (Unificar si el segundo no tiene
+  movimientos). El form ahora conserva `legajo_nro`/`origen`/`creado` (antes se perdían
+  al editar).
+- **Indicadores (Mi Sucursal)**: sección **«Mi equipo»** (`secEquipo`, zona viva, antes de
+  Novedades; `renderEquipoSuc`/`paintEquipoSuc`): padrón con puesto/régimen/estado de
+  vínculo, **+ Agregar persona** (alta → aviso a `RRHH_MAILS` por la Bandeja), ✎ (nombre,
+  puesto, régimen, ingreso) y ⏻ baja (aviso a RRHH); bloque **«Nombres de ventas sin
+  vincular»** (de la venta de la semana activa `_ultimoVe` + `DET.vendedores`) con
+  Vincular / Es nuevo / Ignorar. El **equipo semanal** guarda `{id, nombre, h}`: se arma
+  desde el padrón (`padronVenta()` = activos encargado/vendedor/cajera; fallback ETL), «+
+  Agregar persona…» es un select del padrón (+ «alguien nuevo» → alta), «⇩ Traer del
+  padrón» reemplaza a «Importar de Plantilla», las filas viejas sin id muestran el select
+  «¿Quién es?» con la sugerencia preseleccionada (se toma al Guardar). `real` y
+  `justif` se indexan por `eqKey(p)` = id (o la clave por nombre para lo viejo). La venta
+  se pega **exacto por alias** (`eqIdxExacto`); el difuso queda solo como «vínculo a
+  confirmar ✓» (botón que llama a `Equipo.vincular`). `eqCasosSinHoras` toma la dotación
+  del padrón. La **Plantilla** (`renderPlantillaPadron`) sale del padrón cruzado con el
+  ETL por alias.
+- **Buscador de Artículos**: `sincronizarPerfilesPadron()` en cada `cargarPerfiles`: los
+  perfiles pasan a ser los activos con rol operativo, `id = legajoId`, avatar conservado
+  (por id o por nombre); perfiles creados a mano llevan `manual:true` y se respetan; los
+  del padrón (`legajo:true`) solo editan avatar y no se borran acá. Sin padrón, no toca nada.
+- **Academia**: `dotacion(slug)` lee el padrón primero (ETL de respaldo); `personaId` =
+  legajoId; `migrarIdsAcademia` mueve avances y PINs viejos (id por nombre) al legajoId
+  cuando el nombre coincide exacto; el picker «¿Quién sos?» ya no acepta nombre libre si hay
+  padrón; el staff ve también las sucursales con padrón (`sucsAcademia()`, Diagonal 80).
+  `resumen-widget.js` busca en RRHH por legajoId (fallback por nombre).
+- **Tareas**: «Yo soy» es un select del padrón (texto libre solo sin padrón).
+- **ETL** `scripts/etl_indicadores.py --maestro`: el staff sale de `rrhh/equipo` (una fila
+  por nombre+alias, `sector` en el vocabulario del Excel), los vendedores se normalizan como
+  `Equipo.norm` (mayúsculas, sin acentos ni puntuación) y cada `vendedor` sale con `legajo`.
+  Sin la opción sigue usando `Sucursales staff.xlsx`.
+- **Estado 04/09/2026**: índice sembrado desde los 237 legajos con sucursal (20 del Registro
+  Único quedaron sin sucursal y no entran). Conciliación **pendiente de Juli** (RRHH → ⇄):
+  para Diagonal 80 propone Polari/Casao/Maldonado (vincular), 5 personas nuevas
+  (Calvimonte, Castro, Cavalier, Hernandez, y las que solo cubren) y traslados a confirmar
+  (Arguello desde Adidas, Del Valle desde Kids…). Pendiente: unificar los ~20 mapas
+  slug↔sucursal duplicados en `shared/` (hoy cada módulo tiene el suyo; el ETL suma `SLUG_DATA`).
+
 ## Compensatorios y horas (RRHH + Mi Sucursal)
 
 Circuito de lo que la empresa le debe a cada persona por haber trabajado de más.

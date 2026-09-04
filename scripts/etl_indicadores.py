@@ -1,6 +1,13 @@
 """ETL Indicadores de Sucursal · Mateu Sports
 Lee el export de ventas del mes + el staff, y emite un JSON por período.
-Uso: python3 etl_indicadores.py
+Uso: python3 etl_indicadores.py [--maestro]
+
+  --maestro   el staff (quién es quién, puesto, régimen) sale del PADRÓN del portal
+              (rrhh/equipo en Firebase — los legajos de RRHH, con los alias del
+              sistema de ventas que vinculó cada sucursal) en vez del Excel
+              "Sucursales staff.xlsx". Los nombres de vendedor se normalizan igual
+              que en el portal (sin acentos ni puntuación, en mayúsculas) y cada
+              vendedor sale con su `legajo` (id del padrón) cuando está vinculado.
 
 Salida:
   out/indicadores-<periodo>.json     dataset combinado del período (lo que ve el ETL)
@@ -13,7 +20,24 @@ Salida:
   El navegador de un usuario de sucursal solo pide su archivo + cadena.json:
   las personas de las otras sucursales nunca llegan al cliente.
 """
-import pandas as pd, numpy as np, json, datetime as dt, unicodedata, os
+import pandas as pd, numpy as np, json, datetime as dt, unicodedata, os, sys, re, urllib.request
+
+MAESTRO = '--maestro' in sys.argv
+MAESTRO_URL = 'https://discontinuos-mateu-default-rtdb.firebaseio.com/rrhh/equipo.json'
+# slug del Portal -> nombre de sucursal en los datos (el inverso de DATA_SUC de rrhh/)
+SLUG_DATA = {
+  'calle-12':'12-MS Calle 12','city-bell':'06-MS City Bell','calle-47':'08-MS Calle 47','calle-49':'19-MS Calle 49',
+  'los-hornos':'13-MS Los Hornos','plaza':'01-MS Plaza Italia','berisso':'16-MS Berisso','ensenada':'11-MS Ensenada',
+  'kids':'02-Mateu Kids','aurelius-12':'04-Aurelius Calle 12','aurelius-5':'18-Aurelius Calle 5','aurelius-cb':'17-Aurelius City Bell',
+  'adidas-12':'21-Adidas Calle 12','adidas':'09-Adidas Av. 7','originals':'15-Adidas Originals','ecommerce':'99-Ecommerce',
+  'gonnet':'14-Outlet Gonnet','av-44':'20-Outlet Av. 44','calle-55':'03-Outlet Calle 55','aurelius-10':'07-Aurelius Calle 10',
+  'diagonal':'10-Diagonal 80',
+}
+def nk(s):
+    """Misma normalización que Equipo.norm del portal: minúsculas, sin acentos, sin puntuación."""
+    s = unicodedata.normalize('NFD', str(s or '')).encode('ascii', 'ignore').decode()
+    return re.sub(r'[^a-z0-9]+', ' ', s.lower()).strip()
+def nkU(s): return nk(s).upper()
 
 # El staff se busca en la primera ruta que exista (sandbox de Juli o su máquina Windows)
 STAFF = next((p for p in [
@@ -100,9 +124,46 @@ DEPOSITO  = ['BUZZELLA IVAN','ROUCO NAHUEL','TREZEGUET DIEGO','GUIDA FABIAN',
 EVENTUAL  = ['LEMOS FRANCO EMANUEL','GARCIA SALINAS CAMILO','BOLZANI MARIA CANDELA',
              'CABAÑAS MERELES CLARISA']
 ECOM_P    = ['ASPIROZ ALFREDO']
+if MAESTRO:   # con el padrón los nombres van normalizados (sin Ñ ni puntuación)
+    DEPOSITO=[nkU(x) for x in DEPOSITO]; EVENTUAL=[nkU(x) for x in EVENTUAL]; ECOM_P=[nkU(x) for x in ECOM_P]
+    MANUAL={nkU(k):v for k,v in MANUAL.items()}
 
 # ── STAFF ────────────────────────────────────────────────────────────────
+LEGAJO_DE = {}   # nombre normalizado (mayúsculas) -> legajoId (solo con --maestro)
+def cargar_staff_maestro():
+    """Staff desde el padrón del portal (rrhh/equipo/<slug>/<legajoId>). Cada persona
+    activa aporta una fila por cada nombre con que se la conoce (nombre + alias),
+    con el `sector` en el vocabulario del Excel de staff para que horario() funcione."""
+    with urllib.request.urlopen(MAESTRO_URL, timeout=30) as r:
+        eq = json.load(r) or {}
+    rows = []
+    for slug, personas in eq.items():
+        suc = SLUG_DATA.get(slug)
+        if not suc or suc == '05-Depósito': continue
+        for lid, p in (personas or {}).items():
+            if (p.get('estado') or 'activo') == 'baja': continue
+            puesto = str(p.get('puesto') or ''); reg = str(p.get('regimen') or 'Full Time')
+            pl = puesto.lower()
+            if 'encargad' in pl:   sector = 'Sub Encargado' if 'sub' in pl else 'Encargado'
+            elif 'vended' in pl:   sector = 'Vend. ' + ('Part Time Tarde' if 'part' in reg.lower() else 'Full Time')
+            elif 'cajer' in pl:    sector = 'Caj. ' + ('Part Time Mañana' if 'part' in reg.lower() else 'Full Time')
+            elif 'dep' in pl:      sector = 'Depósito'
+            else:                  sector = puesto or 'Otro'
+            nombres = {nkU(p.get('nombre'))} | {nkU(a) for a in (p.get('alias') or [])}
+            for n in nombres:
+                if not n: continue
+                rows.append({'sucursal': suc, 'sector': sector, 'vendedor': n})
+                LEGAJO_DE[n] = lid
+    st = pd.DataFrame(rows).drop_duplicates(['sucursal', 'vendedor'])
+    print(f'staff desde el padrón del portal: {len(st)} nombres · {st.sucursal.nunique()} sucursales')
+    st['propuesto'] = False
+    st['grupo'] = st.sector.map(lambda s: 'Ventas' if s.startswith('Vend') else
+                                          'Caja'   if s.startswith('Caj')  else
+                                          'Jefatura' if 'Encargado' in s   else 'Otros')
+    return st
+
 def cargar_staff():
+    if MAESTRO: return _con_horario(cargar_staff_maestro())
     st = pd.read_excel(STAFF); st.columns = ['sucursal','sector','vendedor','comp']
     st = st[st.sucursal != '05-Depósito'][['sucursal','sector','vendedor']]
     st = pd.concat([st, pd.DataFrame([{'sucursal':s,'sector':r,'vendedor':v} for v,(s,r) in MANUAL.items()])])
@@ -110,6 +171,9 @@ def cargar_staff():
     st['grupo'] = st.sector.map(lambda s: 'Ventas' if s.startswith('Vend') else
                                           'Caja'   if s.startswith('Caj')  else
                                           'Jefatura' if 'Encargado' in s   else 'Otros')
+    return _con_horario(st)
+
+def _con_horario(st):
     st['au'] = st.sucursal.str.contains('Aurelius')
     def horario(r):
         s, au = r.sector, r.au
@@ -264,6 +328,7 @@ def cargar_ventas(cfg):
     v = v[(v.sucursal != 'Total') & (v.dia != 'Total') & (v.sucursal != '05-Depósito')].copy()
     v['dia'] = v.dia.astype(int); v['hora'] = v.hora.astype(int)
     v['vendedor'] = v.vendedor.fillna('SIN ASIGNAR')
+    if MAESTRO: v['vendedor'] = v.vendedor.map(nkU)   # misma clave que los alias del padrón
     idx = fechas_del_periodo(cfg)
     v['fecha'] = [idx.get((d, ds)) for d, ds in zip(v.dia, v.dia_semana)]
     huerfanas = v.fecha.isna().sum()
@@ -423,6 +488,7 @@ def procesar(per, cfg, st):
                       'horas_contr','h_act','dias','cubre','propuesto']].round(2).to_dict('records')
     for rec in vend_recs:
         rec['semanas'] = lista_sem(vend_sem.get((rec['sucursal'], rec['vendedor']), {}))
+        if MAESTRO and LEGAJO_DE.get(rec['vendedor']): rec['legajo'] = LEGAJO_DE[rec['vendedor']]
 
     # ── mix de venta por rubro por vendedor (solo formato detallado) ─────────
     # Cada linea se atribuye al vendedor de su comprobante (la metadata del comp).
@@ -515,8 +581,9 @@ def emitir_particionado(data, dest):
     json.dump({'periodos': periodos_meta}, open(os.path.join(root, 'periodos.json'), 'w', encoding='utf-8'),
               ensure_ascii=False, indent=2)
 
-if STAFF is None:
-    raise SystemExit('No encuentro el Excel de staff (Sucursales staff.xlsx) en ninguna ruta conocida.')
+if STAFF is None and not MAESTRO:
+    raise SystemExit('No encuentro el Excel de staff (Sucursales staff.xlsx) en ninguna ruta conocida. '
+                     'Alternativa: --maestro (staff desde el padrón del portal).')
 st = cargar_staff()
 os.makedirs(OUT, exist_ok=True)
 data = {}

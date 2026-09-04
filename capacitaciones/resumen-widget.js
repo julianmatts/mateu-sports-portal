@@ -113,7 +113,8 @@
     filas.forEach(function(tr){
       if(tr.querySelector('.acw-chip')) return;
       var l = LEGAJOS[tr.getAttribute('data-leg')]; if(!l) return;
-      var pers = (R.personas||{})[l.sucursal]||{}; var p = pers[idFromNombre(l.nombre)];
+      var legId = tr.getAttribute('data-leg');
+      var pers = (R.personas||{})[l.sucursal]||{}; var p = pers[legId] || pers[idFromNombre(l.nombre)];   // id del padrón (legajoId); los resúmenes viejos van por nombre
       var sub = tr.querySelector('.sub'); if(!sub) return;
       var chip = document.createElement('span'); chip.className='acw-chip';
       if(p && p.asig){

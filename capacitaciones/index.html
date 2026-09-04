@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,700;1,800&family=Barlow+Condensed:ital,wght@0,600;0,700;1,700;1,800&family=Bebas+Neue&display=swap" rel="stylesheet">
+<script src="../shared/equipo.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <!-- Header unificado del shell: barra Menú + logo + calendario retail + drawer -->
 <script src="../shared/header.js" defer></script>
@@ -306,8 +307,13 @@ const SLUG_SUC_IND = {
   'aurelius-12':'04-Aurelius Calle 12','aurelius-5':'18-Aurelius Calle 5','aurelius-cb':'17-Aurelius City Bell',
   'adidas-12':'21-Adidas Calle 12','adidas':'09-Adidas Av. 7','originals':'15-Adidas Originals',
 };
-const SUC_LABEL = {};
+const SUC_LABEL = { 'diagonal':'Diagonal 80','gonnet':'Outlet Gonnet','av-44':'Outlet Av. 44','calle-55':'Outlet Calle 55','aurelius-10':'Aurelius Calle 10','ecommerce':'Ecommerce','deposito':'Depósito Central' };
 Object.keys(SLUG_SUC_IND).forEach(s=>{ SUC_LABEL[s] = SLUG_SUC_IND[s].replace(/^\d+-/,''); });
+// Sucursales que ve el staff: las del ETL de Indicadores + las que tienen padrón
+// (rrhh/equipo, p.ej. Diagonal 80). Se completa al cargar el padrón (sucsAcademia()).
+let SUCS_PADRON = [];
+function sucsAcademia(){ const out=sucsAcademia().slice(); SUCS_PADRON.forEach(s=>{ if(!out.includes(s)) out.push(s); }); return out; }
+function sucLabelDe(s){ return SUC_LABEL[s] || String(s||'').replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase()); }
 const GRUPO_ROL_IND = { Jefatura:'encargado', Ventas:'vendedor', Caja:'cajera', Refuerzos:'deposito' };
 const ROL_LABEL_PERSONA = { encargado:'Encargado/a', vendedor:'Vendedor/a', cajera:'Cajera', deposito:'Depósito' };
 const ROL_COLOR = { encargado:'#1e88e5', vendedor:'#d81b60', cajera:'#c9a800', deposito:'#00897b' };
@@ -399,7 +405,7 @@ async function enviarDirecto(emailDestino, texto){
    capacitaciones/resumen = { ts, porSlug:{slug:{personas,conCursos,pct,aprobados,sinActividad}}, personas:{slug:{pid:{nombre,rol,pct,aprobados:[...],ult}}} } */
 async function publicarResumen(){
   if(!ES_STAFF) return;
-  const slugs=Object.keys(SLUG_SUC_IND);
+  const slugs=sucsAcademia();
   await Promise.all(slugs.map(s=>dotacion(s).catch(()=>[])));
   const porSlug={}, personas={};
   slugs.forEach(slug=>{
@@ -531,7 +537,7 @@ function quienSoy(){
     if(!p){ const b=(SESSION.email||'').split('@')[0].replace(/[._-]+/g,' '); p={nombre:titleNombre(b)||SESSION.email, rol:'Staff'}; }
     return p;
   }
-  return YO ? { nombre:YO.nombre, rol:(ROL_LABEL_PERSONA[YO.rol]||YO.rol)+' · '+(SUC_LABEL[MI_SLUG]||MI_SLUG) } : { nombre:'—', rol:'' };
+  return YO ? { nombre:YO.nombre, rol:(ROL_LABEL_PERSONA[YO.rol]||YO.rol)+' · '+sucLabelDe(MI_SLUG) } : { nombre:'—', rol:'' };
 }
 function pintarWho(){
   const p = quienSoy();
@@ -557,6 +563,17 @@ async function ultimoPeriodo(){
 }
 async function dotacion(slug){
   if(DOT_CACHE[slug]) return DOT_CACHE[slug];
+  // 1) el PADRÓN de la sucursal (shared/equipo.js → rrhh/equipo/<slug>): id = legajoId
+  if(window.Equipo){
+    let gente=[]; try{ gente=Equipo.activos(await Equipo.cargar(slug)); }catch(e){ gente=[]; }
+    gente=gente.filter(p=>ROLES_DESTINO.includes(p.rol));
+    if(gente.length){
+      const out=gente.map(p=>({id:p.id, nombre:p.nombre, rol:p.rol, legajo:true, claves:[...Equipo.clavesDe(p)]}));
+      out.sort((a,b)=> a.rol===b.rol ? a.nombre.localeCompare(b.nombre) : (a.rol==='encargado'?-1: b.rol==='encargado'?1: a.rol.localeCompare(b.rol)));
+      DOT_CACHE[slug]=out; await migrarIdsAcademia(slug, out); return out;
+    }
+  }
+  // 2) respaldo: la dotación del ETL de Indicadores (id derivado del nombre)
   const dn = SLUG_SUC_IND[slug]; if(!dn){ DOT_CACHE[slug]=[]; return []; }
   const per = await ultimoPeriodo(); if(!per){ DOT_CACHE[slug]=[]; return []; }
   const d = await getJSON('../data/indicadores/'+per+'/'+archivoInd(dn)+'.json').catch(()=>null);
@@ -573,9 +590,47 @@ function personasDe(slug){
   const avs = AVANCES[slug]||{};
   const out = dot.slice();
   Object.keys(avs).forEach(pid=>{
-    if(!out.find(x=>x.id===pid)){ const a=Object.values(avs[pid])[0]||{}; out.push({id:pid,nombre:a.nombre||pid,rol:a.rol||'vendedor'}); }
+    if(!out.find(x=>x.id===pid)){ const a=Object.values(avs[pid])[0]||{}; out.push({id:pid,nombre:a.nombre||pid,rol:a.rol||'vendedor',fantasma:true}); }
   });
   return out;
+}
+/* Migración de identidad: los avances/PINs viejos estaban bajo un id derivado del
+   nombre (idFromNombre). Con padrón, cada persona pasa a su legajoId: se mueven
+   los nodos cuyo nombre coincide exacto (nombre o alias) con alguien del padrón.
+   Se corre una vez por sucursal y sesión; lo que no coincide queda como estaba. */
+const _migrado={};
+async function migrarIdsAcademia(slug, dot){
+  if(_migrado[slug] || !window.Equipo) return;
+  const avs=AVANCES[slug]; if(!avs) return;   // todavía no se bajaron los avances: se reintenta después
+  _migrado[slug]=true;
+  const porClave=new Map(); dot.forEach(p=>(p.claves||[]).forEach(c=>{ if(!porClave.has(c)) porClave.set(c,p); }));
+  const ids=new Set(dot.map(p=>p.id));
+  const patch={}; let n=0;
+  Object.keys(avs).forEach(pid=>{
+    if(ids.has(pid)) return;
+    const a=Object.values(avs[pid]||{})[0]||{};
+    const nombre=a.nombre || pid.replace(/-/g,' ');
+    const per=porClave.get(Equipo.norm(nombre)); if(!per) return;
+    if(avs[per.id]){ // ya tiene avances con el id nuevo: fusionar curso a curso (gana el más avanzado)
+      Object.entries(avs[pid]).forEach(([cid,av])=>{ const cur=avs[per.id][cid]; if(!cur || (av.fin&&!cur.fin) || ((av.mods||[]).length>(cur.mods||[]).length)) patch['avances/'+slug+'/'+per.id+'/'+cid]=av; });
+    } else patch['avances/'+slug+'/'+per.id]=avs[pid];
+    patch['avances/'+slug+'/'+pid]=null;
+    patch['pins/'+slug+'/'+per.id+'/_from']=pid;   // el PIN se mueve abajo (lectura previa)
+    n++;
+  });
+  if(!n) return;
+  try{
+    // PINs: mover el viejo al id nuevo si el nuevo no tiene
+    const pins=(await fbGet('pins/'+slug).catch(()=>null))||{};
+    Object.keys(patch).filter(k=>k.endsWith('/_from')).forEach(k=>{
+      const nid=k.split('/')[2], oid=patch[k]; delete patch[k];
+      if(pins[oid] && !pins[nid]){ patch['pins/'+slug+'/'+nid]=pins[oid]; patch['pins/'+slug+'/'+oid]=null; }
+    });
+    const r=await fetch(FIREBASE_DB_URL+'/'+ROOT+'.json',{method:'PATCH',body:JSON.stringify(patch),headers:{'Content-Type':'application/json'}});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    AVANCES[slug]=(await fbGet('avances/'+slug).catch(()=>null))||{};
+    if(YO && !ids.has(YO.id)){ const per=porClave.get(Equipo.norm(YO.nombre)); if(per){ YO={id:per.id,nombre:per.nombre,rol:per.rol}; lsSet('cap_yo_'+MI_SLUG, JSON.stringify(YO)); } }
+  }catch(e){ console.warn('migración de ids de la Academia', e); }
 }
 
 /* ---------- asignación y avance ---------- */
@@ -634,7 +689,7 @@ async function guardarAvanceYo(cid,av){
   // Al completar por primera vez → novedad automática para el feed
   if(av.fin && !(antes&&antes.fin)){
     const c=CURSOS[cid];
-    fbPost('novedades',{ tipo:'Curso completado', autor:YO.nombre, rol:(ROL_LABEL_PERSONA[YO.rol]||YO.rol)+' · '+(SUC_LABEL[MI_SLUG]||MI_SLUG),
+    fbPost('novedades',{ tipo:'Curso completado', autor:YO.nombre, rol:(ROL_LABEL_PERSONA[YO.rol]||YO.rol)+' · '+sucLabelDe(MI_SLUG),
       titulo: YO.nombre+' completó «'+(c?c.titulo:cid)+'»',
       cuerpo: 'Curso aprobado'+(av.quiz?(' con '+av.quiz.pje+'% en la evaluación.'):'.'), ts:Date.now() }).catch(()=>{});
   }
@@ -642,6 +697,14 @@ async function guardarAvanceYo(cid,av){
 async function asegurarYo(){
   const k='cap_yo_'+MI_SLUG; const saved=lsGet(k);
   if(saved){ try{ YO=JSON.parse(saved); }catch(e){ YO=null; } }
+  if(YO && window.Equipo){
+    const dot=await dotacion(MI_SLUG).catch(()=>[]);
+    if(dot.some(p=>p.legajo) && !dot.find(p=>p.id===YO.id)){
+      const per=dot.find(p=>(p.claves||[]).includes(Equipo.norm(YO.nombre)));
+      if(per){ YO={id:per.id,nombre:per.nombre,rol:per.rol}; lsSet(k,JSON.stringify(YO)); }
+      else YO=null;   // ya no está en el padrón (baja): vuelve a elegir
+    }
+  }
   while(!YO){
     const p=await elegirPersona();
     if(await verificarPin(p)){ YO=p; lsSet(k,JSON.stringify(YO)); }
@@ -656,13 +719,15 @@ function elegirPersona(){
         dot.map(p=>'<button class="btn" style="justify-content:flex-start;text-transform:none;letter-spacing:0;font-size:15px" data-pid="'+esc(p.id)+'">'+
           '<span style="width:30px;height:30px;border-radius:50%;background:'+(ROL_COLOR[p.rol]||'#1a1c1f')+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">'+esc(iniciales(p.nombre))+'</span> '+
           esc(p.nombre)+'&nbsp;<span class="muted" style="font-weight:400">· '+esc(ROL_LABEL_PERSONA[p.rol]||p.rol)+'</span></button>').join('')+'</div>'
-        :'<p class="muted">Esta sucursal todavía no tiene dotación cargada en Indicadores.</p>')+
-      '<div style="margin-top:16px;border-top:1px solid var(--borde);padding-top:14px"><label class="fl">O escribí tu nombre</label>'+
-      '<div style="display:flex;gap:8px"><input type="text" id="pNombre" placeholder="Nombre y apellido">'+
-      '<button class="btn pri" id="pManual">Entrar</button></div></div></div>';
+        :'<p class="muted">Esta sucursal todavía no tiene equipo cargado. El encargado lo arma en <b>Mi Sucursal → Mi equipo</b>.</p>')+
+      (dot.some(p=>p.legajo)
+        ? '<p class="muted" style="margin-top:14px;font-size:13px">¿No estás en la lista? Pedile al encargado que te agregue en <b>Mi Sucursal → Mi equipo</b> y volvé a entrar.</p>'
+        : '<div style="margin-top:16px;border-top:1px solid var(--borde);padding-top:14px"><label class="fl">O escribí tu nombre</label>'+
+          '<div style="display:flex;gap:8px"><input type="text" id="pNombre" placeholder="Nombre y apellido">'+
+          '<button class="btn pri" id="pManual">Entrar</button></div></div>')+'</div>';
     document.body.appendChild(velo);
-    velo.querySelectorAll('[data-pid]').forEach(b=>b.addEventListener('click',()=>{ const p=dot.find(x=>x.id===b.dataset.pid); velo.remove(); res(p); }));
-    velo.querySelector('#pManual').addEventListener('click',()=>{ const n=titleNombre(velo.querySelector('#pNombre').value.trim()); if(!n) return; velo.remove(); res({id:idFromNombre(n),nombre:n,rol:'vendedor'}); });
+    velo.querySelectorAll('[data-pid]').forEach(b=>b.addEventListener('click',()=>{ const p=dot.find(x=>x.id===b.dataset.pid); velo.remove(); res({id:p.id,nombre:p.nombre,rol:p.rol}); }));
+    const pm=velo.querySelector('#pManual'); if(pm) pm.addEventListener('click',()=>{ const n=titleNombre(velo.querySelector('#pNombre').value.trim()); if(!n) return; velo.remove(); res({id:idFromNombre(n),nombre:n,rol:'vendedor'}); });
   }));
 }
 
@@ -1303,7 +1368,7 @@ function renderNovedades(){
 async function renderEquipo(){
   const app=$('app');
   app.innerHTML='<div class="wrap medio"><div class="titulo-xl">Mi equipo</div><div class="bajada">Cargando dotación…</div></div>';
-  const slugs = ES_STAFF ? Object.keys(SLUG_SUC_IND) : [MI_SLUG];
+  const slugs = ES_STAFF ? sucsAcademia() : [MI_SLUG];
   await Promise.all(slugs.map(s=>dotacion(s).catch(()=>[])));
   const filas=[];
   slugs.forEach(slug=>personasDe(slug).forEach(per=>{
@@ -1337,7 +1402,7 @@ async function renderEquipo(){
     '<div style="display:flex;gap:10px;flex-wrap:wrap">'+['Todos'].concat(ROLES_DESTINO).map(r=>
       '<button class="fchip'+(EQ_FILTRO.rol===r?' act':'')+'" data-rol="'+r+'">'+(r==='Todos'?'Todos':esc(ROL_LABEL_PERSONA[r]))+'</button>').join('')+'</div>'+
     (ES_STAFF?'<div style="width:1px;height:26px;background:#d8dbe0"></div><select id="eqSuc" style="width:210px">'+
-      '<option value="Todas">Todas las sucursales</option>'+Object.keys(SLUG_SUC_IND).map(s=>'<option value="'+s+'"'+(EQ_FILTRO.suc===s?' selected':'')+'>'+esc(SUC_LABEL[s])+'</option>').join('')+'</select>':'')+
+      '<option value="Todas">Todas las sucursales</option>'+sucsAcademia().map(s=>'<option value="'+s+'"'+(EQ_FILTRO.suc===s?' selected':'')+'>'+esc(sucLabelDe(s))+'</option>').join('')+'</select>':'')+
     '</div>');
   html.push('<div class="tabla" style="margin-top:24px">'+
     '<div class="trow cab" style="grid-template-columns:2.3fr 1.3fr 1.3fr 1.6fr 1.1fr"><div>Persona</div><div>Nivel</div><div>Sucursal</div><div>Progreso de capacitación</div><div>Última actividad</div></div>'+
@@ -1345,7 +1410,7 @@ async function renderEquipo(){
       '<div style="display:flex;align-items:center;gap:12px;min-width:0"><div class="pava" style="width:40px;height:40px;background:'+(ROL_COLOR[f.per.rol]||'#1a1c1f')+';font-size:14px">'+esc(iniciales(f.per.nombre))+'</div>'+
       '<span style="font-size:15px;font-weight:700">'+esc(f.per.nombre)+'</span>'+(f.st.rapidos.length?' <span class="chip ambar" title="Completó '+esc(f.st.rapidos.join(', '))+' demasiado rápido">⚠ muy rápido</span>':'')+'</div>'+
       '<div style="font-size:14.5px;color:#4b5158">'+esc(ROL_LABEL_PERSONA[f.per.rol]||f.per.rol)+'</div>'+
-      '<div style="font-size:14.5px;color:#4b5158">'+esc(SUC_LABEL[f.slug]||f.slug)+'</div>'+
+      '<div style="font-size:14.5px;color:#4b5158">'+esc(sucLabelDe(f.slug))+'</div>'+
       '<div style="display:flex;align-items:center;gap:10px"><div class="barra'+(f.st.pct>=100?' v':'')+'" style="flex:1"><div style="width:'+f.st.pct+'%"></div></div>'+
       '<span style="font-size:13px;font-weight:700;color:var(--gris);width:38px">'+f.st.pct+'%</span></div>'+
       '<div style="font-size:14px;color:var(--gris)">'+(f.st.ult?tiempoRel(f.st.ult):'—')+'</div></div>').join('')+
@@ -1395,7 +1460,7 @@ function fichaPersona(f){
       (e.completo?'<span class="chip verde">Aprobado'+(a&&a.quiz?' '+a.quiz.pje+'%':'')+'</span>':(e.empezado?'<span class="chip azulc">'+e.avance+'%</span>':'<span class="chip" style="background:#eef0f3">Pendiente</span>'))+
       '<span class="muted" style="font-size:12px;width:52px;text-align:right">'+(t?Math.round(t/60)+' min':'—')+'</span></div>'; }).join('');
   velo.innerHTML='<div class="modal" style="max-width:620px"><div style="display:flex;align-items:center;gap:12px"><div class="pava" style="width:46px;height:46px;background:'+(ROL_COLOR[f.per.rol]||'#1a1c1f')+';font-size:16px">'+esc(iniciales(f.per.nombre))+'</div>'+
-    '<div><h2 style="margin:0">'+esc(f.per.nombre)+'</h2><div class="muted" style="font-size:13.5px">'+esc(ROL_LABEL_PERSONA[f.per.rol]||f.per.rol)+' · '+esc(SUC_LABEL[f.slug]||f.slug)+' · avance '+f.st.pct+'% · '+(f.st.ult?'última actividad '+tiempoRel(f.st.ult):'sin actividad')+'</div></div></div>'+
+    '<div><h2 style="margin:0">'+esc(f.per.nombre)+'</h2><div class="muted" style="font-size:13.5px">'+esc(ROL_LABEL_PERSONA[f.per.rol]||f.per.rol)+' · '+esc(sucLabelDe(f.slug))+' · avance '+f.st.pct+'% · '+(f.st.ult?'última actividad '+tiempoRel(f.st.ult):'sin actividad')+'</div></div></div>'+
     (f.st.rapidos.length?'<div class="seccion evitar" style="margin-top:14px"><div class="st">Muy rápido</div><div class="sx">Completó '+esc(f.st.rapidos.join(', '))+' en menos de 20 segundos por módulo. Vale la pena charlarlo.</div></div>':'')+
     '<div style="margin-top:16px">'+(filas||'<p class="muted">No tiene cursos asignados.</p>')+'</div>'+
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px;border-top:1px solid var(--borde);padding-top:14px">'+
@@ -1429,11 +1494,11 @@ async function renderRanking(){
   const app=$('app');
   app.innerHTML='<div class="wrap medio"><div class="titulo-xl">Ranking de capacitación</div><div class="bajada">Calculando…</div></div>';
   const empresa = RK_VISTA==='empresa' && ES_STAFF;
-  const slugs = empresa ? Object.keys(SLUG_SUC_IND) : [ES_STAFF?(Object.keys(SLUG_SUC_IND)[0]):MI_SLUG];
-  const slugsCarga = ES_STAFF ? Object.keys(SLUG_SUC_IND) : [MI_SLUG];
+  const slugs = empresa ? sucsAcademia() : [ES_STAFF?(sucsAcademia()[0]):MI_SLUG];
+  const slugsCarga = ES_STAFF ? sucsAcademia() : [MI_SLUG];
   await Promise.all(slugsCarga.map(s=>dotacion(s).catch(()=>[])));
   const filas=[];
-  (empresa?Object.keys(SLUG_SUC_IND):slugs).forEach(slug=>{
+  (empresa?sucsAcademia():slugs).forEach(slug=>{
     if(!slug) return;
     personasDe(slug).forEach(per=>{
       const st=statsPersona(slug,per);
@@ -1451,7 +1516,7 @@ async function renderRanking(){
     '<button class="'+(RK_VISTA==='sucursal'?'act':'')+'" data-rk="sucursal">Por sucursal</button></div>':'')+'</div>');
   if(ES_STAFF&&RK_VISTA==='sucursal'){
     html.push('<div style="margin-top:18px"><select id="rkSuc" style="width:240px">'+
-      Object.keys(SLUG_SUC_IND).map(s=>'<option value="'+s+'"'+((window.__rkSuc||Object.keys(SLUG_SUC_IND)[0])===s?' selected':'')+'>'+esc(SUC_LABEL[s])+'</option>').join('')+'</select></div>');
+      sucsAcademia().map(s=>'<option value="'+s+'"'+((window.__rkSuc||sucsAcademia()[0])===s?' selected':'')+'>'+esc(sucLabelDe(s))+'</option>').join('')+'</select></div>');
   }
   if(!filas.length){
     html.push('<div class="vacio" style="margin-top:36px">El ranking arranca cuando haya programas asignados y el equipo empiece a cursar.</div>');
@@ -1462,7 +1527,7 @@ async function renderRanking(){
         '<div class="pava" style="width:34px;height:34px;background:'+MEDALLAS[i]+';font-size:16px;font-weight:800">'+(i+1)+'</div>'+
         '<div class="pava" style="width:62px;height:62px;background:'+(ROL_COLOR[f.per.rol]||'#1a1c1f')+';font-size:21px">'+esc(iniciales(f.per.nombre))+'</div>'+
         '<div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:18px;font-weight:700">'+esc(f.per.nombre)+'</span>'+
-        '<span style="font-size:13.5px;color:var(--gris)">'+esc(ROL_LABEL_PERSONA[f.per.rol]||f.per.rol)+' · '+esc(SUC_LABEL[f.slug]||f.slug)+'</span></div>'+
+        '<span style="font-size:13.5px;color:var(--gris)">'+esc(ROL_LABEL_PERSONA[f.per.rol]||f.per.rol)+' · '+esc(sucLabelDe(f.slug))+'</span></div>'+
         '<div style="font-family:\'Barlow Condensed\',sans-serif;font-style:italic;font-weight:800;font-size:42px;line-height:1">'+f.st.pct+'%</div>'+
         '<div style="font-size:13px;color:var(--gris)">'+f.st.mods+' módulos · '+f.st.certs+' certificado'+(f.st.certs===1?'':'s')+'</div></div>').join('')+'</div>');
     if(resto.length){
@@ -1472,7 +1537,7 @@ async function renderRanking(){
         '<div style="display:flex;align-items:center;gap:12px;min-width:0"><div class="pava" style="width:38px;height:38px;background:'+(ROL_COLOR[f.per.rol]||'#1a1c1f')+';font-size:13px">'+esc(iniciales(f.per.nombre))+'</div>'+
         '<div style="display:flex;flex-direction:column;line-height:1.3"><span style="font-size:15px;font-weight:700">'+esc(f.per.nombre)+'</span>'+
         '<span style="font-size:13px;color:var(--gris)">'+esc(ROL_LABEL_PERSONA[f.per.rol]||f.per.rol)+'</span></div></div>'+
-        '<div style="font-size:14px;color:#4b5158">'+esc(SUC_LABEL[f.slug]||f.slug)+'</div>'+
+        '<div style="font-size:14px;color:#4b5158">'+esc(sucLabelDe(f.slug))+'</div>'+
         '<div style="display:flex;align-items:center;gap:10px"><div class="barra" style="flex:1"><div style="width:'+f.st.pct+'%"></div></div>'+
         '<span style="font-size:13px;font-weight:700;color:var(--gris);width:38px">'+f.st.pct+'%</span></div>'+
         '<div style="font-size:14px;color:var(--gris)">'+f.st.mods+' módulos</div>'+
@@ -1489,7 +1554,7 @@ async function renderRanking(){
 const _renderRankingOrig = renderRanking;
 renderRanking = async function(){
   if(ES_STAFF && RK_VISTA==='sucursal'){
-    const slug = window.__rkSuc || Object.keys(SLUG_SUC_IND)[0];
+    const slug = window.__rkSuc || sucsAcademia()[0];
     const app=$('app');
     app.innerHTML='<div class="wrap medio"><div class="titulo-xl">Ranking de capacitación</div><div class="bajada">Calculando…</div></div>';
     await dotacion(slug).catch(()=>[]);
@@ -1512,7 +1577,7 @@ async function _renderRankingSuc(slug){
     '<div class="bajada">Las personas más capacitadas de '+esc(SUC_LABEL[slug]||slug)+'</div></div>'+
     '<div class="toggle"><button data-rk="empresa">Toda la empresa</button><button class="act" data-rk="sucursal">Por sucursal</button></div></div>');
   html.push('<div style="margin-top:18px"><select id="rkSuc" style="width:240px">'+
-    Object.keys(SLUG_SUC_IND).map(s=>'<option value="'+s+'"'+(slug===s?' selected':'')+'>'+esc(SUC_LABEL[s])+'</option>').join('')+'</select></div>');
+    sucsAcademia().map(s=>'<option value="'+s+'"'+(slug===s?' selected':'')+'>'+esc(sucLabelDe(s))+'</option>').join('')+'</select></div>');
   if(!filas.length) html.push('<div class="vacio" style="margin-top:36px">Sin cursada todavía en esta sucursal.</div>');
   else{
     const podio=filas.slice(0,3), resto=filas.slice(3);
@@ -2195,7 +2260,7 @@ function renderEditorPrograma(){
     '<div><label class="fl">Puestos (vacío = todos)</label><select id="pRoles" multiple size="5">'+
       ROLES_DESTINO.map(r=>'<option value="'+r+'"'+((p.roles||[]).includes(r)?' selected':'')+'>'+esc(ROL_LABEL_PERSONA[r])+'</option>').join('')+'</select></div>'+
     '<div><label class="fl">Sucursales (vacío = todas)</label><select id="pSucs" multiple size="8">'+
-      Object.keys(SLUG_SUC_IND).map(s=>'<option value="'+s+'"'+((p.sucursales||[]).includes(s)?' selected':'')+'>'+esc(SUC_LABEL[s])+'</option>').join('')+'</select></div>'+
+      sucsAcademia().map(s=>'<option value="'+s+'"'+((p.sucursales||[]).includes(s)?' selected':'')+'>'+esc(sucLabelDe(s))+'</option>').join('')+'</select></div>'+
     '</div><p class="muted" style="font-size:12.5px;margin:10px 0 0">Ctrl+click para elegir varios. Vacío = aplica a todos.</p></div>');
   const ep=p.encuestaPrevia||{};
   html.push('<div class="card-b" style="margin-top:14px"><label style="display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700"><input type="checkbox" id="pEncAct"'+(ep.activa?' checked':'')+'> Encuesta previa al programa</label>'+
@@ -2282,9 +2347,11 @@ async function cargarAvancesAlumno(){ AVANCES[MI_SLUG]=(await fbGet('avances/'+M
     CURSOS=cursos||{}; PROGRAMAS=programas||{}; NOVEDADES=novedades||{};
     if(ES_STAFF){
       AVANCES=(await fbGet('avances').catch(()=>null))||{};
+      if(window.Equipo){ try{ const todas=await Equipo.cargarTodas(); SUCS_PADRON=Object.keys(todas).filter(s=>Equipo.activos(todas[s]).some(p=>ROLES_DESTINO.includes(p.rol))); }catch(e){} }
     } else {
       if(MI_SLUG){
         await asegurarYo(); await cargarAvancesAlumno();
+        if(DOT_CACHE[MI_SLUG] && DOT_CACHE[MI_SLUG].some(p=>p.legajo)) await migrarIdsAcademia(MI_SLUG, DOT_CACHE[MI_SLUG]);
         const conEnc=Object.values(PROGRAMAS).filter(p=>encActiva(p));
         await Promise.all(conEnc.map(async p=>{ const r=await fbGet('encuestasPrevias/'+p.id+'/'+MI_SLUG+'/'+YO.id).catch(()=>null); if(r) ENC_RESP[p.id]=r; }));
         await Promise.all(Object.values(PROGRAMAS).filter(p=>encPostActiva(p)).map(async p=>{ const r=await fbGet('encuestasPost/'+p.id+'/'+MI_SLUG+'/'+YO.id).catch(()=>null); if(r) ENC_RESP_POST[p.id]=r; }));

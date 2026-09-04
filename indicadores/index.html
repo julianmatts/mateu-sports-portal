@@ -779,6 +779,7 @@ footer b{color:var(--navy)}
 }
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
+<script src="../shared/equipo.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <!-- Academia de Ventas: resumen de capacitación (se inyecta solo; ver capacitaciones/resumen-widget.js) -->
 <script src="../capacitaciones/resumen-widget.js" defer></script>
@@ -960,6 +961,13 @@ footer b{color:var(--navy)}
   #secNov .calnav .mes{min-width:0;font-size:20px}
 }
 </style>
+
+    <section class="sec" id="secEquipo" style="display:none">
+      <div class="sec-label">Equipo</div>
+      <h2 class="sec-title">Mi <em>equipo</em></h2>
+      <p class="hint">Quién trabaja hoy en la sucursal. Es <b>la misma lista</b> que usan el equipo semanal, el Buscador de Artículos, la Academia y Tareas: si alguien entra o se va, cargalo acá una sola vez. Las altas quedan <b>por validar</b> en RRHH (que completa lo legal), pero ya se pueden usar. Cada persona tiene que estar <b>vinculada</b> con el nombre con que aparece en el sistema de ventas: así la venta se le atribuye siempre a quien corresponde.</p>
+      <div class="card pad" id="equipoCard"></div>
+    </section>
 
     <section class="sec" id="secNov" style="display:none">
       <div class="sec-label">RRHH</div>
@@ -1886,7 +1894,7 @@ async function render(){
     $('cadenaView').style.display='none';
     $('content').style.display='block';
     mostrarEmpty('Tu sucursal todavía no tiene datos de indicadores cargados.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderComp(); renderNov(); }
+    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderComp(); renderNov(); renderEquipoSuc(); }
     return;
   }
 
@@ -1953,7 +1961,7 @@ async function render(){
     mostrarEmpty(Object.values(SOLO_OBJ_SUC).includes(sucName)
       ? '<b>'+esc(sucName)+'</b> todavía no tiene datos de indicadores cargados (sí su objetivo y equipo).'
       : 'No hay datos de <b>'+esc(sucName)+'</b> para '+esc(perLabel(per))+'.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderComp(); renderNov(); }
+    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderComp(); renderNov(); renderEquipoSuc(); }
     return;
   }
   // la semana elegida tiene que existir en esta sucursal/período
@@ -1985,6 +1993,7 @@ async function render(){
   renderObjMesCierre();   // objetivo del mes cerrado, arriba de los KPIs (también en Ecommerce)
   renderComp();           // compensatorios del equipo (RRHH): también en Ecommerce
   renderNov();            // novedades del mes (el calendario del encargado)
+  renderEquipoSuc();      // el padrón de la sucursal (Mi equipo)
   if(ecom){ renderCanales(); }
   else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderRubros(); renderSem(); renderObjetivo(); renderBarrida(); renderF8Suc(); }
   _kbVisible=false; $('kpiBar').classList.remove('show'); kpiBarScroll();   // re-evaluar la mini-barra con la vista nueva
@@ -3682,10 +3691,40 @@ const EQ_DIAS=['Lu','Ma','Mi','Ju','Vi','Sá','Do'];
 const EQ_TURNOS=[{lbl:'T1',sub:'9-13',max:4},{lbl:'T2',sub:'13-16',max:3},{lbl:'T3',sub:'16-20',max:4}];
 const _eqCache={}, _eqPesosCache={}, _eqSemCache={};
 let _eqEdit=null;        // borrador del editor {slug,sem,equipo,copiadaDe}
+let _ultimoVe=null;      // {slug, sem, ve}: la venta de la semana activa (para «Mi equipo»)
 let _eqRealDraft=null;   // borrador de reales manuales {slug,sem,real:{key:monto}}
 
 const eqNorm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
 const eqKeyName = s => (eqNorm(s).replace(/ /g,'-').slice(0,60)) || 'p';
+/* ---- PADRÓN de la sucursal (shared/equipo.js → rrhh/equipo/<slug>) ----
+   La identidad de una persona es su legajoId (`id`); el nombre es solo etiqueta.
+   Los mapas laterales del equipo semanal (real manual, justificaciones) se
+   indexan por `eqKey(p)` = id si lo tiene, o la clave por nombre de antes
+   (compatibilidad con las semanas guardadas antes del padrón). */
+let _padron=[], _padronSlug=null;
+async function cargarPadron(slug, fresh){
+  if(!slug || !window.Equipo){ _padron=[]; _padronSlug=slug; return _padron; }
+  try{ _padron = await Equipo.cargar(slug, {fresh:!!fresh}); }catch(e){ _padron=[]; }
+  _padronSlug=slug; return _padron;
+}
+const padronActivos = () => (window.Equipo ? Equipo.activos(_padron) : []);
+// gente que vende (la que va al equipo semanal por defecto)
+const padronVenta = () => padronActivos().filter(p=>['encargado','vendedor','cajera'].includes(p.rol));
+const eqKey = p => (p && p.id) ? p.id : eqKeyName(p ? p.nombre : '');
+const padronDe = id => _padron.find(p=>p.id===id) || null;
+// resuelve una persona del equipo (por id o por nombre exacto/alias) al padrón
+function eqPersona(p){
+  if(!p) return null;
+  if(p.id) return padronDe(p.id);
+  if(!window.Equipo || !_padron.length) return null;
+  const r=Equipo.resolver(p.nombre, _padron); return r.exacto ? r.persona : null;
+}
+// el alias exacto: índice del vendedor del Excel que corresponde a la persona (o -1)
+function eqIdxExacto(p, ve){
+  if(!ve || !ve.vendedores || !window.Equipo) return -1;
+  const per=eqPersona(p); const claves = per ? Equipo.clavesDe(per) : new Set([eqNorm(p.nombre)].filter(Boolean));
+  return ve.vendedores.findIndex(x=>claves.has(eqNorm(x.nombre)));
+}
 
 // Solo Ecommerce y Outlet Gonnet abren los domingos (Juli, 26/08/2026): al resto
 // se le anula el peso del domingo y se renormaliza a 100. Importa sobre todo con
@@ -3746,11 +3785,16 @@ async function saveEquipo(slug, sem, payload){
   limpiarAsigCache(slug);   // las horas asignadas cambiaron: rehacer la base de KPIs
   return payload;
 }
-const eqNuevaPersona = nombre => ({nombre:nombre||'', h:[[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]]});
-// normalizar h por si Firebase devolvió arrays ralos
+const eqNuevaPersona = (nombre, id) => ({id:id||null, nombre:nombre||'', h:[[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]]});
+// normalizar h por si Firebase devolvió arrays ralos; completa el id desde el
+// padrón cuando la fila vieja no lo tenía y el nombre coincide exacto (o por alias)
 function eqSanea(equipo){
-  return (equipo||[]).map(p=>({nombre:p.nombre||'', h:EQ_DIAS.map((_,d)=>{
-    const day=(p.h&&p.h[d])||[]; return [0,1,2].map(t=>Number(day[t])||0); })}));
+  return (equipo||[]).map(p=>{
+    const o={id:p.id||null, nombre:p.nombre||'', h:EQ_DIAS.map((_,d)=>{
+      const day=(p.h&&p.h[d])||[]; return [0,1,2].map(t=>Number(day[t])||0); })};
+    if(!o.id){ const per=eqPersona(o); if(per){ o.id=per.id; if(!o.nombre.trim()) o.nombre=per.nombre; } }
+    return o;
+  });
 }
 const eqHorasPersona = p => p.h.reduce((a,day)=>a+day.reduce((x,y)=>x+y,0),0);
 // horas asignadas de UNA persona solo en los días indicados ('lu','ma'…); sin días → semana entera
@@ -3856,21 +3900,30 @@ function eqMatchScore(a,b){
 // `used` acumula los índices del Excel ya asignados (para listar los sobrantes).
 // Devuelve {monto, src, ix} — ix = índice del Excel matcheado (para KPIs/día a día).
 function eqRealDe(p, eqData, ve, used){
-  let ix=-1;
+  let ix=-1, sug=false;
   if(ve && ve.vendedores){
-    let bestSc=0;
-    ve.vendedores.forEach((x,i2)=>{
-      if(used && used.has(i2)) return;
-      const sc=eqMatchScore(p.nombre, x.nombre);
-      if(sc>bestSc){ bestSc=sc; ix=i2; }
-    });
+    // 1) exacto: el nombre del Excel es el nombre o un alias de la persona del padrón
+    const ex=eqIdxExacto(p, ve);
+    if(ex>=0 && !(used && used.has(ex))) ix=ex;
+    // 2) si no, el match difuso de antes — pero marcado como SUGERIDO (a confirmar)
+    if(ix<0){
+      let bestSc=0;
+      ve.vendedores.forEach((x,i2)=>{
+        if(used && used.has(i2)) return;
+        const sc=eqMatchScore(p.nombre, x.nombre);
+        if(sc>bestSc){ bestSc=sc; ix=i2; }
+      });
+      if(ix>=0) sug=true;
+    }
     if(ix>=0 && used) used.add(ix);
   }
   let monto = (ix>=0 && ve.vendedores[ix].venta>0) ? ve.vendedores[ix].venta : 0;
   let src = monto>0 ? 'excel' : null;
-  const k=eqKeyName(p.nombre);
-  if(eqData && eqData.real && eqData.real[k]>0){ monto=eqData.real[k]; src='manual'; }
-  return src ? {monto, src, ix} : (ix>=0 ? {monto:0, src:null, ix} : null);
+  const real=(eqData&&eqData.real)||{};
+  const k=eqKey(p), k2=eqKeyName(p.nombre);
+  if(real[k]>0){ monto=real[k]; src='manual'; }
+  else if(real[k2]>0){ monto=real[k2]; src='manual'; }
+  return src ? {monto, src, ix, sug} : (ix>=0 ? {monto:0, src:null, ix, sug} : null);
 }
 
 /* ============================================================
@@ -4078,9 +4131,18 @@ function eqCasosSinHoras(equipo){
   equipo.forEach(p=>{
     if(!p.nombre.trim()) return;
     const dias=[]; p.h.forEach((day,d)=>{ if(((day[0]||0)+(day[1]||0)+(day[2]||0))<=0) dias.push(d); });
-    if(dias.length) casos.push({key:eqKeyName(p.nombre), nombre:p.nombre,
+    if(dias.length) casos.push({key:eqKey(p), nombre:p.nombre,
       detalle: dias.length===7 ? 'sin horas toda la semana' : 'sin horas: '+dias.map(d=>EQ_DIAS[d]).join(', ')});
   });
+  if(_padron.length){
+    const ids=new Set(equipo.map(p=>p.id).filter(Boolean));
+    padronVenta().forEach(per=>{
+      if(ids.has(per.id)) return;
+      if(equipo.some(p=>!p.id && eqMatchScore(p.nombre, per.nombre)>0)) return;   // fila vieja sin id
+      casos.push({key:per.id, nombre:per.nombre, detalle:'no está en el equipo de la semana'});
+    });
+    return casos;
+  }
   const enEq=n=>equipo.some(p=>eqMatchScore(p.nombre,n)>0);
   ((DET_FULL&&DET_FULL.vendedores)||[]).filter(x=>x.horas_contr>0 && !x.cubre).forEach(x=>{
     if(!enEq(x.vendedor)) casos.push({key:eqKeyName(x.vendedor), nombre:titleCase(x.vendedor), detalle:'no está en el equipo de la semana'});
@@ -4206,10 +4268,12 @@ function eqVentaAltura(prevX, diasSet){
 // matcher de la semana anterior (cada vendedor previo se asigna una sola vez)
 function eqPrevMatcher(prevVe){
   const used=new Set();
-  return nombre=>{
+  return (nombre, id)=>{
     if(!prevVe || !prevVe.vendedores) return null;
-    let best=-1, sc=0;
-    prevVe.vendedores.forEach((x,ix)=>{ if(used.has(ix)) return; const s=eqMatchScore(nombre, x.nombre); if(s>sc){ sc=s; best=ix; } });
+    let best=eqIdxExacto({id, nombre}, prevVe);
+    if(best>=0 && used.has(best)) best=-1;
+    if(best<0){ let sc=0;
+      prevVe.vendedores.forEach((x,ix)=>{ if(used.has(ix)) return; const s=eqMatchScore(nombre, x.nombre); if(s>sc){ sc=s; best=ix; } }); }
     if(best<0) return null;
     used.add(best);
     return prevVe.vendedores[best];
@@ -4356,7 +4420,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
   const rows=[];
   equipo.forEach((p,i)=>{
     const r=matches[i];
-    rows.push({ idx:i, nombre:p.nombre, horas:eqHorasPersona(p), share:shares[i],
+    rows.push({ idx:i, id:p.id||null, nombre:p.nombre, horas:eqHorasPersona(p), share:shares[i], sug:!!(r&&r.sug),
       meta:metaVal*shares[i], min:minVal*shares[i],
       objDias: metaVal ? sharesDia[i].map(s=>metaVal*s) : null,
       horasSem: eqHorasPersonaDias(p, diasSet),   // horas de los días ya cargados (tickets/h justos a mitad de semana)
@@ -4367,7 +4431,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
   // alerta: horas asignadas y CERO venta (solo cuando ya hay venta cargada esta semana)
   const jvPrev=(eqData.justif&&eqData.justif.sinVenta)||{};
   const jvCasos = totReal>0 ? rows.filter(r=>!r.fuera && r.horas>0 && !(r.venta>0))
-    .map(r=>({key:eqKeyName(r.nombre), nombre:r.nombre, detalle:fmt2(r.horas)+' h asignadas y sin venta'})) : [];
+    .map(r=>({key:eqKey(r), nombre:r.nombre, detalle:fmt2(r.horas)+' h asignadas y sin venta'})) : [];
   _jvState={slug, sem, eqData, casos:jvCasos, pend:jvCasos.filter(c=>!jvPrev[c.key])};
   if(jvCasos.length){
     h+='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:9px;padding:8px 12px;margin-bottom:12px;font-size:12.5px">⚠️ <b>'
@@ -4384,11 +4448,13 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
     const cur = row.veRow ? (row.src==='manual' ? {...row.veRow, venta:row.venta} : row.veRow)
                           : (row.venta>0 ? {venta:row.venta} : null);
     const tags=(row.fuera?' <span class="tag cover">fuera del equipo</span>':'')
-      +(row.src==='manual'?' <span class="tag" title="cargado a mano">✎</span>':'');
+      +(row.src==='manual'?' <span class="tag" title="cargado a mano">✎</span>':'')
+      +((row.sug && row.veRow && row.id)?' <button type="button" class="tag eq-vinc" data-id="'+esc(row.id)+'" data-n="'+esc(row.veRow.nombre)+'" title="El nombre del Excel («'+esc(row.veRow.nombre)+'») se pegó por parecido. Confirmá que es esta persona para que quede vinculado de una vez." style="cursor:pointer;background:#fef3e2;color:#9a3412;border:1px solid #f0d8a8">vínculo a confirmar ✓</button>':'')
+      +((row.sug && row.veRow && !row.id)?' <span class="tag" style="background:#fef3e2;color:#9a3412" title="Persona sin legajo: dala de alta en «Mi equipo» para vincularla">sin padrón</span>':'');
     const stats=[{l:'Horas venta', v:row.horas?fmt2(row.horas)+' h':'—', cls:row.horas?'':'dim'}];
     if(metaVal) stats.push({l:'Su meta', v:row.share?objMoney(row.meta):'—', cls:row.share?'':'dim'});
     if(editReal && !row.fuera){
-      const k=eqKeyName(row.nombre), val=_eqRealDraft.real[k];
+      const k=eqKey(row), val=_eqRealDraft.real[k];
       stats.push({l:'Venta', v:'<input type="text" inputmode="numeric" class="eq-real" data-k="'+esc(k)+'" value="'+(val>0?Math.round(val):'')+'" onclick="event.stopPropagation()">'});
     } else {
       stats.push({l:'Venta', v:row.venta?objMoney(row.venta):'—', cls:row.venta?'big':'dim'});
@@ -4401,7 +4467,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
     h+=eqCardHtml({ idx:row.idx, nombre:row.nombre, tags, fuera:row.fuera,
       sub:(!row.fuera && row.share)?'Participa el '+(row.share*100).toFixed(1)+'% de la meta del equipo':(row.fuera?'Vendió sin estar en el equipo de la semana':(row.horas?null:'Sin horas asignadas esta semana')),
       stats, part: totReal?part:null,
-      detalle: eqDetalleHtml(row.nombre, cur, prevM(row.nombre), diasSet, notaMin, row.objDias, (!row.fuera&&row.share)?row.meta:0, row.fuera?0:(row.horasSem||0)) });
+      detalle: eqDetalleHtml(row.nombre, cur, prevM(row.nombre, row.id), diasSet, notaMin, row.objDias, (!row.fuera&&row.share)?row.meta:0, row.fuera?0:(row.horasSem||0)) });
   });
   // total
   const totHs=equipo.reduce((a,p)=>a+eqHorasPersona(p),0), totSh=shares.reduce((a,x)=>a+x,0);
@@ -4464,9 +4530,23 @@ function eqEditorHtml(){
     const col=EQ_COLORES[pi%EQ_COLORES.length];
     const tot=eqHorasPersona(p);
     h+='<div class="eqe-p'+(tot>0?'':' sin')+'" style="--eqc:'+col[0]+';--eqbg:'+col[1]+'">';
+    const per=p.id?padronDe(p.id):null;
+    const enEq=new Set(E.equipo.map(x=>x.id).filter(Boolean));
+    // fila sin id con padrón cargado: selector «¿quién es?» con la sugerencia preseleccionada
+    let quien='';
+    if(!p.id && _padron.length && p.nombre.trim()){
+      const r=Equipo.resolver(p.nombre, _padron, enEq);
+      const sug=r.exacto?r.persona:r.sugerida;
+      quien='<select class="eq-quien" data-p="'+pi+'" title="Esta fila no está vinculada al padrón: elegí quién es" style="font-size:12px;border:1px solid #f0d8a8;background:#fef3e2;border-radius:6px;padding:3px 6px;max-width:220px">'
+        +'<option value="">¿Quién es? · sin vincular</option>'
+        +padronActivos().filter(x=>!enEq.has(x.id)).map(x=>'<option value="'+esc(x.id)+'"'+(sug&&sug.id===x.id?' selected':'')+'>'+esc(x.nombre)+' · '+esc(x.puesto)+'</option>').join('')
+        +'<option value="__alta">＋ Es alguien nuevo (dar de alta)</option></select>';
+    }
     h+='<div class="eqe-head"><span class="eqe-av eq-av" data-p="'+pi+'">'+esc(eqIniciales(p.nombre))+'</span>'
       +'<span class="eqe-num">Vendedor '+(pi+1)+'</span>'
-      +'<input type="text" class="eq-nom" data-p="'+pi+'" value="'+esc(p.nombre)+'" placeholder="Nombre y apellido">'
+      +'<input type="text" class="eq-nom" data-p="'+pi+'" value="'+esc(p.nombre)+'" placeholder="Nombre y apellido"'+(p.id?' readonly title="Nombre del padrón (se corrige en Mi equipo)"':'')+'>'
+      +(per?'<span class="tag" style="background:#e7f6ec;color:#166534" title="Persona del padrón · '+esc(per.puesto)+'">'+esc(per.puesto)+(per.pendiente?' · por validar':'')+'</span>':'')
+      +quien
       +'<span class="eqe-tot"><b class="eq-tot" data-p="'+pi+'">'+fmt2(tot)+' h</b><small>semana</small></span>'
       +'<button type="button" class="eq-del tb-btn" data-p="'+pi+'" title="Quitar del equipo" style="color:var(--bad,#c0261f)">✕</button></div>';
     h+='<div class="eqe-body"><div class="eqe-grid">'+cab;
@@ -4481,9 +4561,16 @@ function eqEditorHtml(){
     h+='</div></div></div>';
   });
   h+='</div>';
+  const enEq2=new Set(E.equipo.map(x=>x.id).filter(Boolean));
+  const libres=padronActivos().filter(x=>!enEq2.has(x.id));
   h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px">'
-    +'<button type="button" id="eqAdd" class="tb-btn">+ Agregar persona</button>'
-    +'<button type="button" id="eqImportar" class="tb-btn">⇩ Importar de Plantilla</button>'
+    +(_padron.length
+      ? '<select id="eqAddSel" class="tb-btn" style="max-width:260px"><option value="">+ Agregar persona…</option>'
+          +libres.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nombre)+' · '+esc(x.puesto)+'</option>').join('')
+          +'<option value="__alta">＋ Alguien que no está en el padrón</option></select>'
+        +'<button type="button" id="eqImportar" class="tb-btn" title="Suma a todos los del padrón que venden y todavía no están en el equipo">⇩ Traer del padrón'+(libres.length?' ('+libres.filter(x=>['encargado','vendedor','cajera'].includes(x.rol)).length+')':'')+'</button>'
+      : '<button type="button" id="eqAdd" class="tb-btn">+ Agregar persona</button>'
+        +'<button type="button" id="eqImportar" class="tb-btn">⇩ Importar de Plantilla</button>')
     +'<button type="button" id="eqImportPMS" class="tb-btn" title="Trae el equipo y las horas por turno de la hoja REAL del PMS semanal">⇧ Importar del Excel PMS</button>'
     +'<span style="flex:1"></span>'
     +'<button type="button" id="eqGuardar" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">Guardar equipo</button>'
@@ -4970,9 +5057,12 @@ async function renderObjetivo(){
   let v=null, ve=null, eqData=null, pesos=null, prevVe=null;
   try{ [v,ve,eqData,pesos,prevVe] = await Promise.all([
     fetchObjetivoData(slug, sem), fetchVentaEquipo(slug, sem),
-    fetchEquipo(slug, sem), fetchEqPesos(slug), fetchVentaEquipo(slug, prevSem)
+    fetchEquipo(slug, sem), fetchEqPesos(slug), fetchVentaEquipo(slug, prevSem),
+    (_padronSlug===slug && _padron.length) ? null : cargarPadron(slug)
   ]); }catch(e){ v=null; ve=null; eqData=null; pesos=null; prevVe=null; }
   if(sucName!==target) return;
+  _ultimoVe={slug, sem, ve};   // «Mi equipo» lista los nombres de ventas sin vincular
+  if(_padronSlug===slug && $('equipoCard') && $('equipoCard').innerHTML){ try{ paintEquipoSuc(); renderPlantilla(); }catch(e){} }
 
   // selector de semanas (arriba a la derecha)
   const selHtml = '<select id="objSemSel" style="font-family:var(--font-b,inherit);font-size:13px;color:var(--navy,#0B1527);'
@@ -5099,7 +5189,7 @@ async function eqArchivoPMS(file){
     if(!equipo){ alert('No encontré la hoja REAL con las horas por turno en ese Excel. ¿Es el PMS semanal de la sucursal?'); return; }
     const hayCarga=_eqEdit.equipo.some(p=>p.nombre.trim() && eqHorasPersona(p)>0);
     if(hayCarga && !confirm('Voy a reemplazar el equipo y las horas del editor por lo que trae el Excel ('+equipo.length+' personas). ¿Seguimos?')) return;
-    _eqEdit.equipo=equipo;
+    _eqEdit.equipo=eqSanea(equipo);   // completa el id de quien coincide exacto con el padrón
     renderObjetivo();
   }catch(e){ alert('Error leyendo el Excel: '+(e.message||e)); }
 }
@@ -5119,9 +5209,13 @@ function eqWire(slug, sem, eqData){
         if(prev && prev.equipo && prev.equipo.length){ equipo=eqSanea(prev.equipo); copiadaDe=sems[0]; }
       }
     }catch(e){}
+    if(!equipo && _padronSlug!==slug) await cargarPadron(slug);
+    if(!equipo && padronVenta().length){
+      equipo = padronVenta().map(x=>eqNuevaPersona(x.nombre, x.id));
+    }
     if(!equipo){
       const gente=((DET && DET.vendedores) || []).filter(x=>x.horas_contr>0 && !x.cubre).map(x=>titleCase(x.vendedor));
-      equipo = gente.length ? gente.map(eqNuevaPersona) : [eqNuevaPersona('')];
+      equipo = gente.length ? gente.map(n=>eqNuevaPersona(n)) : [eqNuevaPersona('')];
     }
     _eqEdit={slug, sem, equipo, copiadaDe};
     renderObjetivo();
@@ -5152,8 +5246,29 @@ function eqWire(slug, sem, eqData){
     });
     card.querySelectorAll('.eq-del').forEach(b=>b.onclick=()=>{ _eqEdit.equipo.splice(+b.dataset.p,1); if(!_eqEdit.equipo.length) _eqEdit.equipo.push(eqNuevaPersona('')); renderObjetivo(); });
     const add=$('eqAdd'); if(add) add.onclick=()=>{ _eqEdit.equipo.push(eqNuevaPersona('')); renderObjetivo(); };
+    const addSel=$('eqAddSel'); if(addSel) addSel.onchange=()=>{
+      const v=addSel.value; if(!v) return;
+      if(v==='__alta'){ altaPersonaModal(slug, {}, per=>{ if(!per) { renderObjetivo(); return; } _eqEdit.equipo=_eqEdit.equipo.filter(p=>p.nombre.trim()||eqHorasPersona(p)>0); _eqEdit.equipo.push(eqNuevaPersona(per.nombre, per.id)); renderObjetivo(); }); return; }
+      const per=padronDe(v); if(!per) return;
+      _eqEdit.equipo=_eqEdit.equipo.filter(p=>p.nombre.trim()||eqHorasPersona(p)>0);
+      _eqEdit.equipo.push(eqNuevaPersona(per.nombre, per.id)); renderObjetivo();
+    };
+    card.querySelectorAll('.eq-quien').forEach(sel=>sel.onchange=()=>{
+      const pi=+sel.dataset.p, v=sel.value; if(!v) return;
+      if(v==='__alta'){ altaPersonaModal(slug, {nombre:_eqEdit.equipo[pi].nombre}, per=>{ if(per){ _eqEdit.equipo[pi].id=per.id; _eqEdit.equipo[pi].nombre=per.nombre; } renderObjetivo(); }); return; }
+      const per=padronDe(v); if(!per) return;
+      _eqEdit.equipo[pi].id=per.id; _eqEdit.equipo[pi].nombre=per.nombre; renderObjetivo();
+    });
     const ipms=$('eqImportPMS'); if(ipms) ipms.onclick=()=>$('eqFile').click();
     const imp=$('eqImportar'); if(imp) imp.onclick=()=>{
+      if(_padron.length){
+        const ya=new Set(_eqEdit.equipo.map(p=>p.id).filter(Boolean));
+        const gente=padronVenta().filter(x=>!ya.has(x.id));
+        if(!gente.length){ alert('Todo el padrón que vende ya está en el equipo.'); return; }
+        _eqEdit.equipo=_eqEdit.equipo.filter(p=>p.nombre.trim()||eqHorasPersona(p)>0);
+        gente.forEach(x=>_eqEdit.equipo.push(eqNuevaPersona(x.nombre, x.id)));
+        renderObjetivo(); return;
+      }
       const ya=new Set(_eqEdit.equipo.map(p=>eqNorm(p.nombre)).filter(Boolean));
       const gente=((DET && DET.vendedores) || []).filter(x=>x.horas_contr>0 && !x.cubre && !ya.has(eqNorm(x.vendedor)));
       if(!gente.length){ alert('No hay nadie más para importar de la Plantilla del período.'); return; }
@@ -5162,6 +5277,9 @@ function eqWire(slug, sem, eqData){
       renderObjetivo();
     };
     const g=$('eqGuardar'); if(g) g.onclick=async ()=>{
+      // filas sin id con la sugerencia del padrón a la vista: al guardar se toma como confirmada
+      card.querySelectorAll('.eq-quien').forEach(sel=>{ const pi=+sel.dataset.p; const per=(sel.value&&sel.value!=='__alta')?padronDe(sel.value):null;
+        if(per && _eqEdit.equipo[pi] && !_eqEdit.equipo[pi].id){ _eqEdit.equipo[pi].id=per.id; _eqEdit.equipo[pi].nombre=per.nombre; } });
       const equipo=_eqEdit.equipo.filter(p=>p.nombre.trim());
       if(!equipo.length){ alert('Cargá al menos una persona con nombre.'); return; }
       // alerta: gente con días sin horas asignadas (o de la dotación fuera del equipo) → justificar
@@ -5191,9 +5309,17 @@ function eqWire(slug, sem, eqData){
     };
     const c=$('eqCancelar'); if(c) c.onclick=()=>{ _eqEdit=null; renderObjetivo(); };
   }
+  // confirmar un vínculo sugerido (nombre del Excel → persona del padrón)
+  card.querySelectorAll('.eq-vinc').forEach(b=>b.onclick=async e=>{
+    e.stopPropagation();
+    if(!confirm('¿«'+b.dataset.n+'» del sistema de ventas es '+((padronDe(b.dataset.id)||{}).nombre||'esta persona')+'? Queda vinculado de una vez para todos los módulos.')) return;
+    b.disabled=true;
+    try{ await Equipo.vincular(slug, b.dataset.id, b.dataset.n); await cargarPadron(slug, true); renderObjetivo(); renderEquipoSuc(); }
+    catch(err){ alert('No se pudo vincular: '+(err.message||err)); b.disabled=false; }
+  });
   // carga manual de la venta real
   const rb=$('eqRealBtn'); if(rb) rb.onclick=()=>{
-    const real={}; (eqData&&eqData.equipo||[]).forEach(p=>{ const k=eqKeyName(p.nombre); if(eqData.real&&eqData.real[k]>0) real[k]=eqData.real[k]; });
+    const real={}; eqSanea(eqData&&eqData.equipo||[]).forEach(p=>{ const k=eqKey(p), k2=eqKeyName(p.nombre); const v=(eqData.real&&(eqData.real[k]>0?eqData.real[k]:eqData.real[k2]))||0; if(v>0) real[k]=v; });
     _eqRealDraft={slug, sem, real};
     renderObjetivo();
   };
@@ -6148,6 +6274,172 @@ function compDias(a,b){ if(!a||!b) return 0; const d=Math.round((new Date(b+'T00
 function compHoyISO(){ const d=new Date(), z=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate()); }
 function compAhora(){ const d=new Date(), z=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+'T'+z(d.getHours())+':'+z(d.getMinutes()); }
 
+/* ============================================================
+   MI EQUIPO — el padrón de la sucursal (shared/equipo.js → rrhh/equipo/<slug>)
+   El encargado da de alta / baja y vincula los nombres del sistema de ventas
+   con las personas. RRHH valida después (la ficha completa vive en rrhh/).
+   ============================================================ */
+const RRHH_MAILS=['rrhh@mateu.com.ar'];
+const MOTIVOS_BAJA_EQ=['Renuncia','Despido','Fin de contrato','Pase a otra sucursal','Abandono','Otro'];
+let _aliasIgn=null;
+async function renderEquipoSuc(){
+  const sec=$('secEquipo'), card=$('equipoCard'); if(!sec||!card) return;
+  const slug=slugActual(); if(!slug || !window.Equipo){ sec.style.display='none'; return; }
+  if(_padronSlug!==slug) await cargarPadron(slug);
+  if(_aliasIgn===null){ try{ _aliasIgn=(await fetchJSON(RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/aliasIgnorados.json'))||{}; }catch(e){ _aliasIgn={}; } }
+  if(slugActual()!==slug) return;
+  paintEquipoSuc();
+  renderPlantilla();
+  pintarZonas();
+}
+// nombres del sistema de ventas (semana activa + ETL del período) que ningún legajo reconoce
+function eqNombresSinVincular(slug){
+  const nombres=new Map();
+  if(_ultimoVe && _ultimoVe.slug===slug && _ultimoVe.ve && _ultimoVe.ve.vendedores) _ultimoVe.ve.vendedores.forEach(x=>{ const k=eqNorm(x.nombre); if(k && !nombres.has(k)) nombres.set(k,{nombre:x.nombre, venta:x.venta||0, fuente:'venta de la semana'}); });
+  if(DET && DET.vendedores && SUC2SLUG[sucName]===slug) DET.vendedores.forEach(v=>{ if(v.cubre) return; const k=eqNorm(v.vendedor); if(k && !nombres.has(k)) nombres.set(k,{nombre:v.vendedor, venta:v.importe_neto||0, fuente:'estadística del mes'}); });
+  const out=[]; const usados=new Set();
+  const lista=[...nombres.values()];
+  lista.forEach(o=>{ const r=Equipo.resolver(o.nombre, _padron); if(r.exacto) usados.add(r.persona.id); });
+  lista.forEach(o=>{
+    const k=eqNorm(o.nombre); if(_aliasIgn && _aliasIgn[k.replace(/ /g,'_')]) return;
+    if(Equipo.resolver(o.nombre, _padron).exacto) return;
+    const r=Equipo.resolver(o.nombre, padronActivos(), usados);
+    out.push({...o, k, sug:r.sugerida, score:r.score});
+  });
+  return out.sort((a,b)=>b.venta-a.venta);
+}
+function paintEquipoSuc(){
+  const sec=$('secEquipo'), card=$('equipoCard'); if(!sec||!card) return;
+  const slug=slugActual(); if(!slug) return;
+  const act=padronActivos(), bajas=_padron.filter(p=>p.estado==='baja');
+  const pend=act.filter(p=>p.pendiente).length;
+  const sin=eqNombresSinVincular(slug);
+  // ¿está vinculada con ventas? (tiene alias o su nombre aparece tal cual en la venta)
+  const enVentas=new Set();
+  if(_ultimoVe && _ultimoVe.slug===slug && _ultimoVe.ve && _ultimoVe.ve.vendedores) _ultimoVe.ve.vendedores.forEach(x=>enVentas.add(eqNorm(x.nombre)));
+  if(DET && DET.vendedores && SUC2SLUG[sucName]===slug) DET.vendedores.forEach(v=>enVentas.add(eqNorm(v.vendedor)));
+  let html='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+    +'<div style="font-size:15px"><b>'+act.length+'</b> persona'+(act.length===1?'':'s')+' activa'+(act.length===1?'':'s')
+    +(pend?' · <b style="color:#9a3412">'+pend+' por validar en RRHH</b>':'')
+    +(sin.length?' · <b style="color:var(--bad,#c0261f)">'+sin.length+' nombre'+(sin.length===1?'':'s')+' de ventas sin vincular</b>':'')+'</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" id="eqsAlta" class="tb-btn" style="background:var(--red);color:#fff;border-color:var(--red)">+ Agregar persona</button></div></div>';
+  if(!act.length){
+    html+='<p class="empty" style="margin:4px 0 8px">Todavía no hay nadie cargado para esta sucursal. Agregá a tu equipo con <b>+ Agregar persona</b>'+(esGerencia?' o desde RRHH → Legajos':'')+'.</p>';
+  } else {
+    html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Persona</th><th class="L">Puesto</th><th class="L">Régimen</th><th class="L">En ventas</th><th class="L"></th></tr></thead><tbody>';
+    act.forEach(p=>{
+      const claves=Equipo.clavesDe(p); let vinc=null; claves.forEach(c=>{ if(enVentas.has(c)) vinc=c; });
+      const alias=(p.alias||[]).filter(a=>a!==eqNorm(p.nombre));
+      const vTxt = vinc ? '<span class="tag" style="background:#e7f6ec;color:#166534" title="'+esc(vinc.toUpperCase())+'">✓ vinculada</span>'
+        : (alias.length ? '<span class="tag" style="background:#e7f6ec;color:#166534" title="'+esc(alias.join(', ').toUpperCase())+'">✓ alias</span>'
+        : (enVentas.size ? '<span class="tag" style="background:#fef3e2;color:#9a3412" title="No aparece en la venta cargada con este nombre ni con un alias">sin venta a su nombre</span>' : '<span class="hint" style="margin:0">—</span>'));
+      html+='<tr><td class="L"><b>'+esc(p.nombre)+'</b>'+(p.pendiente?' <span class="tag" style="background:#fef3e2;color:#9a3412" title="Alta hecha desde la sucursal: RRHH la valida y completa la ficha">por validar</span>':'')+'</td>'
+        +'<td class="L">'+esc(p.puesto||'—')+'</td><td class="L">'+esc(p.regimen||'—')+'</td><td class="L">'+vTxt+'</td>'
+        +'<td class="L" style="white-space:nowrap"><button type="button" class="tb-btn eqs-edit" data-id="'+esc(p.id)+'" style="padding:3px 9px;font-size:11.5px">✎</button> '
+        +'<button type="button" class="tb-btn eqs-baja" data-id="'+esc(p.id)+'" style="padding:3px 9px;font-size:11.5px;color:var(--bad,#c0261f)" title="Registrar baja">⏻</button></td></tr>';
+    });
+    html+='</tbody></table></div>';
+    if(bajas.length) html+='<p class="hint" style="margin:8px 0 0">'+bajas.length+' baja'+(bajas.length===1?'':'s')+' registrada'+(bajas.length===1?'':'s')+': '+esc(bajas.slice(0,6).map(b=>b.nombre).join(' · '))+(bajas.length>6?' …':'')+'</p>';
+  }
+  if(sin.length){
+    html+='<div style="margin-top:16px;background:#fef2f2;border:1px solid #fecaca;border-radius:9px;padding:10px 12px">'
+      +'<div style="font-weight:700;margin-bottom:4px">Nombres de ventas sin vincular</div>'
+      +'<p class="hint" style="margin:0 0 8px">Aparecen en el sistema de ventas y ningún legajo los reconoce. Decí quién es cada uno (queda como alias y no se vuelve a preguntar), dalo de alta si es alguien nuevo, o ignoralo si no es una persona (MERCADOLIBRE, MOSTRADOR…).</p>';
+    sin.forEach((o,i)=>{
+      const ops='<option value="">— elegir —</option>'+padronActivos().map(x=>'<option value="'+esc(x.id)+'"'+(o.sug&&o.sug.id===x.id?' selected':'')+'>'+esc(x.nombre)+' · '+esc(x.puesto)+'</option>').join('');
+      html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid #fecaca">'
+        +'<div style="min-width:180px;flex:1"><b>'+esc(o.nombre)+'</b><div class="hint" style="margin:0">'+esc(o.fuente)+(o.venta?' · '+objMoney(o.venta):'')+(o.sug?' · sugerido: '+esc(o.sug.nombre):'')+'</div></div>'
+        +'<select class="eqs-vsel" data-i="'+i+'" style="font-size:12.5px;border:1px solid var(--border,#dce3f0);border-radius:6px;padding:4px 6px;max-width:230px">'+ops+'</select>'
+        +'<button type="button" class="tb-btn eqs-vok" data-i="'+i+'" style="padding:4px 10px;font-size:12px">Vincular</button>'
+        +'<button type="button" class="tb-btn eqs-vnew" data-i="'+i+'" style="padding:4px 10px;font-size:12px">Es nuevo</button>'
+        +'<button type="button" class="tb-btn eqs-vign" data-i="'+i+'" style="padding:4px 10px;font-size:12px;color:var(--muted,#6B7A99)">Ignorar</button></div>';
+    });
+    html+='</div>';
+  }
+  card.innerHTML=html; sec.style.display='';
+  const al=$('eqsAlta'); if(al) al.onclick=()=>altaPersonaModal(slug, {}, ()=>{ renderEquipoSuc(); if(_eqEdit) renderObjetivo(); });
+  card.querySelectorAll('.eqs-edit').forEach(b=>b.onclick=()=>editarPersonaModal(slug, b.dataset.id, ()=>{ renderEquipoSuc(); renderObjetivo(); }));
+  card.querySelectorAll('.eqs-baja').forEach(b=>b.onclick=()=>bajaPersonaModal(slug, b.dataset.id, ()=>{ renderEquipoSuc(); renderObjetivo(); }));
+  card.querySelectorAll('.eqs-vok').forEach(b=>b.onclick=async()=>{
+    const o=sin[+b.dataset.i]; const sel=card.querySelector('.eqs-vsel[data-i="'+b.dataset.i+'"]'); const id=sel&&sel.value;
+    if(!id){ alert('Elegí a quién corresponde «'+o.nombre+'».'); return; }
+    b.disabled=true;
+    try{ await Equipo.vincular(slug, id, o.nombre); await cargarPadron(slug, true); renderEquipoSuc(); renderObjetivo(); }
+    catch(e){ alert('No se pudo vincular: '+(e.message||e)); b.disabled=false; }
+  });
+  card.querySelectorAll('.eqs-vnew').forEach(b=>b.onclick=()=>{ const o=sin[+b.dataset.i]; altaPersonaModal(slug, {nombre:titleCase(o.nombre), alias:[o.nombre]}, ()=>{ renderEquipoSuc(); renderObjetivo(); }); });
+  card.querySelectorAll('.eqs-vign').forEach(b=>b.onclick=async()=>{
+    const o=sin[+b.dataset.i]; if(!confirm('¿«'+o.nombre+'» no es una persona del equipo? No se vuelve a preguntar.')) return;
+    try{ await fetch(RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/aliasIgnorados/'+o.k.replace(/ /g,'_')+'.json',{method:'PUT',body:JSON.stringify({nombre:o.nombre, por:(SESSION.email||''), en:new Date().toISOString()})});
+      _aliasIgn[o.k.replace(/ /g,'_')]=true; paintEquipoSuc(); }
+    catch(e){ alert('No se pudo guardar'); }
+  });
+}
+// modal genérico chico (overlay) → Promise<valores|null>
+function eqModal(titulo, bodyHtml, okLabel){
+  return new Promise(res=>{
+    const ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;background:rgba(11,21,39,.55);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px';
+    ov.innerHTML='<div style="background:#fff;border-radius:14px;max-width:520px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden">'
+      +'<div style="padding:14px 18px;background:var(--navy,#0B1527);color:#fff;font-family:var(--font-c,inherit);font-size:19px;font-weight:700;border-bottom:3px solid var(--red,#CC0000)">'+titulo+'</div>'
+      +'<div style="padding:14px 18px;font-size:13.5px">'+bodyHtml+'</div>'
+      +'<div style="padding:10px 18px 14px;display:flex;gap:8px;justify-content:flex-end"><button type="button" class="tb-btn" data-x="cancel">Cancelar</button><button type="button" class="tb-btn" data-x="ok" style="background:var(--red);color:#fff;border-color:var(--red)">'+(okLabel||'Guardar')+'</button></div></div>';
+    document.body.appendChild(ov);
+    const fin=v=>{ ov.remove(); res(v); };
+    ov.querySelector('[data-x="cancel"]').onclick=()=>fin(null);
+    ov.querySelector('[data-x="ok"]').onclick=()=>{ const o={}; ov.querySelectorAll('[data-f]').forEach(el=>o[el.dataset.f]=el.value); fin(o); };
+    const first=ov.querySelector('input,select'); if(first) first.focus();
+  });
+}
+const eqInp=(f,label,attrs,val)=>'<label style="display:block;margin-bottom:9px"><span style="display:block;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted,#6B7A99);margin-bottom:3px">'+label+'</span><input data-f="'+f+'" '+(attrs||'')+' value="'+esc(val||'')+'" style="width:100%;font-size:14px;border:1px solid var(--border,#dce3f0);border-radius:7px;padding:7px 9px"></label>';
+const eqSel=(f,label,opts,val)=>'<label style="display:block;margin-bottom:9px"><span style="display:block;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted,#6B7A99);margin-bottom:3px">'+label+'</span><select data-f="'+f+'" style="width:100%;font-size:14px;border:1px solid var(--border,#dce3f0);border-radius:7px;padding:7px 9px">'+opts.map(o=>'<option'+(o===val?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select></label>';
+async function altaPersonaModal(slug, pre, cb){
+  const puestos=Equipo.PUESTOS.filter(p=>p!=='Gerencia');
+  const v=await eqModal('Agregar persona al equipo',
+    '<p class="hint" style="margin:0 0 10px">Entra ya al padrón de <b>'+esc(nombreBonito(slug))+'</b> y queda <b>por validar</b> en RRHH, que completa DNI, CUIL y demás.</p>'
+    +eqInp('nombre','Apellido y nombre','type="text" placeholder="Ej: Pérez Juan"', pre.nombre||'')
+    +eqSel('puesto','Puesto',puestos, pre.puesto||'Vendedor/a')
+    +eqSel('regimen','Régimen',Equipo.REGIMENES, pre.regimen||'Full Time')
+    +eqInp('ingreso','Fecha de ingreso','type="date"', pre.ingreso||new Date().toISOString().slice(0,10)),
+    'Dar de alta');
+  if(!v){ if(cb) cb(null); return; }
+  if(!String(v.nombre||'').trim()){ alert('Falta el nombre.'); if(cb) cb(null); return; }
+  try{
+    const per=await Equipo.alta(slug, {...v, alias:pre.alias||[]}, SESSION.email||'');
+    await cargarPadron(slug, true);
+    enviarDirectosA(RRHH_MAILS, '👤 Alta en '+nombreBonito(slug)+': '+per.nombre+' ('+per.puesto+', '+per.regimen+', ingreso '+(v.ingreso||'')+'). La cargó '+nombreCorto(SESSION.email||'')+' desde Mi Sucursal — falta validarla y completar la ficha en RRHH → Legajos.').catch(()=>{});
+    if(cb) cb(per);
+  }catch(e){ alert('No se pudo dar de alta: '+(e.message||e)); if(cb) cb(null); }
+}
+async function editarPersonaModal(slug, id, cb){
+  const per=padronDe(id); if(!per) return;
+  const v=await eqModal('Editar · '+esc(per.nombre),
+    eqInp('nombre','Apellido y nombre','type="text"', per.nombre)
+    +eqSel('puesto','Puesto',Equipo.PUESTOS.filter(p=>p!=='Gerencia'), per.puesto)
+    +eqSel('regimen','Régimen',Equipo.REGIMENES, per.regimen||'Full Time')
+    +eqInp('ingreso','Fecha de ingreso','type="date"', per.ingreso||'')
+    +((per.alias||[]).length?'<p class="hint" style="margin:0">En ventas: '+esc(per.alias.join(', ').toUpperCase())+'</p>':''),
+    'Guardar');
+  if(!v) return;
+  try{ await Equipo.editar(slug, id, v, SESSION.email||''); await cargarPadron(slug, true); if(cb) cb(); }
+  catch(e){ alert('No se pudo guardar: '+(e.message||e)); }
+}
+async function bajaPersonaModal(slug, id, cb){
+  const per=padronDe(id); if(!per) return;
+  const v=await eqModal('Baja · '+esc(per.nombre),
+    '<p class="hint" style="margin:0 0 10px">Sale del equipo semanal, del Buscador y de la Academia. RRHH recibe el aviso y cierra la ficha.</p>'
+    +eqInp('fecha','Fecha de baja','type="date"', new Date().toISOString().slice(0,10))
+    +eqSel('motivo','Motivo',MOTIVOS_BAJA_EQ,'Renuncia')
+    +eqInp('obs','Observaciones','type="text" placeholder="opcional"',''),
+    'Confirmar baja');
+  if(!v) return;
+  try{
+    await Equipo.baja(slug, id, v, SESSION.email||''); await cargarPadron(slug, true);
+    enviarDirectosA(RRHH_MAILS, '⏻ Baja en '+nombreBonito(slug)+': '+per.nombre+' — '+v.motivo+' ('+v.fecha+')'+(v.obs?' · '+v.obs:'')+'. La registró '+nombreCorto(SESSION.email||'')+' desde Mi Sucursal.').catch(()=>{});
+    if(cb) cb();
+  }catch(e){ alert('No se pudo registrar la baja: '+(e.message||e)); }
+}
+
 async function renderComp(){
   const sec=$('secComp'); if(!sec) return;
   sec.style.display='none';
@@ -6579,6 +6871,10 @@ function covChart(d){
 /* --- plantilla / dotación --- */
 function titleCase(s){ return (s||'').toLowerCase().replace(/(^|[\s'’-])([a-záéíóúñü])/g, (m,p,c)=>p+c.toUpperCase()); }
 function renderPlantilla(){
+  if(!$('plantilla')) return;
+  const slug=slugActual();
+  if(slug && _padronSlug===slug && padronActivos().length){ renderPlantillaPadron(slug); return; }
+  if(!DET || !DET.vendedores) return;
   const gente = DET.vendedores.slice();
   const total = gente.length;
   const cnt = g => gente.filter(v=>v.grupo===g).length;
@@ -6603,6 +6899,37 @@ function renderPlantilla(){
   $('plantilla').innerHTML = '<div class="pl-stats">'+
     stats.map(s=>`<div class="pl-stat"><div class="n">${s.n}</div><div class="l">${s.l}</div>${s.s?'<div class="s">'+s.s+'</div>':''}</div>`).join('')+
     '</div>'+groupsHtml;
+}
+
+// la plantilla cuando hay padrón: la gente de RRHH (puesto/régimen reales) cruzada
+// con la estadística del período por alias (tickets del mes, cobertura)
+function renderPlantillaPadron(slug){
+  const gente=padronActivos();
+  const det=(DET && DET.vendedores && SUC2SLUG[sucName]===slug) ? DET.vendedores : [];
+  const enVentas=new Map(); det.forEach(v=>enVentas.set(eqNorm(v.vendedor), v));
+  const ft=gente.filter(p=>p.regimen==='Full Time').length, pt=gente.filter(p=>p.regimen==='Part Time').length;
+  const cnt=g=>gente.filter(p=>p.grupo===g).length;
+  const stats=[
+    {n:gente.length, l:'Personas', s:(ft?ft+' full time':'')+(ft&&pt?' · ':'')+(pt?pt+' part time':'')},
+    {n:cnt('Ventas'), l:'Vendedores'},{n:cnt('Jefatura'), l:'Encargado y subs'},{n:cnt('Caja'), l:'Cajas'},{n:cnt('Refuerzos'), l:'Depósito'},
+  ];
+  const grupos=[['Ventas','var(--red)'],['Caja','#2E4A8F'],['Jefatura','#7C8BA5'],['Refuerzos','var(--mid)'],['Otros','var(--muted-light)']];
+  let groupsHtml='';
+  grupos.forEach(([g,col])=>{
+    const ms=gente.filter(p=>p.grupo===g); if(!ms.length) return;
+    groupsHtml+='<div class="pl-group"><div class="pl-group-h"><span class="dotc" style="background:'+col+'"></span>'+esc(grupoLabel(g))+' · '+ms.length+'</div><div class="pl-people">'
+      +ms.map(p=>{
+        let v=null; Equipo.clavesDe(p).forEach(c=>{ if(!v && enVentas.has(c)) v=enVentas.get(c); });
+        let tags=''; if(p.pendiente) tags+='<span class="tag rev">Por validar RRHH</span>';
+        if(v && v.cubre) tags+='<span class="tag cover">Cubre</span>';
+        if(det.length && !v) tags+='<span class="tag rev" title="No registró ventas en el período con este nombre ni con un alias">Sin venta en el período</span>';
+        return '<div class="pl-person"><span class="nm">'+esc(p.nombre)+'</span><span class="rg">'+esc(p.sector)+(v&&v.tickets?' · '+fmtN(v.tickets)+' tickets':'')+'</span><span class="tags">'+tags+'</span></div>';
+      }).join('')+'</div></div>';
+  });
+  const extra=det.filter(v=>!v.cubre && !Equipo.resolver(v.vendedor,_padron).exacto);
+  const extraHtml = extra.length ? '<p class="hint" style="margin:10px 0 0">Vendieron en el período y no están en el padrón: '+esc(extra.map(v=>titleCase(v.vendedor)).join(' · '))+'. Vinculalos o dalos de alta en <b>Mi equipo</b>.</p>' : '';
+  $('plantilla').innerHTML='<div class="pl-stats">'+stats.map(s=>'<div class="pl-stat"><div class="n">'+s.n+'</div><div class="l">'+s.l+'</div>'+(s.s?'<div class="s">'+s.s+'</div>':'')+'</div>').join('')+'</div>'+groupsHtml+extraHtml;
+  const hint=document.querySelector('#secPlantilla .hint'); if(hint) hint.innerHTML='Quién trabaja en la sucursal según el <b>padrón</b> (Mi equipo / RRHH), por rol y régimen, cruzado con las ventas del período.';
 }
 
 /* --- tabla equipos --- */

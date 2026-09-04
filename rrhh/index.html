@@ -264,6 +264,7 @@ table.grid .sub{font-family:var(--font-c);font-size:12px;color:var(--muted)}
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
 <script src="../shared/iconos.js" defer></script>
+<script src="../shared/equipo.js"></script>
 <!-- Academia de Ventas: resumen de capacitación (se inyecta solo; ver capacitaciones/resumen-widget.js) -->
 <script src="../capacitaciones/resumen-widget.js" defer></script>
 <!-- Header unificado del shell: barra Menú + logo + calendario retail + drawer -->
@@ -588,11 +589,12 @@ function viewLegajos(){
     return true;
   });
   const activos = todos.filter(l=>(l.estado||'activo')!=='baja');
+  const pendientes = activos.filter(l=>l.pendiente);
   const ft = activos.filter(l=>l.regimen==='Full Time').length;
   const pt = activos.filter(l=>l.regimen==='Part Time').length;
 
   const kpis = `<div class="kpis">
-    <div class="kpi info"><div class="k">Dotación activa</div><div class="v">${activos.length}</div><div class="s">${ft} full time · ${pt} part time</div></div>
+    <div class="kpi info"><div class="k">Dotación activa</div><div class="v">${activos.length}</div><div class="s">${ft} full time · ${pt} part time${pendientes.length?' · <b style="color:#9a3412">'+pendientes.length+' alta'+(pendientes.length===1?'':'s')+' de sucursal por validar</b>':''}</div></div>
     <div class="kpi"><div class="k">Sucursales con gente</div><div class="v">${new Set(activos.map(l=>l.sucursal)).size}</div></div>
     <div class="kpi ok"><div class="k">Antigüedad promedio</div><div class="v">${promedioAntiguedad(activos)}</div></div>
     <div class="kpi warn"><div class="k">Bajas (12 meses)</div><div class="v">${bajasUltimos12().length}</div></div>
@@ -614,6 +616,7 @@ function viewLegajos(){
     <button class="btn btn-primary btn-sm" id="btnNuevo">+ Legajo</button>
     <button class="btn btn-outline btn-sm" id="btnImportar" title="Traer la dotación registrada en Indicadores">⇩ Importar dotación</button>
     <button class="btn btn-navy btn-sm" id="btnActualizar" title="Subir el Excel Registro Único y actualizar los legajos">⟳ Actualizar (Excel)</button>
+    <button class="btn btn-outline btn-sm" id="btnConciliar" title="Cruzar los nombres del sistema de ventas con los legajos y dejar cada persona vinculada por alias">⇄ Conciliar con ventas</button>
   </div>`;
 
   let body;
@@ -633,8 +636,9 @@ function viewLegajos(){
         <td>${fechaLabel(l.ingreso)}</td>
         <td>${antiguedadLabel(l)}</td>
         <td class="num">${compCelda(l)}</td>
-        <td>${est==='baja'?'<span class="tag baja">Baja</span>':'<span class="tag activo">Activo</span>'}</td>
+        <td>${est==='baja'?'<span class="tag baja">Baja</span>':(l.pendiente?'<span class="tag pend" title="Alta hecha desde Mi Sucursal: revisá los datos y validala">Por validar</span>':'<span class="tag activo">Activo</span>')}</td>
         <td><div class="rowact">
+          ${l.pendiente&&est!=='baja'?`<button class="iconbtn" data-validar="${l.id}" title="Validar el alta de la sucursal" style="color:#166534">✓</button>`:''}
           <button class="iconbtn" data-edit="${l.id}" title="Editar">✎</button>
           ${est==='baja'?`<button class="iconbtn" data-reactivar="${l.id}" title="Reactivar">↩</button>`:`<button class="iconbtn danger" data-baja="${l.id}" title="Registrar baja">⏻</button>`}
         </div></td>
@@ -1581,6 +1585,7 @@ async function publicarImportComp(){
       P.sucFix.forEach(x=>{ legPatch[x.legajoId+'/sucursal']=x.a; legPatch[x.legajoId+'/actualizado']=nowISO(); });
       if(HAS_DB) await fbPatch(ROOT+'/legajos', legPatch);
       P.sucFix.forEach(x=>{ if(LEGAJOS[x.legajoId]){ LEGAJOS[x.legajoId].sucursal=x.a; LEGAJOS[x.legajoId].actualizado=nowISO(); } });
+      sincronizarEquipo();
     }
     // reflejar en memoria
     P.ajustes.forEach((a,i)=>{
@@ -2225,6 +2230,8 @@ function wire(){
   if($('btnNuevo')) $('btnNuevo').onclick=()=>formLegajo(null);
   if($('btnImportar')) $('btnImportar').onclick=importarDotacion;
   if($('btnActualizar')) $('btnActualizar').onclick=abrirActualizar;
+  if($('btnConciliar')) $('btnConciliar').onclick=abrirConciliar;
+  document.querySelectorAll('[data-validar]').forEach(b=> b.onclick=e=>{ e.stopPropagation(); validarLegajo(b.dataset.validar); });
   document.querySelectorAll('[data-leg]').forEach(tr=> tr.onclick=e=>{ if(e.target.closest('.rowact')) return; detalleLegajo(tr.dataset.leg); });
   document.querySelectorAll('[data-edit]').forEach(b=> b.onclick=e=>{ e.stopPropagation(); formLegajo(b.dataset.edit); });
   document.querySelectorAll('[data-baja]').forEach(b=> b.onclick=e=>{ e.stopPropagation(); formBaja(b.dataset.baja); });
@@ -2298,6 +2305,245 @@ function closeModal(){ $('modalBg').classList.remove('on'); }
 function selOptions(arr, sel){ return arr.map(o=>{ const val=Array.isArray(o)?o[0]:o, lab=Array.isArray(o)?o[1]:o; return `<option value="${esc(val)}" ${String(sel)===String(val)?'selected':''}>${esc(lab)}</option>`; }).join(''); }
 function sucSelectOptions(sel){ return sucsVisibles().sort((a,b)=>cmp(sucLabel(a),sucLabel(b))).map(s=>`<option value="${s}" ${sel===s?'selected':''}>${esc(sucLabel(s))}</option>`).join(''); }
 
+/* ============================================================
+   CONCILIAR CON VENTAS — el cruce de identidades, una sola vez
+   Junta los nombres con que aparece la gente en el sistema de ventas
+   (último período del ETL de Indicadores + las últimas semanas de
+   `ventaEquipo` de recepciones-mateu, que es lo que tiene Diagonal 80)
+   y los cruza con los legajos. Cada nombre no reconocido se resuelve a
+   mano: VINCULAR a un legajo (queda como alias → de ahí en más el
+   cruce es exacto en todos los módulos), CREAR el legajo, o IGNORAR
+   (MERCADOLIBRE, MOSTRADOR, cuentas web…). Nunca se vincula solo.
+   ============================================================ */
+const VENTA_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
+let CONC = null;   // estado de la pantalla
+async function conciliarFuentes(){
+  const E=window.Equipo;
+  const porSlug={};   // slug -> norm -> {nombre, fuentes:Set, venta}
+  const add=(slug,nombre,fuente,venta)=>{
+    if(!slug||!nombre) return; const k=E.norm(nombre); if(!k) return;
+    const m=porSlug[slug]||(porSlug[slug]={});
+    const o=m[k]||(m[k]={nombre:String(nombre).trim(), fuentes:new Set(), venta:0});
+    o.fuentes.add(fuente); o.venta+=(+venta||0);
+  };
+  // 1) ETL de Indicadores (último período)
+  try{
+    const periodos=await fetch('../data/indicadores/periodos.json').then(r=>r.json());
+    const per=(periodos.periodos||[]).map(p=>p.id).sort().reverse()[0];
+    if(per){
+      const cadena=await fetch('../data/indicadores/'+per+'/cadena.json').then(r=>r.json());
+      const sucs=(cadena.sucursales||[]).map(x=>x.sucursal).filter(n=>DATA_SUC[n]&&enAlcance(DATA_SUC[n]));
+      await Promise.all(sucs.map(async nombre=>{
+        const archivo=nombre.replace(/\./g,'').replace(/\s+/g,'-');
+        let det; try{ det=await fetch('../data/indicadores/'+per+'/'+archivo+'.json').then(r=>r.json()); }catch(e){ return; }
+        (det.vendedores||[]).forEach(v=>{ if(v.cubre) return; add(DATA_SUC[nombre], v.vendedor, 'ETL '+per, v.importe_neto); });
+      }));
+    }
+  }catch(e){ console.warn('conciliar: sin ETL', e); }
+  // 2) venta semanal cargada en el portal (últimas 4 semanas por sucursal)
+  try{
+    const base=VENTA_URL+'/ventaEquipo';
+    const slugs=Object.keys((await fetch(base+'.json?shallow=true').then(r=>r.json()))||{}).filter(enAlcance);
+    await Promise.all(slugs.map(async slug=>{
+      const sems=Object.keys((await fetch(base+'/'+encodeURIComponent(slug)+'.json?shallow=true').then(r=>r.json()))||{}).sort().reverse().slice(0,4);
+      await Promise.all(sems.map(async sem=>{
+        const ve=await fetch(base+'/'+encodeURIComponent(slug)+'/'+sem+'.json').then(r=>r.json()).catch(()=>null);
+        ((ve&&ve.vendedores)||[]).forEach(x=>add(slug, x.nombre, 'sem '+sem, x.venta));
+      }));
+    }));
+  }catch(e){ console.warn('conciliar: sin ventaEquipo', e); }
+  return porSlug;
+}
+async function abrirConciliar(){
+  if(!window.Equipo){ toast('No cargó shared/equipo.js','err'); return; }
+  openModal('Conciliar con ventas', `<div class="state"><div class="spinner"></div>Leyendo los nombres del sistema de ventas…</div>`, '');
+  try{
+    const [fuentes, ign] = await Promise.all([conciliarFuentes(), HAS_DB?fbGet(ROOT+'/aliasIgnorados').catch(()=>null):null]);
+    CONC={fuentes, ignorados:ign||{}, filas:[], dupes:[], mudanzas:[]};
+    conciliarArmar();
+    conciliarRender();
+  }catch(e){ console.error(e); openModal('Conciliar con ventas', `<div class="empty"><div class="ic">⚠️</div><div class="t">No pude leer las fuentes</div><div class="s">${esc(e.message||e)}</div></div>`, `<button class="btn btn-primary" id="mCancel">Cerrar</button>`); $('mCancel').onclick=closeModal; }
+}
+// arma las filas pendientes: nombre de ventas sin legajo que lo reconozca
+function conciliarArmar(){
+  const E=window.Equipo;
+  const todos=Object.entries(LEGAJOS).map(([id,l])=>E.persona(id, E.resumen(l)));
+  const porSuc={}; todos.forEach(p=>{ (porSuc[p.sucursal||'']=porSuc[p.sucursal||'']||[]).push(p); });
+  const filas=[], mudanzas=[];
+  Object.entries(CONC.fuentes).forEach(([slug, m])=>{
+    const lista=porSuc[slug]||[];
+    const usados=new Set();
+    // primero los exactos (para no sugerir dos veces a la misma persona)
+    Object.entries(m).forEach(([k,o])=>{ const r=E.resolver(o.nombre, lista); if(r.exacto) usados.add(r.persona.id); });
+    Object.entries(m).forEach(([k,o])=>{
+      if(CONC.ignorados[k.replace(/ /g,'_')]) return;
+      if(E.resolver(o.nombre, lista).exacto) return;
+      // ¿lo reconoce un legajo de OTRA sucursal? Entonces la identidad está resuelta:
+      // vendió ahí (cobertura) o se mudó y el legajo quedó viejo → lo decide RRHH abajo.
+      const rg=E.resolver(o.nombre, todos);
+      if(rg.exacto){ if(rg.persona.estado!=='baja') mudanzas.push({slug, k, nombre:o.nombre, fuentes:[...o.fuentes], venta:o.venta, persona:rg.persona}); return; }
+      const r=E.resolver(o.nombre, lista, usados);
+      // sugerencia en la sucursal; si no hay, en todo el padrón (a confirmar; no se mueve sola)
+      let sug=r.sugerida, score=r.score, otra=null;
+      if(!sug || score<2){ const r2=E.resolver(o.nombre, todos.filter(p=>p.sucursal!==slug)); if(r2.sugerida && r2.score>score){ sug=r2.sugerida; score=r2.score; otra=r2.sugerida.sucursal; } }
+      filas.push({slug, k, nombre:o.nombre, fuentes:[...o.fuentes], venta:o.venta, sug, score, otra, lista,
+        accion: sug ? 'vincular' : 'crear', legId: sug?sug.id:'', mover:false, check: !!sug && score>=3 && !otra });
+    });
+  });
+  filas.sort((a,b)=>cmp(sucLabel(a.slug),sucLabel(b.slug)) || (b.venta-a.venta));
+  mudanzas.sort((a,b)=>(b.fuentes.length-a.fuentes.length) || (b.venta-a.venta));
+  CONC.filas=filas; CONC.mudanzas=mudanzas;
+  // legajos duplicados (mismo nombre normalizado o mismo DNI en la misma sucursal)
+  const seen={}; const dupes=[];
+  todos.filter(p=>p.estado!=='baja').forEach(p=>{
+    const l=LEGAJOS[p.id]||{};
+    const keys=[E.norm(p.nombre)+'|'+p.sucursal].concat(l.dni?['dni:'+l.dni]:[]);
+    keys.forEach(k=>{ if(seen[k] && seen[k]!==p.id){ dupes.push([seen[k], p.id]); } else seen[k]=p.id; });
+  });
+  CONC.dupes=dupes.filter(([a,b],i,arr)=>arr.findIndex(x=>x[0]===a&&x[1]===b)===i);
+}
+function conciliarRender(){
+  const E=window.Equipo;
+  const filas=CONC.filas;
+  const nSug=filas.filter(f=>f.sug).length, nNew=filas.filter(f=>!f.sug).length;
+  const grupos={}; filas.forEach((f,i)=>{ (grupos[f.slug]=grupos[f.slug]||[]).push(i); });
+  let body='';
+  body+=`<div class="kpis" style="margin-bottom:12px">
+    <div class="kpi warn"><div class="k">Nombres sin vincular</div><div class="v">${filas.length}</div><div class="s">${nSug} con sugerencia · ${nNew} sin candidato</div></div>
+    <div class="kpi ok"><div class="k">Ya reconocidos</div><div class="v">${Object.values(CONC.fuentes).reduce((a,m)=>a+Object.keys(m).length,0)-filas.length-Object.keys(CONC.ignorados).filter(k=>Object.values(CONC.fuentes).some(m=>m[k.replace(/_/g,' ')])).length}</div><div class="s">por nombre o alias</div></div>
+    <div class="kpi ${CONC.dupes.length?'bad':''}"><div class="k">Legajos duplicados</div><div class="v">${CONC.dupes.length}</div></div>
+  </div>`;
+  body+=`<div class="hintline" style="margin-bottom:10px">Cada nombre del sistema de ventas que ningún legajo reconoce. Elegí a quién corresponde y <b>Vincular</b> (queda como alias del legajo), <b>Crear</b> el legajo si es alguien nuevo, o <b>Ignorar</b> si no es una persona (MERCADOLIBRE, MOSTRADOR…). Las filas marcadas ✓ son sugerencias fuertes: se aplican todas juntas con el botón de abajo.</div>`;
+  if(!filas.length) body+=`<div class="empty"><div class="ic">✅</div><div class="t">Todo vinculado</div><div class="s">Todos los nombres de ventas tienen su legajo.</div></div>`;
+  Object.entries(grupos).forEach(([slug, idxs])=>{
+    body+=`<div class="card-h" style="font-size:15px;margin:12px 0 6px">${esc(sucLabel(slug))} <span class="sub">· ${idxs.length}</span></div>`;
+    body+=`<div class="tblwrap"><table class="grid"><thead><tr><th style="width:26px"></th><th>En ventas</th><th>Quién es</th><th></th></tr></thead><tbody>`;
+    idxs.forEach(i=>{
+      const f=filas[i];
+      const ops=['<option value="">— elegir legajo —</option>'].concat(f.lista.filter(p=>p.estado!=='baja').map(p=>`<option value="${p.id}" ${f.legId===p.id?'selected':''}>${esc(p.nombre)} · ${esc(p.puesto||'')}</option>`));
+      if(f.sug && f.otra) ops.push(`<option value="${f.sug.id}" ${f.legId===f.sug.id?'selected':''}>${esc(f.sug.nombre)} · está en ${esc(sucLabel(f.otra))}</option>`);
+      ops.push(`<option value="__nuevo" ${f.accion==='crear'?'selected':''}>+ Persona nueva (crear legajo)</option>`);
+      body+=`<tr>
+        <td><input type="checkbox" data-ck="${i}" ${f.check?'checked':''} title="Aplicar en el lote"></td>
+        <td><div class="nm">${esc(f.nombre)}</div><div class="sub">${esc(f.fuentes.slice(0,3).join(' · '))}${f.venta?' · '+fmtM(f.venta):''}</div></td>
+        <td><select class="sel" data-sel="${i}" style="width:100%;max-width:300px">${ops.join('')}</select>
+          ${f.sug?`<div class="sub" style="margin-top:3px">sugerido${f.otra?' · legajo en '+esc(sucLabel(f.otra))+' · <label style="cursor:pointer"><input type="checkbox" data-mv="'+i+'"'+(f.mover?' checked':'')+'> mover a '+esc(sucLabel(f.slug))+'</label>':''}</div>`:'<div class="sub" style="margin-top:3px;color:#9a3412">sin candidato en el padrón</div>'}</td>
+        <td><div class="rowact">
+          <button class="btn btn-primary btn-sm" data-ok="${i}">${f.accion==='crear'?'Crear':'Vincular'}</button>
+          <button class="btn btn-outline btn-sm" data-ign="${i}" title="No es una persona / no vincular">Ignorar</button>
+        </div></td></tr>`;
+    });
+    body+=`</tbody></table></div>`;
+  });
+  if(CONC.mudanzas.length){
+    body+=`<div class="card-h" style="font-size:15px;margin:16px 0 6px">Venden en otra sucursal que la de su legajo <span class="sub">· ${CONC.mudanzas.length}</span></div>
+      <div class="hintline">La persona está identificada, pero vendió en una sucursal distinta a la de su legajo. Si fue una <b>cobertura</b>, no hay nada que hacer. Si se <b>trasladó</b> y el legajo quedó viejo, movela: así su equipo, su Buscador y sus compensatorios quedan en la sucursal correcta.</div>`;
+    body+=`<div class="tblwrap"><table class="grid"><thead><tr><th>Persona</th><th>Legajo en</th><th>Vendió en</th><th></th></tr></thead><tbody>`;
+    CONC.mudanzas.forEach((m,i)=>{
+      body+=`<tr><td><div class="nm">${esc(m.persona.nombre)}</div><div class="sub">${esc(m.nombre)}</div></td>
+        <td>${esc(sucLabel(m.persona.sucursal))}</td>
+        <td><div class="nm">${esc(sucLabel(m.slug))}</div><div class="sub">${esc(m.fuentes.slice(0,4).join(' · '))}${m.fuentes.length>4?' · +'+(m.fuentes.length-4):''}${m.venta?' · '+fmtM(m.venta):''}</div></td>
+        <td><button class="btn btn-outline btn-sm" data-mud="${i}">Mover a ${esc(sucLabel(m.slug))}</button></td></tr>`;
+    });
+    body+=`</tbody></table></div>`;
+  }
+  if(CONC.dupes.length){
+    body+=`<div class="card-h" style="font-size:15px;margin:16px 0 6px">Legajos duplicados</div><div class="hintline">Dos legajos para la misma persona en la misma sucursal (o mismo DNI). <b>Unificar</b> conserva el primero (el más completo), le pasa el nombre del otro como alias y borra el segundo — solo si el segundo no tiene ausencias, sanciones ni compensatorios.</div>`;
+    body+=`<div class="tblwrap"><table class="grid"><thead><tr><th>Se conserva</th><th>Se elimina</th><th></th></tr></thead><tbody>`;
+    CONC.dupes.forEach(([a,b],i)=>{
+      // conservar el que tiene más datos (registro único / DNI / legajo_nro)
+      const la=LEGAJOS[a]||{}, lb=LEGAJOS[b]||{};
+      const peso=l=>(l.origen==='registro-unico'?4:0)+(l.dni?2:0)+(l.legajo_nro?1:0)+(l.ingreso?1:0);
+      const [keep, del]= peso(lb)>peso(la) ? [b,a] : [a,b];
+      const refs=conciliarReferencias(del);
+      body+=`<tr><td><div class="nm">${esc((LEGAJOS[keep]||{}).nombre)}</div><div class="sub">${esc(sucLabel((LEGAJOS[keep]||{}).sucursal))} · ${esc((LEGAJOS[keep]||{}).puesto||'')} · ${esc((LEGAJOS[keep]||{}).origen||'manual')}</div></td>
+        <td><div class="nm">${esc((LEGAJOS[del]||{}).nombre)}</div><div class="sub">${esc(sucLabel((LEGAJOS[del]||{}).sucursal))} · ${esc((LEGAJOS[del]||{}).origen||'manual')}${refs.length?' · <b style="color:#991b1b">tiene '+esc(refs.join(', '))+'</b>':''}</div></td>
+        <td>${refs.length?'<span class="sub">unificar a mano</span>':`<button class="btn btn-outline btn-sm" data-unif="${keep}|${del}">Unificar</button>`}</td></tr>`;
+    });
+    body+=`</tbody></table></div>`;
+  }
+  const foot=`<button class="btn btn-outline" id="mCancel">Cerrar</button>${filas.length?`<button class="btn btn-primary" id="concLote">✓ Aplicar las marcadas (${filas.filter(f=>f.check).length})</button>`:''}`;
+  openModal('Conciliar con ventas', body, foot);
+  document.querySelector('.modal').style.maxWidth='980px';
+  $('mCancel').onclick=()=>{ document.querySelector('.modal').style.maxWidth=''; closeModal(); };
+  document.querySelectorAll('[data-sel]').forEach(sel=>sel.onchange=()=>{ const f=filas[+sel.dataset.sel]; f.legId=sel.value==='__nuevo'?'':sel.value; f.accion=sel.value==='__nuevo'?'crear':'vincular'; const b=document.querySelector('[data-ok="'+sel.dataset.sel+'"]'); if(b) b.textContent=f.accion==='crear'?'Crear':'Vincular'; });
+  document.querySelectorAll('[data-ck]').forEach(ck=>ck.onchange=()=>{ filas[+ck.dataset.ck].check=ck.checked; const b=$('concLote'); if(b) b.textContent='✓ Aplicar las marcadas ('+filas.filter(f=>f.check).length+')'; });
+  document.querySelectorAll('[data-ok]').forEach(b=>b.onclick=()=>conciliarAplicar([filas[+b.dataset.ok]]));
+  document.querySelectorAll('[data-ign]').forEach(b=>b.onclick=()=>conciliarIgnorar(filas[+b.dataset.ign]));
+  document.querySelectorAll('[data-unif]').forEach(b=>b.onclick=()=>conciliarUnificar(...b.dataset.unif.split('|')));
+  document.querySelectorAll('[data-mv]').forEach(ck=>ck.onchange=()=>{ filas[+ck.dataset.mv].mover=ck.checked; });
+  document.querySelectorAll('[data-mud]').forEach(b=>b.onclick=()=>conciliarMover(CONC.mudanzas[+b.dataset.mud]));
+  if($('concLote')) $('concLote').onclick=()=>conciliarAplicar(filas.filter(f=>f.check));
+}
+function conciliarReferencias(legId){
+  const refs=[];
+  if(Object.values(AUSENCIAS).some(a=>a.legajoId===legId)) refs.push('ausencias');
+  if(Object.values(SANCIONES).some(a=>a.legajoId===legId)) refs.push('sanciones');
+  if(Object.values(COMPS).some(m=>m&&m[legId])) refs.push('compensatorios');
+  if(Object.values(SOLIC).some(m=>m&&Object.values(m).some(x=>x.legajoId===legId))) refs.push('solicitudes');
+  return refs;
+}
+async function conciliarAplicar(lista){
+  const E=window.Equipo;
+  const ok=lista.filter(f=>f.accion==='crear' || f.legId);
+  if(!ok.length){ toast('Elegí a quién corresponde cada nombre','err'); return; }
+  const btns=document.querySelectorAll('#modalFoot button, #modalBody button'); btns.forEach(b=>b.disabled=true);
+  try{
+    const patch={}; let creados=0, vinc=0;
+    for(const f of ok){
+      if(f.accion==='crear'){
+        const data={ nombre:E.titleCase(f.nombre), sucursal:f.slug, puesto:'Vendedor/a', regimen:'Full Time', alias:[f.k], estado:'activo', pendiente:false, ingreso:null, creado:nowISO(), actualizado:nowISO(), origen:'conciliacion' };
+        if(HAS_DB){ const r=await fbPost(ROOT+'/legajos', data); LEGAJOS[r.name]=data; } else { LEGAJOS['local-'+Object.keys(LEGAJOS).length]=data; }
+        creados++;
+      } else {
+        const l=LEGAJOS[f.legId]; if(!l) continue;
+        const alias=(Array.isArray(l.alias)?l.alias:[]).map(E.norm).filter(Boolean);
+        if(!alias.includes(f.k) && f.k!==E.norm(l.nombre)) alias.push(f.k);
+        l.alias=alias; l.actualizado=nowISO();
+        patch[f.legId+'/alias']=alias; patch[f.legId+'/actualizado']=l.actualizado;
+        if(f.mover && l.sucursal!==f.slug){ l.sucursal=f.slug; patch[f.legId+'/sucursal']=f.slug; }
+        vinc++;
+      }
+    }
+    if(HAS_DB && Object.keys(patch).length) await fbPatch(ROOT+'/legajos', patch);
+    await sincronizarEquipo();
+    toast((vinc?vinc+' vinculado'+(vinc===1?'':'s'):'')+(vinc&&creados?' · ':'')+(creados?creados+' legajo'+(creados===1?'':'s')+' creado'+(creados===1?'':'s'):''),'ok');
+    conciliarArmar(); conciliarRender(); refrescarBadges();
+  }catch(e){ console.error(e); toast('No se pudo aplicar','err'); btns.forEach(b=>b.disabled=false); }
+}
+async function conciliarMover(m){
+  const l=LEGAJOS[m.persona.id]; if(!l) return;
+  if(!confirm('Mover el legajo de «'+l.nombre+'» de '+sucLabel(l.sucursal)+' a '+sucLabel(m.slug)+'?')) return;
+  try{
+    const patch={}; patch[m.persona.id+'/sucursal']=m.slug; patch[m.persona.id+'/actualizado']=nowISO();
+    l.sucursal=m.slug; l.actualizado=nowISO();
+    if(HAS_DB) await fbPatch(ROOT+'/legajos', patch);
+    await sincronizarEquipo();
+    toast('Legajo movido a '+sucLabel(m.slug),'ok'); conciliarArmar(); conciliarRender(); refrescarBadges();
+  }catch(e){ console.error(e); toast('No se pudo mover','err'); }
+}
+async function conciliarIgnorar(f){
+  try{
+    CONC.ignorados[f.k.replace(/ /g,'_')]=true;
+    if(HAS_DB) await fbPut(ROOT+'/aliasIgnorados/'+f.k.replace(/ /g,'_'), {nombre:f.nombre, por:(SESSION.email||''), en:nowISO()});
+    conciliarArmar(); conciliarRender();
+  }catch(e){ toast('No se pudo guardar','err'); }
+}
+async function conciliarUnificar(keep, del){
+  const E=window.Equipo; const lk=LEGAJOS[keep], ld=LEGAJOS[del]; if(!lk||!ld) return;
+  if(!confirm('Unificar «'+ld.nombre+'» dentro de «'+lk.nombre+'» y borrar el legajo duplicado?')) return;
+  try{
+    const alias=(Array.isArray(lk.alias)?lk.alias:[]).map(E.norm).filter(Boolean);
+    [ld.nombre].concat(Array.isArray(ld.alias)?ld.alias:[]).map(E.norm).forEach(a=>{ if(a && a!==E.norm(lk.nombre) && !alias.includes(a)) alias.push(a); });
+    const patch={}; patch[keep+'/alias']=alias; patch[keep+'/actualizado']=nowISO(); patch[del]=null;
+    ['dni','cuil','legajo_nro','ingreso','telefono','email','direccion','nacimiento'].forEach(k=>{ if(!lk[k] && ld[k]){ patch[keep+'/'+k]=ld[k]; lk[k]=ld[k]; } });
+    lk.alias=alias; delete LEGAJOS[del];
+    if(HAS_DB) await fbPatch(ROOT+'/legajos', patch);
+    await sincronizarEquipo();
+    toast('Legajos unificados','ok'); conciliarArmar(); conciliarRender(); refrescarBadges();
+  }catch(e){ console.error(e); toast('No se pudo unificar','err'); }
+}
+
 /* ---------- Form Legajo ---------- */
 function formLegajo(id){
   const l = id? {...LEGAJOS[id]} : {estado:'activo', regimen:'Full Time', ingreso:hoyISO()};
@@ -2331,15 +2577,23 @@ function formLegajo(id){
     </div>
     <div class="frow one">
       <div class="f"><label>Notas</label><textarea class="inp" id="fNotas" rows="2">${esc(l.notas||'')}</textarea></div>
+    </div>
+    <div class="frow one">
+      <div class="f"><label>Nombres en el sistema de ventas (alias)</label><input class="inp" id="fAlias" value="${esc(aliasTexto(l))}" placeholder="Ej: CASAO KEVIN ARMANDO M. — separados por coma">
+      <div class="hintline" style="margin-top:4px">Así aparece la persona en la estadística de ventas / PMS. Con esto Mi Sucursal, la Academia y el Buscador la reconocen sin adivinar. Se completa solo desde <b>⇄ Conciliar con ventas</b>.</div></div>
     </div>`;
-  const foot = `<button class="btn btn-outline" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">${id?'Guardar cambios':'Crear legajo'}</button>`;
-  openModal(id?'Editar legajo':'Nuevo legajo', body, foot);
+  const pendBanner = l.pendiente ? `<div class="banner warn" style="margin-bottom:12px">Alta hecha desde <b>Mi Sucursal</b>${l.alta_por?' por '+esc(l.alta_por):''}${l.creado?' el '+fechaLabel(l.creado):''}. Al guardar queda <b>validada</b>.</div>` : '';
+  const foot = `<button class="btn btn-outline" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">${id?(l.pendiente?'Validar y guardar':'Guardar cambios'):'Crear legajo'}</button>`;
+  openModal(id?'Editar legajo':'Nuevo legajo', pendBanner+body, foot);
   $('mCancel').onclick=closeModal;
   $('mSave').onclick=async()=>{
     const nombre=$('fNombre').value.trim();
     if(!nombre){ toast('El nombre es obligatorio','err'); return; }
     if(!$('fSucF').value){ toast('Elegí la sucursal','err'); return; }
     const data={
+      ...l,   // conserva legajo_nro, origen, creado, alta_por… que el form no muestra
+      pendiente:false,
+      alias: aliasDesdeTexto($('fAlias').value),
       nombre, dni:$('fDni').value.trim(), sucursal:$('fSucF').value, puesto:$('fPuestoF').value,
       regimen:$('fRegimen').value, ingreso:$('fIngreso').value||null, cuil:$('fCuil').value.trim(),
       categoria:$('fCat').value.trim(), telefono:$('fTel').value.trim(), email:$('fEmail').value.trim(),
@@ -2359,7 +2613,23 @@ async function guardarLegajo(id, data){
       else { const r=await fbPost(ROOT+'/legajos', data); id=r.name; }
     } else { id=id||('local-'+Object.keys(LEGAJOS).length); }
     LEGAJOS[id]=data; closeModal(); render(); toast('Legajo guardado','ok');
+    sincronizarEquipo();
   }catch(e){ console.error(e); toast('No se pudo guardar','err'); }
+}
+// alias: texto "A, B" ↔ array normalizado
+function aliasTexto(l){ const a=l&&l.alias; const arr=Array.isArray(a)?a:(a&&typeof a==='object'?Object.values(a):[]); return arr.filter(Boolean).map(x=>String(x).toUpperCase()).join(', '); }
+function aliasDesdeTexto(t){ const E=window.Equipo; return String(t||'').split(/[,;\n]+/).map(x=>E?E.norm(x):x.trim().toLowerCase()).filter(Boolean).filter((x,i,a)=>a.indexOf(x)===i); }
+// Índice por sucursal (`rrhh/equipo/<slug>/<legajoId>`) que consumen Mi Sucursal,
+// el Buscador, la Academia y Tareas: se regenera entero desde legajos después de
+// cada escritura (se relee el nodo por si una sucursal dio un alta mientras tanto).
+async function sincronizarEquipo(){
+  if(!HAS_DB || !window.Equipo) return;
+  try{ const full=await fbGet(ROOT+'/legajos'); await Equipo.reconstruir(full||{}); }
+  catch(e){ console.error('índice de equipos', e); toast('El índice de equipos no se pudo actualizar','err'); }
+}
+async function validarLegajo(id){
+  const l=LEGAJOS[id]; if(!l) return;
+  await guardarLegajo(id, {...l, pendiente:false, validado_por:(SESSION.email||''), actualizado:nowISO()});
 }
 function formBaja(id){
   const l=LEGAJOS[id]; if(!l) return;
@@ -2394,6 +2664,7 @@ function detalleLegajo(id){
     ['DNI', l.dni||'—'],['CUIL', l.cuil||'—'],['Sucursal', sucLabel(l.sucursal)],['Puesto', l.puesto||'—'],
     ['Régimen', l.regimen||'—'],['Categoría', l.categoria||'—'],['Ingreso', fechaLabel(l.ingreso)],['Antigüedad', antiguedadLabel(l)],
     ['Teléfono', l.telefono||'—'],['Email', l.email||'—'],['Nacimiento', fechaLabel(l.nacimiento)],['Dirección', l.direccion||'—'],
+    ['N° legajo', l.legajo_nro||'—'],['En ventas (alias)', aliasTexto(l)||'sin vincular'],
   ];
   const vacBox=`<div class="card" style="margin:14px 0 6px;background:var(--off)"><div class="card-h" style="font-size:17px">Vacaciones ${new Date().getFullYear()}</div>
     <div class="dl-grid">
@@ -2665,12 +2936,13 @@ async function importarDotacion(){
         if(v.cubre) return; // coberturas: cada quien en su sucursal fija
         if(v.grupo==='Gerencia / otros' && /sin rol/i.test(v.sector||'')) return;
         const nombrePersona = titleCase(v.vendedor);
-        nuevos.push({ nombre:nombrePersona, sucursal:slug, puesto:puestoDe(v), regimen:/part time|refuerzo|días|dias/i.test(v.sector||'')?'Part Time':'Full Time' });
+        nuevos.push({ nombre:nombrePersona, sucursal:slug, puesto:puestoDe(v), regimen:/part time|refuerzo|días|dias/i.test(v.sector||'')?'Part Time':'Full Time', alias:[window.Equipo?Equipo.norm(v.vendedor):String(v.vendedor||'').toLowerCase()] });
       });
     }
     // deduplicar contra legajos existentes por nombre+sucursal
-    const existentes=new Set(Object.values(LEGAJOS).map(l=>(l.nombre||'').toLowerCase()+'|'+l.sucursal));
-    const aAgregar=nuevos.filter(n=>!existentes.has((n.nombre||'').toLowerCase()+'|'+n.sucursal));
+    const nk=s=>window.Equipo?Equipo.norm(s):String(s||'').toLowerCase();
+    const existentes=new Set(); Object.values(LEGAJOS).forEach(l=>{ existentes.add(nk(l.nombre)+'|'+l.sucursal); const a=Array.isArray(l.alias)?l.alias:[]; a.forEach(x=>existentes.add(nk(x)+'|'+l.sucursal)); });
+    const aAgregar=nuevos.filter(n=>!existentes.has(nk(n.nombre)+'|'+n.sucursal));
     if(!aAgregar.length){ openModal('Importar dotación', `<div class="empty"><div class="ic">✅</div><div class="t">Todo al día</div><div class="s">No hay personas nuevas en Indicadores (${esc(per)}) que no estén ya en los legajos.</div></div>`, `<button class="btn btn-primary" id="mCancel">Cerrar</button>`); $('mCancel').onclick=closeModal; return; }
     const preview=aAgregar.slice(0,60).map(n=>`<tr><td class="nm">${esc(n.nombre)}</td><td>${esc(sucLabel(n.sucursal))}</td><td>${esc(n.puesto)}</td><td><span class="tag ${n.regimen==='Full Time'?'ft':'pt'}">${esc(n.regimen)}</span></td></tr>`).join('');
     const body=`<div class="hintline">Encontré <b>${aAgregar.length}</b> persona(s) en Indicadores (${esc(per)}) que no están en los legajos. Se crean como <b>activos</b>, sin fecha de ingreso (la completás después). Los que ya existen no se tocan.</div>
@@ -2681,10 +2953,11 @@ async function importarDotacion(){
     $('mImport').onclick=async()=>{
       $('mImport').disabled=true; $('mImport').textContent='Creando…';
       for(const n of aAgregar){
-        const data={ nombre:n.nombre, sucursal:n.sucursal, puesto:n.puesto, regimen:n.regimen, estado:'activo', ingreso:null, creado:nowISO(), actualizado:nowISO(), origen:'indicadores:'+per };
+        const data={ nombre:n.nombre, sucursal:n.sucursal, puesto:n.puesto, regimen:n.regimen, alias:n.alias||[], estado:'activo', ingreso:null, creado:nowISO(), actualizado:nowISO(), origen:'indicadores:'+per };
         try{ if(HAS_DB){ const r=await fbPost(ROOT+'/legajos', data); LEGAJOS[r.name]=data; } else { LEGAJOS['local-'+Object.keys(LEGAJOS).length]=data; } }catch(e){ console.error(e); }
       }
       closeModal(); render(); toast(aAgregar.length+' legajo(s) importados','ok');
+      sincronizarEquipo();
     };
   }catch(e){
     console.error(e);
@@ -2882,6 +3155,7 @@ async function aplicarActualizar(){
     const full = HAS_DB ? (await fbGet(ROOT+'/legajos')||{}) : {...LEGAJOS};
     const plan = planActualizar(REG_PARSED, corte, modo, full);
     if(HAS_DB) await fbPut(ROOT+'/legajos', plan.result);
+    await sincronizarEquipo();
     await recargar(); closeModal(); state.tab='legajos'; syncTabs(); render();
     toast(`Listo: ${plan.nuevos} nuevos · ${plan.actualizados} actualizados · ${plan.bajasN} bajas`,'ok');
   }catch(e){ console.error(e); toast('No se pudo aplicar','err'); $('ruApply').disabled=false; $('ruApply').textContent='Aplicar'; }

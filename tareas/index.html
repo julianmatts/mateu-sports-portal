@@ -244,6 +244,7 @@ table.res{width:100%;border-collapse:collapse;background:#fff;border:1px solid v
 @media print{.tabs,.msh-top,.msh-subbar,.btn,.toast{display:none!important}}
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
+<script src="../shared/equipo.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <script>window.MATEU_HEADER={herramienta:'tareas'};</script>
 <!-- Header unificado del shell: barra Menú + logo + calendario retail + drawer -->
@@ -262,6 +263,7 @@ table.res{width:100%;border-collapse:collapse;background:#fff;border:1px solid v
   <div class="sub-yo" id="subYo" style="display:none">
     <label for="yoInp">Yo soy</label>
     <input class="inp" id="yoInp" placeholder="Tu nombre (firma lo que hacés)" maxlength="40">
+    <select class="sel" id="yoSel" style="display:none" title="Quién está operando (firma lo que hacés)"></select>
   </div>
 </div>
 
@@ -1075,6 +1077,16 @@ function pintarSubbar(){
     try{ state.yo=localStorage.getItem('tareas_yo_'+state.slug)||''; }catch(e){}
     $('yoInp').value=state.yo;
     $('yoInp').onchange=()=>{ state.yo=($('yoInp').value||'').trim(); try{ localStorage.setItem('tareas_yo_'+state.slug, state.yo); }catch(e){} };
+    // «Yo soy» desde el PADRÓN de la sucursal (shared/equipo.js): lista de personas en
+    // vez de texto libre; si la sucursal no tiene padrón, queda el campo de texto.
+    if(window.Equipo) Equipo.cargar(state.slug).then(lista=>{
+      const gente=Equipo.activos(lista); if(!gente.length) return;
+      const sel=$('yoSel'); if(!sel) return;
+      sel.innerHTML='<option value="">Yo soy…</option>'+gente.map(p=>'<option value="'+esc(p.nombre)+'"'+(p.nombre===state.yo?' selected':'')+'>'+esc(p.nombre)+' · '+esc(p.puesto)+'</option>').join('');
+      if(state.yo && !gente.some(p=>p.nombre===state.yo)){ const r=Equipo.resolver(state.yo, gente); if(r.exacto){ state.yo=r.persona.nombre; sel.value=state.yo; } }
+      sel.onchange=()=>{ state.yo=sel.value; try{ localStorage.setItem('tareas_yo_'+state.slug, state.yo); }catch(e){} };
+      $('yoInp').style.display='none'; sel.style.display='';
+    }).catch(()=>{});
   }
 }
 function init(){
