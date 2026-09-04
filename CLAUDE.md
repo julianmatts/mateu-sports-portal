@@ -161,7 +161,9 @@ La presentación del mes (`gestion-stock/?pres=YYYY-MM`, deck generado desde
 tiene usuario). En `init()` el chequeo de `?pres=` va ANTES del gate de sesión;
 el resto del módulo sigue gateado. El deck solo muestra agregados del mes.
 
-**Diseño del deck (03/09/2026, `gsPresHtml` + `gsPresTot`):** navy/rojo de marca,
+**Diseño del deck (03/09/2026, `gsPresHtml` + `gsPresTot`):** fondo **carbón neutro**
+(`--navy:#0B0D12`; 04/09, pedido de Juli: navy sobre navy no contrastaba) con el navy de marca
+reservado para tarjetas, paneles y tablas (`--navy-4`/`--navy-5`/`--navy-6`) y rojo de acento;
 números en Saira itálica 800 (la tipografía «rendimiento» del módulo), KPIs con
 conteo animado, delta ▲/▼ (más = peor, rojo) y **sparkline de los últimos 6 meses
 cargados** (`gsRenderPresentacion` baja los meses anteriores para la tendencia);
