@@ -31,7 +31,7 @@ global.requestAnimationFrame=fn=>setTimeout(fn,0);
 global.alert=()=>{}; global.confirm=()=>false; global.prompt=()=>null;
 global.matchMedia=()=>({matches:false,addEventListener(){}});
 global.IntersectionObserver=class{observe(){}};
-const api=new Function(code+'\n;return {gsPresHtml, gsPresTot};')();
+const api=new Function(code+'\n;return {gsPresHtml, gsPresTot, compararArticulosMes, gsSlugsOrdenados};')();
 (async()=>{
   const FB='https://discontinuos-mateu-default-rtdb.firebaseio.com';
   const get=async u=>(await fetch(u)).json();
@@ -40,6 +40,23 @@ const api=new Function(code+'\n;return {gsPresHtml, gsPresTot};')();
   const data=datos[meses.indexOf(ym)];
   const hist=meses.map((m,k)=>({ym:m, tot:api.gsPresTot(datos[k])}));
   const logo=(fs.readFileSync('shared/header.js','utf8').match(/LOGO = '([^']+)'/)||[])[1]||'';
-  fs.writeFileSync(out, api.gsPresHtml(ym, data, logo, hist));
-  console.log('ok', out, fs.statSync(out).size);
+  // "No trabajados" mes a mes desde el nodo discontinuos/ (igual que gsRenderPresentacion)
+  let noTrab=null;
+  try{
+    const dm=Object.keys(await get(FB+'/discontinuos.json?shallow=true')).sort().reverse();
+    const idx=dm.indexOf(ym);
+    if(idx>=0 && idx<dm.length-1){
+      const prevYm=dm[idx+1];
+      const [cur,prv]=await Promise.all([get(FB+'/discontinuos/'+ym+'.json'), get(FB+'/discontinuos/'+prevYm+'.json')]);
+      const porSlug={};
+      api.gsSlugsOrdenados().forEach(slug=>{
+        const cItems=((cur&&cur[slug]||{}).items)||[];
+        const pItems=((prv&&prv[slug]||{}).items)||[];
+        if(cItems.length||pItems.length) porSlug[slug]=api.compararArticulosMes(cItems,pItems).repetidos.length;
+      });
+      if(Object.keys(porSlug).length) noTrab={prevYm, porSlug};
+    }
+  }catch(e){ noTrab=null; }
+  fs.writeFileSync(out, api.gsPresHtml(ym, data, logo, hist, noTrab));
+  console.log('ok', out, fs.statSync(out).size, 'noTrab', noTrab?Object.keys(noTrab.porSlug).length+' suc vs '+noTrab.prevYm:'—');
 })().catch(e=>{ console.error('ERR', e); process.exit(1); });
