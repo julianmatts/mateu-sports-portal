@@ -166,7 +166,11 @@ el resto del módulo sigue gateado. El deck solo muestra agregados del mes.
 **Diseño del deck (03/09/2026, `gsPresHtml` + `gsPresTot`):** **tapa y pie navy, cuerpo
 claro** (04/09, pedido de Juli: se probó navy sobre navy y carbón; quedó el claro, mismo fondo
 `#f5f7fc` del portal): tarjetas blancas, texto navy, cabeceras de tabla y filas de total en navy
-con borde rojo, nav transparente sobre la tapa y blanco al scrollear (logo en oscuro);
+con borde rojo, nav transparente sobre la tapa y blanco al scrollear (logo en oscuro).
+**Regla de color (04/09):** navy = magnitud (barras Top 5, barras bajo los números, stock
+apilado navy+acero, óptimo/saludable), **rojo solo alerta** (crítico, exceso, ▲ empeoró),
+ámbar la zona intermedia y un verde apagado únicamente en ▼ mejoró. Clase `.f-nav` para las
+barras de magnitud;
 números en Saira itálica 800 (la tipografía «rendimiento» del módulo), KPIs con
 conteo animado, delta ▲/▼ (más = peor, rojo) y **sparkline de los últimos 6 meses
 cargados** (`gsRenderPresentacion` baja los meses anteriores para la tendencia);
