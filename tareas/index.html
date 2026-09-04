@@ -166,6 +166,31 @@ main{max-width:1100px;margin:0 auto;padding:22px 22px 90px}
 .hrow .hi b{font-family:var(--font-c);font-size:13px}
 
 /* ===== resumen todas ===== */
+.subtabs{display:inline-flex;border:1.5px solid var(--border);border-radius:9px;overflow:hidden;background:#fff;margin-bottom:16px}
+.subtab{border:0;background:none;cursor:pointer;padding:9px 16px;font-family:var(--font-c);font-size:13px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.subtab + .subtab{border-left:1.5px solid var(--border)}
+.subtab.on{background:var(--navy);color:#fff}
+.res td.num{text-align:right;font-family:var(--font-c);font-weight:600}
+.res tr.tot td{background:#f3f5fa;font-weight:700;border-top:2px solid var(--navy)}
+.idx{display:inline-block;min-width:44px;text-align:center;border-radius:6px;padding:3px 8px;font-family:var(--font-d);font-size:17px;letter-spacing:.5px}
+.idx.ok{background:var(--ok-bg);color:#166534}.idx.amb{background:var(--warn-bg);color:#92400e}.idx.bad{background:var(--bad-bg);color:#991b1b}.idx.na{background:#eef2f9;color:var(--muted)}
+.ggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.gv{background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;box-shadow:var(--shadow)}
+.gv.alerta{border-color:#fca5a5}.gv.warn{border-color:#fcd34d}
+.gv .im{aspect-ratio:4/3;background:#eef2f9;display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:var(--font-c);font-size:12px}
+.gv .im img{width:100%;height:100%;object-fit:cover;display:block}
+.gv .b{padding:8px 10px}
+.gv .s{font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.gv .n{font-family:var(--font-c);font-size:14px;font-weight:700;line-height:1.1;margin-top:1px}
+.gv .d{font-size:12px;margin-top:3px}.gv .d.bad{color:var(--bad);font-weight:700}.gv .d.warn{color:var(--warn)}.gv .d.ok{color:var(--ok)}
+.rec{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:start}
+.rec .t{font-family:var(--font-c);font-size:18px;font-weight:700;line-height:1.1}
+.rec .acts{display:flex;gap:6px;flex-wrap:wrap}
+.chk-line{display:flex;align-items:center;gap:8px;font-size:13.5px;margin:4px 0 12px;cursor:pointer}
+.chk-line input{width:17px;height:17px}
+.mes-sel{display:inline-flex;align-items:center;gap:8px}
+.mes-sel .sel{width:auto}
+@media(max-width:640px){ .rec{grid-template-columns:1fr} .subtabs{width:100%;overflow-x:auto} }
 table.res{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden;font-size:13px}
 .res th{background:var(--navy);color:#fff;font-family:var(--font-c);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:10px 10px;text-align:left;border-bottom:3px solid var(--red)}
 .res td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
@@ -221,7 +246,7 @@ table.res{width:100%;border-collapse:collapse;background:#fff;border:1px solid v
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--navy);color:#fff;
   padding:11px 18px;border-radius:9px;font-size:13.5px;box-shadow:var(--shadow-md);opacity:0;pointer-events:none;transition:all .25s;z-index:1300}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-.toast.ok{background:#166534}.toast.err{background:#991b1b}
+.toast.ok{background:#166534}.toast.err{background:#991b1b}.toast.warn{background:#92400e}
 .ro{font-size:12.5px;color:var(--muted);font-style:italic}
 
 /* CELULAR */
@@ -246,6 +271,8 @@ table.res{width:100%;border-collapse:collapse;background:#fff;border:1px solid v
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
 <script src="../shared/equipo.js"></script>
 <script src="../shared/iconos.js" defer></script>
+<!-- ExcelJS: export del resumen / cumplimiento (solo gerencia, carga diferida) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js" defer></script>
 <script>window.MATEU_HEADER={herramienta:'tareas'};</script>
 <!-- Header unificado del shell: barra Menú + logo + calendario retail + drawer -->
 <script src="../shared/header.js" defer></script>
@@ -275,6 +302,7 @@ table.res{width:100%;border-collapse:collapse;background:#fff;border:1px solid v
 </nav>
 
 <main>
+  <div class="banner warn" id="colaBanner" style="display:none"></div>
   <div id="view"><div class="state"><div class="spinner"></div>Cargando…</div></div>
 </main>
 
@@ -317,6 +345,13 @@ const MENSAJES_DB_URL = 'https://mensajes-mateu-default-rtdb.firebaseio.com';
 const USUARIOS_DB_URL = 'https://discontinuos-mateu-default-rtdb.firebaseio.com';
 // Vidriera sin cambios: días por defecto para la alerta (gerencia lo ajusta en el módulo).
 const DIAS_VIDRIERA_DEF = 15;
+// Firebase Storage (opcional): cuando Juli cree el bucket (Firebase → Storage → «Comenzar»,
+// reglas abiertas) y pegue acá su nombre (p.ej. 'recepciones-mateu.appspot.com'), las fotos
+// grandes suben ahí por REST y en la base queda solo la URL. Vacío = data URI en la RTDB.
+const STORAGE_BUCKET = '';
+// Poda: las fotos grandes de tareas hechas y limpiezas de hace más de N días se borran
+// (queda la miniatura y el registro). Las vidrieras conservan todo su historial.
+const PODA_DIAS = 90;
 // A quién le llega el aviso de vidriera en alerta además de la sucursal (supervisor).
 const ALERTA_AVISADOS = ['cristian.campion@mateu.com.ar'];
 
@@ -385,12 +420,51 @@ function nombreCorto(email){
 function firma(){ const yo=(state.yo||'').trim(); return yo ? yo+' ('+nombreCorto(SESSION.email)+')' : nombreCorto(SESSION.email); }
 function sortBy(arr, f, desc){ return arr.slice().sort((a,b)=>{ const x=f(a), y=f(b); return (x<y?-1:x>y?1:0)*(desc?-1:1); }); }
 
-/* ---------- Firebase REST ---------- */
-function fbUrl(path){ return FIREBASE_DB_URL.replace(/\/+$/,'') + '/' + (ROOT+'/'+path).split('/').map(encodeURIComponent).join('/') + '.json'; }
+/* ---------- Firebase REST ----------
+   Las escrituras pasan por fbWrite: si no hay conexión (fetch falla por red), el
+   cambio queda en una COLA en localStorage (`tareas_cola`) y se reintenta solo al
+   volver la señal (`online`), al abrir el módulo y cada 30 s. La pantalla se
+   actualiza igual, así el que está en la vidriera sin señal no pierde la foto. */
+function fbUrl(path){ return FIREBASE_DB_URL.replace(/\/+$/,'') + '/' + (ROOT+(path?'/'+path:'')).split('/').map(encodeURIComponent).join('/') + '.json'; }
 async function fbGet(path){ const r=await fetch(fbUrl(path)); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
-async function fbPut(path, data){ const r=await fetch(fbUrl(path),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
-async function fbPatch(path, data){ const r=await fetch(fbUrl(path),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
-async function fbDel(path){ const r=await fetch(fbUrl(path),{method:'DELETE'}); if(!r.ok) throw new Error('Firebase HTTP '+r.status); return r.json(); }
+const COLA_KEY='tareas_cola';
+let _colaEnviando=false;
+function colaLeer(){ try{ return JSON.parse(localStorage.getItem(COLA_KEY)||'[]'); }catch(e){ return []; } }
+function colaGuardar(q){ try{ localStorage.setItem(COLA_KEY, JSON.stringify(q)); return true; }catch(e){ return false; } }
+function esErrorRed(e){ return !!e && (e.name==='TypeError' || /Failed to fetch|NetworkError|Load failed|network/i.test(e.message||'')); }
+async function fbWrite(method, path, data){
+  try{
+    const r=await fetch(fbUrl(path),{method, headers:{'Content-Type':'application/json'}, body: method==='DELETE'?undefined:JSON.stringify(data)});
+    if(!r.ok) throw new Error('Firebase HTTP '+r.status);
+    return r.json();
+  }catch(e){
+    if(!esErrorRed(e) || _colaEnviando) throw e;
+    const q=colaLeer(); q.push({method, path, data: method==='DELETE'?null:data, ts:Date.now()});
+    const txt=JSON.stringify(q);
+    if(txt.length>4e6 || !colaGuardar(q)) throw new Error('Sin conexión y sin lugar para guardar el cambio en este dispositivo');
+    pintarCola(); toast('Sin conexión: quedó guardado en este dispositivo y se manda al volver la señal','warn');
+    return {__cola:true};
+  }
+}
+const fbPut=(path,data)=>fbWrite('PUT',path,data);
+const fbPatch=(path,data)=>fbWrite('PATCH',path,data);
+const fbDel=(path)=>fbWrite('DELETE',path);
+async function colaEnviar(manual){
+  if(_colaEnviando) return; const q=colaLeer(); if(!q.length){ pintarCola(); return; }
+  _colaEnviando=true; let n=0;
+  try{
+    while(q.length){ const it=q[0]; await fbWrite(it.method, it.path, it.data); q.shift(); colaGuardar(q); n++; }
+    toast('Se enviaron '+n+' cambio'+(n===1?'':'s')+' pendiente'+(n===1?'':'s'),'ok');
+    _colaEnviando=false; pintarCola(); recargar();
+  }catch(e){ _colaEnviando=false; pintarCola(); if(manual) toast('Todavía sin conexión ('+(n?n+' enviados':'nada enviado')+')','warn'); }
+}
+function pintarCola(){
+  const b=$('colaBanner'); if(!b) return; const q=colaLeer();
+  if(!q.length){ b.style.display='none'; return; }
+  b.style.display=''; b.innerHTML='⏳ <b>'+q.length+' cambio'+(q.length===1?'':'s')+' esperando conexión</b> · se mandan solos al volver la señal. <button class="cmp-link" style="margin:0" onclick="colaEnviar(true)">Reintentar ahora</button>';
+}
+window.addEventListener('online', ()=>colaEnviar(false));
+setInterval(()=>{ if(colaLeer().length && navigator.onLine!==false) colaEnviar(false); }, 30000);
 
 /* ---------- Bandeja del Portal (best-effort) ---------- */
 const fbKeyMail=e=>(e||'').toLowerCase().trim().replace(/\./g,',');
@@ -424,6 +498,9 @@ const state = {
   filtro:{precios:'pend', sectores:'pend'},
   yo:'',
   resumen:null,
+  recurrentes:{},
+  resVista:'hoy',            // subvista del resumen de gerencia: hoy · cumpl · galeria · recurrentes
+  cumplMes:mesDe(),
   cargando:false,
 };
 try{ const t=localStorage.getItem('tareas_tab'); if(t && ['precios','sectores','limpieza','vidrieras'].includes(t)) state.tab=t; }catch(e){}
@@ -462,20 +539,94 @@ async function cargarSucursal(slug){
 }
 async function cargarTodas(){
   state.cargando=true;
-  const [pr, se, li, vi, cfg] = await Promise.all([
+  const [pr, se, li, vi, cfg, rec] = await Promise.all([
     fbGet('precios').catch(()=>null), fbGet('sectores').catch(()=>null),
     fbGet('limpieza').catch(()=>null), fbGet('vidrieras').catch(()=>null), fbGet('config/global').catch(()=>null),
+    fbGet('recurrentes').catch(()=>null),
   ]);
   if(cfg && cfg.diasVidriera) state.cfg.diasVidriera=Number(cfg.diasVidriera)||DIAS_VIDRIERA_DEF;
   state.resumen={precios:pr||{}, sectores:se||{}, limpieza:li||{}, vidrieras:vi||{}};
+  state.recurrentes=rec||{};
   state.cargando=false;
 }
 async function recargar(){
   try{
     if(state.slug) await cargarSucursal(state.slug); else await cargarTodas();
     render();
-    if(state.slug) avisarVidrierasEnAlerta().catch(()=>{});
+    if(state.slug){
+      avisarVidrierasEnAlerta().catch(()=>{});
+      avisarVencidas({[state.slug]:{precios:state.data.precios, sectores:state.data.sectores}}).catch(()=>{});
+    }else if(esGerencia){
+      // circuitos automáticos de gerencia (no hay backend con cron): se disparan al abrir el resumen
+      const porSlug={}; storesVisibles().forEach(st=>{ porSlug[st.slug]={precios:state.resumen.precios[st.slug], sectores:state.resumen.sectores[st.slug]}; });
+      avisarVencidas(porSlug).catch(()=>{});
+      const gen=await generarRecurrentes().catch(()=>0);
+      if(gen){ toast('Se generaron '+gen+' tarea'+(gen===1?'':'s')+' recurrente'+(gen===1?'':'s'),'ok'); await cargarTodas(); render(); }
+      podarFotos().catch(()=>{});
+    }
   }catch(e){ $('view').innerHTML='<div class="state err"><div class="big-ic">⚠️</div>No se pudo cargar: '+esc(e.message)+'</div>'; }
+}
+function sumarDias(iso, n){ const d=new Date(iso+'T12:00:00'); d.setDate(d.getDate()+n); return hoyISO(d); }
+/* Aviso por la Bandeja de tareas VENCIDAS (fecha pasada sin marcar): a las cuentas de
+   la sucursal + supervisor, una sola vez por tarea (flag tareas/alertasVenc/<slug>/<id>). */
+async function avisarVencidas(porSlug){
+  const slugs=Object.keys(porSlug||{}); if(!slugs.length) return;
+  let flags=null; const patch={};
+  for(const slug of slugs){
+    const venc=[];
+    ['precios','sectores'].forEach(tipo=>pendientes(porSlug[slug]&&porSlug[slug][tipo]).filter(vencida).forEach(t=>venc.push({tipo,t})));
+    if(!venc.length) continue;
+    if(!flags) flags=await fbGet('alertasVenc').catch(()=>null)||{};
+    const nuevas=venc.filter(x=>!(flags[slug]&&flags[slug][x.t.id])); if(!nuevas.length) continue;
+    const mails=[...await mailsDeSucursal(slug), ...ALERTA_AVISADOS];
+    const texto='⚠ '+nombreSuc(slug)+': '+nuevas.length+' tarea'+(nuevas.length===1?'':'s')+' vencida'+(nuevas.length===1?'':'s')+' sin hacer: '
+      +nuevas.map(x=>'«'+x.t.titulo+'» ('+TIPOS[x.tipo].nombre+', '+fmtFecha(x.t.vigencia||x.t.limite)+')').join(', ')
+      +'. Hacela y marcala como hecha en Tareas de la Sucursal.';
+    await directo(mails, texto);
+    nuevas.forEach(x=>patch[slug+'/'+x.t.id]=Date.now());
+  }
+  if(Object.keys(patch).length) await fbPatch('alertasVenc', patch).catch(()=>{});
+}
+/* Poda de fotos grandes (gerencia, una vez por día por dispositivo): tareas hechas y
+   limpiezas de hace más de PODA_DIAS días pierden la foto grande; queda la miniatura
+   y el registro (marcado `podada`). Las vidrieras no se podan. */
+async function podarFotos(){
+  const k='tareas_poda_'+hoyISO(); try{ if(localStorage.getItem(k)) return; }catch(e){}
+  const R=state.resumen; if(!R) return; const lim=Date.now()-PODA_DIAS*86400000; const patch={}; let n=0;
+  ['precios','sectores'].forEach(tipo=>Object.keys(R[tipo]).forEach(slug=>lista(R[tipo][slug]).forEach(t=>{
+    if(t.estado!=='hecha' || !(t.hecho && t.hecho.ts<lim)) return;
+    ['antes','despues'].forEach(l=>{ const r=t.fotos&&t.fotos[l]; if(r&&(r.id||r.url)){ borrarFoto(slug,r); const b=tipo+'/'+slug+'/'+t.id+'/fotos/'+l; patch[b+'/id']=null; patch[b+'/url']=null; patch[b+'/podada']=true; n++; } });
+  })));
+  Object.keys(R.limpieza).forEach(slug=>lista(R.limpieza[slug]).forEach(i=>Object.entries(i.hechos||{}).forEach(([per,h])=>{
+    if(!h || !(h.ts && h.ts<lim)) return;
+    ['antes','despues'].forEach(l=>{ const r=h[l]; if(r&&(r.id||r.url)){ borrarFoto(slug,r); const b='limpieza/'+slug+'/'+i.id+'/hechos/'+per+'/'+l; patch[b+'/id']=null; patch[b+'/url']=null; patch[b+'/podada']=true; n++; } });
+  })));
+  if(n) await fbPatch('', patch);
+  try{ localStorage.setItem(k,'1'); }catch(e){}
+}
+/* Plantillas recurrentes (gerencia): cada N días se genera sola la tarea en sus
+   sucursales, con fecha = vencimiento + plazo. Se corre al abrir el resumen. */
+async function generarRecurrentes(){
+  const rec=state.recurrentes||{}; const hoy=hoyISO(); const patch={}; let n=0; const avisos=[];
+  for(const [id,r] of Object.entries(rec)){
+    if(!r || r.activo===false || !r.proximo || r.proximo>hoy) continue;
+    const cada=Math.max(1, Number(r.cadaDias)||7);
+    let prox=r.proximo; while(prox<=hoy) prox=sumarDias(prox, cada);
+    const due=sumarDias(prox, -cada);                       // la última ocurrencia vencida
+    const fecha=sumarDias(due, Math.max(0, Number(r.plazoDias)||0));
+    const slugs=(r.sucursales&&r.sucursales.length)?r.sucursales:STORES.map(x=>x.slug);
+    const tipo=r.tipo==='sectores'?'sectores':'precios';
+    const base={ titulo:r.titulo, marca:r.marca||'', detalle:r.detalle||'', estado:'pendiente', origen:'gerencia', recurrente:id, exigeFoto:!!r.exigeFoto,
+      creado:{por:'Recurrente · '+nombreCorto(SESSION.email), mail:SESSION.email||'', ts:Date.now()} };
+    if(tipo==='precios') base.vigencia=fecha; else { base.limite=fecha; base.ubicacion=r.ubicacion||''; }
+    slugs.forEach(sl=>{ patch[tipo+'/'+sl+'/'+uid()]=base; n++; });
+    patch['recurrentes/'+id+'/proximo']=prox; patch['recurrentes/'+id+'/ultima']=hoy;
+    avisos.push({tipo, base, slugs});
+  }
+  if(!n) return 0;
+  await fbPatch('', patch);
+  avisos.forEach(a=>avisarTareaNueva(a.tipo, a.base, a.slugs).catch(()=>{}));
+  return n;
 }
 
 /* ============================================================
@@ -547,15 +698,33 @@ function pedirFoto(){
     inp.click();
   });
 }
-// Guarda la foto grande en tareas/fotos/<slug>/<id> y devuelve la referencia liviana para el ítem.
+// Guarda la foto grande (Storage si hay bucket; si no, tareas/fotos/<slug>/<id> en la
+// RTDB) y devuelve la referencia liviana para el ítem: {id, thumb, ts, por[, url]}.
 async function guardarFoto(slug, foto){
-  const id=uid();
-  await fbPut('fotos/'+slug+'/'+id, {data:foto.full, ts:Date.now(), por:firma()});
-  return {id, thumb:foto.thumb, ts:Date.now(), por:firma()};
+  const id=uid(); const ref={id, thumb:foto.thumb, ts:Date.now(), por:firma()};
+  if(STORAGE_BUCKET){
+    try{ ref.url=await storageSubir(slug+'/'+id+'.jpg', foto.full); return ref; }
+    catch(e){ if(esErrorRed(e)) throw e; console.warn('Storage falló, cae a la RTDB', e); }
+  }
+  await fbPut('fotos/'+slug+'/'+id, {data:foto.full, ts:ref.ts, por:ref.por});
+  return ref;
+}
+async function storageSubir(name, dataUri){
+  const blob=await (await fetch(dataUri)).blob();
+  const r=await fetch('https://firebasestorage.googleapis.com/v0/b/'+STORAGE_BUCKET+'/o?name='+encodeURIComponent(ROOT+'/'+name),{method:'POST',headers:{'Content-Type':'image/jpeg'},body:blob});
+  if(!r.ok) throw new Error('Storage HTTP '+r.status);
+  const j=await r.json();
+  return 'https://firebasestorage.googleapis.com/v0/b/'+STORAGE_BUCKET+'/o/'+encodeURIComponent(j.name)+'?alt=media&token='+j.downloadTokens;
+}
+// Borra la foto grande (no la miniatura, que vive en el ítem). Best-effort.
+function borrarFoto(slug, ref){
+  if(!ref) return;
+  if(ref.url){ fetch(ref.url.split('?')[0],{method:'DELETE'}).catch(()=>{}); }
+  else if(ref.id) fbDel('fotos/'+slug+'/'+ref.id).catch(()=>{});
 }
 const _fotoCache={};
 async function bajarFoto(slug, ref){
-  if(!ref) return null; if(!ref.id) return ref.thumb||null;
+  if(!ref) return null; if(ref.url) return ref.url; if(!ref.id) return ref.thumb||null;
   const k=slug+'/'+ref.id; if(_fotoCache[k]) return _fotoCache[k];
   const f=await fbGet('fotos/'+slug+'/'+ref.id).catch(()=>null);
   const d=(f&&f.data)||ref.thumb||null; if(d) _fotoCache[k]=d; return d;
@@ -651,7 +820,7 @@ function tareaCard(tipo,t){
     +'<div class="t">'+esc(t.titulo)+(t.origen==='gerencia'?'<span class="tag ger">Gerencia</span>':'')+'</div>'
     +(t.detalle?'<div class="d">'+esc(t.detalle)+'</div>':'')
     +'<div class="meta">'+(t.marca?'<span class="tag navy">'+esc(t.marca)+'</span>':'')+(t.ubicacion?'<span class="tag">📍 '+esc(t.ubicacion)+'</span>':'')+fechaTag
-    +(hecha?'<span class="tag ok">✓ Hecha</span>':'<span class="tag amb">Pendiente</span>')+'</div>'
+    +(hecha?'<span class="tag ok">✓ Hecha</span>':'<span class="tag amb">Pendiente</span>')+(t.exigeFoto&&!hecha?'<span class="tag">📷 exige foto</span>':'')+(t.recurrente?'<span class="tag">🔁 recurrente</span>':'')+'</div>'
     +'<div class="fotos">'+fotoHtml(t.fotos&&t.fotos.antes,'antes',(t.fotos&&t.fotos.antes)?'verFotos('+q+')':'subirFotoTarea('+q+',\'antes\')',(!hecha||esGerencia)&&t.fotos&&t.fotos.antes?'quitarFotoTarea('+q+',\'antes\')':'')
     +fotoHtml(t.fotos&&t.fotos.despues,'despues',(t.fotos&&t.fotos.despues)?'verFotos('+q+')':'subirFotoTarea('+q+',\'despues\')',(!hecha||esGerencia)&&t.fotos&&t.fotos.despues?'quitarFotoTarea('+q+',\'despues\')':'')+'</div>'
     +(t.fotos&&t.fotos.antes&&t.fotos.despues?'<button class="cmp-link" onclick="verFotos('+q+')">⇄ Ver comparativa antes / después</button>':'')
@@ -679,7 +848,7 @@ async function quitarFotoTarea(tipo,id,lado){
   try{
     const t=state.data[tipo][id]; const ref=t.fotos&&t.fotos[lado];
     await fbDel(tipo+'/'+state.slug+'/'+id+'/fotos/'+lado);
-    if(ref&&ref.id) fbDel('fotos/'+state.slug+'/'+ref.id).catch(()=>{});
+    borrarFoto(state.slug, ref);
     delete t.fotos[lado]; render();
   }catch(e){ toast('No se pudo quitar: '+e.message,'err'); }
 }
@@ -690,7 +859,12 @@ function formTarea(tipo, t){
     +(esP?'<div class="fld"><label>Vigencia (desde cuándo rige)</label><input class="inp" type="date" id="fFecha" value="'+esc(t.vigencia||'')+'"></div>'
          :'<div class="fld"><label>Fecha límite</label><input class="inp" type="date" id="fFecha" value="'+esc(t.limite||'')+'"></div>')+'</div>'
     +(esP?'':'<div class="fld"><label>Dónde (sector / pared / góndola)</label><input class="inp" id="fUbic" maxlength="60" placeholder="Ej.: Pared derecha, entrada" value="'+esc(t.ubicacion||'')+'"></div>')
-    +'<div class="fld"><label>Detalle</label><textarea class="ta" id="fDetalle" placeholder="'+(esP?'Artículos, porcentaje, cartelería, lo que haga falta aclarar…':'Qué productos van, cómo tiene que quedar, referencias…')+'">'+esc(t.detalle||'')+'</textarea></div>';
+    +'<div class="fld"><label>Detalle</label><textarea class="ta" id="fDetalle" placeholder="'+(esP?'Artículos, porcentaje, cartelería, lo que haga falta aclarar…':'Qué productos van, cómo tiene que quedar, referencias…')+'">'+esc(t.detalle||'')+'</textarea></div>'
+    +exigeFotoHtml(t);
+}
+function exigeFotoHtml(t){
+  const on = t && t.id!=null ? !!t.exigeFoto : esGerencia;   // nueva: gerencia exige por defecto
+  return '<label class="chk-line"><input type="checkbox" id="fExige" '+(on?'checked':'')+'> Exigir la foto de <b>después</b> para poder marcarla hecha</label>';
 }
 function nuevaTarea(tipo){
   const T=TIPOS[tipo];
@@ -700,7 +874,7 @@ function nuevaTarea(tipo){
 }
 function leerForm(tipo){
   const titulo=($('fTitulo').value||'').trim(); if(!titulo){ toast('Escribí qué hay que hacer','err'); return null; }
-  const o={ titulo, marca:($('fMarca').value||'').trim(), detalle:($('fDetalle').value||'').trim() };
+  const o={ titulo, marca:($('fMarca').value||'').trim(), detalle:($('fDetalle').value||'').trim(), exigeFoto:!!($('fExige')&&$('fExige').checked) };
   const f=$('fFecha').value||'';
   if(tipo==='precios') o.vigencia=f; else { o.limite=f; o.ubicacion=($('fUbic')&&$('fUbic').value||'').trim(); }
   return o;
@@ -736,16 +910,17 @@ async function guardarEdicion(tipo,id){
 }
 function marcarHecha(tipo,id){
   const t=state.data[tipo][id]; if(!t) return;
-  const sinDesp=!(t.fotos&&t.fotos.despues);
+  const sinDesp=!(t.fotos&&t.fotos.despues); const bloquea=sinDesp && t.exigeFoto;
   abrirHoja('✓ Marcar como hecha',
     '<p style="font-size:14px;margin-bottom:12px"><b>'+esc(t.titulo)+'</b></p>'
-    +(sinDesp?'<div class="banner warn">📷 Todavía no cargaste la foto de <b>después</b>. Podés sacarla ahora para que quede la comparativa.</div><div style="margin-bottom:12px"><button class="btn btn-navy" onclick="cerrarHoja();subirFotoTarea(\''+tipo+'\',\''+id+'\',\'despues\',\'hecha\')">📷 Sacar la foto de después</button></div>':'')
+    +(sinDesp?'<div class="banner '+(bloquea?'bad':'warn')+'">📷 '+(bloquea?'Esta tarea <b>exige la foto de después</b> para marcarla hecha.':'Todavía no cargaste la foto de <b>después</b>. Podés sacarla ahora para que quede la comparativa.')+'</div><div style="margin-bottom:12px"><button class="btn btn-navy" onclick="cerrarHoja();subirFotoTarea(\''+tipo+'\',\''+id+'\',\'despues\',\'hecha\')">📷 Sacar la foto de después</button></div>':'')
     +'<div class="fld"><label>Nota (opcional)</label><input class="inp" id="fNota" maxlength="120" placeholder="Ej.: quedó todo remarcado, faltan 3 carteles"></div>'
     +'<div class="ro">Firma: '+esc(firma())+'</div>',
-    '<button class="btn btn-outline" onclick="cerrarHoja()">Cancelar</button><button class="btn btn-ok" onclick="confirmarHecha(\''+tipo+'\',\''+id+'\')">✓ Confirmar</button>');
+    '<button class="btn btn-outline" onclick="cerrarHoja()">Cancelar</button><button class="btn btn-ok" '+(bloquea?'disabled title="Falta la foto de después"':'')+' onclick="confirmarHecha(\''+tipo+'\',\''+id+'\')">✓ Confirmar</button>');
 }
 async function confirmarHecha(tipo,id){
   const t=state.data[tipo][id]; const nota=($('fNota').value||'').trim();
+  if(t.exigeFoto && !(t.fotos&&t.fotos.despues)){ toast('Falta la foto de después','err'); return; }
   const hecho={por:firma(), mail:SESSION.email||'', ts:Date.now(), nota};
   try{
     await fbPatch(tipo+'/'+state.slug+'/'+id, {estado:'hecha', hecho});
@@ -765,7 +940,7 @@ async function borrarTarea(tipo,id){
   if(!confirm('¿Borrar «'+t.titulo+'»? Se pierden también sus fotos.')) return;
   try{
     await fbDel(tipo+'/'+state.slug+'/'+id);
-    ['antes','despues'].forEach(l=>{ const r=t.fotos&&t.fotos[l]; if(r&&r.id) fbDel('fotos/'+state.slug+'/'+r.id).catch(()=>{}); });
+    ['antes','despues'].forEach(l=>borrarFoto(state.slug, t.fotos&&t.fotos[l]));
     delete state.data[tipo][id]; render();
   }catch(e){ toast('No se pudo borrar: '+e.message,'err'); }
 }
@@ -946,7 +1121,7 @@ async function borrarVidriera(id){
   const v=state.data.vidrieras[id]; if(!confirm('¿Borrar «'+v.nombre+'» con todo su historial de cambios?')) return;
   try{
     await fbDel('vidrieras/'+state.slug+'/'+id);
-    lista(v.cambios||{}).forEach(c=>['antes','despues'].forEach(l=>{ if(c[l]&&c[l].id) fbDel('fotos/'+state.slug+'/'+c[l].id).catch(()=>{}); }));
+    lista(v.cambios||{}).forEach(c=>['antes','despues'].forEach(l=>borrarFoto(state.slug, c[l])));
     delete state.data.vidrieras[id]; cerrarHoja(); render();
   }catch(e){ toast('No se pudo borrar: '+e.message,'err'); }
 }
@@ -1010,26 +1185,37 @@ async function avisarVidrierasEnAlerta(){
 
 /* ============================================================
    RESUMEN — Todas las sucursales (gerencia)
+   Subvistas: Hoy (estado) · Cumplimiento (mes) · Galería de vidrieras · Recurrentes
    ============================================================ */
+function setResVista(v){ state.resVista=v; render(); }
+function resHead(sub){
+  const T={hoy:'Todas las sucursales', cumpl:'Cumplimiento del mes', galeria:'Galería de vidrieras', recurrentes:'Tareas recurrentes'};
+  return '<div class="sec-head"><div><h1>'+T[state.resVista]+'</h1><div class="sub">'+sub+'</div></div>'
+    +'<div class="acts"><button class="btn btn-outline" onclick="exportarExcel()">⇩ Excel</button><button class="btn btn-primary" onclick="nuevaTareaMulti()">+ Publicar tarea</button></div></div>'
+    +'<div class="subtabs">'+[['hoy','Hoy'],['cumpl','Cumplimiento'],['galeria','Vidrieras'],['recurrentes','Recurrentes']].map(([k,l])=>'<button class="subtab '+(state.resVista===k?'on':'')+'" onclick="setResVista(\''+k+'\')">'+l+'</button>').join('')+'</div>';
+}
 function renderResumen(){
   const R=state.resumen; if(!R){ $('view').innerHTML='<div class="state"><div class="spinner"></div>Cargando…</div>'; return; }
-  const vis=storesVisibles();
-  const rows=vis.map(s=>{
-    const pr=pendientes(R.precios[s.slug]), se=pendientes(R.sectores[s.slug]);
-    const li=limpiezaEstado(R.limpieza[s.slug]);
-    const vids=lista(R.vidrieras[s.slug]); const al=vids.filter(v=>vidEstado(v).cls==='bad'); const wr=vids.filter(v=>vidEstado(v).cls==='warn');
-    const maxDias=vids.length?Math.max(...vids.map(v=>vidEstado(v).dias||0)):null;
-    return {s, pr, prV:pr.filter(vencida).length, se, seV:se.filter(vencida).length, li, vids, al, wr, maxDias};
-  });
+  if(state.resVista==='cumpl') return renderCumpl();
+  if(state.resVista==='galeria') return renderGaleria();
+  if(state.resVista==='recurrentes') return renderRecurrentes();
+  const rows=filasHoy();
   const tot={pr:0,prV:0,se:0,seV:0,al:0,liOk:0,liTot:0};
   rows.forEach(r=>{ tot.pr+=r.pr.length; tot.prV+=r.prV; tot.se+=r.se.length; tot.seV+=r.seV; tot.al+=r.al.length; tot.liOk+=r.li.diaria.ok; tot.liTot+=r.li.diaria.tot; });
   const pill=(n,cls)=>'<span class="pill '+cls+'">'+n+'</span>';
-  let h='<div class="sec-head"><div><h1>Todas las sucursales</h1><div class="sub">Estado de hoy · '+fmtFecha(hoyISO())+'. Tocá una fila para entrar a esa sucursal.</div></div>'
-    +'<div class="acts"><button class="btn btn-primary" onclick="nuevaTareaMulti()">+ Publicar tarea</button></div></div>';
+  const faltanLimp=rows.filter(r=>r.li.diaria.tot && r.li.diaria.ok<r.li.diaria.tot);
+  let h=resHead('Estado de hoy · '+fmtFecha(hoyISO())+'. Tocá una fila para entrar a esa sucursal.');
   h+='<div class="kpis"><div class="kpi"><div class="l">💲 Precios pendientes</div><div class="v '+(tot.prV?'bad':'')+'">'+tot.pr+'</div><div class="s">'+(tot.prV?tot.prV+' vencidas':'ninguna vencida')+'</div></div>'
     +'<div class="kpi"><div class="l">🏷️ Sectores pendientes</div><div class="v '+(tot.seV?'bad':'')+'">'+tot.se+'</div><div class="s">'+(tot.seV?tot.seV+' vencidos':'ninguno vencido')+'</div></div>'
     +'<div class="kpi"><div class="l">🧹 Limpieza de hoy</div><div class="v '+(tot.liTot&&tot.liOk===tot.liTot?'ok':'')+'">'+tot.liOk+'<span style="font-size:16px;color:var(--muted)"> / '+tot.liTot+'</span></div><div class="s">tareas diarias hechas</div></div>'
     +'<div class="kpi"><div class="l">🪟 Vidrieras en alerta</div><div class="v '+(tot.al?'bad':'ok')+'">'+tot.al+'</div><div class="s">más de '+state.cfg.diasVidriera+' días sin cambios</div></div></div>';
+  // semáforo de limpieza del día con recordatorio
+  const conLimp=rows.filter(r=>r.li.diaria.tot);
+  if(conLimp.length){
+    const ok=conLimp.length-faltanLimp.length;
+    h+='<div class="banner '+(faltanLimp.length?'warn':'ok')+'">🧹 <b>Limpieza de hoy: '+ok+' de '+conLimp.length+' sucursales al día</b>'
+      +(faltanLimp.length?' · faltan: '+faltanLimp.map(r=>esc(r.s.nombre)+' ('+r.li.diaria.ok+'/'+r.li.diaria.tot+')').join(', ')+' <button class="btn btn-navy btn-sm" style="margin-left:8px" onclick="recordarLimpieza()">📣 Recordar a las que faltan</button>':' ✓')+'</div>';
+  }
   h+='<div class="res-wrap"><table class="res"><thead><tr><th>Sucursal</th><th class="c">💲 Precios</th><th class="c">🏷️ Sectores</th><th class="c">🧹 Hoy</th><th class="c">🧹 Semana</th><th class="c">🪟 Vidrieras</th><th>Más días sin cambio</th></tr></thead><tbody>';
   rows.forEach(r=>{
     const lp=r.li.diaria, ls=r.li.semanal;
@@ -1044,6 +1230,136 @@ function renderResumen(){
   h+='</tbody></table></div>';
   $('view').innerHTML=h;
 }
+function filasHoy(){
+  const R=state.resumen;
+  return storesVisibles().map(s=>{
+    const pr=pendientes(R.precios[s.slug]), se=pendientes(R.sectores[s.slug]);
+    const li=limpiezaEstado(R.limpieza[s.slug]);
+    const vids=lista(R.vidrieras[s.slug]); const al=vids.filter(v=>vidEstado(v).cls==='bad'); const wr=vids.filter(v=>vidEstado(v).cls==='warn');
+    const maxDias=vids.length?Math.max(...vids.map(v=>vidEstado(v).dias||0)):null;
+    return {s, pr, prV:pr.filter(vencida).length, se, seV:se.filter(vencida).length, li, vids, al, wr, maxDias};
+  });
+}
+async function recordarLimpieza(){
+  const faltan=filasHoy().filter(r=>r.li.diaria.tot && r.li.diaria.ok<r.li.diaria.tot);
+  if(!faltan.length) return;
+  if(!confirm('¿Mandar el recordatorio de limpieza a '+faltan.length+' sucursal'+(faltan.length===1?'':'es')+' por la Bandeja?')) return;
+  let n=0;
+  for(const r of faltan){
+    const mails=await mailsDeSucursal(r.s.slug); if(!mails.length) continue;
+    const pend=lista(R_limp(r.s.slug)).filter(i=>i.activo!==false&&(i.frecuencia||'diaria')==='diaria'&&!hechoEnPeriodo(i)).map(i=>i.titulo);
+    n+=await directo(mails, '🧹 Limpieza de hoy: llevan '+r.li.diaria.ok+' de '+r.li.diaria.tot+' tareas marcadas. Faltan: '+pend.join(', ')+'. Marcalas en Tareas de la Sucursal → Limpieza.');
+  }
+  toast('Recordatorio enviado a '+n+' cuenta'+(n===1?'':'s'),'ok');
+}
+function R_limp(slug){ return (state.resumen&&state.resumen.limpieza[slug])||{}; }
+
+/* ---- Cumplimiento del mes ---- */
+function mesesDisponibles(){ const out=[]; const d=new Date(); d.setDate(1); for(let i=0;i<6;i++){ out.push(mesDe(d)); d.setMonth(d.getMonth()-1); } return out; }
+function mesLabel(ym){ const [y,m]=ym.split('-'); return ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][Number(m)-1]+' '+y; }
+function cumplSucursal(slug, ym){
+  const R=state.resumen; const hoy=hoyISO();
+  const c={slug, hechas:0, total:0, aTiempo:0, diasSum:0, liOk:0, liTot:0, cambios:0, vids:0, alerta:0, tareas:[]};
+  ['precios','sectores'].forEach(tipo=>lista(R[tipo][slug]).forEach(t=>{
+    const fecha=t.vigencia||t.limite;
+    const hechaMes = t.estado==='hecha' && t.hecho && mesDe(new Date(t.hecho.ts))===ym;
+    const vencMes = t.estado!=='hecha' && fecha && fecha.slice(0,7)===ym && fecha<hoy;
+    if(hechaMes){ c.total++; c.hechas++; const ok=!fecha || hoyISO(new Date(t.hecho.ts))<=fecha; if(ok) c.aTiempo++; c.diasSum+=Math.max(0,(t.hecho.ts-((t.creado&&t.creado.ts)||t.hecho.ts))/86400000); c.tareas.push({tipo,t,ok}); }
+    else if(vencMes){ c.total++; c.tareas.push({tipo,t,ok:false}); }
+  }));
+  const [y,m]=ym.split('-').map(Number); const ini=new Date(y,m-1,1), fin=new Date(y,m,0), hoyD=new Date(); const finEf=fin<hoyD?fin:hoyD;
+  lista(R.limpieza[slug]).filter(i=>i.activo!==false).forEach(i=>{
+    const f=i.frecuencia||'diaria'; const alta=i.creado&&i.creado.ts?new Date(i.creado.ts):ini; const desde=alta>ini?alta:ini; if(desde>finEf) return;
+    const per=new Set(); const d=new Date(desde); d.setHours(12,0,0,0);
+    while(d<=finEf){ per.add(periodoDe(f,d)); d.setDate(d.getDate()+1); }
+    per.forEach(k=>{ c.liTot++; if(i.hechos&&i.hechos[k]&&!i.hechos[k].pendiente) c.liOk++; });
+  });
+  lista(R.vidrieras[slug]).forEach(v=>{ c.vids++; if(vidEstado(v).cls==='bad') c.alerta++; lista(v.cambios||{}).forEach(ch=>{ if(mesDe(new Date(ch.ts))===ym) c.cambios++; }); });
+  c.pctTiempo = c.total? c.aTiempo/c.total : null;
+  c.diasProm = c.hechas? c.diasSum/c.hechas : null;
+  c.pctLimp = c.liTot? c.liOk/c.liTot : null;
+  c.pctVid = c.vids? (c.vids-c.alerta)/c.vids : null;
+  const parts=[c.pctTiempo,c.pctLimp,c.pctVid].filter(x=>x!=null);
+  c.indice = parts.length? parts.reduce((a,b)=>a+b,0)/parts.length : null;
+  return c;
+}
+const pct=x=>x==null?'—':Math.round(x*100)+'%';
+const clsPct=x=>x==null?'na':x>=.9?'ok':x>=.7?'amb':'bad';
+function renderCumpl(){
+  const ym=state.cumplMes; const rows=storesVisibles().map(s=>Object.assign(cumplSucursal(s.slug, ym),{nombre:s.nombre}));
+  rows.sort((a,b)=>(b.indice==null?-1:b.indice)-(a.indice==null?-1:a.indice));
+  const tot=rows.reduce((a,r)=>({hechas:a.hechas+r.hechas,total:a.total+r.total,aTiempo:a.aTiempo+r.aTiempo,liOk:a.liOk+r.liOk,liTot:a.liTot+r.liTot,cambios:a.cambios+r.cambios,vids:a.vids+r.vids,alerta:a.alerta+r.alerta}),{hechas:0,total:0,aTiempo:0,liOk:0,liTot:0,cambios:0,vids:0,alerta:0});
+  let h=resHead('Ranking por sucursal · el índice promedia tareas a tiempo, limpieza cumplida y vidrieras al día. Insumo para la evaluación del supervisor.');
+  h+='<div class="filtros"><span class="mes-sel"><label style="font-family:var(--font-c);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Mes</label><select class="sel" onchange="state.cumplMes=this.value;render()">'+mesesDisponibles().map(m=>'<option value="'+m+'" '+(m===ym?'selected':'')+'>'+mesLabel(m)+'</option>').join('')+'</select></span></div>';
+  h+='<div class="kpis"><div class="kpi"><div class="l">Tareas a tiempo</div><div class="v '+clsPct(tot.total?tot.aTiempo/tot.total:null)+'">'+pct(tot.total?tot.aTiempo/tot.total:null)+'</div><div class="s">'+tot.aTiempo+' de '+tot.total+' (hechas '+tot.hechas+')</div></div>'
+    +'<div class="kpi"><div class="l">Limpieza cumplida</div><div class="v '+clsPct(tot.liTot?tot.liOk/tot.liTot:null)+'">'+pct(tot.liTot?tot.liOk/tot.liTot:null)+'</div><div class="s">'+tot.liOk+' de '+tot.liTot+' períodos</div></div>'
+    +'<div class="kpi"><div class="l">Cambios de vidriera</div><div class="v">'+tot.cambios+'</div><div class="s">en el mes · '+tot.alerta+' en alerta hoy</div></div></div>';
+  h+='<div class="res-wrap"><table class="res"><thead><tr><th>#</th><th>Sucursal</th><th class="c">Tareas</th><th class="c">A tiempo</th><th class="c">Días para cerrar</th><th class="c">Limpieza</th><th class="c">Cambios vidriera</th><th class="c">Vidrieras en alerta</th><th class="c">Índice</th></tr></thead><tbody>';
+  rows.forEach((r,i)=>{
+    h+='<tr onclick="elegirSucursal(\''+r.slug+'\')"><td>'+(i+1)+'</td><td><b>'+esc(r.nombre)+'</b></td>'
+      +'<td class="c">'+r.hechas+'/'+r.total+'</td><td class="c"><span class="pill '+clsPct(r.pctTiempo)+'">'+pct(r.pctTiempo)+'</span></td>'
+      +'<td class="c">'+(r.diasProm==null?'—':r.diasProm.toFixed(1))+'</td>'
+      +'<td class="c"><span class="pill '+clsPct(r.pctLimp)+'">'+pct(r.pctLimp)+(r.liTot?' <small>'+r.liOk+'/'+r.liTot+'</small>':'')+'</span></td>'
+      +'<td class="c">'+r.cambios+'</td><td class="c">'+(r.vids?(r.alerta?'<span class="pill bad">'+r.alerta+' de '+r.vids+'</span>':'<span class="pill ok">0 de '+r.vids+'</span>'):'—')+'</td>'
+      +'<td class="c"><span class="idx '+clsPct(r.indice)+'">'+pct(r.indice)+'</span></td></tr>';
+  });
+  h+='</tbody></table></div><p class="ro" style="margin-top:10px">Tareas = hechas en el mes + vencidas del mes sin hacer. A tiempo = hecha antes de su vigencia/límite. Limpieza = períodos marcados sobre los que correspondían (desde el alta de cada ítem). Vidrieras = al día hoy sobre el total.</p>';
+  $('view').innerHTML=h;
+}
+
+/* ---- Galería de vidrieras ---- */
+function renderGaleria(){
+  const R=state.resumen; const items=[];
+  storesVisibles().forEach(s=>lista(R.vidrieras[s.slug]).forEach(v=>items.push({slug:s.slug, suc:s.nombre, v, e:vidEstado(v), u:ultimoCambio(v)})));
+  items.sort((a,b)=>(a.e.cls==='bad'?0:a.e.cls==='warn'?1:2)-(b.e.cls==='bad'?0:b.e.cls==='warn'?1:2) || (b.e.dias||0)-(a.e.dias||0));
+  let h=resHead('La última foto de cada vidriera de todas las sucursales. Primero las que están en alerta.');
+  if(!items.length){ h+='<div class="state"><div class="big-ic">🪟</div>Ninguna sucursal cargó vidrieras todavía.</div>'; $('view').innerHTML=h; return; }
+  h+='<div class="ggrid">'+items.map(x=>{ const f=x.u&&x.u.despues; const q='\''+x.slug+'\',\''+x.v.id+'\',\''+(x.u?x.u.id:'')+'\'';
+    return '<div class="gv '+(x.e.cls==='bad'?'alerta':x.e.cls==='warn'?'warn':'')+'" onclick="'+(x.u?'verCambioDe('+q+')':'elegirSucursal(\''+x.slug+'\')')+'"><div class="im">'+(f?'<img src="'+f.thumb+'" alt="">':'📷 sin foto')+'</div>'
+      +'<div class="b"><div class="s">'+esc(x.suc)+'</div><div class="n">'+esc(x.v.nombre)+'</div><div class="d '+x.e.cls+'">'+(x.e.dias!=null?(x.e.cls==='bad'?'⚠ ':'')+x.e.dias+' días sin cambios':'sin registro')+'</div></div></div>'; }).join('')+'</div>';
+  $('view').innerHTML=h;
+}
+function verCambioDe(slug, vid, cid){ const v=state.resumen.vidrieras[slug]&&state.resumen.vidrieras[slug][vid]; const c=v&&v.cambios&&v.cambios[cid]; if(!c) return; abrirCmp(slug, c.antes, c.despues, v.nombre, nombreSuc(slug)+' · cambio del '+fmtTs(c.ts)); }
+
+/* ---- Recurrentes ---- */
+function renderRecurrentes(){
+  const recs=sortBy(lista(state.recurrentes), r=>(r.activo===false?'1':'0')+(r.proximo||''));
+  let h=resHead('Plantillas que generan la tarea solas cada N días en sus sucursales (se generan al abrir este resumen).');
+  h+='<div style="margin-bottom:14px"><button class="btn btn-navy" onclick="nuevaRecurrente()">+ Nueva recurrente</button></div>';
+  if(!recs.length){ h+='<div class="state"><div class="big-ic">🔁</div><h3>Sin tareas recurrentes</h3><p>Ejemplo: «Cambio de vidriera de temporada» cada 15 días para todas, o «Remarcación de fin de semana» cada 7 días en los outlets.</p></div>'; $('view').innerHTML=h; return; }
+  h+=recs.map(r=>{ const n=(r.sucursales&&r.sucursales.length)||0; const q='\''+r.id+'\'';
+    return '<div class="card '+(r.activo===false?'done':'')+'"><div class="rec"><div><div class="t">'+TIPOS[r.tipo==='sectores'?'sectores':'precios'].ic+' '+esc(r.titulo)+(r.activo===false?' <span class="tag">pausada</span>':'')+'</div>'
+      +(r.detalle?'<div style="font-size:13px;color:#334155;margin-top:4px">'+esc(r.detalle)+'</div>':'')
+      +'<div class="meta">'+(r.marca?'<span class="tag navy">'+esc(r.marca)+'</span>':'')+'<span class="tag">cada '+(r.cadaDias||7)+' días</span><span class="tag">plazo '+(r.plazoDias||0)+' días</span><span class="tag">'+(n?n+' sucursal'+(n===1?'':'es'):'todas las sucursales')+'</span>'
+      +(r.exigeFoto?'<span class="tag">📷 exige foto</span>':'')+'<span class="tag '+(r.proximo&&r.proximo<=hoyISO()?'amb':'ok')+'">próxima '+fmtFecha(r.proximo)+'</span>'+(r.ultima?'<span class="tag">última '+fmtFecha(r.ultima)+'</span>':'')+'</div></div>'
+      +'<div class="acts"><button class="btn btn-outline btn-sm" onclick="editarRecurrente('+q+')">✏ Editar</button><button class="btn btn-outline btn-sm" onclick="toggleRecurrente('+q+')">'+(r.activo===false?'▶ Reanudar':'⏸ Pausar')+'</button><button class="btn btn-ghost btn-sm" onclick="borrarRecurrente('+q+')">🗑</button></div></div></div>'; }).join('');
+  $('view').innerHTML=h;
+}
+function formRecurrente(r){
+  return '<div class="fld"><label>Tipo</label><select class="sel" id="fTipo" onchange="$(\'fUbicWrap\').style.display=this.value===\'sectores\'?\'\':\'none\'"><option value="precios" '+(r.tipo!=='sectores'?'selected':'')+'>💲 Cambio de precios</option><option value="sectores" '+(r.tipo==='sectores'?'selected':'')+'>🏷️ Sector de marca</option></select></div>'
+    +'<div class="fld"><label>Qué hay que hacer</label><input class="inp" id="fTitulo" maxlength="90" value="'+esc(r.titulo||'')+'" placeholder="Ej.: Remarcación de fin de semana"></div>'
+    +'<div class="f2"><div class="fld"><label>Marca</label><input class="inp" id="fMarca" maxlength="40" value="'+esc(r.marca||'')+'"></div><div class="fld"><label>Cada cuántos días</label><input class="inp" type="number" min="1" max="365" id="fCada" value="'+(r.cadaDias||7)+'"></div></div>'
+    +'<div class="f2"><div class="fld"><label>Primera / próxima generación</label><input class="inp" type="date" id="fProx" value="'+esc(r.proximo||hoyISO())+'"></div><div class="fld"><label>Plazo para hacerla (días)</label><input class="inp" type="number" min="0" max="60" id="fPlazo" value="'+(r.plazoDias!=null?r.plazoDias:3)+'"><div class="hint">La fecha de la tarea = día de generación + plazo.</div></div></div>'
+    +'<div class="fld" id="fUbicWrap" style="'+(r.tipo==='sectores'?'':'display:none')+'"><label>Dónde</label><input class="inp" id="fUbic" maxlength="60" value="'+esc(r.ubicacion||'')+'"></div>'
+    +'<div class="fld"><label>Detalle</label><textarea class="ta" id="fDetalle">'+esc(r.detalle||'')+'</textarea></div>'
+    +'<label class="chk-line"><input type="checkbox" id="fExige" '+(r.exigeFoto!==false?'checked':'')+'> Exigir la foto de <b>después</b></label>'
+    +chipsSucursales(r.sucursales||[])+'<div class="hint" style="margin-top:-6px;margin-bottom:8px">Sin ninguna marcada = todas las sucursales.</div>';
+}
+function nuevaRecurrente(){ abrirHoja('🔁 Nueva tarea recurrente', formRecurrente({}), '<button class="btn btn-outline" onclick="cerrarHoja()">Cancelar</button><button class="btn btn-primary" onclick="guardarRecurrente(null)">Guardar</button>'); }
+function editarRecurrente(id){ const r=state.recurrentes[id]; if(!r) return; abrirHoja('✏ Editar recurrente', formRecurrente(r), '<button class="btn btn-outline" onclick="cerrarHoja()">Cancelar</button><button class="btn btn-primary" onclick="guardarRecurrente(\''+id+'\')">Guardar</button>'); }
+async function guardarRecurrente(id){
+  const titulo=($('fTitulo').value||'').trim(); if(!titulo){ toast('Escribí qué hay que hacer','err'); return; }
+  const o={ tipo:$('fTipo').value, titulo, marca:($('fMarca').value||'').trim(), detalle:($('fDetalle').value||'').trim(), ubicacion:($('fUbic').value||'').trim(),
+    cadaDias:Math.max(1,Number($('fCada').value)||7), plazoDias:Math.max(0,Number($('fPlazo').value)||0), proximo:$('fProx').value||hoyISO(), exigeFoto:!!$('fExige').checked, sucursales:sucsElegidas() };
+  try{
+    if(id){ await fbPatch('recurrentes/'+id, o); Object.assign(state.recurrentes[id], o); }
+    else { const nid=uid(); const r=Object.assign(o,{activo:true, creado:{por:firma(), mail:SESSION.email||'', ts:Date.now()}}); await fbPut('recurrentes/'+nid, r); state.recurrentes[nid]=r; }
+    cerrarHoja(); render(); toast('Guardado · se genera al abrir el resumen el día indicado','ok');
+  }catch(e){ toast('No se pudo guardar: '+e.message,'err'); }
+}
+async function toggleRecurrente(id){ const r=state.recurrentes[id]; const on=r.activo===false; try{ await fbPatch('recurrentes/'+id,{activo:on}); r.activo=on; render(); }catch(e){ toast('No se pudo guardar: '+e.message,'err'); } }
+async function borrarRecurrente(id){ const r=state.recurrentes[id]; if(!confirm('¿Borrar la recurrente «'+r.titulo+'»? Las tareas ya generadas quedan.')) return; try{ await fbDel('recurrentes/'+id); delete state.recurrentes[id]; render(); }catch(e){ toast('No se pudo borrar: '+e.message,'err'); } }
+
 function nuevaTareaMulti(){
   abrirHoja('📣 Publicar tarea a varias sucursales',
     '<div class="fld"><label>Tipo</label><select class="sel" id="fTipo" onchange="$(\'fUbicWrap\').style.display=this.value===\'sectores\'?\'\':\'none\';$(\'fFechaLab\').textContent=this.value===\'precios\'?\'Vigencia (desde cuándo rige)\':\'Fecha límite\'"><option value="precios">💲 Cambio de precios</option><option value="sectores">🏷️ Sector de marca</option></select></div>'
@@ -1051,8 +1367,70 @@ function nuevaTareaMulti(){
     +'<div class="f2"><div class="fld"><label>Marca</label><input class="inp" id="fMarca" maxlength="40"></div><div class="fld"><label id="fFechaLab">Vigencia (desde cuándo rige)</label><input class="inp" type="date" id="fFecha"></div></div>'
     +'<div class="fld" id="fUbicWrap" style="display:none"><label>Dónde</label><input class="inp" id="fUbic" maxlength="60"></div>'
     +'<div class="fld"><label>Detalle</label><textarea class="ta" id="fDetalle"></textarea></div>'
+    +exigeFotoHtml(null)
     +chipsSucursales(storesVisibles().map(s=>s.slug)),
     '<button class="btn btn-outline" onclick="cerrarHoja()">Cancelar</button><button class="btn btn-primary" onclick="guardarNueva($(\'fTipo\').value)">Publicar</button>');
+}
+
+/* ---- Excel (ExcelJS, estilo RRHH: membrete + header navy con línea roja + autofiltro) ---- */
+const XC={navy:'FF0B1527',red:'FFCC0000',linea:'FFDCE3F0',muted:'FF6B7A99',okBg:'FFE7F6EC',okTx:'FF166534',badBg:'FFFDECEC',badTx:'FF991B1B',ambBg:'FFFFF7ED',ambTx:'FF92400E'};
+const xcFill=argb=>({type:'pattern',pattern:'solid',fgColor:{argb}});
+function xcHoja(wb, nombre, cols, titulo, sub, header, filas, colorCol){
+  const ws=wb.addWorksheet(nombre.replace(/[\\/*?:\[\]]/g,'-').slice(0,31), {views:[{state:'frozen', ySplit:4}]});
+  ws.columns=cols.map(w=>({width:w}));
+  ws.mergeCells(1,1,1,cols.length); const t=ws.getCell(1,1); t.value=titulo; t.font={name:'Arial',size:15,bold:true,color:{argb:XC.navy}}; ws.getRow(1).height=26;
+  ws.mergeCells(2,1,2,cols.length); const st=ws.getCell(2,1); st.value=sub; st.font={name:'Arial',size:9,italic:true,color:{argb:XC.muted}}; ws.getRow(3).height=6;
+  const hr=ws.getRow(4); header.forEach((h,i)=>{ const c=hr.getCell(i+1); c.value=h; c.font={name:'Arial',size:10,bold:true,color:{argb:'FFFFFFFF'}}; c.fill=xcFill(XC.navy); c.alignment={vertical:'middle',wrapText:true}; c.border={bottom:{style:'thin',color:{argb:XC.red}}}; }); hr.height=24;
+  filas.forEach(f=>{ const r=ws.addRow(f); r.eachCell((c,i)=>{ c.font={name:'Arial',size:9.5}; c.border={bottom:{style:'hair',color:{argb:XC.linea}}};
+    const k=colorCol&&colorCol(f,i-1); if(k){ c.fill=xcFill(XC[k+'Bg']); c.font={name:'Arial',size:9.5,bold:true,color:{argb:XC[k+'Tx']}}; } }); });
+  if(filas.length) ws.autoFilter={from:{row:4,column:1},to:{row:4+filas.length,column:cols.length}};
+  return ws;
+}
+async function exportarExcel(){
+  if(!window.ExcelJS){ toast('Todavía se está cargando el componente de Excel, probá de nuevo','warn'); return; }
+  const R=state.resumen; if(!R) return; const ym=state.cumplMes; toast('Generando el Excel…');
+  try{
+    const wb=new ExcelJS.Workbook(); wb.creator='Portal Mateu Sports';
+    const gen='generado el '+fmtFecha(hoyISO())+' por '+nombreCorto(SESSION.email);
+    // Hoy
+    const hoy=filasHoy();
+    xcHoja(wb,'Hoy',[24,12,12,12,12,14,14,16],'Tareas de la Sucursal · estado de hoy', fmtFecha(hoyISO())+' · '+gen,
+      ['Sucursal','Precios pend.','Precios venc.','Sectores pend.','Sectores venc.','Limpieza hoy','Limpieza semana','Vidrieras en alerta'],
+      hoy.map(r=>[r.s.nombre, r.pr.length, r.prV, r.se.length, r.seV, r.li.diaria.tot?r.li.diaria.ok+'/'+r.li.diaria.tot:'—', r.li.semanal.tot?r.li.semanal.ok+'/'+r.li.semanal.tot:'—', r.vids.length?r.al.length+' de '+r.vids.length:'sin cargar']),
+      (f,i)=>(i===2&&f[2])||(i===4&&f[4])||(i===7&&/^[1-9]/.test(String(f[7])))?'bad':null);
+    // Cumplimiento
+    const cum=storesVisibles().map(s=>Object.assign(cumplSucursal(s.slug, ym),{nombre:s.nombre})).sort((a,b)=>(b.indice==null?-1:b.indice)-(a.indice==null?-1:a.indice));
+    xcHoja(wb,'Cumplimiento',[6,24,10,12,14,12,10,12,14,10],'Cumplimiento · '+mesLabel(ym), 'Índice = promedio de tareas a tiempo, limpieza cumplida y vidrieras al día · '+gen,
+      ['#','Sucursal','Hechas','Tareas mes','A tiempo %','Días p/cerrar','Limpieza %','Cambios vidriera','Vidrieras en alerta','Índice %'],
+      cum.map((r,i)=>[i+1, r.nombre, r.hechas, r.total, r.pctTiempo==null?'—':Math.round(r.pctTiempo*100), r.diasProm==null?'—':Number(r.diasProm.toFixed(1)), r.pctLimp==null?'—':Math.round(r.pctLimp*100), r.cambios, r.vids?r.alerta+' de '+r.vids:'—', r.indice==null?'—':Math.round(r.indice*100)]),
+      (f,i)=>{ if(i!==9||f[9]==='—') return null; return f[9]>=90?'ok':f[9]>=70?'amb':'bad'; });
+    // Tareas del mes (detalle)
+    const det=[];
+    storesVisibles().forEach(s=>['precios','sectores'].forEach(tipo=>lista(R[tipo][s.slug]).forEach(t=>{
+      const fecha=t.vigencia||t.limite; const enMes=(t.hecho&&mesDe(new Date(t.hecho.ts))===ym)||(fecha&&fecha.slice(0,7)===ym)||(t.creado&&mesDe(new Date(t.creado.ts))===ym);
+      if(!enMes) return;
+      const aT= t.estado==='hecha' ? (!fecha||hoyISO(new Date(t.hecho.ts))<=fecha?'Sí':'No') : (fecha&&fecha<hoyISO()?'VENCIDA':'pendiente');
+      det.push([s.nombre, TIPOS[tipo].nombre, t.titulo, t.marca||'', t.ubicacion||'', fecha?fmtFecha(fecha):'', t.estado==='hecha'?'Hecha':'Pendiente', aT, t.origen==='gerencia'?'Gerencia':'Sucursal', t.creado?fmtTs(t.creado.ts):'', t.creado&&t.creado.por||'', t.hecho?fmtTs(t.hecho.ts):'', t.hecho&&t.hecho.por||'', t.hecho&&t.hecho.nota||'', (t.fotos&&t.fotos.antes?'antes ':'')+(t.fotos&&t.fotos.despues?'después':'')]);
+    })));
+    xcHoja(wb,'Tareas',[20,16,34,12,16,11,10,10,10,13,18,13,18,24,14],'Tareas · '+mesLabel(ym), det.length+' tareas de precios y sectores con actividad en el mes · '+gen,
+      ['Sucursal','Tipo','Tarea','Marca','Dónde','Fecha','Estado','A tiempo','Origen','Creada','Por','Hecha','Por','Nota','Fotos'], det,
+      (f,i)=>i===7?(f[7]==='Sí'?'ok':f[7]==='VENCIDA'?'bad':f[7]==='No'?'amb':null):null);
+    // Limpieza del mes
+    const lim=[];
+    storesVisibles().forEach(s=>lista(R.limpieza[s.slug]).forEach(i=>Object.entries(i.hechos||{}).forEach(([per,h])=>{ if(!h||h.pendiente||per.slice(0,7)!==ym) return; lim.push([s.nombre, i.titulo, i.zona||'', i.frecuencia||'diaria', per, h.por||'', fmtTs(h.ts), (h.antes?'antes ':'')+(h.despues?'después':'')]); })));
+    lim.sort((a,b)=>a[0].localeCompare(b[0])||a[4].localeCompare(b[4]));
+    xcHoja(wb,'Limpieza',[20,32,14,11,12,22,13,12],'Limpieza · '+mesLabel(ym), lim.length+' marcas del checklist en el mes · '+gen, ['Sucursal','Tarea','Zona','Frecuencia','Período','Por','Fecha y hora','Fotos'], lim);
+    // Vidrieras
+    const vid=[];
+    storesVisibles().forEach(s=>lista(R.vidrieras[s.slug]).forEach(v=>{ const e=vidEstado(v), u=ultimoCambio(v); const nMes=lista(v.cambios||{}).filter(c=>mesDe(new Date(c.ts))===ym).length;
+      vid.push([s.nombre, v.nombre, u?fmtTs(u.ts):'—', u&&u.por||'', e.dias==null?'—':e.dias, e.lim, e.cls==='bad'?'EN ALERTA':e.cls==='warn'?'Por vencer':e.cls==='ok'?'Al día':'Sin registro', nMes, u&&u.nota||'']); }));
+    xcHoja(wb,'Vidrieras',[20,24,14,20,12,10,12,14,30],'Vidrieras', 'Estado a hoy y cambios de '+mesLabel(ym)+' · '+gen, ['Sucursal','Vidriera','Último cambio','Por','Días sin cambio','Tope','Estado','Cambios en el mes','Última nota'], vid,
+      (f,i)=>i===6?(f[6]==='EN ALERTA'?'bad':f[6]==='Por vencer'?'amb':f[6]==='Al día'?'ok':null):null);
+    const buf=await wb.xlsx.writeBuffer();
+    const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='Tareas de la Sucursal '+ym+'.xlsx'; a.click();
+    toast('Excel listo','ok');
+  }catch(e){ toast('No se pudo generar el Excel: '+e.message,'err'); }
 }
 
 /* ============================================================
@@ -1095,7 +1473,7 @@ function init(){
   const salir=$('salir'); if(salir) salir.onclick=()=>{ try{localStorage.removeItem(SESSION_KEY);}catch(e){} location.replace('../'); };
   document.querySelectorAll('.tab').forEach(b=>{ b.onclick=()=>setTab(b.dataset.tab); b.classList.toggle('on', b.dataset.tab===state.tab); });
   document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ cerrarHoja(); cerrarCmp(); } });
-  pintarSubbar();
+  pintarSubbar(); pintarCola(); colaEnviar(false);
   if(esSucursal && !state.slug){ $('view').innerHTML='<div class="state err"><div class="big-ic">⚠️</div>Tu usuario no tiene sucursal asignada. Pedile a gerencia que la cargue en el ⚙ del Portal.</div>'; return; }
   recargar();
 }

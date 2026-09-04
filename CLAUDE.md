@@ -1283,7 +1283,47 @@ no entran. Cuatro pestañas:
 - **Firebase**: `recepciones-mateu`, nodo `tareas/` (agrupado por slug, seguridad blanda):
   `precios/<slug>/<id>`, `sectores/<slug>/<id>`, `limpieza/<slug>/<id>`,
   `vidrieras/<slug>/<id>` (`cambios/<cid>`), `fotos/<slug>/<fid>`, `config/global`,
-  `alertasVidriera/<slug>/<vid>`. Íconos nuevos en `shared/iconos.js`: ⇄ ✨ 🪟.
+  `alertasVidriera/<slug>/<vid>`, `alertasVenc/<slug>/<id>`, `recurrentes/<id>`.
+  Íconos nuevos en `shared/iconos.js`: ⇄ ✨ 🪟.
+
+**Segunda tanda (04/09/2026 tarde, las diez mejoras que pidió Juli):**
+- **Foto obligatoria** (`exigeFoto`, check en el formulario; gerencia lo deja marcado por
+  defecto): sin foto de después no se puede confirmar «Hecha» (chip «📷 exige foto»).
+- **Vencidas por la Bandeja** (`avisarVencidas`): tarea con fecha pasada sin marcar →
+  directo a la sucursal + `ALERTA_AVISADOS`, una sola vez por tarea (flag `alertasVenc`).
+  Se dispara al abrir el módulo (la sucursal para sí; gerencia para todas).
+- **Resumen de gerencia con 4 solapas** (`state.resVista`): **Hoy** (tabla + semáforo de
+  limpieza con «📣 Recordar a las que faltan», `recordarLimpieza`), **Cumplimiento**
+  (`cumplSucursal`: por mes, tareas hechas/total, % a tiempo, días promedio para cerrar,
+  % de limpieza sobre los períodos que correspondían desde el alta de cada ítem, cambios
+  de vidriera, vidrieras en alerta e **índice** = promedio de los tres %; ranking),
+  **Vidrieras** (`renderGaleria`: última foto de cada vidriera de todos los locales) y
+  **Recurrentes**.
+- **Recurrentes** (`tareas/recurrentes/<id>` = tipo, título, marca, detalle, `cadaDias`,
+  `plazoDias`, `proximo`, `sucursales` (vacío = todas), `exigeFoto`, `activo`):
+  `generarRecurrentes()` corre cuando gerencia abre el resumen; por cada plantilla con
+  `proximo <= hoy` crea la tarea en sus sucursales (fecha = último vencimiento + plazo,
+  `recurrente:<id>`, origen gerencia) en un PATCH multi-path, adelanta `proximo` y avisa
+  por la Bandeja. Pausar / reanudar / borrar desde la solapa.
+- **⇩ Excel** (`exportarExcel`, ExcelJS por CDN, estilo RRHH): hojas Hoy · Cumplimiento
+  (mes elegido) · Tareas (detalle del mes) · Limpieza (marcas del mes) · Vidrieras.
+- **Cola offline** (`fbWrite`): toda escritura que falla por red queda en localStorage
+  `tareas_cola` (tope ~4 MB, fotos incluidas) y se reintenta al volver `online`, al abrir el
+  módulo y cada 30 s; la pantalla se actualiza igual y arriba sale «N cambios esperando
+  conexión». Errores HTTP (no de red) siguen fallando normal.
+- **Firebase Storage opcional** (`STORAGE_BUCKET`, vacío hoy): cuando Juli cree el bucket
+  y pegue su nombre, las fotos grandes suben por REST a `tareas/<slug>/<id>.jpg` y el ítem
+  guarda `url` en vez de `id`; `bajarFoto`/`borrarFoto` entienden las dos formas. Mientras
+  tanto, **poda** (`podarFotos`, gerencia, una vez por día por dispositivo): tareas hechas y
+  limpiezas de más de `PODA_DIAS` (90) pierden la foto grande (queda la miniatura, marcadas
+  `podada:true`). Las vidrieras no se podan.
+- **En Indicadores**: sección **«Tareas de hoy»** (`secTareas`, `renderTareasSuc`) en la
+  banda «En curso» de Mi Sucursal (chips precios/sectores/limpieza/vidrieras + lista de
+  vencidas, para hoy, limpieza sin marcar y vidrieras en alerta + link al módulo; oculta si
+  la sucursal no usa el módulo) y **«Tareas de la Sucursal · control»** (`secTareasCad`,
+  `renderTareasCad`/`pintarTareasCad`, solo gerencia, respeta el filtro por línea) en la
+  vista de todas las sucursales, con «📣 Recordar limpieza a las que faltan». Los helpers
+  `t*` de Indicadores son una copia mínima de la lógica del módulo: mantener en sintonía.
 
 ## Celular (03/09/2026)
 

@@ -976,6 +976,16 @@ footer b{color:var(--navy)}
       <div class="card pad" id="novCard"></div>
     </section>
 
+    <!-- Tareas de hoy (04/09/2026): resumen del módulo Tareas de la Sucursal para el
+         encargado — precios/sectores vencidos o para hoy, limpieza x/y y vidrieras en
+         alerta — con el link al módulo. Lo pinta renderTareasSuc. -->
+    <section class="sec" id="secTareas" style="display:none">
+      <div class="sec-label">Operativa del local</div>
+      <h2 class="sec-title">Tareas <em>de hoy</em></h2>
+      <p class="hint">Lo que tiene que pasar hoy en el local según <b>Tareas de la Sucursal</b>: remarcaciones y sectores con fecha, el checklist de limpieza y las vidrieras que llevan demasiados días sin cambios. Se marcan hechas (con foto) en el módulo.</p>
+      <div class="card pad" id="tareasCard"></div>
+    </section>
+
     <section class="sec" id="secComp" style="display:none">
       <div class="sec-label">RRHH</div>
       <h2 class="sec-title">Compensatorios y <em>horas</em></h2>
@@ -1209,6 +1219,16 @@ footer b{color:var(--navy)}
       <h2 class="sec-title" id="f8CadTitle">F8 para armar <em>· control</em></h2>
       <p class="hint">Quién está al día con los F8 repartidos y quién los tiene <b>sin confirmar</b> (la confirmación artículo por artículo la hace cada sucursal en Mi Sucursal o en el Buscador de Artículos). El circuito completo — cruce con transferencias, justificados y críticos — vive en <b>Área de Producto → Control F8</b>.</p>
       <div class="card pad" id="f8CadCard"></div>
+    </section>
+
+    <!-- Tareas de la Sucursal en modo CONTROL (04/09/2026): limpieza de hoy, tareas
+         vencidas y vidrieras en alerta por sucursal, con recordatorio por la Bandeja.
+         Respeta el filtro por línea. Lo pinta pintarTareasCad. -->
+    <section class="sec" id="secTareasCad" style="display:none">
+      <div class="sec-label">Operativa de los locales</div>
+      <h2 class="sec-title" id="tareasCadTitle">Tareas de la Sucursal <em>· control</em></h2>
+      <p class="hint">Quién tiene la <b>limpieza del día</b> al día, tareas de precios o sectores <b>vencidas</b> y <b>vidrieras en alerta</b> por sucursal. El detalle, las fotos y la publicación de tareas viven en <b>Tareas de la Sucursal</b>.</p>
+      <div class="card pad" id="tareasCadCard"></div>
     </section>
     </div><!-- /zonaVivaCad -->
 
@@ -1894,7 +1914,7 @@ async function render(){
     $('cadenaView').style.display='none';
     $('content').style.display='block';
     mostrarEmpty('Tu sucursal todavía no tiene datos de indicadores cargados.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderComp(); renderNov(); renderEquipoSuc(); }
+    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderTareasSuc(); renderComp(); renderNov(); renderEquipoSuc(); }
     return;
   }
 
@@ -1940,6 +1960,7 @@ async function render(){
     pintarZonas();
     renderObjCadena();   // async: Firebase; pinta cuando llega
     renderF8Cad();       // async: control del circuito F8 (Firebase equipo/f8suc)
+    renderTareasCad();   // async: control de Tareas de la Sucursal (Firebase tareas/)
     renderObjMesCadCierre(); // async: objetivo del mes cerrado agregado, arriba de los KPIs
     renderKpiSegCad();   // switch Mes / Sem 1…N del Cierre
     renderKpisCadena();
@@ -1961,7 +1982,7 @@ async function render(){
     mostrarEmpty(Object.values(SOLO_OBJ_SUC).includes(sucName)
       ? '<b>'+esc(sucName)+'</b> todavía no tiene datos de indicadores cargados (sí su objetivo y equipo).'
       : 'No hay datos de <b>'+esc(sucName)+'</b> para '+esc(perLabel(per))+'.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderComp(); renderNov(); renderEquipoSuc(); }
+    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderTareasSuc(); renderComp(); renderNov(); renderEquipoSuc(); }
     return;
   }
   // la semana elegida tiene que existir en esta sucursal/período
@@ -1982,7 +2003,7 @@ async function render(){
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
   $('secCanales').style.display = ecom?'':'none';
-  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secF8','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secSemViva','secRubrosViva'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
+  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secF8','secTareas','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secSemViva','secRubrosViva'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
   const seg=document.querySelector('.seg'); if(seg) seg.style.display = ecom?'none':'flex';
   renderKPIs();
   renderDiagnostico();
@@ -1995,15 +2016,15 @@ async function render(){
   renderNov();            // novedades del mes (el calendario del encargado)
   renderEquipoSuc();      // el padrón de la sucursal (Mi equipo)
   if(ecom){ renderCanales(); }
-  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderRubros(); renderSem(); renderObjetivo(); renderBarrida(); renderF8Suc(); }
+  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderRubros(); renderSem(); renderObjetivo(); renderBarrida(); renderF8Suc(); renderTareasSuc(); }
   _kbVisible=false; $('kpiBar').classList.remove('show'); kpiBarScroll();   // re-evaluar la mini-barra con la vista nueva
 }
 
 function mostrarEmpty(msg){
   // Objetivo / Reposición se muestran igual si hay slug (las pinta su propio render)
   const conSlug = !!slugActual();
-  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secF8','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secObjMesCierre','secSemViva','secRubrosViva']
-    .filter(id=>!(conSlug && /^(sec(Barrida|Objetivo|SemViva|RubrosViva)|kpisSemBox|puenteBox)/.test(id))).forEach(id=>$(id).style.display='none');
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secF8','secTareas','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secObjMesCierre','secSemViva','secRubrosViva']
+    .filter(id=>!(conSlug && /^(sec(Barrida|Objetivo|SemViva|RubrosViva|Tareas)|kpisSemBox|puenteBox)/.test(id))).forEach(id=>$(id).style.display='none');
   pintarZonas();
   $('cobNota').style.display='none';
   $('diagBox').style.display='none';
@@ -5878,6 +5899,112 @@ function pintarF8Cad(){
   sec.style.display='';
   pintarZonas();
 }
+/* ============================================================
+   TAREAS DE LA SUCURSAL (04/09/2026) — resumen en Mi Sucursal y control en Cadena.
+   Lee recepciones-mateu/tareas/<nodo>/<slug> (cada sucursal baja solo lo suyo; en
+   Cadena, gerencia baja todo). La lógica de estado (vencida, limpieza por período,
+   vidriera en alerta) es una copia mínima de la del módulo: mantener en sintonía.
+   ============================================================ */
+const TAREAS_URL='https://recepciones-mateu-default-rtdb.firebaseio.com/tareas';
+const TAREAS_DIAS_VIDRIERA=15;
+const tLista=o=>Object.entries(o||{}).filter(([k,v])=>v&&typeof v==='object').map(([k,v])=>Object.assign({id:k},v));
+function tHoyISO(d){ d=d||new Date(); const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+function tPeriodo(f){ const d=new Date(); if(f==='semanal'){ const day=(d.getDay()+6)%7; d.setDate(d.getDate()-day); return tHoyISO(d); } if(f==='mensual') return tHoyISO(d).slice(0,7); return tHoyISO(d); }
+function tPend(o){ return tLista(o).filter(t=>t.estado!=='hecha'); }
+function tVencida(t){ const f=t.vigencia||t.limite; return !!f && f<tHoyISO(); }
+function tHoy(t){ const f=t.vigencia||t.limite; return !!f && f===tHoyISO(); }
+function tLimp(o){ const r={tot:0,ok:0,pend:[]}; tLista(o).filter(i=>i.activo!==false&&(i.frecuencia||'diaria')==='diaria').forEach(i=>{ r.tot++; const h=i.hechos&&i.hechos[tPeriodo('diaria')]; if(h&&!h.pendiente) r.ok++; else r.pend.push(i.titulo); }); return r; }
+function tVid(v, lim){ const cs=tLista(v.cambios||{}).sort((a,b)=>(b.ts||0)-(a.ts||0)); const ts=cs.length?cs[0].ts:(v.creado&&v.creado.ts); if(!ts) return {cls:'na',dias:null}; const d=Math.floor((Date.now()-ts)/86400000); const l=Number(v.diasAlerta)||lim; return {cls:d>=l?'bad':d>=Math.max(l-4,Math.round(l*.7))?'warn':'ok', dias:d, lim:l}; }
+function tFecha(iso){ const p=String(iso||'').split('-'); return p.length===3?p[2]+'/'+p[1]:iso; }
+async function tFetch(path){ try{ const r=await fetch(TAREAS_URL+'/'+path+'.json'); return r.ok?await r.json():null; }catch(e){ return null; } }
+async function renderTareasSuc(){
+  const sec=$('secTareas'); if(!sec) return;
+  sec.style.display='none';
+  const slug=slugActual(); if(!slug) return;
+  const target=sucName;
+  const [pr,se,li,vi,cfg]=await Promise.all([tFetch('precios/'+slug), tFetch('sectores/'+slug), tFetch('limpieza/'+slug), tFetch('vidrieras/'+slug), tFetch('config/global')]);
+  if(sucName!==target) return;
+  const lim=(cfg&&Number(cfg.diasVidriera))||TAREAS_DIAS_VIDRIERA;
+  const pp=tPend(pr), sp=tPend(se), l=tLimp(li), vids=tLista(vi).map(v=>Object.assign({e:tVid(v,lim)},v));
+  const al=vids.filter(v=>v.e.cls==='bad');
+  if(!pp.length && !sp.length && !l.tot && !vids.length){ pintarZonas(); return; }   // la sucursal no usa el módulo todavía
+  const chip=(cls,txt,title)=>{ const c=cls==='bad'?['#f3b4b4','var(--bad-bg)','#991b1b']:cls==='amb'?['#f0d8a8','var(--mid-bg)','#8a5a00']:['#bfe6cf','var(--ok-bg)','var(--ok)'];
+    return '<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid '+c[0]+';background:'+c[1]+';color:'+c[2]+';border-radius:20px;padding:4px 12px;font-family:var(--font-c);font-size:12px;font-weight:700;letter-spacing:.4px" title="'+esc(title||'')+'">'+txt+'</span>'; };
+  const pv=pp.filter(tVencida).length, sv=sp.filter(tVencida).length;
+  let html='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+    +chip(pv?'bad':pp.length?'amb':'ok','💲 Precios <b>'+pp.length+'</b>'+(pv?' · '+pv+' vencid'+(pv===1?'a':'as'):''), pp.map(t=>t.titulo).join(' · '))
+    +chip(sv?'bad':sp.length?'amb':'ok','🏷️ Sectores <b>'+sp.length+'</b>'+(sv?' · '+sv+' vencid'+(sv===1?'o':'os'):''), sp.map(t=>t.titulo).join(' · '))
+    +(l.tot?chip(l.ok===l.tot?'ok':l.ok?'amb':'bad','🧹 Limpieza de hoy <b>'+l.ok+'/'+l.tot+'</b>', l.pend.join(' · ')):'')
+    +(vids.length?chip(al.length?'bad':'ok','🪟 Vidrieras '+(al.length?'<b>'+al.length+' en alerta</b>':'<b>al día</b>'), al.map(v=>v.nombre+' ('+v.e.dias+' días)').join(' · ')):'')
+    +'</div>';
+  const items=[];
+  pp.concat(sp).filter(t=>tVencida(t)||tHoy(t)).sort((a,b)=>String(a.vigencia||a.limite).localeCompare(String(b.vigencia||b.limite))).slice(0,6)
+    .forEach(t=>items.push('<li><b style="color:'+(tVencida(t)?'#dc2626':'var(--navy)')+'">'+(tVencida(t)?'⚠ Vencida '+tFecha(t.vigencia||t.limite):'Hoy')+'</b> · '+esc(t.titulo)+(t.marca?' <span class="muted">('+esc(t.marca)+')</span>':'')+'</li>'));
+  if(l.tot && l.pend.length) items.push('<li><b>🧹 Falta marcar:</b> '+l.pend.slice(0,6).map(esc).join(', ')+(l.pend.length>6?' y '+(l.pend.length-6)+' más':'')+'</li>');
+  al.forEach(v=>items.push('<li><b style="color:#dc2626">🪟 '+esc(v.nombre)+'</b> lleva <b>'+v.e.dias+' días</b> sin cambios (tope '+v.e.lim+'): registrá el cambio con la foto.</li>'));
+  html+= items.length ? '<ul style="margin:0 0 12px 18px;font-size:13.5px;line-height:1.7">'+items.join('')+'</ul>' : '<div class="muted" style="font-size:13px;margin-bottom:12px">✓ Nada vencido ni pendiente para hoy.</div>';
+  html+='<a class="btn-link" href="../tareas/" style="display:inline-block;font-family:var(--font-c);font-weight:700;font-size:13px;letter-spacing:.8px;text-transform:uppercase;color:#fff;background:var(--navy);border-radius:8px;padding:9px 14px;text-decoration:none">Abrir Tareas de la Sucursal →</a>';
+  $('tareasCard').innerHTML=html; sec.style.display=''; pintarZonas();
+}
+let _tareasCadDocs=null;
+async function renderTareasCad(){
+  const sec=$('secTareasCad'); if(!sec) return;
+  sec.style.display='none';
+  if(!vistaCadena || !esGerencia) return;
+  if(!_tareasCadDocs){
+    const [pr,se,li,vi,cfg]=await Promise.all([tFetch('precios'),tFetch('sectores'),tFetch('limpieza'),tFetch('vidrieras'),tFetch('config/global')]);
+    _tareasCadDocs={precios:pr||{}, sectores:se||{}, limpieza:li||{}, vidrieras:vi||{}, lim:(cfg&&Number(cfg.diasVidriera))||TAREAS_DIAS_VIDRIERA};
+  }
+  pintarTareasCad();
+}
+let _tareasCadRows=[];
+function pintarTareasCad(){
+  const sec=$('secTareasCad'), card=$('tareasCadCard'); if(!sec||!card) return;
+  const D=_tareasCadDocs; if(!vistaCadena || !D){ sec.style.display='none'; pintarZonas(); return; }
+  const slugs=new Set([...Object.keys(D.precios),...Object.keys(D.sectores),...Object.keys(D.limpieza),...Object.keys(D.vidrieras)]);
+  const rows=[];
+  slugs.forEach(slug=>{
+    const full=SLUG_SUC[slug]||OUTLET_SUC[slug]||SOLO_OBJ_SUC[slug];
+    if(rkTipo && (!full || formatoDe(full)!==rkTipo)) return;
+    const pp=tPend(D.precios[slug]), sp=tPend(D.sectores[slug]), l=tLimp(D.limpieza[slug]);
+    const vids=tLista(D.vidrieras[slug]).map(v=>tVid(v,D.lim)); const al=vids.filter(e=>e.cls==='bad').length;
+    rows.push({slug, nombre:full?full.replace(/^\d+-\s*/,''):nombreBonito(slug), pend:pp.length+sp.length, venc:pp.filter(tVencida).length+sp.filter(tVencida).length, l, vids:vids.length, al, maxDias:vids.length?Math.max(...vids.map(e=>e.dias||0)):null});
+  });
+  const tit=$('tareasCadTitle'); if(tit) tit.innerHTML = rkTipo ? 'Tareas de la Sucursal · <em>'+esc(fmtLabel(rkTipo))+'</em>' : 'Tareas de la Sucursal <em>· control</em>';
+  if(!rows.length){ sec.style.display='none'; pintarZonas(); return; }
+  rows.sort((a,b)=>(b.venc+b.al)-(a.venc+a.al) || (b.l.tot-b.l.ok)-(a.l.tot-a.l.ok) || a.nombre.localeCompare(b.nombre));
+  _tareasCadRows=rows;
+  const conLimp=rows.filter(r=>r.l.tot), faltan=conLimp.filter(r=>r.l.ok<r.l.tot);
+  const nVenc=rows.reduce((a,r)=>a+r.venc,0), nAl=rows.reduce((a,r)=>a+r.al,0);
+  const chip=(ok,txt,title)=>'<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid '+(ok?'#bfe6cf':'#f3b4b4')+';background:'+(ok?'var(--ok-bg)':'var(--bad-bg)')+';color:'+(ok?'var(--ok)':'#991b1b')+';border-radius:20px;padding:4px 12px;font-family:var(--font-c);font-size:12px;font-weight:700;letter-spacing:.4px;cursor:default" title="'+esc(title||'')+'">'+txt+'</span>';
+  let html='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+    +'<span style="font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mid)">Hoy</span>'
+    +(conLimp.length?chip(!faltan.length,'🧹 Limpieza al día <b>'+(conLimp.length-faltan.length)+'/'+conLimp.length+'</b>', faltan.map(r=>r.nombre+' ('+r.l.ok+'/'+r.l.tot+')').join(' · ')):'')
+    +chip(!nVenc,'Tareas vencidas <b>'+nVenc+'</b>', rows.filter(r=>r.venc).map(r=>r.nombre+' ('+r.venc+')').join(' · '))
+    +chip(!nAl,'🪟 Vidrieras en alerta <b>'+nAl+'</b>', rows.filter(r=>r.al).map(r=>r.nombre+' ('+r.al+')').join(' · '))
+    +(faltan.length?'<button type="button" class="btn-sm" style="border:0;border-radius:8px;background:var(--navy);color:#fff;font-family:var(--font-c);font-weight:700;font-size:12px;letter-spacing:.6px;text-transform:uppercase;padding:6px 12px;cursor:pointer" onclick="recordarLimpiezaCad()">📣 Recordar limpieza a las que faltan</button>':'')
+    +'</div>';
+  const pill=(txt,cls)=>'<span style="display:inline-block;min-width:26px;text-align:center;border-radius:12px;padding:2px 8px;font-family:var(--font-c);font-weight:700;font-size:12px;background:'+(cls==='ok'?'var(--ok-bg)':cls==='bad'?'var(--bad-bg)':cls==='amb'?'var(--mid-bg)':'#eef2f9')+';color:'+(cls==='ok'?'var(--ok)':cls==='bad'?'#991b1b':cls==='amb'?'#8a5a00':'var(--muted)')+'">'+txt+'</span>';
+  html+='<div class="tbl-wrap"><table style="min-width:560px"><thead><tr><th class="L">Sucursal</th><th>Pendientes</th><th>Vencidas</th><th>🧹 Hoy</th><th>🪟 Vidrieras</th><th>Máx. días sin cambio</th></tr></thead><tbody>'
+    +rows.map(r=>'<tr><td class="L">'+esc(r.nombre)+'</td><td>'+pill(r.pend, r.pend?'amb':'ok')+'</td><td>'+pill(r.venc, r.venc?'bad':'ok')+'</td>'
+      +'<td>'+(r.l.tot?pill(r.l.ok+'/'+r.l.tot, r.l.ok===r.l.tot?'ok':r.l.ok?'amb':'bad'):pill('—','na'))+'</td>'
+      +'<td>'+(r.vids?(r.al?pill(r.al+' ⚠ de '+r.vids,'bad'):pill(r.vids+' al día','ok')):pill('sin cargar','na'))+'</td>'
+      +'<td>'+(r.maxDias!=null?r.maxDias+' días':'<span class="muted">—</span>')+'</td></tr>').join('')
+    +'</tbody></table></div>'
+    +'<div style="margin-top:12px"><a href="../tareas/" style="font-family:var(--font-c);font-weight:700;font-size:13px;letter-spacing:.6px;text-transform:uppercase;color:var(--navy)">Ver todo en Tareas de la Sucursal →</a></div>';
+  card.innerHTML=html; sec.style.display=''; pintarZonas();
+}
+async function recordarLimpiezaCad(){
+  const faltan=_tareasCadRows.filter(r=>r.l.tot && r.l.ok<r.l.tot); if(!faltan.length) return;
+  if(!confirm('¿Mandar el recordatorio de limpieza a '+faltan.length+' sucursal'+(faltan.length===1?'':'es')+' por la Bandeja?')) return;
+  let n=0;
+  for(const r of faltan){
+    const mails=await emailsDeSlug(r.slug); if(!mails.length) continue;
+    await enviarDirectosA(mails, '🧹 Limpieza de hoy: llevan '+r.l.ok+' de '+r.l.tot+' tareas marcadas. Faltan: '+r.l.pend.join(', ')+'. Marcalas en Tareas de la Sucursal → Limpieza.'); n++;
+  }
+  alert('Recordatorio enviado a '+n+' sucursal'+(n===1?'':'es')+'.');
+}
+
 async function renderF8Suc(){
   const sec=$('secF8'); if(!sec) return;
   sec.style.display='none';
@@ -7322,7 +7449,7 @@ function renderRankChips(){
   const presentes = new Set((CAD.sucursales||[]).filter(s=>s.sucursal!==ECOM && s.horas_contr>0).map(s=>s.formato||formatoDe(s.sucursal)));
   const chips = [''].concat(RK_LINEAS.filter(f=>presentes.has(f)));
   $('rkChips').innerHTML = chips.map(f=>`<button class="rk-chip${rkTipo===f?' on':''}" data-f="${esc(f)}">${f===''?'Todas':esc(fmtLabel(f))}</button>`).join('');
-  $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderObjCadena(); pintarF8Cad(); renderObjMesCadCierre(); renderKpiSegCad(); renderKpisCadena(); renderSemCad(); renderRanking(); renderCadenaTabla(); renderAnalisisCad(); });
+  $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderObjCadena(); pintarF8Cad(); pintarTareasCad(); renderObjMesCadCierre(); renderKpiSegCad(); renderKpisCadena(); renderSemCad(); renderRanking(); renderCadenaTabla(); renderAnalisisCad(); });
   const kchips = `<button class="rk-chip${rkKpiSel==='todos'?' on':''}" data-k="todos">Todos</button>`
     + RK_KPIS.map(k=>`<button class="rk-chip${rkKpiSel===k.k?' on':''}" data-k="${k.k}">${esc(k.short)}</button>`).join('');
   $('rkKpiChips').innerHTML = kchips;
