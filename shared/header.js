@@ -74,7 +74,8 @@
   // Usuario del mail, con inicial en mayúscula ("julian" -> "Julian", "cristian.campion" -> "Cristian Campion")
   function nombreCorto(email){
     var u = (email||'').split('@')[0] || email || '';
-    return u ? u.split(/[._-]+/).map(function(p){ return p ? p.charAt(0).toUpperCase()+p.slice(1) : p; }).join(' ') : '—';
+    // Siglas que van todas en mayúscula ("rrhh" -> "RRHH"), el resto con inicial.
+    return u ? u.split(/[._-]+/).map(function(p){ return !p ? p : /^rrhh$/i.test(p) ? 'RRHH' : p.charAt(0).toUpperCase()+p.slice(1); }).join(' ') : '—';
   }
 
   // ---- estilos (colores horneados: no dependen de las variables del módulo) ----

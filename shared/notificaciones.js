@@ -33,7 +33,7 @@
   function keyMail(email){ return (email||'').toLowerCase().trim().replace(/\./g,','); }
   function nombreCorto(email){
     var u=(email||'').split('@')[0]||email||'';
-    return u?u.split(/[._-]+/).map(function(p){return p?p.charAt(0).toUpperCase()+p.slice(1):p;}).join(' '):'—';
+    return u?u.split(/[._-]+/).map(function(p){return !p?p:/^rrhh$/i.test(p)?'RRHH':p.charAt(0).toUpperCase()+p.slice(1);}).join(' '):'—';
   }
   function horaCorta(ts){ try{ return new Date(ts).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } }
   function objToSortedList(obj){ return Object.keys(obj||{}).map(function(id){ var o=Object.assign({id:id},obj[id]); return o; }).sort(function(a,b){ return (a.ts||0)-(b.ts||0); }); }
