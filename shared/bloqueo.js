@@ -17,7 +17,7 @@
        <script src="../shared/bloqueo.js" defer></script> (Indicadores)
 
    Config opcional (definir ANTES de cargar este script):
-     window.MATEU_BLOQUEO = { minutos: 10, roles: ['sucursal','outlet'] }
+     window.MATEU_BLOQUEO = { minutos: 5, roles: ['sucursal','outlet'] }
 
    Cómo funciona:
    - La última actividad se guarda en localStorage (`mateu_bloqueo_act`),
@@ -42,7 +42,7 @@
     (function(){ var s=document.querySelectorAll('script[src*="bloqueo"]'); return s[s.length-1]; })();
   var ROOT = THIS ? new URL('../', THIS.src).href : '../';
   var CFG = window.MATEU_BLOQUEO || {};
-  var BLOQUEO_MIN = +CFG.minutos > 0 ? +CFG.minutos : 10;
+  var BLOQUEO_MIN = +CFG.minutos > 0 ? +CFG.minutos : 5;
   var ROLES = CFG.roles || ['sucursal','outlet'];
   var TIMEOUT = BLOQUEO_MIN*60*1000;
 
