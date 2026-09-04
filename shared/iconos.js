@@ -218,7 +218,10 @@
     '🧢': '<path ' + S + ' d="M4 15a8 8 0 0 1 16 0z"/><path ' + S + ' d="M12 7a8 8 0 0 1 8 8h2"/>',
     '🎽': '<path ' + S + ' d="M8 4L4 7l2 3 2-1v9h8v-9l2 1 2-3-4-3-2 2h-4z"/>',
     '🦁': '<circle cx="12" cy="13" r="6" ' + S + '/><path ' + S + ' d="M6 7l2 2M18 7l-2 2M12 5v3"/><circle cx="10" cy="12" r="0.7" ' + F + '/><circle cx="14" cy="12" r="0.7" ' + F + '/><path ' + S + ' d="M10.5 15c.6.6 2.4.6 3 0"/>',
-    '🦅': '<path ' + S + ' d="M4 8c3 0 5 2 8 2s5-2 8-2c-1 4-4 6-8 6s-7-2-8-6z"/><path ' + S + ' d="M12 14v4M11 20h2"/>'
+    '🦅': '<path ' + S + ' d="M4 8c3 0 5 2 8 2s5-2 8-2c-1 4-4 6-8 6s-7-2-8-6z"/><path ' + S + ' d="M12 14v4M11 20h2"/>',
+    // — RRHH (tutorial): cara con termómetro (ausentismo) y buzón (Bandeja de mensajes) —
+    '🤒': '<circle cx="12" cy="12" r="8" ' + S + '/><circle cx="9.5" cy="10.5" r="0.8" ' + F + '/><circle cx="14.5" cy="10.5" r="0.8" ' + F + '/><path ' + S + ' d="M9.5 15.5h5"/><path ' + S + ' d="M16 20l4-6"/>',
+    '📬': '<path ' + S + ' d="M4 10a4 4 0 0 1 4-4h10v14H4z"/><path ' + S + ' d="M8 6a4 4 0 0 1 4 4v10"/><path ' + S + ' d="M14 6V3h4v3"/><path ' + S + ' d="M18 12h2v2h-2"/>'
   };
 
   // ---- construcción del regex y del <svg> ----

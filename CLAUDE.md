@@ -135,7 +135,9 @@ y las listas de sucursales/outlets.
   admin (lo exigen el Control de Pedidos Semanales y el Dashboard de stock) pero su
   Portal es Área de Producto + Marcas + Gestión de Stock + Pedidos Semanales, con Área
   de Producto como inicio. Los campos se leen al loguearse (sesiones ya abiertas los
-  toman al volver a entrar). **Perfiles fijos en el código** (`PERFILES_FIJOS` en el
+  toman al volver a entrar). El nombre del usuario en drawers/mensajes (`nombreCorto`, 4
+  copias: Portal, `header.js`, Indicadores, `notificaciones.js`) escribe «RRHH» en mayúsculas.
+  **Perfiles fijos en el código** (`PERFILES_FIJOS` en el
   `index.html` raíz, pedido de Juli 04/09/2026): pisan esos tres campos al loguearse y al
   normalizar una sesión abierta, así no dependen del ⚙ (la fila del ⚙ lo avisa). Hoy:
   `producto@` (las 4 herramientas de arriba, inicio Área de Producto) y `rrhh@` (solo
