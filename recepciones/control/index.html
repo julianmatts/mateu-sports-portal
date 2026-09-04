@@ -142,8 +142,33 @@ const FIREBASE_DB_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
 const MENSAJES_DB_URL = 'https://mensajes-mateu-default-rtdb.firebaseio.com';   // Bandeja de avisos del Portal
 const ROOT_ING = 'ingreso';
 /* aviso al tablero del Portal (best-effort; no bloquea) */
-function postAviso(texto){ try{ fetch(MENSAJES_DB_URL+'/avisos.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({de:'deposito@mateu.com.ar',texto:texto,ts:Date.now()})}).catch(function(){}); }catch(e){} }
+function postAviso(texto){ try{ fetch(MENSAJES_DB_URL+'/avisos.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({de:(typeof SESSION!=='undefined'&&SESSION&&SESSION.email)||'deposito@mateu.com.ar',texto:texto,ts:Date.now()})}).catch(function(){}); }catch(e){} }
 const ROOT_BAR = 'barrida';
+
+/* ---- Sesión del Portal (login blando). El kiosco vive bajo una cuenta de rol
+   'kiosko' (mail no real), igual que el puesto de consulta del Buscador. Sin
+   sesión válida rebota al Portal; el rol admin/deposito también puede abrirlo. ---- */
+const SESSION_KEY = 'mateu_portal_session';
+const PORTAL_USUARIOS_URL = 'https://discontinuos-mateu-default-rtdb.firebaseio.com/usuarios.json';
+function readSession(){ try{ return JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); }catch(e){ return null; } }
+const SESSION = readSession();
+const ROLES_KIOSCO = ['kiosko','admin','deposito'];
+function sesionValida(){ return !!(SESSION && SESSION.email && ROLES_KIOSCO.indexOf(SESSION.rol)>=0); }
+// Cerrar la sesión del kiosco: la cuenta 'kiosko' pide el PIN (que un operario o
+// cliente no desloguee la tablet); admin/deposito salen directo.
+async function salirKiosco(){
+  if(SESSION && SESSION.rol!=='kiosko'){ location.href='../../'; return; }
+  const pin = prompt('Para cerrar la sesión del kiosco, ingresá el PIN de la cuenta:');
+  if(pin===null || !String(pin).trim()) return;
+  try{
+    const us = await (await fetch(PORTAL_USUARIOS_URL)).json();
+    const mail = (SESSION.email||'').toLowerCase();
+    const yo = Object.values(us||{}).find(u=>u && u.email && u.email.toLowerCase()===mail);
+    if(!yo || String(yo.pin)!==String(pin).trim()){ toast('PIN incorrecto.','bad'); return; }
+    try{ localStorage.removeItem(SESSION_KEY); }catch(e){}
+    location.href='../../';
+  }catch(e){ toast('No se pudo verificar el PIN. Revisá la conexión.','bad'); }
+}
 
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 const num = x => { const n=Number(x); return isFinite(n)?n:0; };
@@ -202,10 +227,12 @@ function renderHome(){
     + '<button class="task" id="tIng"><div class="ic">📦</div><div class="t">Control de Ingreso</div><div class="d">Controlar un remito que llegó al depósito, escaneando cada unidad.</div></button>'
     + '<button class="task" id="tRep"><div class="ic">📋</div><div class="t">Picking</div><div class="d">Preparar los pedidos asignados: te guía ubicación → producto → cantidad, con scan.</div></button>'
     + '<button class="task" id="tCf"><div class="ic">✅</div><div class="t">Control</div><div class="d">Controlar un pedido ya preparado: re-escaneás y el sistema verifica contra el picking.</div></button>'
-    + '</div>';
+    + '</div>'
+    + '<div style="text-align:center;margin-top:26px"><button class="btn btn-outline btn-sm" id="btnSalirKio">🔒 Cerrar sesión del kiosco</button></div>';
   $('tIng').onclick=()=>enterTask('ingreso');
   $('tRep').onclick=()=>enterTask('picking');
   $('tCf').onclick=()=>enterTask('cfinal');
+  $('btnSalirKio').onclick=salirKiosco;
 }
 async function enterTask(task){
   state.task=task; state.view='lista'; state.remito=null; state.suc=null;
@@ -737,9 +764,14 @@ function kioTutorial(){
 }
 
 /* ============================================================ init ============ */
-render();
-kioTutorial();
-saveqStatus(); procesarCola();   // reanuda guardados pendientes de una sesión anterior
+if(!sesionValida()){
+  // Sin cuenta de kiosco (ni admin/depósito): al Portal a loguearse.
+  location.replace('../../');
+}else{
+  render();
+  kioTutorial();
+  saveqStatus(); procesarCola();   // reanuda guardados pendientes de una sesión anterior
+}
 </script>
 </body>
 </html>

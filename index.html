@@ -455,7 +455,7 @@ const TOOLS = {
   tareas:        { name:'Tareas de la Sucursal',   desc:'Cambio de precios, sectores de marcas, limpieza y vidrieras, con foto de antes y después.', icon:'✅', url:'./tareas/', red:true },
 };
 
-const ROLE_LABEL = { admin:'Administrador', supervisor:'Supervisor', capacitador:'Capacitador', sucursal:'Sucursal', outlet:'Outlet', deposito:'Depósito', puesto:'Puesto de consulta' };
+const ROLE_LABEL = { admin:'Administrador', supervisor:'Supervisor', capacitador:'Capacitador', sucursal:'Sucursal', outlet:'Outlet', deposito:'Depósito', puesto:'Puesto de consulta', kiosko:'Kiosco de depósito' };
 const SESSION_KEY = 'mateu_portal_session';
 
 /* ============================================================
@@ -549,6 +549,9 @@ function herramientasEfectivas(rol, herramientas, soloHerramientas){
   }
   // Puesto de consulta del salón (quiosco a la vista de clientes): SOLO el Buscador.
   if(rol==='puesto') return ['ubicaciones'];
+  // Kiosco del depósito: vive dentro de recepciones/control (redirige el render),
+  // no ve tiles ni bandeja. Sin herramientas de grilla.
+  if(rol==='kiosko') return [];
   return h;
 }
 
@@ -605,6 +608,13 @@ function render(session){
   // mostrador): nunca ve la grilla de tiles ni la bandeja.
   if(session && session.rol==='puesto'){
     location.replace('./ubicaciones/');
+    return;
+  }
+  // El kiosco del depósito (tablet de los operarios) vive SIEMPRE dentro de
+  // recepciones/control (mismo criterio que el puesto de consulta): la cuenta de
+  // rol 'kiosko' (mail no real) arranca ahí y no ve la grilla ni la bandeja.
+  if(session && session.rol==='kiosko'){
+    location.replace('./recepciones/control/');
     return;
   }
   // Pantalla inicial propia del usuario (campo `inicio` = clave de TOOLS, se carga en el ⚙):
@@ -816,7 +826,7 @@ async function renderUsuariosView(container){
       '<div class="card"><div class="card-title">Nuevo usuario</div><div class="form-grid">'+
         '<div class="fld"><label>Email</label><input id="nuEmail" type="email"></div>'+
         '<div class="fld"><label>Rol</label><select class="sel" id="nuRol" style="width:100%">'+
-          '<option value="admin">admin</option><option value="supervisor">supervisor</option><option value="capacitador">capacitador</option><option value="sucursal">sucursal</option><option value="outlet">outlet</option><option value="deposito">deposito (opera el Buscador, sin Mi Sucursal)</option><option value="puesto">puesto (consulta del salón, solo buscar)</option>'+
+          '<option value="admin">admin</option><option value="supervisor">supervisor</option><option value="capacitador">capacitador</option><option value="sucursal">sucursal</option><option value="outlet">outlet</option><option value="deposito">deposito (opera el Buscador, sin Mi Sucursal)</option><option value="puesto">puesto (consulta del salón, solo buscar)</option><option value="kiosko">kiosko (tablet del depósito: picking/ingreso/control)</option>'+
         '</select></div>'+
         '<div class="fld"><label>Sucursal (si rol=sucursal/deposito/puesto)</label><select class="sel" id="nuSucursal" style="width:100%"><option value="">—</option>'+SUCURSALES.map(s=>'<option value="'+s.slug+'">'+s.nombre+'</option>').join('')+'</select></div>'+
         '<div class="fld"><label>Outlet (si rol=outlet)</label><select class="sel" id="nuOutlet" style="width:100%"><option value="">—</option>'+OUTLETS_LIST.map(o=>'<option value="'+o.id+'">'+o.nombre+'</option>').join('')+'</select></div>'+
