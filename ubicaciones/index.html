@@ -3900,19 +3900,36 @@ async function renderActividad(){
   let consultas = {};
   try{ consultas = await fetchJSON(sucPath()+'/consultas.json') || {}; }catch(e){}
   // aplanar los días retenidos (7) y agrupar por artículo
-  const porArt = {}, porPersona = {};
+  const porArt = {}, porPersona = {}, sinRes = {};
   Object.values(consultas).forEach(dia=> Object.values(dia||{}).forEach(c=>{
-    if(!c || !c.key) return;
-    if(!porArt[c.key]) porArt[c.key] = {key:c.key, codigo:c.codigo, descripcion:c.descripcion||'', n:0};
-    porArt[c.key].n++;
-    // ranking de quién busca más (consultas registradas por persona, mismos 7 días)
-    if(c.por){
+    if(!c) return;
+    if(c.key){
+      if(!porArt[c.key]) porArt[c.key] = {key:c.key, codigo:c.codigo, descripcion:c.descripcion||'', n:0};
+      porArt[c.key].n++;
+    } else if(!c.n && c.q){
+      // búsqueda que no encontró NADA: o el artículo está y no se cargó, o no está en la sucursal
+      const k = c.q.toLowerCase();
+      if(!sinRes[k]) sinRes[k] = {q:c.q, n:0, quienes:new Set(), ultima:0};
+      sinRes[k].n++; sinRes[k].ultima = Math.max(sinRes[k].ultima, c.ts||0);
+      if(c.por) sinRes[k].quienes.add(c.por);
+    }
+    // ranking de quién busca más (toda consulta registrada, mismos 7 días)
+    if(c.por && (c.key || c.q)){
       if(!porPersona[c.por]) porPersona[c.por] = {por:c.por, avatar:c.avatar||null, n:0, arts:new Set()};
-      porPersona[c.por].n++; porPersona[c.por].arts.add(c.key);
+      porPersona[c.por].n++; porPersona[c.por].arts.add(c.key || ('q:'+(c.q||'').toLowerCase()));
     }
   }));
   const top = Object.values(porArt).sort((a,b)=>b.n-a.n).slice(0,15);
   const buscadores = Object.values(porPersona).sort((a,b)=>b.n-a.n).slice(0,10);
+  const nada = Object.values(sinRes).sort((a,b)=> b.n-a.n || b.ultima-a.ultima).slice(0,15);
+
+  // reposición del salón de la semana (nodo aparte, ya viene en DATA por el polling)
+  const reps = reposiciones().filter(r=>(r.ts||0) >= Date.now()-7*86400000);
+  const repPend = reps.filter(r=>!r.hecho);
+  const repHechas = reps.filter(r=>r.hecho);
+  const repPorPersona = {};
+  repHechas.forEach(r=>{ const q=(r.hecho&&r.hecho.por)||r.por; repPorPersona[q]=(repPorPersona[q]||0)+1; });
+  const repRanking = Object.entries(repPorPersona).sort((a,b)=>b[1]-a[1]).slice(0,10);
 
   // ranking: asignaciones vigentes de los últimos 7 días, por perfil
   // (se excluye lo importado de planillas)
@@ -3926,7 +3943,40 @@ async function renderActividad(){
   const ranking = Object.entries(rk).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const perfiles = perfilesOrdenados();
 
+  const horasDe = ts=>{
+    const h = Math.round((Date.now()-(ts||0))/3600000);
+    return h < 1 ? 'recién' : (h < 24 ? 'hace '+h+' h' : 'hace '+Math.round(h/24)+' d');
+  };
   cont.innerHTML =
+    '<div class="card"><div class="card-title">🚫 Lo que buscan y no aparece — últimos 7 días</div>'+
+    (nada.length
+      ? nada.map((t,i)=>
+          '<div class="act-row"><span class="act-pos">'+(i+1)+'</span><span class="act-n">'+t.n+'×</span>'+
+            '<div class="info"><b>'+esc(t.q)+'</b>'+
+            '<div class="hint">'+[...t.quienes].slice(0,3).map(esc).join(', ')+
+              (t.quienes.size>3?' +'+(t.quienes.size-3):'')+'</div></div>'+
+            '<span class="act-ubi hint">'+horasDe(t.ultima)+'</span></div>').join('')+
+        '<div class="hint" style="margin-top:8px">Búsquedas que no dieron ningún resultado. Puede ser que el artículo esté en la sucursal y falte cargarlo (subir el stock del día), o que no lo tengamos: si se repite, conviene pedirlo a otra sucursal o avisarle a Compras.</div>'
+      : '<div class="empty">Todas las búsquedas encontraron algo 👌</div>')+'</div>'+
+    '<div class="card"><div class="card-title">🔄 Reposición del salón — últimos 7 días</div>'+
+    (reps.length
+      ? '<div class="act-row"><span class="act-n">'+repHechas.length+'</span>'+
+          '<div class="info"><b>repuestos</b><div class="hint">artículos que se vendieron de la exhibición y volvieron a su lugar</div></div>'+
+          (repPend.length?'<span class="act-ubi" style="color:var(--red)">'+repPend.length+' pendiente'+(repPend.length===1?'':'s')+'</span>':'<span class="act-ubi">al día ✓</span>')+
+        '</div>'+
+        repPend.map(r=>
+          '<div class="act-row"><span class="act-pos">·</span>'+avatarHtml({nombre:r.por, avatar:r.avatar})+
+            '<div class="info"><b>'+esc(r.codigo)+'</b><div class="hint">'+esc((r.descripcion||'').slice(0,50))+'</div></div>'+
+            '<span class="act-ubi hint">'+esc(r.por)+' · '+horasDe(r.ts)+'</span></div>').join('')+
+        (repRanking.length
+          ? '<div class="hint" style="margin:8px 0 4px">Quiénes repusieron</div>'+
+            repRanking.map(([por,n],i)=>{
+              const perfil = perfiles.find(p=>p.nombre===por) || {nombre:por};
+              return '<div class="act-row"><span class="act-pos">'+(i+1)+'</span>'+avatarHtml(perfil)+
+                '<div class="info"><b>'+esc(por)+'</b></div><span class="act-n">'+n+'</span></div>';
+            }).join('')
+          : '')
+      : '<div class="empty">Nadie usó «🔄 Yo repongo» esta semana.<br><span class="hint">Sale en la tarjeta del artículo, al lado de Comentar.</span></div>')+'</div>'+
     '<div class="card"><div class="card-title">🔎 Más consultados — últimos 7 días</div>'+
     (top.length
       ? top.map((t,i)=>{
@@ -3951,10 +4001,10 @@ async function renderActividad(){
       ? buscadores.map((b,i)=>{
           const perfil = perfiles.find(p=>p.nombre===b.por) || {nombre:b.por, avatar:b.avatar};
           return '<div class="act-row"><span class="act-pos">'+(i+1)+'</span>'+avatarHtml(perfil)+
-            '<div class="info"><b>'+esc(b.por)+'</b><div class="hint">'+b.arts.size+' artículo'+(b.arts.size===1?'':'s')+' distinto'+(b.arts.size===1?'':'s')+'</div></div>'+
-            '<span class="act-n">'+b.n+' búsqueda'+(b.n===1?'':'s')+'</span></div>';
+            '<div class="info"><b>'+esc(b.por)+'</b><div class="hint">'+b.arts.size+' búsqueda'+(b.arts.size===1?'':'s')+' distinta'+(b.arts.size===1?'':'s')+'</div></div>'+
+            '<span class="act-n">'+(b.n===1?'1 vez':b.n+' veces')+'</span></div>';
         }).join('')+
-        '<div class="hint" style="margin-top:8px">Cuenta las consultas registradas en el Buscador (código escaneado o resultado único) en los últimos 7 días.</div>'
+        '<div class="hint" style="margin-top:8px">Cuenta todas las búsquedas hechas en el Buscador en los últimos 7 días (se registran solas, encuentren o no).</div>'
       : '<div class="empty">Sin búsquedas registradas en los últimos 7 días.</div>')+'</div>';
 }
 

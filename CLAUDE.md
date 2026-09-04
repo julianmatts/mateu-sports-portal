@@ -496,6 +496,13 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   en cada poll junto con las consultas y `podarConsultas` borra los repuestos de más
   de 7 días. Decisión de Juli: pizarra simple, sin vencimientos ni aviso al encargado
   (eso queda para más adelante si hace falta controlar el cumplimiento).
+- **Actividad (04/09/2026)**: la pestaña abre con **«🚫 Lo que buscan y no aparece»**
+  (búsquedas sin resultado de los últimos 7 días, agrupadas por texto, con cuántas veces,
+  quiénes y hace cuánto: o el artículo está y falta cargarlo, o es demanda que no tenemos)
+  y **«🔄 Reposición del salón»** (repuestos de la semana, los que siguen pendientes y
+  quiénes repusieron). Antes `renderActividad` descartaba con `if(!c.key) return` toda
+  consulta sin artículo, así que las búsquedas de texto no llegaban a ninguna pantalla;
+  ahora el ranking de buscadores también las cuenta.
 - **Búsquedas guardadas solas (01/09/2026)**: el historial de consultas ya no depende
   de tocar la tarjeta. Toda búsqueda queda registrada a los 1,4 s de dejar de tipear
   (desde 3 caracteres): un solo resultado → el artículo; varios → el texto y cuántos
