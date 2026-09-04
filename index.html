@@ -481,6 +481,12 @@ function nombreTool(k, rol){
   return TOOLS[k] ? TOOLS[k].name : k;
 }
 
+// La herramienta de inicio va PRIMERA en la lista (tile y drawer): el multiselect del ⚙
+// guarda en el orden del mapa TOOLS, que no es el que quiere ver el usuario.
+function ordenarInicio(h, inicio){
+  if(!inicio || !h.includes(inicio)) return h;
+  return [inicio].concat(h.filter(k=>k!==inicio));
+}
 // Herramienta de inicio del usuario (campo `inicio`), solo si existe y la tiene asignada.
 function toolInicio(session){
   if(!session || !session.inicio) return null;
@@ -549,7 +555,7 @@ async function login(){
     if(!found || String(found.pin) !== pin){ showLoginErr(); btn.disabled=false; btn.textContent='Entrar'; return; }
     // `sucursales` (para rol supervisor) define qué sucursales ve/edita en
     // Evaluaciones. Alcance "blando" en el cliente, como el resto del portal.
-    const session = { email:found.email, rol:found.rol, herramientas:herramientasEfectivas(found.rol, found.herramientas, found.soloHerramientas), sucursal:found.sucursal||null, outlet_id:found.outlet_id||null, sucursales:found.sucursales||null, inicio:found.inicio||null, soloHerramientas:!!found.soloHerramientas };
+    const session = { email:found.email, rol:found.rol, herramientas:ordenarInicio(herramientasEfectivas(found.rol, found.herramientas, found.soloHerramientas), found.inicio), sucursal:found.sucursal||null, outlet_id:found.outlet_id||null, sucursales:found.sucursales||null, inicio:found.inicio||null, soloHerramientas:!!found.soloHerramientas };
     saveSession(session);
     render(session);
   } catch(e){
@@ -795,7 +801,7 @@ async function renderUsuariosView(container){
         '<div class="fld fld-full"><label>Sucursales que supervisa (si rol=supervisor)</label><select class="sel" multiple size="5" id="nuSupSuc" style="width:100%">'+LOCALES_SUP.map(l=>'<option value="'+l.id+'">'+l.nombre+'</option>').join('')+'</select></div>'+
         '<div class="fld fld-full"><label>Herramientas</label><select class="sel" multiple size="6" id="nuHerramientas" style="width:100%">'+HERRAMIENTAS_LIST.map(h=>'<option value="'+h.id+'">'+h.nombre+'</option>').join('')+'</select></div>'+
         '<div class="fld"><label>Pantalla inicial (vacío = la del rol)</label>'+inicioSelectHtml('nuInicio','','style="width:100%"')+'</div>'+
-        '<div class="fld"><label>Si es admin</label><label style="font-size:13px"><input type="checkbox" id="nuSolo"> Solo las herramientas marcadas (no ver todas)</label></div>'+
+        '<div class="fld"><label>Si es admin</label><div style="font-size:14px;padding-top:6px"><input type="checkbox" id="nuSolo" style="vertical-align:middle"> Solo las herramientas marcadas (no ver todas)</div></div>'+
       '</div><br><button class="btn btn-primary" id="btnNuevoUsuario">Crear usuario (PIN inicial 1111)</button></div>';
 
     body.querySelectorAll('button[data-guardar-herr]').forEach(b=> b.addEventListener('click', async ()=>{
@@ -1340,7 +1346,7 @@ document.addEventListener('click', e=>{
   const s = readSession();
   if(s && s.email){
     // Normaliza sesiones ya guardadas (usuarios que quedaron logueados antes de este cambio)
-    s.herramientas = herramientasEfectivas(s.rol, s.herramientas, s.soloHerramientas);
+    s.herramientas = ordenarInicio(herramientasEfectivas(s.rol, s.herramientas, s.soloHerramientas), s.inicio);
     saveSession(s);
     render(s);
   } else showLogin();
