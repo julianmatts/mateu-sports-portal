@@ -144,6 +144,16 @@ y las listas de sucursales/outlets.
   Recursos Humanos, inicio ahí).
 - El acceso a localStorage está envuelto en try/catch para no romper en
   previews sin storage. Mantener ese patrón.
+- **Bloqueo por inactividad (04/09/2026, `shared/bloqueo.js`)**: las cuentas de encargado
+  (roles `sucursal`/`outlet`) que pasan **10 minutos** sin actividad en cualquier módulo ven
+  una cortina navy y tienen que ingresar el PIN de la cuenta para seguir (la sesión no se
+  cierra; lo que estaban haciendo queda igual). `header.js` lo carga solo en todos los
+  módulos con header unificado; el Portal e Indicadores lo incluyen con una línea en el
+  `<head>`. Última actividad y estado bloqueado en localStorage (`mateu_bloqueo_act` /
+  `mateu_bloqueo_lock`, compartidos entre pestañas; el Portal los limpia al entrar/salir).
+  PIN validado contra `usuarios/<mail>` como el login. Minutos y roles se cambian en las
+  constantes del script o con `window.MATEU_BLOQUEO = {minutos, roles}` antes de cargarlo.
+  `puesto`, `deposito` y gerencia no se bloquean.
 
 ## Branding / design tokens
 

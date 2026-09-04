@@ -570,6 +570,7 @@ async function login(){
     // Evaluaciones. Alcance "blando" en el cliente, como el resto del portal.
     found = aplicarPerfilFijo(found);
     const session = { email:found.email, rol:found.rol, herramientas:ordenarInicio(herramientasEfectivas(found.rol, found.herramientas, found.soloHerramientas), found.inicio), sucursal:found.sucursal||null, outlet_id:found.outlet_id||null, sucursales:found.sucursales||null, inicio:found.inicio||null, soloHerramientas:!!found.soloHerramientas };
+    try{ localStorage.removeItem('mateu_bloqueo_lock'); localStorage.removeItem('mateu_bloqueo_act'); }catch(e){}   // bloqueo por inactividad (shared/bloqueo.js)
     saveSession(session);
     render(session);
   } catch(e){
@@ -582,6 +583,7 @@ function logout(){
   if(MSG_BADGE_TIMER){ clearInterval(MSG_BADGE_TIMER); MSG_BADGE_TIMER=null; }
   $('msgBtn').style.display='none'; $('msgBadge').style.display='none';
   closeNotifPanel(); ocultarToast(); $('notifWidget').style.display='none';
+  try{ localStorage.removeItem('mateu_bloqueo_lock'); localStorage.removeItem('mateu_bloqueo_act'); }catch(e){}
   clearSession(); showLogin();
 }
 
@@ -1373,6 +1375,8 @@ document.addEventListener('click', e=>{
 <!-- Íconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
 <script src="shared/iconos.js" defer></script>
 <script src="shared/tutorial.js" defer></script>
+<!-- Bloqueo por inactividad de las cuentas de encargado (pide el PIN para seguir) -->
+<script src="shared/bloqueo.js" defer></script>
 <!-- Calendario retail del shell (se auto-monta en .top-right del header) -->
 <script src="shared/components/calendario-retail/calendario.js" defer></script>
 

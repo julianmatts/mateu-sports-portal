@@ -244,6 +244,15 @@
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', montar);
   else montar();
 
+  /* Bloqueo por inactividad de las cuentas de encargado (shared/bloqueo.js):
+     se carga solo desde acá, así ningún módulo con header unificado se lo
+     olvida. El Portal e Indicadores (header propio) lo incluyen a mano. */
+  if(!document.querySelector('script[src*="shared/bloqueo"]')){
+    var sb = document.createElement('script');
+    sb.src = ROOT+'shared/bloqueo.js';
+    document.head.appendChild(sb);
+  }
+
   /* Mantener el service worker del Portal al día desde cualquier módulo.
      El registro original vive en el index raíz, pero sucursal/gerencia son
      redirigidas a Indicadores antes del evento load: sin esto, el sw.js nuevo
