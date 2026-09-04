@@ -163,10 +163,17 @@ La presentación del mes (`gestion-stock/?pres=YYYY-MM`, deck generado desde
 tiene usuario). En `init()` el chequeo de `?pres=` va ANTES del gate de sesión;
 el resto del módulo sigue gateado. El deck solo muestra agregados del mes.
 
-**Diseño del deck (03/09/2026, `gsPresHtml` + `gsPresTot`):** **tapa y pie navy, cuerpo
-claro** (04/09, pedido de Juli: se probó navy sobre navy y carbón; quedó el claro, mismo fondo
-`#f5f7fc` del portal): tarjetas blancas, texto navy, cabeceras de tabla y filas de total en navy
-con borde rojo, nav transparente sobre la tapa y blanco al scrollear (logo en oscuro).
+**Diseño del deck (03/09/2026, `gsPresHtml` + `gsPresTot`):** **todo en claro, portada
+incluida** (04/09, pedido de Juli: se probó navy, carbón y tapa navy + cuerpo claro; quedó
+unificado en claro, mismo fondo `#f5f7fc` del portal): tarjetas blancas, texto navy, cabeceras
+de tabla en dos filas (indicador + unidad) y totales **neutros** (gris, sin navy ni rojo), logo
+en oscuro. **Sellos Mateu** tipo certificado (`sello()`: SVG con anillo de texto) en la portada
+(logo + «datos certificados» + fecha de carga), en cada bloque (con su número) y en el pie.
+Tablas sin barras dentro de las celdas; los chips de variación llevan signo («▲ +55» /
+«▼ −115») y cada tabla cierra con la leyenda de lectura (`tblLegend`). En Indicadores, la
+tabla **«Discontinuos mes a mes»** (`discMM`: una columna por informe cargado, celda
+sombreada por magnitud, «Repite N de M» y punto rojo para las sucursales con discontinuos en
+todos los informes; `gsPresTot` expone `disc` por slug).
 **Regla de color (04/09):** navy = magnitud (barras Top 5, barras bajo los números, stock
 apilado navy+acero, óptimo/saludable), **rojo solo alerta** (crítico, exceso, ▲ empeoró),
 ámbar la zona intermedia y un verde apagado únicamente en ▼ mejoró. Clase `.f-nav` para las
