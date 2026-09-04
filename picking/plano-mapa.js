@@ -65,5 +65,18 @@
       +'<div class="mp-legend"><span><i style="background:#e7eefc"></i>Reserva (pickeable)</span>'+hot
       +'<span><i style="background:#fff4e2"></i>Recepción / boxes</span><span><i style="background:#eef1f7"></i>Servicios</span></div>';
   }
-  window.PlanoMapa = { svg:svg, bloque:bloque, shortLabel:shortLabel };
+  // planta que contiene la zona de reserva con ese nombre
+  function plantaDeZona(nombre){
+    var P=window.PLANO_DEPOSITO; if(!P||!P.plantas) return null;
+    for(var i=0;i<P.plantas.length;i++){ var pl=P.plantas[i];
+      if((pl.celdas||[]).some(function(c){ return c.tipo==='reserva'&&c.label===nombre; })) return pl; }
+    return null;
+  }
+  // mapa compacto de la planta donde está la zona, con la zona resaltada (rojo por defecto)
+  function zonaMap(nombre, opts){
+    var pl=plantaDeZona(nombre); if(!pl) return '';
+    opts=opts||{}; opts.resaltar=new Set([nombre]); if(!opts.hotCls) opts.hotCls='mp-here';
+    return '<div class="mp-planta"><h3>'+esc(pl.nombre)+'</h3>'+svg(pl,opts)+'</div>';
+  }
+  window.PlanoMapa = { svg:svg, bloque:bloque, shortLabel:shortLabel, zonaMap:zonaMap, plantaDeZona:plantaDeZona };
 })();

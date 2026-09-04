@@ -8,6 +8,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="../../shared/iconos.js" defer></script>
+<!-- Plano del depósito: mapa que resalta dónde está cada ítem durante el picking -->
+<script src="../../picking/plano-deposito.js"></script>
+<script src="../../picking/plano-mapa.js"></script>
 <style>
   :root{
     --navy:#0B1527;--navy-mid:#1a2f55;--red:#CC0000;--off:#f5f7fc;--card:#fff;--border:#dce3f0;
@@ -347,6 +350,10 @@ function pkInjectCss(){ if($('pkCss')) return; const css=''
   +'.pk-zona{background:var(--navy);color:#fff;border-radius:16px;padding:18px;text-align:center;margin-bottom:12px}'
   +'.pk-zona .lbl{font-family:var(--font-c);font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#8ea3c9}'
   +'.pk-zona .z{font-family:var(--font-d);font-size:clamp(34px,10vw,52px);letter-spacing:1px;line-height:1.02;margin-top:2px}'
+  +'.pk-zona .btnmap{margin-top:10px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.32);color:#fff;font-family:var(--font-c);font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase;padding:6px 14px;border-radius:999px;cursor:pointer}'
+  +'.pk-mapa{max-width:340px;margin:-2px auto 12px}'
+  +'.pk-mapa .mp-planta{padding:8px}'
+  +'.pk-mapa .mp-svg{width:auto;height:min(280px,40vh);max-width:100%;margin:0 auto}'
   +'.pk-prod{background:#fff;border:2px solid var(--border);border-radius:16px;padding:18px;text-align:center;transition:border-color .15s,background .15s}'
   +'.pk-prod.ok{border-color:var(--ok);background:#f2faf5}'
   +'.pk-prod.bad{border-color:var(--bad);background:#fdecec}'
@@ -426,18 +433,22 @@ function renderPickSummary(){
   };
 }
 
+let pkMapaOpen = true;   // el mini-mapa del recorrido arranca visible; el operario lo puede plegar
 function renderPickOperativo(){
   const P=pkGet(); if(!P){ state.view='lista'; return render(); }
   const line=pkNext(P);
   if(!line){ state.view='fin'; return render(); }
   const r=pkResumen(P); const rest=line.req-line.picked; const pct=r.req?Math.round(r.pk/r.req*100):0;
+  const zmap=(window.PlanoMapa && line.zona && line.zona!=='Sin zona') ? PlanoMapa.zonaMap(line.zona) : '';
   let dots=''; for(let i=0;i<line.req;i++) dots+='<span class="dot'+(i<line.picked?' on':'')+'"></span>';
   let h='<div class="pk-op">'
     +'<div class="pk-top"><div class="pk-top-row"><span class="pk-id">PICK #'+esc(P.nro)+'</span>'
     +'<span class="pk-dest2">'+esc(nombreSuc(P.destino))+'</span><button class="btn btn-outline btn-xs" id="pausar">⏸ Pausar</button></div>'
     +'<div class="pk-progbar"><span id="pkPb" style="width:'+pct+'%"></span></div>'
     +'<div class="pk-progtxt" id="pkPt">'+fmtInt(r.pk)+' / '+fmtInt(r.req)+' unidades</div></div>'
-    +'<div class="pk-zona"><div class="lbl">Ir a</div><div class="z">'+esc(line.zona)+'</div></div>'
+    +'<div class="pk-zona"><div class="lbl">Ir a</div><div class="z">'+esc(line.zona)+'</div>'
+    +(zmap?'<button type="button" class="btnmap" id="btnMapa">'+(pkMapaOpen?'▾':'🗺')+' Mapa</button>':'')+'</div>'
+    +(zmap?'<div class="pk-mapa" id="pkMapa"'+(pkMapaOpen?'':' style="display:none"')+'>'+zmap+'</div>':'')
     +'<div class="pk-prod" id="pkProd"><div class="desc">'+esc(line.desc||line.codigo)+'</div>'
     +'<div class="cod">'+esc(line.codigo)+(line.marca?(' · '+esc(line.marca)):'')+'</div>'
     +'<div class="talle"><small>Talle</small>'+esc(line.talle)+'</div>'
@@ -453,6 +464,7 @@ function renderPickOperativo(){
   $('pmanual').onclick=()=>{ pkFeedback(true,'✓ +1'); pkContar(1,'manual'); };
   $('pausar').onclick=pkPausar;
   $('nostock').onclick=pkNoStock;
+  { const bm=$('btnMapa'); if(bm) bm.onclick=()=>{ pkMapaOpen=!pkMapaOpen; const m=$('pkMapa'); if(m) m.style.display=pkMapaOpen?'':'none'; bm.textContent=(pkMapaOpen?'▾':'🗺')+' Mapa'; }; }
   inp.focus();
 }
 function pkFeedback(ok,msg){
