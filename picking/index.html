@@ -475,17 +475,17 @@ async function renderZonas(){
   }).join('') : '<tr><td colspan="4" class="hint" style="padding:14px">Todavía no hay zonas. Creá la primera con "+ Nueva zona".</td></tr>';
   html+='</tbody></table></div>';
   // asignación combo -> zona
-  html+='<div class="sec-head" style="margin-bottom:8px"><div><h1 style="font-size:22px">Marca / Rubro → Zona</h1><div class="sub">Asigná cada combinación de la barrida a una zona.</div></div></div>';
+  html+='<div class="sec-head" style="margin-bottom:8px"><div><h1 style="font-size:22px">Marca / Rubro → Zona</h1><div class="sub">Asigná cada combinación de la barrida a una zona. Son muchas: usá los filtros.</div></div></div>';
   if(!combos.length){ html+='<div class="state">No hay barrida cargada para listar las combinaciones.</div>'; }
   else{
-    html+='<div class="tbl-wrap"><table><thead><tr><th>Marca</th><th>Rubro</th><th style="width:220px">Zona</th></tr></thead><tbody>';
-    html+=combos.map(c=>{ const k=comboKey(c.marca,c.rubro); const cur=DATA.asignZona[k]||'';
-      return '<tr><td><b>'+esc(c.marca)+'</b></td><td>'+esc(c.rubro)+'</td><td><select class="sel" data-combo="'+esc(k)+'" style="width:100%">'
-        + '<option value="">— sin asignar —</option>'
-        + zonas.map(z=>'<option value="'+esc(z.id)+'"'+(cur===z.id?' selected':'')+'>'+esc(z.nombre)+'</option>').join('')
-        + '</select></td></tr>';
-    }).join('');
-    html+='</tbody></table></div>';
+    if(state.zAsgSin===undefined) state.zAsgSin=true;   // por defecto, solo las que faltan asignar
+    const marcasAsg=[...new Set(combos.map(c=>c.marca))].sort(cmp);
+    html+='<div class="subtabs" style="align-items:center;gap:10px;margin-bottom:12px">'
+      +'<input class="inp" id="zAsgQ" placeholder="Buscar marca o rubro…" value="'+esc(state.zAsgQ||'')+'" style="flex:1;min-width:150px">'
+      +'<select class="sel" id="zAsgMarca"><option value="">Todas las marcas</option>'+marcasAsg.map(m=>'<option value="'+esc(m)+'"'+((state.zAsgMarca||'')===m?' selected':'')+'>'+esc(m)+'</option>').join('')+'</select>'
+      +'<label style="display:flex;align-items:center;gap:6px;font-family:var(--font-c);font-size:13px;color:var(--muted);white-space:nowrap;cursor:pointer"><input type="checkbox" id="zAsgSin"'+(state.zAsgSin?' checked':'')+'> Solo sin asignar</label>'
+      +'<span id="zAsgCount" class="hint" style="white-space:nowrap"></span></div>'
+      +'<div class="tbl-wrap" id="zAsgBox"></div>';
   }
   // Mapa del depósito: resalta en verde las zonas que ya tienen marca/rubro asignado
   if(window.PLANO_DEPOSITO && window.PLANO_DEPOSITO.plantas){
@@ -503,8 +503,31 @@ async function renderZonas(){
   });
   document.querySelectorAll('[data-ez]').forEach(b=>b.onclick=()=>editarZona(b.dataset.ez));
   document.querySelectorAll('[data-dz]').forEach(b=>b.onclick=async()=>{ const id=b.dataset.dz; if(!confirm('¿Eliminar la zona "'+(DATA.zonas[id]?DATA.zonas[id].nombre:'')+'"?')) return; try{ await fbDelete(ROOT+'/zonas/'+id); delete DATA.zonas[id]; render(); toast('Zona eliminada','ok'); }catch(e){ toast('No se pudo','bad'); } });
-  document.querySelectorAll('[data-combo]').forEach(sel=>sel.onchange=async()=>{ const k=sel.dataset.combo, zid=sel.value;
-    try{ if(zid){ await fbPut(ROOT+'/asignZona/'+k, zid); DATA.asignZona[k]=zid; } else { await fbDelete(ROOT+'/asignZona/'+k); delete DATA.asignZona[k]; } toast('Asignado','ok'); }catch(e){ toast('No se pudo guardar','bad'); } });
+  // Asignación marca/rubro → zona con filtros (son cientos de combinaciones)
+  function pintarAsg(){
+    const box=$('zAsgBox'); if(!box) return;
+    const q=(state.zAsgQ||'').toLowerCase().trim(), sin=!!state.zAsgSin, fm=state.zAsgMarca||'';
+    const asignadasN=combos.filter(c=>DATA.asignZona[comboKey(c.marca,c.rubro)]).length;
+    const filtrados=combos.filter(c=>{ const k=comboKey(c.marca,c.rubro);
+      if(sin && DATA.asignZona[k]) return false;
+      if(fm && c.marca!==fm) return false;
+      if(q && (c.marca+' '+c.rubro).toLowerCase().indexOf(q)<0) return false;
+      return true; });
+    const cnt=$('zAsgCount'); if(cnt) cnt.textContent=asignadasN+' de '+combos.length+' asignadas · '+(combos.length-asignadasN)+' sin asignar';
+    if(!filtrados.length){ box.innerHTML='<div class="state" style="padding:22px">'+((combos.length-asignadasN)===0&&sin?'✓ Todas las combinaciones están asignadas.':'No hay combinaciones que coincidan con el filtro.')+'</div>'; return; }
+    box.innerHTML='<table><thead><tr><th>Marca</th><th>Rubro</th><th style="width:220px">Zona</th></tr></thead><tbody>'
+      + filtrados.map(c=>{ const k=comboKey(c.marca,c.rubro), cur=DATA.asignZona[k]||'';
+          return '<tr><td><b>'+esc(c.marca)+'</b></td><td>'+esc(c.rubro)+'</td><td><select class="sel" data-combo="'+esc(k)+'" style="width:100%"><option value="">— sin asignar —</option>'
+            + zonas.map(z=>'<option value="'+esc(z.id)+'"'+(cur===z.id?' selected':'')+'>'+esc(z.nombre)+'</option>').join('')+'</select></td></tr>';
+        }).join('')+'</tbody></table>';
+    box.querySelectorAll('[data-combo]').forEach(sel=>sel.onchange=async()=>{ const k=sel.dataset.combo, zid=sel.value;
+      try{ if(zid){ await fbPut(ROOT+'/asignZona/'+k, zid); DATA.asignZona[k]=zid; } else { await fbDelete(ROOT+'/asignZona/'+k); delete DATA.asignZona[k]; }
+        pintarAsg(); }catch(e){ toast('No se pudo guardar','bad'); } });
+  }
+  { const qi=$('zAsgQ'); if(qi) qi.oninput=()=>{ state.zAsgQ=qi.value; pintarAsg(); };
+    const mi=$('zAsgMarca'); if(mi) mi.onchange=()=>{ state.zAsgMarca=mi.value; pintarAsg(); };
+    const si=$('zAsgSin'); if(si) si.onchange=()=>{ state.zAsgSin=si.checked; pintarAsg(); };
+    if($('zAsgBox')) pintarAsg(); }
 }
 function editarZona(id){
   const z = id?DATA.zonas[id]:{nombre:'',orden:(Object.keys(DATA.zonas).length+1)*10};
