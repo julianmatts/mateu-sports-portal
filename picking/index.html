@@ -108,6 +108,9 @@ const $ = id => document.getElementById(id);
 const FIREBASE_DB_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
 const BARR = 'barrida';   // reusa la base de barrida (recepciones-mateu)
 const ROOT = 'picking';   // dominio nuevo
+// Legajos de RRHH (otra base) para traer la dotación del depósito como operarios.
+const LEGAJOS_URL = 'https://discontinuos-mateu-default-rtdb.firebaseio.com/rrhh/legajos.json';
+const SUC_DEPOSITO = 'deposito';   // slug de la sucursal "Depósito Central" en los legajos
 
 /* ---- sesión + rol (lee la sesión del Portal, sin login propio) ---- */
 const SESSION_KEY='mateu_portal_session';
@@ -540,13 +543,14 @@ async function cargarZonasDelPlano(){
 function renderOperarios(){
   const ops=Object.keys(DATA.operarios).map(id=>({id,...DATA.operarios[id]})).sort((a,b)=>cmp(a.nombre,b.nombre));
   let html=seccionHead('Operarios','Los que preparan pedidos. El kiosco usa esta lista al iniciar/terminar una tarea.',
-    '<button class="btn btn-primary btn-sm" id="btnOp">+ Nuevo operario</button>');
-  html+='<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Estado</th><th style="width:120px"></th></tr></thead><tbody>';
-  html+= ops.length ? ops.map(o=>'<tr><td><b>'+esc(o.nombre)+'</b></td><td>'+(o.activo!==false?'<span class="pill fin">Activo</span>':'<span class="pill pend">Inactivo</span>')+'</td>'
+    '<button class="btn btn-outline btn-sm" id="btnDot">⇩ Traer dotación del depósito</button> <button class="btn btn-primary btn-sm" id="btnOp">+ Nuevo operario</button>');
+  html+='<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Puesto</th><th>Estado</th><th style="width:120px"></th></tr></thead><tbody>';
+  html+= ops.length ? ops.map(o=>'<tr><td><b>'+esc(o.nombre)+'</b>'+(o.legajoId?' <span class="pill pend" title="Importado de los legajos de RRHH">legajo</span>':'')+'</td><td>'+esc(o.puesto||'—')+'</td><td>'+(o.activo!==false?'<span class="pill fin">Activo</span>':'<span class="pill pend">Inactivo</span>')+'</td>'
     + '<td><button class="btn btn-outline btn-sm" data-toga="'+esc(o.id)+'">'+(o.activo!==false?'Desactivar':'Activar')+'</button> <button class="btn btn-outline btn-sm" data-delo="'+esc(o.id)+'">🗑</button></td></tr>').join('')
-    : '<tr><td colspan="3" class="hint" style="padding:14px">Todavía no hay operarios. Cargá el primero con "+ Nuevo operario".</td></tr>';
+    : '<tr><td colspan="4" class="hint" style="padding:14px">Todavía no hay operarios. Traé la dotación del depósito o cargá el primero a mano.</td></tr>';
   html+='</tbody></table></div>';
   $('view').innerHTML=html;
+  $('btnDot').onclick=importarDotacionDeposito;
   $('btnOp').onclick=()=>{ openModal('<h2>Nuevo operario</h2><div class="fld"><label>Nombre</label><input class="inp" id="opNom" placeholder="Nombre y apellido"></div>'
     + '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="opSave">Guardar</button></div>');
     $('opNom').focus();
@@ -557,6 +561,27 @@ function renderOperarios(){
   };
   document.querySelectorAll('[data-toga]').forEach(b=>b.onclick=async()=>{ const id=b.dataset.toga; const o=DATA.operarios[id]; if(!o) return; const na=!(o.activo!==false); try{ await fbPut(ROOT+'/operarios/'+id+'/activo', na); o.activo=na; render(); }catch(e){ toast('No se pudo','bad'); } });
   document.querySelectorAll('[data-delo]').forEach(b=>b.onclick=async()=>{ const id=b.dataset.delo; if(!confirm('¿Eliminar a "'+(DATA.operarios[id]?DATA.operarios[id].nombre:'')+'"?')) return; try{ await fbDelete(ROOT+'/operarios/'+id); delete DATA.operarios[id]; render(); toast('Operario eliminado','ok'); }catch(e){ toast('No se pudo','bad'); } });
+}
+// Trae la dotación del Depósito Central desde los legajos de RRHH y la vuelca como
+// operarios (merge por legajo; no borra los cargados a mano ni pisa quién está
+// desactivado). Identidad = 'leg-<legajoId>'.
+async function importarDotacionDeposito(){
+  const b=$('btnDot'); if(b){ b.disabled=true; b.textContent='Cargando…'; }
+  try{
+    const legs = await (await fetch(LEGAJOS_URL)).json();
+    const arr = Object.keys(legs||{}).map(id=>({legId:id, ...legs[id]}))
+      .filter(l=>l && l.sucursal===SUC_DEPOSITO && (l.estado||'activo')!=='baja' && l.nombre)
+      .sort((a,b)=>cmp(a.nombre,b.nombre));
+    if(!arr.length){ toast('No hay legajos activos del Depósito Central','bad'); if(b){ b.disabled=false; b.textContent='⇩ Traer dotación del depósito'; } return; }
+    const nuevos = arr.filter(l=>!DATA.operarios['leg-'+l.legId]).length;
+    if(!confirm('Traer '+arr.length+' personas del Depósito Central (legajos) como operarios: '+nuevos+' nuevas, '+(arr.length-nuevos)+' se actualizan.\n\nSe agregan/actualizan por legajo; NO borra los operarios cargados a mano ni reactiva a los que desactivaste. ¿Seguir?')){ if(b){ b.disabled=false; b.textContent='⇩ Traer dotación del depósito'; } return; }
+    const patch={};
+    arr.forEach(l=>{ const id='leg-'+l.legId; const prev=DATA.operarios[id]||{};
+      patch[id]={ nombre:l.nombre, puesto:l.puesto||'', legajoId:l.legId, activo: prev.activo!==false, creado: prev.creado||nowISO() }; });
+    await fbPatch(ROOT+'/operarios', patch);
+    Object.assign(DATA.operarios, patch);
+    toast(arr.length+' operarios del depósito importados','ok'); render();
+  }catch(e){ if(b){ b.disabled=false; b.textContent='⇩ Traer dotación del depósito'; } toast('No se pudo importar la dotación','bad'); }
 }
 
 /* ---- util ---- */
