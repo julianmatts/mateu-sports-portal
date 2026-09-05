@@ -150,6 +150,13 @@ y las listas de sucursales/outlets.
   lista. Los módulos que publican avisos solos (reporte semanal de equipo/, Academia) no
   pasan por ese filtro. La base `mensajes-mateu` se **reinició** ese día (tablero, directos,
   avisos y lecturas borrados; respaldo en `Descargas/respaldo-mensajes-mateu-2026-09-04.json`).
+- **Diseño de la Bandeja (05/09/2026)**: pestañas segmented; el **Tablero es un muro**
+  (tarjetas `.post` más nuevo arriba, avatar con iniciales `avatarHtml`, etiqueta del autor
+  `ETIQ_AUTOR` —Gerencia/Supervisor/RRHH—, chip de destino, «nuevo» = posterior a la
+  última lectura; la caja de publicar `.tb-compose` elige destinatarios con **chips**
+  `MSG_DEST` + select para sumar una sucursal/outlet puntual). **Directos** es una sola
+  tarjeta `.dm-wrap` con lista (avatar, hora, no leídos) + conversación con separadores
+  por día (`diaEtiqueta`) y textarea que crece (`autoGrow`). Horas en 24 hs (`fechaBonita`).
 - El acceso a localStorage está envuelto en try/catch para no romper en
   previews sin storage. Mantener ese patrón.
 - **Bloqueo por inactividad (04/09/2026, `shared/bloqueo.js`)**: las cuentas de encargado
