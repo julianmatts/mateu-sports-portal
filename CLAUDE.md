@@ -143,6 +143,13 @@ y las listas de sucursales/outlets.
   normalizar una sesión abierta, así no dependen del ⚙ (la fila del ⚙ lo avisa). Hoy:
   `producto@` (las 4 herramientas de arriba, inicio Área de Producto) y `rrhh@` (solo
   Recursos Humanos, inicio ahí).
+- **Bandeja de entrada — quién publica (04/09/2026)**: en el **Tablero** y en los **avisos**
+  de la campana solo escriben los mails de `PUBLICAN_TABLERO` (`index.html` raíz:
+  julian@, cristian.campion@ y rrhh@; helper `puedePublicarTablero`). El resto lee el
+  tablero, ve una nota y usa Directos. Es «por ahora»: para abrirlo, sumar mails a la
+  lista. Los módulos que publican avisos solos (reporte semanal de equipo/, Academia) no
+  pasan por ese filtro. La base `mensajes-mateu` se **reinició** ese día (tablero, directos,
+  avisos y lecturas borrados; respaldo en `Descargas/respaldo-mensajes-mateu-2026-09-04.json`).
 - El acceso a localStorage está envuelto en try/catch para no romper en
   previews sin storage. Mantener ese patrón.
 - **Bloqueo por inactividad (04/09/2026, `shared/bloqueo.js`)**: las cuentas de encargado

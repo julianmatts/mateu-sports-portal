@@ -389,6 +389,13 @@ const FB_USUARIOS = FB + '/usuarios.json';
 
 // Único usuario que ve el ícono de ajustes (gestión de usuarios).
 const ADMIN_SETTINGS_EMAIL = 'julian@mateu.com.ar';
+// Quiénes pueden PUBLICAR en el Tablero de la Bandeja y en los avisos de la campana
+// (pedido de Juli 04/09/2026, «por ahora»): Juli, Cristian (supervisor) y RRHH. El resto
+// lee el tablero y usa los Directos, pero no ve el cuadro para escribir.
+const PUBLICAN_TABLERO = ['julian@mateu.com.ar', 'cristian.campion@mateu.com.ar', 'rrhh@mateu.com.ar'];
+function puedePublicarTablero(session){
+  return !!session && PUBLICAN_TABLERO.indexOf((session.email||'').toLowerCase()) !== -1;
+}
 // Perfiles FIJOS en el código (pedido de Juli 04/09/2026): pisan `herramientas`, `inicio` y
 // `soloHerramientas` del registro de Firebase al loguearse, así no dependen del ⚙.
 // producto@ es admin (lo exigen Pedidos Semanales y Gestión de Stock) pero su Portal son
@@ -1089,7 +1096,7 @@ function abrirNotif(n, el){
 function openNotifPanel(){
   const panel = $('notifPanel'); if(!panel) return;
   panel.style.display='flex';
-  $('notifAvisoBox').style.display = (CURRENT_SESSION && CURRENT_SESSION.rol==='admin') ? 'block' : 'none';
+  $('notifAvisoBox').style.display = puedePublicarTablero(CURRENT_SESSION) ? 'block' : 'none';
   pintarNotifList();
 }
 function closeNotifPanel(){
@@ -1105,10 +1112,10 @@ function toggleNotifPanel(){
   const panel = $('notifPanel');
   if(panel && panel.style.display==='flex') closeNotifPanel(); else openNotifPanel();
 }
-// Publicar un aviso para toda la cadena (solo admin). Se marca leído para el autor.
+// Publicar un aviso para todas las sucursales (solo PUBLICAN_TABLERO). Se marca leído para el autor.
 async function publicarAviso(){
   const inp = $('notifAvisoInput'); const texto = (inp.value||'').trim();
-  if(!texto || !CURRENT_SESSION) return;
+  if(!texto || !puedePublicarTablero(CURRENT_SESSION)) return;
   const btn = $('notifAvisoSend'); btn.disabled=true; btn.textContent='Publicando…';
   const ts = Date.now();
   try{
@@ -1208,27 +1215,31 @@ async function renderTablero(){
   $('msgPane').innerHTML =
     '<div class="msg-filter">Ver <select class="sel" id="msgFiltro">'+filtroOptions(MSG_FILTRO)+'</select></div>'+
     '<div class="msg-thread" id="msgThread"><div class="msg-empty">Cargando…</div></div>'+
+    (puedePublicarTablero(CURRENT_SESSION) ?
     '<div class="msg-compose-wrap">'+
       '<label class="msg-dest-lbl">Para</label>'+
       '<select class="sel" id="msgDest" multiple size="3" style="width:100%">'+destinoOptgroups(['todos'])+'</select>'+
       '<div class="msg-compose"><textarea id="msgInput" placeholder="Escribí un mensaje…"></textarea>'+
       '<button class="btn btn-primary" id="msgSend">Enviar</button></div>'+
-    '</div>';
+    '</div>'
+    : '<div class="msg-notice" style="margin-top:14px">En el tablero publican Gerencia, el Supervisor y RRHH. Para escribirle a alguien usá <b>✉️ Directos</b>.</div>');
   const posts = objToSortedList(await fetchJSON(MENSAJES_DB_URL+'/tablero.json').catch(()=>null));
   MSG_POSTS = posts;
   pintarTablero();
   const ultTs = posts.length ? posts[posts.length-1].ts : Date.now();
   putJSON(MENSAJES_DB_URL+'/lecturas/'+firebaseKeyFromEmail(CURRENT_SESSION.email)+'/tablero.json', ultTs).then(refreshBadge);
   $('msgFiltro').addEventListener('change', e=>{ MSG_FILTRO = e.target.value; pintarTablero(); });
-  $('msgSend').addEventListener('click', enviarTablero);
-  $('msgInput').addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); enviarTablero(); } });
+  if($('msgSend')){
+    $('msgSend').addEventListener('click', enviarTablero);
+    $('msgInput').addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); enviarTablero(); } });
+  }
 }
 // Pinta el tablero aplicando el filtro "Ver" y mostrando el destinatario de cada post.
 function pintarTablero(){
   const thread = $('msgThread'); if(!thread) return;
   const visibles = MSG_POSTS.filter(p=>postCoincideFiltro(p.para));
   if(!visibles.length){
-    thread.innerHTML = '<div class="msg-empty">No hay mensajes'+(MSG_FILTRO!=='__todo'?' para este filtro':' todavía')+'.</div>';
+    thread.innerHTML = '<div class="msg-empty">No hay publicaciones'+(MSG_FILTRO!=='__todo'?' para este filtro':' todavía')+'.</div>';
     return;
   }
   const miEmail = (CURRENT_SESSION.email||'').toLowerCase();
@@ -1242,7 +1253,7 @@ function pintarTablero(){
 }
 async function enviarTablero(){
   const input = $('msgInput'); const texto = (input.value||'').trim();
-  if(!texto) return;
+  if(!texto || !puedePublicarTablero(CURRENT_SESSION)) return;
   let para = Array.from($('msgDest').selectedOptions).map(o=>o.value);
   if(!para.length || para.indexOf('todos')!==-1) para = ['todos'];
   input.value = '';
