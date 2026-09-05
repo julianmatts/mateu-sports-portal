@@ -540,6 +540,22 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   sigue tipeando se refina la MISMA fila (`zap` → `zapatilla run`, ventana de 3 min) y
   se mantiene el dedupe de 10 min por perfil. Tocar una búsqueda del historial la
   repite en el buscador.
+- **Etiquetas de marca — código de barras EAN/UPC (04/09/2026)**: las etiquetas de
+  Under Armour, adidas, Nike… traen el EAN del talle, no el código del sistema, y el
+  export de stock NO puede traer ese dato (Juli). Se resuelve con un **mapa compartido
+  por todas las sucursales** en `ubicaciones-mateu/ean/<gtin13>` =
+  `{codigo, descripcion, t (talle), slug, por, ts}` + índice `ean/suf/<últimos 11>` →
+  clave (tolera la lectora que recorta el primer dígito; si llegó recortado se guarda
+  como `p<dígitos>`). Primera vez: «Sin resultados» + botón **«Vincular a un artículo»**
+  (también en el toast del escaneo; puesto y encargado pueden) → hoja
+  `abrirSheetVincularEan`: buscar el artículo, elegir talle opcional, guardar. Desde ahí
+  el escaneo lo encuentra en cualquier sucursal (`eanResolver` = `eanLocal` por los
+  `eans` del artículo + `eanRemoto` por el mapa, cacheado por promesa). Normalización
+  en `gtin13`/`mismoEan`: solo dígitos, UPC-A de 12 = EAN-13 con cero adelante,
+  igualdad por sufijo de 11 cuando uno vino recortado. Búsqueda, escaneo y Lista de
+  retiro lo usan. Además el mapeo de la carga de stock tiene columna **«Código de
+  barras» opcional** (`RX_EAN`; sin encabezados = numérica de 12-14 dígitos, detectada
+  antes que Id.item) → `eans: [{e,t}]` por artículo, conservados si la carga no los trae.
 - **Artículos nuevos sin ubicar** (prioridad del depósito): «nuevo» = `fechaAlta`
   posterior a la **primera carga** de la sucursal (cada carga graba un único
   timestamp; así el día 1 no se marca todo) y ≤ `NUEVO_DIAS` (7). Se destacan con
