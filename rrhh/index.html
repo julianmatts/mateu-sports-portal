@@ -468,6 +468,7 @@ async function init(){
   cargarFeriados();
   await recargar();
   render();
+  conciliarPendientes();   // de fondo: banner + aviso a RRHH si hay nombres de ventas sin legajo
 }
 /* Feriados del calendario retail del shell (shared/data/calendario-<año>.json).
    Solo para marcarlos en la grilla; si falla, el calendario funciona igual. */
@@ -617,7 +618,7 @@ function viewLegajos(){
     <button class="btn btn-primary btn-sm" id="btnNuevo">+ Legajo</button>
     <button class="btn btn-outline btn-sm" id="btnImportar" title="Traer la dotación registrada en Indicadores">⇩ Importar dotación</button>
     <button class="btn btn-navy btn-sm" id="btnActualizar" title="Subir el Excel Registro Único y actualizar los legajos">⟳ Actualizar (Excel)</button>
-    <button class="btn btn-outline btn-sm" id="btnConciliar" title="Cruzar los nombres del sistema de ventas con los legajos y dejar cada persona vinculada por alias">⇄ Conciliar con ventas</button>
+    <button class="btn btn-outline btn-sm" id="btnConciliar" title="Cruzar los nombres del sistema de ventas con los legajos y dejar cada persona vinculada por alias">⇄ Conciliar con ventas${CONC_PEND&&CONC_PEND.n?` <span class="badge" style="background:#c2410c;color:#fff">${CONC_PEND.n}</span>`:''}</button>
   </div>`;
 
   let body;
@@ -649,7 +650,7 @@ function viewLegajos(){
       <th>Persona</th><th>Sucursal</th><th>Régimen</th><th>Ingreso</th><th>Antigüedad</th><th class="num" title="Días de compensatorio y horas extra que la empresa le debe">Comp. / hs</th><th>Estado</th><th></th>
       </tr></thead><tbody>${rows}</tbody></table></div>`;
   }
-  return `<div class="sec-head"><div><h1>Legajos</h1><div class="sub">Ficha de cada persona: datos, contrato, sucursal y antigüedad.</div></div></div>${kpis}${toolbar}${body}`;
+  return `<div class="sec-head"><div><h1>Legajos</h1><div class="sub">Ficha de cada persona: datos, contrato, sucursal y antigüedad.</div></div></div>${kpis}${concBannerHtml()}${toolbar}${body}`;
 }
 
 function promedioAntiguedad(list){
@@ -2302,7 +2303,7 @@ function openModal(title, bodyHtml, footHtml){
   $('modalTitle').textContent=title; $('modalBody').innerHTML=bodyHtml; $('modalFoot').innerHTML=footHtml||'';
   $('modalBg').classList.add('on');
 }
-function closeModal(){ $('modalBg').classList.remove('on'); }
+function closeModal(){ $('modalBg').classList.remove('on'); if(_concDirty){ _concDirty=false; if(state.tab==='legajos') render(); } }
 function selOptions(arr, sel){ return arr.map(o=>{ const val=Array.isArray(o)?o[0]:o, lab=Array.isArray(o)?o[1]:o; return `<option value="${esc(val)}" ${String(sel)===String(val)?'selected':''}>${esc(lab)}</option>`; }).join(''); }
 function sucSelectOptions(sel){ return sucsVisibles().sort((a,b)=>cmp(sucLabel(a),sucLabel(b))).map(s=>`<option value="${s}" ${sel===s?'selected':''}>${esc(sucLabel(s))}</option>`).join(''); }
 
@@ -2331,6 +2332,7 @@ async function conciliarFuentes(){
   try{
     const periodos=await fetch('../data/indicadores/periodos.json').then(r=>r.json());
     const per=(periodos.periodos||[]).map(p=>p.id).sort().reverse()[0];
+    CONC_PER=per||null;
     if(per){
       const cadena=await fetch('../data/indicadores/'+per+'/cadena.json').then(r=>r.json());
       const sucs=(cadena.sucursales||[]).map(x=>x.sucursal).filter(n=>DATA_SUC[n]&&enAlcance(DATA_SUC[n]));
@@ -2354,6 +2356,56 @@ async function conciliarFuentes(){
     }));
   }catch(e){ console.warn('conciliar: sin ventaEquipo', e); }
   return porSlug;
+}
+/* --- Tarea pendiente para RRHH (07/09/2026, pedido de Juli) ---
+   Cada carga mensual de Indicadores (y cada semana de ventaEquipo) trae altas o
+   coberturas nuevas que ningún legajo reconoce. Antes solo se veían si alguien
+   abría «⇄ Conciliar con ventas». Ahora, al entrar a RRHH se calcula de fondo el
+   pendiente y (1) sale un banner en Legajos + contador en el botón, (2) la primera
+   vez que aparece un período nuevo del ETL con nombres sin legajo, se le manda a
+   RRHH un directo por la Bandeja con la lista (flag rrhh/aliasAviso/<periodo>). */
+let CONC_PER = null;     // último período del ETL leído por conciliarFuentes
+let CONC_PEND = null;    // {n, porSuc:{slug:[nombres]}} · null = todavía no se calculó
+let _concDirty = false;
+const CONC_AVISADOS = ['rrhh@mateu.com.ar'];
+function concPendienteDesde(filas){
+  const porSuc={}; (filas||[]).forEach(f=>{ (porSuc[f.slug]=porSuc[f.slug]||[]).push(f.nombre); });
+  CONC_PEND={n:(filas||[]).length, porSuc};
+  if($('modalBg').classList.contains('on')) _concDirty=true;          // se repinta al cerrar la conciliación
+  else if(state.tab==='legajos') render();
+  return CONC_PEND;
+}
+function concBannerHtml(){
+  if(!CONC_PEND || !CONC_PEND.n) return '';
+  const sucs=Object.keys(CONC_PEND.porSuc).sort((a,b)=>cmp(sucLabel(a),sucLabel(b)));
+  const det=sucs.map(sl=>`<b>${esc(sucLabel(sl))}</b>: ${CONC_PEND.porSuc[sl].map(esc).join(', ')}`).join(' · ');
+  return `<div class="banner warn" id="concBanner" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    <div style="flex:1;min-width:240px">⚠️ <b>${CONC_PEND.n} ${CONC_PEND.n===1?'nombre':'nombres'} del sistema de ventas sin legajo</b> — altas o coberturas nuevas${CONC_PER?' (última carga: '+esc(periodoLabel(CONC_PER))+')':''}. Hay que vincularlos a un legajo, crear el legajo o marcarlos como «no es una persona».<div style="font-size:12px;margin-top:4px;opacity:.9">${det}</div></div>
+    <button class="btn btn-primary btn-sm" onclick="abrirConciliar()">⇄ Conciliar ahora</button>
+  </div>`;
+}
+async function conciliarPendientes(){
+  if(!window.Equipo) return;
+  try{
+    const [fuentes, ign] = await Promise.all([conciliarFuentes(), HAS_DB?fbGet(ROOT+'/aliasIgnorados').catch(()=>null):null]);
+    if($('modalBg').classList.contains('on') && CONC) return;   // ya está abierta la conciliación: manda lo de ahí
+    CONC={fuentes, ignorados:ign||{}, filas:[], dupes:[], mudanzas:[]};
+    conciliarArmar();
+    const pend=concPendienteDesde(CONC.filas);
+    // aviso por la Bandeja, una vez por período del ETL (solo con alcance completo)
+    if(pend.n && CONC_PER && HAS_DB && !SCOPE){
+      const flag=await fbGet(ROOT+'/aliasAviso/'+CONC_PER).catch(()=>null);
+      if(!flag){
+        const sucs=Object.keys(pend.porSuc).sort((a,b)=>cmp(sucLabel(a),sucLabel(b)));
+        const texto='📋 RRHH · Conciliación pendiente\n'
+          +'Se cargó '+periodoLabel(CONC_PER)+' en Indicadores y hay '+pend.n+' '+(pend.n===1?'nombre':'nombres')+' del sistema de ventas sin legajo (altas o coberturas nuevas):\n'
+          +sucs.map(sl=>'• '+sucLabel(sl)+': '+pend.porSuc[sl].join(', ')).join('\n')
+          +'\nEntrá a RRHH → Legajos → «⇄ Conciliar con ventas» para vincular cada nombre a su legajo o crear el legajo nuevo.';
+        await enviarDirectos(CONC_AVISADOS, texto);
+        await fbPut(ROOT+'/aliasAviso/'+CONC_PER, {n:pend.n, en:nowISO(), por:(SESSION.email||'')}).catch(()=>null);
+      }
+    }
+  }catch(e){ console.warn('conciliarPendientes', e); }
 }
 async function abrirConciliar(){
   if(!window.Equipo){ toast('No cargó shared/equipo.js','err'); return; }
@@ -2406,6 +2458,7 @@ function conciliarArmar(){
 function conciliarRender(){
   const E=window.Equipo;
   const filas=CONC.filas;
+  concPendienteDesde(filas);   // el banner de Legajos y el contador siguen lo que se va resolviendo
   const nSug=filas.filter(f=>f.sug).length, nNew=filas.filter(f=>!f.sug).length;
   const grupos={}; filas.forEach((f,i)=>{ (grupos[f.slug]=grupos[f.slug]||[]).push(i); });
   let body='';

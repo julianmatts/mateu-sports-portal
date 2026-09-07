@@ -528,7 +528,9 @@ en `PERIODOS`; los días 27–31/07 salen del par de julio del Excel de mayo-jun
 (`extra_det={archivo, mes, dias}`). `--solo YYYY-MM` procesa un único período (los otros
 tardan ~2 min cada uno). Las **altas de mitad de mes** que no están en el staff ni en el
 padrón (`ALTAS_MES`) cuentan como vendedores con las horas reales de su venta (franja
-diaria, como los eventuales), marcadas `propuesto`. **Diagonal 80 ya tiene datos**: está en
+diaria, como los eventuales), marcadas `propuesto`. `APERTURAS` (sucursal → fecha de
+apertura) prorratea las horas de contrato por los hábiles desde la apertura (Diagonal 80
+abrió el 10/08: ×0,60; si no, tickets/hora salía a la mitad). **Diagonal 80 ya tiene datos**: está en
 `SLUG_SUC` de Indicadores como `10-MS Diagonal 80` (el nombre del sistema y de Meses de
 Stock; `SOLO_OBJ_SUC` quedó vacío); julio y anteriores dan empty state.
 
@@ -1355,6 +1357,15 @@ Mi Sucursal escriben legajo + índice en un PATCH multi-path.
   por nombre+alias, `sector` en el vocabulario del Excel), los vendedores se normalizan como
   `Equipo.norm` (mayúsculas, sin acentos ni puntuación) y cada `vendedor` sale con `legajo`.
   Sin la opción sigue usando `Sucursales staff.xlsx`.
+- **Tarea pendiente para RRHH (07/09/2026, pedido de Juli)**: al entrar a `rrhh/`,
+  `conciliarPendientes()` corre de fondo el mismo cruce de «⇄ Conciliar con ventas» (último
+  período del ETL + últimas 4 semanas de `ventaEquipo`) y, si hay nombres sin legajo, muestra
+  un **banner ámbar en Legajos** con la lista por sucursal + contador en el botón (`CONC_PEND`,
+  se actualiza a medida que se resuelven en el modal). La **primera vez** que aparece un período
+  nuevo del ETL con pendientes, manda un **directo por la Bandeja a `CONC_AVISADOS`** (rrhh@) con
+  la lista y graba `rrhh/aliasAviso/<periodo>` (solo con alcance completo, no supervisores). Así
+  cada carga mensual de Indicadores deja la conciliación como tarea visible, sin depender de
+  que alguien abra el modal.
 - **Estado 04/09/2026**: índice sembrado desde los 237 legajos con sucursal (20 del Registro
   Único quedaron sin sucursal y no entran). Conciliación **pendiente de Juli** (RRHH → ⇄):
   para Diagonal 80 propone Polari/Casao/Maldonado (vincular), 5 personas nuevas

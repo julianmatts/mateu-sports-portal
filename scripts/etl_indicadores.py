@@ -111,6 +111,9 @@ MES_STOCK = {'01':'ENERO','02':'FEBRERO','03':'MARZO','04':'ABRIL','05':'MAYO','
 MES_NOMBRE = {'01':'Enero','02':'Febrero','03':'Marzo','04':'Abril','05':'Mayo','06':'Junio',
               '07':'Julio','08':'Agosto','09':'Septiembre','10':'Octubre','11':'Noviembre','12':'Diciembre'}
 ECOM = '99-Ecommerce'
+# Sucursales que abrieron a mitad de un período: sus horas de contrato se prorratean
+# por los días hábiles desde la apertura (si no, tickets/hora sale a la mitad).
+APERTURAS = {'10-MS Diagonal 80': dt.date(2026, 8, 10)}
 GRUPOS_PISO = ['Ventas','Caja','Jefatura','Refuerzos']
 
 def formato_de(nombre):
@@ -412,6 +415,16 @@ def procesar(per, cfg, st):
     st = st.copy()
     st['horas_contr'] = np.where(st.d_sem == 6, st.h_dia * habiles,
                         np.where(st.d_sem == 3, st.h_dia * 3 * semanas, 0))
+    # factor por sucursal abierta a mitad del período (hábiles desde la apertura / hábiles del período)
+    def factor_suc(suc):
+        ap = APERTURAS.get(suc)
+        if not ap or ap <= cfg['desde']: return 1.0
+        hab_ap = sum(1 for i in range(n_dias) if (cfg['desde'] + dt.timedelta(days=i)) >= ap
+                     and (cfg['desde'] + dt.timedelta(days=i)).weekday() < 6)
+        return hab_ap / habiles
+    fac_suc = {s_: factor_suc(s_) for s_ in APERTURAS}
+    if any(f < 1 for f in fac_suc.values()):
+        print('  · apertura a mitad del período: ' + ', '.join(f'{k} ×{v:.2f}' for k, v in fac_suc.items() if v < 1))
 
     # sucursal fija = donde hizo más tickets
     tkv  = vt.groupby(['vendedor','sucursal']).comprobante.nunique().rename('tk').reset_index()
@@ -442,7 +455,7 @@ def procesar(per, cfg, st):
     ha['share'] = ha.h_act / ha.groupby('vendedor').h_act.transform('sum')
     ha['horas_contr'] = ha.apply(
         lambda r: ev_h.get((r.vendedor, r.sucursal), 0) if meta(r.vendedor)[2] is None
-                  else meta(r.vendedor)[2] * r.share, axis=1)
+                  else meta(r.vendedor)[2] * r.share * fac_suc.get(r.sucursal, 1.0), axis=1)
 
     nc_v = nc.groupby(['sucursal','vendedor']).agg(dev_i=('importe','sum'), dev_u=('cantidad','sum')).reset_index()
     vend = vt.groupby(['sucursal','vendedor','sector','grupo']).agg(
