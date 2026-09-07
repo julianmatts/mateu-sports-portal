@@ -83,7 +83,9 @@
         +'--marca-navy:#0b0b0d;--marca-red:#C2201F;--marca-off:#f4f4f6;--marca-mid:#2b2b31}'
         // fondo del login (el Portal lo tiene horneado en navy)
         +'[data-marca=aurelius] #login{background:radial-gradient(120% 120% at 50% 0%,#26262b 0%,#050506 60%)!important}'
-        +'[data-marca=aurelius] .login-head img{height:104px!important;margin-bottom:8px!important}'
+        // login: logo apaisado a la altura del de Mateu; el subtítulo «Aurelius» sobra (ya lo dice el logo)
+        +'[data-marca=aurelius] .login-head img{height:44px!important;margin-bottom:14px!important}'
+        +'[data-marca=aurelius] .login-head .s{display:none!important}'
         +'[data-marca=aurelius] .msh-ditem:hover,[data-marca=aurelius] .msh-dhome:hover{background:#f1f1f3}'
         +'[data-marca=aurelius] .msh-ditem .msh-ic{background:#ececef}'
     }
@@ -141,13 +143,13 @@
     for(var k in MARCAS) css += MARCAS[k].css;
     css += ''
       +'[data-marca] img[data-marca-logo]{filter:none!important}'
-      +'.marca-nota{margin-top:16px;padding:10px 12px;border-radius:8px;background:var(--marca-off,#f5f7fc);border:1px solid #e0e0e5;font-family:Barlow,system-ui,sans-serif;font-size:12.5px;line-height:1.45;color:#444}'
-      +'.marca-nota b{color:var(--marca-navy,#0B1527)}.marca-nota a{color:var(--marca-red,#CC0000);font-weight:600;cursor:pointer;text-decoration:underline}'
+      +'.marca-nota{margin-top:18px;text-align:center;font-family:"Barlow Condensed",Barlow,system-ui,sans-serif;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#8a8a93}'
+      +'.marca-nota a{color:var(--marca-red,#CC0000);font-weight:700;cursor:pointer;text-decoration:none;border-bottom:1px solid currentColor}.marca-nota a:hover{opacity:.8}'
       +'.marca-acc img{width:22px;height:22px;flex:0 0 auto}'
       +'.marca-modal{position:fixed;inset:0;z-index:2147482000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:18px;font-family:Barlow,system-ui,sans-serif}'
       +'.marca-card{width:100%;max-width:440px;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.5);color:#1a1a1e}'
-      +'.marca-head{background:#050506;border-bottom:3px solid var(--marca-red,#C2201F);padding:22px 20px 16px;text-align:center}'
-      +'.marca-head img{height:82px}'
+      +'.marca-head{background:#050506;border-bottom:3px solid var(--marca-red,#C2201F);padding:20px 20px 16px;text-align:center}'
+      +'.marca-head img{height:40px}'
       +'.marca-body{padding:18px 20px 20px;font-size:14px;line-height:1.5}'
       +'.marca-body h3{margin:0 0 8px;font-family:"Bebas Neue",Impact,sans-serif;font-weight:400;font-size:24px;letter-spacing:1.5px;color:#0b0b0d}'
       +'.marca-body p{margin:0 0 10px}.marca-body ol{margin:0 0 10px;padding-left:20px}.marca-body li{margin:3px 0}'
@@ -173,7 +175,7 @@
       if(M){
         if(img.getAttribute('data-marca-logo')===m) continue;
         if(!img.hasAttribute('data-marca-orig')){ img.setAttribute('data-marca-orig', img.getAttribute('src')||''); img.setAttribute('data-marca-alt', img.getAttribute('alt')||''); }
-        var apilado = !!(img.closest && img.closest('.login-head,.marca-apilado'));
+        var apilado = !!(img.closest && img.closest('.marca-apilado'));   // el login va apaisado, como el de Mateu
         img.setAttribute('src', apilado ? M.logoV : M.logoH);
         img.setAttribute('alt', M.nombre);
         img.setAttribute('data-marca-logo', m);
@@ -249,7 +251,7 @@
     var body = document.querySelector('#login .login-body'); if(!body) return;
     var d = document.createElement('div');
     d.className = 'marca-nota'; d.id = 'marcaNota';
-    d.innerHTML = '<b>Acceso '+M.nombre+'.</b> Guardá esta dirección en favoritos o agregala a la pantalla de inicio del celular: el ingreso y la app quedan con la estética '+M.nombre+'. <a id="marcaNotaComo">Cómo hacerlo</a>';
+    d.innerHTML = 'Acceso '+M.nombre+' · <a id="marcaNotaComo">Guardarlo como app</a>';
     body.appendChild(d);
     var a = document.getElementById('marcaNotaComo'); if(a) a.onclick = function(){ abrirAcceso(m); };
   }
@@ -260,7 +262,7 @@
     var ov = document.createElement('div');
     ov.className = 'marca-modal'; ov.id = 'marcaModal';
     ov.innerHTML = '<div class="marca-card" role="dialog" aria-label="Acceso '+M.nombre+'">'
-      +'<div class="marca-head"><img src="'+M.logoV+'" alt="'+M.nombre+'"></div>'
+      +'<div class="marca-head"><img src="'+M.logoH+'" alt="'+M.nombre+'"></div>'
       +'<div class="marca-body">'
       +'<h3>Acceso '+M.nombre+'</h3>'
       +'<p>Las cuentas de las sucursales '+M.nombre+' ven el portal con la estética '+M.nombre+' apenas ingresan. Para que <b>también la pantalla de ingreso y el ícono de la app</b> sean '+M.nombre+', entrá siempre por este link:</p>'
