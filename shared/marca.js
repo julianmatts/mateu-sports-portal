@@ -63,9 +63,10 @@
         // fondo del login (el Portal lo tiene horneado en navy)
         +'[data-marca=aurelius] #login{background:radial-gradient(120% 120% at 50% 0%,#26262b 0%,#050506 60%)!important}'
         // login: logo apaisado a la altura del de Mateu; el subtítulo «Aurelius» sobra (ya lo dice el logo)
-        +'[data-marca=aurelius] .login-head .marca-lockup{margin-bottom:14px}'
-        +'[data-marca=aurelius] .login-head .marca-lockup img{height:46px!important;margin:0!important}'
-        +'[data-marca=aurelius] .login-head .marca-lockup img.marca-word{height:17px!important}'
+        // login: APILADO como el logo completo oficial (escudo arriba, palabra centrada abajo; pedido de Juli 07/09)
+        +'[data-marca=aurelius] .login-head .marca-lockup{flex-direction:column;gap:9px;margin-bottom:16px}'
+        +'[data-marca=aurelius] .login-head .marca-lockup img{height:80px!important;margin:0!important}'
+        +'[data-marca=aurelius] .login-head .marca-lockup img.marca-word{height:16px!important}'
         +'[data-marca=aurelius] .login-head .s{display:none!important}'
         +'[data-marca=aurelius] .msh-ditem:hover,[data-marca=aurelius] .msh-dhome:hover{background:#f1f1f3}'
         +'[data-marca=aurelius] .msh-ditem .msh-ic{background:#ececef}'
@@ -130,7 +131,7 @@
       +'.marca-lockup img.marca-word{height:15px!important;width:auto!important;margin:0!important;filter:none!important}'
       +'@media(max-width:640px){.marca-lockup{gap:7px}.marca-lockup img.marca-word{height:11px!important}}'
       +'@media(max-width:480px){.marca-lockup img.marca-word{height:10px!important}}'
-      +'.marca-head .marca-lockup img{height:40px}'
+      +'.marca-head .marca-lockup{flex-direction:column;gap:8px}.marca-head .marca-lockup img{height:64px}.marca-head .marca-lockup img.marca-word{height:13px!important}'
       +'.marca-nota{margin-top:18px;text-align:center;font-family:"Barlow Condensed",Barlow,system-ui,sans-serif;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#8a8a93}'
       +'.marca-nota a{color:var(--marca-red,#CC0000);font-weight:700;cursor:pointer;text-decoration:none;border-bottom:1px solid currentColor}.marca-nota a:hover{opacity:.8}'
       +'.marca-acc img{width:22px;height:22px;flex:0 0 auto}'

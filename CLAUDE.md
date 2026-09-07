@@ -1530,7 +1530,10 @@ palabra) en vez del de Mateu, título «… — Aurelius» y app instalable prop
   `.marca-lockup` = isotipo + la **palabra AURELIUS oficial** (`img.marca-word`, PNG blanco del
   identificador, 110 px de alto, también embebido). Le saca el filtro `brightness(0) invert(1)`; el
   alto del isotipo lo sigue poniendo cada módulo y la palabra tiene alto fijo por contexto (15 px en
-  headers, 17 en el login, 11/10 en celular). Un MutationObserver cubre lo que se inyecta después.
+  headers, 11/10 en celular). En los headers va **horizontal** (isotipo + palabra); en el **login y
+  el modal «Acceso Aurelius» va APILADO** (escudo 80 px arriba, palabra 16 px centrada abajo, como
+  el logo completo oficial — pedido de Juli 07/09: «la corona con el escudo arriba de la palabra,
+  centrado, no en un lateral»). Un MutationObserver cubre lo que se inyecta después.
   ⚠ No volver a dibujar el escudo ni las letras a mano: la primera versión (SVG propio) quedó mal y
   Juli pidió el original. Los 14 PNG del identificador (isotipo, logo apilado y palabra, a color y en
   rojo/negro/blanco) están en su carpeta de Drive «id aurelius…».
