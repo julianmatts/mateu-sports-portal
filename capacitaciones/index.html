@@ -289,6 +289,13 @@ const FIREBASE_DB_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
 const ROOT = 'capacitaciones';
 const MENSAJES_DB_URL = 'https://mensajes-mateu-default-rtdb.firebaseio.com';
 const CAPACITADOR_FIRMA = 'Iván Nicoloff';
+const CAPACITADOR_MAIL  = 'capacitaciones@mateu.com.ar';   // cuenta de Iván en el Portal (avisos automáticos salen «de» acá)
+/* Firebase Storage para los archivos de los cursos (PDF, PPT, VIDEOS). Vacío = los archivos
+   siguen yendo en partes base64 a Realtime Database (tope 20 MB). Cuando Juli cree el bucket
+   (Firebase → Storage del proyecto recepciones-mateu, reglas abiertas como el resto) y pegue
+   el nombre acá (p.ej. 'recepciones-mateu.appspot.com'), las subidas nuevas van a Storage,
+   el tope sube a 200 MB y se pueden subir videos grabados en el local. Lo viejo sigue andando. */
+const STORAGE_BUCKET = '';
 const SUPERVISOR_FIRMA  = 'Cristian Campion';
 
 const COMPETENCIAS = ['Venta y servicio','Producto de marca','Digital y omnicanal','Operaciones de tienda',
@@ -313,7 +320,7 @@ Object.keys(SLUG_SUC_IND).forEach(s=>{ SUC_LABEL[s] = SLUG_SUC_IND[s].replace(/^
 // Sucursales que ve el staff: las del ETL de Indicadores + las que tienen padrón
 // (rrhh/equipo, p.ej. Diagonal 80). Se completa al cargar el padrón (sucsAcademia()).
 let SUCS_PADRON = [];
-function sucsAcademia(){ const out=sucsAcademia().slice(); SUCS_PADRON.forEach(s=>{ if(!out.includes(s)) out.push(s); }); return out; }
+function sucsAcademia(){ const out=Object.keys(SLUG_SUC_IND); SUCS_PADRON.forEach(s=>{ if(!out.includes(s)) out.push(s); }); return out; }
 function sucLabelDe(s){ return SUC_LABEL[s] || String(s||'').replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase()); }
 const GRUPO_ROL_IND = { Jefatura:'encargado', Ventas:'vendedor', Caja:'cajera', Refuerzos:'deposito' };
 const ROL_LABEL_PERSONA = { encargado:'Encargado/a', vendedor:'Vendedor/a', cajera:'Cajera', deposito:'Depósito' };
@@ -397,6 +404,25 @@ async function usuariosDeSucursal(slug){
   return USUARIOS_POR_SLUG[slug]||[];
 }
 function fbKeyMail(e){ return (e||'').toLowerCase().trim().replace(/\./g,','); }
+/* Link directo a una pantalla de la Academia (para WhatsApp / la Bandeja): ?curso=<id> abre la
+   portada del curso, ?programa=<id> el catálogo en ese programa. */
+function urlAcademia(q){ return location.origin+location.pathname.replace(/index\.html$/,'')+(q?'?'+q:''); }
+async function copiarTexto(txt){
+  try{ await navigator.clipboard.writeText(txt); return true; }
+  catch(e){ const ta=document.createElement('textarea'); ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); let ok=false; try{ ok=document.execCommand('copy'); }catch(_){} ta.remove(); return ok; }
+}
+function toast(msg){
+  let t=document.getElementById('capToast'); if(!t){ t=document.createElement('div'); t.id='capToast'; t.style.cssText='position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#1a1c1f;color:#fff;padding:10px 18px;border-radius:6px;font-size:14px;font-weight:600;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,.25);transition:opacity .3s'; document.body.appendChild(t); }
+  t.textContent=msg; t.style.opacity='1'; clearTimeout(t._h); t._h=setTimeout(()=>{ t.style.opacity='0'; },2200);
+}
+/* Directo de la Bandeja «de parte de» otra cuenta (p.ej. los avisos automáticos salen de la
+   cuenta del capacitador, así la sucursal no se escribe a sí misma). */
+async function enviarDirectoDe(de, destino, texto){
+  if(!de||!destino||de.toLowerCase()===destino.toLowerCase()) return;
+  const ck=[fbKeyMail(de), fbKeyMail(destino)].sort().join('__');
+  const r=await fetch(MENSAJES_DB_URL+'/directos/'+ck+'.json',{method:'POST',body:JSON.stringify({de,texto,ts:Date.now()}),headers:{'Content-Type':'application/json'}});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+}
 async function enviarDirecto(emailDestino, texto){
   const ck=[fbKeyMail(SESSION.email), fbKeyMail(emailDestino)].sort().join('__');
   const r=await fetch(MENSAJES_DB_URL+'/directos/'+ck+'.json',{method:'POST',body:JSON.stringify({de:SESSION.email,texto,ts:Date.now()}),headers:{'Content-Type':'application/json'}});
@@ -434,8 +460,8 @@ async function recordatoriosVencimiento(){
     rec[clave]=hoy; p.recordatorios=rec;
     try{
       await fbPut('programas/'+p.id+'/recordatorios', rec);   // primero la marca, para no duplicar
-      const texto='⏰ Academia de Ventas: el programa «'+p.nombre+'» vence '+(d<=1?(d===0?'HOY':'MAÑANA'):'el '+p.limite+' (en '+d+' días)')+'. Entrá a Capacitaciones y completá lo que te falta.';
-      await fetch(MENSAJES_DB_URL+'/avisos.json',{method:'POST',body:JSON.stringify({de:'capacitaciones@mateu.com.ar',texto,ts:hoy}),headers:{'Content-Type':'application/json'}});
+      const texto='⏰ Academia de Ventas: el programa «'+p.nombre+'» vence '+(d<=1?(d===0?'HOY':'MAÑANA'):'el '+p.limite+' (en '+d+' días)')+'. Entrá a Capacitaciones y completá lo que te falta: '+urlAcademia('programa='+encodeURIComponent(p.id));
+      await fetch(MENSAJES_DB_URL+'/avisos.json',{method:'POST',body:JSON.stringify({de:CAPACITADOR_MAIL,texto,ts:hoy}),headers:{'Content-Type':'application/json'}});
       await fbPost('novedades',{tipo:'Recordatorio',autor:CAPACITADOR_FIRMA,rol:'Capacitador',titulo:(d<=1?'Último día':'Quedan '+d+' días')+' para cerrar '+p.nombre,cuerpo:'Completá los cursos pendientes antes del '+p.limite+'.',ts:hoy});
     }catch(e){}
   }
@@ -484,9 +510,21 @@ function hexToRgba(hex,a){ const n=parseInt(hex.slice(1),16); return 'rgba('+((n
 function gradCard(color){ return 'linear-gradient(to top,'+color+' 0%,'+color+' 16%,'+hexToRgba(color,.85)+' 32%,rgba(0,0,0,0) 60%)'; }
 
 /* ---------- archivos (PDF/PPT en Firebase, en partes base64) ---------- */
-const ARCHIVO_MAX_MB = 20;
+const ARCHIVO_MAX_MB = STORAGE_BUCKET ? 200 : 20;
 const ARCHIVO_CHUNK = 4000000;
+const ARCHIVO_ACCEPT = '.pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.mp4,.webm,.mov,.m4v,video/mp4,video/webm,video/quicktime';
+function esArchivoUrl(ref){ return /^https?:\/\//i.test(ref||''); }
+function esVideoNombre(n){ return /\.(mp4|webm|mov|m4v)$/i.test(n||''); }
 async function subirArchivo(file,onProgreso){
+  if(STORAGE_BUCKET){
+    // A Storage: un solo POST, queda una URL pública (con token) que se guarda como `contenido`.
+    const name=ROOT+'/'+nuevoId('f')+'-'+file.name.replace(/[^\w.\-]+/g,'_');
+    if(onProgreso) onProgreso(1,1);
+    const r=await fetch('https://firebasestorage.googleapis.com/v0/b/'+STORAGE_BUCKET+'/o?name='+encodeURIComponent(name),{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file});
+    if(!r.ok) throw new Error('Storage HTTP '+r.status);
+    const j=await r.json();
+    return 'https://firebasestorage.googleapis.com/v0/b/'+STORAGE_BUCKET+'/o/'+encodeURIComponent(j.name)+'?alt=media&token='+j.downloadTokens;
+  }
   const fid = nuevoId('f');
   const dataUrl = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('no se pudo leer el archivo')); r.readAsDataURL(file); });
   const b64 = dataUrl.slice(dataUrl.indexOf(',')+1);
@@ -496,6 +534,11 @@ async function subirArchivo(file,onProgreso){
   return fid;
 }
 async function bajarArchivo(fid){
+  if(esArchivoUrl(fid)){   // subido a Storage: se baja directo
+    const r=await fetch(fid); if(!r.ok) throw new Error('HTTP '+r.status);
+    const blob=await r.blob(); const nombre=decodeURIComponent((fid.split('/o/')[1]||'').split('?')[0]).split('/').pop();
+    return { blob, meta:{ mime:blob.type||'application/octet-stream', nombre } };
+  }
   const meta = await fbGet('archivos/'+fid+'/meta'); if(!meta) throw new Error('archivo no encontrado');
   let b64=''; for(let i=0;i<meta.n;i++) b64 += await fbGet('archivos/'+fid+'/c/'+i);
   const bin = atob(b64); const arr = new Uint8Array(bin.length);
@@ -505,6 +548,14 @@ async function bajarArchivo(fid){
 
 /* ---------- estado ---------- */
 let CURSOS = {}, PROGRAMAS = {}, AVANCES = {}, NOVEDADES = {};
+/* Cursos recomendados por el supervisor desde Evaluaciones (capacitaciones/asignaciones/<slug>/<cursoId>
+   = {curso, titulo, motivo, item, semana, por, ts}). Para la sucursal cuentan como un programa
+   más («Recomendado por el supervisor»): se ven en Inicio y Catálogo y suman al avance. */
+let ASIGNACIONES = {};
+const PROG_SUP = { id:'_sup', nombre:'Recomendado por el supervisor', color:'#0057b8', icono:'flag' };
+function cursosSupDe(slug){ return Object.keys(ASIGNACIONES[slug]||{}).filter(cid=>CURSOS[cid]&&CURSOS[cid].activo!==false); }
+function progSupDe(slug){ return Object.assign({}, PROG_SUP, {cursos:cursosSupDe(slug)}); }
+function esMicro(c){ return !!(c&&c.formato==='micro'); }
 let YO = null;                 // alumno: {id,nombre,rol}
 let DOT_CACHE = {}, PERIODO_IND = null;
 let TAB = ES_STAFF ? 'catalogo' : 'inicio';
@@ -529,7 +580,18 @@ async function iaPedir(accion, titulo, modulos, nPreguntas){
   if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
   return j;
 }
-let PLAYER = null;             // {cid, idx, resp:{}, enviado:false}
+let PLAYER = null;             // {cid, idx, resp:{}, enviado:false, orden:{pregs:[..],ops:{pi:[..]}}}
+/* Orden de las preguntas y opciones para ESTE intento (banco de preguntas: cada intento sale
+   distinto; el staff lo ve en el orden original). `resp` se guarda siempre con los índices
+   originales. */
+function barajar(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function ordenQuiz(c){
+  const pregs=(c.quiz&&c.quiz.preguntas)||[]; const mezclar=!ES_STAFF && c.quiz.mezclar!==false;
+  const idx=pregs.map((_,i)=>i); if(mezclar) barajar(idx);
+  const ops={}; pregs.forEach((p,i)=>{ const o=(p.ops||[]).map((_,j)=>j); if(mezclar) barajar(o); ops[i]=o; });
+  return {pregs:idx, ops};
+}
+function claveQuizStats(p,i){ return p.id || ('i'+i); }
 
 /* ---------- identidad ---------- */
 function quienSoy(){
@@ -654,6 +716,9 @@ function cursosDe(slug, rolPersona){
     if(vistos.has(cid)||!CURSOS[cid]||CURSOS[cid].activo===false) return;
     vistos.add(cid); out.push({curso:CURSOS[cid],programa:p});
   }));
+  // + los que recomendó el supervisor para esta sucursal (todos los puestos)
+  const ps=progSupDe(slug);
+  ps.cursos.forEach(cid=>{ if(vistos.has(cid)) return; vistos.add(cid); out.push({curso:CURSOS[cid],programa:ps,asig:ASIGNACIONES[slug][cid]}); });
   return out;
 }
 function estadoCurso(av,curso){
@@ -681,6 +746,60 @@ function statsPersona(slug, per){
   return { asig:asig.length, pct: asig.length?Math.round(suma/asig.length):0, mods, certs, ult, seg, rapidos };
 }
 function avanceYo(cid){ return YO ? (((AVANCES[MI_SLUG]||{})[YO.id]||{})[cid]||null) : null; }
+
+/* ---------- resultados en la venta: UPT y ticket promedio antes / después de aprobar ----------
+   Fuente: la venta semanal por vendedor que carga gerencia en Indicadores
+   (recepciones-mateu/ventaEquipo/<slug>/<lunes>/vendedores[{nombre,tickets,unidades,venta}]).
+   Match por nombre/alias del padrón (Equipo.norm). Por cada curso aprobado: hasta 4 semanas
+   completas antes de la fecha de aprobación vs. hasta 4 después. */
+const _veCache={};
+async function ventaSemanal(slug){
+  if(_veCache[slug]) return _veCache[slug];
+  const d=await getJSON(FIREBASE_DB_URL+'/ventaEquipo/'+slug+'.json').catch(()=>null);
+  _veCache[slug]=d||{}; return _veCache[slug];
+}
+function normVenta(s){ return window.Equipo ? Equipo.norm(s) : String(s||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]+/g,' ').trim(); }
+function clavesPersona(per){ const c=new Set((per.claves||[]).map(normVenta)); c.add(normVenta(per.nombre)); return c; }
+async function kpisSemanales(slug, per){
+  const ve=await ventaSemanal(slug); const claves=clavesPersona(per); const out=[];
+  Object.keys(ve).sort().forEach(lunes=>{
+    const vs=ve[lunes]&&ve[lunes].vendedores; const lista=Array.isArray(vs)?vs:Object.values(vs||{});
+    const v=lista.find(x=>x&&claves.has(normVenta(x.nombre)));
+    if(v && +v.tickets>0) out.push({lunes, tickets:+v.tickets||0, unidades:+v.unidades||0, venta:+v.venta||0});
+  });
+  return out;
+}
+function agregarKpis(sem){
+  const t=sem.reduce((a,x)=>a+x.tickets,0), u=sem.reduce((a,x)=>a+x.unidades,0), v=sem.reduce((a,x)=>a+x.venta,0);
+  return t ? { upt:u/t, tp:v/t, n:sem.length, tickets:t } : null;
+}
+async function resultadosPersona(slug, per){
+  const avP=(AVANCES[slug]||{})[per.id]||{};
+  const cursos=cursosDe(slug, per.rol).filter(x=>{ const a=avP[x.curso.id]; return a&&a.fin; });
+  if(!cursos.length) return [];
+  const sem=await kpisSemanales(slug, per); if(!sem.length) return [];
+  return cursos.map(x=>{
+    const fin=avP[x.curso.id].fin;
+    const antes=sem.filter(z=>Date.parse(z.lunes+'T12:00:00')+6*86400000<fin).slice(-4);
+    const despues=sem.filter(z=>Date.parse(z.lunes+'T12:00:00')>=fin).slice(0,4);
+    return { curso:x.curso, fin, antes:agregarKpis(antes), despues:agregarKpis(despues) };
+  }).sort((a,b)=>b.fin-a.fin);
+}
+function fmtPesos(n){ return '$ '+Math.round(n).toLocaleString('es-AR'); }
+function deltaChip(a,b,dec,pref){
+  if(!a||!b) return '<span class="muted">—</span>';
+  const d=b/a-1; const p=Math.round(d*100); const cls=p>0?'verde':(p<0?'rojo':'');
+  return '<span class="chip '+cls+'" style="font-size:12px" title="'+(pref||'')+'">'+(p>0?'▲ +':(p<0?'▼ ':''))+p+'%</span>';
+}
+function resultadosHtml(rows, quien){
+  if(!rows.length) return '';
+  const filas=rows.map(r=>'<div style="display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:10px;align-items:center;padding:8px 0;border-top:1px solid #eef0f3;font-size:14px">'+
+    '<div><b>'+esc(r.curso.titulo)+'</b><div class="muted" style="font-size:12px">aprobado '+fechaCorta(r.fin)+(r.despues?' · '+r.despues.n+' sem. después':' · esperando semanas de venta')+'</div></div>'+
+    '<div><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.8px">UPT</div>'+(r.antes?r.antes.upt.toFixed(2):'—')+' → <b>'+(r.despues?r.despues.upt.toFixed(2):'—')+'</b> '+deltaChip(r.antes&&r.antes.upt,r.despues&&r.despues.upt)+'</div>'+
+    '<div><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.8px">Ticket promedio</div>'+(r.antes?fmtPesos(r.antes.tp):'—')+' → <b>'+(r.despues?fmtPesos(r.despues.tp):'—')+'</b> '+deltaChip(r.antes&&r.antes.tp,r.despues&&r.despues.tp)+'</div></div>').join('');
+  return '<div class="seccion dato" style="margin-top:14px"><div class="st">📈 Resultados en la venta'+(quien?' · '+esc(quien):'')+'</div>'+
+    '<div class="muted" style="font-size:12.5px;margin:4px 0 6px">Hasta 4 semanas antes de aprobar cada curso vs. hasta 4 después, con la venta semanal por vendedor que carga gerencia.</div>'+filas+'</div>';
+}
 async function guardarAvanceYo(cid,av){
   av.nombre=YO.nombre; av.rol=YO.rol; av.ultTs=Date.now();
   AVANCES[MI_SLUG]=AVANCES[MI_SLUG]||{}; AVANCES[MI_SLUG][YO.id]=AVANCES[MI_SLUG][YO.id]||{};
@@ -693,6 +812,23 @@ async function guardarAvanceYo(cid,av){
     fbPost('novedades',{ tipo:'Curso completado', autor:YO.nombre, rol:(ROL_LABEL_PERSONA[YO.rol]||YO.rol)+' · '+sucLabelDe(MI_SLUG),
       titulo: YO.nombre+' completó «'+(c?c.titulo:cid)+'»',
       cuerpo: 'Curso aprobado'+(av.quiz?(' con '+av.quiz.pje+'% en la evaluación.'):'.'), ts:Date.now() }).catch(()=>{});
+    avisarCertificacion(cid).catch(()=>{});
+  }
+}
+/* Certificación: cuando con este curso se completa un PROGRAMA entero, le llega un directo a la
+   cuenta de la sucursal (de parte de la Academia, para que el encargado lo reconozca en el
+   equipo) y otro al capacitador. Una vez por persona y programa (flag certAvisos/). */
+async function avisarCertificacion(cid){
+  const progs=Object.values(PROGRAMAS).filter(p=>p.activo!==false && (p.cursos||[]).includes(cid) && programaCompletoPara(p));
+  if(!progs.length) return;
+  const cuentas=await usuariosDeSucursal(MI_SLUG).catch(()=>[]);
+  for(const p of progs){
+    const flag='certAvisos/'+MI_SLUG+'/'+YO.id+'/'+p.id;
+    if(await fbGet(flag).catch(()=>null)) continue;
+    await fbPut(flag, Date.now()).catch(()=>{});
+    const texto='🎓 ¡Felicitaciones! '+YO.nombre+' ('+sucLabelDe(MI_SLUG)+') completó el programa «'+p.nombre+'» de la Academia de Ventas y ya tiene su certificado. Vale la pena reconocerlo en el equipo. '+urlAcademia('programa='+encodeURIComponent(p.id));
+    for(const m of cuentas){ await enviarDirectoDe(CAPACITADOR_MAIL, m, texto).catch(()=>{}); }
+    await enviarDirectoDe(SESSION.email, CAPACITADOR_MAIL, texto).catch(()=>{});
   }
 }
 async function asegurarYo(){
@@ -784,7 +920,7 @@ function cursoCardHtml(c, prog, est, extra){
       :(est&&est.empezado?est.avance+'%':'<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5 L6.5 11.5 L12.5 4.5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'))+'</span>'+
     (extra&&extra.editar?'<button class="btn mini oscuro editar" data-editar="'+esc(c.id)+'">✏ Editar</button>':'')+
     '<div class="pie">'+
-      '<span class="dur"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.5" stroke="#fff" stroke-width="1.8"/><path d="M12 7.5 V12 L15 14" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg> '+esc(c.dur||'')+'</span>'+
+      '<span class="dur"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.5" stroke="#fff" stroke-width="1.8"/><path d="M12 7.5 V12 L15 14" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg> '+esc(c.dur||'')+(esMicro(c)?' · <b>⚡ Píldora</b>':'')+'</span>'+
       '<div class="tit">'+esc(c.titulo)+'</div>'+
     '</div></div>';
 }
@@ -888,6 +1024,22 @@ function renderInicio(){
       '</div>'+(compsGanadas.length?'':'<p class="muted" style="font-size:12.5px;margin:8px 0 0">Completá todos los cursos de una competencia y ganás el badge dorado de esa competencia.</p>')+'</div>');
     html.push('</div>');
 
+    // Recomendado por el supervisor (Evaluaciones): primero, con el motivo
+    const sup=lista.filter(x=>x.programa.id==='_sup' && !estadoCurso(avanceYo(x.curso.id),x.curso).completo);
+    if(sup.length){
+      html.push('<div style="margin-top:44px;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap"><div class="sec-t" style="color:var(--azul)">🎯 Recomendado por el supervisor</div>'+
+        '<span class="muted" style="font-size:14px">Salió de la evaluación de la sucursal: '+esc([...new Set(sup.map(x=>(x.asig&&x.asig.motivo)||''))].filter(Boolean).join(' · '))+'</span></div>');
+      html.push('<div class="carrusel" style="margin-top:16px">'+sup.map(x=>cursoCardHtml(x.curso, x.programa, estadoCurso(avanceYo(x.curso.id),x.curso), {chica:true})).join('')+'</div>');
+    }
+    // Píldoras: cursos cortos pendientes, para hacer en el local en 5 minutos
+    const micro=lista.filter(x=>esMicro(x.curso) && x.programa.id!=='_sup' && !estadoCurso(avanceYo(x.curso.id),x.curso).completo);
+    if(micro.length){
+      html.push('<div style="margin-top:44px;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap"><div class="sec-t">⚡ Píldoras de 5 minutos</div><span class="muted" style="font-size:14px">Cortitas, para hacer desde el celular en un rato libre.</span></div>');
+      html.push('<div class="carrusel" style="margin-top:16px">'+micro.map(x=>cursoCardHtml(x.curso, x.programa, estadoCurso(avanceYo(x.curso.id),x.curso), {chica:true})).join('')+'</div>');
+    }
+    // Resultados en la venta (se completa async si hay cursos aprobados y venta semanal)
+    if(aprob.length) html.push('<div id="resYo"></div>');
+
     // Continuá tu programa
     progs.forEach(p=>{
       const cs=(p.cursos||[]).map(cid=>CURSOS[cid]).filter(c=>c&&c.activo!==false);
@@ -914,6 +1066,10 @@ function renderInicio(){
   bindCards(app);
   app.querySelectorAll('[data-cert]').forEach(el=>el.addEventListener('click',()=>verCertificado({curso:CURSOS[el.dataset.cert]})));
   app.querySelectorAll('[data-ir-cat]').forEach(a=>a.addEventListener('click',e=>{ e.preventDefault(); TAB='catalogo'; pintarNav(); render(); }));
+  const ry=$('resYo'); if(ry){
+    const per=(DOT_CACHE[MI_SLUG]||[]).find(x=>x.id===YO.id)||{id:YO.id,nombre:YO.nombre,rol:YO.rol};
+    resultadosPersona(MI_SLUG, per).then(rows=>{ const el=$('resYo'); if(!el) return; const h=resultadosHtml(rows.filter(r=>r.antes||r.despues)); if(h) el.innerHTML='<div style="margin-top:44px"><div class="sec-t">Mis resultados</div>'+h+'</div>'; }).catch(()=>{});
+  }
 }
 
 /* ---------- CATÁLOGO ---------- */
@@ -921,7 +1077,8 @@ function renderCatalogo(){
   const app=$('app');
   const esAl = !ES_STAFF;
   const progsTodos = Object.values(PROGRAMAS).filter(p=>p.activo!==false).sort((a,b)=>(a.ts||0)-(b.ts||0));
-  const progs = esAl ? programasDe(MI_SLUG, YO.rol) : progsTodos;
+  let progs = esAl ? programasDe(MI_SLUG, YO.rol) : progsTodos;
+  if(esAl && cursosSupDe(MI_SLUG).length) progs = [progSupDe(MI_SLUG)].concat(progs);
   if(CAT.prog===null && progs.length) CAT.prog = progs[0].id;
 
   const html=['<div class="wrap">'];
@@ -934,6 +1091,7 @@ function renderCatalogo(){
       '<option value="az"'+(CAT.orden==='az'?' selected':'')+'>A – Z</option>'+
       '<option value="dur"'+(CAT.orden==='dur'?' selected':'')+'>Duración</option></select></div>'+
     (esAl?'<div style="align-self:flex-end"><button class="fchip'+(CAT.ocultarHechos?' act':'')+'" id="catHechos">Ocultar completados</button></div>':'')+
+    '<div style="align-self:flex-end"><button class="fchip'+(CAT.micro?' act':'')+'" id="catMicro" title="Solo los cursos cortos (3 a 5 minutos)">⚡ Píldoras</button></div>'+
     (ES_STAFF?'<div style="align-self:flex-end;margin-left:auto"><button class="btn pri" id="irGestion">＋ Cargar contenido</button></div>':'')+
     '</div>');
 
@@ -966,9 +1124,10 @@ function renderCatalogo(){
         '</button>';
     }).join('')+'</div>');
 
-    const p = PROGRAMAS[CAT.prog] || progs[0];
+    const p = (CAT.prog==='_sup' ? progSupDe(MI_SLUG) : PROGRAMAS[CAT.prog]) || progs[0];
     const color = progColor(p);
     let cs=(p.cursos||[]).map(cid=>CURSOS[cid]).filter(c=>c&&c.activo!==false);
+    if(CAT.micro) cs=cs.filter(esMicro);
     const comps=[...new Set(cs.map(c=>c.competencia||'General'))];
     const q=CAT.q.trim().toLowerCase();
     if(q) cs=cs.filter(c=>(c.titulo||'').toLowerCase().includes(q)||(c.competencia||'').toLowerCase().includes(q));
@@ -991,6 +1150,7 @@ function renderCatalogo(){
   const iq=$('catQ'); iq.addEventListener('input',()=>{ CAT.q=iq.value; render(); const el=$('catQ'); el.focus(); el.setSelectionRange(el.value.length,el.value.length); });
   $('catOrden').addEventListener('change',e=>{ CAT.orden=e.target.value; render(); });
   const ch=$('catHechos'); if(ch) ch.addEventListener('click',()=>{ CAT.ocultarHechos=!CAT.ocultarHechos; render(); });
+  const cm=$('catMicro'); if(cm) cm.addEventListener('click',()=>{ CAT.micro=!CAT.micro; render(); });
   const ig=$('irGestion'); if(ig) ig.addEventListener('click',()=>{ TAB='gestion'; GES_SUB='cursos'; WIZ=null; VISTA={t:'wizard'}; pintarNav(); render(); });
   app.querySelectorAll('[data-prog]').forEach(b=>b.addEventListener('click',()=>{ CAT.prog=b.dataset.prog; CAT.comp=''; render(); }));
   app.querySelectorAll('[data-comp]').forEach(b=>b.addEventListener('click',()=>{ CAT.comp=b.dataset.comp; render(); }));
@@ -1027,7 +1187,9 @@ function renderLanding(){
   html.push('<div style="margin-top:12px;display:flex;align-items:center;gap:18px;font-size:13.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--gris);flex-wrap:wrap">'+
     (prog?'<span>'+esc(prog.nombre)+'</span>':'')+(c.dur?'<span>'+esc(c.dur)+'</span>':'')+
     '<span>'+mods.length+' módulo'+(mods.length===1?'':'s')+(nQuiz?' + quiz':'')+'</span><span>Dicta: '+esc(CAPACITADOR_FIRMA)+'</span>'+
-    (est.completo?'<span class="chip verde">Completado</span>':'')+'</div>');
+    (esMicro(c)?'<span class="chip ambar">⚡ Píldora</span>':'')+
+    (est.completo?'<span class="chip verde">Completado</span>':'')+
+    (ES_STAFF?'<button class="btn mini" id="lLink" title="Copiar el link directo a este curso (para WhatsApp o la Bandeja)">🔗 Copiar link</button>':'')+'</div>');
   html.push('<div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:28px;align-items:start" class="landing-grid">');
   html.push('<div style="position:relative;min-height:340px;border-radius:6px;overflow:hidden;background:'+color+'">'+coverHtml(c,color)+
     '<div style="position:absolute;left:22px;right:22px;bottom:20px;color:#fff;font-size:24px;font-weight:800;text-transform:uppercase;line-height:1.15;text-shadow:0 1px 4px rgba(0,0,0,.3)">'+esc(c.frase||c.titulo)+'</div></div>');
@@ -1045,6 +1207,7 @@ function renderLanding(){
   app.innerHTML=html.join('');
   $('lVolver').addEventListener('click',e=>{ e.preventDefault(); PLAYER=null; render(); });
   $('lComenzar').addEventListener('click',()=>{ PLAYER.landing=false; render(); window.scrollTo(0,0); });
+  const ll=$('lLink'); if(ll) ll.addEventListener('click', async ()=>{ await copiarTexto(urlAcademia('curso='+encodeURIComponent(c.id))); toast('Link copiado: '+urlAcademia('curso='+c.id)); });
 }
 function seccionesDeTexto(contenido){
   // Bloques separados por línea en blanco. "[[tipo]] Título" al inicio de un
@@ -1112,6 +1275,11 @@ function renderPlayer(){
       const yt=esUrlYoutube(m.contenido);
       html.push(yt?'<div class="video-marco"><iframe src="https://www.youtube.com/embed/'+yt+'" allowfullscreen loading="lazy"></iframe></div>'
         :'<div class="seccion"><a class="btn oscuro" target="_blank" rel="noopener" href="'+esc(m.contenido)+'">▶ Ver video</a></div>');
+    } else if(m.tipo==='archivo' && esVideoNombre(m.archivoNombre)){
+      // Video subido (mp4/webm/mov): en Storage se reproduce directo; en base64 se baja al tocar ▶.
+      html.push('<div class="seccion"><div class="st">Video del curso</div><div id="videoMarco" style="margin-top:12px">'+
+        (esArchivoUrl(m.contenido)?'<video controls playsinline preload="metadata" src="'+esc(m.contenido)+'" style="width:100%;max-height:70vh;background:#000;border-radius:6px"></video>'
+          :'<button class="btn oscuro" data-vervideo="'+esc(m.contenido)+'">▶ Ver video</button> <span class="muted" style="font-size:13px">'+esc(m.archivoNombre||'')+'</span>')+'</div></div>');
     } else if(m.tipo==='archivo'){
       const esPdf=/\.pdf$/i.test(m.archivoNombre||'');
       html.push('<div class="seccion"><div class="st">Material del curso</div><div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">'+
@@ -1141,20 +1309,27 @@ function renderPlayer(){
 
   if(esQuiz){
     const q=c.quiz; const aprobado=!!(av.quiz&&av.quiz.ok);
-    html.push('<div style="display:flex;align-items:baseline;gap:14px"><div class="lec-tit">Quiz final</div>'+
-      '<span style="font-size:14px;font-weight:600;color:var(--gris)">'+ (q.preguntas||[]).length+' preguntas · se aprueba con '+(q.aprueba||70)+'%'+((av.quiz&&av.quiz.int)?' · intentos: '+av.quiz.int:'')+'</span></div>');
+    const maxInt=+(q.intentos||0); const usados=(av.quiz&&av.quiz.int)||0;
+    const sinIntentos = !ES_STAFF && !aprobado && !PLAYER.enviado && maxInt>0 && usados>=maxInt;
+    if(!PLAYER.orden) PLAYER.orden=ordenQuiz(c);
+    html.push('<div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap"><div class="lec-tit">Quiz final</div>'+
+      '<span style="font-size:14px;font-weight:600;color:var(--gris)">'+ (q.preguntas||[]).length+' preguntas · se aprueba con '+(q.aprueba||70)+'%'+
+      (usados?' · intento '+usados+(maxInt?' de '+maxInt:''):(maxInt?' · hasta '+maxInt+' intentos':''))+'</span></div>');
     const bloqueado = !ES_STAFF && mods.length>0 && est.modsOk<mods.length;
     if(aprobado && !PLAYER.enviado){
       html.push('<div class="banner verde" style="margin-top:20px"><div style="font-size:19px;font-weight:700">Quiz aprobado</div>'+
         '<div style="font-size:15px;opacity:.92">Sacaste '+av.quiz.pje+'% el '+fechaLarga(av.quiz.ts)+'.</div></div>');
     } else if(bloqueado){
       html.push('<div class="card-b muted" style="margin-top:20px">Completá los '+mods.length+' módulos para habilitar la evaluación.</div>');
+    } else if(sinIntentos){
+      html.push('<div class="banner rojo" style="margin-top:20px"><div style="font-size:19px;font-weight:700">Usaste los '+maxInt+' intentos</div>'+
+        '<div style="font-size:15px;opacity:.92">Repasá los módulos y pedile a tu encargado o al capacitador que te habilite otro intento (lo hacen desde tu ficha en «Mi equipo»).</div></div>');
     } else {
       html.push('<div style="display:flex;flex-direction:column;gap:14px;margin-top:20px">');
-      (q.preguntas||[]).forEach((p,pi)=>{
-        html.push('<div class="preg-card"><div class="q">'+(pi+1)+'. '+esc(p.q)+'</div>'+
+      PLAYER.orden.pregs.forEach((pi,k)=>{ const p=(q.preguntas||[])[pi]; if(!p) return;
+        html.push('<div class="preg-card"><div class="q">'+(k+1)+'. '+esc(p.q)+'</div>'+
           '<div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">'+
-          (p.ops||[]).map((op,oi)=>{
+          (PLAYER.orden.ops[pi]||[]).map(oi=>{ const op=(p.ops||[])[oi];
             let cls='';
             if(!PLAYER.enviado && PLAYER.resp[pi]===oi) cls=' sel';
             if(PLAYER.enviado && oi===+p.ok) cls=' bien';
@@ -1173,7 +1348,9 @@ function renderPlayer(){
         const pje=pct(bien,pregs.length); const okQ=pje>=(q.aprueba||70);
         html.push('<div class="banner '+(okQ?'verde':'rojo')+'"><div style="font-size:19px;font-weight:700">'+(okQ?'¡Quiz aprobado!':'No alcanzaste el puntaje')+'</div>'+
           '<div style="font-size:15px;opacity:.92">'+bien+' de '+pregs.length+' correctas ('+pje+'%)'+(okQ?' — ¡curso completado!':' — necesitás '+(q.aprueba||70)+'% para aprobar.')+'</div>'+
-          (okQ?'':'<button class="btn" id="pReintentar" style="align-self:flex-start;margin-top:8px;background:#fff">Reintentar</button>')+'</div>');
+          (okQ?'':(( +(q.intentos||0)>0 && ((av.quiz&&av.quiz.int)||0)>=+(q.intentos||0))
+            ?'<div style="margin-top:8px;font-size:14px">No te quedan intentos: repasá los módulos y pedí que te habiliten otro desde tu ficha.</div>'
+            :'<button class="btn" id="pReintentar" style="align-self:flex-start;margin-top:8px;background:#fff">Reintentar</button>'))+'</div>');
       }
       html.push('</div>');
     }
@@ -1197,6 +1374,12 @@ function renderPlayer(){
   }));
   const bc=$('pCert'); if(bc) bc.addEventListener('click',()=>verCertificado({curso:c}));
   const ant=$('pAnt'); if(ant) ant.addEventListener('click',()=>{ if(PLAYER.idx>0){ PLAYER.idx--; render(); } });
+  app.querySelectorAll('[data-vervideo]').forEach(b=>b.addEventListener('click', async ()=>{
+    b.disabled=true; b.textContent='Cargando video…';
+    try{ const {blob}=await bajarArchivo(b.dataset.vervideo); const url=URL.createObjectURL(blob);
+      $('videoMarco').innerHTML='<video controls playsinline autoplay src="'+url+'" style="width:100%;max-height:70vh;background:#000;border-radius:6px"></video>';
+    }catch(err){ alert('No se pudo abrir el video: '+err.message); b.disabled=false; b.textContent='▶ Ver video'; }
+  }));
   app.querySelectorAll('[data-verpdf]').forEach(b=>b.addEventListener('click', async ()=>{
     b.disabled=true; b.textContent='Cargando…';
     try{ const {blob}=await bajarArchivo(b.dataset.verpdf); const url=URL.createObjectURL(blob);
@@ -1231,9 +1414,16 @@ function renderPlayer(){
     const e2=estadoCurso(nuevo,c); if(e2.completo&&!nuevo.fin) nuevo.fin=Date.now();
     env.disabled=true;
     try{ await guardarAvanceYo(c.id,nuevo); }catch(err){ alert('No se pudo guardar: '+err.message); return; }
+    // Banco de preguntas: cuántas veces se respondió cada pregunta, cuántas mal y qué opción
+    // equivocada eligieron (quizStats/<curso>/<pregunta>). Contadores del servidor, best-effort.
+    try{
+      const inc={'.sv':{'increment':1}}; const patch={};
+      pregs.forEach((p,i)=>{ const k='quizStats/'+c.id+'/'+claveQuizStats(p,i); patch[k+'/n']=inc; if(PLAYER.resp[i]!==+p.ok){ patch[k+'/mal']=inc; patch[k+'/op/'+PLAYER.resp[i]]=inc; } });
+      fetch(FIREBASE_DB_URL+'/'+ROOT+'.json',{method:'PATCH',body:JSON.stringify(patch),headers:{'Content-Type':'application/json'}}).catch(()=>{});
+    }catch(e){}
     PLAYER.enviado=true; render();
   });
-  const rei=$('pReintentar'); if(rei) rei.addEventListener('click',()=>{ PLAYER.resp={}; PLAYER.enviado=false; render(); });
+  const rei=$('pReintentar'); if(rei) rei.addEventListener('click',()=>{ PLAYER.resp={}; PLAYER.enviado=false; PLAYER.orden=null; render(); });
   const ee=$('encEnviar'); if(ee) ee.addEventListener('click', async ()=>{
     ee.disabled=true;
     try{
@@ -1455,6 +1645,8 @@ async function renderEquipo(){
 function fichaPersona(f){
   const avP=(AVANCES[f.slug]||{})[f.per.id]||{};
   const asig=cursosDe(f.slug,f.per.rol);
+  // cursos con quiz desaprobado y sin intentos disponibles (para habilitar otro)
+  const agotados=asig.filter(x=>{ const a=avP[x.curso.id]; const max=+((x.curso.quiz||{}).intentos||0); return max>0 && a&&a.quiz&&!a.quiz.ok && (a.quiz.int||0)>=max; });
   const velo=document.createElement('div'); velo.className='velo';
   const filas=asig.map(x=>{ const a=avP[x.curso.id]; const e=estadoCurso(a,x.curso); const t=a&&a.tiempo?Object.values(a.tiempo).reduce((q,v)=>q+(+v||0),0):0;
     return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #eef0f3;font-size:14px"><span style="flex:1">'+esc(x.curso.titulo)+' <span class="muted" style="font-size:12px">· '+esc(x.programa.nombre)+'</span></span>'+
@@ -1464,14 +1656,25 @@ function fichaPersona(f){
     '<div><h2 style="margin:0">'+esc(f.per.nombre)+'</h2><div class="muted" style="font-size:13.5px">'+esc(ROL_LABEL_PERSONA[f.per.rol]||f.per.rol)+' · '+esc(sucLabelDe(f.slug))+' · avance '+f.st.pct+'% · '+(f.st.ult?'última actividad '+tiempoRel(f.st.ult):'sin actividad')+'</div></div></div>'+
     (f.st.rapidos.length?'<div class="seccion evitar" style="margin-top:14px"><div class="st">Muy rápido</div><div class="sx">Completó '+esc(f.st.rapidos.join(', '))+' en menos de 20 segundos por módulo. Vale la pena charlarlo.</div></div>':'')+
     '<div style="margin-top:16px">'+(filas||'<p class="muted">No tiene cursos asignados.</p>')+'</div>'+
+    '<div id="fRes"></div>'+
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px;border-top:1px solid var(--borde);padding-top:14px">'+
     (ES_STAFF?'<button class="btn oscuro mini" id="fMsg">✉ Escribir a la sucursal</button>':'')+
+    (agotados.length?'<button class="btn mini" id="fReint" title="'+esc(agotados.map(x=>x.curso.titulo).join(', '))+'">🔁 Habilitar otro intento ('+agotados.length+')</button>':'')+
     '<button class="btn mini" id="fPin">🔑 Resetear PIN</button>'+
     '<button class="btn mini" id="fCerrar" style="margin-left:auto;background:#fff">Cerrar</button></div>'+
     '<div id="fMsgBox" style="display:none;margin-top:12px"><textarea id="fTexto" style="min-height:80px"></textarea><div style="margin-top:8px"><button class="btn pri mini" id="fEnviar">Enviar a la Bandeja de la sucursal</button> <span class="muted" id="fEst" style="font-size:13px"></span></div></div></div>';
   document.body.appendChild(velo);
   velo.querySelector('#fCerrar').addEventListener('click',()=>velo.remove());
   velo.addEventListener('click',e=>{ if(e.target===velo) velo.remove(); });
+  resultadosPersona(f.slug, f.per).then(rows=>{ const el=velo.querySelector('#fRes'); if(el) el.innerHTML=resultadosHtml(rows.filter(r=>r.antes||r.despues)); }).catch(()=>{});
+  const fr=velo.querySelector('#fReint'); if(fr) fr.addEventListener('click', async ()=>{
+    if(!confirm('¿Habilitar otro intento del quiz a '+f.per.nombre+' en: '+agotados.map(x=>x.curso.titulo).join(', ')+'?')) return;
+    fr.disabled=true;
+    try{
+      for(const x of agotados){ const a=avP[x.curso.id]; a.quiz.int=Math.max(0,(+x.curso.quiz.intentos||1)-1); await fbPut('avances/'+f.slug+'/'+f.per.id+'/'+x.curso.id+'/quiz/int', a.quiz.int); }
+      fr.textContent='✓ Habilitado';
+    }catch(err){ alert('No se pudo: '+err.message); fr.disabled=false; }
+  });
   velo.querySelector('#fPin').addEventListener('click', async ()=>{
     if(!confirm('¿Resetear el PIN de '+f.per.nombre+'? La próxima vez que entre, crea uno nuevo.')) return;
     try{ await fbDel('pins/'+f.slug+'/'+f.per.id); alert('PIN reseteado.'); }catch(err){ alert('No se pudo: '+err.message); }
@@ -1753,6 +1956,7 @@ function renderGesCursos(){
         '<div style="font-size:14px">'+((c.modulos||[]).length)+'</div>'+
         '<div style="font-size:14px">'+((c.quiz&&(c.quiz.preguntas||[]).length)||0)+' preg.'+(c.activo===false?' <span class="chip ambar" style="margin-left:6px">borrador</span>':'')+'</div>'+
         '<div style="white-space:nowrap;text-align:right"><button class="btn mini" data-ver="'+esc(c.id)+'">👁 Ver</button> '+
+        '<button class="btn mini" data-link="'+esc(c.id)+'" title="Copiar el link directo al curso (WhatsApp / Bandeja)">🔗</button> '+
         '<button class="btn mini" data-ed="'+esc(c.id)+'">✏ Editar</button> '+
         '<button class="btn mini" data-dup="'+esc(c.id)+'" title="Duplicar (queda en borrador)">⧉</button> '+
         '<button class="btn mini peligro" data-del="'+esc(c.id)+'">🗑</button></div></div>').join('')+'</div>');
@@ -1766,6 +1970,7 @@ function renderGesCursos(){
   });
   $('abrirWizard').addEventListener('click',()=>{ WIZ=null; VISTA={t:'wizard'}; render(); });
   app.querySelectorAll('[data-ver]').forEach(b=>b.addEventListener('click',()=>abrirCurso(b.dataset.ver)));
+  app.querySelectorAll('[data-link]').forEach(b=>b.addEventListener('click', async ()=>{ const u=urlAcademia('curso='+encodeURIComponent(b.dataset.link)); await copiarTexto(u); toast('Link copiado: '+u); }));
   app.querySelectorAll('[data-dup]').forEach(b=>b.addEventListener('click', async ()=>{
     const o=CURSOS[b.dataset.dup]; const c=JSON.parse(JSON.stringify(o));
     c.id=nuevoId('c'); c.titulo=o.titulo+' (copia)'; c.activo=false; c.ts=Date.now(); c.por=SESSION.email;
@@ -1911,10 +2116,10 @@ async function extraerPptx(file){
 
 /* ---------- editor de módulos (compartido: asistente + editor de curso) ---------- */
 let PREV_ABIERTAS = new Set();   // vistas previas desplegadas ("<pref><i>")
-const TIPO_LABEL = { texto:'Texto / lectura', video:'Video (YouTube)', archivo:'Archivo (PDF / PowerPoint)', enlace:'Material (link externo)' };
+const TIPO_LABEL = { texto:'Texto / lectura', video:'Video (YouTube)', archivo:'Archivo (PDF / PowerPoint / video)', enlace:'Material (link externo)' };
 function previewModuloHtml(m){
   if(m.tipo==='video'){ const yt=esUrlYoutube(m.contenido); return yt?'<div class="video-marco" style="max-width:520px"><iframe src="https://www.youtube.com/embed/'+yt+'" allowfullscreen loading="lazy"></iframe></div>':'<p class="muted">Pegá un link de YouTube para ver el video acá.</p>'; }
-  if(m.tipo==='archivo') return '<div class="seccion"><div class="st">Material del curso</div><div style="margin-top:10px"><span class="btn oscuro mini">📥 Descargar '+esc(m.archivoNombre||'material')+'</span></div></div>';
+  if(m.tipo==='archivo') return '<div class="seccion"><div class="st">'+(esVideoNombre(m.archivoNombre)?'Video del curso':'Material del curso')+'</div><div style="margin-top:10px"><span class="btn oscuro mini">'+(esVideoNombre(m.archivoNombre)?'▶ Ver video':'📥 Descargar '+esc(m.archivoNombre||'material'))+'</span></div></div>';
   if(m.tipo==='enlace') return '<div class="seccion"><div class="st">Material del curso</div><div style="margin-top:10px"><span class="btn oscuro mini">📄 Abrir material</span></div></div>';
   const secs=seccionesDeTexto(m.contenido);
   if(!secs.length) return '<p class="muted">Escribí el contenido para ver cómo queda.</p>';
@@ -1935,8 +2140,8 @@ function moduloEditorHtml(m,i,op){
     ((m.tipo||'texto')==='texto' ? '<label class="fl">Contenido</label><textarea data-'+p+'c="'+i+'" style="min-height:130px" placeholder="Doble enter = tarjeta nueva. Opcional: [[tip]] Título, [[dato]] Título, [[evitar]] Título o [[ejemplo]] Título al inicio de un bloque lo destaca con color.">'+esc(m.contenido||'')+'</textarea>'
       : m.tipo==='archivo' ? '<label class="fl">Archivo</label>'+
         (m.contenido?'<p style="margin:0 0 8px;font-size:14px">Subido: <b>'+esc(m.archivoNombre||m.contenido)+'</b> ✓ — elegir otro archivo lo reemplaza.</p>':'')+
-        '<input type="file" data-'+p+'f="'+i+'" accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx"> <span class="muted" data-'+p+'fst="'+i+'" style="font-size:13px"></span>'+
-        '<p class="muted" style="font-size:12.5px;margin:7px 0 0">Máx. '+ARCHIVO_MAX_MB+' MB. Si el PPT pesa mucho por las fotos, conviene exportarlo a PDF.</p>'
+        '<input type="file" data-'+p+'f="'+i+'" accept="'+ARCHIVO_ACCEPT+'"> <span class="muted" data-'+p+'fst="'+i+'" style="font-size:13px"></span>'+
+        '<p class="muted" style="font-size:12.5px;margin:7px 0 0">PDF, PowerPoint o <b>video</b> (mp4/webm/mov, p.ej. grabado con el celular en el local). Máx. '+ARCHIVO_MAX_MB+' MB'+(STORAGE_BUCKET?'':' (con Firebase Storage sube a 200 MB)')+'. Si el PPT pesa mucho por las fotos, conviene exportarlo a PDF; un video largo, comprimirlo antes.</p>'
       : '<label class="fl">URL</label><input type="url" data-'+p+'c="'+i+'" value="'+esc(m.contenido||'')+'" placeholder="https://…">')+
     (abierta?'<div style="margin-top:12px;padding:14px;background:#f6f7f8;border-radius:6px"><div class="fl" style="margin-bottom:8px">Así lo ve el equipo</div>'+previewModuloHtml(m)+'</div>':'')+
     '</div></div>';
@@ -2134,14 +2339,19 @@ function renderEditorCurso(){
     '<div class="fila" style="margin-top:12px"><div style="flex:2"><label class="fl">Portada (URL de una foto, opcional)</label><input type="url" id="cPortada" value="'+esc(c.portada||'')+'" placeholder="https://… (si queda vacío, la tarjeta usa el color)"></div></div>'+
     '<div style="margin-top:12px"><label class="fl">Descripción / objetivo</label><textarea id="cDesc" placeholder="Qué se lleva el equipo de este curso.">'+esc(c.desc||'')+'</textarea></div>'+
     '<div style="margin-top:12px"><label class="fl">Frase gancho de la portada (opcional)</label><input type="text" id="cFrase" value="'+esc(c.frase||'')+'" placeholder="Ej: Vender puede cualquiera, conectar es nuestro objetivo"></div>'+
-    '<label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:15px;font-weight:700"><input type="checkbox" id="cActivo"'+(c.activo!==false?' checked':'')+'> Publicado <span class="muted" style="font-weight:400;font-size:13px">(sin tildar queda en borrador: el equipo no lo ve hasta que tenga contenido)</span></label></div>');
+    '<label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:15px;font-weight:700"><input type="checkbox" id="cActivo"'+(c.activo!==false?' checked':'')+'> Publicado <span class="muted" style="font-weight:400;font-size:13px">(sin tildar queda en borrador: el equipo no lo ve hasta que tenga contenido)</span></label>'+
+    '<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:15px;font-weight:700"><input type="checkbox" id="cMicro"'+(esMicro(c)?' checked':'')+'> ⚡ Píldora <span class="muted" style="font-weight:400;font-size:13px">(curso corto de 3 a 5 minutos para hacer desde el celular en el local: hasta 3 módulos breves y 1 a 3 preguntas; se destaca en Inicio y tiene filtro propio)</span></label></div>');
   html.push('<div class="sec-t" style="margin-top:28px">Módulos ('+(c.modulos||[]).length+')</div>');
   c.modulos=c.modulos||[];
   c.modulos.forEach((m,i)=>{ html.push(moduloEditorHtml(m,i,{pref:'m',unir:false,total:c.modulos.length})); });
   html.push('<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn" data-madd="texto">＋ Módulo de texto</button><button class="btn" data-madd="video">＋ Video (YouTube)</button><button class="btn" data-madd="archivo">＋ Archivo PDF/PPT</button><button class="btn" data-madd="enlace">＋ Link a material</button></div>');
   const q=c.quiz||{aprueba:70,preguntas:[]};
   html.push('<div class="sec-t" style="margin-top:24px">Evaluación ('+(q.preguntas||[]).length+' preguntas)</div>');
-  html.push('<div class="card-b" style="margin-top:10px"><label class="fl">Se aprueba con (%)</label><input type="number" id="qAprueba" value="'+(q.aprueba||70)+'" min="10" max="100" style="max-width:120px"></div>');
+  html.push('<div class="card-b" style="margin-top:10px"><div class="fila">'+
+    '<div><label class="fl">Se aprueba con (%)</label><input type="number" id="qAprueba" value="'+(q.aprueba||70)+'" min="10" max="100" style="max-width:120px"></div>'+
+    '<div><label class="fl">Intentos permitidos</label><input type="number" id="qInt" value="'+(q.intentos===undefined?3:+q.intentos)+'" min="0" max="20" style="max-width:120px"><div class="muted" style="font-size:12px;margin-top:4px">0 = sin límite. Agotados, el encargado o vos habilitan otro desde la ficha.</div></div>'+
+    '<div style="align-self:center"><label style="display:flex;align-items:center;gap:8px;font-size:14.5px;font-weight:600"><input type="checkbox" id="qMezclar"'+(q.mezclar!==false?' checked':'')+'> Mezclar preguntas y opciones en cada intento</label></div></div>'+
+    (CURSOS[c.id]&&(q.preguntas||[]).length?'<div style="margin-top:14px"><div class="fl">Cómo responde el equipo</div><div id="qStats" class="muted" style="font-size:13.5px;margin-top:6px">Cargando…</div></div>':'')+'</div>');
   (q.preguntas||[]).forEach((p,i)=>{
     html.push('<div class="card-b" style="margin-top:10px"><div class="fila">'+
       '<div style="flex:3;min-width:240px"><label class="fl">Pregunta '+(i+1)+'</label><input type="text" data-qq="'+i+'" value="'+esc(p.q||'')+'"></div>'+
@@ -2159,8 +2369,10 @@ function renderEditorCurso(){
   function leerForm(){
     c.titulo=$('cTit').value.trim(); c.dur=$('cDur').value.trim(); c.competencia=$('cComp').value;
     c.color=$('cColor').value; c.portada=$('cPortada').value.trim(); c.desc=$('cDesc').value.trim(); c.frase=$('cFrase').value.trim(); c.activo=$('cActivo').checked;
+    c.formato=$('cMicro').checked?'micro':null;
     leerModulosForm(app,c.modulos,'m');
     c.quiz=c.quiz||{}; c.quiz.aprueba=Math.max(10,Math.min(100,+$('qAprueba').value||70));
+    c.quiz.intentos=Math.max(0,Math.min(20,+$('qInt').value||0)); c.quiz.mezclar=$('qMezclar').checked;
     c.quiz.preguntas=c.quiz.preguntas||[];
     app.querySelectorAll('[data-qq]').forEach(i=>{ c.quiz.preguntas[+i.dataset.qq].q=i.value.trim(); });
     app.querySelectorAll('[data-qo]').forEach(i=>{ c.quiz.preguntas[+i.dataset.qo].ops=i.value.split('\n').map(s=>s.trim()).filter(Boolean); });
@@ -2168,6 +2380,7 @@ function renderEditorCurso(){
   }
   $('volver').addEventListener('click',e=>{ e.preventDefault(); EDIT_CURSO=null; VISTA=null; render(); });
   $('cancelarCurso').addEventListener('click',()=>{ EDIT_CURSO=null; VISTA=null; render(); });
+  if($('qStats')) pintarQuizStats(c);
   app.querySelectorAll('[data-madd]').forEach(b=>b.addEventListener('click',()=>{ leerForm(); c.modulos.push({titulo:'',tipo:b.dataset.madd,contenido:''}); render(); }));
   $('addPreg').addEventListener('click',()=>{ leerForm(); c.quiz.preguntas.push({q:'',ops:[],ok:0}); render(); });
   const eiq=$('edIAQuiz'); if(eiq) eiq.addEventListener('click', async ()=>{
@@ -2187,10 +2400,30 @@ function renderEditorCurso(){
     const malas=(c.quiz.preguntas||[]).filter(p=>p.q&&(p.ops.length<2||p.ok>=p.ops.length));
     if(malas.length){ alert('Hay preguntas con menos de 2 opciones o con la correcta fuera de rango.'); return; }
     c.quiz.preguntas=(c.quiz.preguntas||[]).filter(p=>p.q&&p.ops.length>=2);
+    c.quiz.preguntas.forEach(p=>{ if(!p.id) p.id=nuevoId('q'); });   // id estable: las estadísticas no se pierden al reordenar
     c.modulos=(c.modulos||[]).filter(m=>m.titulo||m.contenido);
+    if(esMicro(c) && (c.modulos.length>3 || c.quiz.preguntas.length>3) && !confirm('Marcaste el curso como Píldora pero tiene '+c.modulos.length+' módulos y '+c.quiz.preguntas.length+' preguntas. Una píldora funciona mejor con hasta 3 módulos cortos y 1 a 3 preguntas. ¿Guardar igual?')) return;
     try{ await fbPut('cursos/'+c.id,c); CURSOS[c.id]=c; EDIT_CURSO=null; VISTA=null; render(); }
     catch(err){ alert('No se pudo guardar: '+err.message); }
   });
+}
+/* Estadísticas del quiz por pregunta (quizStats/<curso>): % de fallas y la opción equivocada
+   más elegida. Lo que más falla va arriba y en rojo desde el 50 %. */
+function pintarQuizStats(c){
+  fbGet('quizStats/'+c.id).then(st=>{
+    const el=$('qStats'); if(!el) return;
+    if(!st){ el.textContent='Todavía nadie respondió este quiz.'; return; }
+    const pregs=c.quiz.preguntas||[];
+    const filas=pregs.map((p,i)=>{ const x=st[claveQuizStats(p,i)]; if(!x||!x.n) return null;
+      const pctMal=Math.round(100*(x.mal||0)/x.n); let peor='';
+      if(x.op){ const k=Object.keys(x.op).sort((a,b)=>x.op[b]-x.op[a])[0]; if(k!==undefined && p.ops && p.ops[k]!==undefined) peor='la equivocada más elegida: «'+esc(p.ops[k])+'»'; }
+      return {i,pctMal,n:x.n,peor,q:p.q}; }).filter(Boolean).sort((a,b)=>b.pctMal-a.pctMal);
+    if(!filas.length){ el.textContent='Todavía nadie respondió este quiz.'; return; }
+    el.innerHTML='<div style="display:flex;flex-direction:column;gap:6px">'+filas.map(f=>'<div style="display:flex;gap:10px;align-items:baseline;font-size:13.5px;color:var(--tinta)">'+
+      '<span class="chip '+(f.pctMal>=50?'rojo':(f.pctMal>=25?'ambar':'verde'))+'" style="min-width:64px;text-align:center">'+f.pctMal+'% falla</span>'+
+      '<span style="flex:1"><b>P'+(f.i+1)+'.</b> '+esc(f.q)+' <span class="muted">· '+f.n+' respuesta'+(f.n===1?'':'s')+(f.peor?' · '+f.peor:'')+'</span></span></div>').join('')+'</div>'+
+      '<div class="muted" style="font-size:12px;margin-top:6px">Una pregunta que falla mucho puede estar mal explicada en el módulo o mal redactada.</div>';
+  }).catch(()=>{ const el=$('qStats'); if(el) el.textContent='No se pudieron cargar las estadísticas.'; });
 }
 function renderGesProgramas(){
   const app=$('app');
@@ -2210,10 +2443,20 @@ function renderGesProgramas(){
         '<div style="font-size:13.5px">'+((p.sucursales&&p.sucursales.length)?p.sucursales.map(s=>esc(SUC_LABEL[s]||s)).join(', '):'Todas')+'</div>'+
         '<div style="font-size:13.5px">'+(p.limite?esc(p.limite)+(d!==null&&d<0?' <span class="chip rojo">vencido</span>':''):'—')+'</div>'+
         '<div>'+(p.avisado?'<span class="chip verde">enviado</span>':'<button class="btn mini oscuro" data-aviso="'+esc(p.id)+'">📣 Avisar</button>')+'</div>'+
-        '<div style="white-space:nowrap;text-align:right"><button class="btn mini" data-ed="'+esc(p.id)+'">✏</button> <button class="btn mini peligro" data-del="'+esc(p.id)+'">🗑</button></div></div>';
+        '<div style="white-space:nowrap;text-align:right"><button class="btn mini" data-plink="'+esc(p.id)+'" title="Copiar el link directo al programa">🔗</button> <button class="btn mini" data-ed="'+esc(p.id)+'">✏</button> <button class="btn mini peligro" data-del="'+esc(p.id)+'">🗑</button></div></div>';
       }).join('')+'</div>');
-    html.push('<p class="muted" style="font-size:13px;margin-top:12px">«Avisar» publica la notificación en la Bandeja del Portal y en Novedades de la Academia.</p>');
+    html.push('<p class="muted" style="font-size:13px;margin-top:12px">«Avisar» publica la notificación en la Bandeja del Portal y en Novedades de la Academia, con el link directo al programa. 🔗 copia ese link para mandarlo por WhatsApp.</p>');
   }
+  // Cursos recomendados por el supervisor desde Evaluaciones (asignaciones/<slug>/<curso>)
+  const asigFilas=[]; Object.keys(ASIGNACIONES).forEach(slug=>Object.keys(ASIGNACIONES[slug]||{}).forEach(cid=>{ const a=ASIGNACIONES[slug][cid]; if(a) asigFilas.push(Object.assign({slug,cid},a)); }));
+  asigFilas.sort((a,b)=>(b.ts||0)-(a.ts||0));
+  html.push('<div class="sec-t" style="margin-top:34px">🎯 Recomendados por el supervisor</div>'+
+    '<p class="muted" style="font-size:13.5px;margin:6px 0 12px">Cursos que Cristian asigna a una sucursal desde un punto flojo de la evaluación semanal. La sucursal los ve en Inicio y cuentan en su avance.</p>');
+  if(!asigFilas.length) html.push('<div class="vacio" style="padding:18px">Todavía no hay cursos recomendados desde Evaluaciones.</div>');
+  else html.push('<div class="tabla"><div class="trow cab" style="grid-template-columns:1.3fr 1.8fr 1.4fr 1fr .5fr"><div>Sucursal</div><div>Curso</div><div>Motivo</div><div>Cuándo</div><div></div></div>'+
+    asigFilas.map(a=>'<div class="trow" style="grid-template-columns:1.3fr 1.8fr 1.4fr 1fr .5fr"><div><b>'+esc(sucLabelDe(a.slug))+'</b></div><div>'+esc((CURSOS[a.cid]||{}).titulo||a.titulo||a.cid)+'</div>'+
+      '<div style="font-size:13.5px">'+esc(a.motivo||'—')+(a.semana?' <span class="muted">· sem. '+esc(a.semana)+'</span>':'')+'</div><div style="font-size:13.5px">'+(a.ts?fechaCorta(a.ts):'—')+'</div>'+
+      '<div style="text-align:right"><button class="btn mini peligro" data-asigdel="'+esc(a.slug)+'|'+esc(a.cid)+'" title="Quitar la recomendación">✕</button></div></div>').join('')+'</div>');
   html.push('</div>');
   app.innerHTML=html.join('');
   bindGesTabs(app);
@@ -2227,9 +2470,15 @@ function renderGesProgramas(){
     if(!confirm('¿Eliminar el programa «'+p.nombre+'»?')) return;
     await fbDel('programas/'+p.id); delete PROGRAMAS[p.id]; render();
   }));
+  app.querySelectorAll('[data-plink]').forEach(b=>b.addEventListener('click', async ()=>{ const u=urlAcademia('programa='+encodeURIComponent(b.dataset.plink)); await copiarTexto(u); toast('Link copiado: '+u); }));
+  app.querySelectorAll('[data-asigdel]').forEach(b=>b.addEventListener('click', async ()=>{
+    const [slug,cid]=b.dataset.asigdel.split('|');
+    if(!confirm('¿Quitar «'+((CURSOS[cid]||{}).titulo||cid)+'» de los recomendados a '+sucLabelDe(slug)+'?')) return;
+    try{ await fbDel('asignaciones/'+slug+'/'+cid); delete ASIGNACIONES[slug][cid]; render(); }catch(err){ alert('No se pudo: '+err.message); }
+  }));
   app.querySelectorAll('[data-aviso]').forEach(b=>b.addEventListener('click', async ()=>{
     const p=PROGRAMAS[b.dataset.aviso];
-    const texto='🎓 Academia de Ventas: nuevo programa «'+p.nombre+'»'+(p.limite?(' — completar antes del '+p.limite):'')+'. Entrá a Capacitaciones desde el Portal.';
+    const texto='🎓 Academia de Ventas: nuevo programa «'+p.nombre+'»'+(p.limite?(' — completar antes del '+p.limite):'')+'. Entrá a Capacitaciones desde el Portal: '+urlAcademia('programa='+encodeURIComponent(p.id));
     if(!confirm('Se publica este aviso en la Bandeja del Portal y en Novedades:\n\n'+texto+'\n\n¿Enviar?')) return;
     b.disabled=true;
     const yo=quienSoy();
@@ -2348,9 +2597,11 @@ async function cargarAvancesAlumno(){ AVANCES[MI_SLUG]=(await fbGet('avances/'+M
     CURSOS=cursos||{}; PROGRAMAS=programas||{}; NOVEDADES=novedades||{};
     if(ES_STAFF){
       AVANCES=(await fbGet('avances').catch(()=>null))||{};
+      ASIGNACIONES=(await fbGet('asignaciones').catch(()=>null))||{};
       if(window.Equipo){ try{ const todas=await Equipo.cargarTodas(); SUCS_PADRON=Object.keys(todas).filter(s=>Equipo.activos(todas[s]).some(p=>ROLES_DESTINO.includes(p.rol))); }catch(e){} }
     } else {
       if(MI_SLUG){
+        ASIGNACIONES[MI_SLUG]=(await fbGet('asignaciones/'+MI_SLUG).catch(()=>null))||{};
         await asegurarYo(); await cargarAvancesAlumno();
         if(DOT_CACHE[MI_SLUG] && DOT_CACHE[MI_SLUG].some(p=>p.legajo)) await migrarIdsAcademia(MI_SLUG, DOT_CACHE[MI_SLUG]);
         const conEnc=Object.values(PROGRAMAS).filter(p=>encActiva(p));
@@ -2359,6 +2610,13 @@ async function cargarAvancesAlumno(){ AVANCES[MI_SLUG]=(await fbGet('avances/'+M
       }
     }
     pintarWho(); pintarNav(); render();
+    // Link directo (?curso=<id> / ?programa=<id>): abre la portada del curso o el catálogo en ese programa.
+    try{
+      const qs=new URLSearchParams(location.search); const qc=qs.get('curso'), qp=qs.get('programa');
+      if(qc && CURSOS[qc] && (ES_STAFF || CURSOS[qc].activo!==false)){ TAB=ES_STAFF?'catalogo':'inicio'; pintarNav(); abrirCurso(qc); }
+      else if(qp && (PROGRAMAS[qp] || (qp==='_sup'&&!ES_STAFF))){ TAB='catalogo'; CAT.prog=qp; pintarNav(); render(); }
+      if(qc||qp) history.replaceState(null,'',location.pathname);
+    }catch(e){}
     recordatoriosVencimiento();                       // 7 días antes y el día anterior, una vez por programa
     if(ES_STAFF) publicarResumen();                   // resumen para Panel General / Evaluaciones / RRHH
     if(ES_STAFF) iaDisponible();                      // muestra los botones ✨ si la clave está cargada en Cloudflare

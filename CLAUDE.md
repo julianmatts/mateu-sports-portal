@@ -1147,6 +1147,49 @@ mismas pantallas y estética, con datos reales.
   GET responde `disponible:false` y la Academia no muestra los botones ✨ («Mejorar con IA» en
   el asistente, «Proponer preguntas con IA» en asistente y editor). Pendiente técnico: los
   archivos subidos van en base64 en RTDB (tope 20 MB); si crecen, migrar a Firebase Storage.
+- **Tanda de adopción (07/09/2026, «aplicar todo» de Juli)** — al 07/09 había 3 cursos activos, 39 en
+  borrador y CERO avances, así que estas mejoras apuntan a que se use:
+  (1) **Panel del encargado en Mi Sucursal**: `resumen-widget.js` ya no depende del resumen del staff
+  para la sucursal: calcula EN VIVO (cursos + programas + `avances/<slug>` + `asignaciones/<slug>` sobre
+  el padrón de `shared/equipo.js`) el estado por persona (al día / en curso / sin empezar, qué le falta)
+  y tiene **«⧉ Copiar recordatorio para WhatsApp»** (texto listo con nombres, pendientes y link). Copia
+  mínima de `programasDe`/`cursosDe`/`estadoCurso`: mantener en sintonía. El Panel General sigue leyendo
+  `capacitaciones/resumen`.
+  (2) **Link directo**: `capacitaciones/?curso=<id>` abre la portada del curso (tras «¿Quién sos?»);
+  `?programa=<id>` el catálogo en ese programa (`urlAcademia()`). Botones 🔗 en Gestión (cursos y
+  programas) y «🔗 Copiar link» en la portada (staff); «📣 Avisar», los recordatorios de vencimiento y
+  los avisos automáticos llevan el link.
+  (3) **Resultados en la venta**: `resultadosPersona` cruza cada curso aprobado (`fin`) con la venta
+  semanal por vendedor de `ventaEquipo/<slug>` (match por nombre/alias del padrón, `Equipo.norm`):
+  UPT y ticket promedio hasta 4 semanas antes vs. hasta 4 después, con chip de variación. Se ve en la
+  ficha de la persona (Mi equipo) y en el Inicio del alumno («Mis resultados»).
+  (4) **Cruce con Evaluaciones**: en el formulario del supervisor, un ítem en Regular/Mal muestra
+  «🎓 Curso de la Academia para este punto» (`ACAD_MAPA` ítem → competencia + palabras clave contra los
+  cursos publicados) y **«Asignar a la sucursal»** escribe `capacitaciones/asignaciones/<slug>/<cursoId>`
+  = `{curso, titulo, motivo, item, semana, por, ts}` + directo a la sucursal. En la Academia esos cursos
+  entran a `cursosDe` como el programa virtual `PROG_SUP` («Recomendado por el supervisor», id `_sup`,
+  todos los puestos): bloque propio en Inicio, pestaña en el Catálogo, cuentan en el avance y el resumen.
+  Gestión → Programas los lista con ✕ para quitarlos.
+  (5) **Píldoras**: `formato:'micro'` (check «⚡ Píldora» del editor; avisa si pasa de 3 módulos o 3
+  preguntas): chip en tarjetas y portada, carrusel «⚡ Píldoras de 5 minutos» en Inicio y filtro en el
+  Catálogo.
+  (6) **Quiz**: `quiz.mezclar` (default sí) baraja preguntas y opciones en cada intento (`ordenQuiz`;
+  `PLAYER.resp` sigue con índices originales; el staff lo ve en orden); `quiz.intentos` (0 = sin límite;
+  el editor propone 3) bloquea al agotarse y el encargado/staff **habilita otro** desde la ficha
+  («🔁 Habilitar otro intento», deja `int = intentos−1`). Cada envío suma contadores del servidor
+  (`{'.sv':{increment:1}}`) en `quizStats/<curso>/<preguntaId>` = `{n, mal, op:{<opción>:n}}`; las
+  preguntas reciben `id` estable al guardar; el editor muestra «Cómo responde el equipo» (% de falla y la
+  equivocada más elegida).
+  (7) **Firebase Storage opcional** (`STORAGE_BUCKET`, vacío hoy, mismo patrón que Tareas): con bucket,
+  `subirArchivo` sube por REST y guarda la URL como `contenido` (`bajarArchivo` entiende URL y partes
+  base64), tope 200 MB. **Videos subidos** (mp4/webm/mov) se reproducen en el player (`<video>`; en base64
+  se bajan al tocar ▶).
+  (8) **Certificación**: al completar un PROGRAMA entero, `avisarCertificacion` manda un directo a las
+  cuentas de la sucursal **de parte de capacitaciones@** (`enviarDirectoDe`) y otro al capacitador; flag
+  `certAvisos/<slug>/<persona>/<programa>`.
+  Pendientes de Juli: `ANTHROPIC_API_KEY` en Cloudflare (botones ✨) y el bucket de Storage.
+  ⚠ Bug arreglado en la misma tanda: `sucsAcademia()` se llamaba a sí misma desde el commit del padrón
+  (04/09) y Mi equipo / Ranking / `publicarResumen` reventaban para el staff.
 - **Asistente «Crear curso desde un PDF o PowerPoint»** (Gestión): lee el texto en el
   navegador (pdf.js / JSZip por CDN), propone un módulo por página/diapositiva, Iván
   revisa (reordena, une, quita, agrega, vista previa), quiz opcional, programa y aviso.

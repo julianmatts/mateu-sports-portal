@@ -547,6 +547,68 @@ function convKeyDe(a,b){ return [fbKeyMail(a),fbKeyMail(b)].sort().join('__'); }
 let _usuariosCache=null;
 async function usuariosPortal(){ if(_usuariosCache) return _usuariosCache; try{ _usuariosCache=await (await fetch(USUARIOS_URL)).json()||{}; }catch(e){ _usuariosCache={}; } return _usuariosCache; }
 // Mails de las cuentas del Portal de una sucursal/outlet (para avisarle al local).
+/* ---- Academia de Ventas: curso sugerido cuando un ítem sale Regular/Mal ----
+   Cruza el ítem de la evaluación con los cursos publicados de la Academia (por competencia y
+   palabras clave) y deja «Asignar a la sucursal»: escribe
+   recepciones-mateu/capacitaciones/asignaciones/<slug>/<cursoId> y avisa por la Bandeja. La
+   Academia lo muestra al equipo como «Recomendado por el supervisor» y cuenta en su avance. */
+const ACAD_DB='https://recepciones-mateu-default-rtdb.firebaseio.com/capacitaciones';
+const ACAD_MAPA={
+  atencion:{comp:['Venta y servicio'],kw:['atencion','cliente','venta','saludo']},
+  salon:{comp:['Ejecución visual'],kw:['exhibicion','vidriera','salon','visual','precio']},
+  limpieza:{comp:['Operaciones de tienda'],kw:['limpieza','orden','mantenimiento']},
+  stock_deposito:{comp:['Operaciones de tienda'],kw:['stock','deposito','f8','remito']},
+  ratio_stock:{comp:['Perspectivas comerciales'],kw:['stock','ratio','rotacion','meses']},
+  liderazgo:{comp:['Liderando mi equipo'],kw:['lider','equipo','conduc']},
+  proactividad:{comp:['Liderándome a mí mismo'],kw:['proactiv','actitud','resultado']},
+  normas:{comp:['Operaciones de tienda'],kw:['norma','procedimiento','politica']},
+  comunicacion:{comp:['Liderándome a mí mismo'],kw:['comunicaci','responsab']},
+  personal:{comp:['Producto de marca','Venta y servicio'],kw:['producto','promocion','adicional','capacitacion']}
+};
+let ACAD_CURSOS=null;
+async function acadCursos(){
+  if(ACAD_CURSOS) return ACAD_CURSOS;
+  try{ const r=await fetch(ACAD_DB+'/cursos.json'); const j=r.ok?await r.json():null; ACAD_CURSOS=Object.values(j||{}).filter(c=>c&&c.activo!==false&&c.titulo); }
+  catch(e){ ACAD_CURSOS=[]; }
+  return ACAD_CURSOS;
+}
+function acadNorm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+function acadSugerir(itemKey, cursos){
+  const m=ACAD_MAPA[itemKey]; if(!m) return [];
+  return cursos.map(c=>{ let s=0; if(m.comp.includes(c.competencia)) s+=3; const txt=acadNorm(c.titulo+' '+(c.desc||'')); m.kw.forEach(k=>{ if(txt.includes(acadNorm(k))) s+=1; }); return {c,s}; })
+    .filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,2).map(x=>x.c);
+}
+async function pintarSugerenciasCursos(){
+  if(!FORM || !FORM.suc) return;
+  const cursos=await acadCursos(); if(!cursos.length) return;
+  const slug=FORM.suc;
+  let asignados={}; try{ const r=await fetch(ACAD_DB+'/asignaciones/'+slug+'.json'); asignados=(r.ok?await r.json():null)||{}; }catch(e){}
+  document.querySelectorAll('[data-sug]').forEach(el=>{
+    if(el.dataset.listo) return;
+    const key=el.dataset.sug; const plan=el.closest('.plan'); if(!plan || !plan.classList.contains('show')) return;
+    const sug=acadSugerir(key,cursos); el.dataset.listo='1';
+    if(!sug.length){ el.innerHTML=''; return; }
+    el.innerHTML='<div style="margin-top:8px;padding:8px 10px;background:#eef3fb;border-radius:6px;font-size:13px;display:flex;flex-wrap:wrap;gap:8px;align-items:center"><span>🎓 Curso de la Academia para este punto:</span>'+
+      sug.map(c=>'<span style="display:inline-flex;align-items:center;gap:6px"><b>'+esc(c.titulo)+'</b>'+
+        (asignados[c.id]?'<span style="color:#178a50;font-weight:700">✓ ya recomendado</span>'
+          :'<button type="button" data-asig="'+esc(c.id)+'" data-asigk="'+esc(key)+'" style="border:1px solid #0B1527;background:#fff;color:#0B1527;border-radius:5px;padding:3px 9px;font:600 12px Barlow,sans-serif;cursor:pointer">Asignar a la sucursal</button>')+'</span>').join('')+'</div>';
+    el.querySelectorAll('[data-asig]').forEach(b=>b.onclick=()=>asignarCursoAcademia(b.dataset.asig, b.dataset.asigk, b));
+  });
+}
+async function asignarCursoAcademia(cid, itemKey, btn){
+  const c=(ACAD_CURSOS||[]).find(x=>x.id===cid); if(!c) return;
+  const it=(E.ITEMS||[]).find(x=>x.key===itemKey); const motivo=it?it.titulo:itemKey; const slug=FORM.suc;
+  if(!confirm('Se recomienda «'+c.titulo+'» a todo el equipo de '+slug+' en la Academia de Ventas (lo ven en Inicio y cuenta en su avance) y se avisa por la Bandeja. ¿Asignar?')) return;
+  btn.disabled=true;
+  try{
+    const payload={curso:cid, titulo:c.titulo, motivo, item:itemKey, semana:FORM.per, por:SESSION.email, ts:Date.now()};
+    const r=await fetch(ACAD_DB+'/asignaciones/'+slug+'/'+cid+'.json',{method:'PUT',body:JSON.stringify(payload),headers:{'Content-Type':'application/json'}});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const link=location.origin+location.pathname.replace(/evaluaciones\/.*$/,'capacitaciones/?curso='+encodeURIComponent(cid));
+    try{ const mails=await emailsDeSucursal(slug); await enviarDirectos(mails,'🎓 El supervisor recomendó el curso «'+c.titulo+'» de la Academia de Ventas para el equipo, por el punto «'+motivo+'» de la evaluación. Entrá con tu nombre y hacelo esta semana: '+link); }catch(e){}
+    btn.outerHTML='<span style="color:#178a50;font-weight:700">✓ recomendado</span>';
+  }catch(err){ alert('No se pudo asignar: '+err.message); btn.disabled=false; }
+}
 async function emailsDeSucursal(slug){
   const us=await usuariosPortal(); const out=[];
   Object.keys(us||{}).forEach(k=>{ const u=us[k]; if(!u||!u.email) return;
@@ -835,6 +897,7 @@ function drawBlocks(){
       <div class="plan${showPlan?' show':''}" data-plan="${it.key}">
         <label class="lbl" style="margin-top:6px">Plan de acción</label>
         <textarea class="inp" data-plantxt="${it.key}" placeholder="Qué hay que corregir / acordado con el encargado">${esc(cur.plan_accion||'')}</textarea>
+        <div data-sug="${it.key}"></div>
       </div>
     </div>`;
   }).join('');
@@ -849,9 +912,10 @@ function drawBlocks(){
   $('view').querySelectorAll('input[type=radio]').forEach(r=>r.onchange=()=>{
     const key=r.name.slice(2); FORM.valores[key].valor=r.value;
     const plan=$('view').querySelector('[data-plan="'+key+'"]');
-    if(r.value==='regular'||r.value==='mal') plan.classList.add('show'); else plan.classList.remove('show');
+    if(r.value==='regular'||r.value==='mal'){ plan.classList.add('show'); pintarSugerenciasCursos(); } else plan.classList.remove('show');
     markDirty(); drawScore();
   });
+  pintarSugerenciasCursos();
   $('view').querySelectorAll('[data-plantxt]').forEach(t=>t.oninput=()=>{ FORM.valores[t.dataset.plantxt].plan_accion=t.value; markDirty(); });
   $('obsOp').oninput=e=>{ FORM.obs_op=e.target.value; markDirty(); };
   $('obsAct').oninput=e=>{ FORM.obs_act=e.target.value; markDirty(); };
