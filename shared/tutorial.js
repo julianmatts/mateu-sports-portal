@@ -129,9 +129,9 @@
 
     barrida: { icono:'🧹', nombre:'Análisis de Reserva Depósito Central', pasos:[
       { ic:'🧹', t:'Qué es', d:'El cruce semanal (típico: los lunes) de la reserva del Depósito Central contra las ventas por sucursal, para decidir la reposición.' },
-      { ic:'⬆️', t:'Cargar', d:'Subí el Excel con las dos hojas — ventas por sucursal y reserva del depósito — y se cruzan solas por ID ITEM y talle.' },
+      { ic:'⬆️', t:'Cargar', d:'Arriba de Reposición: tres botones — ventas por sucursal, reserva del depósito y (opcional) stock por sucursal —, la semana y Guardar. Con ventas + reserva se cruza solo por ID ITEM y talle.' },
       { ic:'📦', t:'Reposición', d:'Por sucursal: qué puede pedir del depósito, talle por talle. Si la reserva de un talle no alcanza para todas, se reparte por prioridad: la que más vendió el artículo, después la que menos meses de stock tiene en la marca-rubro y por último la de mayor categoría; lo recortado va en rojo con «→ lo que recibe». Todo exportable a Excel.' },
-      { ic:'📏', t:'Completar curva', d:'Si además subís el stock por sucursal abierto por talle (mismo formato que ventas), ves los artículos que la sucursal ya tiene pero con talles que le faltan y sí hay en reserva: se manda 1 (o más) por talle faltante, sin repetir los que ya van por Reposición. Si la reserva de un talle no alcanza para todas, la prioridad la tiene la sucursal que más vendió el artículo esa semana.' },
+      { ic:'📏', t:'Completar curva', d:'Si además subís el stock por sucursal abierto por talle (mismo formato que ventas), en Reposición podés tildar «Completar curva de talles»: a cada sucursal se le suman, en verde, los talles que no tiene de artículos que ya trabaja (al menos 2 talles) y sí hay en reserva, 1 por talle (ajustable). Misma prioridad que la reposición si la reserva no alcanza para todas.' },
       { ic:'🛍️', t:'Compras', d:'La mirada por artículo global: mejores vendidos SIN reserva (recomprar), CON reserva (solo seguimiento) y artículos frenados.' },
       { ic:'💾', t:'Guardar la semana', d:'Al guardar, cada sucursal ve su «Reposición disponible» en Indicadores y se acumula el histórico (la reserva crónica de 3+ semanas sale de ahí).' }
     ]},

@@ -810,7 +810,14 @@ herramienta `barrida` en su lista; las sucursales NO entran acá (ven su aviso e
 Indicadores, ver abajo).
 
 - **Entrada = subir Excel** (client-side, SheetJS por CDN, no se sube nada hasta
-  guardar). Dos hojas: **ventas por sucursal** (columna `Sucursal` + `ID ITEM` +
+  guardar). **Ya no hay pestaña «Cargar» (07/09/2026, pedido de Juli): la carga es una tarjeta
+  compacta arriba de Reposición** (`cargaHtml`/`wireCarga`): tres botones ⇧ Ventas por sucursal ·
+  Reserva depósito · Stock por sucursal (opcional), selector de semana, Procesar y 💾 Guardar en
+  la misma pestaña, más una línea de resumen (artículos, reponibles, unidades, parada, curvas,
+  fuentes de prioridad, guardada/sin guardar). El botón usado manda el tipo (`cargarFilesComo`:
+  una hoja con Sucursal va a ventas o stock según el botón; la reserva siempre a reserva); la
+  tarjeta acepta arrastrar archivos (se clasifican solos). Con ventas + reserva **se procesa
+  solo**. Reposición es la primera pestaña (`state.tab='reposicion'`). Dos hojas: **ventas por sucursal** (columna `Sucursal` + `ID ITEM` +
   columnas por talle) y **reserva del depósito** (sin `Sucursal`, `ID ITEM` +
   columnas por talle). Puede ser un archivo con las dos hojas o dos archivos: se
   autodetecta cuál es cuál por los encabezados. Cruce por **`ID ITEM`**, abierto por
@@ -860,26 +867,29 @@ Indicadores, ver abajo).
   sucursal abierto por talle** (mismo layout que ventas: Sucursal · … · ID ITEM · talles). Por
   encabezados no se distingue de ventas: `clasificarHoja` mira el nombre de la hoja y del
   archivo («stock»/«existencia» → stock, «venta» → ventas; si no, ventas) y el chip de Cargar
-  tiene «↔ es stock por sucursal» (`swapVentasStock`). Pestaña **«Completar curva»**
-  (`viewCurva`/`curvaRows`, filtros `filtrosCur`): una fila por artículo × sucursal donde la
-  sucursal **tiene stock en ≥1 talle** y le **faltan talles que sí hay en reserva** (talle con
-  stock ≤ 0 en la sucursal y > 0 en reserva). **Reparto con prioridad** (`aplicarUnidadesCurva`,
-  regla de Juli): por artículo × talle, primero se descuenta lo que ya va por Reposición
-  (lo vendido, `usoRep`) y el resto se reparte entre las sucursales que no tienen el talle
-  en orden de **vendido del artículo esa semana** (desc; empate → más stock del artículo);
-  cada una recibe `unidades por talle` (selector 1/2/3, default 1) hasta agotar la reserva;
-  las que quedan sin unidades se marcan `agotado` (chip gris «agot.»). Columna «Prioridad»
-  = `prio` de `prioDe` (puesto por vendido entre las sucursales del artículo; se guarda).
-  Un talle que ya viene por Reposición (lo vendió) se marca `ya` y no se repite. Filtros de criterio: «solo huecos internos» (faltantes entre el menor y el
-  mayor talle que tiene la sucursal, `marcarInternos`/`rankTalle`), «al menos N talles con
-  stock», «solo si lo vendió esta semana»; los de navegación (sucursal/rubro/marca/buscar) no
-  afectan lo que se guarda (`curvaRows(true)`). Export ⇩ Excel con la misma planilla del
-  depósito (`exportPlanilla`, compartida con Reposición). Se guarda en
-  `barrida/barridas/<lunes>/curva/<slug>` = `[{…, sugerido, talles:[{t,r,s}] (faltantes),
-  tiene:[{t,q}] (la curva actual)}]` + `meta.archivo_stock` y `meta.curva_param`. La
-  sucursal lo ve en Indicadores (bloque «talles para completar la curva» dentro de
-  «Reposición disponible») y el **Picking** lo suma al armar el pick (check «Incluir
-  Completar curva», `curvaDe`; si el artículo ya va por reposición se le agregan los talles).
+  tiene «↔ es stock por sucursal» (`swapVentasStock`). **No es una pestaña: es el tilde
+  «Completar curva de talles» de Reposición** (`filtros.curva`, al lado de «Solo con talle
+  disponible», deshabilitado sin hoja de stock; pedido de Juli 07/09 tarde). Con el tilde,
+  `reposFiltradas()` fusiona en cada fila de reposición los talles de curva de esa sucursal
+  (`curvaFaltan`, `curvaU`; `sugerido` pasa a ser reposición + curva y `sugRep` guarda la
+  reposición sola) y agrega filas `soloCurva` (pill verde) para sucursales que no vendieron
+  pero tienen el artículo incompleto; los chips verdes «41 +1/6» van a continuación de los de
+  reposición (`curvaChips`) y el badge muestra «(+N)». Definición (`computar`, `R.curva`): la
+  sucursal **tiene stock en ≥ `minTalles` talles** (default **2**: un talle suelto es un resto,
+  no una curva) y le faltan talles con stock ≤ 0 en la sucursal y > 0 en reserva; por defecto
+  se **excluyen los artículos sin venta en ninguna sucursal** (`ventaCadena`, = reserva parada;
+  control «Incluir artículos sin venta»). Reparto (`aplicarUnidadesCurva`): por artículo ×
+  talle se descuenta primero lo de Reposición (`usoRep`) y el resto va a las sucursales en
+  orden de `cmpPrioridad`, `unidades` por talle (1/2/3) hasta agotar (`agotado`, chip gris
+  «agot.»); un talle que ya va por Reposición se marca `ya`. Controles (solo con el tilde):
+  unidades, «al menos N talles», «solo huecos internos» (`marcarInternos`/`rankTalle`),
+  «incluir sin venta». Export ⇩ Excel: la cantidad del talle = reposición + curva, subtítulo
+  «+ COMPLETAR CURVA DE TALLES». Se guarda `barrida/barridas/<lunes>/curva/<slug>` **solo si el
+  tilde estaba puesto** = `[{…, sugerido, prio, pr, talles:[{t,r,s}] (faltantes),
+  tiene:[{t,q}]}]` + `meta.archivo_stock` y `meta.curva_param` (`activa`…); al abrir del
+  histórico el tilde vuelve como se guardó. La sucursal lo ve en Indicadores (bloque «talles
+  para completar la curva» dentro de «Reposición disponible») y el **Picking** lo suma al armar
+  el pick (check «Incluir Completar curva», `curvaDe`).
 - **Ingreso reciente / crónica**: NO hay columna de fecha ni SKU en recepciones, así
   que se resuelve con el **histórico semanal** guardado: un artículo que aparece por
   primera vez en la reserva = *ingreso reciente* (se separa de "parada"); "semanas"
