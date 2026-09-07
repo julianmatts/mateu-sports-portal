@@ -1,6 +1,10 @@
 """ETL Indicadores de Sucursal · Mateu Sports
 Lee el export de ventas del mes + el staff, y emite un JSON por período.
-Uso: python3 etl_indicadores.py [--maestro]
+Uso: python3 etl_indicadores.py [--maestro] [--solo <periodo>]
+
+  --solo YYYY-MM  procesa solo ese período (los demás no se recalculan; la salida
+                  particionada trae únicamente los períodos procesados, así que
+                  periodos.json del repo se mergea a mano, como siempre).
 
   --maestro   el staff (quién es quién, puesto, régimen) sale del PADRÓN del portal
               (rrhh/equipo en Firebase — los legajos de RRHH, con los alias del
@@ -23,6 +27,9 @@ Salida:
 import pandas as pd, numpy as np, json, datetime as dt, unicodedata, os, sys, re, urllib.request
 
 MAESTRO = '--maestro' in sys.argv
+SOLO = sys.argv[sys.argv.index('--solo') + 1] if '--solo' in sys.argv else None
+try: sys.stdout.reconfigure(encoding='utf-8')   # Windows: la consola en cp1252 no imprime → ni ·
+except Exception: pass
 MAESTRO_URL = 'https://discontinuos-mateu-default-rtdb.firebaseio.com/rrhh/equipo.json'
 # slug del Portal -> nombre de sucursal en los datos (el inverso de DATA_SUC de rrhh/)
 SLUG_DATA = {
@@ -31,7 +38,7 @@ SLUG_DATA = {
   'kids':'02-Mateu Kids','aurelius-12':'04-Aurelius Calle 12','aurelius-5':'18-Aurelius Calle 5','aurelius-cb':'17-Aurelius City Bell',
   'adidas-12':'21-Adidas Calle 12','adidas':'09-Adidas Av. 7','originals':'15-Adidas Originals','ecommerce':'99-Ecommerce',
   'gonnet':'14-Outlet Gonnet','av-44':'20-Outlet Av. 44','calle-55':'03-Outlet Calle 55','aurelius-10':'07-Aurelius Calle 10',
-  'diagonal':'10-Diagonal 80',
+  'diagonal':'10-MS Diagonal 80',
 }
 def nk(s):
     """Misma normalización que Equipo.norm del portal: minúsculas, sin acentos, sin puntuación."""
@@ -67,6 +74,15 @@ PERIODOS = {
                   formato='detallado'),
   '2026-07': dict(archivo=DETALLE, desde=dt.date(2026,6,29), hasta=dt.date(2026,7,26),
                   formato='detallado'),
+  # Agosto retail = 27/07 al 30/08 (5 semanas; la semana del 31/08 ya es de septiembre,
+  # regla del domingo de mesRetailDe). El export "Ventas agosto portal.csv" es el
+  # detallado por línea del sistema, agosto calendario completo, con UN solo par
+  # Cantidad/Importe (csv=True); los días 27–31/07 salen del par de julio del Excel
+  # de mayo-junio-julio (extra_det).
+  '2026-08': dict(archivo=r'C:\Users\julia\Downloads\Ventas agosto portal.csv',
+                  desde=dt.date(2026,7,27), hasta=dt.date(2026,8,30),
+                  formato='detallado', csv=True,
+                  extra_det=dict(archivo=DETALLE, mes=7, dias=(27, 31))),
 }
 DOW = ['Lu','Ma','Mi','Ju','Vi','Sá','Do']
 
@@ -124,8 +140,16 @@ DEPOSITO  = ['BUZZELLA IVAN','ROUCO NAHUEL','TREZEGUET DIEGO','GUIDA FABIAN',
 EVENTUAL  = ['LEMOS FRANCO EMANUEL','GARCIA SALINAS CAMILO','BOLZANI MARIA CANDELA',
              'CABAÑAS MERELES CLARISA']
 ECOM_P    = ['ASPIROZ ALFREDO']
+# Altas del mes (agosto 2026): entraron a mitad del período y no están en el staff
+# del 14/07 ni (todavía) en el padrón. Se los cuenta como vendedores con las horas
+# REALES de su venta (franja diaria, como los eventuales) en vez del contrato
+# completo, que les cargaría el mes entero. Marcados `propuesto` (rol a confirmar).
+# Cuando RRHH los cargue en el padrón (--maestro) o Juli mande staff nuevo, salen de acá.
+ALTAS_MES = ['NICORA FERNANDO EZEQUIEL','BRIGUEZ DANIEL EZEQUIEL','OVIEDO NAHIARA CELINA',
+             'CALVIMONTE MANUEL AGUSTIN','ARROYO FLORENCIA DENISE','GERARDI TIZIANO',
+             'CASTRO VALENTIN DANIEL']
 if MAESTRO:   # con el padrón los nombres van normalizados (sin Ñ ni puntuación)
-    DEPOSITO=[nkU(x) for x in DEPOSITO]; EVENTUAL=[nkU(x) for x in EVENTUAL]; ECOM_P=[nkU(x) for x in ECOM_P]
+    DEPOSITO=[nkU(x) for x in DEPOSITO]; EVENTUAL=[nkU(x) for x in EVENTUAL]; ECOM_P=[nkU(x) for x in ECOM_P]; ALTAS_MES=[nkU(x) for x in ALTAS_MES]
     MANUAL={nkU(k):v for k,v in MANUAL.items()}
 
 # ── STAFF ────────────────────────────────────────────────────────────────
@@ -245,23 +269,35 @@ def criterio_linea(rubro, articulo):
         return (False, True)
     return (True, True)               # 02-CALZADO / 03-INDUMENTARIA / 04-ACCESORIOS
 
+def _leer_detallado(cfg):
+    """Devuelve la matriz cruda (cols 0-5 base, 6 articulo, 7 rubro, 8.. pares) y el
+    mapa mes calendario -> (col_cantidad, col_importe) de los pares que trae el archivo.
+    csv=True: export del sistema separado por ';' en latin1, una sola fila de
+    cabecera y UN par en las columnas 8/9 (el mes lo define cfg['mes'] o el período)."""
+    if cfg.get('csv'):
+        raw = pd.read_csv(cfg['archivo'], sep=';', header=None, skiprows=1, encoding='latin1', dtype=str)
+        raw = raw[raw[0].notna() & (raw[0] != 'Total')].copy()
+        for c in (2, 4, 8, 9): raw[c] = pd.to_numeric(raw[c], errors='coerce')
+        mes = cfg.get('mes') or cfg['hasta'].month
+        return raw, {mes: (8, 9)}
+    raw = pd.read_excel(cfg['archivo'], sheet_name=0, header=None, skiprows=2)
+    return raw, {5 + i: (8 + i*2, 9 + i*2) for i in range(3)}   # (I,J)(K,L)(M,N) = mayo · junio · julio
+
 def cargar_detallado(cfg):
     """Excel "Estadistica de venta - …": una fila por LINEA de comprobante con
     Articulo (col G) y Rubro (col H) + un par Cantidad/Importe por mes calendario
-    (I..N = mayo/junio/julio). Aplica criterio_linea() y agrega por comprobante,
-    devolviendo el mismo formato de 8 columnas del resto de los loaders. El indice
-    dia+dia-de-semana de cargar_ventas() filtra despues el periodo retail.
+    (I..N = mayo/junio/julio) — o el CSV del sistema con un solo par (csv=True).
+    Aplica criterio_linea() y agrega por comprobante, devolviendo el mismo formato
+    de 8 columnas del resto de los loaders. El indice dia+dia-de-semana de
+    cargar_ventas() filtra despues el periodo retail.
+    cfg['extra_det'] = {archivo, mes, dias:(d0,d1)}: otro archivo detallado del que se
+    toman solo los dias d0..d1 del par de ese mes (bordes del periodo retail que el
+    export principal no cubre, p.ej. 27-31/07 para agosto).
     Devuelve (v, lin): lin = detalle por LINEA con el rubro (para el mix de venta
     por rubro por vendedor); None en los formatos sin rubro."""
-    raw = pd.read_excel(cfg['archivo'], sheet_name=0, header=None, skiprows=2)
     def norm(s):
         s = unicodedata.normalize('NFD', str(s if s is not None else '')).encode('ascii', 'ignore').decode()
         return ' '.join(s.upper().split())
-    flags = [criterio_linea(r, a) for r, a in zip(raw[7].map(norm), raw[6].map(norm))]
-    cant_ok = pd.Series([f[0] for f in flags], index=raw.index)
-    imp_ok  = pd.Series([f[1] for f in flags], index=raw.index)
-    # rubro amigable: "02-CALZADO" -> "CALZADO" (VARIOS/CONCEPTOS/OTROS quedan tal cual)
-    rub = raw[7].map(norm).str.replace(r'^\d+-\s*', '', regex=True)
     # Solo los pares de los meses calendario que el período toca. NO cargar los
     # demás: a 13 semanas justas (91 días) el par día+día-de-semana SE REPITE
     # (27-30/4 = 27-30/7), así que un período que cruza mes (mayo retail) se
@@ -270,38 +306,53 @@ def cargar_detallado(cfg):
     f_ = cfg['desde']
     while f_ <= cfg['hasta']:
         meses_periodo.add(f_.month); f_ += dt.timedelta(days=1)
+    fuentes = [(cfg, None)]
+    if cfg.get('extra_det'):
+        ex = dict(cfg['extra_det'])
+        fuentes.append((dict(cfg, archivo=ex['archivo'], csv=ex.get('csv'), mes=ex['mes']), ex))
     frames, lin_frames = [], []
-    for i in range(3):                # pares (I,J)(K,L)(M,N) = mayo · junio · julio
-        if (5 + i) not in meses_periodo:
-            continue
-        cant = pd.to_numeric(raw[8 + i*2], errors='coerce').fillna(0)
-        imp  = pd.to_numeric(raw[9 + i*2], errors='coerce').fillna(0)
-        sel = ((cant != 0) | (imp != 0)) & raw[0].notna()
-        f = raw.loc[sel, [0, 1, 2, 3, 4, 5]].copy()
-        f.columns = ['sucursal', 'dia_semana', 'dia', 'vendedor', 'hora', 'comprobante']
-        f['cantidad'] = cant[sel].where(cant_ok[sel], 0)
-        f['importe']  = imp[sel].where(imp_ok[sel], 0)
-        f = f[(f.cantidad != 0) | (f.importe != 0)]     # lineas que no cuentan nada, afuera
-        f['vendedor'] = f.vendedor.fillna('SIN ASIGNAR')
-        # detalle por linea con rubro (misma seleccion y criterios): para el mix
-        # por rubro por vendedor. El vendedor se asigna despues, por comprobante.
-        l = raw.loc[sel, [0, 1, 2, 5]].copy()
-        l.columns = ['sucursal', 'dia_semana', 'dia', 'comprobante']
-        l['rubro']    = rub[sel]
-        l['cantidad'] = cant[sel].where(cant_ok[sel], 0)
-        l['importe']  = imp[sel].where(imp_ok[sel], 0)
-        lin_frames.append(l[(l.cantidad != 0) | (l.importe != 0)])
-        # Un comprobante = UNA fila (atomico): se suman sus lineas y la metadata
-        # (dia/hora/vendedor) la define la linea de mayor |importe| — la del articulo
-        # principal, no la del cupon: ~5% de los tickets traen lineas con otro
-        # vendedor/hora (cupones cruzados) y partirlos inflaria el importe al
-        # descartarse sola la mitad negativa de los cambios de producto.
-        f['_abs'] = f.importe.abs()
-        tot = f.groupby(['sucursal', 'comprobante'], as_index=False)[['cantidad', 'importe']].sum()
-        meta_f = (f.sort_values('_abs', ascending=False)
-                    .drop_duplicates(['sucursal', 'comprobante'])
-                 )[['sucursal', 'dia_semana', 'dia', 'vendedor', 'hora', 'comprobante']]
-        frames.append(meta_f.merge(tot, on=['sucursal', 'comprobante']))
+    for src, ex in fuentes:
+        raw, pares = _leer_detallado(src)
+        flags = [criterio_linea(r, a) for r, a in zip(raw[7].map(norm), raw[6].map(norm))]
+        cant_ok = pd.Series([f[0] for f in flags], index=raw.index)
+        imp_ok  = pd.Series([f[1] for f in flags], index=raw.index)
+        # rubro amigable: "02-CALZADO" -> "CALZADO" (VARIOS/CONCEPTOS/OTROS quedan tal cual)
+        rub = raw[7].map(norm).str.replace(r'^\d+-\s*', '', regex=True)
+        for mes, (ci, cj) in pares.items():
+            if mes not in meses_periodo: continue
+            if ex and mes != ex['mes']: continue
+            cant = pd.to_numeric(raw[ci], errors='coerce').fillna(0)
+            imp  = pd.to_numeric(raw[cj], errors='coerce').fillna(0)
+            sel = ((cant != 0) | (imp != 0)) & raw[0].notna()
+            if ex:   # solo los dias pedidos de ese mes
+                dn = pd.to_numeric(raw[2], errors='coerce')
+                sel = sel & dn.between(ex['dias'][0], ex['dias'][1])
+                print(f"  · extra_det: {int(sel.sum())} lineas de los dias {ex['dias'][0]}-{ex['dias'][1]}/{mes} desde {os.path.basename(ex['archivo'])}")
+            f = raw.loc[sel, [0, 1, 2, 3, 4, 5]].copy()
+            f.columns = ['sucursal', 'dia_semana', 'dia', 'vendedor', 'hora', 'comprobante']
+            f['cantidad'] = cant[sel].where(cant_ok[sel], 0)
+            f['importe']  = imp[sel].where(imp_ok[sel], 0)
+            f = f[(f.cantidad != 0) | (f.importe != 0)]     # lineas que no cuentan nada, afuera
+            f['vendedor'] = f.vendedor.fillna('SIN ASIGNAR')
+            # detalle por linea con rubro (misma seleccion y criterios): para el mix
+            # por rubro por vendedor. El vendedor se asigna despues, por comprobante.
+            l = raw.loc[sel, [0, 1, 2, 5]].copy()
+            l.columns = ['sucursal', 'dia_semana', 'dia', 'comprobante']
+            l['rubro']    = rub[sel]
+            l['cantidad'] = cant[sel].where(cant_ok[sel], 0)
+            l['importe']  = imp[sel].where(imp_ok[sel], 0)
+            lin_frames.append(l[(l.cantidad != 0) | (l.importe != 0)])
+            # Un comprobante = UNA fila (atomico): se suman sus lineas y la metadata
+            # (dia/hora/vendedor) la define la linea de mayor |importe| — la del articulo
+            # principal, no la del cupon: ~5% de los tickets traen lineas con otro
+            # vendedor/hora (cupones cruzados) y partirlos inflaria el importe al
+            # descartarse sola la mitad negativa de los cambios de producto.
+            f['_abs'] = f.importe.abs()
+            tot = f.groupby(['sucursal', 'comprobante'], as_index=False)[['cantidad', 'importe']].sum()
+            meta_f = (f.sort_values('_abs', ascending=False)
+                        .drop_duplicates(['sucursal', 'comprobante'])
+                     )[['sucursal', 'dia_semana', 'dia', 'vendedor', 'hora', 'comprobante']]
+            frames.append(meta_f.merge(tot, on=['sucursal', 'comprobante']))
     v = pd.concat(frames, ignore_index=True)
     return v, pd.concat(lin_frames, ignore_index=True)
 
@@ -374,6 +425,7 @@ def procesar(per, cfg, st):
             return r.sector, r.grupo, float(r.horas_contr), bool(r.propuesto), r.sucursal
         if n in DEPOSITO: return 'Depósito · refuerzo', 'Refuerzos', None, False, None
         if n in EVENTUAL: return 'Eventual', 'Refuerzos', None, False, None
+        if n in ALTAS_MES: return 'Vend. alta del mes', 'Ventas', None, True, None   # horas = franja real
         if n in ECOM_P:   return 'eCommerce', 'Otros', 0.0, False, None
         return 'Sin rol', 'Gerencia / otros', 0.0, False, None
 
@@ -588,6 +640,7 @@ st = cargar_staff()
 os.makedirs(OUT, exist_ok=True)
 data = {}
 for per, cfg in PERIODOS.items():
+    if SOLO and per != SOLO: continue
     if not os.path.exists(cfg['archivo']):
         print(f'{per}: sin archivo ({cfg["archivo"]}) — se saltea')
         continue

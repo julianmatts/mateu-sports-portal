@@ -521,6 +521,17 @@ semanal se abre además **por día** (tira «Objetivo por día» del local con r
 hay venta diaria, y objetivo diario por vendedor en su desplegable — `eqPesosDia`,
 `eqSharesDia`, `objDiasHtml`).
 
+**Agosto 2026 (07/09/2026)**: período retail **27/07–30/08** (5 semanas; la semana del 31/08
+es de septiembre por la regla del domingo). El export del sistema vino como **CSV** («Ventas
+agosto portal.csv»: `;`, latin1, una fila de cabecera, UN par Cantidad/Importe) → `csv=True`
+en `PERIODOS`; los días 27–31/07 salen del par de julio del Excel de mayo-junio-julio
+(`extra_det={archivo, mes, dias}`). `--solo YYYY-MM` procesa un único período (los otros
+tardan ~2 min cada uno). Las **altas de mitad de mes** que no están en el staff ni en el
+padrón (`ALTAS_MES`) cuentan como vendedores con las horas reales de su venta (franja
+diaria, como los eventuales), marcadas `propuesto`. **Diagonal 80 ya tiene datos**: está en
+`SLUG_SUC` de Indicadores como `10-MS Diagonal 80` (el nombre del sistema y de Meses de
+Stock; `SOLO_OBJ_SUC` quedó vacío); julio y anteriores dan empty state.
+
 Alternativa sin Python (cuando solo se tiene el JSON del ETL, no los Excel):
 `node scripts/gen-indicadores.mjs indicadores-2026-05.json indicadores-2026-06.json`
 produce exactamente los mismos archivos particionados. Es lo que se usó para poblar el
