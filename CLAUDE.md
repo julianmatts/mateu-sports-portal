@@ -1522,12 +1522,13 @@ palabra) en vez del de Mateu, título «… — Aurelius» y app instalable prop
 - **Logo (07/09/2026, isotipo OFICIAL)**: reemplaza todo `<img alt="Mateu Sports">` (header propio,
   `header.js`, login) por el isotipo oficial de Aurelius (escudo + corona, PNG del identificador que
   pasó Juli, embebido en `marca.js` como data URI a 200 px) y lo envuelve en un lockup
-  `.marca-lockup` = isotipo + la palabra **AURELIUS tipeada en Bebas Neue** (`.marca-word`; no existe
-  como dibujo oficial). Le saca el filtro `brightness(0) invert(1)`; el alto del `<img>` lo sigue
-  poniendo cada módulo y la palabra escala por contexto (header, login, celular). Un MutationObserver
-  cubre lo que se inyecta después. ⚠ No volver a dibujar el escudo ni las letras a mano: la primera
-  versión (SVG propio) quedó mal y Juli pidió el original. Los 7 PNG del identificador (a color y en
-  rojo/negro/blanco, con y sin escudo) están en su Drive («id aurelius-02…07.png»).
+  `.marca-lockup` = isotipo + la **palabra AURELIUS oficial** (`img.marca-word`, PNG blanco del
+  identificador, 110 px de alto, también embebido). Le saca el filtro `brightness(0) invert(1)`; el
+  alto del isotipo lo sigue poniendo cada módulo y la palabra tiene alto fijo por contexto (15 px en
+  headers, 17 en el login, 11/10 en celular). Un MutationObserver cubre lo que se inyecta después.
+  ⚠ No volver a dibujar el escudo ni las letras a mano: la primera versión (SVG propio) quedó mal y
+  Juli pidió el original. Los 14 PNG del identificador (isotipo, logo apilado y palabra, a color y en
+  rojo/negro/blanco) están en su carpeta de Drive «id aurelius…».
   Textos: «Mateu Sports» del login y «MATEU SPORTS» de la cortina de bloqueo → «Aurelius».
 - **App instalable**: `manifest-aurelius.json` (id `./aurelius`, así convive con la app Mateu)
   + `icons/aurelius-{192,512,maskable,180}.png` (solo el escudo con la corona sobre negro, pedido de
