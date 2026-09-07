@@ -74,15 +74,16 @@ PERIODOS = {
                   formato='detallado'),
   '2026-07': dict(archivo=DETALLE, desde=dt.date(2026,6,29), hasta=dt.date(2026,7,26),
                   formato='detallado'),
-  # Agosto retail = 27/07 al 30/08 (5 semanas; la semana del 31/08 ya es de septiembre,
-  # regla del domingo de mesRetailDe). El export "Ventas agosto portal.csv" es el
-  # detallado por línea del sistema, agosto calendario completo, con UN solo par
-  # Cantidad/Importe (csv=True); los días 27–31/07 salen del par de julio del Excel
-  # de mayo-junio-julio (extra_det).
+  # Agosto = MES CALENDARIO 01/08–31/08 (regla de Juli 07/09/2026: los totales de venta
+  # del mes van por mes calendario, tal como se carga; el calendario retail queda solo
+  # para la venta semanal — los dos criterios no cierran entre sí y por ahora se acepta).
+  # El export "Ventas agosto portal.csv" es el detallado por línea del sistema con UN
+  # solo par Cantidad/Importe (csv=True). Las semanas del mes siguen siendo retail
+  # (Lu–Do): la 1.ª y la última quedan parciales (01–02/08 y 31/08). Si hiciera falta
+  # completar bordes desde otro archivo: extra_det=dict(archivo, mes, dias=(d0,d1)).
   '2026-08': dict(archivo=r'C:\Users\julia\Downloads\Ventas agosto portal.csv',
-                  desde=dt.date(2026,7,27), hasta=dt.date(2026,8,30),
-                  formato='detallado', csv=True,
-                  extra_det=dict(archivo=DETALLE, mes=7, dias=(27, 31))),
+                  desde=dt.date(2026,8,1), hasta=dt.date(2026,8,31),
+                  formato='detallado', csv=True),
 }
 DOW = ['Lu','Ma','Mi','Ju','Vi','Sá','Do']
 

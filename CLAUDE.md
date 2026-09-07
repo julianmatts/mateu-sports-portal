@@ -521,11 +521,15 @@ semanal se abre además **por día** (tira «Objetivo por día» del local con r
 hay venta diaria, y objetivo diario por vendedor en su desplegable — `eqPesosDia`,
 `eqSharesDia`, `objDiasHtml`).
 
-**Agosto 2026 (07/09/2026)**: período retail **27/07–30/08** (5 semanas; la semana del 31/08
-es de septiembre por la regla del domingo). El export del sistema vino como **CSV** («Ventas
-agosto portal.csv»: `;`, latin1, una fila de cabecera, UN par Cantidad/Importe) → `csv=True`
-en `PERIODOS`; los días 27–31/07 salen del par de julio del Excel de mayo-junio-julio
-(`extra_det={archivo, mes, dias}`). `--solo YYYY-MM` procesa un único período (los otros
+**Regla de calendario del cierre mensual (Juli, 07/09/2026): los totales de venta del MES
+van por MES CALENDARIO, tal como se carga el export; el calendario retail queda solo para la
+venta SEMANAL.** Los dos criterios no cierran entre sí y por ahora se acepta así. Mayo, junio
+y julio 2026 quedaron con el criterio viejo (retail: 27/04–31/05, 01/06–28/06, 29/06–26/07).
+**Agosto 2026 (07/09/2026)**: **01/08–31/08**, 26 hábiles; las semanas del mes siguen siendo
+retail Lu–Do, así que la 1.ª (01–02/08) y la 6.ª (31/08) quedan parciales. El export del
+sistema vino como **CSV** («Ventas agosto portal.csv»: `;`, latin1, una fila de cabecera, UN par
+Cantidad/Importe) → `csv=True` en `PERIODOS`. Para completar bordes desde otro archivo existe
+`extra_det={archivo, mes, dias}` (no se usa en agosto). `--solo YYYY-MM` procesa un único período (los otros
 tardan ~2 min cada uno). Las **altas de mitad de mes** que no están en el staff ni en el
 padrón (`ALTAS_MES`) cuentan como vendedores con las horas reales de su venta (franja
 diaria, como los eventuales), marcadas `propuesto`. `APERTURAS` (sucursal → fecha de
