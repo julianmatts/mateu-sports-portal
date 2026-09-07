@@ -146,8 +146,9 @@ y las listas de sucursales/outlets.
   **Perfiles fijos en el código** (`PERFILES_FIJOS` en el
   `index.html` raíz, pedido de Juli 04/09/2026): pisan esos tres campos al loguearse y al
   normalizar una sesión abierta, así no dependen del ⚙ (la fila del ⚙ lo avisa). Hoy:
-  `producto@` (las 4 herramientas de arriba, inicio Área de Producto) y `rrhh@` (solo
-  Recursos Humanos, inicio ahí).
+  `producto@` (las 4 herramientas de arriba, inicio Área de Producto), `rrhh@` (solo
+  Recursos Humanos, inicio ahí) y `capacitacion@` (solo Academia de Ventas, inicio ahí;
+  07/09/2026).
 - **Bandeja de entrada — quién publica (04/09/2026)**: en el **Tablero** y en los **avisos**
   de la campana solo escriben los mails de `PUBLICAN_TABLERO` (`index.html` raíz:
   julian@, cristian.campion@ y rrhh@; helper `puedePublicarTablero`). El resto lee el
