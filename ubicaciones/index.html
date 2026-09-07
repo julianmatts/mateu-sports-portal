@@ -3331,6 +3331,12 @@ function filasDe(wb, nombre){
 }
 function idxCol(hdr, rx){ return (hdr||[]).findIndex(c=>rx.test(String(c||'').trim())); }
 function esNA(v){ const s=String(v==null?'':v).trim(); return !s || s==='#N/A' || s==='#REF!' || s==='#VALUE!'; }
+// una «descripción» que en realidad es basura: vacía, #N/A, igual al código, o un
+// número pelado (Id.item / stock) — pasa cuando el mapeo cae en la columna equivocada
+function esDescBasura(d, codigo){
+  const s=String(d==null?'':d).trim();
+  return esNA(s) || s===String(codigo||'').trim() || /^\d+([.,]\d+)?$/.test(s);
+}
 function limpiarId(v){ const s=String(v==null?'':v).trim(); return /^\d+(\.0+)?$/.test(s) ? String(parseInt(s,10)) : s; }
 function numStock(v){ const n=parseFloat(String(v).replace(',','.')); return isNaN(n)?0:n; }
 // "40.0" (número de Excel) → "40"; conserva "7.5", "S", "35-40"
@@ -3489,7 +3495,8 @@ function abrirModalMapeo(wb, hojaElegida){
       rows.slice(0,25).map((r,i)=>'<option value="'+i+'"'+(i===det.fila?' selected':'')+'>Fila '+(i+1)+': '+
         esc(r.slice(0,5).map(c=>String(c||'—').slice(0,14)).join(' | ').slice(0,70))+'</option>').join('')+'</select></div>'+
     '<div class="fld"><label>Columna código</label><span id="wrapCod"></span></div>'+
-    '<div class="fld"><label>Columna descripción</label><span id="wrapDesc"></span></div>'+
+    '<div class="fld"><label>Columna descripción (opcional)</label><span id="wrapDesc"></span>'+
+      '<div class="hint" style="margin-top:4px">Tiene que ser la columna con el nombre del artículo en texto. Si el archivo no la trae, dejá «No importar»: se conserva la descripción que ya está guardada.</div></div>'+
     '<div class="fld"><label>Columna stock</label><span id="wrapStk"></span></div>'+
     '<div class="fld"><label>Columna talle (opcional)</label><span id="wrapTalle"></span>'+
       '<div class="hint" style="margin-top:4px">Si el export viene abierto por talle (una fila por artículo y talle), el stock se agrupa por artículo y la tarjeta muestra el disponible de cada talle. Sin esta columna, se carga solo el total como siempre.</div></div>'+
@@ -3511,7 +3518,9 @@ function abrirModalMapeo(wb, hojaElegida){
 
   function refrescarSelects(iCod,iDesc,iStk,iUbi,iArt,iTalle,iEan){
     $('wrapCod').innerHTML  = selCol('mapCod',  iCod);
-    $('wrapDesc').innerHTML = selCol('mapDesc', iDesc);
+    // la descripción es opcional: sin columna se conserva la que ya está guardada
+    // (07/09/2026: en Diagonal cayó por defecto en la col A = Id.item y pisó las 4.341 descripciones con un número)
+    $('wrapDesc').innerHTML = selCol('mapDesc', iDesc, true);
     $('wrapStk').innerHTML  = selCol('mapStk',  iStk);
     $('wrapTalle').innerHTML= selCol('mapTalle', iTalle!=null?iTalle:-1, true);
     $('wrapArt').innerHTML  = selCol('mapArt',  iArt!=null?iArt:-1, true);
@@ -3535,7 +3544,9 @@ function abrirModalMapeo(wb, hojaElegida){
       const codigo = String(r[iCod]===0?'0':(r[iCod]||'')).trim();
       if(!codigo) continue;
       const stock = parseFloat(String(r[iStk]).replace(',','.'));
-      const desc = String(r[iDesc]||'').trim();
+      // descripción: solo texto; un número pelado (el Id.item, el stock) no sirve como descripción
+      const descRaw = iDesc>=0 ? String(r[iDesc]==null?'':r[iDesc]).trim() : '';
+      const desc = esDescBasura(descRaw, codigo) ? '' : descRaw;
       filasLeidas++;
       // agrupar por código (si el reporte viene abierto por talle, se suma)
       if(!porCodigo[codigo]) porCodigo[codigo] = {codigo, descripcion:desc, stock:0, ubis:[]};
@@ -3573,9 +3584,15 @@ function abrirModalMapeo(wb, hojaElegida){
     const {lista, filasLeidas, conUbi, conTalle, conEan} = parsearConMapeo();
     const ubicados = conUbi ? lista.filter(a=>a.ubis.length).length : 0;
     const conCodBarras = conEan ? lista.filter(a=>a.eans).length : 0;
+    const iDescSel = parseInt(($('mapDesc')||{value:'-1'}).value,10);
+    const sinDesc = lista.length ? lista.filter(a=>!a.descripcion).length : 0;
+    const avisoDesc = !lista.length ? ''
+      : iDescSel<0 ? '<div class="hint" style="margin:4px 0">Sin columna de descripción: se conserva la descripción que ya tiene cada artículo.</div>'
+      : sinDesc>=lista.length*0.5 ? '<div class="hint" style="margin:4px 0;color:var(--red)">⚠ La columna elegida como descripción no trae texto en '+sinDesc+' de '+lista.length+' artículos (parece un número: Id.item o stock). Revisá el mapeo; esas filas conservan la descripción guardada.</div>'
+      : '';
     $('mapPreview').innerHTML = !lista.length
       ? '<div class="hint" style="color:var(--red)">No se leyó ningún artículo con este mapeo.</div>'
-      : '<div class="hint" style="margin:4px 0">'+filasLeidas+' filas leídas → <b>'+lista.length+' artículos</b>'+
+      : avisoDesc+'<div class="hint" style="margin:4px 0">'+filasLeidas+' filas leídas → <b>'+lista.length+' artículos</b>'+
           (filasLeidas>lista.length?' (agrupados por código, stock sumado)':'')+
           (conTalle?' · <b>abierto por talle</b>':'')+
           (conEan?' · <b>'+conCodBarras+'</b> con código de barras':'')+
@@ -3592,9 +3609,10 @@ function abrirModalMapeo(wb, hojaElegida){
     // al cambiar la fila, re-detectar: con -1 (sin encabezados) por contenido
     const f=parseInt($('mapFila').value,10);
     const d2=(f===-1 ? detectarColumnasDatos(rows) : null) || {iCod:0,iDesc:1,iStk:2,iUbi:-1,iArt:-1,iTalle:-1,iEan:-1};
-    refrescarSelects(Math.max(d2.iCod,0), Math.max(d2.iDesc,0), Math.max(d2.iStk,0), d2.iUbi!=null?d2.iUbi:-1, d2.iArt!=null?d2.iArt:-1, d2.iTalle!=null?d2.iTalle:-1, d2.iEan!=null?d2.iEan:-1);
+    // descripción no detectada → «No importar» (nunca la col A por defecto)
+    refrescarSelects(Math.max(d2.iCod,0), d2.iDesc!=null?d2.iDesc:-1, Math.max(d2.iStk,0), d2.iUbi!=null?d2.iUbi:-1, d2.iArt!=null?d2.iArt:-1, d2.iTalle!=null?d2.iTalle:-1, d2.iEan!=null?d2.iEan:-1);
   });
-  refrescarSelects(Math.max(det.iCod,0), Math.max(det.iDesc,0), Math.max(det.iStk,0), det.iUbi!=null?det.iUbi:-1, det.iArt!=null?det.iArt:-1, det.iTalle!=null?det.iTalle:-1, det.iEan!=null?det.iEan:-1);
+  refrescarSelects(Math.max(det.iCod,0), det.iDesc!=null?det.iDesc:-1, Math.max(det.iStk,0), det.iUbi!=null?det.iUbi:-1, det.iArt!=null?det.iArt:-1, det.iTalle!=null?det.iTalle:-1, det.iEan!=null?det.iEan:-1);
 
   $('mapCancelar').addEventListener('click', cerrarModal);
   $('mapConfirmar').addEventListener('click', async ()=>{
@@ -3628,9 +3646,9 @@ async function sincronizarStock(lista){
   for(const art of lista){
     const key = fbKey(art.codigo);
     const p = prev[key];
-    // si el Excel trae la descripción vacía o basura (= el mismo código),
-    // se conserva la descripción buena que ya estaba guardada
-    const descExcel = (art.descripcion && art.descripcion !== art.codigo) ? art.descripcion : '';
+    // si el Excel trae la descripción vacía o basura (= el mismo código, el Id.item
+    // o cualquier número pelado), se conserva la descripción buena que ya estaba guardada
+    const descExcel = esDescBasura(art.descripcion, art.codigo) ? '' : art.descripcion;
     const rec = {
       codigo: art.codigo,
       descripcion: descExcel || (p ? p.descripcion : ''),

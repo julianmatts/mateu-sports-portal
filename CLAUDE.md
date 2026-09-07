@@ -548,6 +548,13 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   descripción, texto corto = SKU), el selector de fila tiene la opción «Sin
   encabezados» y hay columna **Id.item opcional** (→ `articulo`). La carga solo
   actualiza stock/descripción y preserva ubicaciones y lo demás ya asignado.
+  ⚠ **La descripción es opcional y solo acepta texto (07/09/2026)**: si no se detecta
+  columna, el select queda en «No importar» (antes caía en la col A = Id.item, y en
+  Diagonal una carga pisó las 4.341 descripciones con un número; se recuperaron desde
+  el export del 24/08 + la planilla de Drive del 27/08 + Calle 49/barrida/maestro adidas).
+  `esDescBasura()` descarta descripciones vacías, `#N/A`, iguales al código o numéricas,
+  tanto al parsear como al fusionar (`sincronizarStock` conserva la guardada), y la
+  previsualización avisa en rojo si la columna elegida no trae texto.
 - **Planilla de Drive de la sucursal** (modelo «UBICACION DEPOSITO», el que usa
   Diagonal 80): hojas `UBICACION CALZADO / INDUMENTARIA / ACCESORIOS` (grilla por
   casillero `E#-M#` con columnas UBICACIÓN · Contador · Articulo (Id.item) · Codigo
