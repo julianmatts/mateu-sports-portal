@@ -564,6 +564,12 @@ function nombreTool(k, rol){
   return TOOLS[k] ? TOOLS[k].name : k;
 }
 
+// Orden canónico del panel (tiles + drawer) de las cuentas de sucursal/outlet.
+const ORDEN_SUCURSAL = ['indicadores','ubicaciones','marcas','gestion-stock','pedidos-semanales','evaluaciones','tareas'];
+function ordenarSucursal(h){
+  const fijas = ORDEN_SUCURSAL.filter(k=>h.includes(k));
+  return fijas.concat(h.filter(k=>!ORDEN_SUCURSAL.includes(k)));
+}
 // La herramienta de inicio va PRIMERA en la lista (tile y drawer): el multiselect del ⚙
 // guarda en el orden del mapa TOOLS, que no es el que quiere ver el usuario.
 function ordenarInicio(h, inicio){
@@ -594,6 +600,11 @@ function herramientasEfectivas(rol, herramientas, soloHerramientas){
     if(!h.includes('evaluaciones')) h.push('evaluaciones');
     // Tareas de la Sucursal (precios, sectores, limpieza, vidrieras): es de todas las sucursales.
     if(!h.includes('tareas')) h.push('tareas');
+    // Mismo orden de panel para TODAS las sucursales (pedido de Juli 07/09/2026: el que
+    // tenía Diagonal 80): Mi Sucursal → Buscador → Marcas → Gestión de Stock → Pedidos
+    // Semanales → Evaluaciones → Tareas; lo que no esté en la lista va después, como venía.
+    // Solo ordena: no agrega ni saca herramientas (`inicio`, si lo hay, sigue mandando).
+    return ordenarSucursal(h);
   }
   // El supervisor gestiona las Evaluaciones de sus sucursales; Indicadores le
   // sirve de contexto para el ítem de ratio de stock. También tiene acceso

@@ -121,6 +121,11 @@ encargado/subencargado (es la única que ve Mi Sucursal):
 la config del `<script>` es `TOOLS` (nombre, ícono y url de cada herramienta)
 y las listas de sucursales/outlets.
 
+- **Orden del panel de las sucursales (07/09/2026)**: las cuentas `sucursal`/`outlet` ven
+  tiles y drawer siempre en el mismo orden, el que tenía Diagonal 80: Mi Sucursal → Buscador →
+  Marcas → Gestión de Stock → Pedidos Semanales → Evaluaciones → Tareas; lo demás va después.
+  Lo fija `ORDEN_SUCURSAL`/`ordenarSucursal` dentro de `herramientasEfectivas` (solo ordena,
+  no agrega herramientas; `inicio` sigue mandando). No depende del orden guardado en `usuarios/`.
 - La sesión queda en localStorage (`mateu_portal_session`). Los módulos **no
   tienen login propio**: leen esa sesión y redirigen a `../` si falta o si el
   usuario no tiene la herramienta asignada.
