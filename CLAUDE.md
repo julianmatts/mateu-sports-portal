@@ -817,7 +817,16 @@ Indicadores, ver abajo).
   fuentes de prioridad, guardada/sin guardar). El botón usado manda el tipo (`cargarFilesComo`:
   una hoja con Sucursal va a ventas o stock según el botón; la reserva siempre a reserva); la
   tarjeta acepta arrastrar archivos (se clasifican solos). Con ventas + reserva **se procesa
-  solo**. Reposición es la primera pestaña (`state.tab='reposicion'`). Dos hojas: **ventas por sucursal** (columna `Sucursal` + `ID ITEM` +
+  solo**. Reposición es la primera pestaña (`state.tab='reposicion'`).
+  **El stock por sucursal se guarda por semana** (pedido de Juli 07/09: se sube una vez por
+  semana y lo usan todas las barridas de esa semana, otro día u otra compu): al subirlo,
+  `guardarStockSemana()` escribe `barrida/stockSuc/<lunesISO>` = `{meta:{archivo,hoja,subido,por,
+  semana,ids,filas}, data:{<id>:{<slug>:[[talle,cant],…]}}}` (solo talles positivos, como pares).
+  Al abrir el módulo o cambiar la semana, `cargarStockSemana()` trae el `meta` (liviano) y el botón
+  muestra «✓ Stock por sucursal · de la semana»; `asegurarStockData()` baja el `data` recién al
+  procesar. `stockRows()` unifica las dos fuentes (archivo cargado manda; `R.stockOrigen` =
+  archivo|base). Un archivo nuevo pisa el guardado; Guardar la barrida también guarda el stock si
+  no quedó bajo esa semana. Dos hojas: **ventas por sucursal** (columna `Sucursal` + `ID ITEM` +
   columnas por talle) y **reserva del depósito** (sin `Sucursal`, `ID ITEM` +
   columnas por talle). Puede ser un archivo con las dos hojas o dos archivos: se
   autodetecta cuál es cuál por los encabezados. Cruce por **`ID ITEM`**, abierto por

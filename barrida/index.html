@@ -162,6 +162,7 @@ tbody tr:hover td{background:#f8f9fe}
 .cbtn{display:flex;flex-direction:column;gap:3px;min-width:0}
 .cfile{font-size:11.5px;color:var(--navy);max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cfile.muted{color:var(--muted-light)}
+.cfile .ok{color:var(--ok);font-weight:700}
 .carga-res{margin-top:10px;font-size:13px;color:var(--navy);line-height:1.6}
 .carga-res.muted{color:var(--muted)}
 .carga-res .sep{color:var(--muted-light);margin:0 10px}
@@ -412,6 +413,7 @@ async function fbPut(path, data){ const r=await fetch(fbUrl(path),{method:'PUT',
 const state = {
   tab:'reposicion',
   files:{ ventas:null, reserva:null, stock:null },   // {archivo, hoja, matrix, headerIdx, cols, talles}; stock = opcional
+  stockSem:null,                         // stock por sucursal GUARDADO para la semana elegida: {semana, meta, data|null}
   resultado:null,                        // salida de computar()
   semana: lunesDe(new Date()),           // lunes de la barrida
   histKeys:[],                           // lunes con barrida guardada
@@ -555,6 +557,7 @@ async function cargarFilesComo(tipo, fileList){
   if(!files.length){ toast('Subí un archivo .xlsx','err'); return; }
   try{
     toast('Leyendo Excel…');
+    let huboStock=false;
     for(const file of files){
       const sheets=leerLibro(await file.arrayBuffer()); let n=0;
       sheets.forEach(sh=>{
@@ -562,22 +565,95 @@ async function cargarFilesComo(tipo, fileList){
         let t=c.tipo;
         if(c.cols.suc>=0 && (tipo==='ventas'||tipo==='stock')) t=tipo;
         state.files[t]={ archivo:file.name, hoja:sh.name, matrix:c.matrix, headerIdx:c.headerIdx, cols:c.cols, talles:c.talles };
+        if(t==='stock') huboStock=true;
         n++;
       });
       if(!n) throw new Error('No reconocí ninguna hoja de ventas, reserva o stock en "'+file.name+'". Revisá que tenga los encabezados (Sucursal, ID ITEM, Descripción, talles…).');
     }
     state.resultado=null; state.resultadoSemana=null;
     render(); toast('Archivo(s) cargado(s)','ok');
+    if(huboStock) await guardarStockSemana();     // queda para todas las barridas de la semana
     if(state.files.ventas && state.files.reserva) await procesarBarrida();
   }catch(err){ toast(err.message||'No pude leer el archivo','err'); render(); }
 }
 const cargarFiles = fl => cargarFilesComo(null, fl);
+/* ---------- Stock por sucursal de la SEMANA (guardado en la base) ----------
+   El stock por sucursal se sube una vez por semana y sirve para todas las barridas de esa
+   semana (otro día, otra compu): al subirlo se guarda en
+   barrida/stockSuc/<lunesISO> = { meta:{archivo,hoja,subido,por,semana,ids,filas},
+   data:{ <id>: { <slug>: [[talle,cant],…] } } } — solo talles con stock positivo, como pares
+   (un talle como "8.5" es ilegal de clave en Firebase). Si no hay archivo cargado, la barrida
+   usa el guardado de la semana elegida (se baja recién al procesar). Un archivo nuevo lo pisa. */
+function stockDataDesdeHoja(fS){
+  const data={}; let filas=0;
+  filasDeHoja(fS).forEach(v=>{
+    const m=NAME2SLUG[normName(v.suc)]; if(!m) return;
+    const pares=Object.entries(v.talles).filter(([t,q])=>q>0).map(([t,q])=>[t,q]);
+    if(!pares.length) return;
+    const d=(data[v.id]=data[v.id]||{}); d[m.slug]=(d[m.slug]||[]).concat(pares); filas++;
+  });
+  return {data, filas};
+}
+// Filas de stock para el cruce: {id, slug, nombre, talles:{t:q}, meta}. Del archivo cargado
+// (manda) o del guardado de la semana; null si no hay ninguno.
+function stockRows(){
+  const fS=state.files.stock;
+  if(fS){
+    const out=[];
+    filasDeHoja(fS).forEach(v=>{ const m=NAME2SLUG[normName(v.suc)]; if(!m) return; out.push({ id:v.id, slug:m.slug, nombre:m.nombre, talles:v.talles, meta:v.meta }); });
+    return out;
+  }
+  const ss=state.stockSem;
+  if(ss && ss.data && ss.semana===state.semana){
+    const out=[];
+    Object.entries(ss.data).forEach(([id,porSlug])=>{ Object.entries(porSlug||{}).forEach(([slug,pares])=>{
+      const talles={}; (pares||[]).forEach(p=>{ if(p&&p.length>=2) talles[String(p[0])]=(talles[String(p[0])]||0)+num(p[1]); });
+      out.push({ id, slug, nombre:SLUG_SUC[slug]||OUTLET_SUC[slug]||slug, talles, meta:{} });
+    }); });
+    return out;
+  }
+  return null;
+}
+async function guardarStockSemana(){
+  const fS=state.files.stock; if(!fS||!FIREBASE_DB_URL) return;
+  const {data,filas}=stockDataDesdeHoja(fS);
+  const meta={ archivo:fS.archivo, hoja:fS.hoja, subido:nowISO(), por:SESSION.email||'', semana:state.semana, ids:Object.keys(data).length, filas };
+  try{
+    toast('Guardando el stock por sucursal de la semana…');
+    await fbPut(ROOT+'/stockSuc/'+state.semana, {meta, data});
+    state.stockSem={ semana:state.semana, meta, data };
+    toast('Stock por sucursal guardado para la semana del '+lunesLabel(state.semana)+' ✓','ok');
+    render();
+  }catch(e){ toast('No se pudo guardar el stock en la base: '+(e.message||e),'err'); }
+}
+// ¿hay stock guardado para la semana elegida? (solo el meta, liviano)
+async function cargarStockSemana(){
+  const sem=state.semana; if(!FIREBASE_DB_URL) return;
+  if(state.stockSem && state.stockSem.semana===sem) return;
+  state.stockSem=null;
+  try{
+    const meta=await conTimeout(fbGet(ROOT+'/stockSuc/'+sem+'/meta'),8000);
+    if(state.semana!==sem) return;          // cambiaron la semana mientras bajaba
+    if(meta){ state.stockSem={ semana:sem, meta, data:null }; render(); if(state.resultado && !state.resultado.conStock && state.files.ventas && state.files.reserva) procesarBarrida(); }
+    else render();
+  }catch(e){ /* sin base / sin red: se sigue sin stock guardado */ }
+}
+// baja el detalle del stock guardado (recién cuando hace falta para procesar)
+async function asegurarStockData(){
+  const ss=state.stockSem;
+  if(state.files.stock || !ss || ss.data || ss.semana!==state.semana) return;
+  toast('Bajando el stock por sucursal de la semana…');
+  ss.data = (await conTimeout(fbGet(ROOT+'/stockSuc/'+ss.semana+'/data'),60000)) || {};
+}
+
 // Ventas ↔ stock por sucursal: mismo layout, así que si la detección por nombre se
-// equivocó se intercambian a mano desde el chip.
+// equivocó se intercambian a mano desde el chip. El stock nuevo se guarda para la semana.
 function swapVentasStock(){
   const v=state.files.ventas; state.files.ventas=state.files.stock; state.files.stock=v;
   state.resultado=null; state.resultadoSemana=null;
   render();
+  if(state.files.stock) guardarStockSemana();
+  if(state.files.ventas && state.files.reserva) procesarBarrida();
 }
 
 /* ============================================================
@@ -693,15 +769,15 @@ function computar(histPrev, histSnaps){
   });
   // ---- stock por sucursal (hoja opcional): id -> { porSuc:{slug:{nombre,total,talles}}, meta }
   // Solo cuentan los talles con stock POSITIVO (un negativo del sistema vale como cero).
+  // Sale del archivo cargado o, si no hay, del stock GUARDADO para la semana (stockRows()).
   const stock={};
-  if(fS){
-    filasDeHoja(fS).forEach(v=>{
-      const m = NAME2SLUG[normName(v.suc)];
-      if(!m) return;                 // Depósito y no mapeadas quedan afuera
-      if(!stock[v.id]) stock[v.id]={ porSuc:{}, meta:v.meta };
+  const sRows=stockRows();
+  if(sRows){
+    sRows.forEach(v=>{
+      if(!stock[v.id]) stock[v.id]={ porSuc:{}, meta:v.meta||{} };
       const S0=stock[v.id];
-      if(!S0.porSuc[m.slug]) S0.porSuc[m.slug]={ nombre:m.nombre, total:0, talles:{} };
-      const S=S0.porSuc[m.slug];
+      if(!S0.porSuc[v.slug]) S0.porSuc[v.slug]={ nombre:v.nombre, total:0, talles:{} };
+      const S=S0.porSuc[v.slug];
       Object.entries(v.talles).forEach(([t,q])=>{ if(q>0){ S.talles[t]=(S.talles[t]||0)+q; S.total+=q; } });
     });
   }
@@ -778,7 +854,7 @@ function computar(histPrev, histSnaps){
   // Un talle que ya viene por Reposición (lo vendió y se sugiere bajarlo) se marca `ya`
   // y no se vuelve a contar. Lo sugerido por talle lo pone aplicarUnidadesCurva().
   const curva=[];
-  if(fS){
+  if(sRows){
     const repIdx={}; reposicion.forEach(r=>{ repIdx[r.id+'|'+r.slug]=r; });
     Object.entries(stock).forEach(([id,S0])=>{
       const R=reserva[id]; if(!R||R.total<=0) return;
@@ -836,7 +912,7 @@ function computar(histPrev, histSnaps){
   // "notable" = mejor vendido (>=3 u. en la semana), mismo umbral que el filtro por defecto de la vista Compras.
   const notable = c => c.vendido>=3 && noVarios(c);
   return {
-    reposicion, parada, compras, curva, conStock:!!fS, snapshot,
+    reposicion, parada, compras, curva, conStock:!!sRows, stockOrigen: fS ? 'archivo' : (sRows ? 'base' : ''), snapshot,
     totales:{
       curva_lineas: 0, curva_unidades: 0,      // los completa aplicarUnidadesCurva()
       items_reserva: Object.keys(snapshot).length,
@@ -877,10 +953,18 @@ function render(){
 function cargaHtml(){
   const R=state.resultado, fl=state.files;
   const listo = fl.ventas && fl.reserva;
+  const ss=state.stockSem, ssOk = ss && ss.semana===state.semana && ss.meta;   // stock guardado para la semana elegida
   const btn=(tipo,label,opc)=>{ const f=fl[tipo];
     const swap=(f && (tipo==='ventas'||tipo==='stock')) ? ' <button type="button" class="lnk" data-swap="1" title="Ventas y stock por sucursal tienen el mismo formato: si esta hoja es la otra, intercambialas">↔</button>' : '';
+    // stock sin archivo pero guardado en la base para esta semana: se usa ese
+    if(tipo==='stock' && !f && ssOk){
+      const m=ss.meta; const sub=String(m.subido||'').slice(0,16);
+      return '<div class="cbtn"><button type="button" class="btn btn-outline btn-sm" data-cargar="stock" title="Guardado en la base para la semana del '+esc(lunesLabel(ss.semana))+' · '+esc(m.archivo||'')+' · subido '+esc(sub)+(m.por?' por '+esc(m.por):'')+'. Subí otro archivo para reemplazarlo.">✓ '+esc(label)+'</button>'
+        +'<div class="cfile" title="'+esc(m.archivo||'')+' · '+fmtInt(m.ids||0)+' artículos">de la semana · '+esc(m.archivo||'guardado')+'</div></div>';
+    }
+    const guardado = (tipo==='stock' && f && ssOk && ss.meta.archivo===f.archivo) ? ' <span class="ok" title="Guardado para la semana: las próximas barridas de esta semana lo usan solas">✓ semana</span>' : '';
     return '<div class="cbtn"><button type="button" class="btn '+(f?'btn-outline':'btn-primary')+' btn-sm" data-cargar="'+tipo+'">'+(f?'✓ ':'⇧ ')+esc(label)+'</button>'
-      +(f ? '<div class="cfile" title="'+esc(f.archivo)+' · hoja «'+esc(f.hoja)+'» · '+f.talles.length+' talles">'+esc(f.archivo)+swap+'</div>' : '<div class="cfile muted">'+(opc?'opcional':'sin cargar')+'</div>')+'</div>'; };
+      +(f ? '<div class="cfile" title="'+esc(f.archivo)+' · hoja «'+esc(f.hoja)+'» · '+f.talles.length+' talles">'+esc(f.archivo)+swap+guardado+'</div>' : '<div class="cfile muted">'+(opc?'opcional':'sin cargar')+'</div>')+'</div>'; };
   let html='<div class="card carga" id="cargaCard">'
     +'<div class="carga-row">'
     +btn('ventas','Ventas por sucursal')+btn('reserva','Reserva depósito')+btn('stock','Stock por sucursal',true)
@@ -894,7 +978,7 @@ function cargaHtml(){
     const guardada = state.resultadoSemana===state.semana;
     html+='<div class="carga-res">'
       +'<b>'+fmtInt(T.items_reserva)+'</b> artículos en reserva · <b>'+fmtInt(T.items_reponibles)+'</b> con reposición posible · <b>'+fmtInt(T.unidades_sugeridas)+'</b> unidades · reserva parada <b>'+fmtInt(T.items_parados)+'</b> art.'
-      +(R.conStock ? ' · curvas a completar <b>'+fmtInt(T.curva_lineas||0)+'</b>' : ' · <span class="muted" title="Subí el stock por sucursal abierto por talle para habilitar «Completar curva»">sin stock por sucursal</span>')
+      +(R.conStock ? ' · curvas a completar <b>'+fmtInt(T.curva_lineas||0)+'</b>'+(R.stockOrigen==='base'?' <span class="muted">(stock guardado de la semana)</span>':'') : ' · <span class="muted" title="Subí el stock por sucursal abierto por talle para habilitar «Completar curva»">sin stock por sucursal</span>')
       +'<span class="sep">|</span>prioridad: vendido · '+(pf.stock?'meses de stock ('+esc(String(pf.stock).replace('meses de stock ',''))+')':'<span class="warn">sin meses de stock</span>')+' · categoría'+(nRec?' · <b>'+fmtInt(nRec)+'</b> líneas recortadas':'')
       +'<span class="sep">|</span>'+(guardada?'<span class="ok">✓ guardada</span> (las sucursales ya la ven en Indicadores)':'<span class="warn">sin guardar</span>')
       +(R.sinHistorial?' · <span class="muted">primera barrida: sin histórico para «ingreso reciente»</span>':'')
@@ -911,7 +995,8 @@ function wireCarga(){
   card.ondragover=e=>{ e.preventDefault(); card.classList.add('over'); };
   card.ondragleave=()=>card.classList.remove('over');
   card.ondrop=async e=>{ e.preventDefault(); card.classList.remove('over'); await cargarFilesComo(null, e.dataTransfer.files); };
-  const sem=$('semInput'); if(sem) sem.onchange=e=>{ state.semana=e.target.value; render(); };
+  // cambiar la semana: el stock guardado es por semana → se busca el de la nueva
+  const sem=$('semInput'); if(sem) sem.onchange=e=>{ state.semana=e.target.value; state.stockSem=null; render(); cargarStockSemana(); };
   const bp=$('btnProcesar'); if(bp) bp.onclick=procesarBarrida;
   const bg=$('btnGuardar'); if(bg) bg.onclick=guardarBarrida;
   card.querySelectorAll('[data-swap]').forEach(b=>b.onclick=swapVentasStock);
@@ -1240,6 +1325,8 @@ async function procesarBarrida(){
   }catch(e){ /* si falla la base, seguimos sin histórico */ }
   // fuentes de la prioridad (meses de stock + categorías); si fallan, se procesa igual
   if(!PRIO.cargado){ toast('Cargando meses de stock y categorías…'); try{ await conTimeout(cargarPrioridad(),20000); }catch(e){ PRIO.cargado=true; } }
+  // stock por sucursal guardado para la semana (si no hay archivo cargado): se baja recién acá
+  try{ await asegurarStockData(); }catch(e){ toast('No pude bajar el stock por sucursal guardado; sigo sin él','err'); }
   try{
     state.resultado=computar(histPrev, histSnaps);
     state.resultado.prioFuentes={ stock: PRIO.stock?('meses de stock '+PRIO.stockMes):'', cats: PRIO.catsOrigen||'' };
@@ -1290,6 +1377,8 @@ async function guardarBarrida(){
   };
   try{
     const btn=$('btnGuardar'); if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
+    // si el stock por sucursal vino de un archivo y no quedó guardado para ESTA semana (p.ej. se cambió la semana después de subirlo), se guarda ahora
+    if(state.files.stock && !(state.stockSem && state.stockSem.semana===sem && state.stockSem.meta && state.stockSem.meta.archivo===state.files.stock.archivo)) await guardarStockSemana();
     await fbPut(ROOT+'/barridas/'+sem, payload);
     await fbPut(ROOT+'/reservaHist/'+sem, R.snapshot);
     await fbPut(ROOT+'/ultima', sem);
@@ -1662,6 +1751,8 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab)
   render();
   // El histórico se trae en segundo plano para no bloquear la UI si la base tarda/no existe.
   if(FIREBASE_DB_URL) cargarHistKeys().then(()=>{ if(state.tab==='historico') render(); });
+  // ¿ya subieron el stock por sucursal de esta semana? (lo usan todas las barridas de la semana)
+  if(FIREBASE_DB_URL) cargarStockSemana();
 })();
 </script>
 </body>
