@@ -844,9 +844,14 @@ Indicadores, ver abajo).
   tiene «↔ es stock por sucursal» (`swapVentasStock`). Pestaña **«Completar curva»**
   (`viewCurva`/`curvaRows`, filtros `filtrosCur`): una fila por artículo × sucursal donde la
   sucursal **tiene stock en ≥1 talle** y le **faltan talles que sí hay en reserva** (talle con
-  stock ≤ 0 en la sucursal y > 0 en reserva). A mandar = `mín(reserva, unidades por talle)`
-  (selector 1/2/3, default 1). Un talle que ya viene por Reposición (lo vendió) se marca `ya`
-  y no se repite. Filtros de criterio: «solo huecos internos» (faltantes entre el menor y el
+  stock ≤ 0 en la sucursal y > 0 en reserva). **Reparto con prioridad** (`aplicarUnidadesCurva`,
+  regla de Juli): por artículo × talle, primero se descuenta lo que ya va por Reposición
+  (lo vendido, `usoRep`) y el resto se reparte entre las sucursales que no tienen el talle
+  en orden de **vendido del artículo esa semana** (desc; empate → más stock del artículo);
+  cada una recibe `unidades por talle` (selector 1/2/3, default 1) hasta agotar la reserva;
+  las que quedan sin unidades se marcan `agotado` (chip gris «agot.»). Columna «Prioridad»
+  = `prio` de `prioDe` (puesto por vendido entre las sucursales del artículo; se guarda).
+  Un talle que ya viene por Reposición (lo vendió) se marca `ya` y no se repite. Filtros de criterio: «solo huecos internos» (faltantes entre el menor y el
   mayor talle que tiene la sucursal, `marcarInternos`/`rankTalle`), «al menos N talles con
   stock», «solo si lo vendió esta semana»; los de navegación (sucursal/rubro/marca/buscar) no
   afectan lo que se guarda (`curvaRows(true)`). Export ⇩ Excel con la misma planilla del

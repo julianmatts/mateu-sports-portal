@@ -131,7 +131,7 @@
       { ic:'🧹', t:'Qué es', d:'El cruce semanal (típico: los lunes) de la reserva del Depósito Central contra las ventas por sucursal, para decidir la reposición.' },
       { ic:'⬆️', t:'Cargar', d:'Subí el Excel con las dos hojas — ventas por sucursal y reserva del depósito — y se cruzan solas por ID ITEM y talle.' },
       { ic:'📦', t:'Reposición', d:'Por sucursal: qué puede pedir del depósito, talle por talle. Los talles donde lo vendido supera la reserva van en rojo (señal de recompra a la marca). Todo exportable a Excel.' },
-      { ic:'📏', t:'Completar curva', d:'Si además subís el stock por sucursal abierto por talle (mismo formato que ventas), ves los artículos que la sucursal ya tiene pero con talles que le faltan y sí hay en reserva: se manda 1 (o más) por talle faltante, sin repetir los que ya van por Reposición.' },
+      { ic:'📏', t:'Completar curva', d:'Si además subís el stock por sucursal abierto por talle (mismo formato que ventas), ves los artículos que la sucursal ya tiene pero con talles que le faltan y sí hay en reserva: se manda 1 (o más) por talle faltante, sin repetir los que ya van por Reposición. Si la reserva de un talle no alcanza para todas, la prioridad la tiene la sucursal que más vendió el artículo esa semana.' },
       { ic:'🛍️', t:'Compras', d:'La mirada por artículo global: mejores vendidos SIN reserva (recomprar), CON reserva (solo seguimiento) y artículos frenados.' },
       { ic:'💾', t:'Guardar la semana', d:'Al guardar, cada sucursal ve su «Reposición disponible» en Indicadores y se acumula el histórico (la reserva crónica de 3+ semanas sale de ahí).' }
     ]},

@@ -220,7 +220,8 @@ tbody tr:hover td{background:#f8f9fe}
      • RESERVA PARADA — artículo con reserva y CERO venta en todas las sucursales.
      • COMPLETAR CURVA — (con la hoja opcional de STOCK por sucursal, abierto por
        talle) la sucursal tiene el artículo en algunos talles pero le faltan otros
-       que SÍ hay en la reserva del depósito.
+       que SÍ hay en la reserva del depósito. La reserva de cada talle se reparte
+       con prioridad a la sucursal que más vendió el artículo esa semana.
    Se corre semana a semana (típicamente los lunes). El histórico se
    guarda en Firebase (base barrida-mateu) como el resto del portal.
    Lee la sesión del Portal (localStorage), sin login propio.
@@ -312,7 +313,7 @@ const state = {
   // tiene que tener stock en al menos N talles del artículo; soloHuecos = sólo los talles
   // faltantes que caen ENTRE el menor y el mayor que tiene la sucursal (no los extremos).
   filtrosCur:{ suc:'', rubro:'', marca:'', genero:'', tipoprod:'', q:'', excluirVarios:true, soloHuecos:false, soloVendio:false, minTalles:1, unidades:1 },
-  sortRep:{k:'sugerido',dir:-1}, sortPar:{k:'reserva',dir:-1}, sortCom:{k:'vendido',dir:-1}, sortCur:{k:'sugerido',dir:-1},
+  sortRep:{k:'sugerido',dir:-1}, sortPar:{k:'reserva',dir:-1}, sortCom:{k:'vendido',dir:-1}, sortCur:{k:'vendido',dir:-1},
 };
 
 /* ============================================================
@@ -503,14 +504,37 @@ function marcarInternos(row){
   const lo=Math.min(...tiene), hi=Math.max(...tiene);
   row.faltan.forEach(f=>{ const k=rankTalle(f.t); f.interno = tiene.length>0 && isFinite(k) && k>lo && k<hi; });
 }
+// Reparto de la reserva por artículo × talle (regla de Juli 07/09/2026): primero se
+// descuenta lo que ya va por Reposición (lo vendido), y lo que queda del talle se reparte
+// entre las sucursales que no lo tienen en orden de PRIORIDAD = la que más vendió el
+// artículo esta semana (en cualquier talle); empate → la que más stock tiene del artículo.
+// Cada una recibe `unidades` por talle hasta agotar la reserva; las que quedan sin
+// unidades se marcan `agotado` (se ve en gris: la reserva se fue a la que más vendió).
 function aplicarUnidadesCurva(){
   const R=state.resultado; if(!R||!R.curva) return;
   const f=state.filtrosCur, U=Math.max(1,f.unidades|0);
+  // reserva ya comprometida por Reposición, por artículo × talle
+  const usoRep={};
+  (R.reposicion||[]).forEach(r=>{ Object.entries(r.talles||{}).forEach(([t,d])=>{ const k=r.id+'|'+t; usoRep[k]=(usoRep[k]||0)+((d&&d.s)||0); }); });
+  // candidatos por artículo × talle, ordenados por prioridad
+  const porArt={};
   R.curva.forEach(row=>{
-    let sug=0;
-    row.faltan.forEach(d=>{ d.s = (d.ya || (f.soloHuecos && !d.interno)) ? 0 : Math.min(d.r, U); sug+=d.s; });
-    row.sugerido=sug;
+    row.faltan.forEach(d=>{ d.s=0; d.agotado=false; });
+    (porArt[row.id]=porArt[row.id]||[]).push(row);
   });
+  Object.entries(porArt).forEach(([id,rows])=>{
+    // prioridad del artículo: ranking por vendido (desc), luego stock en la sucursal (desc)
+    const orden=rows.slice().sort((a,b)=>(b.vendido-a.vendido)||(b.enSucursal-a.enSucursal)||cmp(a.sucNombre,b.sucNombre));
+    orden.forEach((row,i)=>{ row.prio=i+1; row.prioDe=orden.length; });
+    const talles=new Set(); rows.forEach(r=>r.faltan.forEach(d=>talles.add(d.t)));
+    talles.forEach(t=>{
+      const cand=orden.map(r=>({r, d:r.faltan.find(x=>x.t===t)})).filter(x=>x.d && !x.d.ya && !(f.soloHuecos && !x.d.interno));
+      if(!cand.length) return;
+      let disp=Math.max(0, cand[0].d.r - (usoRep[id+'|'+t]||0));
+      cand.forEach(({d})=>{ d.s=Math.min(U, disp); disp-=d.s; if(d.s<=0) d.agotado=true; });
+    });
+  });
+  R.curva.forEach(row=>{ row.sugerido=row.faltan.reduce((a,d)=>a+d.s,0); });
   R.totales.curva_lineas = R.curva.filter(r=>r.sugerido>0).length;
   R.totales.curva_unidades = R.curva.reduce((a,r)=>a+r.sugerido,0);
 }
@@ -982,8 +1006,8 @@ function curvaHtml(r){
     if(q>0) return '<span class="tg" title="La sucursal tiene '+q+'"><span class="tl">'+esc(t)+'</span><span class="tv">'+q+'</span></span>';
     const d=falt[t]; if(!d) return '';
     if(d.s>0) return '<span class="tg hueco" title="Falta en la sucursal · reserva '+d.r+' · se mandan '+d.s+'"><span class="tl">'+esc(t)+'</span><span class="tv">+'+d.s+'</span><span class="tsep">/</span><span class="tr">'+d.r+'</span></span>';
-    const why = d.ya ? 'ya va por Reposición (lo vendió)' : 'extremo de la curva (filtro «solo huecos internos»)';
-    return '<span class="tg ya" title="Falta en la sucursal · '+why+'"><span class="tl">'+esc(t)+'</span><span class="tv">'+(d.ya?'rep.':'·')+'</span></span>';
+    const why = d.ya ? 'ya va por Reposición (lo vendió)' : d.agotado ? 'la reserva de este talle ('+d.r+') se asignó a las sucursales que más vendieron el artículo' : 'extremo de la curva (filtro «solo huecos internos»)';
+    return '<span class="tg ya" title="Falta en la sucursal · '+why+'"><span class="tl">'+esc(t)+'</span><span class="tv">'+(d.ya?'rep.':d.agotado?'agot.':'·')+'</span></span>';
   }).join('');
 }
 function viewCurva(){
@@ -997,7 +1021,7 @@ function viewCurva(){
   const sucOpts=Object.entries(sucBySlug).sort((a,b)=>cmp(a[1],b[1])).map(([slug,n])=>'<option value="'+esc(slug)+'"'+(slug===f.suc?' selected':'')+'>'+esc(n)+'</option>').join('');
   const enRubro = base.filter(r=>(!f.rubro||r.rubro===f.rubro)&&(!f.marca||r.marca===f.marca));
   let html='<div class="sec-head"><div><h1>Completar curva de talles</h1>'
-    +'<div class="sub">Artículos que la sucursal <b>ya tiene</b> (stock en algún talle) pero con talles que <b>no tiene y sí hay en la reserva</b>. Se sugiere mandar '+f.unidades+' unidad'+(f.unidades>1?'es':'')+' por talle faltante (ajustable). Los talles que ya vienen por Reposición no se repiten.</div></div></div>';
+    +'<div class="sub">Artículos que la sucursal <b>ya tiene</b> (stock en algún talle) pero con talles que <b>no tiene y sí hay en la reserva</b>. Se manda '+f.unidades+' unidad'+(f.unidades>1?'es':'')+' por talle faltante (ajustable). Primero se descuenta lo que ya va por Reposición; lo que queda de cada talle se reparte <b>con prioridad a la sucursal que más vendió el artículo</b> esta semana (empate: la que más stock tiene). Si la reserva se agota, las que siguen quedan sin ese talle.</div></div></div>';
   html+='<div class="filtros">'
     +fsel('Sucursal','kSuc','<option value="">Todas</option>'+sucOpts)
     +fsel('Rubro','kRubro',opts(uniq(base.map(r=>r.rubro)),f.rubro))
@@ -1015,17 +1039,20 @@ function viewCurva(){
     +'<div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="btnCsvCur">⇩ Excel</button></div>'
     +'</div>';
   if(!rows.length) return html+'<div class="state"><div class="big-ic">📭</div>Sin curvas a completar para estos filtros.</div>';
-  html+='<div class="card-hs" style="margin:-4px 0 12px">En Curva, <span class="talles"><span class="tg"><span class="tl">40</span><span class="tv">2</span></span></span> = talle que la sucursal <b>tiene</b> (con su stock) · <span class="talles"><span class="tg hueco"><span class="tl">41</span><span class="tv">+1</span><span class="tsep">/</span><span class="tr">6</span></span></span> = talle que <b>falta</b> y se manda desde la reserva (<b>a mandar</b> / reserva) · <span class="talles"><span class="tg ya"><span class="tl">42</span><span class="tv">rep.</span></span></span> = falta pero ya va por Reposición (lo vendió). <b>Huecos internos</b> = faltantes entre el menor y el mayor talle que tiene la sucursal; con el filtro apagado también se completan los extremos.</div>';
+  html+='<div class="card-hs" style="margin:-4px 0 12px">En Curva, <span class="talles"><span class="tg"><span class="tl">40</span><span class="tv">2</span></span></span> = talle que la sucursal <b>tiene</b> (con su stock) · <span class="talles"><span class="tg hueco"><span class="tl">41</span><span class="tv">+1</span><span class="tsep">/</span><span class="tr">6</span></span></span> = talle que <b>falta</b> y se manda desde la reserva (<b>a mandar</b> / reserva) · <span class="talles"><span class="tg ya"><span class="tl">42</span><span class="tv">rep.</span></span></span> = falta pero ya va por Reposición (lo vendió) · <span class="talles"><span class="tg ya"><span class="tl">43</span><span class="tv">agot.</span></span></span> = falta pero la reserva del talle se fue a las sucursales que más vendieron. <b>Prioridad</b> = puesto de la sucursal entre las que necesitan talles de ese artículo (1 = la que más vendió). <b>Huecos internos</b> = faltantes entre el menor y el mayor talle que tiene la sucursal; con el filtro apagado también se completan los extremos.</div>';
   html+='<div class="tbl-wrap"><table><thead><tr>'
     +th('Sucursal','sucNombre')+th('Artículo','desc')+th('Código','codigo')+th('Marca','marca')
-    +thNum('En sucursal','enSucursal')+thNum('Vendido','vendido')+thNum('Stock reserva','reservaTotal')+thNum('A mandar','sugerido')+'<th class="noord">Curva (sucursal · faltantes)</th>'
+    +thNum('Prioridad','prio')+thNum('Vendido','vendido')+thNum('En sucursal','enSucursal')+thNum('Stock reserva','reservaTotal')+thNum('A mandar','sugerido')+'<th class="noord">Curva (sucursal · faltantes)</th>'
     +'</tr></thead><tbody>';
   rows.forEach(r=>{
+    const prio = r.prio ? '<span class="pill '+(r.prio===1?'rec':'suc')+'" title="'+r.prio+' de '+r.prioDe+' sucursales que necesitan talles de este artículo">'+r.prio+' de '+r.prioDe+'</span>' : '—';
     html+='<tr><td><span class="pill suc">'+esc(r.sucNombre)+'</span></td>'
       +'<td class="desc" title="'+esc(r.desc)+'">'+esc(r.desc||'—')+'</td>'
       +'<td class="mono">'+esc(r.codigo||r.id)+'</td><td>'+esc(r.marca)+'</td>'
+      +'<td class="num">'+prio+'</td>'
+      +'<td class="num mono">'+(r.vendido>0?'<b>'+fmtInt(r.vendido)+'</b>':'<span style="color:var(--muted-light)">0</span>')+'</td>'
       +'<td class="num mono">'+fmtInt(r.enSucursal)+' <small style="color:var(--muted)">· '+r.nTalles+' t.</small></td>'
-      +'<td class="num mono">'+fmtInt(r.vendido)+'</td><td class="num mono" style="color:var(--muted)">'+fmtInt(r.reservaTotal)+'</td>'
+      +'<td class="num mono" style="color:var(--muted)">'+fmtInt(r.reservaTotal)+'</td>'
       +'<td class="num"><span class="sug-badge">'+fmtInt(r.sugerido)+'</span></td>'
       +'<td class="talles">'+curvaHtml(r)+'</td></tr>';
   });
@@ -1182,6 +1209,7 @@ async function guardarBarrida(){
   curvaRows(true).forEach(r=>{ (curBySlug[r.slug]=curBySlug[r.slug]||[]).push({
     id:r.id, codigo:r.codigo, desc:r.desc, marca:r.marca, rubro:r.rubro, tipo:r.tipo, genero:r.genero||'',
     enSucursal:r.enSucursal, nTalles:r.nTalles, vendido:r.vendido, reservaTotal:r.reservaTotal, sugerido:r.sugerido,
+    prio:r.prio||0, prioDe:r.prioDe||0,                                                       // puesto por vendido entre las sucursales del artículo
     talles: r.faltan.filter(d=>d.s>0).map(d=>({t:d.t, r:d.r, s:d.s})),                       // faltantes a mandar
     tiene: Object.keys(r.tallesSuc||{}).sort(cmpTalle).map(t=>({t, q:r.tallesSuc[t]})),      // la curva que ya tiene
   }); });
