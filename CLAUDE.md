@@ -1222,6 +1222,24 @@ mismas pantallas y estética, con datos reales.
   cuentas de la sucursal **de parte de capacitaciones@** (`enviarDirectoDe`) y otro al capacitador; flag
   `certAvisos/<slug>/<persona>/<programa>`.
   Pendientes de Juli: `ANTHROPIC_API_KEY` en Cloudflare (botones ✨) y el bucket de Storage.
+- **Quiz «como vendedor» + perfil deportivo (07/09/2026 tarde)**: el staff ve la correcta en verde y un
+  banner lo aclara; «👁 Ver como vendedor» (`PLAYER.comoAlumno`) muestra el quiz sin marcas y mezclado.
+  **Perfil deportivo** (pedido de Juli: qué disciplinas practica/conoce cada vendedor o cajera y de qué
+  cuadro es hincha): tarjeta «Mi perfil deportivo» en el Inicio del alumno (chips `DISCIPLINAS`, «otra»,
+  select `CLUBES` con «Otro»), guardado en `perfiles/<slug>/<personaId>` = `{disc[], otra, club, nombre,
+  rol, ts}`. Se ve en la ficha, debajo del nombre en Mi equipo, como filtro por disciplina con conteos
+  (para planificar cursos de producto) y en el Excel.
+- **Bloques visuales en los módulos de texto (07/09/2026, pedido de Juli por el curso de HEAD)**:
+  además de `[[dato]]/[[tip]]/[[evitar]]/[[ejemplo]]` y `Título:`, `seccionesDeTexto` entiende
+  `## Subtítulo` (`.lec-h2`, grande con barra roja), `[[img]] ruta-o-URL | leyenda` (figura), `[[lista]]
+  Título` + líneas `Término: explicación` (ficha a dos columnas) y `[[vs]] Evitar | Decir mejor` + líneas
+  `malo | bueno` (comparación roja/verde). Render compartido en `seccionHtml` (player y vista previa).
+  Las fotos de un curso van como archivos estáticos en `capacitaciones/assets/cursos/<curso>/` (JPEG
+  ≤1400 px), NO en Firebase. **Curso «Head 2026: Raquetas y Paletas»** (`c-mtrji4n9mkv8`): rearmado
+  con las 8 imágenes del PPTX de Iván (extraídas de `archivos/<fid>` con zipfile + PIL), títulos por
+  módulo, fichas, comparación y quiz de 9 preguntas (3 intentos, mezclado); portada = foto de raquetas.
+  La fuente está en `capacitaciones/assets/cursos/head-2026/curso.json` (semilla; se publica con
+  `PUT cursos/<id>`), generada por el script de la sesión del 07/09.
   ⚠ Bug arreglado en la misma tanda: `sucsAcademia()` se llamaba a sí misma desde el commit del padrón
   (04/09) y Mi equipo / Ranking / `publicarResumen` reventaban para el staff.
 - **Asistente «Crear curso desde un PDF o PowerPoint»** (Gestión): lee el texto en el
