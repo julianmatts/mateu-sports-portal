@@ -199,6 +199,12 @@ Tablas sin barras dentro de las celdas; los chips de variación llevan signo («
 tabla **«Discontinuos mes a mes»** (`discMM`: una columna por informe cargado, celda
 sombreada por magnitud, «Repite N de M» y punto rojo para las sucursales con discontinuos en
 todos los informes; `gsPresTot` expone `disc` por slug).
+**Variación del ratio (06/09, pedido de Producto):** en «Meses de stock» cada ratio lleva
+al lado el chip `msVar` con la variación % vs. el mes anterior cargado («▲ +12%» / «▼ −8%»,
+columna «vs. Jul 26» en la tabla, total y «Cobertura total» del rubro). El color NO sigue la
+regla «más = peor»: verde si se acercó al rango saludable (3 a 5), rojo si se alejó, gris si
+se movió dentro del rango o no cambió; sin mes anterior sale «—». El ratio por sucursal del
+mes previo viaja en `gsPresTot(...).msSuc[rubro][slug]` (el `hist` de las sparklines).
 **Regla de color (04/09):** navy = magnitud (barras Top 5, barras bajo los números, stock
 apilado navy+acero, óptimo/saludable), **rojo solo alerta** (crítico, exceso, ▲ empeoró),
 ámbar la zona intermedia y un verde apagado únicamente en ▼ mejoró. Clase `.f-nav` para las

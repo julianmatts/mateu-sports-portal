@@ -2498,13 +2498,15 @@ function gsPresTot(data){
   ['discontinuos','negativos'].forEach(c=>{ if(rt[c]===null||rt[c]===undefined) rt[c] = sum(res,c); });
   const hs = (data.horas||[]).filter(h=>h.horas>0).map(h=>h.horas);
   const horasProm = hs.length ? hs.reduce((a,b)=>a+b,0)/hs.length : null;
-  const ms = data.mesesStock||{}, msTot = {};
+  const ms = data.mesesStock||{}, msTot = {}, msSuc = {};
   ['calzado','indumentaria','accesorios'].forEach(r=>{
     const l = ms[r]||[]; const st = l.reduce((a,x)=>a+(x.stock||0),0), ve = l.reduce((a,x)=>a+(x.ventas||0),0);
     msTot[r] = ve>0 ? st/ve : null;
+    // Ratio por sucursal: lo usa el deck para la variación % vs. el mes anterior
+    msSuc[r] = {}; l.forEach(x=>{ if(x.ratio!==null && x.ratio!==undefined) msSuc[r][x.slug] = x.ratio; });
   });
   const disc = {}; Object.keys(res).forEach(k=>{ if(res[k] && res[k].discontinuos!==null && res[k].discontinuos!==undefined) disc[k] = res[k].discontinuos; });
-  return {at, rt, horasProm, msTot, disc};
+  return {at, rt, horasProm, msTot, msSuc, disc};
 }
 
 function gsPresHtml(ym, data, logoSrc, hist, noTrab){
@@ -2709,7 +2711,23 @@ function gsPresHtml(ym, data, logoSrc, hist, noTrab){
   // ---- Meses de stock: gráfico de zonas + tabla, por rubro ----
   const msCls = v => (v===null||v===undefined) ? '' : (v<3 ? 'z-low' : (v<6 ? 'z-mid' : 'z-high'));
   const msTxt = v => (v===null||v===undefined) ? '' : (v<3 ? 'riesgo' : (v<6 ? 'saludable' : 'exceso'));
+  // Variación % del ratio vs. el mes anterior cargado (pedido de Producto 06/09/2026):
+  // «▲ +12%» / «▼ −8%». Subir no siempre es malo: verde si se acercó al rango
+  // saludable (3 a 5), rojo si se alejó, gris si se movió dentro del rango.
+  const msPrev = (()=>{ const p = hist.filter(h=>h.ym<ym); return p.length ? p[p.length-1] : null; })();
+  const msPrevLbl = msPrev ? mesLbl(msPrev.ym) : '';
+  const msVar = (cur, prev) => {
+    if(cur===null||cur===undefined||prev===null||prev===undefined||!(prev>0)) return '<span class="chip cz vp" title="Sin mes anterior para comparar">—</span>';
+    const pct = Math.round((cur-prev)/prev*100);
+    const dist = v => v<3 ? 3-v : (v>=6 ? v-6+0.01 : 0);
+    const dc = dist(cur), dp = dist(prev);
+    const cls = pct===0 ? 'cz' : (dc<dp ? 'cp' : (dc>dp ? 'cn' : 'cz'));
+    const txt = pct===0 ? '=' : (pct>0 ? '▲ +'+pct+'%' : '▼ −'+Math.abs(pct)+'%');
+    return '<span class="chip '+cls+' vp" title="vs. '+msPrevLbl+': '+nr(prev)+' → '+nr(cur)+' meses">'+txt+'</span>';
+  };
   const rubro = (key, titulo, idx) => {
+    const prevSuc = msPrev && msPrev.tot.msSuc ? (msPrev.tot.msSuc[key]||{}) : {};
+    const prevTot = msPrev ? msPrev.tot.msTot[key] : null;
     const lista = (ms[key]||[]).filter(x=>x.ratio!==null&&x.ratio!==undefined).slice().sort((a,b)=>a.ratio-b.ratio);
     if(!lista.length) return '';
     const totStock = lista.reduce((a,x)=>a+(x.stock||0),0), totVentas = lista.reduce((a,x)=>a+(x.ventas||0),0);
@@ -2725,20 +2743,21 @@ function gsPresHtml(ym, data, logoSrc, hist, noTrab){
       '<span class="zn zn-mid" style="--a:'+(3/mxR*100).toFixed(2)+'%;--b:'+(6/mxR*100).toFixed(2)+'%"></span>'+
       '<span class="zn zn-high" style="--a:'+(6/mxR*100).toFixed(2)+'%;--b:100%"></span>';
     const rows = lista.map((x,i)=>'<tr class="rv" style="--d:'+(i*30)+'ms"><td class="L">'+nomHtml(x.slug)+'</td><td class="nc"><b>'+n(x.stock)+'</b></td><td class="nc"><b>'+n(x.ventas)+'</b></td>'+
-      '<td class="mc"><span class="pill '+msCls(x.ratio)+'">'+nr(x.ratio)+'</span></td></tr>').join('');
-    const totRow = '<tr class="tot"><td class="L">Total sucursales</td><td class="nc"><b>'+n(totStock)+'</b></td><td class="nc"><b>'+n(totVentas)+'</b></td><td class="mc"><span class="pill '+msCls(totR)+'">'+nr(totR)+'</span></td></tr>';
+      '<td class="mc"><span class="pill '+msCls(x.ratio)+'">'+nr(x.ratio)+'</span></td><td class="vc">'+msVar(x.ratio, prevSuc[x.slug])+'</td></tr>').join('');
+    const totRow = '<tr class="tot"><td class="L">Total sucursales</td><td class="nc"><b>'+n(totStock)+'</b></td><td class="nc"><b>'+n(totVentas)+'</b></td><td class="mc"><span class="pill '+msCls(totR)+'">'+nr(totR)+'</span></td><td class="vc">'+msVar(totR, prevTot)+'</td></tr>';
     return '<div class="rubro'+(idx===1?' r1':'')+'" id="ms-'+key+'">'+
       '<div class="rubro-h rv"><div class="rubro-t"><i>0'+idx+'</i>'+titulo+'</div>'+
-        '<div class="rubro-k"><div class="rk"><span class="mi-l">Cobertura total</span><b class="num '+msCls(totR)+'">'+nr(totR)+' <small>meses</small></b>'+(hist.length>=2?spark(histVals(t=>t.msTot[key]),'cz'):'')+'</div>'+
+        '<div class="rubro-k"><div class="rk"><span class="mi-l">Cobertura total</span><b class="num '+msCls(totR)+'">'+nr(totR)+' <small>meses</small>'+(msPrev?' '+msVar(totR, prevTot):'')+'</b>'+(hist.length>=2?spark(histVals(t=>t.msTot[key]),'cz'):'')+'</div>'+
         '<div class="rk"><span class="mi-l">Sucursales por zona</span><span class="seg"><i class="f-amb" style="--w:'+(zl/lista.length*100)+'%"></i><i class="f-grn" style="--w:'+(zm/lista.length*100)+'%"></i><i class="f-red" style="--w:'+(zh/lista.length*100)+'%"></i></span>'+
         '<span class="mi-s"><b class="c-amb">'+zl+'</b> en riesgo · <b class="c-grn">'+zm+'</b> saludables · <b class="c-red">'+zh+'</b> en exceso</span></div></div></div>'+
       '<div class="rubro-b">'+
         '<div class="zchart rv" style="--zl:'+(3/mxR*100).toFixed(2)+'%;--zm:'+(6/mxR*100).toFixed(2)+'%"><div class="zb zc-head"><span class="zb-l"></span><span class="zb-t zc-scale">'+zones+ticks.join('')+'</span><span class="zb-v"></span></div>'+bars+'</div>'+
-        '<div class="tbl rv"><table><thead><tr><th class="L">Sucursal</th><th>Stock</th><th>Ventas / mes</th><th>Meses</th></tr></thead><tbody>'+rows+totRow+'</tbody></table></div>'+
+        '<div class="tbl rv"><table><thead><tr><th class="L">Sucursal</th><th>Stock</th><th>Ventas / mes</th><th>Meses</th><th>vs. '+(msPrevLbl||'mes ant.')+'</th></tr></thead><tbody>'+rows+totRow+'</tbody></table></div>'+
       '</div></div>';
   };
   const mesesHtml = rubro('calzado','Calzado',1) + rubro('indumentaria','Indumentaria',2) + rubro('accesorios','Accesorios',3);
-  const msLegend = '<div class="legend rv"><span><i class="z-low"></i>&lt; 3 meses — riesgo de faltante</span><span><i class="z-mid"></i>3 a 5 — saludable</span><span><i class="z-high"></i>≥ 6 — exceso de stock</span></div>';
+  const msLegend = '<div class="legend rv"><span><i class="z-low"></i>&lt; 3 meses — riesgo de faltante</span><span><i class="z-mid"></i>3 a 5 — saludable</span><span><i class="z-high"></i>≥ 6 — exceso de stock</span></div>'+
+    (msPrev ? '<div class="tl rv"><span><i class="chip cn vp">▲ +N%</i> / <i class="chip cp vp">▼ −N%</i> variación de los meses de stock vs. '+msPrevLbl+'</span><span><b class="c-grn">verde</b> = se acercó al rango saludable · <b class="c-red">rojo</b> = se alejó · gris = se movió dentro del rango</span></div>' : '');
 
   const fechaCarga = data.meta && data.meta.fecha ? new Date(data.meta.fecha).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '';
   const logoImg = cls => logoSrc ? '<img class="'+cls+'" src="'+logoSrc+'" alt="Mateu Sports">' : '';
@@ -2814,6 +2833,7 @@ function gsPresHtml(ym, data, logoSrc, hist, noTrab){
 /* chips */
 '.chip{display:inline-block;white-space:nowrap;font-family:var(--fc);font-weight:700;font-size:13px;letter-spacing:1px;padding:3px 9px;border-radius:999px;min-width:44px;text-align:center;font-variant-numeric:tabular-nums}',
 '.chip.cn{background:rgba(204,0,0,.09);color:#B91C1C}.chip.cp{background:rgba(31,122,82,.12);color:var(--grn-d)}.chip.cz{background:var(--ink);color:var(--dim)}',
+'.chip.vp{font-size:12px;padding:2px 8px;min-width:52px;font-style:normal;vertical-align:middle}.rk .num .chip.vp{font-size:11px;letter-spacing:.5px}',
 /* paneles top5 */
 '.panels{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:36px}',
 '.panel{padding:18px 20px 12px}',
@@ -2895,7 +2915,8 @@ function gsPresHtml(ym, data, logoSrc, hist, noTrab){
 '.rubro-h{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:center;margin-bottom:22px}',
 '.rubro-t{font-family:var(--fd);font-size:44px;line-height:1;display:flex;align-items:baseline;gap:14px;color:var(--navy)}.rubro-t i{font-style:normal;color:var(--rojo);font-size:22px}',
 '.rubro-k{display:grid;grid-template-columns:repeat(2,minmax(200px,240px));gap:12px}',
-'.rubro-b{display:grid;grid-template-columns:1.15fr 1fr;gap:18px;align-items:start}',
+'.rubro-b{display:grid;grid-template-columns:1fr 1.1fr;gap:18px;align-items:start}',
+'.rubro-b .tbl td.mc{width:auto;min-width:62px;padding-left:6px;padding-right:6px}.rubro-b .tbl td.vc{width:auto;min-width:66px;padding-left:6px;padding-right:8px}.rubro-b .tbl .pill{min-width:50px;padding:3px 9px}.rubro-b .tbl td.nc{padding-left:6px;padding-right:6px}',
 '.zchart{padding:14px 18px 10px}',
 '.zb{display:grid;grid-template-columns:150px 1fr 54px;align-items:center;gap:12px;padding:4px 0}',
 '.zb-l{font-family:var(--fc);font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--mid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
