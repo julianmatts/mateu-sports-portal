@@ -666,6 +666,19 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   (≥ 6 meses), a reponer (< 3) y a vigilar, con ratio, variación % vs. el mes anterior,
   unidades de más / faltantes, checkbox ✓ y nota ✎ compartidos. Reglas en
   `shared/foco-stock.js`; link «Ver el Reporte Mensual →» al deck.
+  **Descarte de gerencia** (`FOCO_ADMIN` = julian@): botón ✕ en cada ítem → motivo opcional
+  → `{descartado:true, motivoDesc}`; se ve tachado, no se puede marcar, no cuenta en el N/M
+  ni en el cierre; ↩ lo vuelve a incluir. **Cierre del mes** (`renderFocoCierre`,
+  `FocoStock.evaluar`): cuando hay un Reporte Mensual más nuevo, el foco del mes anterior
+  se evalúa con sus ratios: **resuelta** (entró a 3–5) · **mejoró** (se acercó ≥10 % de lo
+  que le faltaba) · sin cambio · **empeoró** · sin dato; cumplimiento % = resueltas +
+  mejoraron / evaluadas (verde ≥70, ámbar ≥40, rojo), «declaró trabajadas X de N» y alerta
+  ⚠ por las marcadas como trabajadas que no mejoraron. Tarjeta por operador debajo del foco
+  con detalle desplegable, «⧉ Copiar» y (Juli) «📣 Enviar por la Bandeja». **Aviso
+  automático**: la primera vez que alguien abre el módulo con el reporte nuevo cargado, se
+  manda el resumen por directo `producto@ → julian@` (`FOCO_CIERRE_AVISO`) y se marca
+  `equipo/focoCierre/<ym>/avisado`; solo para meses ≥ `FOCO_DESDE` (2026-09, cuando arrancó
+  el checklist; los cierres anteriores se ven pero no se avisan solos).
 
 ## Evaluaciones de Supervisor
 
