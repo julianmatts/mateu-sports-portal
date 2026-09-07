@@ -270,6 +270,7 @@ table.res{width:100%;border-collapse:collapse;background:#fff;border:1px solid v
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
 <script src="../shared/equipo.js"></script>
+<script src="../shared/marca.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <!-- ExcelJS: export del resumen / cumplimiento (solo gerencia, carga diferida) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js" defer></script>
@@ -1438,6 +1439,7 @@ async function exportarExcel(){
    ============================================================ */
 function elegirSucursal(slug){
   state.slug=slug||null; try{ localStorage.setItem('tareas_suc', slug||''); }catch(e){}
+  if(window.Marca) Marca.vista(state.slug);   // estética por marca (gerencia mirando una sucursal Aurelius)
   const sel=$('sucSel'); if(sel) sel.value=slug||'';
   $('view').innerHTML='<div class="state"><div class="spinner"></div>Cargando…</div>';
   recargar();
@@ -1447,6 +1449,7 @@ function pintarSubbar(){
     const vis=storesVisibles(); let pre=null; try{ pre=localStorage.getItem('tareas_suc'); }catch(e){}
     if(pre && !vis.some(s=>s.slug===pre)) pre=null;
     state.slug=pre||null;
+    if(window.Marca) Marca.vista(state.slug);
     $('subSuc').innerHTML='<select class="sel" id="sucSel" onchange="elegirSucursal(this.value)"><option value="">Todas las sucursales (resumen)</option>'+vis.map(s=>'<option value="'+s.slug+'" '+(s.slug===state.slug?'selected':'')+'>'+esc(s.nombre)+'</option>').join('')+'</select>';
   }else{
     state.slug=slugSesion();

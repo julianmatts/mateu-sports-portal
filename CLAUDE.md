@@ -1465,6 +1465,46 @@ Juli usa el portal como app instalada en el iPhone (PWA, `manifest.json` con
 - Para probar sin teléfono: Playwright con Chromium (`/opt/pw-browsers/chromium`),
   viewport 390×844 e `isMobile:true`, sesión inyectada en `localStorage`.
 
+## Estética por marca — sucursales Aurelius (`shared/marca.js`, 06/09/2026)
+
+Las cuentas de las sucursales **Aurelius** (Aurelius 12, Aurelius 5, Aurelius CB y el outlet
+Aurelius 10 — incluidas sus cuentas de depósito y puesto) ven todo el portal con la estética de
+Aurelius: **negro `#0b0b0d` + rojo `#C2201F` + blanco**, logo de Aurelius (escudo + corona +
+palabra) en vez del de Mateu, título «… — Aurelius» y app instalable propia. El resto no cambia.
+
+- **Un solo archivo**, `shared/marca.js`, incluido **SIN `defer` antes de `iconos.js`** en el
+  `<head>` de todos los módulos y del Portal (`<script src="../shared/marca.js"></script>`).
+  Módulo nuevo → sumar esa línea. Decide la marca en este orden: (1) **gerencia mirando una
+  sucursal** — el módulo avisa con `Marca.vista(slug)` (hoy Indicadores en `render()`,
+  Buscador al elegir sucursal y Tareas); vale solo para esa página (sessionStorage
+  `mateu_marca_vista`); (2) la **sesión** del Portal (`sucursal`/`outlet_id` que empieza con
+  `aurelius`); (3) sin sesión, `?marca=aurelius` en la URL o la última marca que entró en ese
+  dispositivo (localStorage `mateu_marca_login`, lo guarda el Portal en `login()` vía
+  `Marca.alIniciarSesion`; `?marca=mateu` lo borra).
+- **Cómo pinta**: pone `data-marca="aurelius"` en `<html>` y pisa las variables del módulo
+  (`--navy`, `--red`, `--off`, `--muted`, `--border`, sombras…). Los scripts del shell
+  (`header.js`, `bloqueo.js`, `tutorial.js`, `notificaciones.js`) ya no llevan colores
+  horneados: usan `var(--marca-navy,#0B1527)`, `var(--marca-red,#CC0000)`,
+  `var(--marca-off,#f5f7fc)` y `var(--marca-mid,#1a2f55)`, que `marca.js` publica en `:root`
+  con los valores Mateu por defecto. Colores escritos a mano dentro de un módulo NO cambian
+  (son acentos menores); si molesta alguno, pasarlo a variable.
+- **Logo**: reemplaza todo `<img alt="Mateu Sports">` (header propio, `header.js`, login) por el
+  SVG de Aurelius generado en el propio script (apaisado en headers, apilado en el login) y le
+  saca el filtro `brightness(0) invert(1)`. Un MutationObserver cubre lo que se inyecta después.
+  Textos: «Mateu Sports» del login y «MATEU SPORTS» de la cortina de bloqueo → «Aurelius».
+- **App instalable**: `manifest-aurelius.json` (id `./aurelius`, así convive con la app Mateu)
+  + `icons/aurelius-{192,512,maskable,180}.png` (solo el escudo con la corona, pedido de Juli);
+  `marca.js` cambia el `<link rel=manifest>`, `theme-color`, `apple-touch-icon` y el favicon
+  cuando la marca está activa. Se regeneran con Chrome headless desde el SVG (ver commit).
+- **Explicación para los usuarios**: ítem **«Acceso Aurelius»** en el drawer (`header.js` e
+  Indicadores; lo inyecta `marca.js`) → modal con el link `…/?marca=aurelius`, botón Copiar y los
+  pasos para agregarlo a la pantalla de inicio (iPhone/Android). En el login con la marca activa
+  hay una nota con el mismo link; y la primera vez que una cuenta Aurelius entra en un
+  dispositivo sale un aviso (flag `mateu_marca_aviso_v1`). API: `Marca.abrirAcceso()`,
+  `Marca.urlAcceso()`, `Marca.activa()`, `Marca.refrescar()`.
+- Para sumar otra marca: una entrada más en el mapa `MARCAS` de `marca.js` (`esSlug`, paleta,
+  logo, manifest e íconos).
+
 ## Reglas
 
 - Responder y comentar el código en **español**.
