@@ -234,6 +234,53 @@ con todo visible. Para probar el diseño sin navegador ni sesión:
 `node scripts/gen-presentacion-stock.js 2026-09 salida.html` (ejecuta el script del
 módulo con un DOM simulado y datos reales de Firebase).
 
+## Entregas EDLP (pestaña de `regalias/`, 06/09/2026)
+
+Digitaliza el Excel «RUGE 2026 – Seguimiento de Entregas por Canal» de Juli (carpeta
+`Desktop/EDLP 2026/Control Entregas EDLP 2026- Segumiento por Canal/`). El módulo
+`regalias/` tiene ahora **dos pestañas** (`.mtabs`, sticky bajo el header): «⚽ Liquidación de
+regalías» (todo lo de siempre, envuelto en `#vistaLiq`) y «📦 Entregas EDLP» (`#vistaEnt`;
+link directo `regalias/?tab=entregas`; la última pestaña queda en localStorage `regalias_tab`).
+Código en el mismo `index.html`, bloque «ENTREGAS EDLP» (funciones con prefijo `en`).
+
+- **Modelo**: `articulos/<id>` = maestro de la temporada (código, artículo, color, género,
+  silueta, origen, proveedor, línea, `oc:{'2026-01':n}` = orden de compra por mes,
+  `pedido:{spf,tp,plantel,fem,res,juv,prot}`, `noSuma` (las medias tubo del Excel:
+  «NO SUMA UNIDADES»), `nota`, `orden`, `nuevo`). La **ENTREGA no se tipea**: es la suma de
+  `entregas/<id>` = movimientos `{art, canal, codigo, cant, comprobante, fecha, nota, origen:
+  excel|import|acum|manual, por, ts, archivo}`. Resta = pedido − entrega (negativa = se
+  entregó de más). `id` del artículo = código (`RUG858`); sin código → `X-<slug del nombre>`.
+- **Canales** (`EN_CANALES`): Mayoristas = SuperFútbol (`spf`) y TiendaPincha (`tp`); Contrato
+  = Plantel Prof. (`plantel`), Femenino (`fem`), Reserva (`res`), Juvenil (`juv`), Protocolo
+  (`prot`). `EN_ALIAS` traduce lo que dice el sistema (categoría del remito «FUTBOL
+  PROFESIONAL»/«FPF», «FF», «FJ»… o el cliente «SUPERFUTBOL S.R.L.-…») a canal; PRENSA /
+  FOTOGRAFÍA no tienen canal (se eligen a mano o quedan afuera, como en el Excel).
+- **Vistas**: Resumen (KPI por canal = hoja RESUMEN ENTREGAS, pendientes y últimas entregas),
+  Control general (grilla artículo × canal Pedido | Entrega | Resta, **pedido editable en la
+  celda**, clic en Entrega = detalle/alta, filtro por línea/canal/estado, «Ver OC por mes»,
+  ⇩ Excel), Por canal (= hojas «ANÁLISIS <canal>»: KPIs + apertura por línea con estado),
+  Entregas (ledger: **⇧ Importar del sistema** / + Cargar a mano / ✎ ✕) y Artículos y OC
+  (maestro + **⇧ Importar el Excel de seguimiento**, que lee la hoja CONTROL GENERAL y
+  actualiza artículos/OC/pedidos sin pisar entregas; opción de cargar la columna ENTREGA como
+  saldo inicial solo donde no hay nada).
+- **Importar del sistema** (`enDetectarEntregas`): detecta por contenido columna(s) de código
+  `RUGnnn`, cantidad, comprobante (`Rem.`/`Fc.`), categoría/cliente (con arrastre hacia abajo
+  en pivots) y descripción; soporta el export de remitos (Categoría · Nro comprobante · Código
+  · Cantidad), el listado Cliente · Artículo · Código · Cantidad y los pivots por cliente
+  (varios bloques por hoja, cada uno con su cliente arriba). **Dedupe** por canal+comprobante+
+  código. Check «El archivo trae el acumulado a la fecha» (auto si no hay comprobante y dice
+  «Suma de…»): carga solo la **diferencia** contra lo ya entregado (así se replica el VLOOKUP
+  al pivot de MAYORISTAS del Excel sin duplicar). Códigos desconocidos crean el artículo
+  marcado «NUEVO».
+- **Firebase**: reusa `recepciones-mateu`, nodo aparte `entregasEdlp/<temporada>/`
+  (`EN_DB` + `enNodo()`; temporada = `CONFIG.temporadaVigente`). Sembrado el 06/09/2026 desde
+  el Excel «al 03-06-26»: 92 artículos, 241 entregas como «Saldo inicial · Excel de
+  seguimiento» (fecha 29/06/2026); totales validados exactos contra el Excel (25.152 pedido /
+  21.297 entregado). La fila duplicada «calzas cortas arquero 3» del Excel se cargó como
+  «calza larga arquero 3».
+- Pendiente/no digitalizado: el corte S1/S2 (ene-jun / jul-ago) de las hojas ANÁLISIS
+  SUPERFUTBOL/TIENDAPINCHA (el pedido es un solo número por canal).
+
 ## Meses de Stock — cómo regenerar `datos-meses-stock.js` desde el Excel
 
 El dashboard de Meses de Stock (`gestion-stock/`) no lee el Excel: lee

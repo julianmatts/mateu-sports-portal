@@ -115,7 +115,8 @@
       { ic:'⚽', t:'Qué es', d:'El liquidador de regalías RUGE / EDLP (Estudiantes): clasifica las ventas del mes y aplica las escalas del contrato.' },
       { ic:'⬆️', t:'Cargar el mes', d:'Subí el Excel de ventas del mes: el módulo clasifica los artículos y calcula la regalía que corresponde por escala.' },
       { ic:'📤', t:'Exportar', d:'Descargá el Excel de liquidación del mes y la presentación comercial lista para enviar al club.' },
-      { ic:'🧮', t:'Acumuladores', d:'El acumulado por temporada (que mueve las escalas) se lleva solo; revisalo en la vista de acumuladores.' }
+      { ic:'🧮', t:'Acumuladores', d:'El acumulado por temporada (que mueve las escalas) se lleva solo; revisalo en la vista de acumuladores.' },
+      { ic:'📦', t:'Entregas EDLP', d:'La pestaña «Entregas EDLP» reemplaza el Excel de seguimiento: pedido vs. entregado por canal (SuperFútbol, TiendaPincha, Plantel, Femenino, Reserva, Juvenil, Protocolo). Importá los remitos del sistema o cargá a mano; el pedido se edita en la celda.' }
     ]},
 
     evaluaciones: { icono:'📋', nombre:'Evaluaciones de Supervisor', pasos:[
