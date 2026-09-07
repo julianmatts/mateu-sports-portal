@@ -11,7 +11,7 @@ const fs=require('fs');
 const [,, ym, out] = process.argv;
 const src=fs.readFileSync('gestion-stock/index.html','utf8');
 const i=src.lastIndexOf('\n<script>')+9; const j=src.indexOf('\n</script>', i);
-const code=src.slice(i,j);
+const code=fs.readFileSync('shared/foco-stock.js','utf8')+'\n'+src.slice(i,j);
 const mk=()=>new Proxy(function(){}, {get:(t,k)=>{
   if(k==='addEventListener'||k==='removeEventListener'||k==='setAttribute'||k==='appendChild'||k==='insertBefore'||k==='focus') return ()=>{};
   if(k==='style'||k==='dataset') return {};

@@ -205,6 +205,20 @@ columna «vs. Jul 26» en la tabla, total y «Cobertura total» del rubro). El c
 regla «más = peor»: verde si se acercó al rango saludable (3 a 5), rojo si se alejó, gris si
 se movió dentro del rango o no cambió; sin mes anterior sale «—». El ratio por sucursal del
 mes previo viaja en `gsPresTot(...).msSuc[rubro][slug]` (el `hist` de las sparklines).
+**Foco del mes (06/09, pedido de Juli): el Reporte Mensual es la base de trabajo de Daniel
+y David.** `shared/foco-stock.js` (`window.FocoStock`, se incluye SIN `defer`) calcula desde
+`mesesStock` del mes + los ratios del anterior, con las reglas del deck (< 3 riesgo · 3 a 5
+saludable · ≥ 6 exceso; el Depósito se excluye): por rubro, **Achicar stock** (≥ 6, con las
+unidades por encima de 6 meses de venta), **Reponer** (< 3, con lo que falta para 3 meses) y
+**Vigilar** (en rango pero pegada al borde y moviéndose para el lado malo). Operadores fijos en
+`OPERADORES`: Daniel → calzado; David → indumentaria + accesorios. Se ve en dos lugares:
+(1) el deck, bloque `.foco` al pie de cada rubro (`focoHtml`), de solo lectura; (2) **`equipo/`
+(la pantalla inicial de `producto@`)**, sección «Foco del mes» arriba del Dashboard
+(`cargarFocoMes`/`renderFocoMes`: baja el último `gestionStock/<ym>/mesesStock` y el anterior),
+una tarjeta por operador con **checklist** (✓ trabajada + ✎ nota) y progreso «N/M trabajadas».
+El checklist se comparte en `turnero-mateu/equipo/foco/<ym>/<rubro>__<slug>` =
+`{hecho, nota, por, ts}`. El generador `scripts/gen-presentacion-stock.js` carga el helper
+antes del script del módulo.
 **Regla de color (04/09):** navy = magnitud (barras Top 5, barras bajo los números, stock
 apilado navy+acero, óptimo/saludable), **rojo solo alerta** (crítico, exceso, ▲ empeoró),
 ámbar la zona intermedia y un verde apagado únicamente en ▼ mejoró. Clase `.f-nav` para las
@@ -643,8 +657,15 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
 - **Firebase** (`turnero-mateu`, nodo `equipo/`): `f8s/<id>` (objeto por id, alta
   con PATCH — así las subidas simultáneas no se pisan), `ctrl` (registro manual,
   legacy), `transf` (export vigente `{archivo,subido,por,filas:[[o,c,d,art,env]]}`),
-  `f8suc/<slug>/<f8id>` (reparto + tracking + conf), `config` (tolerancia) y
-  `reporteSem/<semana>`. Eliminar un F8: botón 🗑 en el Historial (PATCH null).
+  `f8suc/<slug>/<f8id>` (reparto + tracking + conf), `config` (tolerancia),
+  `reporteSem/<semana>` y `foco/<ym>/<rubro>__<slug>` (checklist del «Foco del mes», ver
+  Reporte Mensual). Eliminar un F8: botón 🗑 en el Historial (PATCH null).
+- **Foco del mes (06/09/2026)**: sección arriba del Dashboard (pantalla inicial de
+  `producto@`) con la base de trabajo mensual de Daniel (Calzado) y David (Indumentaria +
+  Accesorios) que sale de «Meses de stock» del último Reporte Mensual: sucursales a achicar
+  (≥ 6 meses), a reponer (< 3) y a vigilar, con ratio, variación % vs. el mes anterior,
+  unidades de más / faltantes, checkbox ✓ y nota ✎ compartidos. Reglas en
+  `shared/foco-stock.js`; link «Ver el Reporte Mensual →» al deck.
 
 ## Evaluaciones de Supervisor
 

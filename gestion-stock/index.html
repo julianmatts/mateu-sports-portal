@@ -376,6 +376,7 @@ textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radiu
 }
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
+<script src="../shared/foco-stock.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <!-- Header unificado del shell: barra Menú + logo + calendario retail + drawer -->
 <script src="../shared/header.js" defer></script>
@@ -2725,6 +2726,23 @@ function gsPresHtml(ym, data, logoSrc, hist, noTrab){
     const txt = pct===0 ? '=' : (pct>0 ? '▲ +'+pct+'%' : '▼ −'+Math.abs(pct)+'%');
     return '<span class="chip '+cls+' vp" title="vs. '+msPrevLbl+': '+nr(prev)+' → '+nr(cur)+' meses">'+txt+'</span>';
   };
+  // Foco de trabajo del mes por rubro (shared/foco-stock.js): la base de trabajo de
+  // Daniel (Calzado) y David (Indumentaria + Accesorios). El checklist vive en equipo/.
+  const focoMes = window.FocoStock ? FocoStock.calcular(ms, msPrev && msPrev.tot.msSuc ? msPrev.tot.msSuc : null) : null;
+  const focoOp = key => { const o = (window.FocoStock ? FocoStock.OPERADORES : []).find(o=>o.rubros.indexOf(key)>=0); return o ? o.op : ''; };
+  const focoItem = (x, tipo) => {
+    const det = tipo==='exceso' ? (x.exced ? '≈ '+n(x.exced)+' u. por encima de 6 meses' : '') : (tipo==='riesgo' ? (x.falta ? 'faltan ≈ '+n(x.falta)+' u. para 3 meses' : '') : 'en rango, pero se mueve hacia el borde');
+    return '<li><span class="fi-n">'+esc(x.nombre)+'</span><span class="pill '+msCls(x.ratio)+'">'+nr(x.ratio)+'</span>'+(x.var!=null?msVar(x.ratio, x.prev):'')+(det?'<span class="fi-d">'+det+'</span>':'')+'</li>';
+  };
+  const focoHtml = key => {
+    const f = focoMes && focoMes[key]; if(!f) return '';
+    const grp = (lst, tipo, titulo, cls) => lst.length ? '<div class="fg '+cls+'"><div class="fg-t">'+titulo+' <b>'+lst.length+'</b></div><ul>'+lst.map(x=>focoItem(x,tipo)).join('')+'</ul></div>' : '';
+    const cuerpo = grp(f.exceso,'exceso','Achicar stock · ≥ 6 meses','fg-red')+grp(f.riesgo,'riesgo','Reponer · < 3 meses','fg-amb')+grp(f.vigilar,'vigilar','Vigilar','fg-dim');
+    const nPri = f.exceso.length+f.riesgo.length;
+    return '<div class="foco rv"><div class="foco-h"><div><span class="mi-l">Foco del mes · '+esc(focoOp(key))+'</span><b>'+(nPri ? nPri+' sucursales para trabajar' : 'Sin prioridades: todo en rango')+'</b></div>'+
+      '<span class="foco-s"><b class="c-grn">'+f.sanas+'</b> de '+f.total+' en rango saludable · el seguimiento se marca en Área de Producto</span></div>'+
+      (cuerpo || '<p class="dim">Todas las sucursales están entre 3 y 5 meses de stock.</p>')+'</div>';
+  };
   const rubro = (key, titulo, idx) => {
     const prevSuc = msPrev && msPrev.tot.msSuc ? (msPrev.tot.msSuc[key]||{}) : {};
     const prevTot = msPrev ? msPrev.tot.msTot[key] : null;
@@ -2753,7 +2771,7 @@ function gsPresHtml(ym, data, logoSrc, hist, noTrab){
       '<div class="rubro-b">'+
         '<div class="zchart rv" style="--zl:'+(3/mxR*100).toFixed(2)+'%;--zm:'+(6/mxR*100).toFixed(2)+'%"><div class="zb zc-head"><span class="zb-l"></span><span class="zb-t zc-scale">'+zones+ticks.join('')+'</span><span class="zb-v"></span></div>'+bars+'</div>'+
         '<div class="tbl rv"><table><thead><tr><th class="L">Sucursal</th><th>Stock</th><th>Ventas / mes</th><th>Meses</th><th>vs. '+(msPrevLbl||'mes ant.')+'</th></tr></thead><tbody>'+rows+totRow+'</tbody></table></div>'+
-      '</div></div>';
+      '</div>'+focoHtml(key)+'</div>';
   };
   const mesesHtml = rubro('calzado','Calzado',1) + rubro('indumentaria','Indumentaria',2) + rubro('accesorios','Accesorios',3);
   const msLegend = '<div class="legend rv"><span><i class="z-low"></i>&lt; 3 meses — riesgo de faltante</span><span><i class="z-mid"></i>3 a 5 — saludable</span><span><i class="z-high"></i>≥ 6 — exceso de stock</span></div>'+
@@ -2916,6 +2934,14 @@ function gsPresHtml(ym, data, logoSrc, hist, noTrab){
 '.rubro-t{font-family:var(--fd);font-size:44px;line-height:1;display:flex;align-items:baseline;gap:14px;color:var(--navy)}.rubro-t i{font-style:normal;color:var(--rojo);font-size:22px}',
 '.rubro-k{display:grid;grid-template-columns:repeat(2,minmax(200px,240px));gap:12px}',
 '.rubro-b{display:grid;grid-template-columns:1fr 1.1fr;gap:18px;align-items:start}',
+'.foco{margin-top:18px;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--navy);border-radius:6px;padding:16px 20px 12px;box-shadow:0 1px 2px rgba(11,21,39,.04)}',
+'.foco-h{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:10px}.foco-h>div>b{display:block;font-family:var(--fd);font-size:24px;letter-spacing:1px;color:var(--navy);line-height:1.1;margin-top:2px}',
+'.foco-s{font-family:var(--fc);font-size:12px;letter-spacing:.5px;color:var(--mid)}.foco .dim{margin:0 0 4px;color:var(--mid)}',
+'.foco .fg{margin-top:10px}.foco .fg-t{font-family:var(--fc);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--mid);margin-bottom:4px}.foco .fg-t b{font-family:var(--fn);font-style:italic;font-size:13px;margin-left:4px}',
+'.foco .fg-red .fg-t{color:#B91C1C}.foco .fg-amb .fg-t{color:var(--amb-d)}',
+'.foco ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:2px 18px}',
+'.foco li{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px dashed var(--line);font-size:13px;color:var(--navy)}.foco li .fi-n{font-family:var(--fc);font-weight:700;letter-spacing:.5px;text-transform:uppercase;font-size:13px;min-width:120px}',
+'.foco li .pill{font-size:13px;min-width:44px;padding:1px 8px}.foco li .fi-d{margin-left:auto;font-size:12px;color:var(--mid);white-space:nowrap}',
 '.rubro-b .tbl td.mc{width:auto;min-width:62px;padding-left:6px;padding-right:6px}.rubro-b .tbl td.vc{width:auto;min-width:66px;padding-left:6px;padding-right:8px}.rubro-b .tbl .pill{min-width:50px;padding:3px 9px}.rubro-b .tbl td.nc{padding-left:6px;padding-right:6px}',
 '.zchart{padding:14px 18px 10px}',
 '.zb{display:grid;grid-template-columns:150px 1fr 54px;align-items:center;gap:12px;padding:4px 0}',
