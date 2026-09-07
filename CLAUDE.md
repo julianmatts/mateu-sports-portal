@@ -824,8 +824,10 @@ Indicadores, ver abajo).
   Managment — membrete, header navy, autofiltro, freeze. La de **Reposición** replica
   la planilla física del depósito ("REPOSICIÓN CALZADO / ADIDAS"): título dinámico
   según el rubro/marca filtrado + columnas **Código · Artículo (ID ITEM) · Descripción
-  · Destino · [talles = cantidad a mandar] · Total** y las analíticas (Vendido ·
-  Reserva · Falta) al final; talles faltantes en rojo. Parada y Compras: header navy +
+  · Destino · [talles = cantidad a mandar] · Total**; talles faltantes en rojo. Desde el
+  07/09/2026 (pedido de Juli) la de Reposición va **sin fila de resumen y sin las analíticas**
+  (Vendido · Reserva · Falta · Prioridad · Meses stock · Categoría), todo en negrita, filas de
+  alto 25, fondo blanco y bordes finos en todas las celdas (sin bandas ni separadores gruesos). Parada y Compras: header navy +
   autofiltro (Compras antepone Categoría y tiñe rojo/verde según sin/con reserva).
   Y **Reserva parada**
   (reserva y CERO venta en toda la cadena). El Depósito y filas basura (`Sucursal`)

@@ -1574,12 +1574,15 @@ async function exportPlanilla(cfg){
   for(let c=1;c<=nCols;c++){ ws.getCell(r,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.white}}; ws.getCell(r,c).border={bottom:{style:'medium',color:{argb:BRAND.red}}}; }
   ws.getRow(r).height=38; r++;
 
-  ws.mergeCells(r,1,r,nCols);
-  const sub=ws.getCell(r,1);
-  sub.value=cfg.resumen;
-  sub.font={size:10,name:'Calibri',color:{argb:BRAND.navy}}; sub.alignment={horizontal:'left',vertical:'middle',indent:1};
-  sub.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.band}};
-  ws.getRow(r).height=20; r+=2;
+  // fila de resumen opcional (Reposición no la lleva: pedido de Juli 07/09/2026)
+  if(cfg.resumen){
+    ws.mergeCells(r,1,r,nCols);
+    const sub=ws.getCell(r,1);
+    sub.value=cfg.resumen;
+    sub.font={size:10,name:'Calibri',color:{argb:BRAND.navy}}; sub.alignment={horizontal:'left',vertical:'middle',indent:1};
+    sub.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.band}};
+    ws.getRow(r).height=20; r+=2;
+  }
 
   const headerRowIdx=r;
   const esTalleCol = i => i>=LZ && i<LZ+talles.length;   // i base 0
@@ -1588,33 +1591,33 @@ async function exportPlanilla(cfg){
     const fill = esTalleCol(i) ? ((i-LZ)%2===0?BRAND.navy:BRAND.navyMid) : BRAND.navy;
     c.fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; c.alignment={horizontal:i<LZ?'left':'center',vertical:'middle'};
     const bd=thinBorder(BRAND.navy); if(i===LZ || i===LZ+talles.length) bd.left={style:'medium',color:{argb:BRAND.sep}}; c.border=bd; });
-  ws.getRow(r).height=20; r++;
+  ws.getRow(r).height=25; r++;
 
+  // filas: fondo blanco y bordes finos en todas las celdas (pedido de Juli 07/09/2026; antes bandas alternadas + separadores gruesos)
   rows.forEach((row,i)=>{
-    const bg=i%2===0?BRAND.white:BRAND.band;
+    const bg=BRAND.white;
     // izquierda: Código (barras) · Artículo (ID ITEM) · Descripción · Destino
     [row.codigo||'', row.id, row.desc, row.sucNombre].forEach((v,idx)=>{ const c=ws.getCell(r,idx+1); c.value=(v===''?null:v);
-      c.font={size:10,name:'Calibri',color:{argb:BRAND.navy}}; c.alignment={horizontal:'left',vertical:'middle'};
+      c.font={size:10,bold:true,name:'Calibri',color:{argb:BRAND.navy}}; c.alignment={horizontal:'left',vertical:'middle'};
       c.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}}; c.border=thinBorder(BRAND.border); });
     // talles = cantidad a mandar; rojo si la reserva no alcanza (lo decide cfg.celda).
     // Banda VERTICAL alternada por columna (no por fila) para que no se confundan los talles.
     talles.forEach((t,ti)=>{ const c=ws.getCell(r,LZ+ti+1); const d=cfg.celda(row,t);
       c.value = d.val;
       c.alignment={horizontal:'center',vertical:'middle'};
-      const bd=thinBorder(BRAND.border); if(ti===0) bd.left={style:'medium',color:{argb:BRAND.sep}};   // separa del bloque de identidad
-      c.border=bd;
+      c.border=thinBorder(BRAND.border);
       if(d.falta){ c.font={size:11,bold:true,name:'Calibri',color:{argb:BRAND.faltaTxt}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.faltaBg}}; }
-      else { c.font={size:11,name:'Calibri',color:{argb:BRAND.navy}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb: ti%2===0?BRAND.white:BRAND.talleBand}}; }
+      else { c.font={size:11,bold:true,name:'Calibri',color:{argb:BRAND.navy}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}}; }
     });
     // derecha: Total y las analíticas
     derecha.forEach((d,idx)=>{ const c=ws.getCell(r,LZ+talles.length+idx+1); const v=d.val(row); c.value=(v===''||v==null?null:v);
       c.alignment={horizontal:'center',vertical:'middle'};
-      const bd=thinBorder(BRAND.border); if(idx===0) bd.left={style:'medium',color:{argb:BRAND.sep}};   // cierra el bloque de talles
-      c.border=bd;
-      const esFaltaCol=!!(d.falta && d.falta(row)), esTotal=!!d.total;
-      c.font={size:10,bold:esTotal||esFaltaCol,name:'Calibri',color:{argb:esFaltaCol?BRAND.faltaTxt:BRAND.navy}};
-      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:esFaltaCol?BRAND.faltaBg:(esTotal?BRAND.totalBg:bg)}};
+      c.border=thinBorder(BRAND.border);
+      const esFaltaCol=!!(d.falta && d.falta(row));
+      c.font={size:10,bold:true,name:'Calibri',color:{argb:esFaltaCol?BRAND.faltaTxt:BRAND.navy}};
+      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:esFaltaCol?BRAND.faltaBg:bg}};
     });
+    ws.getRow(r).height=25;   // todas las filas de datos a 25 (pedido de Juli 07/09/2026)
     r++;
   });
 
@@ -1635,14 +1638,12 @@ async function exportRepXlsx(){
   const set=new Set(); rows.forEach(r=>Object.entries(r.talles).forEach(([t,d])=>{ if(d.s>0 || (d.v>0&&d.s<d.v)) set.add(t); }));
   const talles=[...set].sort(cmpTalle);
   const lbl=exportLabels(f.rubro, f.marca, [f.subrubros.join('+'), f.tipoprod]);
-  const totU=rows.reduce((a,x)=>a+x.sugerido,0), nFalta=rows.filter(faltaEn).length;
   await exportPlanilla({
     hoja:'Reposición', titulo:'REPOSICIÓN '+lbl.rubro, subtitulo:lbl.marca,
-    resumen: fmtInt(rows.length)+' líneas · '+fmtInt(totU)+' unidades a reponer · '+fmtInt(nFalta)+' con recorte de talle (en rojo = la reserva no alcanzó; se repartió por prioridad: vendido · meses de stock · categoría)',
+    // sin fila de resumen ni analíticas (Vendido…Categoría): la planilla del depósito lleva solo lo que hay que mandar
     rows, talles,
     celda:(row,t)=>{ const d=row.talles[t]; const sug=d?d.s:0; const esFalta=!!(d&&d.v>0&&d.s<d.v); return { val: sug>0?sug:(esFalta?0:null), falta:esFalta }; },
-    derecha:[ {h:'Total',val:r=>r.sugerido,total:true}, {h:'Vendido',val:r=>r.vendido}, {h:'Reserva',val:r=>r.reservaTotal}, {h:'Falta',w:7,val:r=>faltaEn(r)?'Sí':'',falta:faltaEn},
-      {h:'Prioridad',w:10,val:r=>r.prio?(r.prio+' de '+r.prioDe):''}, {h:'Meses stock',w:11,val:r=>(r.pr&&r.pr.ms!=null)?r.pr.ms:''}, {h:'Categoría',w:10,val:r=>CAT_LABEL[(r.pr||{}).cat]||''} ],
+    derecha:[ {h:'Total',val:r=>r.sugerido,total:true} ],
     archivo:'reposicion'+lbl.file+'-'+state.semana+'.xlsx',
   });
 }
