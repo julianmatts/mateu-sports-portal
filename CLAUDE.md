@@ -1519,14 +1519,20 @@ palabra) en vez del de Mateu, título «… — Aurelius» y app instalable prop
   `var(--marca-off,#f5f7fc)` y `var(--marca-mid,#1a2f55)`, que `marca.js` publica en `:root`
   con los valores Mateu por defecto. Colores escritos a mano dentro de un módulo NO cambian
   (son acentos menores); si molesta alguno, pasarlo a variable.
-- **Logo**: reemplaza todo `<img alt="Mateu Sports">` (header propio, `header.js`, login) por el
-  SVG de Aurelius generado en el propio script (apaisado en headers, apilado en el login) y le
-  saca el filtro `brightness(0) invert(1)`. Un MutationObserver cubre lo que se inyecta después.
+- **Logo (07/09/2026, isotipo OFICIAL)**: reemplaza todo `<img alt="Mateu Sports">` (header propio,
+  `header.js`, login) por el isotipo oficial de Aurelius (escudo + corona, PNG del identificador que
+  pasó Juli, embebido en `marca.js` como data URI a 200 px) y lo envuelve en un lockup
+  `.marca-lockup` = isotipo + la palabra **AURELIUS tipeada en Bebas Neue** (`.marca-word`; no existe
+  como dibujo oficial). Le saca el filtro `brightness(0) invert(1)`; el alto del `<img>` lo sigue
+  poniendo cada módulo y la palabra escala por contexto (header, login, celular). Un MutationObserver
+  cubre lo que se inyecta después. ⚠ No volver a dibujar el escudo ni las letras a mano: la primera
+  versión (SVG propio) quedó mal y Juli pidió el original. Los 7 PNG del identificador (a color y en
+  rojo/negro/blanco, con y sin escudo) están en su Drive («id aurelius-02…07.png»).
   Textos: «Mateu Sports» del login y «MATEU SPORTS» de la cortina de bloqueo → «Aurelius».
 - **App instalable**: `manifest-aurelius.json` (id `./aurelius`, así convive con la app Mateu)
-  + `icons/aurelius-{192,512,maskable,180}.png` (solo el escudo con la corona, pedido de Juli);
-  `marca.js` cambia el `<link rel=manifest>`, `theme-color`, `apple-touch-icon` y el favicon
-  cuando la marca está activa. Se regeneran con Chrome headless desde el SVG (ver commit).
+  + `icons/aurelius-{192,512,maskable,180}.png` (solo el escudo con la corona sobre negro, pedido de
+  Juli; generados con PIL desde el PNG oficial, maskable con más margen); `marca.js` cambia el
+  `<link rel=manifest>`, `theme-color`, `apple-touch-icon` y el favicon cuando la marca está activa.
 - **Explicación para los usuarios**: ítem **«Acceso Aurelius»** en el drawer (`header.js` e
   Indicadores; lo inyecta `marca.js`) → modal con el link `…/?marca=aurelius`, botón Copiar y los
   pasos para agregarlo a la pantalla de inicio (iPhone/Android). En el login con la marca activa
