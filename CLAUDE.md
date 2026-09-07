@@ -147,8 +147,8 @@ y las listas de sucursales/outlets.
   `index.html` raíz, pedido de Juli 04/09/2026): pisan esos tres campos al loguearse y al
   normalizar una sesión abierta, así no dependen del ⚙ (la fila del ⚙ lo avisa). Hoy:
   `producto@` (las 4 herramientas de arriba, inicio Área de Producto), `rrhh@` (solo
-  Recursos Humanos, inicio ahí) y `capacitacion@` (solo Academia de Ventas, inicio ahí;
-  07/09/2026).
+  Recursos Humanos, inicio ahí) y `capacitaciones@` (solo Academia de Ventas, inicio ahí;
+  07/09/2026 — ese día la cuenta se renombró de `capacitacion@` a `capacitaciones@`).
 - **Bandeja de entrada — quién publica (04/09/2026)**: en el **Tablero** y en los **avisos**
   de la campana solo escriben los mails de `PUBLICAN_TABLERO` (`index.html` raíz:
   julian@, cristian.campion@ y rrhh@; helper `puedePublicarTablero`). El resto lee el
@@ -838,6 +838,22 @@ Indicadores, ver abajo).
   reserva parada). "Mejores" usa un umbral `Vendidos ≥` (default 3, ajustable); el
   badge del tab y los KPIs usan ese umbral. Incluye un resumen "a quién reponer" por
   marca de lo sin reserva. Se guarda en el payload (`compras`) para el histórico.
+- **Prioridad de reposición (07/09/2026, pedido de Juli — «que no queden en duda»)**: hasta ahora
+  cada sucursal pedía `mín(vendido, reserva)` por su cuenta y varias podían pedir la misma
+  reserva de un talle (eso era el rojo). Ahora en `computar` hay un **reparto por artículo ×
+  talle**: si la suma de lo pedido entra en la reserva, todas reciben lo suyo; si no, se reparte
+  en orden de `cmpPrioridad`: **1) vendido del artículo** en la sucursal esa semana (empate: lo
+  vendido de ese talle), **2) meses de stock** de la sucursal en la **marca-rubro** (último mes
+  de `gestion-stock/datos-meses-stock.js`, cargado lazy en `cargarStockData` al procesar; sin
+  dato de la marca cae al rubro; sin dato, al final), **3) categoría** de la sucursal
+  (`asignacion-marcas-mateu/asignacion_marcas`, mapa `SLUG2MARCAS`, `CAT_RANK` cat1 > cat2 =
+  aurelius = adidas > outlet; respaldo `CAT_SEED`). `prioInfo(slug,marca,rubro)` → `pr:{ms,
+  msNivel, cat, catRank}` en cada fila; `prio`/`prioDe` = puesto entre las sucursales del
+  artículo. El talle recortado guarda `s < v` (`rec`); `faltaEn` (global) = algún talle con
+  `s < v`; la vista muestra «v/r → s» en rojo, columna «Prioridad» con tooltip (`prioTxt`), el
+  export suma Prioridad · Meses stock · Categoría y la pantalla Cargar un banner con las
+  fuentes usadas (`prioFuentes`, también en `meta`). El mismo comparador ordena el reparto de
+  «Completar curva».
 - **Completar curva (07/09/2026, pedido de Juli)**: tercera hoja **opcional**, el **stock por
   sucursal abierto por talle** (mismo layout que ventas: Sucursal · … · ID ITEM · talles). Por
   encabezados no se distingue de ventas: `clasificarHoja` mira el nombre de la hoja y del
@@ -1047,8 +1063,8 @@ entran acá: ven su objetivo en Indicadores.
   obligatorio; (2) con venta cargada, personas con **horas asignadas y cero venta** →
   popup automático al encargado. Ambas se guardan en el payload del equipo
   (`justif.sinHoras` / `justif.sinVenta`) y el resumen les llega por **directo de la
-  Bandeja** a `ALERTA_ADMINS` (capacitaciones@ —cubre RRHH, confirmado por Juli— /
-  cristian.campion@ / capacitacion@, constante en `indicadores/`).
+  Bandeja** a `ALERTA_ADMINS` (capacitaciones@ —Iván, cubre RRHH, confirmado por Juli— /
+  cristian.campion@, constante en `indicadores/`).
 - **Etapa 2 (26/08/2026, HECHA la parte de aviso)**: al publicar la semana en
   `objetivos/` (`guardar()`), con confirmación se manda un **directo por la Bandeja**
   (`mensajes-mateu`) a cada cuenta de sucursal/outlet con su meta (`notificarSucursales`;
@@ -1073,7 +1089,7 @@ crear ninguna base.**
 
 `capacitaciones/index.html` es la versión FUNCIONAL, self-contained como el resto
 (lee la sesión del Portal, sin login propio). Roles: **staff** = `admin` /
-`capacitador` (Iván Nicoloff, `capacitacion@mateu.com.ar`) / `supervisor`
+`capacitador` (Iván Nicoloff, `capacitaciones@mateu.com.ar`) / `supervisor`
 (Cristian Campion) con acceso total; **alumno** = cuentas `sucursal`/`outlet` con la
 herramienta `capacitaciones`.
 

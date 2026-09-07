@@ -19,7 +19,7 @@
 
   // Personas conocidas del módulo (mail → identidad). El resto se deriva del mail.
   var PERSONAS = {
-    'capacitacion@mateu.com.ar':     { nombre: 'Iván Nicoloff',    rol: 'Capacitador · Admin' },
+    'capacitaciones@mateu.com.ar':   { nombre: 'Iván Nicoloff',    rol: 'Capacitador · Admin' },
     'cristian.campion@mateu.com.ar': { nombre: 'Cristian Campion', rol: 'Supervisor · Admin' },
     'julian@mateu.com.ar':           { nombre: 'Julián Mateu',     rol: 'Gerencia · Admin' }
   };
