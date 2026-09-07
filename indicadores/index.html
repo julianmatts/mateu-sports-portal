@@ -997,7 +997,7 @@ footer b{color:var(--navy)}
     <section class="sec" id="secBarrida" style="display:none">
       <div class="sec-label">Depósito central</div>
       <h2 class="sec-title">Reposición <em>disponible</em></h2>
-      <p class="hint">Artículos que tu sucursal vendió la última semana y que <b>hay en reserva del depósito central</b>. Salen del análisis semanal de la reserva; pedilos por el canal de siempre.</p>
+      <p class="hint">Artículos que tu sucursal vendió la última semana y que <b>hay en reserva del depósito central</b>. Salen del análisis semanal de la reserva; pedilos por el canal de siempre. Si el depósito cargó el stock por talle, abajo también aparecen los <b>talles que te faltan para completar la curva</b> de artículos que ya tenés.</p>
       <div class="card pad" id="barridaCard"></div>
     </section>
     </div><!-- /zonaViva -->
@@ -6805,9 +6805,12 @@ function fetchBarrida(slug){
   _barridaCache[slug] = (async()=>{
     const ultima = await fetch(base+'/barrida/ultima.json').then(r=>r.ok?r.json():null).catch(()=>null);
     if(!ultima) return null;
-    const rep = await fetch(base+'/barrida/barridas/'+encodeURIComponent(ultima)+'/reposicion/'+encodeURIComponent(slug)+'.json')
-      .then(r=>r.ok?r.json():null).catch(()=>null);
-    return (rep && rep.length) ? {lista:rep, semana:ultima} : null;
+    // reposición (lo que vendió y hay en reserva) + completar curva (talles que no tiene y hay en reserva)
+    const get = nodo => fetch(base+'/barrida/barridas/'+encodeURIComponent(ultima)+'/'+nodo+'/'+encodeURIComponent(slug)+'.json').then(r=>r.ok?r.json():null).catch(()=>null);
+    const [rep, cur] = await Promise.all([get('reposicion'), get('curva')]);
+    const lista = Array.isArray(rep) ? rep : (rep ? Object.values(rep) : []);
+    const curva = Array.isArray(cur) ? cur : (cur ? Object.values(cur) : []);
+    return (lista.length || curva.length) ? {lista, curva, semana:ultima} : null;
   })();
   return _barridaCache[slug];
 }
@@ -6822,8 +6825,9 @@ async function renderBarrida(){
   try{ data = await fetchBarrida(slug); }catch(e){ return; }
   if(sucName!==target) return;       // el usuario cambió de sucursal mientras cargaba
   const top = (data && data.lista || []).filter(x=>x.sugerido>0).sort((a,b)=>b.sugerido-a.sugerido);
-  if(!top.length){ sec.style.display='none'; pintarZonas(); return; }
-  _barridaLast = {top, semana:data.semana};
+  const curva = (data && data.curva || []).filter(x=>x.sugerido>0).sort((a,b)=>b.sugerido-a.sugerido);
+  if(!top.length && !curva.length){ sec.style.display='none'; pintarZonas(); return; }
+  _barridaLast = {top, curva, semana:data.semana};
   _barridaFiltro = '';
   paintBarrida();
   pintarZonas();
@@ -6838,27 +6842,30 @@ function barridaEdadHtml(semana){
 }
 function paintBarrida(){
   const sec=$('secBarrida'); if(!sec||!_barridaLast) return;
-  const {top, semana} = _barridaLast;
+  const {top, curva, semana} = _barridaLast;
   const semLbl = (()=>{ const p=String(semana||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:semana; })();
   // agrupar por macro-rubro; "Otros" (cupones, facturación, sin rubro) NO se muestra
   const ORDEN=['Calzado','Indumentaria','Accesorios'];
   const base = top.filter(x=>bMacro(x.rubro)!=='Otros');
+  const curvaBase = (curva||[]).filter(x=>bMacro(x.rubro)!=='Otros');
   const porRubro={}; base.forEach(x=>{ const m=bMacro(x.rubro); (porRubro[m]=porRubro[m]||[]).push(x); });
-  const presentes = ORDEN.filter(m=>porRubro[m] && porRubro[m].length);
-  if(!base.length){ sec.style.display='none'; return; }
-  if(_barridaFiltro && !porRubro[_barridaFiltro]) _barridaFiltro='';   // el filtro activo ya no aplica
-  const filtrados = _barridaFiltro ? porRubro[_barridaFiltro] : base;
+  const porRubroCur={}; curvaBase.forEach(x=>{ const m=bMacro(x.rubro); (porRubroCur[m]=porRubroCur[m]||[]).push(x); });
+  const presentes = ORDEN.filter(m=>(porRubro[m] && porRubro[m].length) || (porRubroCur[m] && porRubroCur[m].length));
+  if(!base.length && !curvaBase.length){ sec.style.display='none'; return; }
+  if(_barridaFiltro && !porRubro[_barridaFiltro] && !porRubroCur[_barridaFiltro]) _barridaFiltro='';   // el filtro activo ya no aplica
+  const filtrados = _barridaFiltro ? (porRubro[_barridaFiltro]||[]) : base;
   const totalU = filtrados.reduce((a,x)=>a+(x.sugerido||0),0);
   // encabezado
   let html='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
     +'<div style="font-size:15px"><b>'+filtrados.length+'</b> artículo'+(filtrados.length===1?'':'s')+' con reposición posible · <b>'+fmtN(totalU)+'</b> unidades sugeridas</div>'
     +'<div class="hint" style="margin:0">Análisis de la semana del '+esc(semLbl)+barridaEdadHtml(semana)+'</div></div>';
-  // pills de rubro
+  // pills de rubro (cuentan reposición + curva)
+  const nRub = m => (porRubro[m]||[]).length + (porRubroCur[m]||[]).length;
   const pill=(val,lbl,n)=>'<button type="button" class="brubro'+(_barridaFiltro===val?' on':'')+'" data-rub="'+esc(val)+'">'+esc(lbl)+' <span>'+fmtN(n)+'</span></button>';
-  html+='<div class="brubros">'+pill('','Todos',base.length)
-    +presentes.map(m=>pill(m,m,porRubro[m].length)).join('')+'</div>';
+  html+='<div class="brubros">'+pill('','Todos',base.length+curvaBase.length)
+    +presentes.map(m=>pill(m,m,nRub(m))).join('')+'</div>';
   // grupos desplegables por rubro (colapsados salvo el primero, para no armar una tabla larga)
-  const grupos = _barridaFiltro ? [_barridaFiltro] : presentes;
+  const grupos = (_barridaFiltro ? [_barridaFiltro] : presentes).filter(m=>porRubro[m] && porRubro[m].length);
   grupos.forEach((m,gi)=>{
     const items = porRubro[m].slice().sort((a,b)=>b.sugerido-a.sugerido);
     const u = items.reduce((a,x)=>a+(x.sugerido||0),0);
@@ -6875,6 +6882,25 @@ function paintBarrida(){
     });
     html+='</tbody></table></div></details>';
   });
+  // ---- completar curva de talles (solo si el depósito cargó el stock por sucursal) ----
+  // `tiene` = la curva que la sucursal ya tiene [{t,q}]; `talles` = faltantes a bajar [{t,r,s}]
+  const cur = _barridaFiltro ? (porRubroCur[_barridaFiltro]||[]) : curvaBase;
+  if(cur.length){
+    const u=cur.reduce((a,x)=>a+(x.sugerido||0),0);
+    html+='<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">'
+      +'<div style="font-size:15px;margin-bottom:4px"><b>'+cur.length+'</b> artículo'+(cur.length===1?'':'s')+' con <b>talles para completar la curva</b> · <b>'+fmtN(u)+'</b> unidades</div>'
+      +'<p class="hint" style="margin:0 0 8px">Los tenés en algunos talles y en el depósito hay los que te faltan. <b>Tenés</b> = tu curva de hoy (talle×stock) · <b>Faltan</b> = lo que se puede bajar del depósito (talle×unidades).</p>'
+      +'<details class="bgrupo"><summary><b>Ver los '+cur.length+' artículos</b> · '+fmtN(u)+' u</summary>'
+      +'<div class="tbl-wrap"><table><thead><tr><th class="L">Artículo</th><th class="L">Código</th><th class="L">Marca</th><th class="L">Tenés</th><th class="L">Faltan</th><th>Unid.</th></tr></thead><tbody>';
+    cur.forEach(x=>{
+      const tiene=(Array.isArray(x.tiene)?x.tiene:[]).map(d=>d.t+'×'+d.q).join('  ');
+      const tarr=Array.isArray(x.talles)?x.talles:Object.entries(x.talles||{}).map(([t,d])=>({t,...d}));
+      const falt=tarr.filter(d=>d.s>0).map(d=>d.t+'×'+d.s).join('  ');
+      html+='<tr><td class="L">'+esc(x.desc||x.codigo||x.id)+'</td><td class="L" style="font-family:ui-monospace,Consolas,monospace;font-size:12.5px;white-space:nowrap">'+esc(x.codigo||x.id||'—')+'</td><td class="L">'+esc(x.marca||'')+'</td>'
+        +'<td class="L" style="color:var(--muted)">'+esc(tiene||'—')+'</td><td class="L"><b>'+esc(falt||'—')+'</b></td><td><b>'+fmtN(x.sugerido)+'</b></td></tr>';
+    });
+    html+='</tbody></table></div></details></div>';
+  }
   $('barridaCard').innerHTML=html;
   $('barridaCard').querySelectorAll('.brubro').forEach(b=>b.onclick=()=>{ _barridaFiltro=b.dataset.rub; paintBarrida(); });
   sec.style.display='';

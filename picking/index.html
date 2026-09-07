@@ -176,6 +176,17 @@ async function repoDe(slug){
   const list=Array.isArray(arr)?arr:(arr?vals(arr):[]);
   DATA.bar.repoCache[slug]=list; return list;
 }
+// «Completar curva» de una sucursal (talles que no tiene y sí hay en reserva); vacío si
+// la barrida no se cargó con el stock por sucursal. Mismo shape que la reposición:
+// {id, codigo, desc, marca, rubro, sugerido, talles:[{t,r,s}]}.
+async function curvaDe(slug){
+  DATA.bar.curvaCache = DATA.bar.curvaCache||{};
+  if(DATA.bar.curvaCache[slug]) return DATA.bar.curvaCache[slug];
+  const lk=fbKey(DATA.bar.ultima);
+  let arr=null; try{ arr=await fbGet(BARR+'/barridas/'+lk+'/curva/'+slug); }catch(e){ arr=null; }
+  const list=Array.isArray(arr)?arr:(arr?vals(arr):[]);
+  DATA.bar.curvaCache[slug]=list; return list;
+}
 // combos (marca,rubro) presentes en toda la barrida — para asignar zonas
 async function cargarCombos(){
   if(DATA.bar.combos.length || !DATA.bar.ultima) return DATA.bar.combos;
@@ -404,6 +415,7 @@ async function abrirNuevoPicking(){
     + marcas.map(m=>'<option>'+esc(m)+'</option>').join('')+'</select></div>'
     + '<div class="fld"><label>Rubro (opcional)</label><select class="sel" id="npRubro"><option value="">Todos</option>'
     + rubros.map(r=>'<option>'+esc(r)+'</option>').join('')+'</select></div></div>'
+    + '<div class="fld" style="margin-top:4px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="npCurva" checked> Incluir «Completar curva» (talles que la sucursal no tiene y hay en reserva)</label></div>'
     + '<div id="npPrev" class="hint"></div>'
     + '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cancelar</button>'
     + '<button class="btn btn-outline" id="npPreview">Previsualizar</button>'
@@ -414,10 +426,28 @@ async function abrirNuevoPicking(){
     const dest=$('npDest').value; if(!dest){ toast('Elegí el destino','bad'); return null; }
     const fm=$('npMarca').value, fr=$('npRubro').value;
     const repo=await repoDe(dest);
-    const filt=repo.filter(it=> num(it.sugerido)>0 && (!fm||it.marca===fm) && (!fr||it.rubro===fr));
-    return filt.map(it=>({ codigo:it.codigo, desc:it.desc, marca:it.marca||'—', rubro:it.rubro||'—', id:it.id,
+    const pasa=it=> num(it.sugerido)>0 && (!fm||it.marca===fm) && (!fr||it.rubro===fr);
+    const items=repo.filter(pasa).map(it=>({ codigo:it.codigo, desc:it.desc, marca:it.marca||'—', rubro:it.rubro||'—', id:it.id,
       talles:(it.talles||[]).filter(t=>num(t.s)>0).map(t=>({t:t.t,s:num(t.s)})),
       requested_qty:num(it.sugerido) }));
+    // «Completar curva»: los talles que la sucursal no tiene. Si el artículo ya va por
+    // reposición se le suman los talles (la barrida no repite un talle en las dos listas).
+    const inc=$('npCurva') && $('npCurva').checked;
+    if(inc){
+      const cur=await curvaDe(dest);
+      cur.filter(pasa).forEach(it=>{
+        const talles=(it.talles||[]).filter(t=>num(t.s)>0).map(t=>({t:t.t,s:num(t.s)}));
+        if(!talles.length) return;
+        const key=x=>String(x.codigo||x.id||'');
+        const ya=items.find(x=>key(x)===key(it));
+        if(ya){
+          talles.forEach(t=>{ const e=ya.talles.find(x=>x.t===t.t); if(e) e.s+=t.s; else ya.talles.push(t); ya.requested_qty+=t.s; });
+        } else {
+          items.push({ codigo:it.codigo, desc:it.desc, marca:it.marca||'—', rubro:it.rubro||'—', id:it.id, talles, requested_qty:talles.reduce((a,t)=>a+t.s,0), curva:true });
+        }
+      });
+    }
+    return items;
   };
   $('npPreview').onclick=async()=>{
     const b=$('npPreview'); b.disabled=true;

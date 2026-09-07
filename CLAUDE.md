@@ -825,6 +825,25 @@ Indicadores, ver abajo).
   reserva parada). "Mejores" usa un umbral `Vendidos ≥` (default 3, ajustable); el
   badge del tab y los KPIs usan ese umbral. Incluye un resumen "a quién reponer" por
   marca de lo sin reserva. Se guarda en el payload (`compras`) para el histórico.
+- **Completar curva (07/09/2026, pedido de Juli)**: tercera hoja **opcional**, el **stock por
+  sucursal abierto por talle** (mismo layout que ventas: Sucursal · … · ID ITEM · talles). Por
+  encabezados no se distingue de ventas: `clasificarHoja` mira el nombre de la hoja y del
+  archivo («stock»/«existencia» → stock, «venta» → ventas; si no, ventas) y el chip de Cargar
+  tiene «↔ es stock por sucursal» (`swapVentasStock`). Pestaña **«Completar curva»**
+  (`viewCurva`/`curvaRows`, filtros `filtrosCur`): una fila por artículo × sucursal donde la
+  sucursal **tiene stock en ≥1 talle** y le **faltan talles que sí hay en reserva** (talle con
+  stock ≤ 0 en la sucursal y > 0 en reserva). A mandar = `mín(reserva, unidades por talle)`
+  (selector 1/2/3, default 1). Un talle que ya viene por Reposición (lo vendió) se marca `ya`
+  y no se repite. Filtros de criterio: «solo huecos internos» (faltantes entre el menor y el
+  mayor talle que tiene la sucursal, `marcarInternos`/`rankTalle`), «al menos N talles con
+  stock», «solo si lo vendió esta semana»; los de navegación (sucursal/rubro/marca/buscar) no
+  afectan lo que se guarda (`curvaRows(true)`). Export ⇩ Excel con la misma planilla del
+  depósito (`exportPlanilla`, compartida con Reposición). Se guarda en
+  `barrida/barridas/<lunes>/curva/<slug>` = `[{…, sugerido, talles:[{t,r,s}] (faltantes),
+  tiene:[{t,q}] (la curva actual)}]` + `meta.archivo_stock` y `meta.curva_param`. La
+  sucursal lo ve en Indicadores (bloque «talles para completar la curva» dentro de
+  «Reposición disponible») y el **Picking** lo suma al armar el pick (check «Incluir
+  Completar curva», `curvaDe`; si el artículo ya va por reposición se le agregan los talles).
 - **Ingreso reciente / crónica**: NO hay columna de fecha ni SKU en recepciones, así
   que se resuelve con el **histórico semanal** guardado: un artículo que aparece por
   primera vez en la reserva = *ingreso reciente* (se separa de "parada"); "semanas"
@@ -836,7 +855,7 @@ Indicadores, ver abajo).
   no depender de un alta manual; los datos viven en un nodo aparte `barrida/…` sin
   tocar el árbol `recepciones/…`. Constante `FIREBASE_DB_URL` en `barrida/` y
   `BARRIDA_URL` en `indicadores/`. Árbol: `barrida/barridas/<lunesISO>` con
-  `{meta, reposicion:{<slug>:[...]}, parada:[...], compras:[...]}`,
+  `{meta, reposicion:{<slug>:[...]}, curva:{<slug>:[...]}, parada:[...], compras:[...]}`,
   `barrida/reservaHist/<lunesISO>` (snapshot `{idItem:total}` para ingreso reciente /
   semanas) y `barrida/ultima` (puntero al último lunes). La reposición se guarda
   **agrupada por slug de sucursal** para que cada sucursal baje solo lo suyo (seguridad
