@@ -143,6 +143,7 @@ tbody tr:hover td{background:#f8f9fe}
 .talles .tsep{color:var(--muted-light);margin:0 1px}
 .talles .tr{color:var(--muted)}
 .talles .tg.falta .tl,.talles .tg.falta .tv,.talles .tg.falta .tr{color:var(--bad)}
+.talles .tas{margin-left:3px;color:#127a3a;font-weight:800}   /* → lo que recibe tras el reparto */
 .talles .falta{color:var(--bad);font-weight:700}
 .sug-badge{display:inline-block;min-width:34px;padding:2px 9px;border-radius:20px;background:#eafaf0;color:#127a3a;font-weight:800;font-variant-numeric:tabular-nums}
 .sug-badge.zero{background:#f1f4fa;color:var(--muted-light)}
@@ -279,6 +280,105 @@ function esMediaMateu(meta){
 }
 // mínimo del talle (0 si el talle no está en la tabla → cae al cálculo normal)
 function mediasMin(label){ return MEDIAS_MIN[String(label).toUpperCase().trim()] || 0; }
+
+/* ---------- Prioridad de reposición (regla de Juli 07/09/2026) ----------
+   Cuando la reserva de un talle NO alcanza para todas las sucursales que lo piden, se
+   define a quién va (y no queda en duda) con tres parámetros, en este orden:
+     1. VENDIDO — la sucursal que más vendió el artículo esta semana va primero
+        (empate: la que más vendió ESE talle);
+     2. MESES DE STOCK de la sucursal en la marca-rubro (gestion-stock/datos-meses-stock.js,
+        último mes cargado; si la marca no tiene dato, el rubro): menos meses = más
+        necesidad → antes; sin dato, después;
+     3. CATEGORÍA de la sucursal (Asignación de Marcas): cat1 > cat2 = aurelius = adidas > outlet.
+   Las fuentes se cargan al procesar (best-effort): si una falla, ese parámetro no desempata.
+   El mismo orden se usa para repartir los talles de «Completar curva». */
+const FB_MARCAS = 'https://asignacion-marcas-mateu-default-rtdb.firebaseio.com/asignacion_marcas.json';
+// slug del Portal -> id de la sucursal en Asignación de Marcas (copia de pedidos-semanales)
+const SLUG2MARCAS = {
+  'calle-12':'ms-c12','city-bell':'ms-cb','diagonal':'ms-d80','calle-47':'ms-c47','calle-49':'ms-c49',
+  'los-hornos':'ms-lh','plaza':'ms-pi','berisso':'ms-ber','ensenada':'ms-ens','kids':'ms-kids','ecommerce':'ms-ecom',
+  'aurelius-12':'aur-c12','aurelius-5':'aur-c5','aurelius-10':'aur-c10','aurelius-cb':'aur-cb',
+  'adidas-12':'adi-c12','adidas':'adi-7','originals':'adi-ori',
+  'gonnet':'out-gon','av-44':'out-44','calle-55':'out-55',
+};
+// respaldo si la base de marcas no responde (semilla de marcas/index.html al 07/09/2026)
+const CAT_SEED = {
+  'calle-12':'cat1','city-bell':'cat1','calle-47':'cat1','diagonal':'cat1','kids':'cat1','ecommerce':'cat1',
+  'los-hornos':'cat2','plaza':'cat2','berisso':'cat2','ensenada':'cat2','calle-49':'cat2',
+  'aurelius-12':'aurelius','aurelius-5':'aurelius','aurelius-10':'aurelius','aurelius-cb':'aurelius',
+  'adidas-12':'adidas','adidas':'adidas','originals':'adidas',
+  'gonnet':'outlet','av-44':'outlet','calle-55':'outlet',
+};
+const CAT_RANK = { cat1:1, cat2:2, aurelius:2, adidas:2, outlet:3 };
+const CAT_LABEL = { cat1:'Cat. 1', cat2:'Cat. 2', aurelius:'Aurelius', adidas:'Adidas', outlet:'Outlet' };
+const PRIO = { stock:null, stockMes:'', cats:null, catsOrigen:'', cargado:false };
+const conTimeout=(p,ms)=>Promise.race([p, new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms))]);
+// meses de stock: el dataset pesa ~3 MB, se trae recién al procesar (una vez por sesión)
+function cargarStockData(){
+  if(PRIO.stock) return Promise.resolve(PRIO.stock);
+  if(window.STOCK_DATA){ PRIO.stock=window.STOCK_DATA; return Promise.resolve(PRIO.stock); }
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script'); s.src='../gestion-stock/datos-meses-stock.js?v='+Date.now();
+    s.onload=()=>{ PRIO.stock=window.STOCK_DATA||null; if(PRIO.stock){ const m=PRIO.stock.meses||[]; PRIO.stockMes=(m[m.length-1]||'')+(PRIO.stock.anio?' '+PRIO.stock.anio:''); } res(PRIO.stock); };
+    s.onerror=()=>rej(new Error('no se pudo cargar datos-meses-stock.js'));
+    document.head.appendChild(s);
+  });
+}
+async function cargarCategorias(){
+  if(PRIO.cats) return PRIO.cats;
+  try{
+    const r=await conTimeout(fetch(FB_MARCAS),6000); if(!r.ok) throw new Error('HTTP '+r.status);
+    const val=await r.json(); const data=val&&(val.data||val); const byId={};
+    Object.values(data||{}).forEach(canal=>{ (canal&&Array.isArray(canal.sucursales)?canal.sucursales:[]).forEach(s=>{ if(s&&s.id&&s.cat) byId[s.id]=s.cat; }); });
+    const cats={}; Object.entries(SLUG2MARCAS).forEach(([slug,id])=>{ if(byId[id]) cats[slug]=byId[id]; });
+    if(Object.keys(cats).length){ PRIO.cats=Object.assign({},CAT_SEED,cats); PRIO.catsOrigen='Asignación de Marcas'; return PRIO.cats; }
+    throw new Error('vacío');
+  }catch(e){ PRIO.cats=Object.assign({},CAT_SEED); PRIO.catsOrigen='respaldo del código'; return PRIO.cats; }
+}
+async function cargarPrioridad(){
+  await Promise.all([ cargarStockData().catch(()=>null), cargarCategorias() ]);
+  PRIO.cargado=true;
+}
+const stripNN = s => String(s||'').replace(/^\d+\s*[-–]\s*/,'').trim();
+// meses de stock de la sucursal en la marca-rubro (último mes cargado); null sin dato
+function mesesStockDe(slug, marca, rubro){
+  const D=PRIO.stock; if(!D||!D.sucursales) return null;
+  const suc=D.sucursales[SLUG_SUC[slug]||OUTLET_SUC[slug]||'']; if(!suc||!suc.rubros) return null;
+  const rk=stripNN(rubro).toUpperCase(); const R=suc.rubros[rk]; if(!R) return null;
+  const ult=(D.meses||[])[(D.meses||[]).length-1]; if(!ult) return null;
+  const ok = x => x && isFinite(x.ratio) && x.ratio>=0 && x.ventas>0;
+  const mk=normName(marca); const mkey=Object.keys(R.marcas||{}).find(k=>normName(k)===mk);
+  const M=mkey?R.marcas[mkey]:null;
+  if(M && M.serie && ok(M.serie[ult])) return { ms:M.serie[ult].ratio, nivel:'marca' };
+  if(R.serie && ok(R.serie[ult])) return { ms:R.serie[ult].ratio, nivel:'rubro' };
+  return null;
+}
+function catDe(slug){ return (PRIO.cats||CAT_SEED)[slug]||''; }
+function prioInfo(slug, marca, rubro){
+  const m=mesesStockDe(slug, marca, rubro), c=catDe(slug);
+  return { ms: m?Math.round(m.ms*10)/10:null, msNivel: m?m.nivel:'', cat:c, catRank: CAT_RANK[c]||9 };
+}
+// orden de prioridad (menor = antes): vendido del artículo ↓ · vendido del talle ↓ ·
+// meses de stock ↑ (sin dato al final) · categoría (cat1 primero) · stock del artículo ↓ · nombre
+function cmpPrioridad(a,b){
+  if((b.vendido||0)!==(a.vendido||0)) return (b.vendido||0)-(a.vendido||0);
+  if((b.vendTalle||0)!==(a.vendTalle||0)) return (b.vendTalle||0)-(a.vendTalle||0);
+  const ma=(a.pr&&a.pr.ms!=null)?a.pr.ms:Infinity, mb=(b.pr&&b.pr.ms!=null)?b.pr.ms:Infinity;
+  if(ma!==mb) return ma-mb;
+  const ca=a.pr?a.pr.catRank:9, cb=b.pr?b.pr.catRank:9;
+  if(ca!==cb) return ca-cb;
+  if((b.enSucursal||0)!==(a.enSucursal||0)) return (b.enSucursal||0)-(a.enSucursal||0);
+  return cmp(a.sucNombre,b.sucNombre);
+}
+// texto corto de los parámetros de prioridad de una fila (para tooltips y export)
+function prioTxt(r){
+  const p=r.pr||{}; const ms = p.ms!=null ? p.ms.toLocaleString('es-AR')+' meses de stock'+(p.msNivel==='rubro'?' (rubro)':'') : 'sin meses de stock';
+  return 'vendió '+fmtInt(r.vendido||0)+' · '+ms+' · '+(CAT_LABEL[p.cat]||'sin categoría');
+}
+const faltaEn = r => Object.values(r.talles||{}).some(d=>d.v>0 && d.s<d.v);   // algún talle recortado (la reserva no alcanzó)
+// recortada por el REPARTO (había reserva del talle pero se la llevó otra sucursal con más prioridad);
+// distinto de «sin reserva» (r=0), que es señal de recompra a la marca
+const recortadaPorPrio = r => Object.values(r.talles||{}).some(d=>d.v>0 && d.r>0 && d.s<d.v);
 
 /* ---------- helpers ---------- */
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -523,8 +623,8 @@ function aplicarUnidadesCurva(){
     (porArt[row.id]=porArt[row.id]||[]).push(row);
   });
   Object.entries(porArt).forEach(([id,rows])=>{
-    // prioridad del artículo: ranking por vendido (desc), luego stock en la sucursal (desc)
-    const orden=rows.slice().sort((a,b)=>(b.vendido-a.vendido)||(b.enSucursal-a.enSucursal)||cmp(a.sucNombre,b.sucNombre));
+    // prioridad del artículo: vendido ↓ · meses de stock ↑ · categoría · stock en la sucursal ↓ (cmpPrioridad)
+    const orden=rows.slice().sort(cmpPrioridad);
     orden.forEach((row,i)=>{ row.prio=i+1; row.prioDe=orden.length; });
     const talles=new Set(); rows.forEach(r=>r.faltan.forEach(d=>talles.add(d.t)));
     talles.forEach(t=>{
@@ -604,6 +704,7 @@ function computar(histPrev, histSnaps){
           marca:R.meta.marca||V.meta.marca||'', rubro:R.meta.rubro||V.meta.rubro||'', tipo:R.meta.tipo||V.meta.tipo||'',
           genero:R.meta.genero||V.meta.genero||'',
           vendido:S.total, reservaTotal:R.total, sugerido, talles:detTalles, pisoMedias:media,
+          pr: prioInfo(slug, R.meta.marca||V.meta.marca||'', R.meta.rubro||V.meta.rubro||''),
         });
       });
     } else {
@@ -618,6 +719,30 @@ function computar(histPrev, histSnaps){
       });
     }
   });
+
+  // ---- REPARTO de la reserva por artículo × talle (prioridad) ----
+  // Hasta acá cada sucursal pidió mín(objetivo, reserva) por su cuenta: si varias piden el
+  // mismo talle, la suma puede superar la reserva. Acá se define a quién va: si alcanza
+  // para todas, todas reciben lo suyo; si no, se reparte en orden de prioridad (vendido ·
+  // meses de stock · categoría, ver cmpPrioridad) y las que quedan cortas se marcan (rec).
+  {
+    const porArt={}; reposicion.forEach(r=>{ (porArt[r.id]=porArt[r.id]||[]).push(r); });
+    Object.values(porArt).forEach(rows=>{
+      const orden=rows.slice().sort(cmpPrioridad);
+      orden.forEach((r,i)=>{ r.prio=i+1; r.prioDe=orden.length; });
+      const talles=new Set(); rows.forEach(r=>Object.keys(r.talles).forEach(t=>talles.add(t)));
+      talles.forEach(t=>{
+        const cand=orden.filter(r=>r.talles[t] && r.talles[t].v>0);
+        if(!cand.length) return;
+        const rq=cand[0].talles[t].r, dem=cand.reduce((a,r)=>a+r.talles[t].v,0);
+        if(dem<=rq){ cand.forEach(r=>{ const d=r.talles[t]; d.s=d.v; d.rec=0; }); return; }
+        let disp=rq;
+        cand.slice().sort((a,b)=>cmpPrioridad({...a, vendTalle:a.talles[t].vend},{...b, vendTalle:b.talles[t].vend}))
+          .forEach(r=>{ const d=r.talles[t]; d.s=Math.min(d.v, disp); disp-=d.s; d.rec=d.v-d.s; });
+      });
+      rows.forEach(r=>{ r.sugerido=Object.values(r.talles).reduce((a,d)=>a+d.s,0); r.recorte=Object.values(r.talles).reduce((a,d)=>a+(d.rec||0),0); });
+    });
+  }
 
   // ---- COMPLETAR CURVA (necesita la hoja de stock por sucursal) ----
   // La sucursal tiene el artículo (stock en ≥1 talle) pero le faltan talles que SÍ hay
@@ -649,6 +774,7 @@ function computar(histPrev, histSnaps){
           enSucursal:S.total, nTalles:Object.keys(S.talles).length,
           vendido:(V&&V.porSuc[slug])?V.porSuc[slug].total:0, reservaTotal:R.total,
           tallesSuc:S.talles, faltan, sugerido:0,
+          pr: prioInfo(slug, R.meta.marca||S0.meta.marca||'', R.meta.rubro||S0.meta.rubro||''),
         };
         marcarInternos(row);
         curva.push(row);
@@ -761,6 +887,13 @@ function viewCargar(){
       +kpi('Unidades paradas',fmtInt(R.totales.unidades_paradas),'par')
       +(R.conStock ? kpi('Curvas a completar',fmtInt(R.totales.curva_lineas||0)+' <small>art.×suc.</small>','cur')+kpi('Unidades por curva',fmtInt(R.totales.curva_unidades||0),'cur') : '')
       +'</div>';
+    if(R.prioFuentes){
+      const pf=R.prioFuentes; const nRec=(R.reposicion||[]).filter(faltaEn).length;
+      html+='<div class="banner '+(pf.stock?'info':'warn')+'">🎯 <b>Prioridad de reposición</b> (cuando la reserva de un talle no alcanza para todas): 1) vendido del artículo · 2) '
+        +(pf.stock?'meses de stock en la marca-rubro ✓ <i>'+esc(pf.stock)+'</i>':'meses de stock <b>sin cargar</b> (no desempata)')
+        +' · 3) categoría de la sucursal ✓ <i>'+esc(pf.cats||'—')+'</i>. '
+        +(nRec?'<b>'+fmtInt(nRec)+'</b> líneas quedaron recortadas por prioridad (en rojo en Reposición).':'Esta semana la reserva alcanzó en todos los talles: no hubo que elegir.')+'</div>';
+    }
     if(!R.conStock) html+='<div class="banner info">ℹ️ <b>Sin stock por sucursal:</b> subí también el reporte de stock abierto por talle de las sucursales (mismo formato que ventas) y se arma la pestaña <b>Completar curva</b>: talles que la sucursal no tiene y sí hay en reserva.</div>';
     if(R.sinHistorial) html+='<div class="banner info">ℹ️ <b>Primera barrida guardada o sin semana previa en la base:</b> todavía no puedo distinguir qué artículos ingresaron recién. Desde la próxima semana, los que aparezcan por primera vez se marcan como <b>ingreso reciente</b> y se separan de la reserva parada.</div>';
     html+='<div class="card"><div class="card-h">3 · Guardar</div>'
@@ -780,11 +913,9 @@ function viewReposicion(){
   const R=state.resultado;
   if(!R) return '<div class="state"><div class="big-ic">⚙️</div>Procesá una barrida en la pestaña «Cargar».</div>';
   const f=state.filtros;
-  // ¿algún talle vendido supera la reserva de ese talle? (reserva insuficiente → recompra)
-  const faltaEn = r => Object.values(r.talles).some(d=>d.v>0 && d.v>d.r);
   let rows=R.reposicion.slice();
   if(f.excluirVarios) rows=rows.filter(r=>!/varios|facturacion/i.test(r.rubro+' '+r.tipo));
-  if(f.soloSugerido) rows=rows.filter(r=>r.sugerido>0);
+  if(f.soloSugerido) rows=rows.filter(r=>r.sugerido>0 || recortadaPorPrio(r));   // las recortadas por el reparto se ven igual
   if(f.soloFaltante) rows=rows.filter(faltaEn);
   if(f.suc) rows=rows.filter(r=>r.slug===f.suc);
   if(f.rubro) rows=rows.filter(r=>r.rubro===f.rubro);
@@ -797,7 +928,7 @@ function viewReposicion(){
   const sucList = uniq(R.reposicion.map(r=>r.sucNombre));
   const sucBySlug={}; R.reposicion.forEach(r=>sucBySlug[r.slug]=r.sucNombre);
   let html='<div class="sec-head"><div><h1>Reposición posible</h1>'
-    +'<div class="sub">Artículos con reserva en depósito que la sucursal vendió la última semana. A reponer = mín(vendido, reserva) por talle. <b>Medias Mateu Sports</b>: por cada talle vendido se repone el mínimo del talle (S:12 · M:24 · L:36 · XL:12), aunque haya vendido menos.</div></div></div>';
+    +'<div class="sub">Artículos con reserva en depósito que la sucursal vendió la última semana. A reponer = lo vendido por talle. Si la reserva de un talle <b>no alcanza para todas</b> las sucursales que lo piden, se reparte por <b>prioridad</b>: 1) la que más vendió el artículo, 2) la que menos meses de stock tiene en la marca-rubro, 3) la de mayor categoría; el resto queda recortado (en rojo). <b>Medias Mateu Sports</b>: por cada talle vendido se repone el mínimo del talle (S:12 · M:24 · L:36 · XL:12), aunque haya vendido menos.</div></div></div>';
   html+='<div class="filtros">'
     +fsel('Sucursal', 'fSuc', '<option value="">Todas</option>'+sucList.map(n=>{ const slug=Object.keys(sucBySlug).find(k=>sucBySlug[k]===n); return '<option value="'+esc(slug)+'"'+(slug===f.suc?' selected':'')+'>'+esc(n)+'</option>'; }).join(''))
     +fsel('Rubro','fRubro',opts(uniq(R.reposicion.map(r=>r.rubro)),f.rubro))
@@ -811,22 +942,24 @@ function viewReposicion(){
     +'<div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="btnCsvRep">⇩ Excel</button></div>'
     +'</div>';
   if(!rows.length) return html+'<div class="state"><div class="big-ic">📭</div>Sin candidatos para estos filtros.</div>';
-  html+='<div class="card-hs" style="margin:-4px 0 12px"><b>Stock reserva</b> = lo que hay en el depósito central · <span class="sug-badge" style="padding:1px 7px">A reponer</span> = lo que conviene bajar a la sucursal (verde). En Talles, <span class="talles"><span class="tg"><span class="tl">M</span><span class="tv">3</span><span class="tsep">/</span><span class="tr">24</span></span></span> = <b>vendido</b> (navy) / <b>reserva</b> (gris). En rojo <span class="talles"><span class="tg falta"><span class="tl">M</span><span class="tv">3</span><span class="tsep">/</span><span class="tr">1</span></span></span> = se vendió más de lo que hay en reserva: la reserva no alcanza y probablemente haya que <b>reponer a la marca</b>. En filas <span class="pill rec">piso medias</span> los talles muestran <b>objetivo mínimo / reserva</b> (rojo = la reserva no cubre el piso).</div>';
+  html+='<div class="card-hs" style="margin:-4px 0 12px"><b>Stock reserva</b> = lo que hay en el depósito central · <span class="sug-badge" style="padding:1px 7px">A reponer</span> = lo que conviene bajar a la sucursal (verde). En Talles, <span class="talles"><span class="tg"><span class="tl">M</span><span class="tv">3</span><span class="tsep">/</span><span class="tr">24</span></span></span> = <b>vendido</b> (navy) / <b>reserva</b> (gris). En rojo <span class="talles"><span class="tg falta"><span class="tl">M</span><span class="tv">3</span><span class="tsep">/</span><span class="tr">1</span><span class="tas">→1</span></span></span> = la reserva del talle no alcanzó para todas las sucursales que lo pidieron: <b>→ lo que le toca</b> a esta según la prioridad (a la marca probablemente haya que <b>reponer</b>). <b>Prioridad</b> = puesto de la sucursal entre las que piden ese artículo (1 = primera): vendido del artículo ↓, meses de stock en la marca-rubro ↑, categoría (pasá el mouse para ver los tres). En filas <span class="pill rec">piso medias</span> los talles muestran <b>objetivo mínimo / reserva</b>.</div>';
   const nFalta = rows.filter(faltaEn).length;
   html+='<div class="tbl-wrap"><table><thead><tr>'
     +th('Sucursal','sucNombre')+th('Artículo','desc')+th('Código','codigo')+th('Marca','marca')
-    +thNum('Vendido','vendido')+thNum('Stock reserva','reservaTotal')+thNum('A reponer','sugerido')+'<th class="noord">Talles (vend/reserva)</th>'
+    +thNum('Prioridad','prio')+thNum('Vendido','vendido')+thNum('Stock reserva','reservaTotal')+thNum('A reponer','sugerido')+'<th class="noord">Talles (vend/reserva → recibe)</th>'
     +'</tr></thead><tbody>';
   rows.forEach(r=>{
     const falta=faltaEn(r);
     const piso=r.pisoMedias;
     const tt=Object.entries(r.talles).filter(([t,d])=>d.v>0)
-      .map(([t,d])=>'<span class="tg'+(d.v>d.r?' falta':'')+'"><span class="tl">'+esc(t)+'</span><span class="tv">'+d.v+'</span><span class="tsep">/</span><span class="tr">'+d.r+'</span></span>').join('');
+      .map(([t,d])=>{ const rec=d.s<d.v; return '<span class="tg'+(rec?' falta':'')+'"'+(rec?' title="Pidió '+d.v+', reserva del talle '+d.r+': por prioridad recibe '+d.s+'"':'')+'><span class="tl">'+esc(t)+'</span><span class="tv">'+d.v+'</span><span class="tsep">/</span><span class="tr">'+d.r+'</span>'+(rec?'<span class="tas">→'+d.s+'</span>':'')+'</span>'; }).join('');
     const pillPiso = piso?' <span class="pill rec" title="Medias Mateu: para el talle vendido se repone el mínimo (S:12 M:24 L:36 XL:12), aunque haya vendido menos">piso medias</span>':'';
-    const tallesTitle = piso?' title="objetivo mínimo / reserva por talle vendido"':'';
+    const tallesTitle = piso?' title="objetivo mínimo / reserva por talle vendido → lo que recibe"':'';
+    const prio = r.prio ? '<span class="pill '+(r.prio===1?'rec':'suc')+'" title="Prioridad '+r.prio+' de '+r.prioDe+' sucursales que piden este artículo · '+esc(prioTxt(r))+'">'+r.prio+' de '+r.prioDe+'</span>' : '—';
     html+='<tr><td><span class="pill suc">'+esc(r.sucNombre)+'</span></td>'
-      +'<td class="desc" title="'+esc(r.desc)+'">'+esc(r.desc||'—')+pillPiso+(falta?' <span class="pill falta" title="'+(piso?'Reserva no cubre el piso en algún talle':'Reserva insuficiente en algún talle')+'">⚠ falta</span>':'')+'</td>'
+      +'<td class="desc" title="'+esc(r.desc)+'">'+esc(r.desc||'—')+pillPiso+(falta?' <span class="pill falta" title="'+(piso?'La reserva no cubre el piso en algún talle':'La reserva no alcanzó en algún talle: recibe menos de lo vendido')+'">⚠ falta</span>':'')+'</td>'
       +'<td class="mono">'+esc(r.codigo||r.id)+'</td><td>'+esc(r.marca)+'</td>'
+      +'<td class="num">'+prio+'</td>'
       +'<td class="num mono">'+fmtInt(r.vendido)+'</td><td class="num mono" style="color:var(--muted)">'+fmtInt(r.reservaTotal)+'</td>'
       +'<td class="num"><span class="sug-badge'+(r.sugerido>0?'':' zero')+'">'+fmtInt(r.sugerido)+'</span></td>'
       +'<td class="talles"'+tallesTitle+'>'+(tt||'—')+'</td></tr>';
@@ -1182,8 +1315,11 @@ async function procesarBarrida(){
       }
     }
   }catch(e){ /* si falla la base, seguimos sin histórico */ }
+  // fuentes de la prioridad (meses de stock + categorías); si fallan, se procesa igual
+  if(!PRIO.cargado){ toast('Cargando meses de stock y categorías…'); try{ await conTimeout(cargarPrioridad(),20000); }catch(e){ PRIO.cargado=true; } }
   try{
     state.resultado=computar(histPrev, histSnaps);
+    state.resultado.prioFuentes={ stock: PRIO.stock?('meses de stock '+PRIO.stockMes):'', cats: PRIO.catsOrigen||'' };
     aplicarUnidadesCurva();
     state.resultadoSemana=null;
     render();
@@ -1200,6 +1336,7 @@ async function guardarBarrida(){
   R.reposicion.forEach(r=>{ (repBySlug[r.slug]=repBySlug[r.slug]||[]).push({
     id:r.id, codigo:r.codigo, desc:r.desc, marca:r.marca, rubro:r.rubro, tipo:r.tipo,
     vendido:r.vendido, reservaTotal:r.reservaTotal, sugerido:r.sugerido,
+    prio:r.prio||0, prioDe:r.prioDe||0, pr:r.pr||null,   // prioridad con la que se repartió la reserva
     // talles como ARRAY (no objeto): Firebase no admite claves con punto (ej "8.5").
     talles: Object.entries(r.talles).map(([t,d])=>({t, v:d.v, r:d.r, s:d.s}))
   }); });
@@ -1209,7 +1346,7 @@ async function guardarBarrida(){
   curvaRows(true).forEach(r=>{ (curBySlug[r.slug]=curBySlug[r.slug]||[]).push({
     id:r.id, codigo:r.codigo, desc:r.desc, marca:r.marca, rubro:r.rubro, tipo:r.tipo, genero:r.genero||'',
     enSucursal:r.enSucursal, nTalles:r.nTalles, vendido:r.vendido, reservaTotal:r.reservaTotal, sugerido:r.sugerido,
-    prio:r.prio||0, prioDe:r.prioDe||0,                                                       // puesto por vendido entre las sucursales del artículo
+    prio:r.prio||0, prioDe:r.prioDe||0, pr:r.pr||null,                                        // puesto entre las sucursales del artículo (vendido · meses de stock · categoría)
     talles: r.faltan.filter(d=>d.s>0).map(d=>({t:d.t, r:d.r, s:d.s})),                       // faltantes a mandar
     tiene: Object.keys(r.tallesSuc||{}).sort(cmpTalle).map(t=>({t, q:r.tallesSuc[t]})),      // la curva que ya tiene
   }); });
@@ -1219,6 +1356,7 @@ async function guardarBarrida(){
       archivo_ventas:(state.files.ventas||{}).archivo||'', archivo_reserva:(state.files.reserva||{}).archivo||'',
       archivo_stock:(state.files.stock||{}).archivo||'',
       curva_param:{ unidades:fc.unidades, soloHuecos:fc.soloHuecos, minTalles:fc.minTalles, soloVendio:fc.soloVendio, excluirVarios:fc.excluirVarios },
+      prioFuentes: R.prioFuentes||null,
       totales:R.totales },
     reposicion:repBySlug,
     curva:curBySlug,
@@ -1333,6 +1471,7 @@ async function abrirBarrida(sem){
     const conStock = curva.length>0 || !!(b.meta && b.meta.archivo_stock);
     state.resultado={ reposicion, parada:b.parada||[], compras:b.compras||null, curva, conStock, snapshot:{}, totales:(b.meta&&b.meta.totales)||{}, sinHistorial:false };
     if(b.meta && b.meta.curva_param) Object.assign(state.filtrosCur, b.meta.curva_param);
+    if(b.meta && b.meta.prioFuentes) state.resultado.prioFuentes=b.meta.prioFuentes;
     aplicarUnidadesCurva();
     state.resultadoSemana=sem; state.semana=sem;
     setTab('reposicion');
@@ -1387,10 +1526,9 @@ function filaEstilizada(meta, rowIdx, valores, i, tint){
 // filas de reposición filtradas + ordenadas igual que la tabla
 function reposFiltradas(){
   const f=state.filtros, R=state.resultado;
-  const faltaEn = r => Object.values(r.talles).some(d=>d.v>0 && d.v>d.r);
   let rows=R.reposicion.slice();
   if(f.excluirVarios) rows=rows.filter(r=>!/varios|facturacion/i.test(r.rubro+' '+r.tipo));
-  if(f.soloSugerido) rows=rows.filter(r=>r.sugerido>0);
+  if(f.soloSugerido) rows=rows.filter(r=>r.sugerido>0 || recortadaPorPrio(r));   // las recortadas por el reparto se ven igual
   if(f.soloFaltante) rows=rows.filter(faltaEn);
   if(f.suc) rows=rows.filter(r=>r.slug===f.suc);
   if(f.rubro) rows=rows.filter(r=>r.rubro===f.rubro);
@@ -1493,18 +1631,18 @@ async function exportRepXlsx(){
   const f=state.filtros;
   const rows=reposFiltradas();
   if(!rows.length){ toast('No hay filas para exportar','err'); return; }
-  const faltaEn = r => Object.values(r.talles).some(d=>d.v>0 && d.v>d.r);
-  // columnas de talle: solo las que tienen SUGERIDO>0 en algún artículo de lo filtrado.
-  const set=new Set(); rows.forEach(r=>Object.entries(r.talles).forEach(([t,d])=>{ if(d.s>0) set.add(t); }));
+  // columnas de talle: las que tienen SUGERIDO>0 o un recorte en algún artículo de lo filtrado.
+  const set=new Set(); rows.forEach(r=>Object.entries(r.talles).forEach(([t,d])=>{ if(d.s>0 || (d.v>0&&d.s<d.v)) set.add(t); }));
   const talles=[...set].sort(cmpTalle);
   const lbl=exportLabels(f.rubro, f.marca, [f.subrubros.join('+'), f.tipoprod]);
   const totU=rows.reduce((a,x)=>a+x.sugerido,0), nFalta=rows.filter(faltaEn).length;
   await exportPlanilla({
     hoja:'Reposición', titulo:'REPOSICIÓN '+lbl.rubro, subtitulo:lbl.marca,
-    resumen: fmtInt(rows.length)+' líneas · '+fmtInt(totU)+' unidades a reponer · '+fmtInt(nFalta)+' con faltante de talle (en rojo = la reserva no alcanza)',
+    resumen: fmtInt(rows.length)+' líneas · '+fmtInt(totU)+' unidades a reponer · '+fmtInt(nFalta)+' con recorte de talle (en rojo = la reserva no alcanzó; se repartió por prioridad: vendido · meses de stock · categoría)',
     rows, talles,
-    celda:(row,t)=>{ const d=row.talles[t]; const sug=d?d.s:0; const esFalta=!!(d&&d.v>0&&d.v>d.r); return { val: sug>0?sug:(esFalta?0:null), falta:esFalta }; },
-    derecha:[ {h:'Total',val:r=>r.sugerido,total:true}, {h:'Vendido',val:r=>r.vendido}, {h:'Reserva',val:r=>r.reservaTotal}, {h:'Falta',w:7,val:r=>faltaEn(r)?'Sí':'',falta:faltaEn} ],
+    celda:(row,t)=>{ const d=row.talles[t]; const sug=d?d.s:0; const esFalta=!!(d&&d.v>0&&d.s<d.v); return { val: sug>0?sug:(esFalta?0:null), falta:esFalta }; },
+    derecha:[ {h:'Total',val:r=>r.sugerido,total:true}, {h:'Vendido',val:r=>r.vendido}, {h:'Reserva',val:r=>r.reservaTotal}, {h:'Falta',w:7,val:r=>faltaEn(r)?'Sí':'',falta:faltaEn},
+      {h:'Prioridad',w:10,val:r=>r.prio?(r.prio+' de '+r.prioDe):''}, {h:'Meses stock',w:11,val:r=>(r.pr&&r.pr.ms!=null)?r.pr.ms:''}, {h:'Categoría',w:10,val:r=>CAT_LABEL[(r.pr||{}).cat]||''} ],
     archivo:'reposicion'+lbl.file+'-'+state.semana+'.xlsx',
   });
 }
