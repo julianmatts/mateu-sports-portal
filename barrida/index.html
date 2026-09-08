@@ -137,6 +137,7 @@ tbody tr:hover td{background:#f8f9fe}
 .pill.suc{background:#eef2fb;color:var(--navy-mid)}
 .pill.falta{background:#fef2f2;color:#b91c1c}
 .pill.curva{background:#eafaf0;color:#127a3a}
+.pill.vac{background:#e6eefb;color:#1e40af}
 .talles{font-size:12px;color:var(--muted);font-family:var(--font-c)}
 /* Un casillero por talle: arriba el talle, en grande CUÁNTAS unidades van, abajo el
    porqué (cuántas hay en reserva, o cuántas pedía si no alcanzó). Rediseñado el
@@ -152,6 +153,9 @@ tbody tr:hover td{background:#f8f9fe}
 .tgx.rec .txn,.tgx.rec .txr{color:var(--bad)}
 .tgx.hueco{border-color:#bfe6cf}                      /* completar curva: talle que la sucursal no tiene */
 .tgx.hueco .txl{background:#eafaf0;color:#127a3a;border-bottom-color:#bfe6cf}
+.tgx.vac{border-color:#bcd2f2}                       /* vaciar la reserva chica: baja todo lo que queda */
+.tgx.vac .txl{background:#e6eefb;color:#1e40af;border-bottom-color:#bcd2f2}
+.tgx.vac .txn{color:#1e40af}
 .tgx.off{opacity:.55}
 .tgx.off .txn{color:var(--muted-light);font-size:12px;padding-top:4px}
 .sug-badge{display:inline-block;min-width:34px;padding:2px 9px;border-radius:20px;background:#eafaf0;color:#127a3a;font-weight:800;font-variant-numeric:tabular-nums}
@@ -172,6 +176,10 @@ tbody tr:hover td{background:#f8f9fe}
 .carga-res .sep{color:var(--muted-light);margin:0 10px}
 .carga-res .ok{color:var(--ok);font-weight:700}.carga-res .warn{color:var(--warn);font-weight:700}.carga-res .muted{color:var(--muted)}
 .desc{max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* en Reposición el nombre se recorta solo, para que los chips (piso medias · solo curva ·
+   solo vaciado · ⚠ falta) queden siempre a la vista */
+.desc.rep{max-width:360px;overflow:visible;text-overflow:clip}
+.desc.rep .dtxt{display:inline-block;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
 .grp-suc{background:#eef2fb;font-family:var(--font-c);font-weight:700;color:var(--navy-mid);letter-spacing:.5px}
 
 /* ===== ESTADOS ===== */
@@ -423,7 +431,7 @@ const state = {
   histKeys:[],                           // lunes con barrida guardada
   // curva = tilde «Completar curva de talles» de Reposición: fusiona en cada fila los talles
   // que la sucursal no tiene y sí hay en reserva (y suma filas de sucursales que solo tienen curva)
-  filtros:{ suc:'', rubro:'', marca:'', discs:[], subrubros:[], tipoprod:'', q:'', soloSugerido:true, excluirVarios:true, soloFaltante:false, curva:false },
+  filtros:{ suc:'', rubro:'', marca:'', discs:[], subrubros:[], tipoprod:'', q:'', soloSugerido:true, excluirVarios:true, soloFaltante:false, curva:false, vaciar:false },
   mselOpen:null,   // panel multi-select abierto (se conserva entre renders)
   filtrosPar:{ rubro:'', marca:'', q:'', excluirVarios:true, soloCronica:false },
   filtrosCom:{ rubro:'', marca:'', q:'', excluirVarios:true, minVendido:3, topN:20, vista:'sin' },
@@ -432,6 +440,10 @@ const state = {
   // una curva); soloHuecos = sólo los faltantes que caen ENTRE el menor y el mayor que tiene
   // la sucursal (no los extremos); incluirParados = también artículos sin venta en ninguna sucursal.
   filtrosCur:{ soloHuecos:false, incluirParados:false, minTalles:2, unidades:1 },
+  // Vaciar la reserva chica: max = hasta cuántas unidades del artículo (todos los talles
+  // sumados) se considera reserva chica; minSuc = si TODAS las sucursales candidatas ya
+  // tienen esa cantidad del talle, ese talle se deja en el depósito (no se las pasa de stock).
+  filtrosVac:{ max:5, minSuc:3 },
   sortRep:{k:'sugerido',dir:-1}, sortPar:{k:'reserva',dir:-1}, sortCom:{k:'vendido',dir:-1},
 };
 
@@ -724,6 +736,8 @@ function marcarInternos(row){
 function aplicarUnidadesCurva(){
   const R=state.resultado; if(!R||!R.curva) return;
   const f=state.filtrosCur, U=Math.max(1,f.unidades|0);
+  // los artículos que se vacían enteros no entran al reparto de curva: ya se bajan completos
+  const vacIds = state.filtros.vaciar ? new Set(vacRows().map(r=>r.id)) : null;
   // reserva ya comprometida por Reposición, por artículo × talle
   const usoRep={};
   (R.reposicion||[]).forEach(r=>{ Object.entries(r.talles||{}).forEach(([t,d])=>{ const k=r.id+'|'+t; usoRep[k]=(usoRep[k]||0)+((d&&d.s)||0); }); });
@@ -734,6 +748,7 @@ function aplicarUnidadesCurva(){
   R.curva.forEach(row=>{
     row.faltan.forEach(d=>{ d.s=0; d.agotado=false; });
     row.prio=0; row.prioDe=0;
+    if(vacIds && vacIds.has(row.id)) return;
     if(curvaElegible(row)) (porArt[row.id]=porArt[row.id]||[]).push(row);
   });
   Object.entries(porArt).forEach(([id,rows])=>{
@@ -752,6 +767,59 @@ function aplicarUnidadesCurva(){
   R.totales.curva_lineas = R.curva.filter(r=>r.sugerido>0).length;
   R.totales.curva_unidades = R.curva.reduce((a,r)=>a+r.sugerido,0);
 }
+
+/* ---------- Vaciar la reserva chica (regla de Juli 08/09/2026) ----------
+   En CALZADO e INDUMENTARIA, un artículo con muy poca reserva no tiene sentido en el
+   depósito central: conviene repartir lo que queda y que viva en las sucursales. Si el
+   artículo tiene hasta `max` unidades en total (todos los talles sumados) se baja TODO lo
+   que quede después de la reposición normal, repartido de a una unidad por vuelta entre las
+   sucursales candidatas en orden de prioridad (vendido · meses de stock · categoría).
+   Candidatas = las que lo vendieron esta semana o las que lo tienen en stock.
+   EXCEPCIÓN: si TODAS las candidatas ya tienen `minSuc` o más unidades de ese talle, el
+   talle se DEJA en reserva (bajarlo solo les sumaría stock parado) y se marca con un
+   indicador. La excepción necesita la hoja de stock por sucursal. */
+const VAC_TOPE = 20;                       // tope duro de candidatos que se calculan (el umbral de pantalla llega a 10)
+const esVaciable = rubro => /calzado|indumentaria/i.test(stripNN(rubro));
+function aplicarVaciado(){
+  const R=state.resultado; if(!R||!R.vaciado) return;
+  const f=state.filtrosVac, MAX=Math.max(1,f.max|0), MIN=Math.max(1,f.minSuc|0);
+  // reserva ya comprometida por Reposición, por artículo × talle
+  const usoRep={};
+  (R.reposicion||[]).forEach(r=>{ Object.entries(r.talles||{}).forEach(([t,d])=>{ const k=r.id+'|'+t; usoRep[k]=(usoRep[k]||0)+((d&&d.s)||0); }); });
+  const dejados={};                        // id -> [{t,r}] talles que quedan en el depósito
+  const porArt={};
+  R.vaciado.forEach(row=>{ row.talles=[]; row.sugerido=0; row.prio=0; row.prioDe=0;
+    if(row.reservaTotal<=MAX) (porArt[row.id]=porArt[row.id]||[]).push(row); });
+  Object.entries(porArt).forEach(([id,rows])=>{
+    const orden=rows.slice().sort(cmpPrioridad);
+    orden.forEach((r,i)=>{ r.prio=i+1; r.prioDe=orden.length; });
+    Object.entries(rows[0].resTalles||{}).forEach(([t,rq])=>{
+      let disp=Math.max(0, rq-(usoRep[id+'|'+t]||0));
+      if(disp<=0) return;
+      if(rows[0].conStock && orden.every(r=>((r.tallesSuc||{})[t]||0)>=MIN)){
+        (dejados[id]=dejados[id]||[]).push({t, r:rq, min:MIN}); return;   // todas cubiertas: se deja
+      }
+      for(let i=0; disp>0 && i<orden.length*rq+orden.length; i++){
+        const r=orden[i%orden.length];
+        let d=r.talles.find(x=>x.t===t); if(!d){ d={t, r:rq, s:0}; r.talles.push(d); }
+        d.s++; disp--;
+      }
+    });
+    rows.forEach(r=>{ r.talles.sort((a,b)=>cmpTalle(a.t,b.t)); r.sugerido=r.talles.reduce((a,d)=>a+d.s,0); });
+  });
+  R.vacDejados=dejados;
+  R.totales.vac_lineas = R.vaciado.filter(r=>r.sugerido>0).length;
+  R.totales.vac_unidades = R.vaciado.reduce((a,r)=>a+r.sugerido,0);
+  R.totales.vac_dejados = Object.keys(dejados).length;
+}
+// filas del vaciado con unidades a mandar (recalculadas con los parámetros de pantalla)
+function vacRows(){
+  const R=state.resultado; if(!R||!R.vaciado) return [];
+  aplicarVaciado();
+  return R.vaciado.filter(r=>r.sugerido>0);
+}
+// índice id|slug -> fila de vaciado (para fusionarla con la reposición)
+function vacIdx(){ const o={}; vacRows().forEach(r=>{ o[r.id+'|'+r.slug]=r; }); return o; }
 
 function computar(histPrev, histSnaps){
   const fV = state.files.ventas, fR = state.files.reserva, fS = state.files.stock;
@@ -858,6 +926,33 @@ function computar(histPrev, histSnaps){
     });
   }
 
+  // ---- VACIAR LA RESERVA CHICA (calzado e indumentaria) ----
+  // Candidatos: artículos con poca reserva y las sucursales que lo venden o lo tienen.
+  // El reparto fino (umbral y excepción) lo hace aplicarVaciado(), para poder mover los
+  // parámetros desde la pantalla sin volver a procesar el Excel.
+  const vaciado=[];
+  Object.entries(reserva).forEach(([id,R])=>{
+    if(R.total<=0 || R.total>VAC_TOPE || !esVaciable(R.meta.rubro)) return;
+    const V=ventas[id], S0=stock[id];
+    const slugs=new Set();
+    if(V) Object.keys(V.porSuc).forEach(sl=>slugs.add(sl));
+    if(S0) Object.keys(S0.porSuc).forEach(sl=>{ if(S0.porSuc[sl].total>0) slugs.add(sl); });
+    if(!slugs.size) return;                       // nadie lo vende ni lo tiene: queda en reserva parada
+    const m=R.meta, mv=(V&&V.meta)||{};
+    slugs.forEach(slug=>{
+      const sv=(V&&V.porSuc[slug])||null, ss=(S0&&S0.porSuc[slug])||null;
+      vaciado.push({
+        id, slug, sucNombre:(sv&&sv.nombre)||(ss&&ss.nombre)||slug,
+        codigo:m.cod||mv.cod||'', desc:m.desc||mv.desc||'', marca:m.marca||mv.marca||'',
+        rubro:m.rubro||mv.rubro||'', tipo:m.tipo||mv.tipo||'', disc:m.disc||mv.disc||'', genero:m.genero||mv.genero||'',
+        reservaTotal:R.total, resTalles:R.talles, conStock:!!sRows,
+        vendido:sv?sv.total:0, enSucursal:ss?ss.total:0, tallesSuc:ss?ss.talles:{},
+        talles:[], sugerido:0,
+        pr: prioInfo(slug, m.marca||mv.marca||'', m.rubro||mv.rubro||''),
+      });
+    });
+  });
+
   // ---- COMPLETAR CURVA (necesita la hoja de stock por sucursal) ----
   // La sucursal tiene el artículo (stock en ≥1 talle) pero le faltan talles que SÍ hay
   // en la reserva. Una fila por (artículo × sucursal) con la lista de talles faltantes.
@@ -922,9 +1017,10 @@ function computar(histPrev, histSnaps){
   // "notable" = mejor vendido (>=3 u. en la semana), mismo umbral que el filtro por defecto de la vista Compras.
   const notable = c => c.vendido>=3 && noVarios(c);
   return {
-    reposicion, parada, compras, curva, conStock:!!sRows, stockOrigen: fS ? 'archivo' : (sRows ? 'base' : ''), snapshot,
+    reposicion, parada, compras, curva, vaciado, vacDejados:{}, conStock:!!sRows, stockOrigen: fS ? 'archivo' : (sRows ? 'base' : ''), snapshot,
     totales:{
       curva_lineas: 0, curva_unidades: 0,      // los completa aplicarUnidadesCurva()
+      vac_lineas: 0, vac_unidades: 0, vac_dejados: 0,   // los completa aplicarVaciado()
       items_reserva: Object.keys(snapshot).length,
       items_reponibles: new Set(reposicion.map(r=>r.id)).size,
       lineas_reposicion: reposicion.length,
@@ -1024,6 +1120,9 @@ function viewReposicion(){
   const f=state.filtros, fc=state.filtrosCur;
   const rows=reposFiltradas();
   const curvaOn = f.curva && R.conStock;
+  const fv=state.filtrosVac, vacOn = f.vaciar && (R.vaciado||[]).length>0;
+  // talles que quedan en el depósito (todas las sucursales cubiertas), por artículo
+  const dejPorArt = vacOn ? (R.vacDejados||{}) : {};
 
   const base = R.reposicion.concat(curvaOn ? curvaRows() : []);
   const sucList = uniq(base.map(r=>r.sucNombre));
@@ -1044,8 +1143,23 @@ function viewReposicion(){
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk" title="Saca del listado los rubros Varios y Facturación (gift cards, cupones y demás)"><input type="checkbox" id="fVarios" '+(f.excluirVarios?'checked':'')+'> Excluir Varios/Facturación</label></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk" title="Solo las líneas donde la reserva no alcanza para todo lo vendido (los talles en rojo): son las que hay que recomprar a la marca."><input type="checkbox" id="fFalta" '+(f.soloFaltante?'checked':'')+'> Solo con faltante de talle</label></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"'+(R.conStock?'':' title="Subí también el stock por sucursal abierto por talle en «Cargar»" style="opacity:.55"')+'><input type="checkbox" id="fCurva" '+(f.curva?'checked':'')+(R.conStock?'':' disabled')+'> Completar curva de talles'+(R.conStock?'':' <small>(sin stock por sucursal)</small>')+'</label></div>'
+    +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"'+((R.vaciado||[]).length?' title="Calzado e indumentaria con muy poca reserva: se baja todo lo que queda y el artículo deja de vivir en el depósito"':' title="No hay artículos de calzado o indumentaria con reserva chica en esta barrida" style="opacity:.55"')+'><input type="checkbox" id="fVaciar" '+(f.vaciar?'checked':'')+((R.vaciado||[]).length?'':' disabled')+'> Vaciar la reserva chica</label></div>'
     +'<div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="btnCsvRep">⇩ Excel</button></div>'
     +'</div>';
+  if(vacOn){
+    // controles del vaciado: solo cuando el tilde está puesto
+    const T=R.totales||{};
+    html+='<div class="filtros" style="background:#eef3fc;border:1px solid #cfdcf3;border-radius:9px;padding:8px 12px;margin-top:-6px">'
+      +'<div class="fgrp" style="min-width:auto;justify-content:center"><b style="font-family:var(--font-c);color:#1e40af">Vaciar la reserva chica</b></div>'
+      +fsel('Reserva del artículo de hasta','vMax',[3,5,8,10].map(n=>'<option value="'+n+'"'+(n===fv.max?' selected':'')+'>'+n+' unidades</option>').join(''))
+      +fsel('Dejar el talle si todas ya tienen','vMin',[2,3,4,5].map(n=>'<option value="'+n+'"'+(n===fv.minSuc?' selected':'')+'>'+n+' o más</option>').join(''))
+      +'<div class="fgrp" style="flex:1;min-width:220px"><label>&nbsp;</label><div style="font-size:12.5px;color:var(--navy-mid);padding-bottom:8px">'
+      +'<b>'+fmtInt(T.vac_unidades||0)+'</b> unidades en <b>'+fmtInt(T.vac_lineas||0)+'</b> líneas'
+      +((T.vac_dejados||0)?' · <b>'+fmtInt(T.vac_dejados)+'</b> artículos con algún talle que se deja':'')
+      +(R.conStock?'':' · <span style="color:var(--bad)">sin el stock por sucursal no se puede aplicar la excepción: baja todo</span>')
+      +'</div></div>'
+      +'</div>';
+  }
   if(curvaOn){
     // controles de la curva: solo cuando el tilde está puesto
     html+='<div class="filtros" style="background:#eafaf0;border:1px solid #cdeedb;border-radius:9px;padding:8px 12px;margin-top:-6px">'
@@ -1058,6 +1172,7 @@ function viewReposicion(){
   }
   if(!rows.length) return html+'<div class="state"><div class="big-ic">📭</div>Sin candidatos para estos filtros.</div>';
   html+='<div class="card-hs" style="margin:-4px 0 12px"><b>Cada casillero de la columna Talles es un talle</b>: arriba el talle, en el medio y en grande <b>cuántas unidades van</b> de ese talle, y abajo chiquito de dónde sale ese número. <span class="tgx"><span class="txl">41</span><span class="txn">3</span><span class="txr">de 13</span></span> = vendió 3, hay 13 en el depósito, se le mandan las 3. <span class="tgx rec"><span class="txl">41</span><span class="txn">1</span><span class="txr">pedía 3</span></span> = en rojo, la reserva de ese talle <b>no alcanzó</b> para todas las sucursales que lo pidieron y por <b>prioridad</b> le tocó menos (si además la reserva estaba en cero, es señal de <b>recompra a la marca</b>). <b>Prioridad</b> = puesto de la sucursal entre las que piden ese artículo (1 = primera): vendido del artículo ↓, meses de stock en la marca-rubro ↑, categoría (pasá el mouse para ver los tres). En las filas <span class="pill rec">piso medias</span> el número grande es el <b>mínimo por talle</b> (S:12 · M:24 · L:36 · XL:12), no lo vendido.'
+    +(vacOn ? ' Con <b>Vaciar la reserva chica</b> se suman casilleros azules: <span class="tgx vac"><span class="txl">41</span><span class="txn">+2</span><span class="txr">vaciar</span></span> = el artículo tiene '+fv.max+' unidades o menos en todo el depósito, así que se reparte lo que queda entre las sucursales que lo venden o lo tienen (de a una por vuelta, en orden de prioridad) y deja de vivir en la reserva. <span class="tgx off"><span class="txl">43</span><span class="txn">—</span><span class="txr">se deja</span></span> = ese talle NO baja porque todas esas sucursales ya tienen '+fv.minSuc+' o más (bajarlo sería stock parado). Las filas <span class="pill vac">solo vaciado</span> son sucursales que no lo vendieron pero lo tienen en stock.' : '')
     +(curvaOn ? ' Con <b>Completar curva</b> se suman casilleros verdes: <span class="tgx hueco"><span class="txl">41</span><span class="txn">+1</span><span class="txr">no tiene</span></span> = talle que la sucursal <b>no tiene</b> y sí hay en reserva (van +'+fc.unidades+' por talle faltante); <span class="tgx off"><span class="txl">43</span><span class="txn">—</span><span class="txr">agot.</span></span> = la reserva de ese talle se la llevó una sucursal con más prioridad. Las filas <span class="pill curva">solo curva</span> son sucursales que no vendieron el artículo pero lo tienen incompleto.' : '')
     +'</div>';
   const nFalta = rows.filter(faltaEn).length;
@@ -1071,22 +1186,28 @@ function viewReposicion(){
     const tt=Object.entries(r.talles).filter(([t,d])=>d.v>0).map(([t,d])=>talleChip(t,d,piso)).join('');
     const pillPiso = piso?' <span class="pill rec" title="Medias Mateu: para el talle vendido se repone el mínimo (S:12 M:24 L:36 XL:12), aunque haya vendido menos">piso medias</span>':'';
     const pillCurva = r.soloCurva?' <span class="pill curva" title="No vendió el artículo esta semana, pero lo tiene incompleto: solo talles de curva">solo curva</span>':'';
+    const pillVac = r.soloVaciado?' <span class="pill vac" title="No vendió el artículo esta semana, pero lo tiene en stock: recibe parte de la reserva que se vacía">solo vaciado</span>':'';
     const prio = r.prio ? '<span class="pill '+(r.prio===1?'rec':'suc')+'" title="Prioridad '+r.prio+' de '+r.prioDe+' sucursales que piden este artículo · '+esc(prioTxt(r))+'">'+r.prio+' de '+r.prioDe+'</span>' : '—';
     // talles de curva (verde) a continuación de los de reposición
     const ttCurva = (curvaOn && r.curvaFaltan) ? curvaChips(r.curvaFaltan) : '';
-    const sep = (tt && ttCurva) ? '<span style="color:var(--muted-light);margin:0 4px">·</span>' : '';
-    const badgeTitle = (r.curvaU>0) ? ' title="'+fmtInt(r.sugRep||0)+' por venta + '+fmtInt(r.curvaU)+' para completar la curva"' : '';
+    // vaciado: lo que baja de más + los talles que quedan en el depósito porque todas están cubiertas
+    const ttVac = (vacOn && r.vacFaltan) ? vacChips(r.vacFaltan) : '';
+    const ttDej = vacOn ? dejChips(dejPorArt[r.id], fv.minSuc) : '';
+    const extras = [ttCurva, ttVac, ttDej].filter(Boolean).join('');
+    const sep = (tt && extras) ? '<span style="color:var(--muted-light);margin:0 4px">·</span>' : '';
+    const detBadge = [ (r.curvaU>0?fmtInt(r.curvaU)+' para completar la curva':''), (r.vacU>0?fmtInt(r.vacU)+' por vaciar la reserva':'') ].filter(Boolean).join(' + ');
+    const badgeTitle = detBadge ? ' title="'+fmtInt(r.sugRep||0)+' por venta + '+detBadge+'"' : '';
     html+='<tr><td><span class="pill suc">'+esc(r.sucNombre)+'</span></td>'
-      +'<td class="desc" title="'+esc(r.desc)+'">'+esc(r.desc||'—')+pillPiso+pillCurva+(falta?' <span class="pill falta" title="'+(piso?'La reserva no cubre el piso en algún talle':'La reserva no alcanzó en algún talle: recibe menos de lo vendido')+'">⚠ falta</span>':'')+'</td>'
+      +'<td class="desc rep" title="'+esc(r.desc)+'"><span class="dtxt">'+esc(r.desc||'—')+'</span>'+pillPiso+pillCurva+pillVac+(falta?' <span class="pill falta" title="'+(piso?'La reserva no cubre el piso en algún talle':'La reserva no alcanzó en algún talle: recibe menos de lo vendido')+'">⚠ falta</span>':'')+'</td>'
       +'<td class="mono">'+esc(r.codigo||r.id)+'</td><td>'+esc(r.marca)+'</td>'
       +'<td class="num">'+prio+'</td>'
       +'<td class="num mono">'+fmtInt(r.vendido)+'</td><td class="num mono" style="color:var(--muted)">'+fmtInt(r.reservaTotal)+'</td>'
-      +'<td class="num"><span class="sug-badge'+(r.sugerido>0?'':' zero')+'"'+badgeTitle+'>'+fmtInt(r.sugerido)+(r.curvaU>0?' <small style="font-weight:600;opacity:.8">(+'+fmtInt(r.curvaU)+')</small>':'')+'</span></td>'
-      +'<td class="talles">'+(tt||(ttCurva?'':'—'))+sep+ttCurva+'</td></tr>';
+      +'<td class="num"><span class="sug-badge'+(r.sugerido>0?'':' zero')+'"'+badgeTitle+'>'+fmtInt(r.sugerido)+((r.curvaU>0||r.vacU>0)?' <small style="font-weight:600;opacity:.8">(+'+fmtInt((r.curvaU||0)+(r.vacU||0))+')</small>':'')+'</span></td>'
+      +'<td class="talles">'+(tt||(extras?'':'—'))+sep+extras+'</td></tr>';
   });
   html+='</tbody></table></div>';
-  const uCurva = rows.reduce((a,r)=>a+(r.curvaU||0),0);
-  html+='<div class="card-hs" style="margin-top:10px">'+fmtInt(rows.length)+' líneas · '+fmtInt(rows.reduce((a,r)=>a+r.sugerido,0))+' unidades sugeridas'+(uCurva?' (<b>'+fmtInt(uCurva)+'</b> para completar curvas)':'')
+  const uCurva = rows.reduce((a,r)=>a+(r.curvaU||0),0), uVac = rows.reduce((a,r)=>a+(r.vacU||0),0);
+  html+='<div class="card-hs" style="margin-top:10px">'+fmtInt(rows.length)+' líneas · '+fmtInt(rows.reduce((a,r)=>a+r.sugerido,0))+' unidades sugeridas'+(uCurva?' (<b>'+fmtInt(uCurva)+'</b> para completar curvas)':'')+(uVac?' (<b>'+fmtInt(uVac)+'</b> por vaciar la reserva chica)':'')
     +(nFalta?' · <span style="color:var(--bad)"><b>'+fmtInt(nFalta)+'</b> con faltante de talle (reserva no alcanza)</span>':'')+'.</div>';
   return html;
 }
@@ -1262,6 +1383,16 @@ function talleChip(t, d, piso){
     +'<span class="txl">'+esc(t)+'</span><span class="txn">'+d.s+'</span><span class="txr">'+esc(pie)+'</span></span>';
 }
 // chips de la curva de una fila: talles faltantes que se mandan (verde) y los que no (gris)
+// casilleros del vaciado: talles que bajan enteros porque la reserva del artículo es chica
+function vacChips(talles){
+  return (talles||[]).filter(d=>d.s>0).map(d=>'<span class="tgx vac" title="Vaciar reserva: quedan '+d.r+' de este talle en el depósito · se le mandan '+d.s+' a esta sucursal">'
+    +'<span class="txl">'+esc(d.t)+'</span><span class="txn">+'+d.s+'</span><span class="txr">vaciar</span></span>').join('');
+}
+// casilleros de los talles que NO se bajan: todas las sucursales ya están cubiertas
+function dejChips(dej, min){
+  return (dej||[]).map(d=>'<span class="tgx off" title="Se deja en el depósito: todas las sucursales que lo piden ya tienen '+(d.min||min)+' o más de este talle (bajarlo sería stock parado). Quedan '+d.r+' en reserva.">'
+    +'<span class="txl">'+esc(d.t)+'</span><span class="txn">—</span><span class="txr">se deja</span></span>').join('');
+}
 function curvaChips(faltan){
   return (faltan||[]).map(d=>{
     if(d.s>0) return '<span class="tgx hueco" title="Completar curva: la sucursal no tiene el talle '+esc(d.t)+' · en reserva '+d.r+' · se mandan '+d.s+'">'
@@ -1358,7 +1489,7 @@ async function procesarBarrida(){
   try{
     state.resultado=computar(histPrev, histSnaps);
     state.resultado.prioFuentes={ stock: PRIO.stock?('meses de stock '+PRIO.stockMes):'', cats: PRIO.catsOrigen||'' };
-    aplicarUnidadesCurva();
+    aplicarVaciado(); aplicarUnidadesCurva();
     state.resultadoSemana=null;
     render();
     toast('Barrida procesada','ok');
@@ -1370,13 +1501,30 @@ async function guardarBarrida(){
   if(!FIREBASE_DB_URL){ toast('Sin base configurada','err'); return; }
   const R=state.resultado, sem=state.semana;
   // reposición agrupada por slug (para que cada sucursal baje solo lo suyo)
+  // El vaciado de la reserva chica NO va en un nodo aparte: se SUMA a la reposición de cada
+  // sucursal, porque para el local es lo mismo (mercadería que baja del depósito) y así lo
+  // ven sin cambios Indicadores y el Picking. Solo si el tilde estaba puesto.
+  const vacI = state.filtros.vaciar ? vacIdx() : {};
   const repBySlug={};
-  R.reposicion.forEach(r=>{ (repBySlug[r.slug]=repBySlug[r.slug]||[]).push({
-    id:r.id, codigo:r.codigo, desc:r.desc, marca:r.marca, rubro:r.rubro, tipo:r.tipo, disc:r.disc||'', genero:r.genero||'',
-    vendido:r.vendido, reservaTotal:r.reservaTotal, sugerido:r.sugerido,
-    prio:r.prio||0, prioDe:r.prioDe||0, pr:r.pr||null,   // prioridad con la que se repartió la reserva
-    // talles como ARRAY (no objeto): Firebase no admite claves con punto (ej "8.5").
-    talles: Object.entries(r.talles).map(([t,d])=>({t, v:d.v, r:d.r, s:d.s}))
+  R.reposicion.forEach(r=>{
+    const v=vacI[r.id+'|'+r.slug]; if(v) delete vacI[r.id+'|'+r.slug];
+    const talles=Object.entries(r.talles).map(([t,d])=>({t, v:d.v, r:d.r, s:d.s}));
+    if(v) v.talles.forEach(d=>{ const y=talles.find(x=>x.t===d.t); if(y) y.s+=d.s; else talles.push({t:d.t, v:0, r:d.r, s:d.s}); });
+    (repBySlug[r.slug]=repBySlug[r.slug]||[]).push({
+      id:r.id, codigo:r.codigo, desc:r.desc, marca:r.marca, rubro:r.rubro, tipo:r.tipo, disc:r.disc||'', genero:r.genero||'',
+      vendido:r.vendido, reservaTotal:r.reservaTotal, sugerido:r.sugerido+(v?v.sugerido:0),
+      vaciado:v?v.sugerido:0,                            // cuánto de lo que baja es por vaciar la reserva
+      prio:r.prio||0, prioDe:r.prioDe||0, pr:r.pr||null,   // prioridad con la que se repartió la reserva
+      // talles como ARRAY (no objeto): Firebase no admite claves con punto (ej "8.5").
+      talles
+    });
+  });
+  // sucursales que no vendieron el artículo pero lo tienen: reciben solo por el vaciado
+  Object.values(vacI).forEach(v=>{ (repBySlug[v.slug]=repBySlug[v.slug]||[]).push({
+    id:v.id, codigo:v.codigo, desc:v.desc, marca:v.marca, rubro:v.rubro, tipo:v.tipo, disc:v.disc||'', genero:v.genero||'',
+    vendido:v.vendido, reservaTotal:v.reservaTotal, sugerido:v.sugerido, vaciado:v.sugerido, soloVaciado:true,
+    prio:v.prio||0, prioDe:v.prioDe||0, pr:v.pr||null,
+    talles: v.talles.map(d=>({t:d.t, v:0, r:d.r, s:d.s})),
   }); });
   // completar curva, también por slug: solo lo que quedó con unidades a mandar con los
   // parámetros elegidos (unidades por talle, huecos, mínimo de talles, vendió).
@@ -1396,6 +1544,7 @@ async function guardarBarrida(){
       archivo_ventas:(state.files.ventas||{}).archivo||'', archivo_reserva:(state.files.reserva||{}).archivo||'',
       archivo_stock:(state.files.stock||{}).archivo||'',
       curva_param:{ activa:!!state.filtros.curva, unidades:fc.unidades, soloHuecos:fc.soloHuecos, minTalles:fc.minTalles, incluirParados:fc.incluirParados },
+      vaciado_param:{ activa:!!state.filtros.vaciar, max:state.filtrosVac.max, minSuc:state.filtrosVac.minSuc },
       prioFuentes: R.prioFuentes||null,
       totales:R.totales },
     reposicion:repBySlug,
@@ -1429,6 +1578,9 @@ function wireReposicion(){
   wireMulti('fDisc','discs'); wireMulti('fSubrubro','subrubros');
   const q=$('fQ'); if(q) q.oninput=e=>{ f.q=e.target.value; renderDebounce(); };
   const sug=$('fSug'); if(sug) sug.onchange=e=>{ f.soloSugerido=e.target.checked; render(); };
+  const vac=$('fVaciar'); if(vac) vac.onchange=e=>{ f.vaciar=e.target.checked; aplicarVaciado(); aplicarUnidadesCurva(); render(); };
+  const vMax=$('vMax'); if(vMax) vMax.onchange=e=>{ state.filtrosVac.max=parseInt(e.target.value,10)||5; aplicarVaciado(); aplicarUnidadesCurva(); render(); };
+  const vMin=$('vMin'); if(vMin) vMin.onchange=e=>{ state.filtrosVac.minSuc=parseInt(e.target.value,10)||3; aplicarVaciado(); aplicarUnidadesCurva(); render(); };
   const vr=$('fVarios'); if(vr) vr.onchange=e=>{ f.excluirVarios=e.target.checked; render(); };
   const fa=$('fFalta'); if(fa) fa.onchange=e=>{ f.soloFaltante=e.target.checked; render(); };
   // completar curva (tilde + sus controles)
@@ -1519,9 +1671,11 @@ async function abrirBarrida(sem){
       marcarInternos(row); curva.push(row);
     }); });
     const conStock = curva.length>0 || !!(b.meta && b.meta.archivo_stock);
-    state.resultado={ reposicion, parada:b.parada||[], compras:b.compras||null, curva, conStock, snapshot:{}, totales:(b.meta&&b.meta.totales)||{}, sinHistorial:false };
+    state.resultado={ reposicion, parada:b.parada||[], compras:b.compras||null, curva, vaciado:[], vacDejados:{}, conStock, snapshot:{}, totales:(b.meta&&b.meta.totales)||{}, sinHistorial:false };
     if(b.meta && b.meta.curva_param){ const cp=b.meta.curva_param; ['unidades','soloHuecos','minTalles','incluirParados'].forEach(k=>{ if(cp[k]!=null) state.filtrosCur[k]=cp[k]; }); }
     state.filtros.curva = curva.length>0;   // el tilde queda como se guardó
+    // el vaciado ya viene sumado a las filas guardadas: el tilde no tiene nada que recalcular
+    state.filtros.vaciar = false;
     if(b.meta && b.meta.prioFuentes) state.resultado.prioFuentes=b.meta.prioFuentes;
     aplicarUnidadesCurva();
     state.resultadoSemana=sem; state.semana=sem;
@@ -1590,6 +1744,15 @@ function reposFiltradas(){
     Object.values(idx).forEach(c=>rows.push({ id:c.id, slug:c.slug, sucNombre:c.sucNombre, codigo:c.codigo, desc:c.desc, marca:c.marca, rubro:c.rubro, tipo:c.tipo, genero:c.genero, disc:c.disc,
       vendido:c.vendido, reservaTotal:c.reservaTotal, talles:{}, pr:c.pr, prio:c.prio, prioDe:c.prioDe,
       soloCurva:true, sugRep:0, curvaFaltan:c.faltan, curvaU:c.sugerido, sugerido:c.sugerido, tallesSuc:c.tallesSuc }));
+  }
+  if(f.vaciar){
+    // el vaciado se suma a la misma fila: sus talles van a `vacFaltan` y engordan el sugerido
+    const idx=vacIdx();
+    rows=rows.map(r=>{ const c=idx[r.id+'|'+r.slug]; if(!c) return r; delete idx[r.id+'|'+r.slug];
+      return {...r, sugRep:(r.sugRep!=null?r.sugRep:r.sugerido), vacFaltan:c.talles, vacU:c.sugerido, sugerido:r.sugerido+c.sugerido}; });
+    Object.values(idx).forEach(c=>rows.push({ id:c.id, slug:c.slug, sucNombre:c.sucNombre, codigo:c.codigo, desc:c.desc, marca:c.marca, rubro:c.rubro, tipo:c.tipo, genero:c.genero, disc:c.disc,
+      vendido:c.vendido, reservaTotal:c.reservaTotal, talles:{}, pr:c.pr, prio:c.prio, prioDe:c.prioDe,
+      soloVaciado:true, sugRep:0, vacFaltan:c.talles, vacU:c.sugerido, sugerido:c.sugerido }));
   }
   if(f.excluirVarios) rows=rows.filter(r=>!/varios|facturacion/i.test(r.rubro+' '+r.tipo));
   if(f.soloSugerido) rows=rows.filter(r=>r.sugerido>0 || recortadaPorPrio(r));   // las recortadas por el reparto se ven igual
@@ -1705,17 +1868,18 @@ async function exportRepXlsx(){
   if(!rows.length){ toast('No hay filas para exportar','err'); return; }
   // columnas de talle: las que tienen SUGERIDO>0 o un recorte en algún artículo de lo filtrado,
   // más los talles de «Completar curva» que se mandan (si el tilde está puesto).
-  const set=new Set(); rows.forEach(r=>{ Object.entries(r.talles).forEach(([t,d])=>{ if(d.s>0 || (d.v>0&&d.s<d.v)) set.add(t); }); (r.curvaFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); });
+  const set=new Set(); rows.forEach(r=>{ Object.entries(r.talles).forEach(([t,d])=>{ if(d.s>0 || (d.v>0&&d.s<d.v)) set.add(t); }); (r.curvaFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); (r.vacFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); });
   const talles=[...set].sort(cmpTalle);
   const lbl=exportLabels(f.rubro, f.marca, [f.tipoprod, f.discs.join('+'), f.subrubros.join('+')]);
-  const uCurva=rows.reduce((a,x)=>a+(x.curvaU||0),0);
+  const uCurva=rows.reduce((a,x)=>a+(x.curvaU||0),0), uVac=rows.reduce((a,x)=>a+(x.vacU||0),0);
   const curvaS=(row,t)=>{ const d=(row.curvaFaltan||[]).find(x=>x.t===t); return d?d.s:0; };
+  const vacS=(row,t)=>{ const d=(row.vacFaltan||[]).find(x=>x.t===t); return d?d.s:0; };
   await exportPlanilla({
-    hoja:'Reposición', titulo:'REPOSICIÓN '+lbl.rubro, subtitulo:lbl.marca+(uCurva?'  ·  + COMPLETAR CURVA DE TALLES':''),
+    hoja:'Reposición', titulo:'REPOSICIÓN '+lbl.rubro, subtitulo:lbl.marca+(uCurva?'  ·  + COMPLETAR CURVA DE TALLES':'')+(uVac?'  ·  + VACIADO DE RESERVA CHICA':''),
     // sin fila de resumen ni analíticas (Vendido…Categoría): la planilla del depósito lleva solo lo que hay que mandar
     rows, talles,
-    // cantidad a mandar = reposición por venta + talles de curva de esa sucursal
-    celda:(row,t)=>{ const d=row.talles[t]; const sug=(d?d.s:0)+curvaS(row,t); const esFalta=!!(d&&d.v>0&&d.s<d.v); return { val: sug>0?sug:(esFalta?0:null), falta:esFalta }; },
+    // cantidad a mandar = reposición por venta + talles de curva + vaciado de esa sucursal
+    celda:(row,t)=>{ const d=row.talles[t]; const sug=(d?d.s:0)+curvaS(row,t)+vacS(row,t); const esFalta=!!(d&&d.v>0&&d.s<d.v); return { val: sug>0?sug:(esFalta?0:null), falta:esFalta }; },
     derecha:[ {h:'Total',val:r=>r.sugerido,total:true} ],
     archivo:'reposicion'+lbl.file+'-'+state.semana+'.xlsx',
   });

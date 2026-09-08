@@ -958,6 +958,25 @@ Indicadores, ver abajo).
   histórico el tilde vuelve como se guardó. La sucursal lo ve en Indicadores (bloque «talles
   para completar la curva» dentro de «Reposición disponible») y el **Picking** lo suma al armar
   el pick (check «Incluir Completar curva», `curvaDe`).
+- **Vaciar la reserva chica (08/09/2026, pedido de Juli)**: en **calzado e indumentaria**
+  (`esVaciable`), un artículo con muy poca reserva no tiene sentido en el depósito: conviene
+  repartir lo que queda y que viva en las sucursales. Tilde **«Vaciar la reserva chica»** en
+  Reposición (apagado por defecto) + dos controles: «reserva del artículo de hasta N unidades»
+  (default **5**, sumando TODOS los talles) y «dejar el talle si todas ya tienen N o más»
+  (default **3**). Se calcula en `computar` (candidatos: las sucursales que lo **vendieron**
+  esta semana o que lo **tienen en stock**) y el reparto lo hace `aplicarVaciado()` con los
+  parámetros de pantalla: por talle, sobre lo que queda después de la reposición normal, **de
+  a una unidad por vuelta** en orden de `cmpPrioridad`. **Excepción**: si TODAS las candidatas
+  ya tienen `minSuc` o más de ese talle, el talle **se deja** en el depósito (`R.vacDejados`,
+  casillero gris «se deja») para no pasarles el límite de stock del local; necesita la hoja de
+  stock por sucursal (sin ella se baja todo y lo avisa). Los artículos que se vacían salen del
+  reparto de «Completar curva» (bajan enteros igual). En pantalla: casilleros azules
+  «+N · vaciar» y filas <span>solo vaciado</span> (sucursales que no lo vendieron pero lo
+  tienen). En el ⇩ Excel la cantidad del talle = reposición + curva + vaciado. **Al guardar,
+  el vaciado se SUMA a la reposición de cada sucursal** (no va en un nodo aparte: para el local
+  es la misma mercadería que baja, y así lo ven sin cambios Indicadores y el Picking), con el
+  campo `vaciado` por fila y `meta.vaciado_param`. ⚠️ Pendiente que definió Juli: usar la
+  **curva de talles** (velocidad de venta por talle) como criterio adicional.
 - **Ingreso reciente / crónica**: NO hay columna de fecha ni SKU en recepciones, así
   que se resuelve con el **histórico semanal** guardado: un artículo que aparece por
   primera vez en la reserva = *ingreso reciente* (se separa de "parada"); "semanas"
