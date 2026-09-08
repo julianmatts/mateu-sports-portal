@@ -1968,6 +1968,27 @@ Hoy: **20 sucursales, 26 meses (jul-2024 → ago-2026)**. Forma:
   se deduplica comparando el contenido **ordenado por sucursal** (si no, se corre todo un mes).
 - La columna «%» no se copia: se recalcula.
 
+**Informe mensual — `reviews/?pres=YYYY-MM`** (08/09/2026): deck que **Iván manda por mail la
+primera semana de cada mes**. Es **público**, igual que el Reporte Mensual de stock — el
+chequeo de `?pres=` va ANTES del gate de sesión, así lo abre cualquiera desde el mail. Solo
+muestra agregados: no lista los nombres de quienes dejaron reseña (eso queda dentro del
+módulo). Portada con sello + los números del mes + ranking con podio + qué subió y qué bajó
+contra el mes anterior + reseñas negativas + la captación de los últimos 12 meses. Tres
+acciones (no se imprimen): **🖨 Imprimir** (A4, `@media print`), **🔗 Copiar el link** y
+**⧉ Copiar resumen para el mail** (`presTexto`, texto plano listo para pegar). El logo va
+embebido y todo el dibujo es SVG, así que el HTML imprime suelto. En el módulo lo abre el
+botón «📄 Informe del mes», con el mes que se esté mirando.
+
+⚠️ **El mes que se manda suele no tener tickets todavía** (la columna se carga después), y sin
+tickets no hay captación. En ese caso el ranking ordena por **reseñas recibidas** y el informe
+lo aclara; cuando Iván carga los tickets, el mismo link pasa solo a ordenar por captación.
+La constante `MODO` (`'tasa'` | `'vol'`) es la que decide, en `presRender` y en `presTexto`.
+
+**Quién lo ve** (08/09/2026): gerencia, el rol **supervisor** (Cristian — se suma en
+`herramientasEfectivas` junto a evaluaciones/indicadores/capacitaciones/tareas) e **Iván**
+(`capacitaciones@`, que tiene perfil fijo con `soloHerramientas`: su lista es
+`['capacitaciones','reviews']` y el inicio sigue siendo la Academia).
+
 **Lo que el Excel NO trae: el texto de las reseñas.** Solo el nombre de quien dejó la última
 opinión leída. Para ver los comentarios hace falta conectar la **API de Google Business
 Profile** (OAuth + el Place ID de cada sucursal), que queda pendiente. Tampoco hay mapa
