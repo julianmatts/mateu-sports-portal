@@ -861,8 +861,19 @@ async function renderUsuariosView(container){
     return '<select class="sel" multiple size="4" data-herr="'+k+'" style="min-width:150px">'+
       HERRAMIENTAS_LIST.map(h=>'<option value="'+h.id+'"'+(actuales.includes(h.id)?' selected':'')+'>'+h.nombre+'</option>').join('')+
       '</select>'+
-      // Solo para admin: por defecto ve todos los tiles; con el check, únicamente los marcados.
-      (u.rol==='admin' ? '<label style="display:block;margin-top:6px;font-size:12px;color:var(--muted)"><input type="checkbox" data-solo="'+k+'"'+(u.soloHerramientas?' checked':'')+'> Solo estas (no ver todas)</label>' : '');
+      // Solo para admin: por defecto ve todos los tiles aunque acá se marquen algunas;
+      // con el check, únicamente las marcadas. El aviso de abajo dice qué está pasando
+      // hoy con esa cuenta, para que la selección no quede sin efecto sin darse cuenta.
+      (u.rol==='admin'
+        ? '<label style="display:block;margin-top:6px;font-size:12px;color:var(--muted)"><input type="checkbox" data-solo="'+k+'"'+(u.soloHerramientas?' checked':'')+'> Solo estas (si no, ve TODAS igual)</label>'+
+          '<div data-soloest="'+k+'" style="font-size:11px;margin-top:2px">'+soloEstadoHtml(!!u.soloHerramientas)+'</div>'
+        : '');
+  }
+  // Texto de estado del check «Solo estas» (un admin sin el check ve todos los tiles).
+  function soloEstadoHtml(solo){
+    return solo
+      ? '<span style="color:#137a3d">✓ Ve solo las herramientas marcadas</span>'
+      : '<span style="color:var(--red)">⚠ Hoy ve TODAS las herramientas (la selección no se aplica)</span>';
   }
   // Pantalla inicial: a qué herramienta aterriza al entrar (vacío = la del rol).
   function inicioSelectHtml(id, actual, attr){
@@ -923,6 +934,11 @@ async function renderUsuariosView(container){
         '<div class="fld"><label>Si es admin</label><div style="font-size:14px;padding-top:6px"><input type="checkbox" id="nuSolo" style="vertical-align:middle"> Solo las herramientas marcadas (no ver todas)</div></div>'+
       '</div><br><button class="btn btn-primary" id="btnNuevoUsuario">Crear usuario (PIN inicial 1111)</button></div>';
 
+    // El aviso de «hoy ve todas / solo las marcadas» se actualiza al tildar, antes de guardar.
+    body.querySelectorAll('input[data-solo]').forEach(c=> c.addEventListener('change', ()=>{
+      const est = body.querySelector('div[data-soloest="'+c.dataset.solo+'"]');
+      if(est) est.innerHTML = soloEstadoHtml(c.checked);
+    }));
     body.querySelectorAll('button[data-guardar-herr]').forEach(b=> b.addEventListener('click', async ()=>{
       const k = b.dataset.guardarHerr;
       const sel = body.querySelector('select[data-herr="'+k+'"]');
@@ -1573,17 +1589,43 @@ document.addEventListener('click', e=>{
   if(w && w.style.display!=='none' && !w.contains(e.target)) closeNotifPanel();
 });
 
+// Trae del registro de Firebase lo que el ⚙ pudo haber cambiado (rol, herramientas,
+// «solo estas», pantalla inicial, sucursal) y lo aplica a la sesión ya abierta. Antes
+// esos campos se leían SOLO al loguearse: el usuario seguía viendo las herramientas
+// viejas hasta salir y volver a entrar, y parecía que el ⚙ no aplicaba nada.
+// Devuelve true si algo cambió (best-effort: si Firebase no responde, no toca nada).
+async function refrescarSesion(s){
+  let u = null;
+  try{ u = await fetchJSON(FB+'/usuarios/'+firebaseKeyFromEmail(s.email)+'.json'); }catch(e){ return false; }
+  if(!u || !u.email) return false;
+  const fijo = PERFILES_FIJOS[(s.email||'').toLowerCase()];
+  const base = fijo ? Object.assign({}, u, fijo) : u;
+  const herr = ordenarInicio(herramientasEfectivas(base.rol, base.herramientas, base.soloHerramientas), base.inicio);
+  const igual = base.rol===s.rol && (base.inicio||null)===(s.inicio||null) &&
+    !!base.soloHerramientas===!!(s.soloHerramientas) &&
+    (base.sucursal||null)===(s.sucursal||null) && (base.outlet_id||null)===(s.outlet_id||null) &&
+    herr.join('|')===(s.herramientas||[]).join('|');
+  if(igual) return false;
+  s.rol = base.rol; s.inicio = base.inicio||null; s.soloHerramientas = !!base.soloHerramientas;
+  s.sucursal = base.sucursal||null; s.outlet_id = base.outlet_id||null; s.sucursales = base.sucursales||null;
+  s.herramientas = herr;
+  saveSession(s);
+  return true;
+}
+
 // Al cargar: si hay sesión válida, entrar directo
-(function init(){
+(async function init(){
   const s = readSession();
-  if(s && s.email){
-    // Normaliza sesiones ya guardadas (usuarios que quedaron logueados antes de este cambio)
-    const fijo = PERFILES_FIJOS[(s.email||'').toLowerCase()];
-    if(fijo){ Object.assign(s, fijo); }
-    s.herramientas = ordenarInicio(herramientasEfectivas(s.rol, s.herramientas, s.soloHerramientas), s.inicio);
-    saveSession(s);
-    render(s);
-  } else showLogin();
+  if(!s || !s.email){ showLogin(); return; }
+  // Normaliza sesiones ya guardadas (usuarios que quedaron logueados antes de este cambio)
+  const fijo = PERFILES_FIJOS[(s.email||'').toLowerCase()];
+  if(fijo){ Object.assign(s, fijo); }
+  s.herramientas = ordenarInicio(herramientasEfectivas(s.rol, s.herramientas, s.soloHerramientas), s.inicio);
+  saveSession(s);
+  // Antes de entrar (render puede redirigir a la pantalla inicial), traer lo último
+  // del ⚙. Tope de 1,5 s: si Firebase no contesta, se entra con lo que había.
+  await Promise.race([ refrescarSesion(s), new Promise(r=>setTimeout(r, 1500)) ]);
+  render(s);
 })();
 </script>
 <!-- Íconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
