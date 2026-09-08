@@ -4618,8 +4618,8 @@ function msCargaHtml(){
   let html = '<div class="ms-card" style="padding:18px 20px;max-width:920px;margin:0 auto">'+
     '<div style="font-weight:600;font-size:15px;margin-bottom:8px">Actualizar datos de RATIO</div>'+
     '<div style="font-size:13px;color:#5A6072;line-height:1.6;margin-bottom:14px">'+
-      '1. Subí el <b>export mensual de RATIO tal cual sale del sistema</b> (p.ej. «RATIO JULIO.xls», con sus filas de totales y la columna Vtas.cant.): se detecta solo y el mes se <b>suma a los ya publicados</b> (ene–jun + JULIO). También sirve un Excel <b>plano</b> con columnas <b>MES · SUCURSAL · RUBRO · MARCA · SEGMENTO · STOCK · VENTAS</b> (opcional: <b>COMENTARIO</b>), una fila por mes × sucursal × rubro × marca × segmento.<br>'+
-      '2. Revisá el resumen de validación.<br>'+
+      '1. Subí el <b>export mensual de RATIO tal cual sale del sistema</b> (p.ej. «RATIO AGOSTO.xls», con sus filas de totales y la columna Vtas.cant.): se detecta solo y el mes se <b>suma a los ya publicados</b>, sin pisarlos. Los encabezados se buscan en cualquier hoja y en las primeras 30 filas, y da igual cómo se llame la columna de ventas (Vtas.cant. / Vtas. Cant. / Ventas). Si el archivo no trae columna MES, el mes sale del nombre («RATIO AGOSTO.xls»). También sirve un Excel <b>plano</b> con columnas <b>MES · SUCURSAL · RUBRO · MARCA · SEGMENTO · STOCK · VENTAS</b> (opcional: <b>COMENTARIO</b>), una fila por mes × sucursal × rubro × marca × segmento.<br>'+
+      '2. Revisá el resumen de validación. <b>El export tiene que traer el mes completo, con todos los rubros juntos</b>: si sube uno solo (p.ej. Calzado), los demás quedan sin ese mes y el aviso lo dice.<br>'+
       '3. Apretá <b>«Publicar al portal»</b>: sube el archivo al repo y Cloudflare republica solo (~1 min). Plan B: descargá <b>datos-meses-stock.js</b> y reemplazalo a mano en <b>gestion-stock/</b>. Con «Probar en esta sesión» lo ves acá sin publicar nada.<br>'+
       '<span style="color:#8A8FA3">Opcional: una hoja llamada «UMBRALES» con columnas RUBRO · MIN · MAX para cambiar los rangos sanos.</span>'+
     '</div>'+
@@ -4652,26 +4652,80 @@ function msCargaHtml(){
   return html;
 }
 
-function msParseRatioFlat(wb, anio){
+/* Mes deducido del nombre del archivo, para los exports que vienen sin columna
+   MES (p.ej. «RATIO AGOSTO.xls» o «Ratio 2026-08.xlsx»). */
+function msMesDeNombre(fileName){
+  const n = normStr(fileName||'');
+  const porNombre = MS_MES_ORDEN.find(m=> n.indexOf(m)>=0);
+  if(porNombre) return porNombre;
+  let m = /(20\d{2})\s*[-\/ ]?\s*(0[1-9]|1[0-2])(?!\d)/.exec(n);   // 2026-08
+  if(m) return MS_MES_NUM[parseInt(m[2],10)];
+  m = /(?:^|\D)(0[1-9]|1[0-2])\s*[-\/]\s*(20\d{2}|\d{2})(?!\d)/.exec(n); // 08-2026 / 08-26
+  if(m) return MS_MES_NUM[parseInt(m[1],10)];
+  return null;
+}
+
+function msParseRatioFlat(wb, anio, fileName){
   const errores = [];
-  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:true});
-  const ALIAS = {mes:['MES'], suc:['SUCURSAL','SUC','TIENDA','LOCAL'], rubro:['RUBRO'], marca:['MARCA'],
-    seg:['SEGMENTO','SEG'], stock:['STOCK'], ventas:['VENTAS','VENTA','VTAS.CANT.','VTAS.CANT','VTAS CANT.','VTAS'],
-    ratio:['RATIO'], com:['COMENTARIO','COMENTARIOS','OBSERVACION','OBSERVACIONES']};
-  let hIdx = -1, map = null;
-  for(let i=0;i<Math.min(rows.length,10);i++){
-    const cells = (rows[i]||[]).map(v=>normStr(v));
-    const m = {};
-    for(const k in ALIAS){ const j = cells.findIndex(cv=> ALIAS[k].indexOf(cv)>=0); if(j>=0) m[k]=j; }
-    if(m.mes!==undefined && m.suc!==undefined && m.rubro!==undefined && m.marca!==undefined && m.stock!==undefined && m.ventas!==undefined){ hIdx=i; map=m; break; }
+  // Los encabezados se buscan en TODAS las hojas y en las primeras 30 filas, y el
+  // nombre de cada columna se compara sin puntos ni espacios («Vtas. Cant.» =
+  // «VTAS.CANT.» = «Vtas cant»): el export del sistema los cambia seguido.
+  const ALIAS = {
+    mes:['MES','MESES','PERIODO'],
+    suc:['SUCURSAL','SUCURSALES','SUC','TIENDA','LOCAL'],
+    rubro:['RUBRO','RUBROS'],
+    marca:['MARCA','MARCAS'],
+    seg:['SEGMENTO','SEGMENTOS','SEG','GENERO'],
+    stock:['STOCK','STOCKCANT','CANTSTOCK','EXISTENCIA','EXISTENCIAS'],
+    ventas:['VENTAS','VENTA','VTASCANT','CANTVTAS','VTAS','VENTASCANT','UNIDADESVENDIDAS','VENDIDO'],
+    ratio:['RATIO'],
+    com:['COMENTARIO','COMENTARIOS','OBSERVACION','OBSERVACIONES']};
+  const clave = v=> normStr(v).replace(/[.\s]/g,'');
+  const ALIAS_K = {}; for(const k in ALIAS) ALIAS_K[k] = ALIAS[k].map(clave);
+  let rows = null, hIdx = -1, map = null;
+  for(const sn of wb.SheetNames){
+    if(normStr(sn)==='UMBRALES') continue;
+    const rs = XLSX.utils.sheet_to_json(wb.Sheets[sn], {header:1, raw:true});
+    for(let i=0;i<Math.min(rs.length,30);i++){
+      const cells = (rs[i]||[]).map(clave);
+      const m = {};
+      for(const k in ALIAS_K){ const j = cells.findIndex(cv=> cv && ALIAS_K[k].indexOf(cv)>=0); if(j>=0) m[k]=j; }
+      if(m.suc!==undefined && m.rubro!==undefined && m.marca!==undefined && m.stock!==undefined && m.ventas!==undefined){
+        rows = rs; hIdx = i; map = m; break;
+      }
+    }
+    if(map) break;
   }
-  if(!map) return {errorFatal:'No encontré la fila de encabezados. La primera hoja necesita las columnas MES, SUCURSAL, RUBRO, MARCA, STOCK y VENTAS.', errores, comments:[], nFilas:0, nMarcas:0};
+  if(!map){
+    // Diagnóstico: qué hojas y qué encabezados llegaron, para ver por qué no cierra.
+    const diag = wb.SheetNames.map(sn=>{
+      const rs = XLSX.utils.sheet_to_json(wb.Sheets[sn], {header:1, raw:true});
+      const fila = rs.find(r=> Array.isArray(r) && r.some(c=> c!==null && c!==undefined && String(c).trim()!=='')) || [];
+      const txt = fila.slice(0,14).map(c=> String(c===null||c===undefined?'':c).trim()).filter(Boolean).join(' · ');
+      return '«'+sn+'» ('+rs.length+' filas): '+(txt||'vacía');
+    }).join('  |  ');
+    return {errorFatal:'No encontré la fila de encabezados. Hace falta SUCURSAL, RUBRO, MARCA, STOCK y VENTAS (Vtas.cant.) en alguna hoja, en las primeras 30 filas. Lo que leí en el archivo — '+diag,
+      errores, comments:[], nFilas:0, nMarcas:0};
+  }
+  // Sin columna MES el mes sale del nombre del archivo («RATIO AGOSTO.xls»).
+  const mesFijo = map.mes===undefined ? msMesDeNombre(fileName) : null;
+  if(map.mes===undefined && !mesFijo)
+    return {errorFatal:'El archivo no trae columna MES y tampoco pude deducir el mes del nombre («'+(fileName||'sin nombre')+'»). Poné el mes en el nombre del archivo (p.ej. «RATIO AGOSTO.xls») o agregá la columna MES.',
+      errores, comments:[], nFilas:0, nMarcas:0};
+  if(mesFijo) errores.push('El archivo no trae columna MES: tomo '+mesFijo+' del nombre del archivo.');
+  const mesDeFila = row=>{
+    if(map.mes===undefined) return mesFijo;
+    const mn = normStr(row[map.mes]);
+    if(MS_MES_ORDEN.indexOf(mn)>=0) return mn;
+    const num = toNumber(row[map.mes]);
+    return (num>=1 && num<=12) ? MS_MES_NUM[num] : null;
+  };
   // ¿Es el export jerárquico de RATIO (trae filas de totales Marca/Segmento="Total")?
   if(map.seg!==undefined){
     for(let i=hIdx+1;i<rows.length;i++){
       const r = rows[i]||[];
       if(normStr(r[map.marca])==='TOTAL' && normStr(r[map.seg])==='TOTAL')
-        return msParseRatioJer(wb, rows, hIdx, map, anio, errores);
+        return msParseRatioJer(wb, rows, hIdx, map, anio, errores, mesDeFila);
     }
   }
   const mesesSet = new Set(), sucursales = {}, comments = [];
@@ -4679,10 +4733,7 @@ function msParseRatioFlat(wb, anio){
   for(let i=hIdx+1;i<rows.length;i++){
     const row = rows[i]||[];
     if(row.every(v=> v===null||v===undefined||v==='')) continue;
-    let mes = null;
-    const mesN = normStr(row[map.mes]);
-    if(MS_MES_ORDEN.indexOf(mesN)>=0) mes = mesN;
-    else{ const num = toNumber(row[map.mes]); if(num>=1 && num<=12) mes = MS_MES_NUM[num]; }
+    const mes = mesDeFila(row);
     const suc = String(row[map.suc]===undefined||row[map.suc]===null?'':row[map.suc]).trim();
     const rubro = normStr(row[map.rubro]);
     const marca = String(row[map.marca]===undefined||row[map.marca]===null?'':row[map.marca]).trim();
@@ -4754,15 +4805,12 @@ function msParseRatioFlat(wb, anio){
      suc.serie[mes]   = Σ rubro.serie
    Si el archivo no cubre los meses ya publicados (típico: un solo mes), se
    FUSIONA con window.STOCK_DATA en vez de reemplazarlo. */
-function msParseRatioJer(wb, rows, hIdx, map, anio, errores){
+function msParseRatioJer(wb, rows, hIdx, map, anio, errores, mesDeFila){
   const recs = [];
   for(let i=hIdx+1;i<rows.length;i++){
     const row = rows[i]||[];
     if(row.every(v=> v===null||v===undefined||v==='')) continue;
-    let mes = null;
-    const mesN = normStr(row[map.mes]);
-    if(MS_MES_ORDEN.indexOf(mesN)>=0) mes = mesN;
-    else{ const num = toNumber(row[map.mes]); if(num>=1 && num<=12) mes = MS_MES_NUM[num]; }
+    const mes = mesDeFila(row);
     const str = j=> String(row[j]===undefined||row[j]===null?'':row[j]).trim();
     const suc = str(map.suc), rubro = str(map.rubro), marca = str(map.marca), seg = str(map.seg);
     if(!mes || !suc || !rubro || !marca || !seg){ continue; }
@@ -4842,6 +4890,19 @@ function msParseRatioJer(wb, rows, hIdx, map, anio, errores){
       base.meses = MS_MES_ORDEN.filter(m=> previos.indexOf(m)>=0 || mesesArchivo.indexOf(m)>=0);
       data = base;
       fusion = {previos, nuevos: mesesArchivo};
+      // El archivo tiene que traer el mes COMPLETO. Si viene solo un rubro (p.ej. el
+      // export de Calzado solo), los demás quedan sin ese mes y el panel los muestra
+      // «sin dato»: se avisa fuerte en vez de publicar un mes a medias.
+      const rubNuevo = {}, sucNuevo = {}, rubFaltan = [], sucFaltan = [];
+      for(const s2 in sucursales){ sucNuevo[s2] = 1; for(const rb in sucursales[s2].rubros) rubNuevo[rb] = 1; }
+      for(const s2 in prev.sucursales){
+        if(!sucNuevo[s2]) sucFaltan.push(s2);
+        for(const rb in prev.sucursales[s2].rubros) if(!rubNuevo[rb] && rubFaltan.indexOf(rb)<0) rubFaltan.push(rb);
+      }
+      const lblNuevos = mesesArchivo.join(', ');
+      if(rubFaltan.length) errores.push('⚠ El archivo no trae '+rubFaltan.join(' ni ')+
+        ': esos rubros quedan SIN '+lblNuevos+' y en el panel van a figurar «sin dato». Subí el export del mes con TODOS los rubros juntos.');
+      if(sucFaltan.length) errores.push('⚠ Sucursales que no vienen en el archivo y quedan sin '+lblNuevos+': '+sucFaltan.join(', ')+'.');
       // comentarios previos se conservan (con sus ids, por las respuestas de
       // Firebase); los de un mes re-subido se reemplazan por los del archivo
       comments = prevCom.filter(c=> mesesArchivo.indexOf(c.mes)<0);
@@ -4910,7 +4971,7 @@ function msCargaLeer(f){
   reader.onload = e=>{
     try{
       const wb = XLSX.read(e.target.result, {type:'array'});
-      MS._carga = Object.assign({fileName:f.name, anio}, msParseRatioFlat(wb, anio));
+      MS._carga = Object.assign({fileName:f.name, anio}, msParseRatioFlat(wb, anio, f.name));
     }catch(err){
       MS._carga = {fileName:f.name, anio, errorFatal:'No pude leer el archivo: '+err.message};
     }

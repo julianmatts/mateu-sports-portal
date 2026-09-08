@@ -301,7 +301,14 @@ Año/Mes/Sucursal/Rubro/Marca/Segmento/Stock/Ventas/Ratio + Comentarios Encargad
 sistema tal cual (p.ej. `RATIO JULIO.xls`, formato jerárquico con filas de
 totales y columna `Vtas.cant.`) en la pantalla «Actualizar datos» del módulo:
 el uploader lo detecta solo, lo parsea con las reglas del generador y **fusiona**
-el mes nuevo con los ya publicados (no los pisa). Publica con el botón
+el mes nuevo con los ya publicados (no los pisa). El lector es tolerante (08/09/2026):
+busca los encabezados en **cualquier hoja** y en las **primeras 30 filas**, compara los
+nombres de columna sin puntos ni espacios (`Vtas.cant.` = `Vtas. Cant.` = `Ventas`), y si
+el archivo no trae columna **MES** lo deduce del nombre («RATIO AGOSTO.xls», `msMesDeNombre`).
+Cuando no encuentra los encabezados, el error **lista las hojas y los encabezados que leyó**
+en vez de un mensaje genérico. ⚠️ El export tiene que traer el **mes completo con todos los
+rubros**: si sube uno solo (p.ej. el de Calzado), los demás quedan sin ese mes y figuran «sin
+dato» — el resumen de la carga lo avisa en ámbar. Publica con el botón
 **«Publicar al portal»**: commitea `datos-meses-stock.js` a `main` vía la API de
 GitHub (token fine-grained de Juli, solo ese repo, Contents RW, guardado en
 localStorage `gs_github_token` de su navegador) y Cloudflare deploya solo.
