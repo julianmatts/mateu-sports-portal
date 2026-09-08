@@ -138,20 +138,24 @@ tbody tr:hover td{background:#f8f9fe}
 .pill.falta{background:#fef2f2;color:#b91c1c}
 .pill.curva{background:#eafaf0;color:#127a3a}
 .talles{font-size:12px;color:var(--muted);font-family:var(--font-c)}
-.talles .tg{display:inline-flex;align-items:baseline;margin:1px 10px 1px 0;white-space:nowrap}
-.talles .tl{color:var(--navy);font-weight:700;margin-right:4px}
-.talles .tv{color:var(--navy);font-weight:700}
-.talles .tsep{color:var(--muted-light);margin:0 1px}
-.talles .tr{color:var(--muted)}
-.talles .tg.falta .tl,.talles .tg.falta .tv,.talles .tg.falta .tr{color:var(--bad)}
-.talles .tas{margin-left:3px;color:#127a3a;font-weight:800}   /* → lo que recibe tras el reparto */
-.talles .falta{color:var(--bad);font-weight:700}
+/* Un casillero por talle: arriba el talle, en grande CUÁNTAS unidades van, abajo el
+   porqué (cuántas hay en reserva, o cuántas pedía si no alcanzó). Rediseñado el
+   08/09/2026: antes era una línea "41 1/13" en la que no se sabía qué era cada número. */
+.tgx{display:inline-flex;flex-direction:column;align-items:stretch;text-align:center;vertical-align:top;
+  min-width:46px;margin:2px 5px 2px 0;border:1px solid #e2e8f3;border-radius:8px;overflow:hidden;background:#fff}
+.tgx .txl{background:#eef2fb;color:var(--navy);font-family:var(--font-c);font-size:11px;font-weight:700;
+  letter-spacing:.4px;padding:1px 6px;border-bottom:1px solid #e2e8f3;white-space:nowrap}
+.tgx .txn{font-family:var(--font-b);font-size:15px;font-weight:800;color:#127a3a;line-height:1.15;padding-top:2px;font-variant-numeric:tabular-nums}
+.tgx .txr{font-family:var(--font-c);font-size:9.5px;font-weight:600;color:var(--muted-light);padding:0 4px 2px;white-space:nowrap}
+.tgx.rec{border-color:#f3c9c9}                        /* la reserva no alcanzó: recibe menos de lo que pidió */
+.tgx.rec .txl{background:#fdeaea;color:var(--bad);border-bottom-color:#f3c9c9}
+.tgx.rec .txn,.tgx.rec .txr{color:var(--bad)}
+.tgx.hueco{border-color:#bfe6cf}                      /* completar curva: talle que la sucursal no tiene */
+.tgx.hueco .txl{background:#eafaf0;color:#127a3a;border-bottom-color:#bfe6cf}
+.tgx.off{opacity:.55}
+.tgx.off .txn{color:var(--muted-light);font-size:12px;padding-top:4px}
 .sug-badge{display:inline-block;min-width:34px;padding:2px 9px;border-radius:20px;background:#eafaf0;color:#127a3a;font-weight:800;font-variant-numeric:tabular-nums}
 .sug-badge.zero{background:#f1f4fa;color:var(--muted-light)}
-/* completar curva: talle faltante que se manda (verde) / faltante que no se manda (gris) */
-.talles .tg.hueco{background:#eafaf0;border-radius:6px;padding:0 5px}
-.talles .tg.hueco .tl,.talles .tg.hueco .tv{color:#127a3a}
-.talles .tg.ya{opacity:.5}
 .kpi.cur{border-left:4px solid #127a3a}
 .lnk{border:0;background:none;color:var(--navy-mid);font-family:var(--font-c);font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;padding:0 2px}
 .filechip small{color:var(--muted);font-weight:400}
@@ -419,7 +423,7 @@ const state = {
   histKeys:[],                           // lunes con barrida guardada
   // curva = tilde «Completar curva de talles» de Reposición: fusiona en cada fila los talles
   // que la sucursal no tiene y sí hay en reserva (y suma filas de sucursales que solo tienen curva)
-  filtros:{ suc:'', rubro:'', marca:'', subrubros:[], tipoprod:'', q:'', soloSugerido:true, excluirVarios:true, soloFaltante:false, curva:false },
+  filtros:{ suc:'', rubro:'', marca:'', discs:[], subrubros:[], tipoprod:'', q:'', soloSugerido:true, excluirVarios:true, soloFaltante:false, curva:false },
   mselOpen:null,   // panel multi-select abierto (se conserva entre renders)
   filtrosPar:{ rubro:'', marca:'', q:'', excluirVarios:true, soloCronica:false },
   filtrosCom:{ rubro:'', marca:'', q:'', excluirVarios:true, minVendido:3, topN:20, vista:'sin' },
@@ -463,7 +467,10 @@ function detectarCols(matrix){
     rubro: find(h=>h==='rubro'||h.startsWith('rubro')),
     marca: find(h=>h==='marca'),
     disc:  find(h=>h.includes('disciplina')),
-    gen:   find(h=>h.includes('genero')),
+    // El sistema llama «Subrubro» a la columna del género (02-HOMBRE / 03-DAMA) y
+    // «Grupo 1» al tipo de producto (CALZADO ADULTO). La disciplina (CASUAL, RUNNING,
+    // FUTBOL 11) es su propia columna: hasta el 08/09/2026 se tomaba como subrubro.
+    gen:   find(h=>h.includes('genero')||h.includes('subrubro')),
     tipo:  find(h=>h.includes('tipo')||h.includes('grupo')),
     desc:  find(h=>h.includes('descrip')||h==='articulo'||h.startsWith('articulo')),
     id:    find(h=>h.includes('id item')||h==='item'||h==='id'),
@@ -473,7 +480,9 @@ function detectarCols(matrix){
   // es "Sucursal", el orden de columnas es fijo → completamos por posición SOLO
   // las que no se detectaron por nombre (así no se pisan los alias correctos).
   if(cols.suc===0){
-    const POS = { rubro:1, marca:2, disc:3, gen:4, tipo:5, desc:6, id:7, cod:8 };
+    // Sucursal · Rubro · Marca · Grupo 1 (tipo) · Disciplina · Subrubro (género) ·
+    // Articulo · Id Item · Codigo de barras
+    const POS = { rubro:1, marca:2, tipo:3, disc:4, gen:5, desc:6, id:7, cod:8 };
     for(const k in POS){ if(cols[k]<0) cols[k]=POS[k]; }
   }
   // Talles = columnas a la derecha de CODIGO BARRAS con encabezado no vacío.
@@ -515,7 +524,7 @@ function detectarColsPosicional(matrix){
     if(c0 && NAME2SLUG[c0]){ esVentas=true; break; }
   }
   const cols = esVentas
-    ? { suc:0, rubro:1, marca:2, disc:3, gen:4, tipo:5, desc:6, id:7, cod:8 }
+    ? { suc:0, rubro:1, marca:2, tipo:3, disc:4, gen:5, desc:6, id:7, cod:8 }
     : { suc:-1, rubro:0, marca:1, tipo:2, disc:3, gen:4, desc:5, id:6, cod:7 };
   const talles=[];
   for(let j=talleStart;j<matrix[headerIdx].length;j++){
@@ -674,8 +683,9 @@ function filasDeHoja(f){
       meta:{
         rubro:String(row[f.cols.rubro]||'').trim(),
         marca:String(row[f.cols.marca]||'').trim(),
-        tipo: f.cols.tipo>=0?String(row[f.cols.tipo]||'').trim():'',    // subrubro
-        genero: f.cols.gen>=0?String(row[f.cols.gen]||'').trim():'',
+        tipo: f.cols.tipo>=0?String(row[f.cols.tipo]||'').trim():'',    // «Grupo 1»: CALZADO ADULTO…
+        disc: f.cols.disc>=0?String(row[f.cols.disc]||'').trim():'',    // CASUAL, RUNNING, FUTBOL 11…
+        genero: f.cols.gen>=0?String(row[f.cols.gen]||'').trim():'',    // «Subrubro»: 02-HOMBRE, 03-DAMA…
         desc: String(row[f.cols.desc]||'').trim(),
         cod:  f.cols.cod>=0?String(row[f.cols.cod]||'').trim():'',
       },
@@ -806,7 +816,7 @@ function computar(histPrev, histSnaps){
           id, slug, sucNombre:S.nombre,
           codigo:R.meta.cod||V.meta.cod||'', desc:R.meta.desc||V.meta.desc||'',
           marca:R.meta.marca||V.meta.marca||'', rubro:R.meta.rubro||V.meta.rubro||'', tipo:R.meta.tipo||V.meta.tipo||'',
-          genero:R.meta.genero||V.meta.genero||'',
+          genero:R.meta.genero||V.meta.genero||'', disc:R.meta.disc||V.meta.disc||'',
           vendido:S.total, reservaTotal:R.total, sugerido, talles:detTalles, pisoMedias:media,
           pr: prioInfo(slug, R.meta.marca||V.meta.marca||'', R.meta.rubro||V.meta.rubro||''),
         });
@@ -874,7 +884,7 @@ function computar(histPrev, histSnaps){
           id, slug, sucNombre:S.nombre,
           codigo:R.meta.cod||S0.meta.cod||'', desc:R.meta.desc||S0.meta.desc||'',
           marca:R.meta.marca||S0.meta.marca||'', rubro:R.meta.rubro||S0.meta.rubro||'', tipo:R.meta.tipo||S0.meta.tipo||'',
-          genero:R.meta.genero||S0.meta.genero||'',
+          genero:R.meta.genero||S0.meta.genero||'', disc:R.meta.disc||S0.meta.disc||'',
           enSucursal:S.total, nTalles:Object.keys(S.talles).length,
           vendido:(V&&V.porSuc[slug])?V.porSuc[slug].total:0, ventaCadena:V?V.totalCadena:0, reservaTotal:R.total,
           tallesSuc:S.talles, faltan, sugerido:0,
@@ -1003,7 +1013,9 @@ function wireCarga(){
 }
 function kpi(k,v,cls){ return '<div class="kpi '+(cls||'')+'"><div class="k">'+esc(k)+'</div><div class="v mono">'+v+'</div></div>'; }
 
-function opts(list, sel){ return '<option value="">Todas</option>'+list.map(x=>'<option value="'+esc(x)+'"'+(x===sel?' selected':'')+'>'+esc(x)+'</option>').join(''); }
+// El sistema rotula los valores con un prefijo numérico (02-CALZADO, 03-DAMA): en pantalla
+// se muestran sin él; el valor del filtro sigue siendo el original del Excel.
+function opts(list, sel){ return '<option value="">Todas</option>'+list.map(x=>'<option value="'+esc(x)+'"'+(x===sel?' selected':'')+'>'+esc(stripNN(x))+'</option>').join(''); }
 function uniq(arr){ return [...new Set(arr.filter(Boolean))].sort(cmp); }
 
 function viewReposicion(){
@@ -1018,16 +1030,19 @@ function viewReposicion(){
   const sucBySlug={}; base.forEach(r=>sucBySlug[r.slug]=r.sucNombre);
   let html=cargaHtml()+'<div class="sec-head"><div><h1>Reposición posible</h1>'
     +'<div class="sub">Artículos con reserva en depósito que la sucursal vendió la última semana. A reponer = lo vendido por talle. Si la reserva de un talle <b>no alcanza para todas</b> las sucursales que lo piden, se reparte por <b>prioridad</b>: 1) la que más vendió el artículo, 2) la que menos meses de stock tiene en la marca-rubro, 3) la de mayor categoría; el resto queda recortado (en rojo). <b>Medias Mateu Sports</b>: por cada talle vendido se repone el mínimo del talle (S:12 · M:24 · L:36 · XL:12), aunque haya vendido menos.</div></div></div>';
+  // las opciones de tipo/disciplina/subrubro se acotan al rubro y la marca ya elegidos
+  const rb = r => (!f.rubro||r.rubro===f.rubro)&&(!f.marca||r.marca===f.marca);
   html+='<div class="filtros">'
     +fsel('Sucursal', 'fSuc', '<option value="">Todas</option>'+sucList.map(n=>{ const slug=Object.keys(sucBySlug).find(k=>sucBySlug[k]===n); return '<option value="'+esc(slug)+'"'+(slug===f.suc?' selected':'')+'>'+esc(n)+'</option>'; }).join(''))
     +fsel('Rubro','fRubro',opts(uniq(R.reposicion.map(r=>r.rubro)),f.rubro))
     +fsel('Marca','fMarca',opts(uniq(R.reposicion.filter(r=>!f.rubro||r.rubro===f.rubro).map(r=>r.marca)),f.marca))
-    +fmulti('Subrubro','fSubrubro',uniq(R.reposicion.filter(r=>(!f.rubro||r.rubro===f.rubro)&&(!f.marca||r.marca===f.marca)).map(r=>r.genero)),f.subrubros)
-    +fsel('Tipo de producto','fTipoProd',opts(uniq(R.reposicion.filter(r=>(!f.rubro||r.rubro===f.rubro)&&(!f.marca||r.marca===f.marca)).map(r=>r.tipo)),f.tipoprod))
+    +fsel('Tipo de producto','fTipoProd',opts(uniq(R.reposicion.filter(rb).map(r=>r.tipo)),f.tipoprod))
+    +fmulti('Disciplina','fDisc',uniq(R.reposicion.filter(rb).map(r=>r.disc)),f.discs)
+    +fmulti('Subrubro','fSubrubro',uniq(R.reposicion.filter(rb).map(r=>r.genero)),f.subrubros)
     +'<div class="fgrp" style="flex:1;min-width:150px"><label for="fQ">Buscar</label><input class="inp" id="fQ" placeholder="artículo, código, ID…" value="'+esc(f.q)+'" style="width:100%"></div>'
-    +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fSug" '+(f.soloSugerido?'checked':'')+'> Solo con talle disponible</label></div>'
-    +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fVarios" '+(f.excluirVarios?'checked':'')+'> Excluir Varios/Facturación</label></div>'
-    +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fFalta" '+(f.soloFaltante?'checked':'')+'> Solo con faltante de talle</label></div>'
+    +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk" title="Oculta las líneas donde no hay nada para bajar: el artículo tiene reserva, pero no en los talles que la sucursal vendió. Las recortadas por prioridad se siguen viendo."><input type="checkbox" id="fSug" '+(f.soloSugerido?'checked':'')+'> Solo lo que se puede mandar</label></div>'
+    +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk" title="Saca del listado los rubros Varios y Facturación (gift cards, cupones y demás)"><input type="checkbox" id="fVarios" '+(f.excluirVarios?'checked':'')+'> Excluir Varios/Facturación</label></div>'
+    +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk" title="Solo las líneas donde la reserva no alcanza para todo lo vendido (los talles en rojo): son las que hay que recomprar a la marca."><input type="checkbox" id="fFalta" '+(f.soloFaltante?'checked':'')+'> Solo con faltante de talle</label></div>'
     +'<div class="fgrp" style="min-width:auto"><label>&nbsp;</label><label class="chk"'+(R.conStock?'':' title="Subí también el stock por sucursal abierto por talle en «Cargar»" style="opacity:.55"')+'><input type="checkbox" id="fCurva" '+(f.curva?'checked':'')+(R.conStock?'':' disabled')+'> Completar curva de talles'+(R.conStock?'':' <small>(sin stock por sucursal)</small>')+'</label></div>'
     +'<div class="fgrp" style="min-width:auto;margin-left:auto"><label>&nbsp;</label><button class="btn btn-outline btn-sm" id="btnCsvRep">⇩ Excel</button></div>'
     +'</div>';
@@ -1042,26 +1057,24 @@ function viewReposicion(){
       +'</div>';
   }
   if(!rows.length) return html+'<div class="state"><div class="big-ic">📭</div>Sin candidatos para estos filtros.</div>';
-  html+='<div class="card-hs" style="margin:-4px 0 12px"><b>Stock reserva</b> = lo que hay en el depósito central · <span class="sug-badge" style="padding:1px 7px">A reponer</span> = lo que conviene bajar a la sucursal (verde). En Talles, <span class="talles"><span class="tg"><span class="tl">M</span><span class="tv">3</span><span class="tsep">/</span><span class="tr">24</span></span></span> = <b>vendido</b> (navy) / <b>reserva</b> (gris). En rojo <span class="talles"><span class="tg falta"><span class="tl">M</span><span class="tv">3</span><span class="tsep">/</span><span class="tr">1</span><span class="tas">→1</span></span></span> = la reserva del talle no alcanzó para todas las sucursales que lo pidieron: <b>→ lo que le toca</b> a esta según la prioridad (a la marca probablemente haya que <b>reponer</b>). <b>Prioridad</b> = puesto de la sucursal entre las que piden ese artículo (1 = primera): vendido del artículo ↓, meses de stock en la marca-rubro ↑, categoría (pasá el mouse para ver los tres). En filas <span class="pill rec">piso medias</span> los talles muestran <b>objetivo mínimo / reserva</b>.'
-    +(curvaOn ? ' Con <b>Completar curva</b>: <span class="talles"><span class="tg hueco"><span class="tl">41</span><span class="tv">+1</span><span class="tsep">/</span><span class="tr">6</span></span></span> = talle que la sucursal <b>no tiene</b> (y sí hay en reserva): se manda <b>+'+fc.unidades+'</b> por talle faltante; <span class="talles"><span class="tg ya"><span class="tl">43</span><span class="tv">agot.</span></span></span> = la reserva de ese talle se fue a una sucursal con más prioridad. Las filas <span class="pill curva">solo curva</span> son sucursales que no vendieron el artículo pero lo tienen incompleto.' : '')
+  html+='<div class="card-hs" style="margin:-4px 0 12px"><b>Cada casillero de la columna Talles es un talle</b>: arriba el talle, en el medio y en grande <b>cuántas unidades van</b> de ese talle, y abajo chiquito de dónde sale ese número. <span class="tgx"><span class="txl">41</span><span class="txn">3</span><span class="txr">de 13</span></span> = vendió 3, hay 13 en el depósito, se le mandan las 3. <span class="tgx rec"><span class="txl">41</span><span class="txn">1</span><span class="txr">pedía 3</span></span> = en rojo, la reserva de ese talle <b>no alcanzó</b> para todas las sucursales que lo pidieron y por <b>prioridad</b> le tocó menos (si además la reserva estaba en cero, es señal de <b>recompra a la marca</b>). <b>Prioridad</b> = puesto de la sucursal entre las que piden ese artículo (1 = primera): vendido del artículo ↓, meses de stock en la marca-rubro ↑, categoría (pasá el mouse para ver los tres). En las filas <span class="pill rec">piso medias</span> el número grande es el <b>mínimo por talle</b> (S:12 · M:24 · L:36 · XL:12), no lo vendido.'
+    +(curvaOn ? ' Con <b>Completar curva</b> se suman casilleros verdes: <span class="tgx hueco"><span class="txl">41</span><span class="txn">+1</span><span class="txr">no tiene</span></span> = talle que la sucursal <b>no tiene</b> y sí hay en reserva (van +'+fc.unidades+' por talle faltante); <span class="tgx off"><span class="txl">43</span><span class="txn">—</span><span class="txr">agot.</span></span> = la reserva de ese talle se la llevó una sucursal con más prioridad. Las filas <span class="pill curva">solo curva</span> son sucursales que no vendieron el artículo pero lo tienen incompleto.' : '')
     +'</div>';
   const nFalta = rows.filter(faltaEn).length;
   html+='<div class="tbl-wrap"><table><thead><tr>'
     +th('Sucursal','sucNombre')+th('Artículo','desc')+th('Código','codigo')+th('Marca','marca')
-    +thNum('Prioridad','prio')+thNum('Vendido','vendido')+thNum('Stock reserva','reservaTotal')+thNum('A reponer','sugerido')+'<th class="noord">Talles (vend/reserva → recibe)</th>'
+    +thNum('Prioridad','prio')+thNum('Vendido','vendido')+thNum('Stock reserva','reservaTotal')+thNum('A reponer','sugerido')+'<th class="noord">Talles · cuántas unidades van de cada uno</th>'
     +'</tr></thead><tbody>';
   rows.forEach(r=>{
     const falta=faltaEn(r);
     const piso=r.pisoMedias;
-    const tt=Object.entries(r.talles).filter(([t,d])=>d.v>0)
-      .map(([t,d])=>{ const rec=d.s<d.v; return '<span class="tg'+(rec?' falta':'')+'"'+(rec?' title="Pidió '+d.v+', reserva del talle '+d.r+': por prioridad recibe '+d.s+'"':'')+'><span class="tl">'+esc(t)+'</span><span class="tv">'+d.v+'</span><span class="tsep">/</span><span class="tr">'+d.r+'</span>'+(rec?'<span class="tas">→'+d.s+'</span>':'')+'</span>'; }).join('');
+    const tt=Object.entries(r.talles).filter(([t,d])=>d.v>0).map(([t,d])=>talleChip(t,d,piso)).join('');
     const pillPiso = piso?' <span class="pill rec" title="Medias Mateu: para el talle vendido se repone el mínimo (S:12 M:24 L:36 XL:12), aunque haya vendido menos">piso medias</span>':'';
     const pillCurva = r.soloCurva?' <span class="pill curva" title="No vendió el artículo esta semana, pero lo tiene incompleto: solo talles de curva">solo curva</span>':'';
-    const tallesTitle = piso?' title="objetivo mínimo / reserva por talle vendido → lo que recibe"':'';
     const prio = r.prio ? '<span class="pill '+(r.prio===1?'rec':'suc')+'" title="Prioridad '+r.prio+' de '+r.prioDe+' sucursales que piden este artículo · '+esc(prioTxt(r))+'">'+r.prio+' de '+r.prioDe+'</span>' : '—';
     // talles de curva (verde) a continuación de los de reposición
     const ttCurva = (curvaOn && r.curvaFaltan) ? curvaChips(r.curvaFaltan) : '';
-    const sep = (tt && ttCurva) ? '<span class="tsep" style="margin:0 6px">·</span>' : '';
+    const sep = (tt && ttCurva) ? '<span style="color:var(--muted-light);margin:0 4px">·</span>' : '';
     const badgeTitle = (r.curvaU>0) ? ' title="'+fmtInt(r.sugRep||0)+' por venta + '+fmtInt(r.curvaU)+' para completar la curva"' : '';
     html+='<tr><td><span class="pill suc">'+esc(r.sucNombre)+'</span></td>'
       +'<td class="desc" title="'+esc(r.desc)+'">'+esc(r.desc||'—')+pillPiso+pillCurva+(falta?' <span class="pill falta" title="'+(piso?'La reserva no cubre el piso en algún talle':'La reserva no alcanzó en algún talle: recibe menos de lo vendido')+'">⚠ falta</span>':'')+'</td>'
@@ -1069,7 +1082,7 @@ function viewReposicion(){
       +'<td class="num">'+prio+'</td>'
       +'<td class="num mono">'+fmtInt(r.vendido)+'</td><td class="num mono" style="color:var(--muted)">'+fmtInt(r.reservaTotal)+'</td>'
       +'<td class="num"><span class="sug-badge'+(r.sugerido>0?'':' zero')+'"'+badgeTitle+'>'+fmtInt(r.sugerido)+(r.curvaU>0?' <small style="font-weight:600;opacity:.8">(+'+fmtInt(r.curvaU)+')</small>':'')+'</span></td>'
-      +'<td class="talles"'+tallesTitle+'>'+(tt||(ttCurva?'':'—'))+sep+ttCurva+'</td></tr>';
+      +'<td class="talles">'+(tt||(ttCurva?'':'—'))+sep+ttCurva+'</td></tr>';
   });
   html+='</tbody></table></div>';
   const uCurva = rows.reduce((a,r)=>a+(r.curvaU||0),0);
@@ -1235,13 +1248,28 @@ function curvaRows(){
 }
 // índice id|slug -> fila de curva (para fusionarla con la reposición)
 function curvaIdx(){ const o={}; curvaRows().forEach(r=>{ o[r.id+'|'+r.slug]=r; }); return o; }
+// Casillero de un talle en la columna Talles: talle arriba, unidades a mandar en grande,
+// y abajo el porqué (cuántas hay en reserva; si no alcanzó, cuántas pedía).
+// d = {v: lo pedido (vendido, o el mínimo en las medias), r: reserva del talle, s: lo que recibe}.
+function talleChip(t, d, piso){
+  const rec = d.s < d.v;                       // la reserva no alcanzó para todas las que lo piden
+  const pedia = piso ? 'mínimo '+d.v : 'pedía '+d.v;
+  const pie = rec ? pedia : 'de '+d.r;
+  const tip = rec
+    ? 'Talle '+t+' · '+(piso?'mínimo por talle ':'vendió ')+d.v+' · en reserva '+d.r+(d.r>0?' (repartidas por prioridad)':' (sin stock en el depósito)')+' · le tocan '+d.s
+    : 'Talle '+t+' · '+(piso?'mínimo por talle ':'vendió ')+d.v+' · en reserva '+d.r+' · se mandan '+d.s;
+  return '<span class="tgx'+(rec?' rec':'')+'" title="'+esc(tip)+'">'
+    +'<span class="txl">'+esc(t)+'</span><span class="txn">'+d.s+'</span><span class="txr">'+esc(pie)+'</span></span>';
+}
 // chips de la curva de una fila: talles faltantes que se mandan (verde) y los que no (gris)
 function curvaChips(faltan){
   return (faltan||[]).map(d=>{
-    if(d.s>0) return '<span class="tg hueco" title="Completar curva: la sucursal no tiene el '+esc(d.t)+' · reserva '+d.r+' · se mandan '+d.s+'"><span class="tl">'+esc(d.t)+'</span><span class="tv">+'+d.s+'</span><span class="tsep">/</span><span class="tr">'+d.r+'</span></span>';
+    if(d.s>0) return '<span class="tgx hueco" title="Completar curva: la sucursal no tiene el talle '+esc(d.t)+' · en reserva '+d.r+' · se mandan '+d.s+'">'
+      +'<span class="txl">'+esc(d.t)+'</span><span class="txn">+'+d.s+'</span><span class="txr">no tiene</span></span>';
     if(d.ya) return '';   // ya está en los talles de reposición de esta misma fila
     const why = d.agotado ? 'la reserva del talle se fue a las sucursales con más prioridad' : 'extremo de la curva (filtro «solo huecos internos»)';
-    return '<span class="tg ya" title="Completar curva: falta el '+esc(d.t)+' · '+why+'"><span class="tl">'+esc(d.t)+'</span><span class="tv">'+(d.agotado?'agot.':'·')+'</span></span>';
+    return '<span class="tgx off" title="Completar curva: falta el talle '+esc(d.t)+' · '+why+'">'
+      +'<span class="txl">'+esc(d.t)+'</span><span class="txn">—</span><span class="txr">'+(d.agotado?'agot.':'no va')+'</span></span>';
   }).join('');
 }
 
@@ -1269,12 +1297,12 @@ function fsel(label,id,inner){ return '<div class="fgrp"><label for="'+id+'">'+e
 // es "Todas" y destildar una (p.ej. sacar NIÑO para achicar la lista de talles)
 function fmulti(label, id, opciones, sel){
   const n=sel.length;
-  const txt = !n ? 'Todas' : (n===1 ? sel[0] : n+' de '+opciones.length);
+  const txt = !n ? 'Todas' : (n===1 ? stripNN(sel[0]) : n+' de '+opciones.length);
   let pop;
   if(!opciones.length){
-    pop='<div class="msel-empty">Esta barrida se guardó sin el dato de género. Se completa solo con la <b>próxima barrida</b> que cargues (el cruce nuevo ya lo trae).</div>';
+    pop='<div class="msel-empty">Esta barrida se guardó sin este dato. Se completa solo con la <b>próxima barrida</b> que cargues (el cruce nuevo ya lo trae).</div>';
   } else {
-    pop=opciones.map(o=>'<label class="msel-it"><input type="checkbox" value="'+esc(o)+'"'+(sel.includes(o)?' checked':'')+'> '+esc(o)+'</label>').join('')
+    pop=opciones.map(o=>'<label class="msel-it"><input type="checkbox" value="'+esc(o)+'"'+(sel.includes(o)?' checked':'')+'> '+esc(stripNN(o))+'</label>').join('')
       +'<div class="msel-acc"><button type="button" data-acc="todas">Marcar todas</button><button type="button" data-acc="limpiar">Limpiar</button></div>';
   }
   return '<div class="fgrp"><label>'+esc(label)+'</label><details class="msel" id="'+id+'"'+(state.mselOpen===id?' open':'')+'>'
@@ -1344,7 +1372,7 @@ async function guardarBarrida(){
   // reposición agrupada por slug (para que cada sucursal baje solo lo suyo)
   const repBySlug={};
   R.reposicion.forEach(r=>{ (repBySlug[r.slug]=repBySlug[r.slug]||[]).push({
-    id:r.id, codigo:r.codigo, desc:r.desc, marca:r.marca, rubro:r.rubro, tipo:r.tipo,
+    id:r.id, codigo:r.codigo, desc:r.desc, marca:r.marca, rubro:r.rubro, tipo:r.tipo, disc:r.disc||'', genero:r.genero||'',
     vendido:r.vendido, reservaTotal:r.reservaTotal, sugerido:r.sugerido,
     prio:r.prio||0, prioDe:r.prioDe||0, pr:r.pr||null,   // prioridad con la que se repartió la reserva
     // talles como ARRAY (no objeto): Firebase no admite claves con punto (ej "8.5").
@@ -1356,7 +1384,7 @@ async function guardarBarrida(){
   // Picking ven la curva únicamente cuando se decidió mandarla.
   const curBySlug={};
   (state.filtros.curva ? curvaRows() : []).forEach(r=>{ (curBySlug[r.slug]=curBySlug[r.slug]||[]).push({
-    id:r.id, codigo:r.codigo, desc:r.desc, marca:r.marca, rubro:r.rubro, tipo:r.tipo, genero:r.genero||'',
+    id:r.id, codigo:r.codigo, desc:r.desc, marca:r.marca, rubro:r.rubro, tipo:r.tipo, disc:r.disc||'', genero:r.genero||'',
     enSucursal:r.enSucursal, nTalles:r.nTalles, vendido:r.vendido, reservaTotal:r.reservaTotal, sugerido:r.sugerido,
     prio:r.prio||0, prioDe:r.prioDe||0, pr:r.pr||null,                                        // puesto entre las sucursales del artículo (vendido · meses de stock · categoría)
     talles: r.faltan.filter(d=>d.s>0).map(d=>({t:d.t, r:d.r, s:d.s})),                       // faltantes a mandar
@@ -1398,7 +1426,7 @@ function wireReposicion(){
   const f=state.filtros;
   const bind=(id,key)=>{ const el=$(id); if(el) el.onchange=e=>{ f[key]=e.target.value; if(key==='rubro') f.marca=''; render(); }; };
   bind('fSuc','suc'); bind('fRubro','rubro'); bind('fMarca','marca'); bind('fTipoProd','tipoprod');
-  wireMulti('fSubrubro','subrubros');
+  wireMulti('fDisc','discs'); wireMulti('fSubrubro','subrubros');
   const q=$('fQ'); if(q) q.oninput=e=>{ f.q=e.target.value; renderDebounce(); };
   const sug=$('fSug'); if(sug) sug.onchange=e=>{ f.soloSugerido=e.target.checked; render(); };
   const vr=$('fVarios'); if(vr) vr.onchange=e=>{ f.excluirVarios=e.target.checked; render(); };
@@ -1559,7 +1587,7 @@ function reposFiltradas(){
     const idx=curvaIdx();
     rows=rows.map(r=>{ const c=idx[r.id+'|'+r.slug]; if(!c) return r; delete idx[r.id+'|'+r.slug];
       return {...r, sugRep:r.sugerido, curvaFaltan:c.faltan, curvaU:c.sugerido, sugerido:r.sugerido+c.sugerido, tallesSuc:c.tallesSuc}; });
-    Object.values(idx).forEach(c=>rows.push({ id:c.id, slug:c.slug, sucNombre:c.sucNombre, codigo:c.codigo, desc:c.desc, marca:c.marca, rubro:c.rubro, tipo:c.tipo, genero:c.genero,
+    Object.values(idx).forEach(c=>rows.push({ id:c.id, slug:c.slug, sucNombre:c.sucNombre, codigo:c.codigo, desc:c.desc, marca:c.marca, rubro:c.rubro, tipo:c.tipo, genero:c.genero, disc:c.disc,
       vendido:c.vendido, reservaTotal:c.reservaTotal, talles:{}, pr:c.pr, prio:c.prio, prioDe:c.prioDe,
       soloCurva:true, sugRep:0, curvaFaltan:c.faltan, curvaU:c.sugerido, sugerido:c.sugerido, tallesSuc:c.tallesSuc }));
   }
@@ -1569,6 +1597,7 @@ function reposFiltradas(){
   if(f.suc) rows=rows.filter(r=>r.slug===f.suc);
   if(f.rubro) rows=rows.filter(r=>r.rubro===f.rubro);
   if(f.marca) rows=rows.filter(r=>r.marca===f.marca);
+  if(f.discs.length) rows=rows.filter(r=>f.discs.includes(r.disc||''));
   if(f.subrubros.length) rows=rows.filter(r=>f.subrubros.includes(r.genero||''));
   if(f.tipoprod) rows=rows.filter(r=>r.tipo===f.tipoprod);
   if(f.q){ const q=f.q.toLowerCase(); rows=rows.filter(r=>(r.desc+' '+r.codigo+' '+r.id+' '+r.marca).toLowerCase().includes(q)); }
@@ -1678,7 +1707,7 @@ async function exportRepXlsx(){
   // más los talles de «Completar curva» que se mandan (si el tilde está puesto).
   const set=new Set(); rows.forEach(r=>{ Object.entries(r.talles).forEach(([t,d])=>{ if(d.s>0 || (d.v>0&&d.s<d.v)) set.add(t); }); (r.curvaFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); });
   const talles=[...set].sort(cmpTalle);
-  const lbl=exportLabels(f.rubro, f.marca, [f.subrubros.join('+'), f.tipoprod]);
+  const lbl=exportLabels(f.rubro, f.marca, [f.tipoprod, f.discs.join('+'), f.subrubros.join('+')]);
   const uCurva=rows.reduce((a,x)=>a+(x.curvaU||0),0);
   const curvaS=(row,t)=>{ const d=(row.curvaFaltan||[]).find(x=>x.t===t); return d?d.s:0; };
   await exportPlanilla({

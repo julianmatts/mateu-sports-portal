@@ -871,10 +871,27 @@ Indicadores, ver abajo).
   autodetecta cuál es cuál por los encabezados. Cruce por **`ID ITEM`**, abierto por
   talle. ⚠️ La hoja de reserva trae una columna final **`Total`** (suma de la fila):
   se excluye de los talles a propósito; si se contara, **duplicaría el stock**.
+  **Columnas descriptivas (corregido 08/09/2026)**: el export real es `Sucursal · Rubro ·
+  Marca · Grupo 1 · Disciplina · Subrubro · Articulo · Id Item · Codigo de barras · talles`
+  (la reserva, igual pero sin `Sucursal`). El sistema llama **«Grupo 1»** al tipo de producto
+  (CALZADO ADULTO), **«Disciplina»** a CASUAL/RUNNING/FUTBOL 11 y **«Subrubro»** al género
+  (02-HOMBRE, 03-DAMA). Hasta el 08/09 el mapa posicional estaba corrido y el filtro
+  «Subrubro» mostraba disciplinas; ahora hay **un filtro por cada uno** (Tipo de producto ·
+  Disciplina · Subrubro, los dos últimos multi-selección) y los valores se muestran sin el
+  prefijo numérico (`opts`/`fmulti` aplican `stripNN`; el valor real no cambia). La hoja
+  «reporte stock global» rotula la columna Marca con el nombre de la marca filtrada
+  («Puma»): por eso el respaldo posicional sigue haciendo falta.
 - **Salida = dos alertas por sucursal**: **Reposición** (artículo con reserva Y venta
   en una sucursal → sugerido por talle = `mín(vendido, reserva)`; los talles donde
   `vendido > reserva` van en **rojo** + pill ⚠ falta en el artículo = reserva no
   alcanza, señal de recompra a la marca; filtro "Solo con faltante de talle").
+  La columna **Talles** es un **casillero por talle** (`talleChip`, rediseñada 08/09/2026:
+  antes era la línea «41 1/13», en la que no se sabía qué era cada número): arriba el talle,
+  en grande **cuántas unidades van** y abajo el porqué («de 13» = lo que hay en reserva;
+  en rojo «pedía 3» = la reserva no alcanzó y por prioridad le tocó menos). Los talles de
+  «Completar curva» usan el mismo casillero en verde («+1 · no tiene»). El tilde
+  **«Solo lo que se puede mandar»** (ex «Solo con talle disponible») oculta las líneas sin
+  nada para bajar: hay reserva del artículo pero no en los talles que la sucursal vendió.
   Botón **⇩ Excel** (las tres pestañas exportan): estilo ExcelJS como el OC de
   Managment — membrete, header navy, autofiltro, freeze. La de **Reposición** replica
   la planilla física del depósito ("REPOSICIÓN CALZADO / ADIDAS"): título dinámico
