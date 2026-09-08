@@ -210,6 +210,14 @@
       { ic:'📬', t:'Avisos y ayuda', d:'Todo lo que requiere tu respuesta (solicitudes de compensatorios, semanas del calendario sin confirmar) te llega también a la Bandeja de mensajes del Portal: abrila desde el botón «Menú» de arriba a la izquierda. El logo del header vuelve al Portal. Este recorrido queda siempre disponible en el botón «?» de abajo a la derecha.' }
     ]},
 
+    logistica: { icono:'🚚', nombre:'Envíos e Ingresos', pasos:[
+      { ic:'🚚', t:'Qué es', d:'El tablero de logística: cuántas unidades salieron del depósito central hacia cada sucursal y cuántas ingresaron al depósito, mes a mes, abiertas por rubro, subrubro, disciplina y marca.' },
+      { ic:'🔍', t:'Filtros encadenados', d:'Elegí una o varias sucursales, meses, rubros, subrubros, disciplinas o marcas: todos los números y gráficos se recalculan al instante y cada filtro solo ofrece las opciones que quedan con los demás. «Limpiar filtros» vuelve a ver todo.' },
+      { ic:'📊', t:'Envíos e ingresos', d:'Arriba, los envíos: unidades por sucursal, distribución por rubro, evolución por mes, top de marcas, disciplinas y subrubros. Abajo, la recepción del depósito: enviado vs. ingresado, e ingresos por rubro, subrubro y mes.' },
+      { ic:'📋', t:'Detalle y Excel', d:'Al pie está el detalle artículo por artículo (buscá por código, ID ITEM o nombre) con lo que ingresó al depósito del mismo artículo ese mes. «⇩ Excel» descarga el detalle filtrado y un resumen por sucursal, mes, rubro y marca.' },
+      { ic:'⇧', t:'Cargar el mes nuevo', d:'«⇧ Cargar export» recibe el Excel o CSV del sistema: uno de envíos a sucursales y otro de ingresos al depósito (Sucursal · Mes · Rubro · Subrubro · Disciplina · Marca · Código · ID ITEM · Artículo · Cantidad). Cada mes del archivo reemplaza lo guardado de ese mes; los demás quedan como están.' },
+    ]},
+
     tareas: { icono:'✅', nombre:'Tareas de la Sucursal', pasos:[
       { ic:'✅', t:'Qué es', d:'Las tareas operativas del local en un solo lugar, en cuatro pestañas: Cambio de precios, Sectores de marcas, Limpieza y Vidrieras. Todo queda registrado con quién lo hizo, cuándo y, donde corresponde, la foto de antes y la de después.' },
       { ic:'👤', t:'Decí quién sos', d:'La cuenta es de la sucursal: escribí tu nombre en «Yo soy» (arriba, se recuerda en este dispositivo) para que lo que marques quede firmado por vos.', roles:['sucursal','outlet'] },

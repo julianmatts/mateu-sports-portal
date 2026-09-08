@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Envíos e Ingresos · Mateu Sports</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0B1527;--navy-mid:#1a2f55;--navy-soft:#13203a;--steel:#4a5f8a;
+  --red:#CC0000;--red-soft:#ff3b3b;--red-dark:#8b1a1a;
+  --white:#fff;--off:#f5f7fc;--muted:#6B7A99;--muted-light:#b0bcd4;
+  --card:#fff;--border:#dce3f0;--grid:#edf0f5;
+  --ok:#16a34a;--warn:#d97706;--bad:#dc2626;
+  --font-d:'Bebas Neue',sans-serif;--font-c:'Barlow Condensed',sans-serif;--font-b:'Barlow',sans-serif;
+  --shadow:0 1px 4px rgba(11,21,39,.08);--shadow-md:0 8px 30px rgba(11,21,39,.18);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--off);color:var(--navy);font-family:var(--font-b);min-height:100vh}
+img,svg{max-width:100%}
+button{font-family:inherit}
+
+/* ===== HERO (título del módulo) ===== */
+.hero{background:linear-gradient(135deg,var(--navy),var(--navy-soft));color:#fff;padding:18px 22px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.hero h1{font-family:var(--font-d);font-size:28px;letter-spacing:1.5px;line-height:1;font-weight:400}
+.hero .sub{font-family:var(--font-c);font-size:13px;color:var(--muted-light);margin-top:5px;letter-spacing:.3px}
+.hero .acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.badge{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);padding:8px 12px;border-radius:8px;font-family:var(--font-c);font-size:12px;font-weight:600;letter-spacing:.5px;white-space:nowrap}
+.btn{height:36px;border:0;border-radius:7px;padding:0 14px;font-family:var(--font-c);font-size:13px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;cursor:pointer;background:var(--navy);color:#fff;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn.red{background:var(--red)}
+.btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.35);color:#fff}
+.btn.sec{background:#eef2f8;color:var(--navy)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn:hover:not(:disabled){filter:brightness(1.12)}
+
+main{max-width:1500px;margin:0 auto;padding:16px 22px 60px}
+
+/* ===== FILTROS ===== */
+.filters{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:var(--shadow);display:grid;grid-template-columns:repeat(6,minmax(140px,1fr)) auto;gap:10px;align-items:end}
+.filters .help{grid-column:1/-1;font-size:11px;color:var(--muted);margin-bottom:-2px}
+.lbl{font-family:var(--font-c);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:5px}
+
+/* multi-select propio (chips) */
+.msel{position:relative}
+.msel-btn{width:100%;height:38px;border:1px solid #d8e0ea;border-radius:8px;background:#fff;color:var(--navy);text-align:left;padding:0 30px 0 10px;font-family:var(--font-b);font-size:13px;cursor:pointer;position:relative;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msel-btn:after{content:'';position:absolute;right:12px;top:14px;width:7px;height:7px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg)}
+.msel-btn.on{border-color:var(--navy);background:#eef2f8;font-weight:600}
+.msel.open .msel-btn{border-color:var(--red)}
+.msel-pop{display:none;position:absolute;left:0;top:calc(100% + 4px);min-width:100%;width:max-content;max-width:320px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-md);z-index:50;padding:8px}
+.msel.open .msel-pop{display:block}
+.msel-pop input{width:100%;height:32px;border:1px solid var(--border);border-radius:6px;padding:0 9px;font-family:var(--font-b);font-size:13px;outline:none}
+.msel-pop input:focus{border-color:var(--red)}
+.msel-acts{display:flex;gap:10px;padding:6px 2px;font-family:var(--font-c);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.6px}
+.msel-acts a{color:var(--navy);cursor:pointer;text-decoration:none}
+.msel-acts a:hover{color:var(--red)}
+.msel-list{max-height:240px;overflow:auto}
+.msel-list label{display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:13px;cursor:pointer;border-radius:5px;white-space:nowrap}
+.msel-list label:hover{background:var(--off)}
+.msel-list input{accent-color:var(--red);width:15px;height:15px;margin:0}
+.msel-list .n{margin-left:auto;color:var(--muted);font-size:11px;font-family:var(--font-c)}
+
+/* ===== KPIs ===== */
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:14px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
+.kpi{padding:14px 16px;position:relative;overflow:hidden}
+.kpi:after{content:'';position:absolute;right:-26px;top:-26px;width:90px;height:90px;border-radius:50%;background:rgba(204,0,0,.06)}
+.kpi .acc{height:3px;width:36px;background:var(--red);border-radius:3px;margin-bottom:8px}
+.kpi .t{font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.kpi .v{font-family:var(--font-d);font-size:34px;line-height:1;color:var(--navy);margin-top:6px;letter-spacing:.5px}
+.kpi .s{font-size:11px;color:var(--muted);margin-top:4px;font-family:var(--font-c)}
+
+/* ===== SECCIONES / PANELES ===== */
+.sec-title{margin:24px 0 10px;font-family:var(--font-d);font-size:22px;letter-spacing:1.5px;color:var(--navy);display:flex;align-items:center;gap:10px}
+.sec-title:after{content:'';flex:1;height:1px;background:var(--border)}
+.grid{display:grid;grid-template-columns:1.25fr .95fr;gap:14px;margin-top:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+.panel{padding:14px 16px 12px;min-height:340px}
+.panelhead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+.panel h2{font-family:var(--font-c);font-size:15px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--navy)}
+.panel .mini{width:230px}
+.chartbox{height:300px;position:relative}
+.empty{padding:40px 20px;text-align:center;color:var(--muted);font-size:14px}
+.empty b{display:block;font-family:var(--font-d);font-size:24px;letter-spacing:1px;color:var(--navy);margin-bottom:6px}
+
+/* ===== TABLA ===== */
+.tablepanel{margin-top:14px;padding:14px 16px}
+.tablehead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.tablehead .count{font-size:11px;color:var(--muted);margin-top:3px;font-family:var(--font-c)}
+.search{width:300px;max-width:100%}
+.search input{width:100%;height:36px;border:1px solid #d8e0ea;border-radius:8px;padding:0 10px;font-family:var(--font-b);font-size:13px;outline:none}
+.search input:focus{border-color:var(--red)}
+.tbl-wrap{overflow:auto;max-height:440px;border:1px solid var(--grid);border-radius:8px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--navy);color:#fff;text-align:left;padding:9px 8px;position:sticky;top:0;z-index:1;font-family:var(--font-c);font-weight:600;letter-spacing:.6px;text-transform:uppercase;font-size:11px;white-space:nowrap}
+td{padding:7px 8px;border-bottom:1px solid var(--grid);white-space:nowrap}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+th.num{text-align:right}
+tr:hover td{background:#fafbfd}
+.pager{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--muted);font-family:var(--font-c)}
+.pager button{border:1px solid #d8e0ea;background:#fff;border-radius:6px;padding:5px 10px;cursor:pointer;color:var(--navy)}
+.pager button:disabled{opacity:.4;cursor:default}
+
+/* ===== ESTADO / TOAST ===== */
+.state{padding:60px 20px;text-align:center;color:var(--muted);font-family:var(--font-c);font-size:15px}
+.spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:sp .8s linear infinite;margin:0 auto 12px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--navy);color:#fff;padding:10px 16px;border-radius:8px;font-family:var(--font-c);font-size:14px;opacity:0;pointer-events:none;transition:.25s;z-index:200;box-shadow:var(--shadow-md);max-width:90vw}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.err{background:var(--bad)}
+.banner{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:10px 14px;font-size:13px;margin-top:12px}
+
+/* ===== MODAL DE CARGA ===== */
+.modal-bg{position:fixed;inset:0;background:rgba(11,21,39,.55);display:none;align-items:center;justify-content:center;z-index:120;padding:16px}
+.modal-bg.show{display:flex}
+.modal{background:#fff;border-radius:14px;width:760px;max-width:100%;max-height:92vh;overflow:auto;box-shadow:var(--shadow-md)}
+.modal-h{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.modal-h h3{font-family:var(--font-d);font-size:22px;letter-spacing:1px;font-weight:400}
+.modal-x{background:none;border:0;font-size:22px;cursor:pointer;color:var(--muted);line-height:1}
+.modal-b{padding:16px 20px}
+.modal-f{padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;align-items:center}
+.drops{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.drop{border:2px dashed var(--border);border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:.15s;background:#fafbfd}
+.drop:hover,.drop.over{border-color:var(--red);background:#fff5f5}
+.drop.ok{border-style:solid;border-color:var(--ok);background:#f0fdf4}
+.drop .ic{font-size:22px}
+.drop .t{font-family:var(--font-c);font-size:15px;font-weight:700;letter-spacing:.5px;margin-top:4px}
+.drop .d{font-size:12px;color:var(--muted);margin-top:4px}
+.drop .f{font-size:12px;color:var(--ok);font-weight:600;margin-top:6px;word-break:break-all}
+.drop input{display:none}
+.opts{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:14px 0 6px;font-size:13px}
+.opts label{display:flex;align-items:center;gap:6px}
+.opts input[type=number]{width:80px;height:32px;border:1px solid var(--border);border-radius:6px;padding:0 8px;font-family:var(--font-b)}
+.prev{margin-top:12px}
+.prev h4{font-family:var(--font-c);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:10px 0 6px}
+.prev table td,.prev table th{font-size:12px}
+.prev .warn{color:var(--warn);font-size:12px;margin-top:6px}
+.prev .bad{color:var(--bad);font-size:12px;margin-top:6px}
+.note{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5}
+.pill{display:inline-block;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:2px 8px;border-radius:20px;background:#eef2f8;color:var(--navy)}
+.pill.ok{background:#dcfce7;color:#166534}
+.pill.new{background:#fef3c7;color:#92400e}
+
+@media(max-width:1100px){.filters{grid-template-columns:repeat(3,1fr)}.kpis{grid-template-columns:repeat(3,1fr)}.grid,.grid2{grid-template-columns:1fr}}
+@media(max-width:650px){main{padding:10px 10px 50px}.hero{padding:14px}.filters{grid-template-columns:1fr 1fr}.kpis{grid-template-columns:1fr 1fr}.kpi .v{font-size:28px}.panel .mini,.search{width:100%}.drops{grid-template-columns:1fr}.panel{min-height:0}}
+@media print{.hero .acts,.filters,.pager,.search,#tutBtn{display:none!important}.chartbox{break-inside:avoid}}
+</style>
+<script src="../shared/marca.js"></script>
+<script src="../shared/iconos.js" defer></script>
+<script src="../shared/header.js" defer></script>
+<script src="../shared/tutorial.js" defer></script>
+</head>
+<body>
+
+<!-- Header unificado del shell (shared/header.js). Stubs ocultos que el módulo sigue escribiendo. -->
+<div hidden aria-hidden="true"><span id="whoName"></span><span id="whoRole"></span><button id="salir"></button></div>
+
+<div class="hero">
+  <div>
+    <h1>Envíos e Ingresos</h1>
+    <div class="sub" id="heroSub">Abastecimiento a las sucursales, recepción del depósito y mix de producto</div>
+  </div>
+  <div class="acts">
+    <span class="badge" id="status">Cargando…</span>
+    <button class="btn ghost" id="btnExcel" title="Descargar el detalle filtrado">⇩ Excel</button>
+    <button class="btn red" id="btnCargar">⇧ Cargar export</button>
+  </div>
+</div>
+
+<main>
+  <div id="app"><div class="state"><div class="spinner"></div>Cargando los envíos e ingresos…</div></div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<!-- ===== Modal: cargar export del sistema ===== -->
+<div class="modal-bg" id="modalCarga">
+  <div class="modal">
+    <div class="modal-h"><h3>Cargar export del sistema</h3><button class="modal-x" id="mcX">×</button></div>
+    <div class="modal-b">
+      <div class="drops">
+        <label class="drop" id="dropEnv">
+          <div class="ic">🚚</div><div class="t">Envíos a sucursales</div>
+          <div class="d">Excel o CSV con Sucursal · Mes · Rubro · Subrubro · Disciplina · Marca · Código · ID ITEM · Artículo · Cantidad</div>
+          <div class="f" id="fEnv"></div>
+          <input type="file" id="fileEnv" accept=".xlsx,.xls,.csv">
+        </label>
+        <label class="drop" id="dropIng">
+          <div class="ic">📥</div><div class="t">Ingresos al depósito</div>
+          <div class="d">Mismas columnas, con la cantidad como «Ingresado» (la sucursal es el depósito)</div>
+          <div class="f" id="fIng"></div>
+          <input type="file" id="fileIng" accept=".xlsx,.xls,.csv">
+        </label>
+      </div>
+      <div class="opts">
+        <label>Año de los meses <input type="number" id="anio" min="2020" max="2100"></label>
+        <span style="font-size:12px;color:var(--muted)">Si el archivo trae una fecha completa o el mes con año, se usa esa y este campo no aplica.</span>
+      </div>
+      <div class="prev" id="prevCarga"></div>
+      <div class="note">Cada mes del archivo <b>reemplaza</b> lo guardado para ese mes y ese tipo (envíos o ingresos); los otros meses quedan como estaban. Las filas «Total» y las que no tienen mes se descartan. También podés arrastrar los archivos sobre los recuadros.</div>
+    </div>
+    <div class="modal-f">
+      <span id="mcInfo" style="font-size:12px;color:var(--muted);margin-right:auto"></span>
+      <button class="btn sec" id="mcCancel">Cancelar</button>
+      <button class="btn red" id="mcSave" disabled>💾 Guardar en el portal</button>
+    </div>
+  </div>
+</div>
+
+<!-- Chart.js (gráficos) + SheetJS (leer/escribir Excel), ambos por CDN, sin build -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+/* ============================================================
+   Envíos e Ingresos — dashboard de logística del Portal.
+   Pantalla inicial de logistica@ y deposito@. Replica el «Dashboard
+   Gerencial — Envíos e Ingresos» (informe de junio-julio-agosto 2026)
+   con datos vivos: unidades enviadas del depósito a cada sucursal e
+   ingresos al depósito, por mes, rubro, subrubro, disciplina y marca.
+   Los datos viven en Firebase (recepciones-mateu, nodo `logistica/`),
+   un nodo por mes, y se actualizan subiendo el export del sistema.
+   Lee la sesión del Portal (localStorage), sin login propio.
+   ============================================================ */
+'use strict';
+const $ = id => document.getElementById(id);
+
+/* ---------- Firebase ----------
+   Reusa la base recepciones-mateu (reglas abiertas), nodo aparte `logistica/`.
+   Árbol: logistica/meses/<YYYY-MM> = { meta:{envios:{…}, ingresos:{…}},
+          envios:[[suc,rubro,sub,disc,marca,cod,id,art,q],…], ingresos:[[…]] }
+          logistica/ultimo = 'YYYY-MM' */
+const FIREBASE_DB_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
+const ROOT = 'logistica';
+const COLS = ['suc','rubro','sub','disc','marca','cod','id','art','q'];
+
+/* ---------- sesión ---------- */
+const SESSION_KEY = 'mateu_portal_session';
+function readSession(){ try{ const s=localStorage.getItem(SESSION_KEY); return s?JSON.parse(s):null; }catch(e){ return window.__sess||null; } }
+const SESSION = readSession();
+if(!SESSION || !SESSION.rol){ location.replace('../'); }
+const puedeVer = SESSION && (SESSION.rol==='admin' || (SESSION.herramientas||[]).includes('logistica'));
+if(SESSION && SESSION.rol && !puedeVer){ location.replace('../'); }
+if(SESSION){ $('whoName').textContent = SESSION.nombre || SESSION.email || ''; $('whoRole').textContent = SESSION.rol || ''; }
+$('salir').addEventListener('click', ()=>{ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} location.replace('../'); });
+
+/* ---------- utilidades ---------- */
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const MES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const fmt = n => new Intl.NumberFormat('es-AR').format(Math.round(Number(n)||0));
+const pct = (v,t) => t ? (v/t*100).toFixed(1).replace('.',',')+'%' : '0,0%';
+function ymLabel(ym){ const [y,m]=ym.split('-'); return MESES[+m-1]+' '+y; }
+function ymCorto(ym){ const [y,m]=ym.split('-'); return MES_CORTO[+m-1]+' '+y.slice(2); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(msg, err){ const t=$('toast'); t.textContent=msg; t.className='toast show'+(err?' err':''); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'), err?4500:2600); }
+function norm(s){ return String(s==null?'':s).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]+/g,' ').trim(); }
+
+/* ---------- datos ---------- */
+let ENV = [];   // envíos: {suc,ym,rubro,sub,disc,marca,cod,id,art,q}
+let ING = [];   // ingresos al depósito (suc = depósito), mismo formato
+let META = {};  // por ym: {envios:{…}, ingresos:{…}}
+let MESES_YM = []; // meses cargados, ordenados
+
+function filaObj(a, ym){
+  const o = {ym};
+  COLS.forEach((k,i)=>{ o[k] = a[i]; });
+  o.q = Number(o.q)||0;
+  o.suc = String(o.suc||''); o.rubro=String(o.rubro||''); o.sub=String(o.sub||''); o.disc=String(o.disc||''); o.marca=String(o.marca||'');
+  o.cod = String(o.cod||''); o.art = String(o.art||''); o.id = o.id==null?'':String(o.id);
+  return o;
+}
+async function cargarDatos(){
+  const r = await fetch(`${FIREBASE_DB_URL}/${ROOT}/meses.json?shallow=true`);
+  const keys = Object.keys((await r.json())||{}).sort();
+  const meses = await Promise.all(keys.map(ym => fetch(`${FIREBASE_DB_URL}/${ROOT}/meses/${ym}.json`).then(x=>x.json()).then(d=>[ym,d]).catch(()=>[ym,null])));
+  ENV=[]; ING=[]; META={}; MESES_YM=[];
+  meses.forEach(([ym,d])=>{
+    if(!d) return;
+    MESES_YM.push(ym);
+    META[ym] = d.meta || {};
+    (d.envios||[]).forEach(a=>ENV.push(filaObj(a, ym)));
+    (d.ingresos||[]).forEach(a=>ING.push(filaObj(a, ym)));
+  });
+}
+
+/* ---------- filtros (multi-select propio) ---------- */
+const FILTROS = [
+  {k:'suc',   label:'Sucursal',   soloEnv:true},
+  {k:'ym',    label:'Mes'},
+  {k:'rubro', label:'Rubro'},
+  {k:'sub',   label:'Subrubro'},
+  {k:'disc',  label:'Disciplina'},
+  {k:'marca', label:'Marca'},
+];
+const SEL = {}; // k -> Set de valores elegidos
+const MS = {};  // k -> componente
+function labelDe(k, v){ return k==='ym' ? ymLabel(v) : v; }
+
+function multiSel(host, k, label, onChange){
+  const sel = SEL[k] = SEL[k] || new Set();
+  host.innerHTML = `<span class="lbl">${esc(label)}</span><div class="msel" id="ms-${k}"><button type="button" class="msel-btn">Todas</button><div class="msel-pop"><input placeholder="Buscar…"><div class="msel-acts"><a data-a="all">Todas</a><a data-a="none">Ninguna</a></div><div class="msel-list"></div></div></div>`;
+  const root = host.querySelector('.msel'), btn=root.querySelector('.msel-btn'), pop=root.querySelector('.msel-pop'), list=root.querySelector('.msel-list'), q=pop.querySelector('input');
+  let opts = []; // [{v,n}]
+  function pintar(){
+    const f = norm(q.value);
+    list.innerHTML = opts.filter(o=>!f || norm(labelDe(k,o.v)).includes(f)).map(o=>`<label><input type="checkbox" value="${esc(o.v)}"${sel.has(o.v)?' checked':''}> <span>${esc(labelDe(k,o.v))}</span><span class="n">${fmt(o.n)}</span></label>`).join('') || '<div style="padding:8px;color:var(--muted);font-size:12px">Sin opciones</div>';
+    const n = sel.size;
+    btn.textContent = !n ? 'Todas' : (n===1 ? labelDe(k,[...sel][0]) : n+' elegidas');
+    btn.classList.toggle('on', n>0);
+  }
+  list.addEventListener('change', e=>{ const v=e.target.value; if(e.target.checked) sel.add(v); else sel.delete(v); pintar(); onChange(); });
+  pop.querySelector('.msel-acts').addEventListener('click', e=>{
+    const a=e.target.dataset.a; if(!a) return;
+    if(a==='all') opts.forEach(o=>sel.add(o.v)); else sel.clear();
+    pintar(); onChange();
+  });
+  q.addEventListener('input', pintar);
+  btn.addEventListener('click', e=>{ e.stopPropagation(); const abierto=root.classList.contains('open'); cerrarTodos(); if(!abierto){ root.classList.add('open'); q.value=''; pintar(); q.focus(); } });
+  pop.addEventListener('click', e=>e.stopPropagation());
+  return MS[k] = {
+    setOptions(o){ opts=o; const ok=new Set(o.map(x=>x.v)); [...sel].forEach(v=>{ if(!ok.has(v)) sel.delete(v); }); pintar(); },
+    pintar, clear(){ sel.clear(); pintar(); }
+  };
+}
+function cerrarTodos(){ document.querySelectorAll('.msel.open').forEach(m=>m.classList.remove('open')); }
+document.addEventListener('click', cerrarTodos);
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') cerrarTodos(); });
+
+// filas que cumplen todos los filtros salvo `except`
+function cumple(r, except, esIng){
+  for(const f of FILTROS){
+    if(f.k===except) continue;
+    if(esIng && f.soloEnv) continue;
+    const s = SEL[f.k]; if(s && s.size && !s.has(r[f.k])) return false;
+  }
+  return true;
+}
+function refreshOpciones(){
+  FILTROS.forEach(f=>{
+    const m = new Map();
+    ENV.forEach(r=>{ if(cumple(r, f.k, false)) m.set(r[f.k], (m.get(r[f.k])||0)+r.q); });
+    if(!f.soloEnv) ING.forEach(r=>{ if(cumple(r, f.k, true)) m.set(r[f.k], (m.get(r[f.k])||0)+r.q); });
+    const opts = [...m.entries()].filter(([v])=>v!=='' && v!=null).map(([v,n])=>({v,n}));
+    opts.sort((a,b)=> f.k==='ym' ? a.v.localeCompare(b.v) : String(a.v).localeCompare(String(b.v),'es'));
+    MS[f.k].setOptions(opts);
+  });
+}
+
+/* ---------- agregados ---------- */
+let fEnv = [], fIng = [];
+function agrupar(rows, key){
+  const m = new Map(); rows.forEach(r=>{ m.set(r[key], (m.get(r[key])||0)+r.q); });
+  return [...m.entries()].sort((a,b)=>b[1]-a[1]);
+}
+function suma(rows){ return rows.reduce((s,r)=>s+r.q,0); }
+function mesesVisibles(){ const s=SEL.ym; return (s && s.size) ? MESES_YM.filter(ym=>s.has(ym)) : MESES_YM.slice(); }
+
+/* ---------- gráficos (Chart.js) ---------- */
+const charts = {};
+const C = { navy:'#0B1527', mid:'#1a2f55', steel:'#4a5f8a', red:'#CC0000', redDark:'#8b1a1a', muted:'#6B7A99', grid:'#edf0f5' };
+const DONUT = [C.navy, C.red, C.mid, '#e04b4b', C.steel, C.redDark, C.muted, '#334e68'];
+Chart.defaults.font.family = "'Barlow', sans-serif";
+Chart.defaults.font.size = 11;
+Chart.defaults.color = '#3b4a68';
+
+// Etiquetas de valor dentro de las barras / anillos / puntos (port del informe original).
+const valueLabels = {
+  id:'valueLabels',
+  afterDatasetsDraw(chart, args, cfg){
+    cfg = cfg||{}; if(cfg.display===false) return;
+    const ctx = chart.ctx, type = chart.config.type;
+    ctx.save(); ctx.font = "700 10px 'Barlow', sans-serif"; ctx.textAlign='center'; ctx.textBaseline='middle';
+    chart.data.datasets.forEach((ds,di)=>{
+      const meta = chart.getDatasetMeta(di); if(meta.hidden) return;
+      const vals = (ds.data||[]).map(v=>Number(v)||0), total = cfg.total!=null ? cfg.total : vals.reduce((a,b)=>a+b,0);
+      meta.data.forEach((el,i)=>{
+        const v = vals[i]; if(!v) return;
+        const p = total ? (v/total*100).toFixed(1).replace('.',',')+'%' : '';
+        if(type==='doughnut'){
+          const a=(el.startAngle+el.endAngle)/2, r=(el.innerRadius+el.outerRadius)/2;
+          if((el.endAngle-el.startAngle) < 0.25) return;
+          const x=el.x+Math.cos(a)*r, y=el.y+Math.sin(a)*r;
+          ctx.fillStyle='#fff'; ctx.strokeStyle='rgba(11,21,39,.55)'; ctx.lineWidth=2.5;
+          ctx.strokeText(fmt(v),x,y-6); ctx.fillText(fmt(v),x,y-6); ctx.strokeText(p,x,y+6); ctx.fillText(p,x,y+6);
+          return;
+        }
+        if(type==='line'){
+          const text = cfg.sinPct ? fmt(v) : `${fmt(v)} · ${p}`;
+          const y = Math.max(chart.chartArea.top+10, el.y-13);
+          ctx.fillStyle=C.navy; ctx.strokeStyle='#fff'; ctx.lineWidth=3; ctx.strokeText(text,el.x,y); ctx.fillText(text,el.x,y);
+          return;
+        }
+        if(type==='bar'){
+          const horiz = chart.options.indexAxis==='y';
+          if(horiz){
+            const w = Math.abs(el.x-el.base), avail = Math.max(0, w-12);
+            const cands = cfg.sinPct ? [fmt(v)] : [`${fmt(v)} · ${p}`, p];
+            const inside = cands.find(t=>ctx.measureText(t).width<=avail);
+            if(inside){ ctx.fillStyle='#fff'; ctx.strokeStyle='rgba(11,21,39,.45)'; ctx.lineWidth=2.5; const x=(el.base+el.x)/2; ctx.strokeText(inside,x,el.y); ctx.fillText(inside,x,el.y); }
+            else { const t=cands[0]; ctx.textAlign='left'; ctx.fillStyle=C.navy; ctx.fillText(t, el.x+6, el.y); ctx.textAlign='center'; }
+          } else {
+            const h = Math.abs(el.base-el.y);
+            const text = cfg.sinPct ? fmt(v) : `${fmt(v)} · ${p}`;
+            if(h>18){ ctx.fillStyle='#fff'; ctx.strokeStyle='rgba(11,21,39,.45)'; ctx.lineWidth=2.5; ctx.strokeText(text,el.x,(el.base+el.y)/2); ctx.fillText(text,el.x,(el.base+el.y)/2); }
+            else { ctx.fillStyle=C.navy; ctx.fillText(text, el.x, el.y-9); }
+          }
+        }
+      });
+    });
+    ctx.restore();
+  }
+};
+Chart.register(valueLabels);
+
+function destroy(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
+function base(){ return { responsive:true, maintainAspectRatio:false, animation:{duration:350}, plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:c=>` ${fmt(c.raw)} unidades` } } } }; }
+function hbar(id, pares, color, opt){
+  opt = opt||{};
+  const box = $(id).parentElement; box.style.height = Math.max(opt.minH||280, pares.length*(opt.rowH||30))+'px';
+  destroy(id);
+  charts[id] = new Chart($(id), { type:'bar', data:{ labels:pares.map(x=>x[0]), datasets:[{ data:pares.map(x=>x[1]), backgroundColor:color, borderRadius:4, barPercentage:.78, categoryPercentage:.85 }] },
+    options:{ ...base(), indexAxis:'y', scales:{ x:{ beginAtZero:true, grid:{color:C.grid}, ticks:{ callback:v=>fmt(v) } }, y:{ grid:{display:false}, ticks:{ autoSkip:false, font:{size:opt.font||10} } } }, plugins:{ legend:{display:false}, valueLabels:{ total:opt.total }, tooltip:{ callbacks:{ label:c=>{ const t=opt.total!=null?opt.total:c.dataset.data.reduce((a,b)=>a+b,0); return ` ${fmt(c.raw)} unidades · ${pct(c.raw,t)}`; } } } } } });
+}
+function vbar(id, pares, colores, opt){
+  opt = opt||{}; destroy(id);
+  charts[id] = new Chart($(id), { type:'bar', data:{ labels:pares.map(x=>x[0]), datasets:[{ data:pares.map(x=>x[1]), backgroundColor:colores, borderRadius:5, barPercentage:.6 }] },
+    options:{ ...base(), scales:{ y:{ beginAtZero:true, grid:{color:C.grid}, ticks:{ callback:v=>fmt(v) } }, x:{ grid:{display:false} } }, plugins:{ legend:{display:false}, valueLabels:{ sinPct:!!opt.sinPct } } } });
+}
+function linea(id, pares, color, fondo){
+  destroy(id);
+  charts[id] = new Chart($(id), { type:'line', data:{ labels:pares.map(x=>x[0]), datasets:[{ data:pares.map(x=>x[1]), borderColor:color, backgroundColor:fondo, fill:true, tension:.35, pointRadius:5, pointBackgroundColor:'#fff', pointBorderWidth:2.5 }] },
+    options:{ ...base(), scales:{ y:{ beginAtZero:true, grid:{color:C.grid}, ticks:{ callback:v=>fmt(v) } }, x:{ grid:{display:false} } }, layout:{ padding:{top:14,right:24,left:10} } } });
+}
+function anillo(id, pares){
+  destroy(id);
+  charts[id] = new Chart($(id), { type:'doughnut', data:{ labels:pares.map(x=>x[0]), datasets:[{ data:pares.map(x=>x[1]), backgroundColor:DONUT, borderWidth:2, borderColor:'#fff' }] },
+    options:{ ...base(), cutout:'58%', plugins:{ legend:{ position:'bottom', labels:{ boxWidth:12, font:{size:10} } }, tooltip:{ callbacks:{ label:c=>{ const t=c.dataset.data.reduce((a,b)=>a+b,0); return ` ${c.label}: ${fmt(c.raw)} · ${pct(c.raw,t)}`; } } } } } });
+}
+
+/* ---------- render ---------- */
+function shell(){
+  $('app').innerHTML = `
+  <section class="filters" id="filtros">
+    <div class="help">Elegí uno o varios valores en cada filtro; se encadenan entre sí. El filtro de sucursal aplica a los envíos (los ingresos son del depósito central).</div>
+    ${FILTROS.map(f=>`<div id="f-${f.k}"></div>`).join('')}
+    <div><button class="btn sec" id="btnLimpiar" style="height:38px">Limpiar filtros</button></div>
+  </section>
+  <section class="kpis">
+    <div class="card kpi"><div class="acc"></div><div class="t">Unidades enviadas</div><div class="v" id="kEnv">0</div><div class="s" id="kEnvS"></div></div>
+    <div class="card kpi"><div class="acc"></div><div class="t">Ingresos al depósito · unidades</div><div class="v" id="kIng">0</div><div class="s" id="kIngS"></div></div>
+    <div class="card kpi"><div class="acc"></div><div class="t">Sucursales abastecidas</div><div class="v" id="kSuc">0</div><div class="s" id="kSucS"></div></div>
+    <div class="card kpi"><div class="acc"></div><div class="t">Artículos únicos</div><div class="v" id="kArt">0</div><div class="s">enviados (ID ITEM)</div></div>
+    <div class="card kpi"><div class="acc"></div><div class="t">Marcas distintas</div><div class="v" id="kMar">0</div><div class="s" id="kMarS"></div></div>
+  </section>
+
+  <div class="sec-title">🚚 Envíos a sucursales</div>
+  <section class="grid">
+    <div class="card panel"><div class="panelhead"><h2>Unidades por sucursal</h2><div class="mini" id="f-sucVista"></div></div><div class="chartbox"><canvas id="chSuc"></canvas></div></div>
+    <div class="card panel"><div class="panelhead"><h2>Distribución por rubro</h2></div><div class="chartbox"><canvas id="chRubro"></canvas></div></div>
+  </section>
+  <section class="grid2">
+    <div class="card panel"><div class="panelhead"><h2>Envíos por mes</h2></div><div class="chartbox"><canvas id="chMes"></canvas></div></div>
+    <div class="card panel"><div class="panelhead"><h2>Top marcas</h2></div><div class="chartbox"><canvas id="chMarca"></canvas></div></div>
+  </section>
+  <section class="grid2">
+    <div class="card panel"><div class="panelhead"><h2>Top disciplinas</h2></div><div class="chartbox"><canvas id="chDisc"></canvas></div></div>
+    <div class="card panel"><div class="panelhead"><h2>Unidades por subrubro</h2></div><div class="chartbox"><canvas id="chSub"></canvas></div></div>
+  </section>
+
+  <div class="sec-title">📥 Ingresos / Recepción del depósito</div>
+  <section class="grid">
+    <div class="card panel"><div class="panelhead"><h2>Enviado vs. ingresado</h2></div><div class="chartbox"><canvas id="chComp"></canvas></div></div>
+    <div class="card panel"><div class="panelhead"><h2>Ingresado por rubro</h2></div><div class="chartbox"><canvas id="chIngRubro"></canvas></div></div>
+  </section>
+  <section class="grid2">
+    <div class="card panel"><div class="panelhead"><h2>Ingresado por subrubro</h2></div><div class="chartbox"><canvas id="chIngSub"></canvas></div></div>
+    <div class="card panel"><div class="panelhead"><h2>Ingresado por mes</h2></div><div class="chartbox"><canvas id="chIngMes"></canvas></div></div>
+  </section>
+
+  <section class="card tablepanel">
+    <div class="tablehead">
+      <div><h2 style="font-family:var(--font-c);font-size:15px;font-weight:700;letter-spacing:.5px;text-transform:uppercase">Detalle de envíos</h2><div class="count" id="count"></div></div>
+      <div class="search"><input id="q" placeholder="Buscar por código, ID ITEM o artículo…"></div>
+    </div>
+    <div class="tbl-wrap"><table><thead><tr><th>Sucursal</th><th>Mes</th><th>Rubro</th><th>Subrubro</th><th>Disciplina</th><th>Marca</th><th>Código</th><th>ID ITEM</th><th>Artículo</th><th class="num">Enviado</th><th class="num" title="Unidades del mismo artículo que ingresaron al depósito ese mes">Ingresó al depósito</th></tr></thead><tbody id="tbody"></tbody></table></div>
+    <div class="pager"><button id="prev">‹</button><span id="pageInfo"></span><button id="next">›</button></div>
+  </section>`;
+
+  FILTROS.forEach(f=> multiSel($('f-'+f.k), f.k, f.label, ()=>{ refreshOpciones(); refresh(); }));
+  multiSel($('f-sucVista'), 'sucVista', 'Ver solo estas sucursales', ()=>pintarSucursales());
+  $('btnLimpiar').addEventListener('click', ()=>{ Object.keys(SEL).forEach(k=>SEL[k].clear()); Object.values(MS).forEach(m=>m.pintar()); $('q').value=''; page=1; refreshOpciones(); refresh(); });
+  $('q').addEventListener('input', ()=>{ page=1; tabla(); });
+  $('prev').addEventListener('click', ()=>{ if(page>1){ page--; tabla(); } });
+  $('next').addEventListener('click', ()=>{ page++; tabla(); });
+}
+
+function refresh(){
+  fEnv = ENV.filter(r=>cumple(r,null,false));
+  fIng = ING.filter(r=>cumple(r,null,true));
+  kpis(); graficos(); page=1; tabla();
+  $('status').textContent = `${fmt(fEnv.length)} envíos · ${fmt(fIng.length)} ingresos`;
+}
+function kpis(){
+  const tot = suma(fEnv), totI = suma(fIng);
+  $('kEnv').textContent = fmt(tot);
+  $('kIng').textContent = fmt(totI);
+  const nSuc = new Set(fEnv.map(r=>r.suc)).size, nArt = new Set(fEnv.map(r=>r.id||r.cod)).size, marcas = new Set(fEnv.map(r=>r.marca));
+  $('kSuc').textContent = fmt(nSuc); $('kArt').textContent = fmt(nArt); $('kMar').textContent = fmt(marcas.size);
+  const mv = mesesVisibles();
+  $('kEnvS').textContent = mv.length ? (mv.length===1 ? ymLabel(mv[0]) : `${ymCorto(mv[0])} → ${ymCorto(mv[mv.length-1])}`) : '';
+  $('kIngS').textContent = tot ? `${pct(totI, tot)} de lo enviado` : '';
+  $('kSucS').textContent = nSuc ? `${fmt(tot/nSuc)} unidades por sucursal` : '';
+  $('kMarS').textContent = [...marcas].slice(0,4).join(' · ');
+}
+function pintarSucursales(){
+  let pares = agrupar(fEnv,'suc');
+  MS.sucVista.setOptions(pares.map(([v,n])=>({v,n})));
+  const s = SEL.sucVista; const total = suma(fEnv);
+  if(s && s.size) pares = pares.filter(x=>s.has(x[0]));
+  hbar('chSuc', pares, C.mid, { total, rowH:29, minH:300 });
+}
+function graficos(){
+  pintarSucursales();
+  anillo('chRubro', agrupar(fEnv,'rubro').slice(0,8));
+  const mv = mesesVisibles();
+  linea('chMes', mv.map(ym=>[ymCorto(ym), suma(fEnv.filter(r=>r.ym===ym))]), C.red, 'rgba(204,0,0,.08)');
+  hbar('chMarca', agrupar(fEnv,'marca').slice(0,10), C.red, { rowH:40 });
+  hbar('chDisc', agrupar(fEnv,'disc').slice(0,10), C.mid, { rowH:40 });
+  hbar('chSub', agrupar(fEnv,'sub').slice(0,10), C.red, { rowH:30 });
+  vbar('chComp', [['Enviado a sucursales', suma(fEnv)], ['Ingresado al depósito', suma(fIng)]], [C.mid, C.red], { sinPct:true });
+  hbar('chIngRubro', agrupar(fIng,'rubro').slice(0,10), C.red, { rowH:44 });
+  hbar('chIngSub', agrupar(fIng,'sub').slice(0,10), C.mid, { rowH:30 });
+  linea('chIngMes', mv.map(ym=>[ymCorto(ym), suma(fIng.filter(r=>r.ym===ym))]), C.mid, 'rgba(26,47,85,.10)');
+}
+
+let page = 1; const PAGE = 15;
+function ingresadoPorClave(){
+  // unidades ingresadas al depósito por código+mes (para la columna del detalle)
+  const m = new Map(); fIng.forEach(r=>{ const k=r.cod+'|'+r.ym; m.set(k,(m.get(k)||0)+r.q); }); return m;
+}
+function filasTabla(){
+  const q = norm($('q').value);
+  return fEnv.filter(r=>!q || norm(r.cod).includes(q) || norm(r.art).includes(q) || norm(r.id).includes(q));
+}
+function tabla(){
+  const rows = filasTabla(), ing = ingresadoPorClave();
+  const pages = Math.max(1, Math.ceil(rows.length/PAGE)); page = Math.min(Math.max(1,page), pages);
+  $('tbody').innerHTML = rows.slice((page-1)*PAGE, page*PAGE).map(r=>`<tr><td>${esc(r.suc)}</td><td>${esc(ymCorto(r.ym))}</td><td>${esc(r.rubro)}</td><td>${esc(r.sub)}</td><td>${esc(r.disc)}</td><td>${esc(r.marca)}</td><td>${esc(r.cod)}</td><td>${esc(r.id)}</td><td style="white-space:normal;min-width:220px">${esc(r.art)}</td><td class="num" style="font-weight:700">${fmt(r.q)}</td><td class="num">${fmt(ing.get(r.cod+'|'+r.ym)||0)}</td></tr>`).join('')
+    || '<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:20px">Sin envíos con estos filtros</td></tr>';
+  $('count').textContent = `${fmt(rows.length)} envíos · ${fmt(suma(rows))} unidades`;
+  $('pageInfo').textContent = `Página ${page} de ${pages}`;
+  $('prev').disabled = page<=1; $('next').disabled = page>=pages;
+}
+
+/* ---------- Excel del detalle filtrado ---------- */
+$('btnExcel').addEventListener('click', ()=>{
+  if(!fEnv.length){ toast('No hay envíos para exportar con estos filtros', true); return; }
+  const ing = ingresadoPorClave();
+  const wb = XLSX.utils.book_new();
+  const det = [['Sucursal','Mes','Rubro','Subrubro','Disciplina','Marca','Código','ID ITEM','Artículo','Enviado','Ingresó al depósito']];
+  filasTabla().forEach(r=>det.push([r.suc, ymLabel(r.ym), r.rubro, r.sub, r.disc, r.marca, r.cod, r.id, r.art, r.q, ing.get(r.cod+'|'+r.ym)||0]));
+  const ws = XLSX.utils.aoa_to_sheet(det); ws['!cols']=[{wch:22},{wch:14},{wch:14},{wch:12},{wch:12},{wch:10},{wch:14},{wch:10},{wch:40},{wch:10},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Envíos');
+  const res = [['Resumen','Unidades','%']]; const tot=suma(fEnv);
+  const bloque = (tit,key,rows)=>{ res.push([]); res.push([tit]); const t=suma(rows); agrupar(rows,key).forEach(([v,n])=>res.push([key==='ym'?ymLabel(v):v, n, t?Math.round(n/t*1000)/10:0])); };
+  res.push(['Unidades enviadas', tot]); res.push(['Unidades ingresadas al depósito', suma(fIng)]);
+  bloque('Envíos por sucursal','suc',fEnv); bloque('Envíos por mes','ym',fEnv); bloque('Envíos por rubro','rubro',fEnv); bloque('Envíos por subrubro','sub',fEnv); bloque('Envíos por disciplina','disc',fEnv); bloque('Envíos por marca','marca',fEnv);
+  bloque('Ingresos por mes','ym',fIng); bloque('Ingresos por rubro','rubro',fIng); bloque('Ingresos por subrubro','sub',fIng); bloque('Ingresos por marca','marca',fIng);
+  const ws2 = XLSX.utils.aoa_to_sheet(res); ws2['!cols']=[{wch:34},{wch:12},{wch:8}];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Resumen');
+  const mv = mesesVisibles();
+  XLSX.writeFile(wb, `Envios e ingresos ${mv.length?mv[0]+(mv.length>1?'_'+mv[mv.length-1]:''):''}.xlsx`);
+});
+
+/* ============================================================
+   CARGA DEL EXPORT (Excel/CSV) → Firebase, un nodo por mes
+   ============================================================ */
+const ALIAS = {
+  suc:   ['SUCURSAL','SUC','LOCAL','DESTINO','SUCURSAL DESTINO'],
+  mes:   ['MES','PERIODO','PERÍODO'],
+  fecha: ['FECHA','FECHA MOVIMIENTO','FECHA ENVIO','FECHA INGRESO','FECHA COMPROBANTE','FECHA REMITO'],
+  rubro: ['RUBRO'],
+  sub:   ['SUBRUBRO','SUB RUBRO','SUB-RUBRO','GENERO','GÉNERO'],
+  disc:  ['DISCIPLINA','DEPORTE'],
+  marca: ['MARCA'],
+  cod:   ['CODIGO DE BARRAS','CÓDIGO DE BARRAS','CODIGO','CÓDIGO','SKU','COD','COD. BARRAS'],
+  id:    ['ID ITEM','IDITEM','ID.ITEM','ID','ITEM','ID ARTICULO','ID ARTÍCULO'],
+  art:   ['ARTICULO','ARTÍCULO','DESCRIPCION','DESCRIPCIÓN','DETALLE','PRODUCTO'],
+  q:     ['CANTIDAD','ENVIADO','ENVIADAS','UNIDADES','CANT','CANT.','INGRESADO','INGRESADAS','INGRESO','RECIBIDO','UNID'],
+};
+const ALIAS_ING = ['INGRESADO','INGRESADAS','INGRESO','RECIBIDO'];
+const CARGA = { env:null, ing:null }; // {archivo, meses:{ym:[filas]}, descartadas, tipoDetectado}
+
+function mapearEncabezado(row){
+  const map = {}; const usado = new Set();
+  row.forEach((c,i)=>{
+    const n = norm(c); if(!n) return;
+    for(const k of Object.keys(ALIAS)){
+      if(map[k]!=null) continue;
+      if(ALIAS[k].some(a=>norm(a)===n)){ map[k]=i; usado.add(i); break; }
+    }
+  });
+  return map;
+}
+function serialAFecha(v){
+  if(v instanceof Date) return v;
+  if(typeof v==='number' && v>20000 && v<80000){ return new Date(Math.round((v-25569)*86400*1000)); }
+  const s = String(v||'').trim();
+  let m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/); if(m){ const y=m[3].length===2?2000+ +m[3]:+m[3]; return new Date(y, +m[2]-1, +m[1]); }
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return new Date(+m[1], +m[2]-1, +m[3]);
+  return null;
+}
+function ymDeCelda(v, anio){
+  if(v==null || v==='') return null;
+  if(typeof v==='number'){
+    if(v>=1 && v<=12) return `${anio}-${String(v).padStart(2,'0')}`;
+    const d = serialAFecha(v); return d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` : null;
+  }
+  const s = String(v).trim(); let m;
+  if((m = s.match(/^(\d{4})[-\/](\d{1,2})$/))) return `${m[1]}-${String(+m[2]).padStart(2,'0')}`;
+  if((m = s.match(/^(\d{1,2})[-\/](\d{4})$/))) return `${m[2]}-${String(+m[1]).padStart(2,'0')}`;
+  if(/^\d{1,2}$/.test(s) && +s>=1 && +s<=12) return `${anio}-${s.padStart(2,'0')}`;
+  const n = norm(s); const idx = MESES.findIndex((x,i)=> norm(x)===n || norm(MES_CORTO[i])===n || n.startsWith(norm(x)) );
+  if(idx>=0){ const y = (s.match(/(\d{4})/)||[])[1] || (s.match(/\b(\d{2})$/)? 2000+ +s.match(/\b(\d{2})$/)[1] : anio); return `${y}-${String(idx+1).padStart(2,'0')}`; }
+  const d = serialAFecha(s); return d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` : null;
+}
+function parsearLibro(wb, anio){
+  // Recorre las hojas y se queda con la que más filas válidas produce.
+  let mejor = null;
+  wb.SheetNames.forEach(name=>{
+    const m = XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, raw:true, defval:''});
+    for(let h=0; h<Math.min(m.length,30); h++){
+      const map = mapearEncabezado(m[h]);
+      const n = Object.keys(map).length;
+      if(map.q==null || map.art==null && map.cod==null || n<4) continue;
+      const tipoIng = ALIAS_ING.some(a=>norm(m[h][map.q])===norm(a));
+      const meses = {}; let desc = 0, sinMes = 0, filas = 0;
+      for(let i=h+1;i<m.length;i++){
+        const r = m[i]; if(!r || !r.length) continue;
+        const suc = map.suc!=null ? String(r[map.suc]||'').trim() : '';
+        const q = Number(String(r[map.q]).replace(/\./g,'').replace(',','.'));
+        if(!q || !isFinite(q)) continue;
+        if(norm(suc)==='TOTAL' || (map.art!=null && norm(r[map.art])==='TOTAL')){ desc++; continue; }
+        let ym = null;
+        if(map.fecha!=null) ym = ymDeCelda(r[map.fecha], anio);
+        if(!ym && map.mes!=null) ym = ymDeCelda(r[map.mes], anio);
+        if(!ym){ sinMes++; continue; }
+        const id = map.id!=null ? r[map.id] : '';
+        const fila = [suc, String(r[map.rubro]??'').trim(), String(r[map.sub]??'').trim(), String(r[map.disc]??'').trim(), String(r[map.marca]??'').trim(),
+          String(map.cod!=null?r[map.cod]:'').trim(), (id===''||id==null)?'':(typeof id==='number'?Math.round(id):String(id).trim()), String(map.art!=null?r[map.art]:'').trim(), Math.round(q)];
+        (meses[ym] = meses[ym]||[]).push(fila); filas++;
+      }
+      if(filas && (!mejor || filas>mejor.filas)) mejor = { hoja:name, map, meses, filas, desc, sinMes, tipoIng, sinSuc: map.suc==null };
+    }
+  });
+  return mejor;
+}
+function leerArchivo(file){
+  return new Promise((res,rej)=>{
+    const fr = new FileReader();
+    fr.onload = e=>{ try{ res(XLSX.read(e.target.result, {type:'array', cellDates:false, codepage:65001})); }catch(err){ rej(err); } };
+    fr.onerror = rej; fr.readAsArrayBuffer(file);
+  });
+}
+async function tomarArchivo(tipo, file){
+  if(!file) return;
+  try{
+    const wb = await leerArchivo(file);
+    const p = parsearLibro(wb, +$('anio').value || new Date().getFullYear());
+    if(!p){ toast('No encontré una hoja con las columnas esperadas (Cantidad + Artículo/Código + Mes o Fecha)', true); return; }
+    // si el archivo huele al otro tipo, avisar pero respetar el recuadro donde se cargó
+    p.aviso = (tipo==='env' && p.tipoIng) ? 'La columna de cantidad se llama «Ingresado»: ¿seguro que es el archivo de envíos?' : (tipo==='ing' && !p.tipoIng && !p.sinSuc && Object.values(p.meses).some(f=>f.some(x=>!/DEP/i.test(x[0])))) ? 'Trae sucursales que no son el depósito: ¿seguro que es el archivo de ingresos?' : '';
+    if(tipo==='ing'){ Object.values(p.meses).forEach(f=>f.forEach(x=>{ if(!x[0]) x[0]='05-Depósito'; })); }
+    p.archivo = file.name; CARGA[tipo] = p;
+    $(tipo==='env'?'fEnv':'fIng').textContent = '✓ '+file.name; $(tipo==='env'?'dropEnv':'dropIng').classList.add('ok');
+    previsualizar();
+  }catch(e){ console.error(e); toast('No pude leer el archivo: '+e.message, true); }
+}
+function previsualizar(){
+  const h = [];
+  ['env','ing'].forEach(t=>{
+    const p = CARGA[t]; if(!p) return;
+    const yms = Object.keys(p.meses).sort();
+    h.push(`<h4>${t==='env'?'🚚 Envíos':'📥 Ingresos'} · hoja «${esc(p.hoja)}» · ${fmt(p.filas)} filas</h4>`);
+    h.push(`<div class="tbl-wrap" style="max-height:200px"><table><thead><tr><th>Mes</th><th class="num">Filas</th><th class="num">Unidades</th><th>En el portal</th></tr></thead><tbody>${yms.map(ym=>{
+      const meta = (META[ym]||{})[t==='env'?'envios':'ingresos'];
+      const est = meta ? `<span class="pill">reemplaza ${fmt(meta.filas)} filas (${esc(meta.subido||'')})</span>` : '<span class="pill new">mes nuevo</span>';
+      return `<tr><td>${esc(ymLabel(ym))}</td><td class="num">${fmt(p.meses[ym].length)}</td><td class="num">${fmt(p.meses[ym].reduce((s,x)=>s+x[8],0))}</td><td>${est}</td></tr>`; }).join('')}</tbody></table></div>`);
+    if(p.sinMes) h.push(`<div class="warn">⚠ ${fmt(p.sinMes)} filas sin mes reconocible se descartan.</div>`);
+    if(p.desc) h.push(`<div class="warn">${fmt(p.desc)} filas «Total» descartadas.</div>`);
+    if(p.aviso) h.push(`<div class="bad">⚠ ${esc(p.aviso)}</div>`);
+    const faltan = ['rubro','sub','disc','marca'].filter(k=>p.map[k]==null);
+    if(faltan.length) h.push(`<div class="warn">No se encontraron las columnas ${faltan.map(k=>({rubro:'Rubro',sub:'Subrubro',disc:'Disciplina',marca:'Marca'})[k]).join(', ')}: esas aperturas quedan vacías.</div>`);
+  });
+  $('prevCarga').innerHTML = h.join('');
+  $('mcSave').disabled = !(CARGA.env || CARGA.ing);
+  $('mcInfo').textContent = (CARGA.env||CARGA.ing) ? 'Se guarda por mes; los meses que no vienen en el archivo no se tocan.' : '';
+}
+async function guardarCarga(){
+  const upd = {}; const hoy = new Date().toISOString().slice(0,10); const por = SESSION.email||'';
+  let ult = MESES_YM[MESES_YM.length-1] || '';
+  ['env','ing'].forEach(t=>{
+    const p = CARGA[t]; if(!p) return; const nodo = t==='env'?'envios':'ingresos';
+    Object.keys(p.meses).forEach(ym=>{
+      upd[`meses/${ym}/${nodo}`] = p.meses[ym];
+      upd[`meses/${ym}/meta/${nodo}`] = { archivo:p.archivo, hoja:p.hoja, subido:hoy, por, filas:p.meses[ym].length, unidades:p.meses[ym].reduce((s,x)=>s+x[8],0) };
+      if(ym>ult) ult = ym;
+    });
+  });
+  if(ult) upd.ultimo = ult;
+  $('mcSave').disabled = true; $('mcSave').textContent = 'Guardando…';
+  try{
+    const r = await fetch(`${FIREBASE_DB_URL}/${ROOT}.json`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(upd) });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    toast('Guardado. Actualizando el dashboard…');
+    cerrarModal();
+    await init(true);
+  }catch(e){ console.error(e); toast('No se pudo guardar: '+e.message, true); $('mcSave').disabled=false; }
+  $('mcSave').textContent = '💾 Guardar en el portal';
+}
+function abrirModal(){
+  CARGA.env=null; CARGA.ing=null; $('fEnv').textContent=''; $('fIng').textContent=''; $('dropEnv').classList.remove('ok'); $('dropIng').classList.remove('ok');
+  $('fileEnv').value=''; $('fileIng').value=''; $('prevCarga').innerHTML=''; $('mcSave').disabled=true; $('mcInfo').textContent='';
+  if(!$('anio').value) $('anio').value = new Date().getFullYear();
+  $('modalCarga').classList.add('show');
+}
+function cerrarModal(){ $('modalCarga').classList.remove('show'); }
+$('btnCargar').addEventListener('click', abrirModal);
+$('mcX').addEventListener('click', cerrarModal); $('mcCancel').addEventListener('click', cerrarModal);
+$('modalCarga').addEventListener('click', e=>{ if(e.target===$('modalCarga')) cerrarModal(); });
+$('mcSave').addEventListener('click', guardarCarga);
+$('fileEnv').addEventListener('change', e=>tomarArchivo('env', e.target.files[0]));
+$('fileIng').addEventListener('change', e=>tomarArchivo('ing', e.target.files[0]));
+$('anio').addEventListener('change', ()=>{ /* re-parsear con el año nuevo */ const fe=$('fileEnv').files[0], fi=$('fileIng').files[0]; if(fe) tomarArchivo('env',fe); if(fi) tomarArchivo('ing',fi); });
+[['dropEnv','env'],['dropIng','ing']].forEach(([id,t])=>{
+  const d=$(id);
+  d.addEventListener('dragover', e=>{ e.preventDefault(); d.classList.add('over'); });
+  d.addEventListener('dragleave', ()=>d.classList.remove('over'));
+  d.addEventListener('drop', e=>{ e.preventDefault(); d.classList.remove('over'); tomarArchivo(t, e.dataTransfer.files[0]); });
+});
+
+/* ---------- arranque ---------- */
+async function init(recarga){
+  try{
+    await cargarDatos();
+  }catch(e){
+    console.error(e);
+    $('app').innerHTML = `<div class="empty"><b>No se pudieron cargar los datos</b>${esc(e.message)}. Probá de nuevo en un momento.</div>`;
+    $('status').textContent = 'Sin datos'; return;
+  }
+  if(!MESES_YM.length){
+    $('app').innerHTML = `<div class="empty card" style="padding:50px 20px"><b>Todavía no hay envíos ni ingresos cargados</b>Subí el export del sistema con «⇧ Cargar export» (envíos a sucursales e ingresos al depósito, por mes).</div>`;
+    $('status').textContent = 'Sin datos'; return;
+  }
+  const prevSel = {}; Object.keys(SEL).forEach(k=>prevSel[k]=new Set(SEL[k]));
+  shell();
+  if(recarga) Object.keys(prevSel).forEach(k=>{ SEL[k]=prevSel[k]; });
+  refreshOpciones(); refresh();
+  const ult = MESES_YM[MESES_YM.length-1], subidos = Object.values(META).map(m=>(m.envios||{}).subido||'').filter(Boolean).sort();
+  $('heroSub').textContent = `${MESES_YM.length===1 ? ymLabel(ult) : ymLabel(MESES_YM[0])+' → '+ymLabel(ult)} · abastecimiento a las sucursales, recepción del depósito y mix de producto` + (subidos.length ? ` · última carga ${subidos[subidos.length-1]}` : '');
+}
+init();
+</script>
+</body>
+</html>

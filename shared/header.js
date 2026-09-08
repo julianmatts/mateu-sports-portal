@@ -57,7 +57,8 @@
     objetivos:          { name:'Objetivos de Venta',         icon:'🎯' },
     rrhh:               { name:'Recursos Humanos',           icon:'🧑‍💼' },
     capacitaciones:     { name:'Capacitaciones',             icon:'🎓' },
-    tareas:             { name:'Tareas de la Sucursal',      icon:'✅' }
+    tareas:             { name:'Tareas de la Sucursal',      icon:'✅' },
+    logistica:          { name:'Envíos e Ingresos',          icon:'🚚' }
   };
 
   // herramienta actual: config o carpeta de la URL (…/<slug>/…)
