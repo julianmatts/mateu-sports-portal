@@ -990,6 +990,30 @@ Indicadores, ver abajo).
   es la misma mercadería que baja, y así lo ven sin cambios Indicadores y el Picking), con el
   campo `vaciado` por fila y `meta.vaciado_param`. ⚠️ Pendiente que definió Juli: usar la
   **curva de talles** (velocidad de venta por talle) como criterio adicional.
+- **Reparto por artículo, no por sucursal (08/09/2026, aclaración de Juli)**: el depósito agarra
+  el artículo y lo reparte a todas las sucursales de una (ir local por local sería doble trabajo).
+  Por eso el orden por defecto de la tabla y del Excel es **`sortRep.k='art'`**: los artículos que
+  más unidades bajan primero y, dentro de cada uno, las sucursales por prioridad.
+- **Qué queda en el depósito (08/09/2026)**: columna **«Queda»** por artículo = reserva −
+  todo lo repartido (`restantePorArt()` sobre `reposFusionadas()`, que son las filas con curva y
+  vaciado sumados y SIN los filtros de navegación); en azul los que salen enteros, y la tira de
+  resumen cuenta cuántos artículos quedan en cero.
+- **Se repite de la semana pasada (08/09/2026)**: al procesar, `cargarSemanaPrevia()` baja la
+  reposición de la última barrida guardada anterior (`barridas/<lunes>/reposicion`, agregada por
+  `id|slug`) y la fila lleva el chip **↻ repite** con cuántas unidades se le habían sugerido:
+  o no se ejecutó el envío, o el artículo rota y hay que recomprarlo. Tilde «Solo lo que se
+  repite» y contador en la tira. (De paso, `cargarHistKeys` pasó a `?shallow=true`: bajaba TODAS
+  las barridas enteras solo para leer las claves.)
+- **Curva de talles (08/09/2026, pedido de Juli)**: `curvaDeTalles()` calcula con la venta de la
+  semana de todas las sucursales cuánto pesa cada talle, agrupado por **rubro + tipo de producto**
+  (CALZADO ADULTO y CALZADO NIÑO tienen escalas distintas); ordenados de más a menos: **fuerte**
+  = primer 60 % de la venta acumulada, **medio** hasta el 90 %, **flojo** la cola. Se usa en dos
+  lados: el rótulo del casillero se tiñe (navy pleno / claro / apagado, con el % en el tooltip) y
+  el control **«Solo talles que rotan»** de Completar curva no gasta reserva en los de la cola.
+  Validado con el export real: en calzado adulto los fuertes son 8.5 · 8 · 9 · 9.5 · 7.5 (escala
+  US), y el 47/48 caen en la cola.
+- **Preferencias del depósito (08/09/2026)**: filtros, tildes, parámetros de curva/vaciado y orden
+  se recuerdan en el navegador (`localStorage barrida_prefs`; la búsqueda no).
 - **Ingreso reciente / crónica**: NO hay columna de fecha ni SKU en recepciones, así
   que se resuelve con el **histórico semanal** guardado: un artículo que aparece por
   primera vez en la reserva = *ingreso reciente* (se separa de "parada"); "semanas"
