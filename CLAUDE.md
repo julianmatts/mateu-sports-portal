@@ -1676,6 +1676,29 @@ palabra) en vez del de Mateu, título «… — Aurelius» y app instalable prop
 - Para sumar otra marca: una entrada más en el mapa `MARCAS` de `marca.js` (`esSlug`, paleta,
   logo, manifest e íconos).
 
+## Reviews de Sucursales (`reviews/`, 08/09/2026)
+
+`reviews/index.html` es un módulo self-contained que muestra un dashboard de análisis de 
+opiniones de clientes por sucursal — **buenas y malas críticas, puntuación de satisfacción, 
+últimos comentarios y tabla de tendencias**. Los datos provienen del archivo de Iván 
+("Porcentaje de buenas y malas criticas.xlsx").
+
+- **Datos**: `reviews-data.js` (inline en el HTML con estructura por sucursal y mes; los datos 
+  vienen manualmente de Iván, no de Firebase).
+- **Vistas principales**:
+  - **Tarjetas por sucursal**: puntuación %, buenas vs malas, tickets evaluados, último comentario.
+  - **Tabla de tendencias**: ranking agregado de todas las sucursales.
+  - **Filtros**: selector «Todas» o por sucursal individual.
+- **Estilos**: Bebas Neue para títulos, Barlow para texto, paleta navy+rojo+off como el resto del portal, 
+  barras de progreso con gradiente (verde→ámbar→rojo). Responsive a 768px y 480px.
+- **Roles**: visible para admin y cualquiera con sesión válida. Sin sesión, redirige al Portal.
+- **Generador**: `scripts/gen-reviews.js` (estructura y helpers para procesar el Excel de Iván 
+  en el futuro; hoy es un stub que muestra cómo estructurar los datos).
+
+**Actualización de datos**: hasta que se integre con Google Reviews API (pendiente), Iván sube 
+manualmente los datos del Excel a `reviews/reviews-data.js`, commit + push. Una futura versión 
+podría traer reviews vivos de Google My Business por sucursal.
+
 ## Reglas
 
 - Responder y comentar el código en **español**.
