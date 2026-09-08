@@ -658,9 +658,30 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   `eans` del artículo + `eanRemoto` por el mapa, cacheado por promesa). Normalización
   en `gtin13`/`mismoEan`: solo dígitos, UPC-A de 12 = EAN-13 con cero adelante,
   igualdad por sufijo de 11 cuando uno vino recortado. Búsqueda, escaneo y Lista de
-  retiro lo usan. Además el mapeo de la carga de stock tiene columna **«Código de
-  barras» opcional** (`RX_EAN`; sin encabezados = numérica de 12-14 dígitos, detectada
-  antes que Id.item) → `eans: [{e,t}]` por artículo, conservados si la carga no los trae.
+  retiro lo usan.
+- **Importar el stock CON los EAN (08/09/2026, el reporte del sistema ya los trae)**: el
+  mapeo de la carga tiene columna **«Código de barras» opcional** → `eans: [{e,t}]` por
+  artículo (un EAN por talle si el export viene abierto). Cómo los toma:
+  - **Detección**: el encabezado (`RX_EAN`) manda, pero se **valida el contenido**
+    (`columnaEsEan`: mayoría de números de 12-14 dígitos) — la hoja «Base de Datos» de la
+    planilla de Drive llama «Código de barras» al SKU y NO es un EAN. Sin encabezado que lo
+    diga, se busca la columna por contenido (`colEanPorContenido`; en el export pelado,
+    `eanShare` en vez del largo promedio, así no se confunde con el Id.item).
+  - **La celda**: `eanDigits` acepta el EAN como número, con guiones/espacios, con `.0` de
+    más y en notación científica **completa**; una científica recortada («7,7912E+12»,
+    Excel ya perdió dígitos) se **descarta** en vez de inventar un código. `eansDeCelda`
+    parte una celda con varios códigos.
+  - **Reporte que identifica por EAN** (sin columna de código del sistema): el modal lo
+    detecta y ofrece **resolver cada EAN al artículo** (índice `eanIndexCargar` = los `eans`
+    ya cargados + todo el mapa compartido; `eanIdxBuscar` tolera el dígito recortado). Sin
+    resolver, cada talle entraría como un artículo distinto — lo avisa en rojo. Las filas con
+    un EAN que nadie vinculó todavía no se cargan y se listan en la vista previa.
+  - **Se fusionan, no se pisan**: los EAN nuevos se suman a los del artículo (tope
+    `EAN_MAX_ART` = 80), así una carga sin la columna no borra los vinculados a mano.
+  - **Se comparten**: al terminar la carga, `eanCompartir` publica en el mapa `ean/` los
+    códigos que no estaban (de a 250, sin pisar nunca un vínculo existente), así sirven en
+    todas las sucursales. El resumen de la carga muestra cuántos y el ⇩ Excel del módulo
+    suma la columna «Cód. barras». Tests: `node --test lib/ean.test.js`.
 - **Artículos nuevos sin ubicar** (prioridad del depósito): «nuevo» = `fechaAlta`
   posterior a la **primera carga** de la sucursal (cada carga graba un único
   timestamp; así el día 1 no se marca todo) y ≤ `NUEVO_DIAS` (7). Se destacan con
