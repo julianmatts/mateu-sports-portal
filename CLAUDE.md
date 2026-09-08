@@ -1030,6 +1030,17 @@ Indicadores, ver abajo).
   (✓ completo · ⚠ parcial · ✗ sin salir · + sin estar en la barrida), tilde «Solo lo que falta
   enviar» y un **% de cumplimiento** en la tira de resumen. Si esa semana ya está guardada, el
   cruce se guarda en `barridas/<lunes>/transf` y vuelve al abrirla del histórico.
+- **Dos rojos distintos en los talles (08/09/2026, no se entendían)**: el casillero rojo decía
+  siempre «pedía N» y mezclaba dos cosas. Ahora `talleChip` separa **«no hay»** (borde punteado,
+  `d.r<=0`: el depósito no tiene NINGUNA de ese talle — no se la llevó nadie, hay que pedírsela
+  a la marca) de **«de R · pedía V»** (hay stock pero no alcanza y por prioridad le tocó menos).
+  El pill de la fila también: **⚠ hay que comprar** (`sinStockEn`) vs. **⚠ recortado**.
+- **La tabla ya no se corta (08/09/2026)**: `main` pasó de 1200 a **1600 px** de ancho y los
+  casilleros de la columna Talles van en un `div.tw` con `max-width:560px` y `flex-wrap`, así
+  envuelven en vez de estirar la tabla fuera de la pantalla (a 1440 px ya no hay scroll lateral).
+- **Tarjeta de carga plegada (08/09/2026)**: con la barrida procesada queda una sola línea
+  (chips ✓ de los archivos, la semana, ↻ Reprocesar y 💾 Guardar); «⇧ Archivos» la despliega y
+  «▴ plegar» la vuelve a cerrar (`state.cargaOpen`). Pasó de ~130 px de alto a 46.
 - **Ingreso reciente / crónica**: NO hay columna de fecha ni SKU en recepciones, así
   que se resuelve con el **histórico semanal** guardado: un artículo que aparece por
   primera vez en la reserva = *ingreso reciente* (se separa de "parada"); "semanas"
