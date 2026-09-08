@@ -265,7 +265,7 @@ html .top-in{padding-top:calc(12px + env(safe-area-inset-top,0px))}
 .ritmo{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;line-height:1.45;border-radius:9px;padding:8px 12px;margin:-4px 0 14px}
 .ritmo.r-ok{background:var(--ok-bg);color:#14663a} .ritmo.r-mid{background:var(--mid-bg);color:#7a5310} .ritmo.r-bad{background:var(--bad-bg);color:#7a1a15}
 .ritmo b{font-weight:700}
-@media(max-width:640px){ .zona-title{font-size:28px} .zona-title em{display:block;margin:6px 0 0} .zona-viva{padding:0 14px 18px} .ztab{padding:6px 11px;font-size:11.5px} .ztab em{display:none} }
+@media(max-width:640px){ .dep-grid{grid-template-columns:1fr!important} .zona-title{font-size:28px} .zona-title em{display:block;margin:6px 0 0} .zona-viva{padding:0 14px 18px} .ztab{padding:6px 11px;font-size:11.5px} .ztab em{display:none} }
 .hint{font-size:13px;color:var(--muted);margin:0 0 20px;max-width:680px;line-height:1.6}
 .hint b{color:var(--navy);font-weight:600}
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
@@ -999,6 +999,13 @@ footer b{color:var(--navy)}
       <h2 class="sec-title">Reposición <em>disponible</em></h2>
       <p class="hint">Artículos que tu sucursal vendió la última semana y que <b>hay en reserva del depósito central</b>. Salen del análisis semanal de la reserva; pedilos por el canal de siempre. Si el depósito cargó el stock por talle, abajo también aparecen los <b>talles que te faltan para completar la curva</b> de artículos que ya tenés.</p>
       <div class="card pad" id="barridaCard"></div>
+    </section>
+
+    <section class="sec" id="secDeposito" style="display:none">
+      <div class="sec-label">Depósito central</div>
+      <h2 class="sec-title">Qué te mandó <em>el depósito</em></h2>
+      <p class="hint">Unidades que el depósito central le envió a tu sucursal en el mes, abiertas por rubro y marca, con los artículos que más llegaron. Sale del Panel General de logística (se actualiza con cada carga mensual).</p>
+      <div class="card pad" id="depositoCard"></div>
     </section>
     </div><!-- /zonaViva -->
 
@@ -1919,7 +1926,7 @@ async function render(){
     $('cadenaView').style.display='none';
     $('content').style.display='block';
     mostrarEmpty('Tu sucursal todavía no tiene datos de indicadores cargados.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderTareasSuc(); renderComp(); renderNov(); renderEquipoSuc(); }
+    if(slugActual()){ renderObjetivo(); renderBarrida(); renderDeposito(); renderF8Suc(); renderTareasSuc(); renderComp(); renderNov(); renderEquipoSuc(); }
     return;
   }
 
@@ -1987,7 +1994,7 @@ async function render(){
     mostrarEmpty(Object.values(SOLO_OBJ_SUC).includes(sucName)
       ? '<b>'+esc(sucName)+'</b> todavía no tiene datos de indicadores cargados (sí su objetivo y equipo).'
       : 'No hay datos de <b>'+esc(sucName)+'</b> para '+esc(perLabel(per))+'.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); renderF8Suc(); renderTareasSuc(); renderComp(); renderNov(); renderEquipoSuc(); }
+    if(slugActual()){ renderObjetivo(); renderBarrida(); renderDeposito(); renderF8Suc(); renderTareasSuc(); renderComp(); renderNov(); renderEquipoSuc(); }
     return;
   }
   // la semana elegida tiene que existir en esta sucursal/período
@@ -2008,7 +2015,7 @@ async function render(){
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
   $('secCanales').style.display = ecom?'':'none';
-  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secF8','secTareas','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secSemViva','secRubrosViva'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
+  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secDeposito','secF8','secTareas','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secSemViva','secRubrosViva'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
   const seg=document.querySelector('.seg'); if(seg) seg.style.display = ecom?'none':'flex';
   renderKPIs();
   renderDiagnostico();
@@ -2021,14 +2028,14 @@ async function render(){
   renderNov();            // novedades del mes (el calendario del encargado)
   renderEquipoSuc();      // el padrón de la sucursal (Mi equipo)
   if(ecom){ renderCanales(); }
-  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderRubros(); renderSem(); renderObjetivo(); renderBarrida(); renderF8Suc(); renderTareasSuc(); }
+  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderRubros(); renderSem(); renderObjetivo(); renderBarrida(); renderDeposito(); renderF8Suc(); renderTareasSuc(); }
   _kbVisible=false; $('kpiBar').classList.remove('show'); kpiBarScroll();   // re-evaluar la mini-barra con la vista nueva
 }
 
 function mostrarEmpty(msg){
   // Objetivo / Reposición se muestran igual si hay slug (las pinta su propio render)
   const conSlug = !!slugActual();
-  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secF8','secTareas','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secObjMesCierre','secSemViva','secRubrosViva']
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secDeposito','secF8','secTareas','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secObjMesCierre','secSemViva','secRubrosViva']
     .filter(id=>!(conSlug && /^(sec(Barrida|Objetivo|SemViva|RubrosViva|Tareas)|kpisSemBox|puenteBox)/.test(id))).forEach(id=>$(id).style.display='none');
   pintarZonas();
   $('cobNota').style.display='none';
@@ -6953,6 +6960,45 @@ function fetchBarrida(slug){
     return (lista.length || curva.length) ? {lista, curva, semana:ultima} : null;
   })();
   return _barridaCache[slug];
+}
+/* ---------- «Qué te mandó el depósito» (Panel General de logística, nodo logistica/porSuc/<slug>) ----------
+   Cada sucursal baja SOLO su resumen por mes: {u, rubros:{}, marcas:{}, top:[[art, marca, u, cod],…]}. */
+const LOGISTICA_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
+let _depData = null, _depYm = null;
+async function renderDeposito(){
+  const sec=$('secDeposito'); if(!sec) return;
+  sec.style.display='none';
+  const slug = slugActual(); if(!slug) return;
+  const target = sucName;
+  let d=null;
+  try{ d = await fetch(LOGISTICA_URL+'/logistica/porSuc/'+encodeURIComponent(slug)+'.json').then(r=>r.json()); }catch(e){ return; }
+  if(sucName!==target) return;
+  const yms = Object.keys(d||{}).sort();
+  if(!yms.length){ pintarZonas(); return; }
+  _depData = d; _depYm = yms[yms.length-1];
+  paintDeposito();
+  sec.style.display=''; pintarZonas();
+}
+function paintDeposito(){
+  const d=_depData; if(!d) return;
+  const yms = Object.keys(d).sort(), ym=_depYm, o=d[ym]||{u:0,rubros:{},marcas:{},top:[]};
+  const MESES_L=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const lbl = k=>{ const [y,m]=k.split('-'); return MESES_L[+m-1]+' '+y; };
+  const i = yms.indexOf(ym), ant = i>0 ? d[yms[i-1]] : null;
+  const hoyYm=new Date().toISOString().slice(0,7), enCurso = ym===hoyYm;
+  let varTxt = enCurso ? '<span style="font-family:var(--font-c);font-size:12px;font-weight:700;padding:2px 8px;border-radius:20px;background:#eef2f8;color:var(--muted)">mes en curso · parcial</span>' : '';
+  if(!enCurso && ant && ant.u){ const dv=(o.u-ant.u)/ant.u*100; varTxt = '<span style="font-family:var(--font-c);font-size:12px;font-weight:700;padding:2px 8px;border-radius:20px;background:'+(dv>0.5?'#dcfce7;color:#166534':dv<-0.5?'#fee2e2;color:#991b1b':'#eef2f8;color:var(--muted)')+'">'+(dv>0.5?'▲':dv<-0.5?'▼':'=')+' '+(dv>0?'+':'')+Math.round(dv)+' % vs. '+lbl(yms[i-1]).split(' ')[0]+'</span>'; }
+  const rub = Object.entries(o.rubros||{}).sort((a,b)=>b[1]-a[1]);
+  const mar = Object.entries(o.marcas||{}).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const sel = '<select id="depSel" style="height:30px;border:1px solid var(--border);border-radius:6px;padding:0 8px;font-family:var(--font-b);font-size:13px">'+yms.slice().reverse().map(k=>'<option value="'+k+'"'+(k===ym?' selected':'')+'>'+lbl(k)+'</option>').join('')+'</select>';
+  let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+    +'<div style="font-size:15px"><b style="font-family:var(--font-d);font-size:26px;letter-spacing:.5px">'+fmtN(o.u)+'</b> unidades recibidas del depósito en '+lbl(ym)+' '+varTxt+'</div>'+sel+'</div>';
+  html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'+rub.map(([r,u])=>'<span style="font-family:var(--font-c);font-size:12px;padding:4px 10px;border-radius:20px;background:#eef2f8"><b>'+r+'</b> '+fmtN(u)+' · '+(o.u?Math.round(u/o.u*100):0)+' %</span>').join('')+'</div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" class="dep-grid">';
+  html+='<div><div class="sec-label" style="margin-bottom:6px">Marcas</div>'+mar.map(([m,u])=>'<div style="display:flex;align-items:center;gap:8px;font-size:13px;margin:3px 0"><span style="min-width:120px">'+m+'</span><div style="flex:1;height:7px;background:#edf0f5;border-radius:4px;overflow:hidden"><i style="display:block;height:100%;width:'+Math.round(u/(mar[0][1]||1)*100)+'%;background:var(--navy);border-radius:4px"></i></div><b style="min-width:48px;text-align:right;font-family:var(--font-c)">'+fmtN(u)+'</b></div>').join('')+'</div>';
+  html+='<div><div class="sec-label" style="margin-bottom:6px">Artículos que más llegaron</div>'+(o.top||[]).slice(0,10).map(t=>'<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px solid #edf0f5"><span style="white-space:normal">'+t[0]+' <span style="color:var(--muted)">· '+t[1]+'</span></span><b style="font-family:var(--font-c);white-space:nowrap">'+fmtN(t[2])+'</b></div>').join('')+'</div></div>';
+  $('depositoCard').innerHTML = html;
+  const s=$('depSel'); if(s) s.addEventListener('change', ()=>{ _depYm=s.value; paintDeposito(); });
 }
 async function renderBarrida(){
   const sec=$('secBarrida'); if(!sec) return;

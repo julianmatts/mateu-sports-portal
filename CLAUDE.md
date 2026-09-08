@@ -1102,22 +1102,53 @@ por jsdelivr; ⚠ en cdnjs la ruta de Chart.js da 404).
   disciplinas, jun–ago): 9.226 de sus 9.228 filas coinciden con el CSV.
 - **Modelo Firebase** (`recepciones-mateu/logistica/`): `arts/<clave>` = maestro compartido
   `[rubro, sub, disc, marca, idItem, artículo, tipo, código]` (clave = código con `. # $ [ ] /`
-  → `_`; el rubro va sin el prefijo «NN-»: `CALZADO`) y `meses/<YYYY-MM>` =
+  → `_`; el rubro va sin el prefijo «NN-»: `CALZADO`), `meses/<YYYY-MM>` =
   `{meta:{envios:{archivo,hoja,subido,por,filas,unidades}, ingresos:{…}},
   envios:[[clave, sucursal, unidades],…], ingresos:[[clave, unidades, costo],…]}` (sumados
-  por artículo × sucursal × mes) + `ultimo`. Filas compactas para que el año entero pese
-  poco (~4 MB por PATCH; al abrir baja `arts` + cada mes). Sembrado el 08/09/2026 ene–sep
-  2026 con `node scripts/importar-logistica-csv.js 2026 "<transferencias.csv>"
-  "<remitos.csv>" [--dry]` (mismas reglas que `parsearPivot` del módulo: mantener en
-  sintonía). Totales: 643.710 enviadas · 787.804 ingresadas · 151 marcas.
+  por artículo × sucursal × mes), **`porSuc/<slug>/<YYYY-MM>`** = `{u, rubros:{}, marcas:{},
+  top:[[art, marca, u, cod]…]}` (resumen por sucursal, seguridad blanda: Mi Sucursal baja solo
+  el suyo; `PREFIJO_SLUG` NN→slug como en objetivos/), `avisos/<YYYY-MM>` (recordatorio ya
+  mandado) y `ultimo`. **Carga perezosa (08/09/2026 tarde)**: al abrir baja `arts` + los
+  últimos `MESES_INICIALES` (3) meses; el filtro «Mes» lista todos los del año (los no
+  cargados con «·») y `refresh()` baja a demanda los que se elijan más el período anterior y
+  el mismo del año anterior (para las variaciones); «Limpiar filtros» = todo el año.
+  Sembrado el 08/09/2026 ene–sep 2026 con `node scripts/importar-logistica-csv.js 2026
+  "<transferencias.csv>" "<remitos.csv>" [--dry]`. Totales: 643.710 enviadas · 787.804
+  ingresadas · 151 marcas.
+- **Parser en `lib/logistica-parse.js`** (UMD, `window.LogisticaParse` / `require`): única
+  fuente de verdad de la lectura de los exports (`detectarPivot`, `conocidosDesde`,
+  `inferirColumnas`, `parsearPivot`, `detectarPorNombre`, `parsearPorNombre`, `csvAMatriz`,
+  `filasMes`, `unidadesDe`, `resumenPorSucursal`, `ymDeCelda`…). Lo usan el módulo, el
+  script de siembra y los tests: **`node --test lib/logistica-parse.test.js`** (fixtures con
+  el formato real, columnas desordenadas, remitos con costo, formato por nombre).
 - **Pantalla**: 7 filtros multi-select propios (`multiSel`, chips con buscador; **encadenados**:
   cada uno ofrece solo los valores que quedan con los demás; el de Sucursal aplica solo a
-  envíos porque los ingresos son del depósito; el 7.º es Tipo de artículo) → 5 KPIs (el de
-  ingresos suma el **costo** en millones) → Envíos (unidades por sucursal con selector «ver
-  solo estas», anillo por rubro, línea por mes, top marcas, disciplinas, subrubros) →
-  Ingresos (enviado vs. ingresado, por rubro, subrubro, mes) → detalle con buscador/paginado
-  y columna «Ingresó al depósito» (mismo artículo+mes). «⇩ Excel» = detalle filtrado + hojas
-  Resumen e Ingresos (con costo). Plugin `valueLabels` dibuja valor · % en barras/anillo/puntos.
+  envíos porque los ingresos son del depósito; el 7.º es Tipo de artículo) → 5 KPIs
+  (enviadas, ingresadas con **costo** en millones, **sin distribuir**, sucursales, artículos ·
+  marcas) con **chips de variación** `varChip` vs. el período anterior de la misma cantidad
+  de meses y vs. los mismos meses del año anterior (solo si están todos cargados) → Envíos
+  (unidades por sucursal con selector «ver solo estas», anillo por rubro, **línea por mes con
+  el año anterior punteado** y el **ritmo del mes en curso** `ritmoHtml`: unidades por día
+  hábil lun–sáb sin feriados del calendario del shell `shared/data/calendario-<año>.json`,
+  proyección y % del ritmo del mes pasado; top marcas, disciplinas, subrubros) →
+  **«Abastecimiento vs. venta»** `ventaVsEnvios` (unidades enviadas por cada 100 vendidas por
+  sucursal; la venta neta sale de `data/indicadores/<ym>/cadena.json` — períodos RETAIL, sin
+  apertura por rubro — solo para los meses que tienen período) → Ingresos con **switch
+  «Unidades / $ al costo»** (`MODO_ING`, `valIng`) para rubro/subrubro/mes → **«Ingresó y no
+  salió»** `noSalio` (por artículo: ingresó − salió a cualquier sucursal en los mismos meses,
+  % distribuido con barra, top 30; alimenta el KPI «Sin distribuir») → detalle **ordenable por
+  columna** (`TB.sort`), **«Agrupar por artículo»** (suma sucursales) y **«⧉ Copiar»** (TSV al
+  portapapeles), con «Ingresó al depósito» del mismo artículo+mes. «⇩ Excel» = Envíos,
+  Resumen, Ingresos (con costo), Sin distribuir y Vs. venta. Plugin `valueLabels` dibuja
+  valor · % en barras/anillo/puntos (texto plano, sin contorno; sin % con un solo valor).
+- **Recordatorio de carga** (`recordatorioCarga`): si falta el mes anterior (desde el día 5)
+  sale un banner ámbar con «⇧ Cargar ahora» y se manda **una vez por mes** un directo por la
+  Bandeja a `AVISO_MAILS` (logistica@, deposito@; flag `logistica/avisos/<ym>`).
+- **Mi Sucursal**: sección **«Qué te mandó el depósito»** (`secDeposito`,
+  `renderDeposito`/`paintDeposito` en `indicadores/`, zona viva, después de la Reposición):
+  lee `logistica/porSuc/<slug>` y muestra por mes (selector) unidades recibidas con variación
+  vs. el mes anterior (el mes en curso se marca «parcial»), chips por rubro, barras por marca
+  y los 10 artículos que más llegaron. Sin resumen → la sección no aparece.
 - **Carga mensual** («⇧ Cargar export», modal con dos recuadros envíos / ingresos, CSV o
   Excel, drag & drop; el CSV se lee como windows-1252): `detectarPivot` reconoce el pivot del
   sistema por la fila de meses (y «Cant.recibido» en la segunda fila para remitos). **El orden
