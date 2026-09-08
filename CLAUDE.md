@@ -1035,6 +1035,13 @@ Indicadores, ver abajo).
   `d.r<=0`: el depósito no tiene NINGUNA de ese talle — no se la llevó nadie, hay que pedírsela
   a la marca) de **«de R · pedía V»** (hay stock pero no alcanza y por prioridad le tocó menos).
   El pill de la fila también: **⚠ hay que comprar** (`sinStockEn`) vs. **⚠ recortado**.
+- **Por defecto NO se muestra lo que no se puede reponer (08/09/2026, pedido de Juli)**: para
+  armar la barrida solo sirven los talles que bajan. `filtros.verRojos` (default **false**) oculta
+  los casilleros que quedan en 0 —el depósito no tiene el talle, o se lo llevó otra sucursal— y
+  los pills ⚠ de la fila; el ⇩ Excel tampoco lleva esos ceros ni sus columnas. El tilde
+  **«Ver los talles que no hay»** (grupo Mostrar) los trae de vuelta, y el contador
+  «N con faltante de talle» de la tira de resumen funciona como interruptor. «Solo con faltante
+  de talle» lo prende solo. Los recortados que igual mandan algo (`s>0`) se ven siempre.
 - **La tabla ya no se corta (08/09/2026)**: `main` pasó de 1200 a **1600 px** de ancho y los
   casilleros de la columna Talles van en un `div.tw` con `max-width:560px` y `flex-wrap`, así
   envuelven en vez de estirar la tabla fuera de la pantalla (a 1440 px ya no hay scroll lateral).

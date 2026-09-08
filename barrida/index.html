@@ -158,6 +158,7 @@ main{max-width:1600px;margin:0 auto;padding:20px 18px 80px}
 .resu .c-curva b{color:#127a3a} .resu .c-vac b{color:#1e40af} .resu .c-falta,.resu .c-falta b{color:var(--bad)}
 .resu small{font-size:12px;color:var(--muted)}
 .resu .c-cero b{color:#1e40af}
+.resu .lnkr{border:0;background:none;padding:0;font:inherit;cursor:pointer;text-decoration:underline dotted}
 .resu .c-rep b{color:#92400e}
 .resu .c-env b{color:#127a3a}
 .env-ok,.env-par,.env-no,.env-ex{display:inline-block;padding:2px 8px;border-radius:20px;font-weight:800;font-variant-numeric:tabular-nums;font-size:12.5px}
@@ -495,7 +496,7 @@ const state = {
   histKeys:[],                           // lunes con barrida guardada
   // curva = tilde «Completar curva de talles» de Reposición: fusiona en cada fila los talles
   // que la sucursal no tiene y sí hay en reserva (y suma filas de sucursales que solo tienen curva)
-  filtros:{ suc:'', rubro:'', marca:'', discs:[], subrubros:[], tipoprod:'', q:'', soloSugerido:true, excluirVarios:true, soloFaltante:false, soloRepite:false, soloSinEnviar:false, curva:false, vaciar:false },
+  filtros:{ suc:'', rubro:'', marca:'', discs:[], subrubros:[], tipoprod:'', q:'', soloSugerido:true, excluirVarios:true, soloFaltante:false, soloRepite:false, soloSinEnviar:false, verRojos:false, curva:false, vaciar:false },
   mselOpen:null,   // panel multi-select abierto (se conserva entre renders)
   filtrosPar:{ rubro:'', marca:'', q:'', excluirVarios:true, soloCronica:false },
   filtrosCom:{ rubro:'', marca:'', q:'', excluirVarios:true, minVendido:3, topN:20, vista:'sin' },
@@ -1410,6 +1411,7 @@ function viewReposicion(){
   const rows=reposFiltradas();
   const curvaOn = f.curva && R.conStock;
   const fv=state.filtrosVac, vacOn = f.vaciar && (R.vaciado||[]).length>0;
+  const verRojos = f.verRojos || f.soloFaltante;   // los talles que no se pueden reponer
   // talles que quedan en el depósito (todas las sucursales cubiertas), por artículo
   const dejPorArt = vacOn ? (R.vacDejados||{}) : {};
 
@@ -1436,6 +1438,7 @@ function viewReposicion(){
       +chk('fSug',f.soloSugerido,'Solo lo que se puede mandar','Oculta las líneas donde no hay nada para bajar: el artículo tiene reserva, pero no en los talles que la sucursal vendió. Las recortadas por prioridad se siguen viendo.')
       +chk('fVarios',f.excluirVarios,'Excluir Varios/Facturación','Saca del listado los rubros Varios y Facturación (gift cards, cupones y demás)')
       +chk('fFalta',f.soloFaltante,'Solo con faltante de talle','Solo las líneas donde la reserva no alcanza para todo lo vendido (los talles en rojo): son las que hay que recomprar a la marca.')
+      +chk('fRojos',f.verRojos,'Ver los talles que no hay','Muestra también, en rojo, los talles que la sucursal vendió y el depósito NO puede reponer. Para armar la barrida no hacen falta; sirven para saber qué pedirle a la marca.')
       +(R.previa?chk('fRepite',f.soloRepite,'Solo lo que se repite','Solo las líneas que ya estaban en la barrida del '+lunesLabel(R.previa.semana)+' para esa misma sucursal'):'')
       +(state.transf?chk('fSinEnv',f.soloSinEnviar,'Solo lo que falta enviar','Solo las líneas que el sistema todavía no registra como transferidas (o salieron a medias)'):'')
     +'</div><div class="fsep"></div>'
@@ -1478,7 +1481,7 @@ function viewReposicion(){
   if(!rows.length) return html+'<div class="state"><div class="big-ic">📭</div>Sin candidatos para estos filtros.</div>';
   // ---- cómo se lee la tabla: plegable, se recuerda abierto/cerrado ----
   html+='<details class="ayuda" id="ayudaRep"'+(ayudaAbierta()?' open':'')+'><summary>¿Cómo se lee esta tabla?</summary>'
-    +'<div class="card-hs"><b>Cada casillero de la columna Talles es un talle</b>: arriba el talle, en el medio y en grande <b>cuántas unidades van</b> de ese talle, y abajo chiquito de dónde sale ese número. <span class="tgx"><span class="txl">41</span><span class="txn">3</span><span class="txr">de 13</span></span> = vendió 3, hay 13 en el depósito, se le mandan las 3. <b>Hay dos rojos distintos</b>: <span class="tgx rec"><span class="txl">41</span><span class="txn">1</span><span class="txr">de 3 · pedía 4</span></span> = sí hay stock del talle (3) pero no alcanza para todas las sucursales que lo piden, y por <b>prioridad</b> a esta le tocó 1. <span class="tgx rec nohay"><span class="txl">41</span><span class="txn">0</span><span class="txr">no hay</span></span> (borde punteado) = el depósito <b>no tiene ninguna</b> de ese talle: no se la llevó nadie, directamente falta — <b>hay que pedírsela a la marca</b>. Por eso las filas se marcan <span class="pill falta">⚠ hay que comprar</span> o <span class="pill rec2">⚠ recortado</span>.<br><b>Prioridad</b> = puesto de la sucursal entre las que piden ese artículo (1 = primera): vendido del artículo ↓, meses de stock en la marca-rubro ↑, categoría (pasá el mouse para ver los tres).<br><b>Cuánto rota cada talle</b> (curva de la venta de la semana en ese rubro y tipo de producto): <span class="tgx n-fuerte"><span class="txl">41</span><span class="txn">3</span><span class="txr">de 13</span></span> rótulo navy = talle fuerte, entra en el primer 60% de la venta; el rótulo claro es rotación media y <span class="tgx n-flojo"><span class="txl">47</span><span class="txn">1</span><span class="txr">de 4</span></span> apagado = cola de la curva, casi no se vende (pasá el mouse para ver el % exacto). En <b>Completar curva</b>, «Solo talles que rotan» no gasta reserva en esos últimos.<br>El chip <span class="pill rep2">↻ repite</span> avisa que a esa misma sucursal ya se le había sugerido ese artículo en la barrida anterior: o no se ejecutó el envío, o el artículo rota y hay que recomprarlo. La columna <b>Queda</b> es lo que sobra de ese artículo en el depósito después de repartirlo entre todas las sucursales (en azul, los que salen enteros).<br><b>Medias Mateu Sports</b> (filas <span class="pill rec">piso medias</span>): por cada talle vendido se repone el mínimo del talle (S:12 · M:24 · L:36 · XL:12) aunque haya vendido menos, así que el número grande es ese mínimo y no lo vendido.'
+    +'<div class="card-hs"><b>Cada casillero de la columna Talles es un talle</b>: arriba el talle, en el medio y en grande <b>cuántas unidades van</b> de ese talle, y abajo chiquito de dónde sale ese número. <span class="tgx"><span class="txl">41</span><span class="txn">3</span><span class="txr">de 13</span></span> = vendió 3, hay 13 en el depósito, se le mandan las 3. <b>Los talles que no se pueden reponer no se muestran</b> (no hacen falta para armar): con el tilde <b>«Ver los talles que no hay»</b> aparecen en rojo, y hay dos: <span class="tgx rec"><span class="txl">41</span><span class="txn">1</span><span class="txr">de 3 · pedía 4</span></span> = sí hay stock del talle (3) pero no alcanza para todas las sucursales que lo piden, y por <b>prioridad</b> a esta le tocó 1. <span class="tgx rec nohay"><span class="txl">41</span><span class="txn">0</span><span class="txr">no hay</span></span> (borde punteado) = el depósito <b>no tiene ninguna</b> de ese talle: no se la llevó nadie, directamente falta — <b>hay que pedírsela a la marca</b>. Por eso las filas se marcan <span class="pill falta">⚠ hay que comprar</span> o <span class="pill rec2">⚠ recortado</span>.<br><b>Prioridad</b> = puesto de la sucursal entre las que piden ese artículo (1 = primera): vendido del artículo ↓, meses de stock en la marca-rubro ↑, categoría (pasá el mouse para ver los tres).<br><b>Cuánto rota cada talle</b> (curva de la venta de la semana en ese rubro y tipo de producto): <span class="tgx n-fuerte"><span class="txl">41</span><span class="txn">3</span><span class="txr">de 13</span></span> rótulo navy = talle fuerte, entra en el primer 60% de la venta; el rótulo claro es rotación media y <span class="tgx n-flojo"><span class="txl">47</span><span class="txn">1</span><span class="txr">de 4</span></span> apagado = cola de la curva, casi no se vende (pasá el mouse para ver el % exacto). En <b>Completar curva</b>, «Solo talles que rotan» no gasta reserva en esos últimos.<br>El chip <span class="pill rep2">↻ repite</span> avisa que a esa misma sucursal ya se le había sugerido ese artículo en la barrida anterior: o no se ejecutó el envío, o el artículo rota y hay que recomprarlo. La columna <b>Queda</b> es lo que sobra de ese artículo en el depósito después de repartirlo entre todas las sucursales (en azul, los que salen enteros).<br><b>Medias Mateu Sports</b> (filas <span class="pill rec">piso medias</span>): por cada talle vendido se repone el mínimo del talle (S:12 · M:24 · L:36 · XL:12) aunque haya vendido menos, así que el número grande es ese mínimo y no lo vendido.'
     +(vacOn ? '<br>Con <b>Vaciar la reserva chica</b> se suman casilleros azules: <span class="tgx vac"><span class="txl">41</span><span class="txn">+2</span><span class="txr">vaciar</span></span> = el artículo tiene '+fv.max+' unidades o menos en todo el depósito, así que se reparte lo que queda entre las sucursales que lo venden o lo tienen (de a una por vuelta, en orden de prioridad) y deja de vivir en la reserva. <span class="tgx off"><span class="txl">43</span><span class="txn">—</span><span class="txr">se deja</span></span> = ese talle NO baja porque todas esas sucursales ya tienen '+fv.minSuc+' o más (bajarlo sería stock parado). Las filas <span class="pill vac">solo vaciado</span> son sucursales que no lo vendieron pero lo tienen en stock.' : '')
     +(curvaOn ? '<br>Con <b>Completar curva</b> se suman casilleros verdes: <span class="tgx hueco"><span class="txl">41</span><span class="txn">+1</span><span class="txr">no tiene</span></span> = talle que la sucursal <b>no tiene</b> y sí hay en reserva (van +'+fc.unidades+' por talle faltante); <span class="tgx off"><span class="txl">43</span><span class="txn">—</span><span class="txr">agot.</span></span> = la reserva de ese talle se la llevó una sucursal con más prioridad. Las filas <span class="pill curva">solo curva</span> son sucursales que no vendieron el artículo pero lo tienen incompleto.' : '')
     +'</div></details>';
@@ -1492,7 +1495,7 @@ function viewReposicion(){
     if(uVac) desg.push('<span class="c-vac"><b>'+fmtInt(uVac)+'</b> vaciado</span>'); }
   html+='<div class="resu"><span><b>'+fmtInt(rows.length)+'</b> líneas</span>'
     +'<span><b>'+fmtInt(uTot)+'</b> unidades a bajar'+(desg.length?' <small>('+desg.join(' · ')+')</small>':'')+'</span>'
-    +(nFalta?'<span class="c-falta"><b>'+fmtInt(nFalta)+'</b> con faltante de talle: la reserva no alcanza</span>':'')
+    +(nFalta?'<button type="button" class="c-falta lnkr" id="verFaltaBtn" title="'+(verRojos?'Ocultar los talles que no se pueden reponer':'Ver en rojo los talles que la sucursal vendió y el depósito no puede reponer')+'"><b>'+fmtInt(nFalta)+'</b> con faltante de talle: la reserva no alcanza '+(verRojos?'▴':'▾')+'</button>':'')
     +(artVacios?'<span class="c-cero"><b>'+fmtInt(artVacios)+'</b> artículos salen enteros del depósito</span>':'')
     +(R.previa?(function(){ const n=rows.filter(r=>repiteDe(r)>0).length; return n?'<span class="c-rep"><b>'+fmtInt(n)+'</b> ya estaban en la barrida del '+lunesLabel(R.previa.semana)+'</span>':''; })():'')
     +(state.transf?(function(){ let env=0, ped=0, falta=0;
@@ -1507,7 +1510,9 @@ function viewReposicion(){
   rows.forEach(r=>{
     const falta=faltaEn(r);
     const piso=r.pisoMedias;
-    const tt=Object.entries(r.talles).filter(([t,d])=>d.v>0).map(([t,d])=>talleChip(t,d,r)).join('');
+    // Para armar la barrida solo importan los talles que bajan: los que quedan en cero
+    // (el depósito no los tiene, o se los llevó otra sucursal) se ocultan salvo que se pidan.
+    const tt=Object.entries(r.talles).filter(([t,d])=>d.v>0 && (verRojos || d.s>0)).map(([t,d])=>talleChip(t,d,r)).join('');
     const pillPiso = piso?' <span class="pill rec" title="Medias Mateu: para el talle vendido se repone el mínimo (S:12 M:24 L:36 XL:12), aunque haya vendido menos">piso medias</span>':'';
     const pillCurva = r.soloCurva?' <span class="pill curva" title="No vendió el artículo esta semana, pero lo tiene incompleto: solo talles de curva">solo curva</span>':'';
     const pillVac = r.soloVaciado?' <span class="pill vac" title="No vendió el artículo esta semana, pero lo tiene en stock: recibe parte de la reserva que se vacía">solo vaciado</span>':'';
@@ -1524,7 +1529,7 @@ function viewReposicion(){
     const detBadge = [ (r.curvaU>0?fmtInt(r.curvaU)+' para completar la curva':''), (r.vacU>0?fmtInt(r.vacU)+' por vaciar la reserva':'') ].filter(Boolean).join(' + ');
     const badgeTitle = detBadge ? ' title="'+fmtInt(r.sugRep||0)+' por venta + '+detBadge+'"' : '';
     html+='<tr><td><span class="pill suc">'+esc(r.sucNombre)+'</span></td>'
-      +'<td class="desc rep" title="'+esc(r.desc)+'"><span class="dtxt">'+esc(r.desc||'—')+'</span>'+pillPiso+pillCurva+pillVac+pillRep+(falta?(sinStockEn(r)
+      +'<td class="desc rep" title="'+esc(r.desc)+'"><span class="dtxt">'+esc(r.desc||'—')+'</span>'+pillPiso+pillCurva+pillVac+pillRep+((falta&&verRojos)?(sinStockEn(r)
         ? ' <span class="pill falta" title="Vendió talles que el depósito no tiene: no hay nada que bajar, hay que pedírselos a la marca">⚠ hay que comprar</span>'
         : ' <span class="pill rec2" title="Hay stock del talle pero no alcanza para todas las sucursales que lo piden: por prioridad esta recibe menos de lo que vendió">⚠ recortado</span>'):'')+'</td>'
       +'<td class="mono">'+esc(r.codigo||r.id)+'</td><td>'+esc(r.marca)+'</td>'
@@ -1981,7 +1986,9 @@ function wireReposicion(){
   const vMax=$('vMax'); if(vMax) vMax.onchange=e=>{ state.filtrosVac.max=parseInt(e.target.value,10)||5; aplicarVaciado(); aplicarUnidadesCurva(); render(); };
   const vMin=$('vMin'); if(vMin) vMin.onchange=e=>{ state.filtrosVac.minSuc=parseInt(e.target.value,10)||3; aplicarVaciado(); aplicarUnidadesCurva(); render(); };
   const vr=$('fVarios'); if(vr) vr.onchange=e=>{ f.excluirVarios=e.target.checked; render(); };
-  const fa=$('fFalta'); if(fa) fa.onchange=e=>{ f.soloFaltante=e.target.checked; render(); };
+  const fa=$('fFalta'); if(fa) fa.onchange=e=>{ f.soloFaltante=e.target.checked; if(f.soloFaltante) f.verRojos=true; render(); };
+  const rj=$('fRojos'); if(rj) rj.onchange=e=>{ f.verRojos=e.target.checked; render(); };
+  const vf=$('verFaltaBtn'); if(vf) vf.onclick=()=>{ f.verRojos=!f.verRojos; if(!f.verRojos) f.soloFaltante=false; render(); };
   const rp=$('fRepite'); if(rp) rp.onchange=e=>{ f.soloRepite=e.target.checked; render(); };
   const se=$('fSinEnv'); if(se) se.onchange=e=>{ f.soloSinEnviar=e.target.checked; render(); };
   // completar curva (tilde + sus controles)
@@ -2294,11 +2301,12 @@ async function exportPlanilla(cfg){
 async function exportRepXlsx(){
   const R=state.resultado; if(!R) return;
   const f=state.filtros;
+  const verRojos = f.verRojos || f.soloFaltante;   // igual que en pantalla
   const rows=reposFiltradas();
   if(!rows.length){ toast('No hay filas para exportar','err'); return; }
-  // columnas de talle: las que tienen SUGERIDO>0 o un recorte en algún artículo de lo filtrado,
-  // más los talles de «Completar curva» que se mandan (si el tilde está puesto).
-  const set=new Set(); rows.forEach(r=>{ Object.entries(r.talles).forEach(([t,d])=>{ if(d.s>0 || (d.v>0&&d.s<d.v)) set.add(t); }); (r.curvaFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); (r.vacFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); });
+  // columnas de talle: las que se mandan y, solo si se piden, las que quedaron en cero;
+  // más los talles de «Completar curva» y del vaciado.
+  const set=new Set(); rows.forEach(r=>{ Object.entries(r.talles).forEach(([t,d])=>{ if(d.s>0 || (verRojos&&d.v>0&&d.s<d.v)) set.add(t); }); (r.curvaFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); (r.vacFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); });
   const talles=[...set].sort(cmpTalle);
   const lbl=exportLabels(f.rubro, f.marca, [f.tipoprod, f.discs.join('+'), f.subrubros.join('+')]);
   const uCurva=rows.reduce((a,x)=>a+(x.curvaU||0),0), uVac=rows.reduce((a,x)=>a+(x.vacU||0),0);
@@ -2309,7 +2317,8 @@ async function exportRepXlsx(){
     // sin fila de resumen ni analíticas (Vendido…Categoría): la planilla del depósito lleva solo lo que hay que mandar
     rows, talles,
     // cantidad a mandar = reposición por venta + talles de curva + vaciado de esa sucursal
-    celda:(row,t)=>{ const d=row.talles[t]; const sug=(d?d.s:0)+curvaS(row,t)+vacS(row,t); const esFalta=!!(d&&d.v>0&&d.s<d.v); return { val: sug>0?sug:(esFalta?0:null), falta:esFalta }; },
+    // el 0 rojo del talle que no se puede reponer solo sale si se pidió verlo en pantalla
+    celda:(row,t)=>{ const d=row.talles[t]; const sug=(d?d.s:0)+curvaS(row,t)+vacS(row,t); const esFalta=!!(d&&d.v>0&&d.s<d.v&&verRojos); return { val: sug>0?sug:(esFalta?0:null), falta:esFalta }; },
     derecha:[ {h:'Total',val:r=>r.sugerido,total:true} ],
     archivo:'reposicion'+lbl.file+'-'+state.semana+'.xlsx',
   });
