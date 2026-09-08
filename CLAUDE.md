@@ -958,6 +958,19 @@ Indicadores, ver abajo).
   histórico el tilde vuelve como se guardó. La sucursal lo ve en Indicadores (bloque «talles
   para completar la curva» dentro de «Reposición disponible») y el **Picking** lo suma al armar
   el pick (check «Incluir Completar curva», `curvaDe`).
+- **Panel de Reposición reordenado (08/09/2026)**: los 6 selects, los 5 tildes y el botón de
+  Excel estaban todos sueltos en la misma línea. Ahora es una tarjeta `.fpanel` con dos filas:
+  arriba **qué mirar** (Sucursal · Rubro · Marca · Tipo · Disciplina · Subrubro · Buscar) y
+  abajo, separadas por una línea, las opciones agrupadas en **Mostrar** (solo lo que se puede
+  mandar · excluir Varios · solo con faltante) y **Sumar al pedido** (Completar curva · Vaciar
+  la reserva chica), con «Limpiar filtros» y ⇩ Excel a la derecha. Debajo, **chips con los
+  filtros puestos** (`chipsFiltros`, ✕ para sacar uno de a uno), los parámetros de curva y
+  vaciado como bloques `.fmodo` (verde y azul, en el mismo orden que sus tildes, con cuántas
+  unidades aporta cada uno) y una **tira de resumen arriba de la tabla** (`.resu`: líneas,
+  unidades a bajar con el desglose por venta/curva/vaciado, líneas con faltante, artículos y
+  sucursales) — antes ese total estaba solo al pie. La explicación larga de la tabla pasó a un
+  desplegable **«¿Cómo se lee esta tabla?»** (`<details class="ayuda">`), abierto la primera vez
+  y después como lo deje el usuario (localStorage `barrida_ayuda`).
 - **Vaciar la reserva chica (08/09/2026, pedido de Juli)**: en **calzado e indumentaria**
   (`esVaciable`), un artículo con muy poca reserva no tiene sentido en el depósito: conviene
   repartir lo que queda y que viva en las sucursales. Tilde **«Vaciar la reserva chica»** en

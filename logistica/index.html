@@ -139,6 +139,13 @@ tr:hover td{background:#fafbfd}
 .pill{display:inline-block;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:2px 8px;border-radius:20px;background:#eef2f8;color:var(--navy)}
 .pill.ok{background:#dcfce7;color:#166534}
 .pill.new{background:#fef3c7;color:#92400e}
+.pill.bad{background:#fee2e2;color:#991b1b}
+.cols{margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:#fafbfd}
+.cols summary{cursor:pointer;font-family:var(--font-c);font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--navy)}
+.cols .ej{font-size:11px;color:var(--muted);white-space:normal;max-width:360px}
+.cols tr.ign td{color:var(--muted-light)}
+.cols select{height:28px;border:1px solid var(--border);border-radius:6px;padding:0 6px;font-family:var(--font-b);font-size:12px;background:#fff;color:var(--muted)}
+.cols select.on{color:var(--navy);font-weight:600;border-color:var(--navy)}
 
 @media(max-width:1100px){.filters{grid-template-columns:repeat(4,1fr)}.kpis{grid-template-columns:repeat(3,1fr)}.grid,.grid2{grid-template-columns:1fr}}
 @media(max-width:650px){main{padding:10px 10px 50px}.hero{padding:14px}.filters{grid-template-columns:1fr 1fr}.kpis{grid-template-columns:1fr 1fr}.kpi .v{font-size:28px}.panel .mini,.search{width:100%}.drops{grid-template-columns:1fr}.panel{min-height:0}}
@@ -586,15 +593,19 @@ $('btnExcel').addEventListener('click', ()=>{
 /* ============================================================
    CARGA DEL EXPORT → Firebase (maestro de artículos + un nodo por mes)
    Formato principal: los dos exports PIVOT del sistema (CSV ; latin1, o Excel):
-   · «Estad transferencias <año>» = envíos: origen · rubro · subrubro · marca ·
-     proveedor · disciplina · tipo art. · campaña · línea · código · artículo ·
-     ID ITEM · destino · una columna por mes (1..12); fila «Total» por artículo.
-   · «Estad remitos <año>» = ingresos: marca · rubro · subrubro · disciplina ·
-     remito · tipo art. · campaña · línea · artículo · código · ID ITEM · pares
-     (Cant.recibido · Costo) por mes + Total. Segunda fila de encabezado.
+   · «Estad transferencias <año>» = envíos: columnas de texto (origen, rubro,
+     subrubro, marca, proveedor, disciplina, tipo art., campaña, línea, código,
+     artículo, ID ITEM, destino…) + una columna por mes (1..12); fila «Total»
+     por artículo.
+   · «Estad remitos <año>» = ingresos: columnas de texto + pares (Cant.recibido ·
+     Costo) por mes + Total. Segunda fila de encabezado.
+   ⚠ El ORDEN de las columnas de texto NO es fijo (pedido de Juli 08/09/2026):
+   `inferirColumnas` reconoce cada una por su CONTENIDO (valores conocidos del
+   maestro `ARTS` + patrones) y el modal muestra la asignación de cada columna
+   con un selector para corregirla; la corrección se recuerda por tipo y cantidad
+   de columnas (localStorage `logi_colmap_*`).
    Formato alternativo: una fila por movimiento con encabezados por nombre
    (Sucursal · Mes/Fecha · Rubro · … · Cantidad/Ingresado), como el informe.
-   Mismas reglas que scripts/importar-logistica-csv.js (mantener en sintonía).
    ============================================================ */
 const ALIAS = {
   suc:   ['SUCURSAL','SUC','LOCAL','DESTINO','SUCURSAL DESTINO'],
@@ -612,7 +623,13 @@ const ALIAS = {
   costo: ['COSTO','IMPORTE','VALOR'],
 };
 const ALIAS_ING = ['INGRESADO','INGRESADAS','INGRESO','RECIBIDO','CANT.RECIBIDO'];
-const CARGA = { env:null, ing:null }; // por recuadro: {archivo, hoja, tipo, arts, porMes:{ym:[[k,suc,q,costo]]}, filas, desc, sinMes, aviso}
+// Campos asignables a una columna de texto del pivot (y su rótulo en el selector).
+const CAMPOS = [
+  ['', '— ignorar —'], ['suc','Sucursal destino'], ['rubro','Rubro'], ['sub','Subrubro'], ['disc','Disciplina'],
+  ['marca','Marca'], ['tipo','Tipo de artículo'], ['cod','Código de barras'], ['id','ID ITEM'], ['art','Artículo'],
+];
+const CAMPO_LBL = Object.fromEntries(CAMPOS);
+const CARGA = { env:null, ing:null }; // por recuadro: {archivo, hojas, det, map, auto, origenMap, tipo, arts, porMes, filas, desc, sinMes, aviso, cols}
 const sinPrefijo = s => String(s==null?'':s).trim().replace(/^\d{2}-/, '');
 const numCell = v => { if(typeof v==='number') return v; const n = parseFloat(String(v==null?'':v).trim().replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.')); return isFinite(n) ? n : 0; };
 
@@ -624,27 +641,92 @@ function sumarFila(p, ym, k, suc, q, costo){
 }
 function setArt(p, cod, a){ p.arts[clave(cod)] = [sinPrefijo(a.rubro), String(a.sub||'').trim(), String(a.disc||'').trim(), String(a.marca||'').trim(), a.id==null||a.id===''?'':(typeof a.id==='number'?String(Math.round(a.id)):String(a.id).trim()), String(a.art||'').trim(), String(a.tipo||'').trim(), String(cod||'').trim()]; }
 
-/* --- formato pivot del sistema --- */
-function parsearPivot(m, anio, tipoRecuadro){
+/* --- detección del pivot: columnas de mes y fila de arranque --- */
+function detectarPivot(m){
   const h = m[0]||[]; if(!h.length) return null;
   const meses = [], vistos = new Set();
   h.forEach((c,i)=>{ const s=String(c==null?'':c).trim(); if(/^\d{1,2}$/.test(s) && +s>=1 && +s<=12 && !vistos.has(+s)){ vistos.add(+s); meses.push({i, mes:+s}); } });
-  if(meses.length < 1 || meses[0].i < 8) return null;           // no es el pivot (los meses arrancan tras ≥ 8 columnas de texto)
-  const esRemito = !!(m[1] && m[1].some(c=>/cant\.?\s*recib/i.test(String(c)))) || meses[0].i===11 && !(m[2]||[])[12];
-  const p = nuevoParse(esRemito ? 'ingresos' : 'envios'); p.hoja = 'pivot ' + (esRemito?'remitos':'transferencias');
-  for(let r = esRemito?2:1; r<m.length; r++){
-    const f = m[r]; if(!f || f.length < 12) continue;
-    if(esRemito){
-      const marca = String(f[0]||'').trim(); if(!marca || /^total$/i.test(marca)){ p.desc++; continue; }
-      const cod = f[9]; setArt(p, cod, { rubro:f[1], sub:f[2], disc:f[3], marca, id:f[10], art:f[8], tipo:f[5] });
-      meses.forEach(({i,mes})=>{ const c=numCell(f[i]); if(c) sumarFila(p, `${anio}-${String(mes).padStart(2,'0')}`, clave(cod), '05-Depósito', c, numCell(f[i+1])); });
-    } else {
-      const suc = String(f[12]||'').trim(); if(!suc || /^total$/i.test(suc)){ p.desc++; continue; }
-      const cod = f[9]; setArt(p, cod, { rubro:f[1], sub:f[2], disc:f[5], marca:f[3], id:f[11], art:f[10], tipo:f[6] });
-      meses.forEach(({i,mes})=>{ const c=numCell(f[i]); if(c) sumarFila(p, `${anio}-${String(mes).padStart(2,'0')}`, clave(cod), suc, c, 0); });
-    }
+  if(meses.length < 1 || meses[0].i < 6) return null;   // no es el pivot (los meses arrancan tras varias columnas de texto)
+  const esRemito = !!(m[1] && m[1].some(c=>/cant\.?\s*recib/i.test(String(c))));
+  const textCols = []; for(let i=0;i<meses[0].i;i++) textCols.push(i);
+  return { meses, esRemito, ini: esRemito?2:1, textCols };
+}
+
+/* --- reconocer cada columna de texto por su contenido --- */
+function conocidos(){
+  // valores del maestro ya cargado (se enriquece con cada carga) + semilla mínima por si está vacío
+  const K = { rubro:new Set(['CALZADO','INDUMENTARIA','ACCESORIOS','VARIOS','OTROS']), sub:new Set(['02-HOMBRE','03-DAMA','04-NIÑO','05-INFANTE','06-UNISEX','UNISEX','INFANTE','VARIOS','HOMBRE','DAMA','NIÑO','OTROS']),
+    disc:new Set(['CASUAL','RUNNING','TRAINING','ORIGINALS','FUTBOL 5','FUTBOL 11','FUTBOL','FUTSAL','ADVENTURE','BASQUET','TENIS','PADDLE','RUGBY','HOCKEY','VOLEY','NATACION','HANDBALL','CALZADO VERANO']),
+    marca:new Set(['ADIDAS','NIKE','PUMA','REEBOK','UNDER ARMOUR','FILA','TOPPER','WILSON','ASICS','NEW BALANCE','CONVERSE','VANS','UMBRO','KAPPA','AURELIUS']),
+    tipo:new Set(['CALZADO ADULTO','CALZADO NIÑO','CALZADO INFANTS','CHINELAS','SANDALIAS','OJOTAS','CAMPERAS','REMERAS','PANTALONES','MEDIAS','MOCHILAS','GORRAS','PELOTAS','SHORTS','BUZOS','CONJUNTOS']) };
+  Object.values(ARTS).forEach(a=>{ if(a.rubro) K.rubro.add(norm(a.rubro)); if(a.sub) K.sub.add(norm(a.sub)); if(a.disc) K.disc.add(norm(a.disc)); if(a.marca) K.marca.add(norm(a.marca)); if(a.tipo) K.tipo.add(norm(a.tipo)); });
+  ['rubro','sub','disc','marca','tipo'].forEach(k=>{ K[k] = new Set([...K[k]].map(norm)); });
+  return K;
+}
+function inferirColumnas(m, det){
+  const K = conocidos();
+  const filas = []; for(let r=det.ini; r<m.length && filas.length<600; r+= Math.max(1, Math.floor((m.length-det.ini)/600))){ const f=m[r]; if(f && f.length>=det.textCols.length) filas.push(f); }
+  const stats = det.textCols.map(i=>{
+    const vals = filas.map(f=>String(f[i]==null?'':f[i]).trim()).filter(v=>v!=='');
+    const n = vals.length||1, distinct = new Set(vals).size;
+    const frac = pred => vals.filter(pred).length/n;
+    const esTotal = frac(v=>/^total$/i.test(v));
+    const sinTotal = vals.filter(v=>!/^total$/i.test(v));
+    const conocido = set => sinTotal.filter(v=>set.has(norm(sinPrefijo(v)))||set.has(norm(v))).length/(sinTotal.length||1);
+    return { i, n:vals.length, distinct, esTotal,
+      rubro: conocido(K.rubro), sub: conocido(K.sub), disc: conocido(K.disc), marca: conocido(K.marca), tipo: conocido(K.tipo),
+      id: frac(v=>/^\d{4,8}(\.0+)?$/.test(v)),
+      remito: frac(v=>/^\d{4}-\d{6,}$/.test(v)),
+      pref: frac(v=>/^\d{2}-\S/.test(v)),
+      cod: frac(v=>/^[A-Z0-9][A-Z0-9._-]{4,}$/i.test(v) && /[A-Z]/i.test(v) && /\d/.test(v) && !/^\d{2}-/.test(v)),
+      espacio: frac(v=>/\s/.test(v)),
+      largo: vals.reduce((s,v)=>s+v.length,0)/n,
+      prov: frac(v=>/S\.?\s?A\.?$|S\.?R\.?L|SRL|S\.A\.|LTDA|INC\b/i.test(v)),
+      camp: frac(v=>/^\*\*\*|NO TIENE|CAMPAÑA|DISCONTINUO|PROMO/i.test(v)),
+      mixto: frac(v=>/[a-z]/.test(v) && /[A-Z]/.test(v)),
+    };
+  });
+  const map = {}, usados = new Set();
+  const tomar = (campo, score) => {
+    let mejor = null; stats.forEach(s=>{ if(usados.has(s.i)) return; const v = score(s); if(v!=null && v>=0.5 && (!mejor || v>mejor.v)) mejor = {i:s.i, v}; });
+    if(mejor){ map[campo] = mejor.i; usados.add(mejor.i); }
+  };
+  // 1) por valores conocidos (los más inequívocos primero)
+  tomar('rubro', s=>s.rubro);
+  tomar('sub',   s=>s.sub);
+  tomar('disc',  s=>s.disc);
+  tomar('tipo',  s=>s.tipo);
+  // 2) por forma
+  tomar('id',    s=>s.id);
+  stats.forEach(s=>{ if(!usados.has(s.i) && s.remito>=0.5) usados.add(s.i); });                       // nro de remito: se ignora
+  stats.forEach(s=>{ if(!usados.has(s.i) && (s.prov>=0.3 || s.camp>=0.3)) usados.add(s.i); });       // proveedor / campaña: se ignoran
+  tomar('cod',   s=>s.cod>=0.7 && s.espacio<0.2 ? s.cod + s.distinct/1e6 : null);
+  // sucursal destino: prefijo NN- que no es rubro; si hay dos (origen y destino), la de más valores distintos / con «Total»
+  tomar('suc',   s=>s.pref>=0.5 || (s.pref+s.esTotal)>=0.8 ? (s.pref+s.esTotal) + Math.min(s.distinct,60)/100 : null);
+  // artículo: texto con espacios y muchos valores distintos
+  tomar('art',   s=>s.espacio>=0.5 && s.largo>=10 ? 0.5 + Math.min(s.distinct,5000)/5000 : null);
+  // marca: lo que queda con pocos valores distintos y mayúsculas/minúsculas mezcladas (o conocido a medias)
+  tomar('marca', s=>(s.marca>=0.15 || s.mixto>=0.3) && s.distinct<400 ? 0.5 + s.marca + s.mixto/2 : null);
+  return { map, stats };
+}
+function mapaRecordado(tipo, ncols){ try{ const s = localStorage.getItem(`logi_colmap_${tipo}_${ncols}`); return s ? JSON.parse(s) : null; }catch(e){ return null; } }
+function recordarMapa(tipo, ncols, map){ try{ localStorage.setItem(`logi_colmap_${tipo}_${ncols}`, JSON.stringify(map)); }catch(e){} }
+
+/* --- lectura del pivot con un mapa de columnas --- */
+function parsearPivot(m, anio, det, map){
+  const p = nuevoParse(det.esRemito ? 'ingresos' : 'envios'); p.hoja = 'pivot ' + (det.esRemito?'remitos':'transferencias');
+  const g = (f,k) => map[k]!=null ? f[map[k]] : '';
+  for(let r = det.ini; r<m.length; r++){
+    const f = m[r]; if(!f || f.length < det.textCols.length) continue;
+    const suc = det.esRemito ? '05-Depósito' : String(g(f,'suc')||'').trim();
+    const cod = g(f,'cod')!=='' ? g(f,'cod') : g(f,'id');
+    if(/^total$/i.test(suc) || /^total$/i.test(String(g(f,'marca')||'')) || /^total$/i.test(String(g(f,'art')||''))){ p.desc++; continue; }
+    if(cod==null || String(cod).trim()==='') continue;
+    if(!det.esRemito && !suc) continue;
+    setArt(p, cod, { rubro:g(f,'rubro'), sub:g(f,'sub'), disc:g(f,'disc'), marca:g(f,'marca'), id:g(f,'id'), art:g(f,'art'), tipo:g(f,'tipo') });
+    det.meses.forEach(({i,mes})=>{ const c=numCell(f[i]); if(c) sumarFila(p, `${anio}-${String(mes).padStart(2,'0')}`, clave(cod), suc, c, det.esRemito ? numCell(f[i+1]) : 0); });
   }
-  return p.filas ? p : null;
+  return p;
 }
 
 /* --- formato por nombre de columna (una fila por movimiento) --- */
@@ -675,29 +757,30 @@ function ymDeCelda(v, anio){
   if(idx>=0){ const y = (s.match(/(\d{4})/)||[])[1] || (s.match(/\b(\d{2})$/)? 2000+ +s.match(/\b(\d{2})$/)[1] : anio); return `${y}-${String(idx+1).padStart(2,'0')}`; }
   const d = serialAFecha(s); return d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` : null;
 }
-function parsearPorNombre(m, anio, hoja){
-  let mejor = null;
+function detectarPorNombre(m){
   for(let h=0; h<Math.min(m.length,30); h++){
     const map = mapearEncabezado(m[h]);
     if(map.q==null || (map.art==null && map.cod==null) || Object.keys(map).length<4) continue;
-    const tipoIng = ALIAS_ING.some(a=>norm(m[h][map.q])===norm(a));
-    const p = nuevoParse(tipoIng ? 'ingresos' : 'envios'); p.hoja = hoja; p.map = map;
-    for(let i=h+1;i<m.length;i++){
-      const r = m[i]; if(!r || !r.length) continue;
-      const suc = map.suc!=null ? String(r[map.suc]||'').trim() : '';
-      const q = numCell(r[map.q]); if(!q) continue;
-      if(norm(suc)==='TOTAL' || (map.art!=null && norm(r[map.art])==='TOTAL')){ p.desc++; continue; }
-      let ym = null;
-      if(map.fecha!=null) ym = ymDeCelda(r[map.fecha], anio);
-      if(!ym && map.mes!=null) ym = ymDeCelda(r[map.mes], anio);
-      if(!ym){ p.sinMes++; continue; }
-      const cod = map.cod!=null ? r[map.cod] : (map.id!=null ? r[map.id] : r[map.art]);
-      setArt(p, cod, { rubro:r[map.rubro], sub:r[map.sub], disc:r[map.disc], marca:r[map.marca], id:map.id!=null?r[map.id]:'', art:map.art!=null?r[map.art]:'', tipo:map.tipo!=null?r[map.tipo]:'' });
-      sumarFila(p, ym, clave(cod), tipoIng ? '05-Depósito' : suc, q, map.costo!=null ? numCell(r[map.costo]) : 0);
-    }
-    if(p.filas && (!mejor || p.filas>mejor.filas)) mejor = p;
+    return { h, map, tipoIng: ALIAS_ING.some(a=>norm(m[h][map.q])===norm(a)) };
   }
-  return mejor;
+  return null;
+}
+function parsearPorNombre(m, anio, det, map, hoja){
+  const p = nuevoParse(det.tipoIng ? 'ingresos' : 'envios'); p.hoja = hoja;
+  for(let i=det.h+1;i<m.length;i++){
+    const r = m[i]; if(!r || !r.length) continue;
+    const suc = map.suc!=null ? String(r[map.suc]||'').trim() : '';
+    const q = numCell(r[map.q]); if(!q) continue;
+    if(norm(suc)==='TOTAL' || (map.art!=null && norm(r[map.art])==='TOTAL')){ p.desc++; continue; }
+    let ym = null;
+    if(map.fecha!=null) ym = ymDeCelda(r[map.fecha], anio);
+    if(!ym && map.mes!=null) ym = ymDeCelda(r[map.mes], anio);
+    if(!ym){ p.sinMes++; continue; }
+    const cod = map.cod!=null ? r[map.cod] : (map.id!=null ? r[map.id] : r[map.art]);
+    setArt(p, cod, { rubro:r[map.rubro], sub:r[map.sub], disc:r[map.disc], marca:r[map.marca], id:map.id!=null?r[map.id]:'', art:map.art!=null?r[map.art]:'', tipo:map.tipo!=null?r[map.tipo]:'' });
+    sumarFila(p, ym, clave(cod), det.tipoIng ? '05-Depósito' : suc, q, map.costo!=null ? numCell(r[map.costo]) : 0);
+  }
+  return p;
 }
 
 /* --- lectura del archivo → matrices por hoja --- */
@@ -717,63 +800,126 @@ function leerArchivo(file){
     }
   });
 }
-function parsearHojas(hojas, anio){
-  let mejor = null;
-  hojas.forEach(h=>{
-    const p = parsearPivot(h.m, anio) || parsearPorNombre(h.m, anio, h.nombre);
-    if(p && (!mejor || p.filas>mejor.filas)) mejor = p;
-  });
-  return mejor;
-}
 function anioDeNombre(nombre){ const m = String(nombre||'').match(/(20\d{2})/); return m ? +m[1] : null; }
 
+// Arma (o re-arma con un mapa corregido) el parse de un recuadro.
+function procesar(c, anio){
+  const { hoja, det } = c;
+  let p;
+  if(det.pivot){
+    p = parsearPivot(hoja.m, anio, det, c.map);
+    p.cols = det.textCols.map(i=>{ const st = c.stats.find(s=>s.i===i); const ej=[]; for(let r=det.ini; r<hoja.m.length && ej.length<3; r++){ const v=String(hoja.m[r][i]==null?'':hoja.m[r][i]).trim(); if(v && !ej.includes(v)) ej.push(v); } return { i, label:'Col. '+(i+1), ej, distinct: st?st.distinct:0 }; });
+    p.mesesTxt = `Meses: columnas ${det.meses[0].i+1} a ${det.meses[det.meses.length-1].i+1} (${det.meses.map(x=>MES_CORTO[x.mes-1]).join(' · ')})` + (det.esRemito ? ' con su costo al lado' : '');
+  } else {
+    p = parsearPorNombre(hoja.m, anio, det, c.map, hoja.nombre);
+    p.cols = (hoja.m[det.h]||[]).map((h,i)=>({ i, label: String(h||('Col. '+(i+1))), ej:[String((hoja.m[det.h+1]||[])[i]||'')].filter(Boolean) })).filter(x=>x.label);
+    p.mesesTxt = c.map.fecha!=null ? 'El mes sale de la columna Fecha' : c.map.mes!=null ? 'El mes sale de la columna Mes' : '⚠ No hay columna Mes ni Fecha';
+  }
+  return p;
+}
 async function tomarArchivo(tipo, file){
   if(!file) return;
   try{
     const a = anioDeNombre(file.name); if(a && !$('anio').dataset.manual) $('anio').value = a;
     const anio = +$('anio').value || new Date().getFullYear();
     const hojas = await leerArchivo(file);
-    const p = parsearHojas(hojas, anio);
-    if(!p){ toast('No reconocí el formato: espero el export pivot del sistema (una columna por mes) o una tabla con Cantidad + Artículo/Código + Mes o Fecha', true); return; }
+    // elegir la hoja: primero la que sea pivot con más filas; si no, la de encabezados por nombre
+    let c = null;
+    hojas.forEach(h=>{
+      const dp = detectarPivot(h.m);
+      if(dp){ if(!c || !c.det.pivot || h.m.length > c.hoja.m.length) c = { hoja:h, det:Object.assign(dp,{pivot:true}) }; return; }
+      const dn = detectarPorNombre(h.m);
+      if(dn && !c) c = { hoja:h, det:Object.assign(dn,{pivot:false}) };
+    });
+    if(!c){ toast('No reconocí el formato: espero el export pivot del sistema (una columna por mes) o una tabla con Cantidad + Artículo/Código + Mes o Fecha', true); return; }
     const esperado = tipo==='env' ? 'envios' : 'ingresos';
-    p.aviso = p.tipo!==esperado ? (tipo==='env' ? 'Este archivo parece el de INGRESOS (remitos), no el de envíos. Cargalo en el otro recuadro o revisá.' : 'Este archivo parece el de ENVÍOS (transferencias), no el de ingresos. Cargalo en el otro recuadro o revisá.') : '';
-    p.tipo = esperado;                       // manda el recuadro donde se cargó
-    if(esperado==='ingresos'){ Object.values(p.porMes).forEach(b=>b.forEach(x=>{ x[1]='05-Depósito'; })); }
-    p.archivo = file.name; CARGA[tipo] = p;
+    if(c.det.pivot){
+      const inf = inferirColumnas(c.hoja.m, c.det);
+      c.stats = inf.stats; c.auto = inf.map;
+      const rec = mapaRecordado(esperado, c.det.textCols.length);
+      c.map = Object.assign({}, inf.map, rec||{}); c.origenMap = rec ? 'recordado' : 'auto';
+    } else { c.map = c.det.map; c.origenMap = 'encabezados'; c.auto = c.det.map; }
+    c.archivo = file.name; c.tipo = esperado; c.recuadro = tipo;
+    const detectado = c.det.pivot ? (c.det.esRemito ? 'ingresos' : 'envios') : (c.det.tipoIng ? 'ingresos' : 'envios');
+    c.aviso = detectado!==esperado ? (tipo==='env' ? 'Este archivo parece el de INGRESOS (remitos), no el de envíos. Cargalo en el otro recuadro o revisá.' : 'Este archivo parece el de ENVÍOS (transferencias), no el de ingresos. Cargalo en el otro recuadro o revisá.') : '';
+    CARGA[tipo] = c;
+    reprocesar(tipo);
     $(tipo==='env'?'fEnv':'fIng').textContent = '✓ '+file.name; $(tipo==='env'?'dropEnv':'dropIng').classList.add('ok');
     previsualizar();
   }catch(e){ console.error(e); toast('No pude leer el archivo: '+e.message, true); }
 }
+function reprocesar(tipo){
+  const c = CARGA[tipo]; if(!c) return;
+  const anio = +$('anio').value || new Date().getFullYear();
+  const p = procesar(c, anio);
+  Object.assign(c, { arts:p.arts, porMes:p.porMes, filas:p.filas, desc:p.desc, sinMes:p.sinMes, hojaTxt:p.hoja, cols:p.cols, mesesTxt:p.mesesTxt });
+  if(c.tipo==='ingresos'){ Object.values(c.porMes).forEach(b=>b.forEach(x=>{ x[1]='05-Depósito'; })); }
+  // faltantes obligatorios
+  c.faltan = [];
+  if(c.map.cod==null && c.map.id==null) c.faltan.push('Código de barras o ID ITEM');
+  if(c.tipo==='envios' && c.det.pivot && c.map.suc==null) c.faltan.push('Sucursal destino');
+  if(c.map.art==null) c.faltan.push('Artículo');
+}
 function unidadesDe(b){ let s=0; b.forEach(x=>{ s+=x[2]; }); return s; }
+function colsHtml(t, c){
+  const asignado = i => Object.keys(c.map).find(k=>c.map[k]===i) || '';
+  const ocultos = c.det.pivot ? [] : ['q','mes','fecha','costo'];
+  const filas = c.cols.filter(x=>!ocultos.includes(asignado(x.i)) || true).map(x=>{
+    const k = asignado(x.i); const fijo = !c.det.pivot && ['q','mes','fecha','costo'].includes(k);
+    const sel = fijo ? `<span class="pill">${k==='q'?'Cantidad':k==='mes'?'Mes':k==='fecha'?'Fecha':'Costo'}</span>` :
+      `<select data-t="${t}" data-i="${x.i}" class="colsel${k?' on':''}">${CAMPOS.map(([v,l])=>`<option value="${v}"${v===k?' selected':''}>${esc(l)}</option>`).join('')}</select>`;
+    const cambiado = c.auto && (c.auto[k]!==x.i) && k ? ' <span class="pill new" title="distinto de lo detectado">corregida</span>' : '';
+    return `<tr class="${k?'':'ign'}"><td style="white-space:nowrap">${esc(x.label)}</td><td class="ej">${x.ej.map(esc).join(' · ')}</td><td>${sel}${cambiado}</td></tr>`;
+  }).join('');
+  const origen = c.origenMap==='recordado' ? 'con la corrección que guardaste la última vez' : c.origenMap==='encabezados' ? 'por el nombre de cada encabezado' : 'por el contenido de cada columna (el orden no importa)';
+  return `<details class="cols" ${c.faltan.length?'open':''}><summary>Cómo leí las columnas <span class="pill">${origen}</span>${c.faltan.length?` <span class="pill bad">falta: ${esc(c.faltan.join(', '))}</span>`:''}</summary>
+    <div class="ej" style="margin:6px 0">${esc(c.mesesTxt||'')}</div>
+    <div class="tbl-wrap" style="max-height:260px"><table><thead><tr><th>Columna</th><th>Ejemplos</th><th>La tomo como</th></tr></thead><tbody>${filas}</tbody></table></div>
+    <div class="ej" style="margin-top:6px">Si una columna quedó mal, elegí qué es en el selector: se vuelve a leer el archivo y la corrección se recuerda para la próxima vez.</div></details>`;
+}
 function previsualizar(){
   const h = [];
   ['env','ing'].forEach(t=>{
-    const p = CARGA[t]; if(!p) return;
-    const yms = Object.keys(p.porMes).sort();
-    h.push(`<h4>${t==='env'?'🚚 Envíos':'📥 Ingresos'} · ${esc(p.hoja)} · ${fmt(p.filas)} movimientos · ${fmt(Object.keys(p.arts).length)} artículos</h4>`);
-    h.push(`<div class="tbl-wrap" style="max-height:220px"><table><thead><tr><th>Mes</th><th class="num">Filas</th><th class="num">Unidades</th><th>En el portal</th></tr></thead><tbody>${yms.map(ym=>{
-      const meta = (META[ym]||{})[t==='env'?'envios':'ingresos'];
+    const c = CARGA[t]; if(!c) return;
+    const yms = Object.keys(c.porMes).sort();
+    h.push(`<h4>${t==='env'?'🚚 Envíos':'📥 Ingresos'} · ${esc(c.hojaTxt)} · ${fmt(c.filas)} movimientos · ${fmt(Object.keys(c.arts).length)} artículos</h4>`);
+    h.push(colsHtml(t, c));
+    if(yms.length) h.push(`<div class="tbl-wrap" style="max-height:220px;margin-top:8px"><table><thead><tr><th>Mes</th><th class="num">Filas</th><th class="num">Unidades</th><th>En el portal</th></tr></thead><tbody>${yms.map(ym=>{
+      const meta = (META[ym]||{})[c.tipo];
       const est = meta ? `<span class="pill">reemplaza ${fmt(meta.filas)} filas · ${fmt(meta.unidades||0)} u. (${esc(meta.subido||'')})</span>` : '<span class="pill new">mes nuevo</span>';
-      return `<tr><td>${esc(ymLabel(ym))}</td><td class="num">${fmt(p.porMes[ym].size)}</td><td class="num">${fmt(unidadesDe(p.porMes[ym]))}</td><td>${est}</td></tr>`; }).join('')}</tbody></table></div>`);
-    if(p.sinMes) h.push(`<div class="warn">⚠ ${fmt(p.sinMes)} filas sin mes reconocible se descartan.</div>`);
-    if(p.desc) h.push(`<div class="warn">${fmt(p.desc)} filas «Total» descartadas.</div>`);
-    if(p.aviso) h.push(`<div class="bad">⚠ ${esc(p.aviso)}</div>`);
-    if(p.map){ const faltan = ['rubro','sub','disc','marca','tipo'].filter(k=>p.map[k]==null); if(faltan.length) h.push(`<div class="warn">No se encontraron las columnas ${faltan.map(k=>({rubro:'Rubro',sub:'Subrubro',disc:'Disciplina',marca:'Marca',tipo:'Tipo de artículo'})[k]).join(', ')}: esas aperturas quedan vacías.</div>`); }
+      return `<tr><td>${esc(ymLabel(ym))}</td><td class="num">${fmt(c.porMes[ym].size)}</td><td class="num">${fmt(unidadesDe(c.porMes[ym]))}</td><td>${est}</td></tr>`; }).join('')}</tbody></table></div>`);
+    else h.push(`<div class="bad">⚠ No quedó ningún movimiento: revisá la asignación de columnas.</div>`);
+    if(c.sinMes) h.push(`<div class="warn">⚠ ${fmt(c.sinMes)} filas sin mes reconocible se descartan.</div>`);
+    if(c.desc) h.push(`<div class="warn">${fmt(c.desc)} filas «Total» descartadas.</div>`);
+    if(c.aviso) h.push(`<div class="bad">⚠ ${esc(c.aviso)}</div>`);
+    const opc = ['rubro','sub','disc','marca','tipo'].filter(k=>c.map[k]==null);
+    if(opc.length) h.push(`<div class="warn">Sin columna para ${opc.map(k=>CAMPO_LBL[k]).join(', ')}: esas aperturas quedan vacías (podés asignarlas arriba).</div>`);
   });
   $('prevCarga').innerHTML = h.join('');
-  $('mcSave').disabled = !(CARGA.env || CARGA.ing);
+  const ok = ['env','ing'].some(t=>CARGA[t]) && ['env','ing'].every(t=>!CARGA[t] || (!CARGA[t].faltan.length && Object.keys(CARGA[t].porMes).length));
+  $('mcSave').disabled = !ok;
   $('mcInfo').textContent = (CARGA.env||CARGA.ing) ? 'Se guarda por mes; los meses que no vienen en el archivo no se tocan. El mes en curso se puede volver a subir cuando cierre.' : '';
 }
+// cambio manual de la asignación de una columna
+$('prevCarga').addEventListener('change', e=>{
+  const s = e.target; if(!s.classList.contains('colsel')) return;
+  const t = s.dataset.t, i = +s.dataset.i, k = s.value, c = CARGA[t]; if(!c) return;
+  Object.keys(c.map).forEach(kk=>{ if(c.map[kk]===i) delete c.map[kk]; });   // la columna deja su asignación anterior
+  if(k){ delete c.map[k]; c.map[k] = i; }                                     // y el campo suelta la columna que tenía
+  c.origenMap = 'manual';
+  if(c.det.pivot) recordarMapa(c.tipo, c.det.textCols.length, c.map);
+  reprocesar(t); previsualizar();
+});
 async function guardarCarga(){
   const upd = {}; const hoy = new Date().toISOString().slice(0,10); const por = SESSION.email||'';
   let ult = MESES_YM[MESES_YM.length-1] || '';
   ['env','ing'].forEach(t=>{
-    const p = CARGA[t]; if(!p) return; const nodo = p.tipo;
-    Object.entries(p.arts).forEach(([k,a])=>{ upd[`arts/${k}`] = a; });
-    Object.keys(p.porMes).forEach(ym=>{
-      const filas = [...p.porMes[ym].values()].map(x => nodo==='envios' ? [x[0], x[1], x[2]] : [x[0], x[2], x[3]]);
+    const c = CARGA[t]; if(!c) return; const nodo = c.tipo;
+    Object.entries(c.arts).forEach(([k,a])=>{ upd[`arts/${k}`] = a; });
+    Object.keys(c.porMes).forEach(ym=>{
+      const filas = [...c.porMes[ym].values()].map(x => nodo==='envios' ? [x[0], x[1], x[2]] : [x[0], x[2], x[3]]);
       upd[`meses/${ym}/${nodo}`] = filas;
-      upd[`meses/${ym}/meta/${nodo}`] = { archivo:p.archivo, hoja:p.hoja, subido:hoy, por, filas:filas.length, unidades:unidadesDe(p.porMes[ym]) };
+      upd[`meses/${ym}/meta/${nodo}`] = { archivo:c.archivo, hoja:c.hojaTxt, subido:hoy, por, filas:filas.length, unidades:unidadesDe(c.porMes[ym]) };
       if(ym>ult) ult = ym;
     });
   });
@@ -802,7 +948,7 @@ $('modalCarga').addEventListener('click', e=>{ if(e.target===$('modalCarga')) ce
 $('mcSave').addEventListener('click', guardarCarga);
 $('fileEnv').addEventListener('change', e=>tomarArchivo('env', e.target.files[0]));
 $('fileIng').addEventListener('change', e=>tomarArchivo('ing', e.target.files[0]));
-$('anio').addEventListener('change', ()=>{ $('anio').dataset.manual='1'; const fe=$('fileEnv').files[0], fi=$('fileIng').files[0]; if(fe) tomarArchivo('env',fe); if(fi) tomarArchivo('ing',fi); });
+$('anio').addEventListener('change', ()=>{ $('anio').dataset.manual='1'; ['env','ing'].forEach(t=>{ if(CARGA[t]) reprocesar(t); }); previsualizar(); });
 [['dropEnv','env'],['dropIng','ing']].forEach(([id,t])=>{
   const d=$(id);
   d.addEventListener('dragover', e=>{ e.preventDefault(); d.classList.add('over'); });
