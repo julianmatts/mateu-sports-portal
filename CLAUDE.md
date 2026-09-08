@@ -1874,28 +1874,64 @@ palabra) en vez del de Mateu, título «… — Aurelius» y app instalable prop
 - Para sumar otra marca: una entrada más en el mapa `MARCAS` de `marca.js` (`esSlug`, paleta,
   logo, manifest e íconos).
 
-## Reviews de Sucursales (`reviews/`, 08/09/2026)
+## Reviews de Sucursales (`reviews/`, 08/09/2026 — COMPLETADO)
 
-`reviews/index.html` es un módulo self-contained que muestra un dashboard de análisis de 
-opiniones de clientes por sucursal — **buenas y malas críticas, puntuación de satisfacción, 
-últimos comentarios y tabla de tendencias**. Los datos provienen del archivo de Iván 
-("Porcentaje de buenas y malas criticas.xlsx").
+`reviews/index.html` es un **dashboard profesional self-contained** para análisis de opiniones de clientes 
+por sucursal — buenas y malas críticas, puntuación de satisfacción, gráficos de tendencia histórica 
+(últimos 6 meses) y tabla de histórico completo 2024-2026. Los datos provienen del Excel de Iván 
+("Porcentaje de buenas y malas criticas.xlsx"), procesados por `extraer-reviews-excel.py`.
 
-- **Datos**: `reviews-data.js` (inline en el HTML con estructura por sucursal y mes; los datos 
-  vienen manualmente de Iván, no de Firebase).
-- **Vistas principales**:
-  - **Tarjetas por sucursal**: puntuación %, buenas vs malas, tickets evaluados, último comentario.
-  - **Tabla de tendencias**: ranking agregado de todas las sucursales.
-  - **Filtros**: selector «Todas» o por sucursal individual.
-- **Estilos**: Bebas Neue para títulos, Barlow para texto, paleta navy+rojo+off como el resto del portal, 
-  barras de progreso con gradiente (verde→ámbar→rojo). Responsive a 768px y 480px.
-- **Roles**: visible para admin y cualquiera con sesión válida. Sin sesión, redirige al Portal.
-- **Generador**: `scripts/gen-reviews.js` (estructura y helpers para procesar el Excel de Iván 
-  en el futuro; hoy es un stub que muestra cómo estructurar los datos).
+**Componentes y Vistas:**
 
-**Actualización de datos**: hasta que se integre con Google Reviews API (pendiente), Iván sube 
-manualmente los datos del Excel a `reviews/reviews-data.js`, commit + push. Una futura versión 
-podría traer reviews vivos de Google My Business por sucursal.
+- **Hero header** (gradiente navy→mid): título y descripción
+- **KPIs agregados** (4 tarjetas): total opiniones, buenas, malas, satisfacción promedio (reactivos a filtros)
+- **Grid de sucursales** (3 cols desktop, 1 mobile):
+  - Tarjeta con header gradient navy + border rojo
+  - Métrica grande de **satisfacción %** con barra de progreso (gradiente success→warning→danger)
+  - Stats de buenas vs malas en mini-tarjetas
+  - **Gráfico Chart.js**: líneas animadas de buenas/malas últimos 6 meses (lazy-loaded, responsive: false)
+- **Filtros**: selector de sucursal (todas o una) + mes (todos o específico)
+- **Mapa placeholder**: estructura lista para Google Maps API (requiere API key de Juli)
+- **Tabla histórico**: últimas 50 filas con columnas Sucursal | Mes | Buenas | Malas | Total | % Satisfacción
+- **Responsive**: 1024px (ajusta grid), 768px (1 col), 480px (sin márgenes, font reducido)
+
+**Datos:**
+
+- **`reviews-data.js`** (generado por `scripts/extraer-reviews-excel.py`): estructura
+  `{sucursales: {slug: {nombre, reviews: [{mes, buenas, malas, tickets?, porcentaje?}]}}, actualizado}`
+- **Cobertura**: **19 sucursales desde 2024 hasta septiembre 2026**
+  (Calle 12, 47, 49, City Bell, Plaza Italia, Los Hornos, Ensenada, Berisso, Diagonal 80, 
+  Aurelius 12/5/10/CB, Kids, Gonnet, Avenida 44, Adidas 12/Original, Outlet 55)
+- **Histórico completo**: ambas hojas del Excel de Iván (2025 y 2026 como tab names)
+
+**Generador (`scripts/extraer-reviews-excel.py`):**
+
+Lee el Excel (formato complejo: múltiples bloques por mes, sucursales en filas) y genera 
+`reviews-data.js` auto-contenido:
+
+```bash
+python scripts/extraer-reviews-excel.py "ruta/Porcentaje.xlsx" reviews/reviews-data.js
+```
+
+Normaliza nombres, ordena por mes, exporta `window.REVIEWS_DATA`. Self-contained, requiere solo `openpyxl`.
+
+**Estilos:**
+
+- Gradientes navy→mid en headers, **borders rojos 4px**
+- Chart.js para gráficos (líneas con fill, responsive)
+- Barras de progreso con gradiente success→warning→danger
+- Tipografía: Bebas Neue (títulos) + Barlow (texto) + Barlow Condensed (labels)
+- Sombras suaves (2px, 8px), transiciones 0.3s, hover effects
+- Paleta: navy `#0B1527` + red `#CC0000` + off `#f5f7fc` + shades `#e8eef5`
+
+**Próximas integraciones:**
+
+- **Google Maps API**: cargar mapa con marcadores + PopUps por sucursal (cuando Juli proporcione key)
+- **Google Reviews API**: traer opiniones en vivo desde Google My Business (requiere OAuth)
+- **Firebase**: guardar histórico de cambios/comparativas (hoy JSON estático)
+- **Export Excel**: botón para descargar histórico con estilos ExcelJS
+
+**Roles:** visible para admin y cualquiera con sesión válida. Sin sesión, redirige al Portal.
 
 ## Reglas
 
