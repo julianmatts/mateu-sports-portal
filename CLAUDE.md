@@ -2021,12 +2021,29 @@ Hoy: **20 sucursales, 26 meses (jul-2024 → ago-2026)**. Forma:
 primera semana de cada mes**. Es **público**, igual que el Reporte Mensual de stock — el
 chequeo de `?pres=` va ANTES del gate de sesión, así lo abre cualquiera desde el mail. Solo
 muestra agregados: no lista los nombres de quienes dejaron reseña (eso queda dentro del
-módulo). Portada con sello + los números del mes + ranking con podio + qué subió y qué bajó
-contra el mes anterior + reseñas negativas + la captación de los últimos 12 meses. Tres
-acciones (no se imprimen): **🖨 Imprimir** (A4, `@media print`), **🔗 Copiar el link** y
-**⧉ Copiar resumen para el mail** (`presTexto`, texto plano listo para pegar). El logo va
-embebido y todo el dibujo es SVG, así que el HTML imprime suelto. En el módulo lo abre el
-botón «📄 Informe del mes», con el mes que se esté mirando.
+módulo). Cinco secciones: los números del mes, ranking (paneles de las cinco primeras y
+últimas + tabla), qué subió y qué bajó contra el mes anterior, reseñas negativas y la
+captación de los últimos 12 meses. Tres acciones (no se imprimen): **🖨 Imprimir** (A4,
+`@media print`), **🔗 Copiar link** y **⧉ Resumen para el mail** (`presTexto`, texto plano
+listo para pegar). En el módulo lo abre el botón «📄 Informe del mes», con el mes que se
+esté mirando.
+
+**Usa el mismo lenguaje visual que `gestion-stock/?pres=`** (pedido de Juli 08/09/2026: los
+dos informes se mandan por mail y tienen que verse de la misma familia): tapa a pantalla
+completa con grilla y diagonales, nav fija con links y barra de progreso, secciones
+numeradas con label rojo y logo tenue, números en **Saira itálica 800**, KPIs con conteo
+animado y sparkline, paneles con barras, tablas con barra en la celda y leyenda de lectura,
+reveal por IntersectionObserver y pie navy. Se escribe con **`document.write`** (documento
+completo, como el de stock), así no hereda el CSS del módulo; el logo va embebido y todo el
+dibujo es SVG, así que el HTML imprime suelto.
+
+⚠️ Dos cosas que el patrón original deja expuestas y acá **no hay que volver a romper**,
+porque esto se manda por mail y se abre en cualquier navegador: (1) el **valor final de cada
+KPI va escrito en el HTML** y la animación solo lo recorre — si el span sale vacío y arranca
+en cero, un navegador sin `requestAnimationFrame` (o una pestaña en segundo plano) muestra
+«0 reseñas», que es un número falso; hay además un plazo de 1,8 s que lo escribe igual;
+(2) un bloque **no puede quedar en `opacity:0`** si el IntersectionObserver no dispara: el
+handler de scroll revela lo que ya está en pantalla (`red()`) y hay un chequeo a los 1,2 s.
 
 ⚠️ **El mes que se manda suele no tener tickets todavía** (la columna se carga después), y sin
 tickets no hay captación. En ese caso el ranking ordena por **reseñas recibidas** y el informe
