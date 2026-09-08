@@ -31,6 +31,7 @@ mateu-sports-portal/
 ├── objetivos/          # Objetivos de Venta Semanal: gerencia carga el objetivo (Meta) de venta por sucursal por semana (subiendo el Excel "PMS Objetivos" o a mano) → dashboard vs. real; cada sucursal ve su objetivo en Indicadores. Firebase: reusa recepciones-mateu (nodo objetivos/). Ver "Objetivos de Venta Semanal" abajo.
 ├── capacitaciones/     # Academia de Ventas FUNCIONAL: cursos y programas del capacitador, avance por persona con quiz, certificados, equipo/ranking y encuestas. Ver "Academia de Ventas" abajo. (Las pantallas .dc.html son el prototipo original de Design; quedan de referencia.)
 ├── tareas/             # Tareas de la Sucursal: Cambio de precios, Sectores de marcas, Limpieza (checklist) y Vidrieras (alerta por días sin cambios), con foto antes/después y comparativa. Firebase: reusa recepciones-mateu (nodo tareas/). Ver "Tareas de la Sucursal" abajo.
+├── logistica/          # Envíos e Ingresos: dashboard de logística (unidades enviadas a cada sucursal + ingresos al depósito por mes/rubro/subrubro/disciplina/marca). Pantalla inicial de logistica@ y deposito@. Firebase: reusa recepciones-mateu (nodo logistica/). Ver "Envíos e Ingresos" abajo.
 ├── lib/                # código JS común versionado y testeable (hoy: evaluacion.js = cálculo puro de Evaluaciones + tests con node --test)
 └── shared/             # código común del shell (calendario retail, etc.)
 ```
@@ -939,6 +940,39 @@ Indicadores, ver abajo).
 
 **Puesta en marcha: ya funciona (usa `recepciones-mateu`, que está en vivo). No hace
 falta crear ninguna base.**
+
+## Envíos e Ingresos (`logistica/`, 08/09/2026)
+
+Dashboard de logística, **pantalla inicial de `logistica@` y `deposito@`** (campo `inicio:'logistica'`
++ la herramienta primera en `herramientas` de sus registros en `usuarios/`; no van por
+`PERFILES_FIJOS`, así el ⚙ los sigue editando; son admin, ven el resto en el drawer). Replica
+el informe HTML «Dashboard Gerencial — Envíos e Ingresos» (jun–ago 2026, generado fuera del
+portal) con datos vivos: `index.html` self-contained (header unificado, Chart.js 4 + SheetJS
+por jsdelivr; ⚠ en cdnjs la ruta de Chart.js da 404).
+
+- **Datos**: envíos = unidades que salen del depósito central a cada sucursal; ingresos = lo
+  que entra al depósito (`05-Depósito`). Ambos con Sucursal · Mes · Rubro · Subrubro ·
+  Disciplina · Marca · Código de barras · ID ITEM · Artículo · Cantidad. Firebase
+  `recepciones-mateu/logistica/meses/<YYYY-MM>` = `{meta:{envios:{archivo,hoja,subido,por,
+  filas,unidades}, ingresos:{…}}, envios:[[suc,rubro,sub,disc,marca,cod,id,art,q],…],
+  ingresos:[[…]]}` + `logistica/ultimo`. El módulo baja `meses.json?shallow=true` y luego
+  cada mes. Sembrado el 08/09/2026 con `node scripts/importar-logistica-informe.js
+  "<informe>.html" 2026` (lee los arrays `SENT`/`RECEIVED` embebidos; 9.228 envíos /
+  1.514 ingresos; totales validados exactos: 76.923 enviadas, 76.935 ingresadas).
+- **Pantalla**: filtros multi-select propios (`multiSel`, chips con buscador; **encadenados**:
+  cada uno ofrece solo los valores que quedan con los demás; el de Sucursal aplica solo a
+  envíos porque los ingresos son del depósito) → 5 KPIs → Envíos (unidades por sucursal con
+  selector «ver solo estas», anillo por rubro, línea por mes, top marcas, disciplinas,
+  subrubros) → Ingresos (enviado vs. ingresado, por rubro, subrubro, mes) → detalle con
+  buscador/paginado y columna «Ingresó al depósito» (mismo código+mes). «⇩ Excel» = detalle
+  filtrado + hoja Resumen. Plugin `valueLabels` dibuja valor · % en barras/anillo/puntos.
+- **Carga mensual** («⇧ Cargar export», modal con dos recuadros envíos / ingresos, Excel o
+  CSV, drag & drop): `parsearLibro` busca en cada hoja la fila de encabezados por alias
+  (`ALIAS`), el mes sale de una columna Fecha o Mes (número 1-12 + «Año» del modal, nombre,
+  `2026-06`, `06/2026`), descarta filas «Total» y sin mes, detecta si la cantidad se llama
+  «Ingresado» (avisa si el archivo parece del otro tipo). Cada mes del archivo **reemplaza**
+  ese mes y tipo (PATCH multi-path); los demás quedan. ⚠ El formato real del export del
+  sistema todavía no se validó: se calibró contra las columnas del informe.
 
 ## Objetivos de Venta Semanal (y Mensual)
 
