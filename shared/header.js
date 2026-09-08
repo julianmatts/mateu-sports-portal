@@ -58,7 +58,8 @@
     rrhh:               { name:'Recursos Humanos',           icon:'🧑‍💼' },
     capacitaciones:     { name:'Capacitaciones',             icon:'🎓' },
     tareas:             { name:'Tareas de la Sucursal',      icon:'✅' },
-    logistica:          { name:'Envíos e Ingresos',          icon:'🚚' },
+    // «Panel General» para quien lo tiene de inicio (ver drawer)
+    logistica:          { name:'Panel General · Logística',  icon:'🚚' },
     reviews:            { name:'Reseñas de Google',          icon:'⭐' }
   };
 
@@ -203,7 +204,8 @@
     var herr = (S.herramientas||[]).filter(function(h){ return TOOLS[h]; });
     document.getElementById('mshDnav').innerHTML = herr.map(function(h){
       var t = TOOLS[h], on = (h===cur);
-      var nm = (h==='indicadores' && (S.rol==='sucursal'||S.rol==='outlet')) ? 'Mi Sucursal' : t.name;
+      var nm = (h==='indicadores' && (S.rol==='sucursal'||S.rol==='outlet')) ? 'Mi Sucursal'
+             : (h==='logistica' && S.inicio==='logistica') ? 'Panel General' : t.name;
       return '<a class="msh-ditem'+(on?' cur':'')+'" href="'+(on?'./':ROOT+h+'/')+'"'+(on?' aria-current="page"':'')+'>'
         +'<span class="msh-ic">'+t.icon+'</span><span><span class="msh-nm">'+esc(nm)+'</span></span></a>';
     }).join('') || '<div style="padding:14px;color:#6B7A99;font-size:13px">Sin herramientas asignadas.</div>';

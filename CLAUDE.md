@@ -1039,16 +1039,21 @@ Indicadores, ver abajo).
 **Puesta en marcha: ya funciona (usa `recepciones-mateu`, que está en vivo). No hace
 falta crear ninguna base.**
 
-## Envíos e Ingresos (`logistica/`, 08/09/2026)
+## Panel General de Logística (`logistica/`, 08/09/2026)
 
-Dashboard de logística, **pantalla inicial de `logistica@` y `deposito@`** (campo `inicio:'logistica'`
-+ la herramienta primera en `herramientas` de sus registros en `usuarios/`; no van por
-`PERFILES_FIJOS`, así el ⚙ los sigue editando). Son admin pero con
-**`soloHerramientas:true`** (08/09/2026): ven SOLO las herramientas que Juli les marcó en el ⚙,
-no todas. Ojo: un admin **sin** ese check ve todos los tiles aunque se le marquen algunos —
-por eso el ⚙ ahora avisa en cada fila «⚠ Hoy ve TODAS las herramientas». Y las sesiones ya
-abiertas toman los cambios del ⚙ al pasar por el Portal (`refrescarSesion` en `init()`), sin
-tener que salir y volver a entrar. Replica
+Dashboard de logística (envíos e ingresos), **pantalla inicial de `logistica@` y `deposito@`**.
+Desde el 08/09/2026 (tarde) las dos cuentas están en **`PERFILES_FIJOS`** del Portal (sus
+herramientas, `inicio:'logistica'`, `soloHerramientas:true`), como producto@/rrhh@, así la
+pantalla inicial no depende del ⚙ ni de la sesión que tengan abierta; sus registros en
+`usuarios/` llevan lo mismo. Son admin (lo exigen sus módulos) pero ven SOLO esas herramientas.
+Ojo: un admin **sin** `soloHerramientas` ve todos los tiles aunque se le marquen algunos — por
+eso el ⚙ avisa en cada fila «⚠ Hoy ve TODAS las herramientas». Las sesiones ya abiertas toman
+los cambios del ⚙ al pasar por el Portal (`refrescarSesion` en `init()`).
+**Nombre visible (pedido de Juli 08/09/2026): «Panel General»** para quien lo tiene de pantalla
+inicial (`session.inicio==='logistica'`: tiles del Portal `nombreTool`, drawer de `header.js`,
+título/hero del módulo `NOMBRE_MODULO`) y **«Panel General · Logística»** para gerencia, que ya
+tiene el Panel General de Indicadores (así no hay dos tiles iguales en la grilla de Juli). En
+el código y en este archivo se sigue hablando de «logística» / envíos e ingresos. Replica
 el informe HTML «Dashboard Gerencial — Envíos e Ingresos» (jun–ago 2026, generado fuera del
 portal) con datos vivos: `index.html` self-contained (header unificado, Chart.js 4 + SheetJS
 por jsdelivr; ⚠ en cdnjs la ruta de Chart.js da 404).
