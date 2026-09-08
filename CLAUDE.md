@@ -32,6 +32,7 @@ mateu-sports-portal/
 ├── capacitaciones/     # Academia de Ventas FUNCIONAL: cursos y programas del capacitador, avance por persona con quiz, certificados, equipo/ranking y encuestas. Ver "Academia de Ventas" abajo. (Las pantallas .dc.html son el prototipo original de Design; quedan de referencia.)
 ├── tareas/             # Tareas de la Sucursal: Cambio de precios, Sectores de marcas, Limpieza (checklist) y Vidrieras (alerta por días sin cambios), con foto antes/después y comparativa. Firebase: reusa recepciones-mateu (nodo tareas/). Ver "Tareas de la Sucursal" abajo.
 ├── logistica/          # Envíos e Ingresos: dashboard de logística (unidades enviadas a cada sucursal + ingresos al depósito por mes/rubro/subrubro/disciplina/marca). Pantalla inicial de logistica@ y deposito@. Firebase: reusa recepciones-mateu (nodo logistica/). Ver "Envíos e Ingresos" abajo.
+├── reviews/            # Reseñas de Google por sucursal: buenas/malas, captación sobre tickets y evolución mes a mes, con estética de ficha de Google. Solo lectura; los datos salen del Excel de Iván vía scripts/gen-reviews.py. Ver "Reseñas de Google" abajo.
 ├── lib/                # código JS común versionado y testeable (hoy: evaluacion.js = cálculo puro de Evaluaciones + tests con node --test)
 └── shared/             # código común del shell (calendario retail, etc.)
 ```
@@ -1898,64 +1899,60 @@ palabra) en vez del de Mateu, título «… — Aurelius» y app instalable prop
 - Para sumar otra marca: una entrada más en el mapa `MARCAS` de `marca.js` (`esSlug`, paleta,
   logo, manifest e íconos).
 
-## Reviews de Sucursales (`reviews/`, 08/09/2026 — COMPLETADO)
+## Reseñas de Google (`reviews/`, 08/09/2026)
 
-`reviews/index.html` es un **dashboard profesional self-contained** para análisis de opiniones de clientes 
-por sucursal — buenas y malas críticas, puntuación de satisfacción, gráficos de tendencia histórica 
-(últimos 6 meses) y tabla de histórico completo 2024-2026. Los datos provienen del Excel de Iván 
-("Porcentaje de buenas y malas criticas.xlsx"), procesados por `extraer-reviews-excel.py`.
+`reviews/index.html` self-contained (lee la sesión del Portal, sin login propio). Muestra las
+**reseñas de Google de cada sucursal** — buenas y malas, captación sobre tickets y evolución
+mes a mes — con la estética de una ficha de Google (avatar, estrellas, barras). Es de solo
+lectura: NO escribe a Firebase. Lo mira gerencia; la fuente la mantiene **Iván**.
 
-**Componentes y Vistas:**
+**Dos métricas distintas, no confundirlas:**
+- **Captación** = `buenas ÷ tickets`. Es la columna «%» del Excel de Iván: cuántos de los que
+  compran dejan una reseña. Es el KPI del módulo (semáforo del chip: ≥10 % verde, ≥5 % ámbar,
+  menos rojo) y la línea del gráfico.
+- **% positivas** = `buenas ÷ (buenas + malas)`. La calidad de lo que se recibió. Da ~99–100 %
+  en casi todas, así que sirve de control, no de ranking. Es el número grande + las estrellas.
 
-- **Hero header** (gradiente navy→mid): título y descripción
-- **KPIs agregados** (4 tarjetas): total opiniones, buenas, malas, satisfacción promedio (reactivos a filtros)
-- **Grid de sucursales** (3 cols desktop, 1 mobile):
-  - Tarjeta con header gradient navy + border rojo
-  - Métrica grande de **satisfacción %** con barra de progreso (gradiente success→warning→danger)
-  - Stats de buenas vs malas en mini-tarjetas
-  - **Gráfico Chart.js**: líneas animadas de buenas/malas últimos 6 meses (lazy-loaded, responsive: false)
-- **Filtros**: selector de sucursal (todas o una) + mes (todos o específico)
-- **Mapa placeholder**: estructura lista para Google Maps API (requiere API key de Juli)
-- **Tabla histórico**: últimas 50 filas con columnas Sucursal | Mes | Buenas | Malas | Total | % Satisfacción
-- **Responsive**: 1024px (ajusta grid), 768px (1 col), 480px (sin márgenes, font reducido)
+**Pantalla:** barra con selector de mes y buscador · 4 KPIs del mes (reseñas, captación con
+delta en puntos vs. el mes anterior, % positivas, acumulado en Google) · grilla de fichas por
+sucursal ordenada por captación (avatar con iniciales, estrellas rellenas al % positivas,
+barras positivas/negativas, captación con delta, acumulado en Google con las nuevas del mes,
+sparkline de 12 meses y quién dejó la última opinión) · ranking ordenable por cualquier
+columna · detalle al tocar una ficha (barras apiladas buenas/malas + línea de captación de
+toda la serie, y tabla mes a mes). La ficha de la sucursal del usuario va con borde rojo.
 
-**Datos:**
+**Todo el dibujo es SVG inline** (estrellas, sparkline y gráfico del detalle), como Meses de
+Stock: sin Chart.js ni ninguna librería de gráficos.
 
-- **`reviews-data.js`** (generado por `scripts/extraer-reviews-excel.py`): estructura
-  `{sucursales: {slug: {nombre, reviews: [{mes, buenas, malas, tickets?, porcentaje?}]}}, actualizado}`
-- **Cobertura**: **19 sucursales desde 2024 hasta septiembre 2026**
-  (Calle 12, 47, 49, City Bell, Plaza Italia, Los Hornos, Ensenada, Berisso, Diagonal 80, 
-  Aurelius 12/5/10/CB, Kids, Gonnet, Avenida 44, Adidas 12/Original, Outlet 55)
-- **Histórico completo**: ambas hojas del Excel de Iván (2025 y 2026 como tab names)
+**Datos — `reviews/reviews-data.js`**, que genera `scripts/gen-reviews.py` desde el Excel de
+Iván «Porcentaje de buenas y malas criticas.xlsx». **No editar a mano.** Para actualizar:
 
-**Generador (`scripts/extraer-reviews-excel.py`):**
-
-Lee el Excel (formato complejo: múltiples bloques por mes, sucursales en filas) y genera 
-`reviews-data.js` auto-contenido:
-
-```bash
-python scripts/extraer-reviews-excel.py "ruta/Porcentaje.xlsx" reviews/reviews-data.js
+```
+python scripts/gen-reviews.py "C:/ruta/Porcentaje de buenas y malas criticas.xlsx"
 ```
 
-Normaliza nombres, ordena por mes, exporta `window.REVIEWS_DATA`. Self-contained, requiere solo `openpyxl`.
+Hoy: **20 sucursales, 26 meses (jul-2024 → ago-2026)**. Forma:
+`{fuente, generado, periodos:[...], sucursales:{<slug>:{nombre, serie:{"2026-07":{b,m,t,total,nuevas,autor}}}}}`
+— `b` buenas, `m` malas, `t` tickets, `total` reseñas acumuladas del local en Google,
+`nuevas` las del mes, `autor` el nombre de la última opinión leída.
 
-**Estilos:**
+**Trampas del Excel** (están resueltas en el generador, no volver a pisarlas):
+- Los bloques mensuales **no tienen ancho fijo**: arrancan en 3 columnas y crecen hasta 8. Hay
+  que detectarlos buscando `Sucursal` en la fila 2 y leer los encabezados contiguos, nunca
+  saltando de a N columnas.
+- **Cada bloque ordena las sucursales distinto** (los últimos van por captación), así que el
+  nombre se lee fila por fila dentro del bloque.
+- El mes que mide un bloque: manda la **etiqueta** de la fila 1 si está; si no, con dos fechas
+  la primera es el 1.º del mes medido, y con una sola el dato se leyó a principios del mes
+  siguiente (los datos de junio se tomaron el 04/07). El corte de año aparece en las dos hojas:
+  se deduplica comparando el contenido **ordenado por sucursal** (si no, se corre todo un mes).
+- La columna «%» no se copia: se recalcula.
 
-- Gradientes navy→mid en headers, **borders rojos 4px**
-- Chart.js para gráficos (líneas con fill, responsive)
-- Barras de progreso con gradiente success→warning→danger
-- Tipografía: Bebas Neue (títulos) + Barlow (texto) + Barlow Condensed (labels)
-- Sombras suaves (2px, 8px), transiciones 0.3s, hover effects
-- Paleta: navy `#0B1527` + red `#CC0000` + off `#f5f7fc` + shades `#e8eef5`
+**Lo que el Excel NO trae: el texto de las reseñas.** Solo el nombre de quien dejó la última
+opinión leída. Para ver los comentarios hace falta conectar la **API de Google Business
+Profile** (OAuth + el Place ID de cada sucursal), que queda pendiente. Tampoco hay mapa
+geográfico: no están cargadas las direcciones de los locales.
 
-**Próximas integraciones:**
-
-- **Google Maps API**: cargar mapa con marcadores + PopUps por sucursal (cuando Juli proporcione key)
-- **Google Reviews API**: traer opiniones en vivo desde Google My Business (requiere OAuth)
-- **Firebase**: guardar histórico de cambios/comparativas (hoy JSON estático)
-- **Export Excel**: botón para descargar histórico con estilos ExcelJS
-
-**Roles:** visible para admin y cualquiera con sesión válida. Sin sesión, redirige al Portal.
 
 ## Reglas
 

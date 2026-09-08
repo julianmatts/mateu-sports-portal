@@ -58,7 +58,8 @@
     rrhh:               { name:'Recursos Humanos',           icon:'🧑‍💼' },
     capacitaciones:     { name:'Capacitaciones',             icon:'🎓' },
     tareas:             { name:'Tareas de la Sucursal',      icon:'✅' },
-    logistica:          { name:'Envíos e Ingresos',          icon:'🚚' }
+    logistica:          { name:'Envíos e Ingresos',          icon:'🚚' },
+    reviews:            { name:'Reseñas de Google',          icon:'⭐' }
   };
 
   // herramienta actual: config o carpeta de la URL (…/<slug>/…)
