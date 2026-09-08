@@ -1534,6 +1534,51 @@ llega a `COMP_APROBADORES` (rrhh@ = RRHH y cristian.campion@ = supervisor,
 constante en `indicadores/`); al responder, RRHH le avisa a las cuentas de la
 sucursal (resueltas contra `discontinuos-mateu/usuarios`) y a quien pidió.
 
+## Mapa de sucursales y movimientos de personal (`rrhh/`, 08/09/2026)
+
+Segunda pestaña de RRHH: **la dotación de cada local en una sola pantalla**, y el circuito
+para mover gente entre sucursales. La ve gerencia, RRHH y el supervisor (este último de solo
+lectura: `puedeMover = esAdmin || tieneTool`).
+
+- **Pantalla**: KPIs (dotación activa · movimientos de los últimos 30 días · coberturas
+  abiertas y cuántas con la vuelta vencida · sucursales sin encargado) + buscador de persona
+  y filtro por puesto + dos vistas (**Tarjetas** / **Comparar**) + ⇩ Excel. Cada tarjeta es
+  una sucursal: total, FT/PT, barra de composición por rol (`Equipo.rolDe`), chips de alerta
+  (sin encargado, altas por validar, «N cubriendo acá», «N cubriendo afuera», vueltas
+  vencidas), la lista de personas y **+ Persona** (alta con la sucursal precargada). Los
+  legajos sin sucursal caen en la tarjeta «Sin sucursal asignada», primera de todas.
+  «Comparar» es la misma foto como tabla (total · FT · PT · Jefatura · Ventas · Caja ·
+  Depósito · Otros · Cubren) para ver desbalances.
+- **Mover a alguien**: se **arrastra** la persona a otra tarjeta (en celular, el botón ⇄ de
+  su fila; también hay «⇄ Registrar movimiento» en la barra y «⇄ Mover de sucursal» en el
+  detalle del legajo). El modal pide destino, **tipo** (Traslado / Cobertura temporal con
+  fecha de vuelta), fecha, motivo (`MOTIVOS_MOV`), puesto en el destino y observaciones.
+- **Qué hace un movimiento** (`guardarMovimiento`), en este orden: (1) PATCH a
+  `rrhh/legajos/<id>` con la sucursal nueva, el puesto y el campo `cobertura`
+  (`{origen, retorno, mov, desde}`, o `null` si es traslado); (2) `sincronizarEquipo()` →
+  `Equipo.reconstruir` regenera `rrhh/equipo/<slug>` — **por eso el cambio impacta solo en
+  Mi Sucursal, el Buscador de Artículos, la Academia, Tareas y el ETL**, que leen ese índice;
+  (3) **muda la ficha de compensatorios** `rrhh/compensatorios/<origen>/<id>` → `<destino>`
+  con todos sus `movs` (mismo criterio que el import del Excel) y las solicitudes que siguen
+  pendientes; (4) **avisa por la Bandeja** (`mensajes-mateu/directos`) a las cuentas de las
+  DOS sucursales + `MOV_AVISADOS` (rrhh@ y cristian.campion@), con checkbox para no mandarlo.
+- **Cobertura temporal**: la persona igual se muda (trabaja allá, así que todos los módulos
+  tienen que verla allá) pero queda marcada; la tarjeta muestra el chip «Cubre», el botón ↩
+  la devuelve a su sucursal (movimiento de tipo `retorno`, que cierra el original) y pasada
+  la fecha de vuelta el chip se pone rojo y suma al KPI de vencidas.
+- **Historial**: tabla «Movimientos de personal» al pie (últimos 40) con fecha, persona,
+  desde → hasta, tipo, motivo y quién lo registró. El ↩ de una fila **deshace** un movimiento
+  mal cargado (solo si la persona sigue donde ese movimiento la dejó): la devuelve, mueve la
+  ficha de vuelta y lo tacha en el historial (`deshecho`), sin borrarlo.
+- **Firebase**: nodo nuevo `rrhh/movimientos/<id>` en discontinuos-mateu =
+  `{legajoId, nombre, puesto, desde, hasta, tipo:'traslado'|'cobertura'|'retorno', fecha,
+  retorno, motivo, obs, por, en, cerrado?, deshecho?}`. Nada más cambia de esquema: la
+  sucursal sigue viviendo en el legajo, que es la única fuente de verdad
+  (ver «Equipo de la sucursal — padrón único»).
+- **⇩ Excel** (ExcelJS, estilo del resto de RRHH): hojas «Dotación» (una fila por sucursal),
+  «Personas» (una por persona, con la situación: estable / cubre / alta por validar) y
+  «Movimientos», las tres con autofiltro.
+
 ## Calendario de novedades del mes
 
 Reemplaza el Excel que los encargados mandaban mes a mes (`Calendario 08-2026.xls`:
