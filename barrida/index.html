@@ -325,6 +325,11 @@ const ROOT = 'barrida';   // rama raíz de la barrida dentro de la base
 const SESSION_KEY = 'mateu_portal_session';
 function readSession(){ try{ const s=localStorage.getItem(SESSION_KEY); return s?JSON.parse(s):null; }catch(e){ return window.__sess||null; } }
 const SESSION = readSession();
+// La vista Compras es la mirada del comprador (qué recomprarle a la marca), no la del
+// depósito: la ven solo Juli y Julián de Marco (pedido de Juli 08/09/2026). Para sumar a
+// alguien, agregar el mail acá.
+const COMPRAS_MAILS = ['julian@mateu.com.ar','julian.demarco@mateu.com.ar'];
+const puedeCompras = () => COMPRAS_MAILS.includes(String((SESSION&&SESSION.email)||'').trim().toLowerCase());
 if(!SESSION || !SESSION.rol){ location.replace('../'); }
 // La barrida la corre el depósito / gerencia. Las sucursales ven su aviso en Indicadores.
 const puedeVer = SESSION && (SESSION.rol==='admin' || (SESSION.herramientas||[]).includes('barrida'));
@@ -1294,14 +1299,15 @@ function computar(histPrev, histSnaps){
 /* ============================================================
    VISTAS
    ============================================================ */
-function setTab(t){ state.tab=t; document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t)); render(); }
+function setTab(t){ if(t==='compras' && !puedeCompras()) t='reposicion';
+  state.tab=t; document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t)); render(); }
 
 function render(){
   const R=state.resultado;
   if(state.tab==='reposicion') guardarPrefs();   // el corte del depósito se recuerda en este navegador
   $('bRep').textContent = R? R.totales.lineas_reposicion : 0;
   $('bPar').textContent = R? R.totales.items_parados : 0;
-  $('bCom').textContent = R? (R.totales.compras_sin_reserva||0) : 0;
+  const bc=$('bCom'); if(bc) bc.textContent = R? (R.totales.compras_sin_reserva||0) : 0;
   const v=$('view');
   if(state.tab==='reposicion') v.innerHTML=viewReposicion();
   else if(state.tab==='compras') v.innerHTML=viewCompras();
@@ -1548,6 +1554,7 @@ function viewReposicion(){
 }
 
 function viewCompras(){
+  if(!puedeCompras()) return '';   // por si se llega por otro camino
   const R=state.resultado;
   if(!R) return '<div class="state"><div class="big-ic">⚙️</div>Cargá los Excel de la semana en la pestaña Reposición.</div>';
   if(!R.compras) return '<div class="state"><div class="big-ic">🛒</div>Esta barrida se guardó antes de la vista Compras. Volvé a procesar el Excel para verla.</div>';
@@ -2382,6 +2389,7 @@ async function exportComXlsx(){
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
 (function init(){
   cargarPrefs();
+  if(!puedeCompras()){ const b=document.querySelector('[data-tab="compras"]'); if(b) b.remove(); if(state.tab==='compras') state.tab='reposicion'; }
   if(!FIREBASE_DB_URL){
     $('cfgBanner').style.display='block';
     $('cfgBanner').innerHTML='⚙️ <b>Falta la base:</b> pegá la URL de <code>barrida-mateu</code> en la constante <code>FIREBASE_DB_URL</code>. Podés cargar y ver barridas, pero no se guarda el histórico ni el aviso a sucursales.';

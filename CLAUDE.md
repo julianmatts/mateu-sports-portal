@@ -909,7 +909,9 @@ Indicadores, ver abajo).
   (reserva y CERO venta en toda la cadena). El Depósito y filas basura (`Sucursal`)
   se excluyen de la demanda; se puede filtrar `Varios/Facturación` (gift cards,
   cupones). El grano fino es art×sucursal.
-- **Vista Compras** (pestaña `compras`, para el rol Compras — Juli + Julián de Marco):
+- **Vista Compras** (pestaña `compras`, **solo para `COMPRAS_MAILS`** = julian@ y julian.demarco@ —
+  pedido de Juli 08/09/2026: al depósito no le sirve; para sumar a alguien, un mail más en esa
+  constante. Sin permiso la pestaña se saca del DOM y `setTab`/`viewCompras` rebotan a Reposición):
   mirada por **artículo global** (no por sucursal), ranking por vendido en la cadena,
   en tres grupos: **mejores vendidos SIN reserva** = reponer a la marca (recomprar),
   **mejores vendidos CON reserva** = solo seguimiento, y **artículos frenados** (= la
