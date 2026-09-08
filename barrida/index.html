@@ -1066,6 +1066,7 @@ function aplicarVaciado(){
     rows.forEach(r=>{ r.talles.sort((a,b)=>cmpTalle(a.t,b.t)); r.sugerido=r.talles.reduce((a,d)=>a+d.s,0); });
   });
   R.vacDejados=dejados;
+  R.vacArts={}; Object.keys(porArt).forEach(id=>{ R.vacArts[id]=true; });   // artículos de reserva chica
   R.totales.vac_lineas = R.vaciado.filter(r=>r.sugerido>0).length;
   R.totales.vac_unidades = R.vaciado.reduce((a,r)=>a+r.sugerido,0);
   R.totales.vac_dejados = Object.keys(dejados).length;
@@ -1278,7 +1279,7 @@ function computar(histPrev, histSnaps){
   // "notable" = mejor vendido (>=3 u. en la semana), mismo umbral que el filtro por defecto de la vista Compras.
   const notable = c => c.vendido>=3 && noVarios(c);
   return {
-    reposicion, parada, compras, curva, vaciado, vacDejados:{}, curvaTalles, conStock:!!sRows, stockOrigen: fS ? 'archivo' : (sRows ? 'base' : ''), snapshot,
+    reposicion, parada, compras, curva, vaciado, vacDejados:{}, vacArts:{}, curvaTalles, conStock:!!sRows, stockOrigen: fS ? 'archivo' : (sRows ? 'base' : ''), snapshot,
     totales:{
       curva_lineas: 0, curva_unidades: 0,      // los completa aplicarUnidadesCurva()
       vac_lineas: 0, vac_unidades: 0, vac_dejados: 0,   // los completa aplicarVaciado()
@@ -1426,8 +1427,11 @@ function viewReposicion(){
   const sucBySlug={}; base.forEach(r=>sucBySlug[r.slug]=r.sucNombre);
   const chk=(id,on,txt,tip,off)=>'<label class="chk"'+(tip?' title="'+esc(tip)+'"':'')+(off?' style="opacity:.55"':'')
     +'><input type="checkbox" id="'+id+'" '+(on?'checked':'')+(off?' disabled':'')+'> '+txt+'</label>';
-  let html=cargaHtml()+'<div class="sec-head"><div><h1>Reposición posible</h1>'
-    +'<div class="sub">Lo que la sucursal vendió la última semana y hay en el depósito para bajarle. Abrí <b>¿Cómo se lee esta tabla?</b> para el detalle de los talles, la prioridad y las reglas.</div></div></div>';
+  let html=cargaHtml()+'<div class="sec-head"><div><h1>'+(vacOn?'Vaciar la reserva chica':'Reposición posible')+'</h1>'
+    +'<div class="sub">'+(vacOn
+      ? 'SOLO los artículos de calzado e indumentaria con <b>hasta '+fv.max+' unidades</b> en todo el depósito: se baja lo que queda y dejan de vivir en la reserva. Destildá «Vaciar la reserva chica» para volver a la reposición por venta.'
+      : 'Lo que la sucursal vendió la última semana y hay en el depósito para bajarle. Abrí <b>¿Cómo se lee esta tabla?</b> para el detalle de los talles, la prioridad y las reglas.')
+    +'</div></div></div>';
   // ---- panel de filtros: arriba QUÉ MIRAR, abajo QUÉ MOSTRAR / QUÉ SUMAR ----
   // las opciones de tipo/disciplina/subrubro se acotan al rubro y la marca ya elegidos
   const rb = r => (!f.rubro||r.rubro===f.rubro)&&(!f.marca||r.marca===f.marca);
@@ -1448,11 +1452,13 @@ function viewReposicion(){
       +(R.previa?chk('fRepite',f.soloRepite,'Solo lo que se repite','Solo las líneas que ya estaban en la barrida del '+lunesLabel(R.previa.semana)+' para esa misma sucursal'):'')
       +(state.transf?chk('fSinEnv',f.soloSinEnviar,'Solo lo que falta enviar','Solo las líneas que el sistema todavía no registra como transferidas (o salieron a medias)'):'')
     +'</div><div class="fsep"></div>'
-    +'<div class="fgrupo"><span class="glab">Sumar al pedido</span>'
+    +'<div class="fgrupo"><span class="glab">Además</span>'
       +chk('fCurva',f.curva,'Completar curva de talles'+(R.conStock?'':' <small>(sin stock por sucursal)</small>'),
         R.conStock?'Le manda a cada sucursal los talles que no tiene y sí hay en el depósito':'Subí también el stock por sucursal abierto por talle en la tarjeta de arriba', !R.conStock)
+    +'</div><div class="fsep"></div>'
+    +'<div class="fgrupo"><span class="glab">Modo</span>'
       +chk('fVaciar',f.vaciar,'Vaciar la reserva chica',
-        (R.vaciado||[]).length?'Calzado e indumentaria con muy poca reserva: se baja todo lo que queda y el artículo deja de vivir en el depósito':'No hay artículos de calzado o indumentaria con reserva chica en esta barrida', !(R.vaciado||[]).length)
+        (R.vaciado||[]).length?'Deja en la lista SOLO los artículos de calzado e indumentaria con poca reserva y reparte todo lo que queda de cada uno: el artículo deja de vivir en el depósito.':'No hay artículos de calzado o indumentaria con reserva chica en esta barrida', !(R.vaciado||[]).length)
     +'</div>'
     +'<div style="margin-left:auto;display:flex;gap:10px;align-items:center">'
       +(hayFiltros(f)?'<button class="lnk" id="btnLimpiarF">Limpiar filtros</button>':'')
@@ -2167,8 +2173,11 @@ function reposFusionadas(){
       soloCurva:true, sugRep:0, curvaFaltan:c.faltan, curvaU:c.sugerido, sugerido:c.sugerido, tallesSuc:c.tallesSuc }));
   }
   if(f.vaciar){
-    // el vaciado se suma a la misma fila: sus talles van a `vacFaltan` y engordan el sugerido
+    // «Vaciar la reserva chica» es un MODO, no un extra: la lista queda SOLO con los artículos
+    // de poca reserva (pedido de Juli 08/09/2026) y muestra cómo se reparte todo lo que queda.
     const idx=vacIdx();
+    const arts=R.vacArts||{};
+    rows=rows.filter(r=>arts[r.id]);
     rows=rows.map(r=>{ const c=idx[r.id+'|'+r.slug]; if(!c) return r; delete idx[r.id+'|'+r.slug];
       return {...r, sugRep:(r.sugRep!=null?r.sugRep:r.sugerido), vacFaltan:c.talles, vacU:c.sugerido, sugerido:r.sugerido+c.sugerido}; });
     Object.values(idx).forEach(c=>rows.push({ id:c.id, slug:c.slug, sucNombre:c.sucNombre, codigo:c.codigo, desc:c.desc, marca:c.marca, rubro:c.rubro, tipo:c.tipo, genero:c.genero, disc:c.disc,
@@ -2320,14 +2329,16 @@ async function exportRepXlsx(){
   const curvaS=(row,t)=>{ const d=(row.curvaFaltan||[]).find(x=>x.t===t); return d?d.s:0; };
   const vacS=(row,t)=>{ const d=(row.vacFaltan||[]).find(x=>x.t===t); return d?d.s:0; };
   await exportPlanilla({
-    hoja:'Reposición', titulo:'REPOSICIÓN '+lbl.rubro, subtitulo:lbl.marca+(uCurva?'  ·  + COMPLETAR CURVA DE TALLES':'')+(uVac?'  ·  + VACIADO DE RESERVA CHICA':''),
+    hoja: f.vaciar?'Vaciado':'Reposición',
+    titulo: (f.vaciar?'VACIADO DE RESERVA ':'REPOSICIÓN ')+lbl.rubro,
+    subtitulo: lbl.marca+(f.vaciar?'  ·  ARTÍCULOS CON HASTA '+state.filtrosVac.max+' UNIDADES EN EL DEPÓSITO':'')+(uCurva?'  ·  + COMPLETAR CURVA DE TALLES':''),
     // sin fila de resumen ni analíticas (Vendido…Categoría): la planilla del depósito lleva solo lo que hay que mandar
     rows, talles,
     // cantidad a mandar = reposición por venta + talles de curva + vaciado de esa sucursal
     // el 0 rojo del talle que no se puede reponer solo sale si se pidió verlo en pantalla
     celda:(row,t)=>{ const d=row.talles[t]; const sug=(d?d.s:0)+curvaS(row,t)+vacS(row,t); const esFalta=!!(d&&d.v>0&&d.s<d.v&&verRojos); return { val: sug>0?sug:(esFalta?0:null), falta:esFalta }; },
     derecha:[ {h:'Total',val:r=>r.sugerido,total:true} ],
-    archivo:'reposicion'+lbl.file+'-'+state.semana+'.xlsx',
+    archivo:(f.vaciar?'vaciado-reserva':'reposicion')+lbl.file+'-'+state.semana+'.xlsx',
   });
 }
 

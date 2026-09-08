@@ -974,7 +974,12 @@ Indicadores, ver abajo).
   sucursales) — antes ese total estaba solo al pie. La explicación larga de la tabla pasó a un
   desplegable **«¿Cómo se lee esta tabla?»** (`<details class="ayuda">`), abierto la primera vez
   y después como lo deje el usuario (localStorage `barrida_ayuda`).
-- **Vaciar la reserva chica (08/09/2026, pedido de Juli)**: en **calzado e indumentaria**
+- **Vaciar la reserva chica (08/09/2026, pedido de Juli)** — es un **MODO de la vista, no un
+  extra**: al tildarlo la lista queda SOLO con los artículos de poca reserva (`R.vacArts`,
+  `reposFiltradas` filtra por ahí), con el título «Vaciar la reserva chica» y su propio Excel
+  (`vaciado-reserva-<lunes>.xlsx`). La primera versión los sumaba a la reposición normal y se
+  seguía viendo todo lo demás: no servía para la tarea, que es limpiar el depósito. En
+  **calzado e indumentaria**
   (`esVaciable`), un artículo con muy poca reserva no tiene sentido en el depósito: conviene
   repartir lo que queda y que viva en las sucursales. Tilde **«Vaciar la reserva chica»** en
   Reposición (apagado por defecto) + dos controles: «reserva del artículo de hasta N unidades»
