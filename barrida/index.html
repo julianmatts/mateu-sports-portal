@@ -1537,7 +1537,8 @@ function hojaEstilizada(wb, nombre, titulo, resumen, headers, widths, leftCols){
   ws.getRow(r).height=18;
   ws.autoFilter={from:{row:headerRowIdx,column:1},to:{row:headerRowIdx,column:nCols}};
   ws.views=[{state:'frozen', ySplit:headerRowIdx, showGridLines:false}];
-  ws.pageSetup={orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}};
+  // al imprimir, membrete + encabezados se repiten arriba en TODAS las hojas (pedido de Juli 08/09/2026)
+  ws.pageSetup={orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, printTitlesRow:'1:'+headerRowIdx, margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}};
   return { ws, headerRowIdx, nCols, leftCols };
 }
 function filaEstilizada(meta, rowIdx, valores, i, tint){
@@ -1659,7 +1660,11 @@ async function exportPlanilla(cfg){
   // autofiltro en las columnas de identidad (Código..Destino); los talles quedan sin flecha.
   ws.autoFilter={ from:{row:headerRowIdx,column:1}, to:{row:headerRowIdx,column:LZ} };
   ws.views=[{state:'frozen', xSplit:LZ, ySplit:headerRowIdx, showGridLines:false}];
-  ws.pageSetup={orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}};
+  // al imprimir, membrete + encabezados (incluida la fila de talles) se repiten arriba en TODAS las hojas
+  // y las columnas de identidad Código..Destino a la izquierda (pedido de Juli 08/09/2026)
+  ws.pageSetup={orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0,
+    printTitlesRow:'1:'+headerRowIdx, printTitlesColumn:'A:'+String.fromCharCode(64+LZ),
+    margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}};
   await downloadWorkbook(wb, cfg.archivo);
   toast('Excel generado ✓','ok');
 }

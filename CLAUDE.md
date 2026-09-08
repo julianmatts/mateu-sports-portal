@@ -883,7 +883,10 @@ Indicadores, ver abajo).
   07/09/2026 (pedido de Juli) la de Reposición va **sin fila de resumen y sin las analíticas**
   (Vendido · Reserva · Falta · Prioridad · Meses stock · Categoría), todo en negrita, filas de
   alto 25, fondo blanco y bordes finos en todas las celdas (sin bandas ni separadores gruesos). Parada y Compras: header navy +
-  autofiltro (Compras antepone Categoría y tiñe rojo/verde según sin/con reserva).
+  autofiltro (Compras antepone Categoría y tiñe rojo/verde según sin/con reserva). Los tres
+  exports **repiten el membrete y los encabezados arriba de cada hoja al imprimir**
+  (`pageSetup.printTitlesRow`; Reposición además repite Código..Destino a la izquierda con
+  `printTitlesColumn`) — pedido de Juli 08/09/2026.
   Y **Reserva parada**
   (reserva y CERO venta en toda la cadena). El Depósito y filas basura (`Sucursal`)
   se excluyen de la demanda; se puede filtrar `Varios/Facturación` (gift cards,
