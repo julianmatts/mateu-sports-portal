@@ -382,40 +382,43 @@ const valueLabels = {
   afterDatasetsDraw(chart, args, cfg){
     cfg = cfg||{}; if(cfg.display===false) return;
     const ctx = chart.ctx, type = chart.config.type;
-    ctx.save(); ctx.font = "700 10px 'Barlow', sans-serif"; ctx.textAlign='center'; ctx.textBaseline='middle';
+    // Texto limpio, sin contorno: blanco dentro de la barra/segmento, navy afuera.
+    // (El contorno oscuro sobre el blanco se veía sucio; pedido de Juli 08/09/2026.)
+    ctx.save(); ctx.font = "600 12px 'Barlow Condensed', 'Barlow', sans-serif"; ctx.textAlign='center'; ctx.textBaseline='middle';
     chart.data.datasets.forEach((ds,di)=>{
       const meta = chart.getDatasetMeta(di); if(meta.hidden) return;
       const vals = (ds.data||[]).map(v=>Number(v)||0), total = cfg.total!=null ? cfg.total : vals.reduce((a,b)=>a+b,0);
+      const nVis = vals.filter(Boolean).length;
       meta.data.forEach((el,i)=>{
         const v = vals[i]; if(!v) return;
-        const p = total ? (v/total*100).toFixed(1).replace('.',',')+'%' : '';
+        const pn = total ? v/total*100 : 0;
+        // el % no se muestra si es el único valor (sería siempre 100 %) o si se pidió sin %
+        const p = (!cfg.sinPct && nVis>1 && pn<99.95) ? (pn>=10 ? Math.round(pn) : pn.toFixed(1).replace('.',',')) + ' %' : '';
+        const txtCompleto = p ? `${fmt(v)} · ${p}` : fmt(v);
         if(type==='doughnut'){
           const a=(el.startAngle+el.endAngle)/2, r=(el.innerRadius+el.outerRadius)/2;
-          if((el.endAngle-el.startAngle) < 0.25) return;
+          if((el.endAngle-el.startAngle) < 0.28) return;
           const x=el.x+Math.cos(a)*r, y=el.y+Math.sin(a)*r;
-          ctx.fillStyle='#fff'; ctx.strokeStyle='rgba(11,21,39,.55)'; ctx.lineWidth=2.5;
-          ctx.strokeText(fmt(v),x,y-6); ctx.fillText(fmt(v),x,y-6); ctx.strokeText(p,x,y+6); ctx.fillText(p,x,y+6);
+          ctx.fillStyle='#fff'; ctx.fillText(fmt(v),x,y-(p?6:0)); if(p) ctx.fillText(p,x,y+7);
           return;
         }
         if(type==='line'){
-          const text = cfg.sinPct ? fmt(v) : `${fmt(v)} · ${p}`;
-          const y = Math.max(chart.chartArea.top+10, el.y-13);
-          ctx.fillStyle=C.navy; ctx.strokeStyle='#fff'; ctx.lineWidth=3; ctx.strokeText(text,el.x,y); ctx.fillText(text,el.x,y);
+          const y = Math.max(chart.chartArea.top+10, el.y-14);
+          ctx.fillStyle=C.navy; ctx.fillText(txtCompleto,el.x,y);
           return;
         }
         if(type==='bar'){
           const horiz = chart.options.indexAxis==='y';
           if(horiz){
-            const w = Math.abs(el.x-el.base), avail = Math.max(0, w-12);
-            const cands = cfg.sinPct ? [fmt(v)] : [`${fmt(v)} · ${p}`, p];
+            const w = Math.abs(el.x-el.base), avail = Math.max(0, w-14);
+            const cands = p ? [txtCompleto, fmt(v)] : [fmt(v)];
             const inside = cands.find(t=>ctx.measureText(t).width<=avail);
-            if(inside){ ctx.fillStyle='#fff'; ctx.strokeStyle='rgba(11,21,39,.45)'; ctx.lineWidth=2.5; const x=(el.base+el.x)/2; ctx.strokeText(inside,x,el.y); ctx.fillText(inside,x,el.y); }
-            else { const t=cands[0]; ctx.textAlign='left'; ctx.fillStyle=C.navy; ctx.fillText(t, el.x+6, el.y); ctx.textAlign='center'; }
+            if(inside){ ctx.fillStyle='#fff'; ctx.fillText(inside,(el.base+el.x)/2,el.y); }
+            else { ctx.textAlign='left'; ctx.fillStyle=C.navy; ctx.fillText(txtCompleto, el.x+6, el.y); ctx.textAlign='center'; }
           } else {
             const h = Math.abs(el.base-el.y);
-            const text = cfg.sinPct ? fmt(v) : `${fmt(v)} · ${p}`;
-            if(h>18){ ctx.fillStyle='#fff'; ctx.strokeStyle='rgba(11,21,39,.45)'; ctx.lineWidth=2.5; ctx.strokeText(text,el.x,(el.base+el.y)/2); ctx.fillText(text,el.x,(el.base+el.y)/2); }
-            else { ctx.fillStyle=C.navy; ctx.fillText(text, el.x, el.y-9); }
+            if(h>20 && ctx.measureText(txtCompleto).width <= el.width-6){ ctx.fillStyle='#fff'; ctx.fillText(txtCompleto,el.x,(el.base+el.y)/2); }
+            else { ctx.fillStyle=C.navy; ctx.fillText(txtCompleto, el.x, el.y-9); }
           }
         }
       });

@@ -1056,13 +1056,22 @@ por jsdelivr; ⚠ en cdnjs la ruta de Chart.js da 404).
   y columna «Ingresó al depósito» (mismo artículo+mes). «⇩ Excel» = detalle filtrado + hojas
   Resumen e Ingresos (con costo). Plugin `valueLabels` dibuja valor · % en barras/anillo/puntos.
 - **Carga mensual** («⇧ Cargar export», modal con dos recuadros envíos / ingresos, CSV o
-  Excel, drag & drop; el CSV se lee como windows-1252): `parsearPivot` reconoce el pivot del
-  sistema por la fila de meses (y «Cant.recibido» en la segunda fila para remitos);
-  respaldo `parsearPorNombre` para una tabla plana con encabezados por alias (`ALIAS`: mes
-  desde Fecha o Mes). El año sale del nombre del archivo o del campo «Año». Avisa si el
-  archivo parece del otro recuadro. Cada mes del archivo **reemplaza** ese mes y tipo y
-  actualiza el maestro (PATCH multi-path); los demás meses quedan. Validado con los dos CSV
-  reales: mismos totales que el script.
+  Excel, drag & drop; el CSV se lee como windows-1252): `detectarPivot` reconoce el pivot del
+  sistema por la fila de meses (y «Cant.recibido» en la segunda fila para remitos). **El orden
+  de las columnas de texto NO importa (pedido de Juli 08/09/2026)**: `inferirColumnas` asigna
+  cada columna por su CONTENIDO (valores conocidos del maestro `ARTS` para rubro/subrubro/
+  disciplina/tipo/marca; patrones para ID ITEM, código, sucursal «NN-…», artículo; proveedor,
+  campaña y nro. de remito se ignoran solos) y la previsualización muestra el panel «Cómo leí
+  las columnas» (ejemplos + selector por columna, `CAMPOS`): cambiar un selector re-lee el
+  archivo (`reprocesar`), marca «corregida», bloquea Guardar si falta Código/ID, Artículo o
+  Sucursal destino, y recuerda la corrección por tipo y cantidad de columnas (localStorage
+  `logi_colmap_<tipo>_<n>`). Respaldo `detectarPorNombre`/`parsearPorNombre` para una tabla
+  plana con encabezados por alias (`ALIAS`: mes desde Fecha o Mes), con el mismo panel. El año
+  sale del nombre del archivo o del campo «Año». Avisa si el archivo parece del otro recuadro.
+  Cada mes del archivo **reemplaza** ese mes y tipo y actualiza el maestro (PATCH multi-path);
+  los demás meses quedan. Validado con los dos CSV reales y con una copia con las columnas
+  desordenadas: mismos totales que el script. Etiquetas de los gráficos (`valueLabels`): texto
+  plano sin contorno, blanco adentro / navy afuera, sin % cuando hay un solo valor.
 
 ## Objetivos de Venta Semanal (y Mensual)
 
