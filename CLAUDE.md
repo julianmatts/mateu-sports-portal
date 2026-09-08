@@ -966,7 +966,12 @@ falta crear ninguna base.**
 
 Dashboard de logística, **pantalla inicial de `logistica@` y `deposito@`** (campo `inicio:'logistica'`
 + la herramienta primera en `herramientas` de sus registros en `usuarios/`; no van por
-`PERFILES_FIJOS`, así el ⚙ los sigue editando; son admin, ven el resto en el drawer). Replica
+`PERFILES_FIJOS`, así el ⚙ los sigue editando). Son admin pero con
+**`soloHerramientas:true`** (08/09/2026): ven SOLO las herramientas que Juli les marcó en el ⚙,
+no todas. Ojo: un admin **sin** ese check ve todos los tiles aunque se le marquen algunos —
+por eso el ⚙ ahora avisa en cada fila «⚠ Hoy ve TODAS las herramientas». Y las sesiones ya
+abiertas toman los cambios del ⚙ al pasar por el Portal (`refrescarSesion` en `init()`), sin
+tener que salir y volver a entrar. Replica
 el informe HTML «Dashboard Gerencial — Envíos e Ingresos» (jun–ago 2026, generado fuera del
 portal) con datos vivos: `index.html` self-contained (header unificado, Chart.js 4 + SheetJS
 por jsdelivr; ⚠ en cdnjs la ruta de Chart.js da 404).
