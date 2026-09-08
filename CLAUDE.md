@@ -1490,6 +1490,22 @@ nodo `rrhh/` de **discontinuos-mateu**:
   pueden cancelar. El desplegable **«Historial»** (`compHistorial`) lista todos los
   movimientos del equipo con su chip GANADO / TOMADO / AJUSTE y **el día en que se
   tomó cada compensatorio**.
+- **Horas extra cargadas por la sucursal, validadas por RRHH (08/09/2026, pedido de
+  Juli)**: el encargado carga las horas extra de su gente desde la misma sección de
+  Mi Sucursal («+ Cargar horas extra» → persona del padrón, día, horas, motivo de
+  `HS_MOTIVOS` y detalle). **No suman al saldo**: quedan en
+  `rrhh/horas_pend/<slug>/<id>` con `estado:'pendiente'` (`hsEnviar`; el desplegable
+  «Horas extra cargadas por la sucursal» las muestra con su estado y las pendientes
+  se pueden cancelar). El aviso le llega a `COMP_APROBADORES` (rrhh@ y el
+  supervisor) por la Bandeja. En **RRHH → Compensatorios y horas** aparecen arriba
+  de las solicitudes, en «Horas extra cargadas por las sucursales» (`hpHtml`;
+  pendientes + resueltas de los últimos 30 días, filtradas por el selector de
+  sucursal y contadas en el badge de la pestaña): **✓ validar**
+  (`formValidarHoras`: se puede ajustar la cantidad y el día, muestra el saldo
+  proyectado y recién ahí escribe el movimiento `{d, k:'hs', t:'alta', hp:<id>}` en
+  la ficha) o **✕ rechazar** con motivo (`formRechazarHoras`); las dos le avisan a
+  la sucursal por la Bandeja. El 🗑 borra el registro ya resuelto (no toca el
+  movimiento). Los **compensatorios en días los sigue cargando solo RRHH**.
 
 **Carga masiva — «⇧ Importar Excel»** (pestaña Compensatorios): sube el Excel de
 Juli (`Compensatorios.xlsx`: una hoja con bloques por sucursal — encabezado
@@ -1527,7 +1543,11 @@ suyo, misma seguridad blanda que Objetivos / Barrida):
 — el **saldo es la suma de `d`** (+ ganados, − tomados; no hay campo `saldo`) —
 y `rrhh/solicitudes_comp/<slug>/<id>` = `{legajoId, nombre, k, modo:'tomar'|'cobrar',
 cant (y `dias` por compatibilidad), desde, hasta, motivo, estado, por, en,
-resp:{por,en,nota,imp,vh,sug:{desde,hasta,nota}}}`.
+resp:{por,en,nota,imp,vh,sug:{desde,hasta,nota}}}`, y
+`rrhh/horas_pend/<slug>/<id>` = `{legajoId, nombre, puesto, fecha, horas, motivo,
+detalle, estado:'pendiente'|'aprobada'|'rechazada', por, en,
+resp:{por,en,nota,horas,fecha}}` (las horas que carga la sucursal, hasta que RRHH
+las valida).
 
 **Avisos por la Bandeja** (`mensajes-mateu/directos`, best-effort): al solicitar le
 llega a `COMP_APROBADORES` (rrhh@ = RRHH y cristian.campion@ = supervisor,
