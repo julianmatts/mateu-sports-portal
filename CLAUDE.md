@@ -1015,6 +1015,21 @@ Indicadores, ver abajo).
   US), y el 47/48 caen en la cola.
 - **Preferencias del depósito (08/09/2026)**: filtros, tildes, parámetros de curva/vaciado y orden
   se recuerdan en el navegador (`localStorage barrida_prefs`; la búsqueda no).
+- **Sugerido vs. enviado (08/09/2026)**: cuarto botón opcional **«⇧ Transferencias»** en la
+  tarjeta de carga: se sube el export de transferencias del sistema (CSV `;`-separado latin1 o
+  Excel) y `parseTransf` cruza lo que la barrida sugirió con lo que realmente salió del depósito.
+  Columnas por CONTENIDO, igual que el Control F8 de `equipo/` (mantener en sintonía), con dos
+  arreglos propios: **la columna de sucursal se valida contra `NAME2SLUG`** (el rubro y el
+  subrubro también empiezan con «NN-»: 02-CALZADO, 02-HOMBRE) y **el código de artículo empieza
+  con letras y trae dígitos**, desempatando por cantidad de valores distintos. Reconoce el export
+  simple (origen · destino · código · enviado) y el **pivot anual con una columna por mes**
+  («Estad transferencias <año>»), del que toma el mes de la semana de la barrida y lo avisa.
+  Solo cuenta lo que sale del depósito (`esDeposito`, con acentos plegados: el sistema escribe
+  «05-Depósito»); si el export no trae ninguna salida del depósito, cuenta todo y lo aclara.
+  Cruce por **Id.item** con respaldo por código. En la tabla, columna **«Enviado»** con estado
+  (✓ completo · ⚠ parcial · ✗ sin salir · + sin estar en la barrida), tilde «Solo lo que falta
+  enviar» y un **% de cumplimiento** en la tira de resumen. Si esa semana ya está guardada, el
+  cruce se guarda en `barridas/<lunes>/transf` y vuelve al abrirla del histórico.
 - **Ingreso reciente / crónica**: NO hay columna de fecha ni SKU en recepciones, así
   que se resuelve con el **histórico semanal** guardado: un artículo que aparece por
   primera vez en la reserva = *ingreso reciente* (se separa de "parada"); "semanas"
