@@ -36,7 +36,7 @@ button{font-family:inherit}
 main{max-width:1500px;margin:0 auto;padding:16px 22px 60px}
 
 /* ===== FILTROS ===== */
-.filters{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:var(--shadow);display:grid;grid-template-columns:repeat(6,minmax(140px,1fr)) auto;gap:10px;align-items:end}
+.filters{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:var(--shadow);display:grid;grid-template-columns:repeat(7,minmax(130px,1fr)) auto;gap:10px;align-items:end}
 .filters .help{grid-column:1/-1;font-size:11px;color:var(--muted);margin-bottom:-2px}
 .lbl{font-family:var(--font-c);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:5px}
 
@@ -140,7 +140,7 @@ tr:hover td{background:#fafbfd}
 .pill.ok{background:#dcfce7;color:#166534}
 .pill.new{background:#fef3c7;color:#92400e}
 
-@media(max-width:1100px){.filters{grid-template-columns:repeat(3,1fr)}.kpis{grid-template-columns:repeat(3,1fr)}.grid,.grid2{grid-template-columns:1fr}}
+@media(max-width:1100px){.filters{grid-template-columns:repeat(4,1fr)}.kpis{grid-template-columns:repeat(3,1fr)}.grid,.grid2{grid-template-columns:1fr}}
 @media(max-width:650px){main{padding:10px 10px 50px}.hero{padding:14px}.filters{grid-template-columns:1fr 1fr}.kpis{grid-template-columns:1fr 1fr}.kpi .v{font-size:28px}.panel .mini,.search{width:100%}.drops{grid-template-columns:1fr}.panel{min-height:0}}
 @media print{.hero .acts,.filters,.pager,.search,#tutBtn{display:none!important}.chartbox{break-inside:avoid}}
 </style>
@@ -180,23 +180,23 @@ tr:hover td{background:#fafbfd}
       <div class="drops">
         <label class="drop" id="dropEnv">
           <div class="ic">🚚</div><div class="t">Envíos a sucursales</div>
-          <div class="d">Excel o CSV con Sucursal · Mes · Rubro · Subrubro · Disciplina · Marca · Código · ID ITEM · Artículo · Cantidad</div>
+          <div class="d">«Estad transferencias &lt;año&gt;.csv» del sistema (una columna por mes) o una tabla con Sucursal · Mes · Rubro · … · Cantidad</div>
           <div class="f" id="fEnv"></div>
           <input type="file" id="fileEnv" accept=".xlsx,.xls,.csv">
         </label>
         <label class="drop" id="dropIng">
           <div class="ic">📥</div><div class="t">Ingresos al depósito</div>
-          <div class="d">Mismas columnas, con la cantidad como «Ingresado» (la sucursal es el depósito)</div>
+          <div class="d">«Estad remitos &lt;año&gt;.csv» del sistema (Cant.recibido · Costo por mes) o una tabla con la cantidad como «Ingresado»</div>
           <div class="f" id="fIng"></div>
           <input type="file" id="fileIng" accept=".xlsx,.xls,.csv">
         </label>
       </div>
       <div class="opts">
         <label>Año de los meses <input type="number" id="anio" min="2020" max="2100"></label>
-        <span style="font-size:12px;color:var(--muted)">Si el archivo trae una fecha completa o el mes con año, se usa esa y este campo no aplica.</span>
+        <span style="font-size:12px;color:var(--muted)">Se toma del nombre del archivo («… 2026.csv») o de este campo; si el archivo trae fecha completa, manda la fecha.</span>
       </div>
       <div class="prev" id="prevCarga"></div>
-      <div class="note">Cada mes del archivo <b>reemplaza</b> lo guardado para ese mes y ese tipo (envíos o ingresos); los otros meses quedan como estaban. Las filas «Total» y las que no tienen mes se descartan. También podés arrastrar los archivos sobre los recuadros.</div>
+      <div class="note">Cada mes del archivo <b>reemplaza</b> lo guardado para ese mes y ese tipo (envíos o ingresos); los otros meses quedan como estaban. Las filas «Total» y las que no tienen mes se descartan; los movimientos de un mismo artículo, sucursal y mes se suman. También podés arrastrar los archivos sobre los recuadros.</div>
     </div>
     <div class="modal-f">
       <span id="mcInfo" style="font-size:12px;color:var(--muted);margin-right:auto"></span>
@@ -225,12 +225,17 @@ const $ = id => document.getElementById(id);
 
 /* ---------- Firebase ----------
    Reusa la base recepciones-mateu (reglas abiertas), nodo aparte `logistica/`.
-   Árbol: logistica/meses/<YYYY-MM> = { meta:{envios:{…}, ingresos:{…}},
-          envios:[[suc,rubro,sub,disc,marca,cod,id,art,q],…], ingresos:[[…]] }
-          logistica/ultimo = 'YYYY-MM' */
+   Árbol: logistica/arts/<clave> = [rubro, sub, disc, marca, idItem, artículo, tipo, código]
+            (maestro compartido: clave = código de barras con . # $ [ ] / → _)
+          logistica/meses/<YYYY-MM> = { meta:{envios:{…}, ingresos:{…}},
+            envios:[[clave, sucursal, unidades],…], ingresos:[[clave, unidades, costo],…] }
+          logistica/ultimo = 'YYYY-MM'
+   Las filas van compactas (solo referencian al maestro) para que los 9 meses
+   del año pesen poco al abrir. */
 const FIREBASE_DB_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
 const ROOT = 'logistica';
-const COLS = ['suc','rubro','sub','disc','marca','cod','id','art','q'];
+const ART = ['rubro','sub','disc','marca','id','art','tipo','cod'];
+const clave = cod => String(cod||'').trim().replace(/[.#$\[\]\/]/g,'_') || '_';
 
 /* ---------- sesión ---------- */
 const SESSION_KEY = 'mateu_portal_session';
@@ -246,6 +251,7 @@ $('salir').addEventListener('click', ()=>{ try{ localStorage.removeItem(SESSION_
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const MES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 const fmt = n => new Intl.NumberFormat('es-AR').format(Math.round(Number(n)||0));
+const fmtM = n => { n=Number(n)||0; return n>=1e6 ? fmt(n/1e6)+' M' : fmt(n); };   // 22.960 M = millones de pesos
 const pct = (v,t) => t ? (v/t*100).toFixed(1).replace('.',',')+'%' : '0,0%';
 function ymLabel(ym){ const [y,m]=ym.split('-'); return MESES[+m-1]+' '+y; }
 function ymCorto(ym){ const [y,m]=ym.split('-'); return MES_CORTO[+m-1]+' '+y.slice(2); }
@@ -254,30 +260,31 @@ function toast(msg, err){ const t=$('toast'); t.textContent=msg; t.className='to
 function norm(s){ return String(s==null?'':s).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]+/g,' ').trim(); }
 
 /* ---------- datos ---------- */
-let ENV = [];   // envíos: {suc,ym,rubro,sub,disc,marca,cod,id,art,q}
-let ING = [];   // ingresos al depósito (suc = depósito), mismo formato
+let ARTS = {};  // maestro: clave -> {rubro,sub,disc,marca,id,art,tipo,cod}
+let ENV = [];   // envíos: {ym,suc,q, + campos del artículo}
+let ING = [];   // ingresos al depósito: {ym,suc:'05-Depósito',q,costo, + artículo}
 let META = {};  // por ym: {envios:{…}, ingresos:{…}}
 let MESES_YM = []; // meses cargados, ordenados
 
-function filaObj(a, ym){
-  const o = {ym};
-  COLS.forEach((k,i)=>{ o[k] = a[i]; });
-  o.q = Number(o.q)||0;
-  o.suc = String(o.suc||''); o.rubro=String(o.rubro||''); o.sub=String(o.sub||''); o.disc=String(o.disc||''); o.marca=String(o.marca||'');
-  o.cod = String(o.cod||''); o.art = String(o.art||''); o.id = o.id==null?'':String(o.id);
-  return o;
-}
+const ART_VACIO = { rubro:'', sub:'', disc:'', marca:'', id:'', art:'', tipo:'', cod:'' };
+function artObj(a){ const o={}; ART.forEach((k,i)=>{ o[k] = a && a[i]!=null ? String(a[i]) : ''; }); return o; }
+function filaEnv(a, ym){ const art = ARTS[a[0]] || Object.assign({}, ART_VACIO, {cod:a[0]}); return Object.assign({ym, suc:String(a[1]||''), q:Number(a[2])||0, costo:0, k:a[0]}, art); }
+function filaIng(a, ym){ const art = ARTS[a[0]] || Object.assign({}, ART_VACIO, {cod:a[0]}); return Object.assign({ym, suc:'05-Depósito', q:Number(a[1])||0, costo:Number(a[2])||0, k:a[0]}, art); }
 async function cargarDatos(){
-  const r = await fetch(`${FIREBASE_DB_URL}/${ROOT}/meses.json?shallow=true`);
-  const keys = Object.keys((await r.json())||{}).sort();
+  const [keysRaw, arts] = await Promise.all([
+    fetch(`${FIREBASE_DB_URL}/${ROOT}/meses.json?shallow=true`).then(r=>r.json()),
+    fetch(`${FIREBASE_DB_URL}/${ROOT}/arts.json`).then(r=>r.json()),
+  ]);
+  ARTS = {}; Object.entries(arts||{}).forEach(([k,a])=>{ ARTS[k] = artObj(a); });
+  const keys = Object.keys(keysRaw||{}).sort();
   const meses = await Promise.all(keys.map(ym => fetch(`${FIREBASE_DB_URL}/${ROOT}/meses/${ym}.json`).then(x=>x.json()).then(d=>[ym,d]).catch(()=>[ym,null])));
   ENV=[]; ING=[]; META={}; MESES_YM=[];
   meses.forEach(([ym,d])=>{
     if(!d) return;
     MESES_YM.push(ym);
     META[ym] = d.meta || {};
-    (d.envios||[]).forEach(a=>ENV.push(filaObj(a, ym)));
-    (d.ingresos||[]).forEach(a=>ING.push(filaObj(a, ym)));
+    (d.envios||[]).forEach(a=>ENV.push(filaEnv(a, ym)));
+    (d.ingresos||[]).forEach(a=>ING.push(filaIng(a, ym)));
   });
 }
 
@@ -289,6 +296,7 @@ const FILTROS = [
   {k:'sub',   label:'Subrubro'},
   {k:'disc',  label:'Disciplina'},
   {k:'marca', label:'Marca'},
+  {k:'tipo',  label:'Tipo de artículo'},
 ];
 const SEL = {}; // k -> Set de valores elegidos
 const MS = {};  // k -> componente
@@ -480,7 +488,7 @@ function shell(){
       <div><h2 style="font-family:var(--font-c);font-size:15px;font-weight:700;letter-spacing:.5px;text-transform:uppercase">Detalle de envíos</h2><div class="count" id="count"></div></div>
       <div class="search"><input id="q" placeholder="Buscar por código, ID ITEM o artículo…"></div>
     </div>
-    <div class="tbl-wrap"><table><thead><tr><th>Sucursal</th><th>Mes</th><th>Rubro</th><th>Subrubro</th><th>Disciplina</th><th>Marca</th><th>Código</th><th>ID ITEM</th><th>Artículo</th><th class="num">Enviado</th><th class="num" title="Unidades del mismo artículo que ingresaron al depósito ese mes">Ingresó al depósito</th></tr></thead><tbody id="tbody"></tbody></table></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Sucursal</th><th>Mes</th><th>Rubro</th><th>Subrubro</th><th>Disciplina</th><th>Marca</th><th>Tipo</th><th>Código</th><th>ID ITEM</th><th>Artículo</th><th class="num">Enviado</th><th class="num" title="Unidades del mismo artículo que ingresaron al depósito ese mes">Ingresó al depósito</th></tr></thead><tbody id="tbody"></tbody></table></div>
     <div class="pager"><button id="prev">‹</button><span id="pageInfo"></span><button id="next">›</button></div>
   </section>`;
 
@@ -506,7 +514,8 @@ function kpis(){
   $('kSuc').textContent = fmt(nSuc); $('kArt').textContent = fmt(nArt); $('kMar').textContent = fmt(marcas.size);
   const mv = mesesVisibles();
   $('kEnvS').textContent = mv.length ? (mv.length===1 ? ymLabel(mv[0]) : `${ymCorto(mv[0])} → ${ymCorto(mv[mv.length-1])}`) : '';
-  $('kIngS').textContent = tot ? `${pct(totI, tot)} de lo enviado` : '';
+  const costoI = fIng.reduce((s,r)=>s+r.costo,0);
+  $('kIngS').textContent = (costoI ? '$ '+fmtM(costoI)+' al costo' : '') + (tot ? (costoI?' · ':'')+`${pct(totI, tot)} de lo enviado` : '');
   $('kSucS').textContent = nSuc ? `${fmt(tot/nSuc)} unidades por sucursal` : '';
   $('kMarS').textContent = [...marcas].slice(0,4).join(' · ');
 }
@@ -534,7 +543,7 @@ function graficos(){
 let page = 1; const PAGE = 15;
 function ingresadoPorClave(){
   // unidades ingresadas al depósito por código+mes (para la columna del detalle)
-  const m = new Map(); fIng.forEach(r=>{ const k=r.cod+'|'+r.ym; m.set(k,(m.get(k)||0)+r.q); }); return m;
+  const m = new Map(); fIng.forEach(r=>{ const k=r.k+'|'+r.ym; m.set(k,(m.get(k)||0)+r.q); }); return m;
 }
 function filasTabla(){
   const q = norm($('q').value);
@@ -543,8 +552,8 @@ function filasTabla(){
 function tabla(){
   const rows = filasTabla(), ing = ingresadoPorClave();
   const pages = Math.max(1, Math.ceil(rows.length/PAGE)); page = Math.min(Math.max(1,page), pages);
-  $('tbody').innerHTML = rows.slice((page-1)*PAGE, page*PAGE).map(r=>`<tr><td>${esc(r.suc)}</td><td>${esc(ymCorto(r.ym))}</td><td>${esc(r.rubro)}</td><td>${esc(r.sub)}</td><td>${esc(r.disc)}</td><td>${esc(r.marca)}</td><td>${esc(r.cod)}</td><td>${esc(r.id)}</td><td style="white-space:normal;min-width:220px">${esc(r.art)}</td><td class="num" style="font-weight:700">${fmt(r.q)}</td><td class="num">${fmt(ing.get(r.cod+'|'+r.ym)||0)}</td></tr>`).join('')
-    || '<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:20px">Sin envíos con estos filtros</td></tr>';
+  $('tbody').innerHTML = rows.slice((page-1)*PAGE, page*PAGE).map(r=>`<tr><td>${esc(r.suc)}</td><td>${esc(ymCorto(r.ym))}</td><td>${esc(r.rubro)}</td><td>${esc(r.sub)}</td><td>${esc(r.disc)}</td><td>${esc(r.marca)}</td><td>${esc(r.tipo)}</td><td>${esc(r.cod)}</td><td>${esc(r.id)}</td><td style="white-space:normal;min-width:220px">${esc(r.art)}</td><td class="num" style="font-weight:700">${fmt(r.q)}</td><td class="num">${fmt(ing.get(r.k+'|'+r.ym)||0)}</td></tr>`).join('')
+    || '<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:20px">Sin envíos con estos filtros</td></tr>';
   $('count').textContent = `${fmt(rows.length)} envíos · ${fmt(suma(rows))} unidades`;
   $('pageInfo').textContent = `Página ${page} de ${pages}`;
   $('prev').disabled = page<=1; $('next').disabled = page>=pages;
@@ -555,15 +564,19 @@ $('btnExcel').addEventListener('click', ()=>{
   if(!fEnv.length){ toast('No hay envíos para exportar con estos filtros', true); return; }
   const ing = ingresadoPorClave();
   const wb = XLSX.utils.book_new();
-  const det = [['Sucursal','Mes','Rubro','Subrubro','Disciplina','Marca','Código','ID ITEM','Artículo','Enviado','Ingresó al depósito']];
-  filasTabla().forEach(r=>det.push([r.suc, ymLabel(r.ym), r.rubro, r.sub, r.disc, r.marca, r.cod, r.id, r.art, r.q, ing.get(r.cod+'|'+r.ym)||0]));
-  const ws = XLSX.utils.aoa_to_sheet(det); ws['!cols']=[{wch:22},{wch:14},{wch:14},{wch:12},{wch:12},{wch:10},{wch:14},{wch:10},{wch:40},{wch:10},{wch:12}];
+  const det = [['Sucursal','Mes','Rubro','Subrubro','Disciplina','Marca','Tipo de artículo','Código','ID ITEM','Artículo','Enviado','Ingresó al depósito']];
+  filasTabla().forEach(r=>det.push([r.suc, ymLabel(r.ym), r.rubro, r.sub, r.disc, r.marca, r.tipo, r.cod, r.id, r.art, r.q, ing.get(r.k+'|'+r.ym)||0]));
+  const ws = XLSX.utils.aoa_to_sheet(det); ws['!cols']=[{wch:22},{wch:14},{wch:14},{wch:12},{wch:12},{wch:10},{wch:16},{wch:14},{wch:10},{wch:40},{wch:10},{wch:12}];
   XLSX.utils.book_append_sheet(wb, ws, 'Envíos');
   const res = [['Resumen','Unidades','%']]; const tot=suma(fEnv);
   const bloque = (tit,key,rows)=>{ res.push([]); res.push([tit]); const t=suma(rows); agrupar(rows,key).forEach(([v,n])=>res.push([key==='ym'?ymLabel(v):v, n, t?Math.round(n/t*1000)/10:0])); };
-  res.push(['Unidades enviadas', tot]); res.push(['Unidades ingresadas al depósito', suma(fIng)]);
-  bloque('Envíos por sucursal','suc',fEnv); bloque('Envíos por mes','ym',fEnv); bloque('Envíos por rubro','rubro',fEnv); bloque('Envíos por subrubro','sub',fEnv); bloque('Envíos por disciplina','disc',fEnv); bloque('Envíos por marca','marca',fEnv);
-  bloque('Ingresos por mes','ym',fIng); bloque('Ingresos por rubro','rubro',fIng); bloque('Ingresos por subrubro','sub',fIng); bloque('Ingresos por marca','marca',fIng);
+  res.push(['Unidades enviadas', tot]); res.push(['Unidades ingresadas al depósito', suma(fIng)]); res.push(['Costo de lo ingresado ($)', Math.round(fIng.reduce((s,r)=>s+r.costo,0))]);
+  bloque('Envíos por sucursal','suc',fEnv); bloque('Envíos por mes','ym',fEnv); bloque('Envíos por rubro','rubro',fEnv); bloque('Envíos por subrubro','sub',fEnv); bloque('Envíos por disciplina','disc',fEnv); bloque('Envíos por marca','marca',fEnv); bloque('Envíos por tipo de artículo','tipo',fEnv);
+  bloque('Ingresos por mes','ym',fIng); bloque('Ingresos por rubro','rubro',fIng); bloque('Ingresos por subrubro','sub',fIng); bloque('Ingresos por marca','marca',fIng); bloque('Ingresos por tipo de artículo','tipo',fIng);
+  const ingD = [['Ingresos al depósito','Mes','Rubro','Subrubro','Disciplina','Marca','Tipo de artículo','Código','ID ITEM','Artículo','Unidades','Costo ($)']];
+  fIng.forEach(r=>ingD.push(['', ymLabel(r.ym), r.rubro, r.sub, r.disc, r.marca, r.tipo, r.cod, r.id, r.art, r.q, Math.round(r.costo)]));
+  const ws3 = XLSX.utils.aoa_to_sheet(ingD); ws3['!cols']=[{wch:4},{wch:14},{wch:14},{wch:12},{wch:12},{wch:10},{wch:16},{wch:14},{wch:10},{wch:40},{wch:10},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, ws3, 'Ingresos');
   const ws2 = XLSX.utils.aoa_to_sheet(res); ws2['!cols']=[{wch:34},{wch:12},{wch:8}];
   XLSX.utils.book_append_sheet(wb, ws2, 'Resumen');
   const mv = mesesVisibles();
@@ -571,7 +584,17 @@ $('btnExcel').addEventListener('click', ()=>{
 });
 
 /* ============================================================
-   CARGA DEL EXPORT (Excel/CSV) → Firebase, un nodo por mes
+   CARGA DEL EXPORT → Firebase (maestro de artículos + un nodo por mes)
+   Formato principal: los dos exports PIVOT del sistema (CSV ; latin1, o Excel):
+   · «Estad transferencias <año>» = envíos: origen · rubro · subrubro · marca ·
+     proveedor · disciplina · tipo art. · campaña · línea · código · artículo ·
+     ID ITEM · destino · una columna por mes (1..12); fila «Total» por artículo.
+   · «Estad remitos <año>» = ingresos: marca · rubro · subrubro · disciplina ·
+     remito · tipo art. · campaña · línea · artículo · código · ID ITEM · pares
+     (Cant.recibido · Costo) por mes + Total. Segunda fila de encabezado.
+   Formato alternativo: una fila por movimiento con encabezados por nombre
+   (Sucursal · Mes/Fecha · Rubro · … · Cantidad/Ingresado), como el informe.
+   Mismas reglas que scripts/importar-logistica-csv.js (mantener en sintonía).
    ============================================================ */
 const ALIAS = {
   suc:   ['SUCURSAL','SUC','LOCAL','DESTINO','SUCURSAL DESTINO'],
@@ -581,23 +604,53 @@ const ALIAS = {
   sub:   ['SUBRUBRO','SUB RUBRO','SUB-RUBRO','GENERO','GÉNERO'],
   disc:  ['DISCIPLINA','DEPORTE'],
   marca: ['MARCA'],
+  tipo:  ['TIPO','TIPO DE ARTICULO','TIPO DE ARTÍCULO','TIPO ARTICULO','CATEGORIA','CATEGORÍA'],
   cod:   ['CODIGO DE BARRAS','CÓDIGO DE BARRAS','CODIGO','CÓDIGO','SKU','COD','COD. BARRAS'],
   id:    ['ID ITEM','IDITEM','ID.ITEM','ID','ITEM','ID ARTICULO','ID ARTÍCULO'],
   art:   ['ARTICULO','ARTÍCULO','DESCRIPCION','DESCRIPCIÓN','DETALLE','PRODUCTO'],
-  q:     ['CANTIDAD','ENVIADO','ENVIADAS','UNIDADES','CANT','CANT.','INGRESADO','INGRESADAS','INGRESO','RECIBIDO','UNID'],
+  q:     ['CANTIDAD','ENVIADO','ENVIADAS','UNIDADES','CANT','CANT.','INGRESADO','INGRESADAS','INGRESO','RECIBIDO','UNID','CANT.RECIBIDO'],
+  costo: ['COSTO','IMPORTE','VALOR'],
 };
-const ALIAS_ING = ['INGRESADO','INGRESADAS','INGRESO','RECIBIDO'];
-const CARGA = { env:null, ing:null }; // {archivo, meses:{ym:[filas]}, descartadas, tipoDetectado}
+const ALIAS_ING = ['INGRESADO','INGRESADAS','INGRESO','RECIBIDO','CANT.RECIBIDO'];
+const CARGA = { env:null, ing:null }; // por recuadro: {archivo, hoja, tipo, arts, porMes:{ym:[[k,suc,q,costo]]}, filas, desc, sinMes, aviso}
+const sinPrefijo = s => String(s==null?'':s).trim().replace(/^\d{2}-/, '');
+const numCell = v => { if(typeof v==='number') return v; const n = parseFloat(String(v==null?'':v).trim().replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.')); return isFinite(n) ? n : 0; };
 
-function mapearEncabezado(row){
-  const map = {}; const usado = new Set();
-  row.forEach((c,i)=>{
-    const n = norm(c); if(!n) return;
-    for(const k of Object.keys(ALIAS)){
-      if(map[k]!=null) continue;
-      if(ALIAS[k].some(a=>norm(a)===n)){ map[k]=i; usado.add(i); break; }
+function nuevoParse(tipo){ return { tipo, arts:{}, porMes:{}, filas:0, desc:0, sinMes:0 }; }
+function sumarFila(p, ym, k, suc, q, costo){
+  const b = p.porMes[ym] = p.porMes[ym] || new Map();
+  const kk = k+'|'+suc, prev = b.get(kk) || [k, suc, 0, 0];
+  prev[2] += Math.round(q); prev[3] += Math.round(costo||0); b.set(kk, prev); p.filas++;
+}
+function setArt(p, cod, a){ p.arts[clave(cod)] = [sinPrefijo(a.rubro), String(a.sub||'').trim(), String(a.disc||'').trim(), String(a.marca||'').trim(), a.id==null||a.id===''?'':(typeof a.id==='number'?String(Math.round(a.id)):String(a.id).trim()), String(a.art||'').trim(), String(a.tipo||'').trim(), String(cod||'').trim()]; }
+
+/* --- formato pivot del sistema --- */
+function parsearPivot(m, anio, tipoRecuadro){
+  const h = m[0]||[]; if(!h.length) return null;
+  const meses = [], vistos = new Set();
+  h.forEach((c,i)=>{ const s=String(c==null?'':c).trim(); if(/^\d{1,2}$/.test(s) && +s>=1 && +s<=12 && !vistos.has(+s)){ vistos.add(+s); meses.push({i, mes:+s}); } });
+  if(meses.length < 1 || meses[0].i < 8) return null;           // no es el pivot (los meses arrancan tras ≥ 8 columnas de texto)
+  const esRemito = !!(m[1] && m[1].some(c=>/cant\.?\s*recib/i.test(String(c)))) || meses[0].i===11 && !(m[2]||[])[12];
+  const p = nuevoParse(esRemito ? 'ingresos' : 'envios'); p.hoja = 'pivot ' + (esRemito?'remitos':'transferencias');
+  for(let r = esRemito?2:1; r<m.length; r++){
+    const f = m[r]; if(!f || f.length < 12) continue;
+    if(esRemito){
+      const marca = String(f[0]||'').trim(); if(!marca || /^total$/i.test(marca)){ p.desc++; continue; }
+      const cod = f[9]; setArt(p, cod, { rubro:f[1], sub:f[2], disc:f[3], marca, id:f[10], art:f[8], tipo:f[5] });
+      meses.forEach(({i,mes})=>{ const c=numCell(f[i]); if(c) sumarFila(p, `${anio}-${String(mes).padStart(2,'0')}`, clave(cod), '05-Depósito', c, numCell(f[i+1])); });
+    } else {
+      const suc = String(f[12]||'').trim(); if(!suc || /^total$/i.test(suc)){ p.desc++; continue; }
+      const cod = f[9]; setArt(p, cod, { rubro:f[1], sub:f[2], disc:f[5], marca:f[3], id:f[11], art:f[10], tipo:f[6] });
+      meses.forEach(({i,mes})=>{ const c=numCell(f[i]); if(c) sumarFila(p, `${anio}-${String(mes).padStart(2,'0')}`, clave(cod), suc, c, 0); });
     }
-  });
+  }
+  return p.filas ? p : null;
+}
+
+/* --- formato por nombre de columna (una fila por movimiento) --- */
+function mapearEncabezado(row){
+  const map = {};
+  (row||[]).forEach((c,i)=>{ const n = norm(c); if(!n) return; for(const k of Object.keys(ALIAS)){ if(map[k]!=null) continue; if(ALIAS[k].some(a=>norm(a)===n)){ map[k]=i; break; } } });
   return map;
 }
 function serialAFecha(v){
@@ -622,86 +675,105 @@ function ymDeCelda(v, anio){
   if(idx>=0){ const y = (s.match(/(\d{4})/)||[])[1] || (s.match(/\b(\d{2})$/)? 2000+ +s.match(/\b(\d{2})$/)[1] : anio); return `${y}-${String(idx+1).padStart(2,'0')}`; }
   const d = serialAFecha(s); return d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` : null;
 }
-function parsearLibro(wb, anio){
-  // Recorre las hojas y se queda con la que más filas válidas produce.
+function parsearPorNombre(m, anio, hoja){
   let mejor = null;
-  wb.SheetNames.forEach(name=>{
-    const m = XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, raw:true, defval:''});
-    for(let h=0; h<Math.min(m.length,30); h++){
-      const map = mapearEncabezado(m[h]);
-      const n = Object.keys(map).length;
-      if(map.q==null || map.art==null && map.cod==null || n<4) continue;
-      const tipoIng = ALIAS_ING.some(a=>norm(m[h][map.q])===norm(a));
-      const meses = {}; let desc = 0, sinMes = 0, filas = 0;
-      for(let i=h+1;i<m.length;i++){
-        const r = m[i]; if(!r || !r.length) continue;
-        const suc = map.suc!=null ? String(r[map.suc]||'').trim() : '';
-        const q = Number(String(r[map.q]).replace(/\./g,'').replace(',','.'));
-        if(!q || !isFinite(q)) continue;
-        if(norm(suc)==='TOTAL' || (map.art!=null && norm(r[map.art])==='TOTAL')){ desc++; continue; }
-        let ym = null;
-        if(map.fecha!=null) ym = ymDeCelda(r[map.fecha], anio);
-        if(!ym && map.mes!=null) ym = ymDeCelda(r[map.mes], anio);
-        if(!ym){ sinMes++; continue; }
-        const id = map.id!=null ? r[map.id] : '';
-        const fila = [suc, String(r[map.rubro]??'').trim(), String(r[map.sub]??'').trim(), String(r[map.disc]??'').trim(), String(r[map.marca]??'').trim(),
-          String(map.cod!=null?r[map.cod]:'').trim(), (id===''||id==null)?'':(typeof id==='number'?Math.round(id):String(id).trim()), String(map.art!=null?r[map.art]:'').trim(), Math.round(q)];
-        (meses[ym] = meses[ym]||[]).push(fila); filas++;
-      }
-      if(filas && (!mejor || filas>mejor.filas)) mejor = { hoja:name, map, meses, filas, desc, sinMes, tipoIng, sinSuc: map.suc==null };
+  for(let h=0; h<Math.min(m.length,30); h++){
+    const map = mapearEncabezado(m[h]);
+    if(map.q==null || (map.art==null && map.cod==null) || Object.keys(map).length<4) continue;
+    const tipoIng = ALIAS_ING.some(a=>norm(m[h][map.q])===norm(a));
+    const p = nuevoParse(tipoIng ? 'ingresos' : 'envios'); p.hoja = hoja; p.map = map;
+    for(let i=h+1;i<m.length;i++){
+      const r = m[i]; if(!r || !r.length) continue;
+      const suc = map.suc!=null ? String(r[map.suc]||'').trim() : '';
+      const q = numCell(r[map.q]); if(!q) continue;
+      if(norm(suc)==='TOTAL' || (map.art!=null && norm(r[map.art])==='TOTAL')){ p.desc++; continue; }
+      let ym = null;
+      if(map.fecha!=null) ym = ymDeCelda(r[map.fecha], anio);
+      if(!ym && map.mes!=null) ym = ymDeCelda(r[map.mes], anio);
+      if(!ym){ p.sinMes++; continue; }
+      const cod = map.cod!=null ? r[map.cod] : (map.id!=null ? r[map.id] : r[map.art]);
+      setArt(p, cod, { rubro:r[map.rubro], sub:r[map.sub], disc:r[map.disc], marca:r[map.marca], id:map.id!=null?r[map.id]:'', art:map.art!=null?r[map.art]:'', tipo:map.tipo!=null?r[map.tipo]:'' });
+      sumarFila(p, ym, clave(cod), tipoIng ? '05-Depósito' : suc, q, map.costo!=null ? numCell(r[map.costo]) : 0);
     }
-  });
+    if(p.filas && (!mejor || p.filas>mejor.filas)) mejor = p;
+  }
   return mejor;
 }
+
+/* --- lectura del archivo → matrices por hoja --- */
 function leerArchivo(file){
   return new Promise((res,rej)=>{
     const fr = new FileReader();
-    fr.onload = e=>{ try{ res(XLSX.read(e.target.result, {type:'array', cellDates:false, codepage:65001})); }catch(err){ rej(err); } };
-    fr.onerror = rej; fr.readAsArrayBuffer(file);
+    if(/\.csv$|\.txt$/i.test(file.name)){
+      fr.onload = e=>{
+        const txt = e.target.result, lineas = txt.split(/\r?\n/).filter(l=>l.length);
+        const sep = ((lineas[0]||'').match(/;/g)||[]).length >= ((lineas[0]||'').match(/,/g)||[]).length ? ';' : ',';
+        res([{ nombre:'csv', m: lineas.map(l=>l.split(sep).map(c=>c.trim().replace(/^"(.*)"$/,'$1'))) }]);
+      };
+      fr.onerror = rej; fr.readAsText(file, 'windows-1252');   // los exports del sistema vienen en latin1
+    } else {
+      fr.onload = e=>{ try{ const wb = XLSX.read(e.target.result, {type:'array', cellDates:false}); res(wb.SheetNames.map(n=>({ nombre:n, m: XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, raw:true, defval:''}) }))); }catch(err){ rej(err); } };
+      fr.onerror = rej; fr.readAsArrayBuffer(file);
+    }
   });
 }
+function parsearHojas(hojas, anio){
+  let mejor = null;
+  hojas.forEach(h=>{
+    const p = parsearPivot(h.m, anio) || parsearPorNombre(h.m, anio, h.nombre);
+    if(p && (!mejor || p.filas>mejor.filas)) mejor = p;
+  });
+  return mejor;
+}
+function anioDeNombre(nombre){ const m = String(nombre||'').match(/(20\d{2})/); return m ? +m[1] : null; }
+
 async function tomarArchivo(tipo, file){
   if(!file) return;
   try{
-    const wb = await leerArchivo(file);
-    const p = parsearLibro(wb, +$('anio').value || new Date().getFullYear());
-    if(!p){ toast('No encontré una hoja con las columnas esperadas (Cantidad + Artículo/Código + Mes o Fecha)', true); return; }
-    // si el archivo huele al otro tipo, avisar pero respetar el recuadro donde se cargó
-    p.aviso = (tipo==='env' && p.tipoIng) ? 'La columna de cantidad se llama «Ingresado»: ¿seguro que es el archivo de envíos?' : (tipo==='ing' && !p.tipoIng && !p.sinSuc && Object.values(p.meses).some(f=>f.some(x=>!/DEP/i.test(x[0])))) ? 'Trae sucursales que no son el depósito: ¿seguro que es el archivo de ingresos?' : '';
-    if(tipo==='ing'){ Object.values(p.meses).forEach(f=>f.forEach(x=>{ if(!x[0]) x[0]='05-Depósito'; })); }
+    const a = anioDeNombre(file.name); if(a && !$('anio').dataset.manual) $('anio').value = a;
+    const anio = +$('anio').value || new Date().getFullYear();
+    const hojas = await leerArchivo(file);
+    const p = parsearHojas(hojas, anio);
+    if(!p){ toast('No reconocí el formato: espero el export pivot del sistema (una columna por mes) o una tabla con Cantidad + Artículo/Código + Mes o Fecha', true); return; }
+    const esperado = tipo==='env' ? 'envios' : 'ingresos';
+    p.aviso = p.tipo!==esperado ? (tipo==='env' ? 'Este archivo parece el de INGRESOS (remitos), no el de envíos. Cargalo en el otro recuadro o revisá.' : 'Este archivo parece el de ENVÍOS (transferencias), no el de ingresos. Cargalo en el otro recuadro o revisá.') : '';
+    p.tipo = esperado;                       // manda el recuadro donde se cargó
+    if(esperado==='ingresos'){ Object.values(p.porMes).forEach(b=>b.forEach(x=>{ x[1]='05-Depósito'; })); }
     p.archivo = file.name; CARGA[tipo] = p;
     $(tipo==='env'?'fEnv':'fIng').textContent = '✓ '+file.name; $(tipo==='env'?'dropEnv':'dropIng').classList.add('ok');
     previsualizar();
   }catch(e){ console.error(e); toast('No pude leer el archivo: '+e.message, true); }
 }
+function unidadesDe(b){ let s=0; b.forEach(x=>{ s+=x[2]; }); return s; }
 function previsualizar(){
   const h = [];
   ['env','ing'].forEach(t=>{
     const p = CARGA[t]; if(!p) return;
-    const yms = Object.keys(p.meses).sort();
-    h.push(`<h4>${t==='env'?'🚚 Envíos':'📥 Ingresos'} · hoja «${esc(p.hoja)}» · ${fmt(p.filas)} filas</h4>`);
-    h.push(`<div class="tbl-wrap" style="max-height:200px"><table><thead><tr><th>Mes</th><th class="num">Filas</th><th class="num">Unidades</th><th>En el portal</th></tr></thead><tbody>${yms.map(ym=>{
+    const yms = Object.keys(p.porMes).sort();
+    h.push(`<h4>${t==='env'?'🚚 Envíos':'📥 Ingresos'} · ${esc(p.hoja)} · ${fmt(p.filas)} movimientos · ${fmt(Object.keys(p.arts).length)} artículos</h4>`);
+    h.push(`<div class="tbl-wrap" style="max-height:220px"><table><thead><tr><th>Mes</th><th class="num">Filas</th><th class="num">Unidades</th><th>En el portal</th></tr></thead><tbody>${yms.map(ym=>{
       const meta = (META[ym]||{})[t==='env'?'envios':'ingresos'];
-      const est = meta ? `<span class="pill">reemplaza ${fmt(meta.filas)} filas (${esc(meta.subido||'')})</span>` : '<span class="pill new">mes nuevo</span>';
-      return `<tr><td>${esc(ymLabel(ym))}</td><td class="num">${fmt(p.meses[ym].length)}</td><td class="num">${fmt(p.meses[ym].reduce((s,x)=>s+x[8],0))}</td><td>${est}</td></tr>`; }).join('')}</tbody></table></div>`);
+      const est = meta ? `<span class="pill">reemplaza ${fmt(meta.filas)} filas · ${fmt(meta.unidades||0)} u. (${esc(meta.subido||'')})</span>` : '<span class="pill new">mes nuevo</span>';
+      return `<tr><td>${esc(ymLabel(ym))}</td><td class="num">${fmt(p.porMes[ym].size)}</td><td class="num">${fmt(unidadesDe(p.porMes[ym]))}</td><td>${est}</td></tr>`; }).join('')}</tbody></table></div>`);
     if(p.sinMes) h.push(`<div class="warn">⚠ ${fmt(p.sinMes)} filas sin mes reconocible se descartan.</div>`);
     if(p.desc) h.push(`<div class="warn">${fmt(p.desc)} filas «Total» descartadas.</div>`);
     if(p.aviso) h.push(`<div class="bad">⚠ ${esc(p.aviso)}</div>`);
-    const faltan = ['rubro','sub','disc','marca'].filter(k=>p.map[k]==null);
-    if(faltan.length) h.push(`<div class="warn">No se encontraron las columnas ${faltan.map(k=>({rubro:'Rubro',sub:'Subrubro',disc:'Disciplina',marca:'Marca'})[k]).join(', ')}: esas aperturas quedan vacías.</div>`);
+    if(p.map){ const faltan = ['rubro','sub','disc','marca','tipo'].filter(k=>p.map[k]==null); if(faltan.length) h.push(`<div class="warn">No se encontraron las columnas ${faltan.map(k=>({rubro:'Rubro',sub:'Subrubro',disc:'Disciplina',marca:'Marca',tipo:'Tipo de artículo'})[k]).join(', ')}: esas aperturas quedan vacías.</div>`); }
   });
   $('prevCarga').innerHTML = h.join('');
   $('mcSave').disabled = !(CARGA.env || CARGA.ing);
-  $('mcInfo').textContent = (CARGA.env||CARGA.ing) ? 'Se guarda por mes; los meses que no vienen en el archivo no se tocan.' : '';
+  $('mcInfo').textContent = (CARGA.env||CARGA.ing) ? 'Se guarda por mes; los meses que no vienen en el archivo no se tocan. El mes en curso se puede volver a subir cuando cierre.' : '';
 }
 async function guardarCarga(){
   const upd = {}; const hoy = new Date().toISOString().slice(0,10); const por = SESSION.email||'';
   let ult = MESES_YM[MESES_YM.length-1] || '';
   ['env','ing'].forEach(t=>{
-    const p = CARGA[t]; if(!p) return; const nodo = t==='env'?'envios':'ingresos';
-    Object.keys(p.meses).forEach(ym=>{
-      upd[`meses/${ym}/${nodo}`] = p.meses[ym];
-      upd[`meses/${ym}/meta/${nodo}`] = { archivo:p.archivo, hoja:p.hoja, subido:hoy, por, filas:p.meses[ym].length, unidades:p.meses[ym].reduce((s,x)=>s+x[8],0) };
+    const p = CARGA[t]; if(!p) return; const nodo = p.tipo;
+    Object.entries(p.arts).forEach(([k,a])=>{ upd[`arts/${k}`] = a; });
+    Object.keys(p.porMes).forEach(ym=>{
+      const filas = [...p.porMes[ym].values()].map(x => nodo==='envios' ? [x[0], x[1], x[2]] : [x[0], x[2], x[3]]);
+      upd[`meses/${ym}/${nodo}`] = filas;
+      upd[`meses/${ym}/meta/${nodo}`] = { archivo:p.archivo, hoja:p.hoja, subido:hoy, por, filas:filas.length, unidades:unidadesDe(p.porMes[ym]) };
       if(ym>ult) ult = ym;
     });
   });
@@ -720,6 +792,7 @@ function abrirModal(){
   CARGA.env=null; CARGA.ing=null; $('fEnv').textContent=''; $('fIng').textContent=''; $('dropEnv').classList.remove('ok'); $('dropIng').classList.remove('ok');
   $('fileEnv').value=''; $('fileIng').value=''; $('prevCarga').innerHTML=''; $('mcSave').disabled=true; $('mcInfo').textContent='';
   if(!$('anio').value) $('anio').value = new Date().getFullYear();
+  delete $('anio').dataset.manual;
   $('modalCarga').classList.add('show');
 }
 function cerrarModal(){ $('modalCarga').classList.remove('show'); }
@@ -729,7 +802,7 @@ $('modalCarga').addEventListener('click', e=>{ if(e.target===$('modalCarga')) ce
 $('mcSave').addEventListener('click', guardarCarga);
 $('fileEnv').addEventListener('change', e=>tomarArchivo('env', e.target.files[0]));
 $('fileIng').addEventListener('change', e=>tomarArchivo('ing', e.target.files[0]));
-$('anio').addEventListener('change', ()=>{ /* re-parsear con el año nuevo */ const fe=$('fileEnv').files[0], fi=$('fileIng').files[0]; if(fe) tomarArchivo('env',fe); if(fi) tomarArchivo('ing',fi); });
+$('anio').addEventListener('change', ()=>{ $('anio').dataset.manual='1'; const fe=$('fileEnv').files[0], fi=$('fileIng').files[0]; if(fe) tomarArchivo('env',fe); if(fi) tomarArchivo('ing',fi); });
 [['dropEnv','env'],['dropIng','ing']].forEach(([id,t])=>{
   const d=$(id);
   d.addEventListener('dragover', e=>{ e.preventDefault(); d.classList.add('over'); });

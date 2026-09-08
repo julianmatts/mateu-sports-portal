@@ -1015,29 +1015,41 @@ el informe HTML «Dashboard Gerencial — Envíos e Ingresos» (jun–ago 2026, 
 portal) con datos vivos: `index.html` self-contained (header unificado, Chart.js 4 + SheetJS
 por jsdelivr; ⚠ en cdnjs la ruta de Chart.js da 404).
 
-- **Datos**: envíos = unidades que salen del depósito central a cada sucursal; ingresos = lo
-  que entra al depósito (`05-Depósito`). Ambos con Sucursal · Mes · Rubro · Subrubro ·
-  Disciplina · Marca · Código de barras · ID ITEM · Artículo · Cantidad. Firebase
-  `recepciones-mateu/logistica/meses/<YYYY-MM>` = `{meta:{envios:{archivo,hoja,subido,por,
-  filas,unidades}, ingresos:{…}}, envios:[[suc,rubro,sub,disc,marca,cod,id,art,q],…],
-  ingresos:[[…]]}` + `logistica/ultimo`. El módulo baja `meses.json?shallow=true` y luego
-  cada mes. Sembrado el 08/09/2026 con `node scripts/importar-logistica-informe.js
-  "<informe>.html" 2026` (lee los arrays `SENT`/`RECEIVED` embebidos; 9.228 envíos /
-  1.514 ingresos; totales validados exactos: 76.923 enviadas, 76.935 ingresadas).
-- **Pantalla**: filtros multi-select propios (`multiSel`, chips con buscador; **encadenados**:
+- **Fuente = los dos exports pivot del sistema** (CSV `;` latin1, una columna por mes 1..12,
+  el año va en el nombre del archivo): **«Estad transferencias <año>.csv»** = envíos del
+  depósito a cada sucursal (origen · rubro · subrubro · marca · proveedor · disciplina · tipo
+  de artículo · campaña · línea · código · artículo · ID ITEM · destino · meses; una fila
+  «Total» por artículo que se descarta) y **«Estad remitos <año>.csv»** = ingresos al depósito
+  (marca · rubro · subrubro · disciplina · remito · tipo · campaña · línea · artículo · código
+  · ID ITEM · pares Cant.recibido/Costo por mes + Total; segunda fila de encabezado). El
+  informe HTML original era un **recorte** de estos archivos (Adidas/Nike/Puma y 4
+  disciplinas, jun–ago): 9.226 de sus 9.228 filas coinciden con el CSV.
+- **Modelo Firebase** (`recepciones-mateu/logistica/`): `arts/<clave>` = maestro compartido
+  `[rubro, sub, disc, marca, idItem, artículo, tipo, código]` (clave = código con `. # $ [ ] /`
+  → `_`; el rubro va sin el prefijo «NN-»: `CALZADO`) y `meses/<YYYY-MM>` =
+  `{meta:{envios:{archivo,hoja,subido,por,filas,unidades}, ingresos:{…}},
+  envios:[[clave, sucursal, unidades],…], ingresos:[[clave, unidades, costo],…]}` (sumados
+  por artículo × sucursal × mes) + `ultimo`. Filas compactas para que el año entero pese
+  poco (~4 MB por PATCH; al abrir baja `arts` + cada mes). Sembrado el 08/09/2026 ene–sep
+  2026 con `node scripts/importar-logistica-csv.js 2026 "<transferencias.csv>"
+  "<remitos.csv>" [--dry]` (mismas reglas que `parsearPivot` del módulo: mantener en
+  sintonía). Totales: 643.710 enviadas · 787.804 ingresadas · 151 marcas.
+- **Pantalla**: 7 filtros multi-select propios (`multiSel`, chips con buscador; **encadenados**:
   cada uno ofrece solo los valores que quedan con los demás; el de Sucursal aplica solo a
-  envíos porque los ingresos son del depósito) → 5 KPIs → Envíos (unidades por sucursal con
-  selector «ver solo estas», anillo por rubro, línea por mes, top marcas, disciplinas,
-  subrubros) → Ingresos (enviado vs. ingresado, por rubro, subrubro, mes) → detalle con
-  buscador/paginado y columna «Ingresó al depósito» (mismo código+mes). «⇩ Excel» = detalle
-  filtrado + hoja Resumen. Plugin `valueLabels` dibuja valor · % en barras/anillo/puntos.
-- **Carga mensual** («⇧ Cargar export», modal con dos recuadros envíos / ingresos, Excel o
-  CSV, drag & drop): `parsearLibro` busca en cada hoja la fila de encabezados por alias
-  (`ALIAS`), el mes sale de una columna Fecha o Mes (número 1-12 + «Año» del modal, nombre,
-  `2026-06`, `06/2026`), descarta filas «Total» y sin mes, detecta si la cantidad se llama
-  «Ingresado» (avisa si el archivo parece del otro tipo). Cada mes del archivo **reemplaza**
-  ese mes y tipo (PATCH multi-path); los demás quedan. ⚠ El formato real del export del
-  sistema todavía no se validó: se calibró contra las columnas del informe.
+  envíos porque los ingresos son del depósito; el 7.º es Tipo de artículo) → 5 KPIs (el de
+  ingresos suma el **costo** en millones) → Envíos (unidades por sucursal con selector «ver
+  solo estas», anillo por rubro, línea por mes, top marcas, disciplinas, subrubros) →
+  Ingresos (enviado vs. ingresado, por rubro, subrubro, mes) → detalle con buscador/paginado
+  y columna «Ingresó al depósito» (mismo artículo+mes). «⇩ Excel» = detalle filtrado + hojas
+  Resumen e Ingresos (con costo). Plugin `valueLabels` dibuja valor · % en barras/anillo/puntos.
+- **Carga mensual** («⇧ Cargar export», modal con dos recuadros envíos / ingresos, CSV o
+  Excel, drag & drop; el CSV se lee como windows-1252): `parsearPivot` reconoce el pivot del
+  sistema por la fila de meses (y «Cant.recibido» en la segunda fila para remitos);
+  respaldo `parsearPorNombre` para una tabla plana con encabezados por alias (`ALIAS`: mes
+  desde Fecha o Mes). El año sale del nombre del archivo o del campo «Año». Avisa si el
+  archivo parece del otro recuadro. Cada mes del archivo **reemplaza** ese mes y tipo y
+  actualiza el maestro (PATCH multi-path); los demás meses quedan. Validado con los dos CSV
+  reales: mismos totales que el script.
 
 ## Objetivos de Venta Semanal (y Mensual)
 
