@@ -519,12 +519,13 @@ table.grid.en .ib.del:hover{ border-color:var(--red); color:var(--red); }
         <div class="en-tools">
           <button class="btn red sm" id="enBtnImportar">⇧ Importar del sistema</button>
           <button class="btn sm" id="enBtnManual">+ Cargar a mano</button>
+          <button class="btn ghost sm" id="enBtnRemitos" title="Qué disciplina es cada remito del cliente RUGE CONTRATO">🗂 Remitos → disciplina <span class="chip" id="enBadgeRem" style="margin-left:4px">0</span></button>
           <select class="ctl" id="enFCanalEnt"><option value="">Todos los canales</option></select>
           <input class="ctl" id="enQEnt" placeholder="Código, artículo o comprobante…">
           <span class="sp"></span>
           <span class="muted" id="enCntEnt"></span>
         </div>
-        <div class="banner info" style="margin-bottom:10px"><span class="ic">📄</span><span><b>Importar del sistema</b> acepta el export de remitos al club (columnas Categoría · Nro comprobante · Código · Cantidad), el resumen por cliente (Código barras · Total) y el listado con Cliente · Artículo · Código · Cantidad. Detecta las columnas por contenido, asigna el canal por la categoría o el cliente (si no puede, lo elegís vos para todo el archivo) y <b>no repite</b> lo que ya está cargado con el mismo comprobante.</span></div>
+        <div class="banner info" style="margin-bottom:10px"><span class="ic">📄</span><span><b>Importar del sistema</b> acepta el <b>reporte de ventas por cliente</b> (Cliente · Día · Comprobante · Código · una columna «Mes Cant.» por mes: SuperFútbol S.R.L. = Pincha Store, Club Estudiantes = Tienda Pincha y RUGE CONTRATO = el contrato, cuya disciplina sale de <b>Remitos → disciplina</b>), el export de remitos por categoría, el resumen por cliente (Código barras · Total) y el listado Cliente · Artículo · Código · Cantidad. Detecta las columnas por contenido, asigna el canal por la categoría o el cliente (si no puede, lo elegís vos para todo el archivo) y <b>no repite</b> lo que ya está cargado con el mismo comprobante.</span></div>
         <div class="tbl-wrap"><table class="grid en" id="enTblEnt"></table></div>
       </div>
 
@@ -1619,8 +1620,12 @@ function renderMapeoManual(tipo, mapa, faltan){
 const EN_DB = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
 const enNodo = () => 'entregasEdlp/'+CONFIG.temporadaVigente;
 const EN_CANALES = [
-  { id:'spf',     nombre:'SuperFútbol',   grupo:'Mayoristas' },
-  { id:'tp',      nombre:'TiendaPincha',  grupo:'Mayoristas' },
+  // Ojo con los nombres (Juli, 09/09/2026): el cliente SUPERFUTBOL S.R.L. es «Pincha Store», el local
+  // físico del estadio (otro cliente); el cliente CLUB ESTUDIANTES DE LA PLATA (CUIT 30528412285) es
+  // «Tienda Pincha», la web de venta del club. El contrato se factura al cliente RUGE CONTRATO (88888888)
+  // SIN discriminar disciplina: eso lo resuelve el mapa remito → disciplina (EN.remitos).
+  { id:'spf',     nombre:'Pincha Store',  grupo:'Mayoristas', cliente:'SuperFútbol S.R.L. · local del estadio' },
+  { id:'tp',      nombre:'Tienda Pincha', grupo:'Mayoristas', cliente:'Club Estudiantes de La Plata · web' },
   { id:'plantel', nombre:'Plantel Prof.', grupo:'Contrato' },
   { id:'fem',     nombre:'Femenino',      grupo:'Contrato' },
   { id:'res',     nombre:'Reserva',       grupo:'Contrato' },
@@ -1636,13 +1641,18 @@ const EN_ALIAS = {
   'RESERVA':'res', 'RES':'res',
   'FUTBOL JUVENIL':'juv', 'FJ':'juv', 'JUVENIL':'juv', 'JUVENILES':'juv', 'INFERIORES':'juv',
   'PROTOCOLO':'prot',
-  'SUPERFUTBOL':'spf', 'SUPER FUTBOL':'spf', 'SPF':'spf',
-  'TIENDAPINCHA':'tp', 'TIENDA PINCHA':'tp', 'TP':'tp',
+  'SUPERFUTBOL':'spf', 'SUPER FUTBOL':'spf', 'SPF':'spf', 'PINCHA STORE':'spf', '30709250716':'spf',
+  'TIENDAPINCHA':'tp', 'TIENDA PINCHA':'tp', 'TP':'tp', 'CLUB ESTUDIANTES DE LA PLATA':'tp', '30528412285':'tp',
+  // el cliente del contrato: la disciplina sale del mapa de remitos (pseudo-canal 'contrato')
+  'RUGE CONTRATO':'contrato', '88888888':'contrato', 'CONTRATO':'contrato',
 };
+// Nro de remito "corto" (como lo nombra el Drive de remitos firmados): 'Rem.0094-00053855' → '53855'
+const enNroRem = comp => { const m=String(comp||'').match(/(\d+)\s*$/); return m? String(+m[1]) : ''; };
+const EN_REM_X = 'x';   // en el mapa: remito fuera del control (prensa, fotografía, RRHH…)
 const EN_ST_LBL = { ok:'✓ Completo', pend:'Pendiente', sin:'Sin entrega', extra:'Sin pedido', na:'—' };
 const EN_MES_ABR = { ENE:1,FEB:2,MAR:3,ABR:4,MAY:5,JUN:6,JUL:7,AGO:8,SEP:9,SEPT:9,SET:9,OCT:10,NOV:11,DIC:12, JAN:1,APR:4,AUG:8,DEC:12 };
 
-let EN = { articulos:{}, entregas:{}, meta:{} };
+let EN = { articulos:{}, entregas:{}, remitos:{}, meta:{} };
 const enSt = { tab:'liq', sub:'resumen', canal:'plantel', cargado:false, cargando:false };
 let enFileTarget = null;
 
@@ -1697,7 +1707,7 @@ async function enCargar(){
   if(enSt.cargando) return; enSt.cargando=true; enSetSync('CARGANDO…');
   try{
     const d=await enGet('');
-    EN={ articulos:(d&&d.articulos)||{}, entregas:(d&&d.entregas)||{}, meta:(d&&d.meta)||{} };
+    EN={ articulos:(d&&d.articulos)||{}, entregas:(d&&d.entregas)||{}, remitos:(d&&d.remitos)||{}, meta:(d&&d.meta)||{} };
     enSt.cargado=true; enSetSync('EN LÍNEA','ok');
   }catch(e){ enSetSync('SIN CONEXIÓN','err'); toast('No se pudo leer Firebase: '+e.message); }
   enSt.cargando=false; enRender();
@@ -1723,13 +1733,14 @@ function enFillSelects(){
   const sl=$('enFLinea'); const cur=sl.value;
   sl.innerHTML='<option value="">Todas las líneas</option>'+lineas.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join(''); sl.value=cur;
   ['enFCanal','enFCanalEnt'].forEach(id=>{ const s=$(id); if(s.options.length>1) return; s.innerHTML='<option value="">Todos los canales</option>'+EN_CANALES.map(k=>`<option value="${k.id}">${esc(k.nombre)}</option>`).join(''); });
-  const sc=$('enSelCanal'); if(!sc.options.length){ sc.innerHTML=EN_CANALES.map(k=>`<option value="${k.id}">${esc(k.grupo)} · ${esc(k.nombre)}</option>`).join(''); }
+  const sc=$('enSelCanal'); if(!sc.options.length){ sc.innerHTML=EN_CANALES.map(k=>`<option value="${k.id}">${esc(k.grupo)} · ${esc(k.nombre)}${k.cliente?' ('+esc(k.cliente)+')':''}</option>`).join(''); }
   sc.value=enSt.canal;
 }
 function enRender(){
   if(enSt.tab!=='ent') return;
   $('enTemp').textContent=CONFIG.temporadaVigente;
   $('enBadgeEnt').textContent=Object.keys(EN.entregas||{}).length;
+  $('enBadgeRem').textContent=Object.keys(EN.remitos||{}).length;
   enFillSelects();
   ({ resumen:enRenderResumen, control:enRenderControl, canal:enRenderCanal, entregas:enRenderEntregas, articulos:enRenderArticulos })[enSt.sub]();
 }
@@ -1746,7 +1757,7 @@ function enKpiHtml(titulo, t, extraCls, dataAttr, grupo){
 function enRenderResumen(){
   const R=enCalc();
   let h=enKpiHtml('Todos los canales', R.tt, 'tot');
-  EN_CANALES.forEach(k=>{ h+=enKpiHtml(k.nombre, R.tot[k.id], '', `data-canal="${k.id}"`, k.grupo); });
+  EN_CANALES.forEach(k=>{ h+=enKpiHtml(k.nombre, R.tot[k.id], '', `data-canal="${k.id}"`, k.grupo+(k.cliente?' · '+k.cliente:'')); });
   $('enKpis').innerHTML=h;
   $('enKpis').querySelectorAll('[data-canal]').forEach(el=>el.addEventListener('click',()=>{ enSt.canal=el.dataset.canal; enSetSub('canal'); }));
   const pend=[]; R.rows.forEach(r=>{ if(r.a.noSuma) return; EN_CANALES.forEach(k=>{ const c=r.c[k.id]; if(c.resta>0) pend.push({r,k,c}); }); });
@@ -2038,8 +2049,13 @@ function enDetectarEntregas(aoa){
   let canalCol=st.filter(S=>!codCols.includes(S.c)&&S.c!==compC&&S.canal>=1&&S.canal/S.ne>=0.3&&S.num<S.ne*0.5).sort((a,b)=>b.canal-a.canal)[0];
   if(!canalCol) canalCol=st.filter(S=>/CATEGOR|CLIENTE|CANAL/.test(hdrTxt(S.c))&&!codCols.includes(S.c))[0];
   const canalC=canalCol?canalCol.c:-1;
-  // canal por defecto: una celda suelta en las primeras filas (pivot "Cliente | SUPERFUTBOL…")
-  let defCanal=null; for(let r=0;r<Math.min(4,N)&&!defCanal;r++) for(let c=0;c<W;c++){ const s=enStr(aoa[r][c]); if(typeof s==='string'&&s&&c!==canalC){ const k=enCanalDe(s); if(k){ defCanal=k; break; } } }
+  // canal por defecto: una celda suelta en las primeras filas (pivot "Cliente | SUPERFUTBOL…"); se saltean
+  // las columnas de texto largo (descripciones tipo "CAMISETA JUVENIL" no son un canal)
+  let defCanal=null; for(let r=0;r<Math.min(4,N)&&!defCanal;r++) for(let c=0;c<W;c++){ const s=enStr(aoa[r][c]); if(typeof s==='string'&&s&&c!==canalC&&!(st[c].ne&&st[c].len/st[c].ne>25)){ const k=enCanalDe(s); if(k){ defCanal=k; break; } } }
+  // Reporte de ventas del sistema: una columna "Ene-26 Cant." (+ "Ene-26 Imp.") por mes y la columna "Día"
+  let hdrRow=-1, mesCols=[], diaC=-1;
+  for(let r=0;r<Math.min(8,N)&&hdrRow<0;r++){ const mc=[]; for(let c=0;c<W;c++){ const s=enStr(aoa[r][c]); if(typeof s!=='string') continue; const m=s.match(/^(.+?)\s*CANT\.?$/i); if(m){ const ym=enMesDe(m[1].trim()); if(ym) mc.push({c,ym}); } } if(mc.length>=2){ hdrRow=r; mesCols=mc; } }
+  if(hdrRow>=0) for(let c=0;c<W;c++){ const s=enStr(aoa[hdrRow][c]); if(typeof s==='string'&&normHdr(s)==='DIA'){ diaC=c; break; } }
   const bloques=codCols.map((cc,i)=>{
     const lim=codCols[i+1]!==undefined?codCols[i+1]:W;
     let qty=-1, best=-1;
@@ -2055,15 +2071,21 @@ function enDetectarEntregas(aoa){
     if(canalC>=0){ const s=enStr(aoa[r][canalC]); if(typeof s==='string'&&s){ const k=enCanalDe(s); carry = k || (RX_COD.test(enCod(s))?carry:null); if(!k && !RX_COD.test(enCod(s))) carry={otro:s}; } }
     bloques.forEach(b=>{
       const code=enStr(aoa[r][b.cod]); if(typeof code!=='string'||!RX_COD.test(enCod(code))) return;
-      const cant=Math.round(parseNumAR(aoa[r][b.qty])); if(!cant) return;
       let canal=b.canal, otro=null;
       if(canalC>=0){ if(carry&&carry.otro){ canal=null; otro=carry.otro; } else if(carry) canal=carry; }
-      filas.push({ codigo:enCod(code), cant, canal, otro, comprobante: compC>=0? String(enStr(aoa[r][compC])||'').trim() : '', desc: b.desc>=0? String(enStr(aoa[r][b.desc])||'').trim() : '' });
+      const base={ codigo:enCod(code), canal, otro, comprobante: compC>=0? String(enStr(aoa[r][compC])||'').trim() : '', desc: b.desc>=0? String(enStr(aoa[r][b.desc])||'').trim() : '' };
+      if(mesCols.length){   // pivot mensual: un movimiento por mes con cantidad, fecha = mes + Día
+        const dia = diaC>=0? Math.round(parseNumAR(aoa[r][diaC])) : 0;
+        mesCols.forEach(mc=>{ const cant=Math.round(parseNumAR(aoa[r][mc.c])); if(!cant) return; filas.push({ ...base, cant, ym:mc.ym, fecha: mc.ym+'-'+String(dia>0&&dia<=31?dia:1).padStart(2,'0') }); });
+        return;
+      }
+      const cant=Math.round(parseNumAR(aoa[r][b.qty])); if(!cant) return;
+      filas.push({ ...base, cant });
     });
   }
   const conComp=filas.some(f=>f.comprobante);
   let acum=false; for(let r=0;r<Math.min(6,N);r++) for(let c=0;c<W;c++){ const s=enStr(aoa[r][c]); if(typeof s==='string'&&/SUMA DE|ACUMUL/i.test(s)) acum=true; }
-  return { filas, conComp, acum: acum && !conComp, canalC, compC };
+  return { filas, conComp, acum: acum && !conComp && !mesCols.length, canalC, compC, mensual: mesCols.length>0 };
 }
 function enElegirHoja(wb){
   let best=null, bs=-1;
@@ -2077,20 +2099,32 @@ async function enImportarEntregas(file){
   if(det.error){ toast(det.error); return; }
   const idx=enIdxCod(); const R=enCalc();
   const existentes={}; Object.values(EN.entregas).forEach(e=>{ if(!e) return; const k=[e.canal,normHdr(e.comprobante||''),enCod(e.codigo)].join('|'); existentes[k]=(existentes[k]||0)+(+e.cant||0); });
-  const filas=det.filas.map((f,i)=>{ const art=idx[f.codigo]||null; const k=[f.canal,normHdr(f.comprobante),f.codigo].join('|'); const ya=f.comprobante&&f.canal&&existentes[k]!==undefined; return {...f,i,art,ya}; });
-  const sinCanal=filas.filter(f=>!f.canal).length, nuevos=new Set(filas.filter(f=>!f.art).map(f=>f.codigo)).size;
-  const body=`<div class="banner info"><span class="ic">📄</span><span><b>${esc(file.name)}</b> · hoja «${esc(hoja.n)}» · ${filas.length} renglones con código y cantidad${det.conComp?' · con comprobante':' · <b>sin comprobante</b> (no puedo detectar repetidos)'}${sinCanal?` · <b>${sinCanal} sin canal</b>`:''}${nuevos?` · <b>${nuevos} códigos nuevos</b> (se crean como artículo para completar después)`:''}</span></div>
+  const filas=det.filas.map((f,i)=>{
+    // artículo: exacto por código; si no, la variante (RUG858SS, RUG844A) cae al artículo base
+    let art=idx[f.codigo]||null, base=null;
+    if(!art){ const b=f.codigo.replace(/[A-Z]+$/,''); if(b!==f.codigo && idx[b]){ base=b; art=idx[b]; } }
+    // cliente del contrato: la disciplina sale del mapa remito → disciplina
+    let canal=f.canal, contrato=false, nro='', excl=false, sinMapa=false;
+    if(canal==='contrato'){ contrato=true; nro=enNroRem(f.comprobante); const rm=EN.remitos[nro];
+      if(rm&&rm.canal===EN_REM_X){ excl=true; canal=null; } else if(rm&&rm.canal){ canal=rm.canal; } else { canal=null; sinMapa=true; } }
+    const k=[canal,normHdr(f.comprobante),f.codigo].join('|'); const ya=!!(f.comprobante&&canal&&existentes[k]!==undefined);
+    return {...f,i,art,base,canal,contrato,nro,excl,sinMapa,ya};
+  });
+  const sinCanal=filas.filter(f=>!f.canal&&!f.excl).length, nuevos=new Set(filas.filter(f=>!f.art).map(f=>f.codigo)).size;
+  const nContrato=filas.filter(f=>f.contrato).length, sinMapa=new Set(filas.filter(f=>f.sinMapa).map(f=>f.nro)).size, variantes=new Set(filas.filter(f=>f.base).map(f=>f.codigo)).size;
+  const body=`<div class="banner info"><span class="ic">📄</span><span><b>${esc(file.name)}</b> · hoja «${esc(hoja.n)}» · ${filas.length} renglones con código y cantidad${det.mensual?' · <b>reporte por mes</b> (fecha = mes + día)':''}${det.conComp?' · con comprobante':' · <b>sin comprobante</b> (no puedo detectar repetidos)'}${nContrato?` · ${nContrato} del <b>cliente del contrato</b>${sinMapa?` (<b>${sinMapa} remitos sin disciplina</b>: elegila en la fila y queda guardada)`:' (disciplina por el mapa de remitos)'}`:''}${sinCanal&&!nContrato?` · <b>${sinCanal} sin canal</b>`:''}${variantes?` · ${variantes} variantes (RUG858SS…) suman al artículo base`:''}${nuevos?` · <b>${nuevos} códigos nuevos</b> (se crean como artículo para completar después)`:''}</span></div>
     <div class="en-tools" style="margin:8px 0">
-      <label class="toggle"><input type="checkbox" id="enI_acum" ${det.acum?'checked':''}> El archivo trae el <b>acumulado a la fecha</b> por artículo (no movimientos): cargo solo la diferencia contra lo ya entregado</label>
+      <label class="toggle" ${det.mensual?'hidden':''}><input type="checkbox" id="enI_acum" ${det.acum?'checked':''}> El archivo trae el <b>acumulado a la fecha</b> por artículo (no movimientos): cargo solo la diferencia contra lo ya entregado</label>
+      <label class="toggle" ${variantes?'':'hidden'}><input type="checkbox" id="enI_var" checked> Las variantes (RUG858SS, RUG844A…) <b>suman al artículo base</b></label>
       <span class="sp"></span>
-      <label class="fld" style="margin:0">Fecha</label><input class="ctl" type="date" id="enI_fecha" value="${enHoy()}" style="max-width:150px">
-      ${sinCanal?`<label class="fld" style="margin:0">Canal para los sin canal</label><select class="ctl" id="enI_defCanal"><option value="">— dejar afuera —</option>${enOptsCanal('')}</select>`:''}
+      <label class="fld" style="margin:0">${det.mensual?'Fecha si falta':'Fecha'}</label><input class="ctl" type="date" id="enI_fecha" value="${enHoy()}" style="max-width:150px">
+      ${sinCanal?`<label class="fld" style="margin:0">Canal para los sin ${nContrato?'disciplina':'canal'}</label><select class="ctl" id="enI_defCanal"><option value="">— dejar afuera —</option>${enOptsCanal('')}</select>`:''}
     </div>
-    <div class="tbl-wrap" style="max-height:420px;overflow:auto"><table class="grid en" style="min-width:0" id="enI_tbl"><thead><tr><th><input type="checkbox" id="enI_all" checked></th><th>Canal</th><th>Comprobante</th><th>Cód.</th><th>Artículo</th><th class="num">Cant.</th><th class="num acum-col">Ya entregado</th><th class="num acum-col">Diferencia</th><th>Estado</th></tr></thead><tbody>
-    ${filas.map(f=>`<tr class="en-imp-row ${f.ya?'skip':''}" data-i="${f.i}"><td><input type="checkbox" data-chk ${f.ya?'':'checked'}></td><td><select data-canal style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:5px;font-size:12px"><option value="">— elegir —</option>${enOptsCanal(f.canal)}</select>${f.otro?`<div class="muted" style="font-size:10.5px">${esc(f.otro)}</div>`:''}</td><td>${esc(f.comprobante)}</td><td class="cod">${esc(f.codigo)}</td><td>${esc(f.art?enNombreArt(f.art,f.codigo):(f.desc||'—'))}${f.art?'':' <span class="st st-extra">nuevo</span>'}</td><td class="num">${units(f.cant)}</td><td class="num acum-col" data-ya></td><td class="num acum-col" data-dif></td><td>${f.ya?'<span class="st st-na">ya cargada</span>':'<span class="st st-ok">nueva</span>'}</td></tr>`).join('')}
+    <div class="tbl-wrap" style="max-height:420px;overflow:auto"><table class="grid en" style="min-width:0" id="enI_tbl"><thead><tr><th><input type="checkbox" id="enI_all" checked></th>${det.mensual?'<th>Fecha</th>':''}<th>Canal</th><th>Comprobante</th><th>Cód.</th><th>Artículo</th><th class="num">Cant.</th><th class="num acum-col">Ya entregado</th><th class="num acum-col">Diferencia</th><th>Estado</th></tr></thead><tbody>
+    ${filas.map(f=>`<tr class="en-imp-row ${(f.ya||f.excl)?'skip':''}" data-i="${f.i}"><td><input type="checkbox" data-chk ${(f.ya||f.excl)?'':'checked'}></td>${det.mensual?`<td style="white-space:nowrap">${enFmtFecha(f.fecha)}</td>`:''}<td><select data-canal style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:5px;font-size:12px"><option value="">— elegir —</option>${enOptsCanal(f.canal)}${f.contrato?`<option value="${EN_REM_X}" ${f.excl?'selected':''}>Fuera del control (prensa, fotos…)</option>`:''}</select>${f.otro?`<div class="muted" style="font-size:10.5px">${esc(f.otro)}</div>`:''}${f.contrato?`<div class="muted" style="font-size:10.5px">contrato · rem. ${esc(f.nro)}</div>`:''}</td><td>${esc(f.comprobante)}</td><td class="cod">${esc(f.codigo)}${f.base?`<div class="muted" style="font-size:10.5px">→ ${esc(f.base)}</div>`:''}</td><td>${esc(f.art?enNombreArt(f.art,f.codigo):(f.desc||'—'))}${f.art?'':' <span class="st st-extra">nuevo</span>'}</td><td class="num ${f.cant<0?'neg':''}">${units(f.cant)}</td><td class="num acum-col" data-ya></td><td class="num acum-col" data-dif></td><td>${f.ya?'<span class="st st-na">ya cargada</span>':f.excl?'<span class="st st-na">fuera del control</span>':f.sinMapa?'<span class="st st-pend">sin disciplina</span>':'<span class="st st-ok">nueva</span>'}</td></tr>`).join('')}
     </tbody></table></div>`;
   const ovl=enModal('Importar entregas del sistema', body, `<button class="btn ghost" data-x>Cancelar</button><button class="btn red" id="enI_ok">Cargar las marcadas</button>`, true);
-  const tbl=ovl.querySelector('#enI_tbl'), chkAcum=ovl.querySelector('#enI_acum');
+  const tbl=ovl.querySelector('#enI_tbl'), chkAcum=ovl.querySelector('#enI_acum'), chkVar=ovl.querySelector('#enI_var');
   const yaDe=(art,canal)=> art&&canal&&R.ent[art]&&R.ent[art][canal] ? R.ent[art][canal] : 0;
   function refresco(){
     const acum=chkAcum.checked; ovl.querySelectorAll('.acum-col').forEach(el=>el.style.display=acum?'':'none');
@@ -2100,24 +2134,58 @@ async function enImportarEntregas(file){
   }
   chkAcum.addEventListener('change',refresco);
   ovl.querySelector('#enI_all').addEventListener('change',e=>tbl.querySelectorAll('[data-chk]').forEach(c=>c.checked=e.target.checked));
-  const defSel=ovl.querySelector('#enI_defCanal'); if(defSel) defSel.addEventListener('change',()=>{ tbl.querySelectorAll('tr.en-imp-row').forEach(tr=>{ const f=filas[+tr.dataset.i]; if(!f.canal) tr.querySelector('[data-canal]').value=defSel.value; }); refresco(); });
-  tbl.querySelectorAll('[data-canal]').forEach(s=>s.addEventListener('change',refresco));
+  const defSel=ovl.querySelector('#enI_defCanal'); if(defSel) defSel.addEventListener('change',()=>{ tbl.querySelectorAll('tr.en-imp-row').forEach(tr=>{ const f=filas[+tr.dataset.i]; if(!f.canal&&!f.excl) tr.querySelector('[data-canal]').value=defSel.value; }); refresco(); });
+  // un remito del contrato es de UNA disciplina: elegirla en una fila la copia a las demás filas del mismo remito
+  tbl.querySelectorAll('[data-canal]').forEach(s=>s.addEventListener('change',()=>{ const f=filas[+s.closest('tr').dataset.i]; if(f.contrato&&f.nro){ tbl.querySelectorAll('tr.en-imp-row').forEach(tr=>{ const g=filas[+tr.dataset.i]; if(g.contrato&&g.nro===f.nro&&g!==f){ tr.querySelector('[data-canal]').value=s.value; if(!g.ya) tr.querySelector('[data-chk]').checked=(s.value&&s.value!==EN_REM_X); } }); if(!f.ya) s.closest('tr').querySelector('[data-chk]').checked=(s.value&&s.value!==EN_REM_X); } refresco(); }));
   refresco();
   ovl.querySelector('#enI_ok').addEventListener('click',async()=>{
-    const acum=chkAcum.checked, fecha=ovl.querySelector('#enI_fecha').value||enHoy(), ts=Date.now();
-    const upd={}; let n=0, u=0, creados=0; const nuevosArt={};
+    const acum=chkAcum.checked, agrupar=chkVar?chkVar.checked:true, fechaDef=ovl.querySelector('#enI_fecha').value||enHoy(), ts=Date.now();
+    const upd={}; let n=0, u=0, creados=0, mapa=0; const nuevosArt={}; const remitosVistos={};
     tbl.querySelectorAll('tr.en-imp-row').forEach(tr=>{
-      if(!tr.querySelector('[data-chk]').checked) return; const f=filas[+tr.dataset.i]; const canal=tr.querySelector('[data-canal]').value; if(!canal) return;
-      let art=f.art || nuevosArt[f.codigo];
-      if(!art){ art=enArtId(f.codigo,f.desc||f.codigo); if(!EN.articulos[art]){ const na={ codigo:f.codigo, articulo:f.desc||f.codigo, orden:enOrdenSig()+creados, nuevo:true }; EN.articulos[art]=na; upd['articulos/'+art]=na; creados++; } nuevosArt[f.codigo]=art; }
+      const f=filas[+tr.dataset.i]; const canal=tr.querySelector('[data-canal]').value;
+      // mapa remito → disciplina: se guarda lo elegido (también "fuera del control"), aunque la fila no se cargue
+      if(f.contrato&&f.nro&&canal&&!remitosVistos[f.nro]){ remitosVistos[f.nro]=1; const rm=EN.remitos[f.nro]; if(!rm||rm.canal!==canal){ const m={ canal, origen:'manual', por:enQuien(), ts }; EN.remitos[f.nro]=m; upd['remitos/'+f.nro]=m; mapa++; } }
+      if(!tr.querySelector('[data-chk]').checked) return; if(!canal||canal===EN_REM_X) return;
+      let art=f.art, nota='';
+      if(f.base){ if(agrupar){ nota='variante '+f.codigo; } else { art=null; } }
+      if(!art){ art=nuevosArt[f.codigo]||enArtId(f.codigo,f.desc||f.codigo); if(!EN.articulos[art]){ const na={ codigo:f.codigo, articulo:f.desc||f.codigo, orden:enOrdenSig()+creados, nuevo:true }; EN.articulos[art]=na; upd['articulos/'+art]=na; creados++; } nuevosArt[f.codigo]=art; }
       let cant=f.cant; if(acum){ cant=f.cant-yaDe(art,canal); if(!cant) return; }
+      const fecha=f.fecha||fechaDef;
       const id=enId(); const e={ art, canal, codigo:f.codigo, cant, comprobante: acum? (f.comprobante||'Acumulado al '+enFmtFecha(fecha)) : f.comprobante, fecha, origen: acum?'acum':'import', por:enQuien(), ts:ts+n, archivo:file.name };
+      if(f.ym) e.ym=f.ym; if(f.contrato) e.nro=f.nro; if(nota) e.nota=nota;
       EN.entregas[id]=e; upd['entregas/'+id]=e; n++; u+=cant;
     });
-    if(!n){ toast('No quedó nada para cargar'); return; }
-    try{ await enPatch('',upd); toast(`${n} entregas cargadas · ${units(u)} unidades${creados?' · '+creados+' artículos nuevos':''}`); }catch(err){ toast('No se pudo guardar: '+err.message); }
+    if(!n&&!mapa){ toast('No quedó nada para cargar'); return; }
+    try{ await enPatch('',upd); toast(`${n} entregas cargadas · ${units(u)} unidades${creados?' · '+creados+' artículos nuevos':''}${mapa?' · '+mapa+' remitos con disciplina':''}`); }catch(err){ toast('No se pudo guardar: '+err.message); }
     ovl.remove(); enRender();
   });
+}
+
+/* ---- MAPA remito → disciplina (el sistema factura el contrato a un solo cliente) ---- */
+function enModalRemitos(){
+  const porNro={};
+  Object.entries(EN.entregas).forEach(([id,e])=>{ if(!e||!e.nro) return; const r=porNro[e.nro]=porNro[e.nro]||{u:0,n:0,fecha:'',ids:[]}; r.u+=+e.cant||0; r.n++; r.ids.push(id); if(!r.fecha||(e.fecha&&e.fecha<r.fecha)) r.fecha=e.fecha||r.fecha; });
+  const nros=[...new Set([...Object.keys(EN.remitos||{}),...Object.keys(porNro)])].sort((a,b)=>(+b)-(+a));
+  const lbl=o=>o==='drive'?'Drive':o==='excel'?'Excel':o==='manual'?'A mano':o||'';
+  const filaHtml=nro=>{ const m=EN.remitos[nro]||{}; const d=porNro[nro]||{u:0,n:0,fecha:''}; return `<tr data-nro="${esc(nro)}"><td class="cod">${esc(nro)}</td><td style="white-space:nowrap">${enFmtFecha(d.fecha)}</td><td class="num">${d.n?units(d.u):'·'}</td><td class="num">${d.n||'·'}</td><td><select data-rem style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:5px;font-size:12px"><option value="">— sin disciplina —</option>${enOptsCanal(m.canal)}<option value="${EN_REM_X}" ${m.canal===EN_REM_X?'selected':''}>Fuera del control (prensa, fotos…)</option></select></td><td class="muted" style="font-size:11px">${esc(lbl(m.origen))}${m.por?' · '+esc(String(m.por).split('@')[0]):''}</td></tr>`; };
+  const body=`<div class="banner info"><span class="ic">🗂</span><span>El sistema factura el contrato al cliente <b>RUGE CONTRATO</b> sin decir a qué disciplina fue. Acá va el número de cada remito con su disciplina (la que dice la carpeta del Drive de remitos firmados). Al importar el reporte de ventas, el portal usa esta lista; lo que falta lo elegís en la importación y queda guardado.</span></div>
+    <div class="en-tools" style="margin:8px 0"><input class="ctl" id="enR_q" placeholder="Buscar nro…" style="max-width:140px"><span class="sp"></span><input class="ctl" id="enR_nro" placeholder="Nro de remito nuevo" style="max-width:150px"><select class="ctl" id="enR_canal"><option value="">— disciplina —</option>${enOptsCanal('')}<option value="${EN_REM_X}">Fuera del control</option></select><button class="btn sm" id="enR_add">+ Agregar</button></div>
+    <div class="tbl-wrap" style="max-height:440px;overflow:auto"><table class="grid en" style="min-width:0" id="enR_tbl"><thead><tr><th>Remito</th><th>Fecha</th><th class="num">Unid.</th><th class="num">Reng.</th><th>Disciplina</th><th>Origen</th></tr></thead><tbody>${nros.map(filaHtml).join('')||'<tr><td colspan="6" class="empty">Todavía no hay remitos mapeados</td></tr>'}</tbody></table></div>`;
+  const ovl=enModal('Remitos del contrato → disciplina', body, `<button class="btn ghost" data-x>Cerrar</button>`, true);
+  const tbl=ovl.querySelector('#enR_tbl');
+  async function setRem(nro, canal){
+    const u={}; const m=canal? { canal, origen:'manual', por:enQuien(), ts:Date.now() } : null;
+    if(m) EN.remitos[nro]=m; else delete EN.remitos[nro]; u['remitos/'+nro]=m;
+    const ids=(porNro[nro]||{ids:[]}).ids;
+    if(canal===EN_REM_X && ids.length){ if(!confirm(`El remito ${nro} tiene ${ids.length} entregas cargadas. ¿Las saco del control?`)) { /* igual guardo el mapa */ } else { ids.forEach(id=>{ delete EN.entregas[id]; u['entregas/'+id]=null; }); delete porNro[nro]; } }
+    else if(canal && ids.length){ ids.forEach(id=>{ if(EN.entregas[id]){ EN.entregas[id].canal=canal; u['entregas/'+id+'/canal']=canal; } }); }
+    try{ await enPatch('',u); toast(`Remito ${nro}: ${canal? (EN_CANAL[canal]?EN_CANAL[canal].nombre:'fuera del control') : 'sin disciplina'}`); }catch(e){ toast('No se pudo guardar: '+e.message); }
+    enRender();
+  }
+  const wire=tr=>tr.querySelector('[data-rem]').addEventListener('change',e=>setRem(tr.dataset.nro,e.target.value));
+  tbl.querySelectorAll('tr[data-nro]').forEach(wire);
+  ovl.querySelector('#enR_q').addEventListener('input',e=>{ const q=e.target.value.replace(/\D/g,''); tbl.querySelectorAll('tr[data-nro]').forEach(tr=>tr.style.display=(!q||tr.dataset.nro.includes(q))?'':'none'); });
+  ovl.querySelector('#enR_add').addEventListener('click',()=>{ const nro=enNroRem(ovl.querySelector('#enR_nro').value), canal=ovl.querySelector('#enR_canal').value; if(!nro||!canal){ toast('Cargá el número y la disciplina'); return; } if(EN.remitos[nro]){ toast('Ese remito ya está en la lista'); return; } setRem(nro,canal); const tb=tbl.querySelector('tbody'); if(tb.querySelector('.empty')) tb.innerHTML=''; tb.insertAdjacentHTML('afterbegin',filaHtml(nro)); wire(tb.querySelector('tr')); ovl.querySelector('#enR_nro').value=''; });
 }
 
 /* ---- IMPORTAR EL EXCEL DE SEGUIMIENTO (hoja CONTROL GENERAL) ---- */
@@ -2202,6 +2270,7 @@ function enInit(){
   $('enSelCanal').addEventListener('change',()=>{ enSt.canal=$('enSelCanal').value; enRender(); });
   $('enBtnExcel').addEventListener('click',enExportarExcel);
   $('enBtnManual').addEventListener('click',()=>enModalEntrega({}));
+  $('enBtnRemitos').addEventListener('click',enModalRemitos);
   $('enBtnNuevoArt').addEventListener('click',()=>enModalArticulo(null));
   $('enBtnImportar').addEventListener('click',()=>{ enFileTarget='entregas'; $('enFile').click(); });
   $('enBtnImportarMaestro').addEventListener('click',()=>{ enFileTarget='maestro'; $('enFile').click(); });

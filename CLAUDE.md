@@ -286,6 +286,37 @@ Código en el mismo `index.html`, bloque «ENTREGAS EDLP» (funciones con prefij
   seguimiento» (fecha 29/06/2026); totales validados exactos contra el Excel (25.152 pedido /
   21.297 entregado). La fila duplicada «calzas cortas arquero 3» del Excel se cargó como
   «calza larga arquero 3».
+- **Clientes del sistema (Juli, 09/09/2026 — no confundir)**: `SUPERFUTBOL S.R.L.-30709250716` es
+  **«Pincha Store»**, el local físico del estadio (otro cliente) → canal `spf`; `CLUB ESTUDIANTES DE
+  LA PLATA.-30528412285` es **«Tienda Pincha»**, la web de venta del club → canal `tp`; `CLUB
+  ESTUDIANTES RUGE CONTRATO.-88888888` es el cliente con el que se remiten las entregas por contrato,
+  **sin discriminar disciplina**. Los nombres de los canales en pantalla ya son esos (`EN_CANALES`
+  lleva `cliente`); en el código los ids `spf`/`tp` no cambian.
+- **Mapa remito → disciplina** (`entregasEdlp/<temporada>/remitos/<nro corto>` = `{canal, origen:
+  drive|excel|manual, por, ts, nota}`; `canal:'x'` = fuera del control: prensa, fotografía, RRHH):
+  resuelve la disciplina de cada remito del cliente del contrato. Fuente humana: el Drive «REMITOS
+  ENTREGAS CONTRATOS RUGE 2026 → CONTRATO PROFESIONAL → <disciplina>» donde el depósito sube el
+  remito firmado con el archivo nombrado por el número (`54096.jpg` = Rem.0094-00054096;
+  `enNroRem` saca el número corto sin ceros). Sembrado 09/09/2026: 56 desde el Drive (26 Fútbol
+  Profesional, 11 Femenino, 11 Reserva, 5 Juvenil, 3 Protocolo, prensa 53866 y fotografía 53880 como
+  `x`) + 24 de enero–febrero que no están en el Drive pero la hoja «entregas al 29.06» del Excel de
+  Juli tenía como Fútbol Profesional + 53922 → Juvenil (camisetas RUG259/261). Se edita en Entregas →
+  **«🗂 Remitos → disciplina»** (`enModalRemitos`: cambiar la disciplina reescribe las entregas ya
+  cargadas de ese remito; «fuera del control» las saca) y en la propia importación (elegir la
+  disciplina en una fila la copia a las demás filas del mismo remito y queda guardada).
+- **Reporte de ventas por cliente** («Reporte ventas ruge mayorista y contrato 2026.xlsx»: Cliente ·
+  Día · Rubro · Nro.comprobante · Artículo · Código barras · una columna «Mes Cant.» + «Mes Imp.» por
+  mes): el detector lo reconoce por la fila con ≥2 encabezados «… Cant.» (`mesCols`, `det.mensual`)
+  y genera **un movimiento por mes** con `ym` y `fecha` = mes + Día; el cliente manda el canal
+  (`EN_ALIAS` incluye los CUIT) y las filas del contrato pasan por el mapa. Las **variantes** de código
+  (`RUG858SS`, `RUG844A`) suman al artículo base con nota «variante …» (check en la importación;
+  desmarcado crean artículo). Las NcA/NcI vienen con cantidad negativa y entran como devolución.
+  **El 09/09/2026 se reemplazó el saldo inicial del Excel por el reporte completo** (429 movimientos,
+  24.291 u.; respaldo del saldo en el `seed-entregas-2026.json` de la sesión del 06/09): SuperFútbol
+  4.019, Tienda Pincha 7.628, Plantel 9.013, Femenino 771, Reserva 648, Juvenil 975, Protocolo 154.
+  Quedaron sin disciplina el remito 54064 (jul, 50 RUG858) y la NcI 6708 (−12 RUG887): la importación
+  los vuelve a mostrar hasta que Juli los asigne. 15 códigos del reporte no estaban en el maestro
+  (RUG944–948, 957–959, 974/975, 464/466, 533, 601, 796) y se crearon marcados «NUEVO».
 - Pendiente/no digitalizado: el corte S1/S2 (ene-jun / jul-ago) de las hojas ANÁLISIS
   SUPERFUTBOL/TIENDAPINCHA (el pedido es un solo número por canal).
 
