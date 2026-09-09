@@ -1487,7 +1487,7 @@ function montarQuiosco(){
    para el sistema Y el Buscador.
    Escucha en vivo por SSE; si el navegador no lo soporta (Windows 7 con
    IE) o la conexión no abre, cae a preguntar cada 2,5 s. */
-let sbUltimo = null, sbActivo = false, sbPoll = null, sbSse = false;
+let sbVistos = new Set(), sbActivo = false, sbPoll = null, sbSse = false;
 function iniciarScanBridge(){
   if(sbActivo || !SUC || (MODE!=='puesto' && MODE!=='sucursal')) return;
   sbActivo = true;
@@ -1497,10 +1497,16 @@ function iniciarScanBridge(){
     if(!rec || !rec.codigo) return;
     // ts lo pone el servidor de Firebase (así no depende del reloj de la PC)
     const marca = String(rec.ts||'')+'|'+rec.codigo;
-    // lo que ya estaba guardado al conectarnos es un escaneo viejo: se ignora
-    if(primera){ primera = false; sbUltimo = marca; return; }
-    if(marca===sbUltimo) return;
-    sbUltimo = marca;
+    // Cada escaneo se atiende UNA vez: lo que ya estaba guardado al conectarnos
+    // es viejo, y en cada reconexión Firebase vuelve a mandar el último valor.
+    if(sbVistos.has(marca)) return;
+    sbVistos.add(marca);
+    if(sbVistos.size > 60) sbVistos = new Set([marca]);
+    // Lo primero que leemos suele ser un escaneo viejo (el que quedó guardado):
+    // se ignora, salvo que sea de recién — cuando la pantalla se abre justo
+    // después de una pasada de lectora, esa pasada tiene que salir igual.
+    // El ts lo pone el servidor de Firebase, no la PC del salón.
+    if(primera){ primera = false; if(!(rec.ts && Math.abs(Date.now()-rec.ts) < 60000)) return; }
     if($('profileScreen').style.display==='flex') return;
     if(rec.test || rec.codigo==='PUENTE-TEST'){ toast('📡 Puente del escáner conectado ✔'); return; }
     toast('📡 Escaneado en el sistema: '+rec.codigo);
@@ -1517,9 +1523,10 @@ function iniciarScanBridge(){
     const leer = e=>{ try{ const d = JSON.parse(e.data); if(d && d.path==='/') aplicar(d.data); }catch(err){} };
     es.addEventListener('put', leer);
     es.addEventListener('patch', leer);
-    // EventSource reintenta solo; si quedó cerrado de verdad, se pregunta por HTTP
-    es.addEventListener('error', ()=>{ if(es.readyState===2) arrancarPoll(); });
-    setTimeout(()=>{ if(!sbSse) arrancarPoll(); }, 10000);
+    // Si la conexión en vivo falla o no abre (proxy, navegador viejo), se
+    // pregunta por HTTP; si después abre, el 'open' apaga el polling.
+    es.addEventListener('error', ()=> arrancarPoll());
+    setTimeout(()=>{ if(!sbSse) arrancarPoll(); }, 4000);
   }catch(e){ arrancarPoll(); }
 }
 
