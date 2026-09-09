@@ -4639,14 +4639,23 @@ function msCargaHtml(){
       ' · <b>Comentarios:</b> '+c.comments.length+'</div>';
     if(c.errores.length) html += '<div class="nota-regla" style="margin-top:10px">'+
       c.errores.slice(0,25).map(esc).join('<br>')+(c.errores.length>25?'<br>… y '+(c.errores.length-25)+' más':'')+'</div>';
+    // «Publicar al portal» necesita el token de GitHub, que vive SOLO en el
+    // navegador que lo pegó (el de Juli). Sin token no se muestra el botón: antes
+    // salía un prompt pidiendo un token de GitHub que el otro no tiene ni entiende.
+    const conToken = msGhTieneToken();
     html += '<div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">'+
-      '<button class="ms-send" id="msCargaPublicar" style="padding:10px 18px">Publicar al portal (commit + deploy)</button>'+
-      '<button class="ms-open" id="msCargaDescargar" style="padding:10px 18px">Descargar datos-meses-stock.js</button>'+
+      (conToken ? '<button class="ms-send" id="msCargaPublicar" style="padding:10px 18px">Publicar al portal (commit + deploy)</button>' : '')+
+      '<button class="'+(conToken?'ms-open':'ms-send')+'" id="msCargaDescargar" style="padding:10px 18px">Descargar datos-meses-stock.js</button>'+
       '<button class="ms-open" id="msCargaProbar" style="padding:10px 18px">Probar en esta sesión</button>'+
     '</div>'+
     '<div id="msPubEstado" style="margin-top:10px;font-size:13px;color:#5A6072"></div>'+
-    '<div style="margin-top:6px;font-size:12px;color:#8A8FA3">«Publicar» commitea directo a <b>main</b> con tu token de GitHub, que queda guardado solo en este navegador. '+
-      '<a href="#" id="msPubToken" style="color:#8A8FA3">Cambiar token…</a></div>';
+    (conToken
+      ? '<div style="margin-top:6px;font-size:12px;color:#8A8FA3">«Publicar» commitea directo a <b>main</b> con tu token de GitHub, que queda guardado solo en este navegador. '+
+        '<a href="#" id="msPubToken" style="color:#8A8FA3">Cambiar token…</a></div>'
+      : '<div class="nota-regla" style="margin-top:10px">Publicar al portal lo hace <b>Juli</b>: el token de GitHub queda guardado solo en su navegador, '+
+        'así que desde acá el botón no aparece. Los datos ya están bien leídos — apretá <b>«Descargar datos-meses-stock.js»</b> y pasáselo, '+
+        'o avisale para que publique él. Con <b>«Probar en esta sesión»</b> podés revisar el resultado antes.'+
+        '<br><a href="#" id="msPubToken" style="color:#5A6072">Tengo el token de GitHub, quiero publicar yo…</a></div>');
   }
   html += '</div>';
   return html;
@@ -5011,6 +5020,10 @@ function msCargaProbar(){
    lo pega Juli una vez y queda en localStorage de SU navegador. */
 const MS_REPO = {owner:'julianmatts', repo:'mateu-sports-portal', branch:'main', path:'gestion-stock/datos-meses-stock.js'};
 
+function msGhTieneToken(){
+  try{ return !!localStorage.getItem('gs_github_token'); }catch(e){ return false; }
+}
+
 function msGhToken(forzar){
   let t = null;
   try{ t = localStorage.getItem('gs_github_token'); }catch(e){}
@@ -5040,7 +5053,9 @@ async function msCargaPublicar(){
   const api = 'https://api.github.com/repos/'+MS_REPO.owner+'/'+MS_REPO.repo;
   const H = {'Authorization':'Bearer '+token, 'Accept':'application/vnd.github+json'};
   const tokenMalo = ()=>{ try{ localStorage.removeItem('gs_github_token'); }catch(e){}
-    decir('Token inválido, vencido o sin permiso de escritura. Volvé a apretar «Publicar» y pegá uno nuevo.', true); };
+    decir('GitHub rechazó el token: está vencido o le falta el permiso «Contents: Read and write». Los tokens fine-grained caducan — '+
+      'renovalo en github.com → Settings → Developer settings → Fine-grained tokens y volvé a apretar «Publicar» para pegar el nuevo. '+
+      'Mientras tanto podés usar «Descargar datos-meses-stock.js».', true); };
   if(btn) btn.disabled = true;
   try{
     for(let intento = 0; intento < 2; intento++){
@@ -5102,7 +5117,8 @@ function msWireCarga(root){
   const tk = root.querySelector('#msPubToken');
   if(tk) tk.addEventListener('click', e=>{
     e.preventDefault();
-    if(msGhToken(true)){ const est = root.querySelector('#msPubEstado'); if(est){ est.textContent = 'Token actualizado.'; est.style.color = '#5A6072'; } }
+    // al pegar un token por primera vez hay que repintar para que aparezca «Publicar»
+    if(msGhToken(true)) msRender();
   });
 }
 

@@ -313,6 +313,12 @@ dato» — el resumen de la carga lo avisa en ámbar. Publica con el botón
 GitHub (token fine-grained de Juli, solo ese repo, Contents RW, guardado en
 localStorage `gs_github_token` de su navegador) y Cloudflare deploya solo.
 Plan B: descargar el `.js`, reemplazar y push a mano.
+⚠️ **El token es de un solo navegador**: quien no lo tiene (Daniel, David) **no ve el botón**
+(`msGhTieneToken`); en su lugar aparece una nota que explica que publica Juli y deja
+«Descargar datos-meses-stock.js» como acción principal, más el link «Tengo el token…» por si
+alguien lo pega. Antes salía un `prompt()` pidiendo un token de GitHub — eso era el «error»
+que reportaba Daniel el 08/09/2026. Si GitHub rechaza el token (401/403), el mensaje avisa que
+los fine-grained **caducan** y hay que renovarlo.
 
 **Forma correcta de regenerar el año completo — usar el generador:**
 
