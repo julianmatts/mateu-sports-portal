@@ -317,6 +317,24 @@ Código en el mismo `index.html`, bloque «ENTREGAS EDLP» (funciones con prefij
   Quedaron sin disciplina el remito 54064 (jul, 50 RUG858) y la NcI 6708 (−12 RUG887): la importación
   los vuelve a mostrar hasta que Juli los asigne. 15 códigos del reporte no estaban en el maestro
   (RUG944–948, 957–959, 974/975, 464/466, 533, 601, 796) y se crearon marcados «NUEVO».
+- **Vista «📜 Contrato» (09/09/2026)**: cruza el contrato oficial con lo entregado. **El contrato
+  oficial es la «PROPUESTA DE SPONSOR TÉCNICO EdeLP – MATEU 2025 (07.10.2024)»** (docx en
+  Descargas; cláusula 6.1: **13.000 prendas anuales sin cargo** según el ANEXO I = 50 renglones
+  Tipo · Producto · Cantidad: Juego / Tiempo Libre / Entrenamiento). ⚠ No confundir con el
+  «CONTRATO PERTENENCIA SPONSORIZACION» (PDF escaneado, deporte amateur y colegio: 2.094 prendas +
+  425 medias) ni con el anexo «Pedido CONTRATO EDLP 2026 - ANEXO prop inicial y devolución
+  martín» (13.162 / 12.102: negociación por disciplina, no el contrato). Firebase
+  `entregasEdlp/<temporada>/contrato` = `{fuente, total, items:{<id>:{orden, tipo, producto,
+  cantidad, arts:[ids de artículo]}}}`, sembrado el 09/09/2026 con el anexo y un **mapeo
+  producto → códigos RUG hecho por nombre** (p.ej. «camiseta home» = RUG858 + RUG974 + RUG975;
+  «media» = medias home + RUG950; gorro, chinelas, guantes, cuellos, botineros, socks y térmicas
+  cortas sin artículo). `enCalcContrato`: entregado = todo lo que salió a las 5 disciplinas del
+  contrato en el año (por `fecha`; **incluye** los artículos `noSuma`, porque el contrato cuenta
+  medias), por renglón y por disciplina; lo entregado sin renglón se lista abajo con un select
+  para asignarlo (juveniles «pertenencia» RUG259/261/464/466/250/796 y kids quedan ahí).
+  ✎ por renglón (`enModalContratoItem`: cantidad, tipo, producto y checklist de artículos, avisa
+  si ya está en otro renglón), «+ Renglón», «⇩ Excel» (`enExportarContrato`). Al 09/09/2026:
+  12.644 entregadas (11.902 en renglones + 742 fuera del anexo) = 97,3 %.
 - Pendiente/no digitalizado: el corte S1/S2 (ene-jun / jul-ago) de las hojas ANÁLISIS
   SUPERFUTBOL/TIENDAPINCHA (el pedido es un solo número por canal).
 

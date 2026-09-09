@@ -458,6 +458,7 @@ table.grid.en .ib.del:hover{ border-color:var(--red); color:var(--red); }
         <button data-sub="resumen" class="on">📊 Resumen</button>
         <button data-sub="control">🗂️ Control general</button>
         <button data-sub="canal">🎯 Por canal</button>
+        <button data-sub="contrato">📜 Contrato</button>
         <button data-sub="entregas">🚚 Entregas <span class="chip" id="enBadgeEnt" style="margin-left:4px">0</span></button>
         <button data-sub="articulos">🏷️ Artículos y OC</button>
       </div>
@@ -512,6 +513,24 @@ table.grid.en .ib.del:hover{ border-color:var(--red); color:var(--red); }
         </div>
         <div class="en-kpis" id="enCanalKpis"></div>
         <div class="tbl-wrap"><table class="grid en" id="enTblCanal"></table></div>
+      </div>
+
+      <!-- CONTRATO: 13.000 prendas anuales (Sponsor Técnico, cláusula 6.1 + ANEXO I) vs. entregado por contrato -->
+      <div id="enV_contrato" class="hidden">
+        <div class="en-tools">
+          <span class="muted" id="enConFuente" style="font-size:12px"></span>
+          <span class="sp"></span>
+          <button class="btn sm" id="enBtnConItem">+ Renglón</button>
+          <button class="btn ghost sm" id="enBtnConExcel">⇩ Excel</button>
+        </div>
+        <div class="en-kpis" id="enConKpis"></div>
+        <div class="banner info" style="margin-bottom:10px"><span class="ic">📜</span><span>Cada renglón del <b>ANEXO I</b> del contrato se cruza con los códigos RUG que lo cumplen (tocá ✎ para cambiar la cantidad o los artículos). <b>Entregado</b> = todo lo que salió al cliente del contrato en el año, por disciplina. Lo que se entregó y no está asignado a ningún renglón aparece abajo, para que lo ubiques.</span></div>
+        <div class="tbl-wrap"><table class="grid en" id="enTblCon"></table></div>
+        <div class="acc-card" style="margin-top:14px">
+          <h3>📦 Entregado por contrato sin renglón del anexo</h3>
+          <div class="acc-sub" style="margin:4px 0 10px">Artículos que salieron al club por contrato y no están en ningún renglón. Elegí a qué renglón van (o dejalos: cuentan igual en el total entregado).</div>
+          <div class="tbl-wrap"><table class="grid en" style="min-width:0" id="enTblConSin"></table></div>
+        </div>
       </div>
 
       <!-- ENTREGAS (movimientos) -->
@@ -1652,7 +1671,7 @@ const EN_REM_X = 'x';   // en el mapa: remito fuera del control (prensa, fotogra
 const EN_ST_LBL = { ok:'✓ Completo', pend:'Pendiente', sin:'Sin entrega', extra:'Sin pedido', na:'—' };
 const EN_MES_ABR = { ENE:1,FEB:2,MAR:3,ABR:4,MAY:5,JUN:6,JUL:7,AGO:8,SEP:9,SEPT:9,SET:9,OCT:10,NOV:11,DIC:12, JAN:1,APR:4,AUG:8,DEC:12 };
 
-let EN = { articulos:{}, entregas:{}, remitos:{}, meta:{} };
+let EN = { articulos:{}, entregas:{}, remitos:{}, contrato:{}, meta:{} };
 const enSt = { tab:'liq', sub:'resumen', canal:'plantel', cargado:false, cargando:false };
 let enFileTarget = null;
 
@@ -1707,7 +1726,7 @@ async function enCargar(){
   if(enSt.cargando) return; enSt.cargando=true; enSetSync('CARGANDO…');
   try{
     const d=await enGet('');
-    EN={ articulos:(d&&d.articulos)||{}, entregas:(d&&d.entregas)||{}, remitos:(d&&d.remitos)||{}, meta:(d&&d.meta)||{} };
+    EN={ articulos:(d&&d.articulos)||{}, entregas:(d&&d.entregas)||{}, remitos:(d&&d.remitos)||{}, contrato:(d&&d.contrato)||{}, meta:(d&&d.meta)||{} };
     enSt.cargado=true; enSetSync('EN LÍNEA','ok');
   }catch(e){ enSetSync('SIN CONEXIÓN','err'); toast('No se pudo leer Firebase: '+e.message); }
   enSt.cargando=false; enRender();
@@ -1725,7 +1744,7 @@ function enSetTab(t){
 function enSetSub(s){
   enSt.sub=s;
   document.querySelectorAll('#enSub button').forEach(b=>b.classList.toggle('on',b.dataset.sub===s));
-  ['resumen','control','canal','entregas','articulos'].forEach(v=>$('enV_'+v).classList.toggle('hidden',v!==s));
+  ['resumen','control','canal','contrato','entregas','articulos'].forEach(v=>$('enV_'+v).classList.toggle('hidden',v!==s));
   enRender();
 }
 function enFillSelects(){
@@ -1742,7 +1761,7 @@ function enRender(){
   $('enBadgeEnt').textContent=Object.keys(EN.entregas||{}).length;
   $('enBadgeRem').textContent=Object.keys(EN.remitos||{}).length;
   enFillSelects();
-  ({ resumen:enRenderResumen, control:enRenderControl, canal:enRenderCanal, entregas:enRenderEntregas, articulos:enRenderArticulos })[enSt.sub]();
+  ({ resumen:enRenderResumen, control:enRenderControl, canal:enRenderCanal, contrato:enRenderContrato, entregas:enRenderEntregas, articulos:enRenderArticulos })[enSt.sub]();
 }
 
 /* ---- RESUMEN ---- */
@@ -2161,6 +2180,91 @@ async function enImportarEntregas(file){
   });
 }
 
+
+/* ---- CONTRATO: 13.000 prendas anuales sin cargo (Propuesta de Sponsor Técnico EdeLP–Mateu 2025,
+   cláusula 6.1 + ANEXO I) cruzadas con lo entregado al cliente del contrato por disciplina.
+   EN.contrato = { fuente, total, items:{ <id>:{orden, tipo, producto, cantidad, arts:[ids]} } } ---- */
+const enConCanales = () => EN_CANALES.filter(k=>k.grupo==='Contrato').map(k=>k.id);
+function enCalcContrato(){
+  const C=EN.contrato||{}; const CON=enConCanales(); const anio=String(CONFIG.temporadaVigente);
+  const items=Object.entries(C.items||{}).filter(x=>x[1]).map(([id,it])=>({id,...it, arts:(it.arts||[]).slice()})).sort((a,b)=>(a.orden||0)-(b.orden||0));
+  // entregado en el año por artículo × disciplina (todo lo que salió por contrato, sin excluir "no suma")
+  const ent={}; Object.values(EN.entregas||{}).forEach(e=>{ if(!e||!CON.includes(e.canal)) return; if(e.fecha&&!String(e.fecha).startsWith(anio)) return; const a=ent[e.art]=ent[e.art]||{}; a[e.canal]=(a[e.canal]||0)+(+e.cant||0); });
+  const usado={};
+  items.forEach(it=>{ it.ent={}; it.entTot=0; it.arts.forEach(a=>{ usado[a]=(usado[a]||0)+1; const x=ent[a]||{}; CON.forEach(c=>{ it.ent[c]=(it.ent[c]||0)+(x[c]||0); it.entTot+=(x[c]||0); }); }); it.resta=(+it.cantidad||0)-it.entTot; });
+  const sinMapa=Object.entries(ent).filter(([a])=>!usado[a]).map(([a,x])=>({art:a, ent:x, tot:CON.reduce((s,c)=>s+(x[c]||0),0)})).filter(z=>z.tot).sort((a,b)=>b.tot-a.tot);
+  const totCon=items.reduce((s,i)=>s+(+i.cantidad||0),0), totEntMap=items.reduce((s,i)=>s+i.entTot,0);
+  const porCanal={}; CON.forEach(c=>porCanal[c]=Object.values(ent).reduce((s,x)=>s+(x[c]||0),0));
+  const totEntTodo=CON.reduce((s,c)=>s+porCanal[c],0);
+  return { items, sinMapa, totCon, totEntMap, totEntTodo, porCanal, CON, ent, usado };
+}
+function enRenderContrato(){
+  const R=enCalcContrato(); const C=EN.contrato||{};
+  $('enConFuente').textContent = C.fuente ? 'Fuente: '+C.fuente : 'Sin contrato cargado: agregá los renglones del anexo con «+ Renglón».';
+  const pct=R.totCon? R.totEntTodo/R.totCon : null;
+  let h=`<div class="en-kpi tot ${enPctCls(pct)}"><h4>Contrato ${CONFIG.temporadaVigente}</h4><div class="n">${units(R.totEntTodo)} <small>/ ${units(R.totCon)}</small></div><div class="d">${R.totCon-R.totEntTodo>0?'Faltan '+units(R.totCon-R.totEntTodo)+' prendas':'Cumplido'} · ${units(R.totEntMap)} en renglones del anexo${R.totEntTodo-R.totEntMap?' + '+units(R.totEntTodo-R.totEntMap)+' fuera del anexo':''}</div><div class="bar"><i style="width:${Math.min(100,(pct||0)*100).toFixed(1)}%"></i></div><span class="pct">${pct==null?'—':pctStr(pct)}</span></div>`;
+  R.CON.forEach(c=>{ const k=EN_CANAL[c]; const v=R.porCanal[c]; h+=`<div class="en-kpi"><div class="grp">Entregado por contrato</div><h4>${esc(k.nombre)}</h4><div class="n">${units(v)}</div><div class="d">${R.totEntTodo?pctStr(v/R.totEntTodo)+' del total':'—'}</div></div>`; });
+  $('enConKpis').innerHTML=h;
+  // tabla por tipo
+  let t='<thead><tr><th>Producto del anexo</th><th class="num">Contrato</th>'; R.CON.forEach(c=>t+=`<th class="num sub">${esc(EN_CANAL[c].nombre)}</th>`); t+='<th class="num">Entregado</th><th class="num">Resta</th><th class="num">% cumpl.</th><th>Artículos RUG</th><th></th></tr></thead><tbody>';
+  let tipo=null; const sub={};
+  R.items.forEach(it=>{
+    if(it.tipo!==tipo){ tipo=it.tipo; t+=`<tr class="linea"><td colspan="${7+R.CON.length}">${esc(tipo||'SIN TIPO')}</td></tr>`; }
+    const x=it.cantidad? it.entTot/it.cantidad : null;
+    t+=`<tr><td class="art">${esc(it.producto)}</td><td class="num">${units(it.cantidad||0)}</td>`; R.CON.forEach(c=>{ const v=it.ent[c]||0; t+=`<td class="num ${v?'':'cero'}">${v?units(v):'·'}</td>`; });
+    t+=`<td class="num">${it.entTot?units(it.entTot):'·'}</td><td class="num ${it.resta<0?'neg':it.resta>0?'pend':'cero'}">${units(it.resta)}</td><td class="num">${x==null?'—':pctStr(x)}</td>
+      <td style="max-width:260px">${it.arts.length? it.arts.map(a=>`<span class="en-canal-tag" title="${esc(enNombreArt(a,a))}">${esc((EN.articulos[a]||{}).codigo||a)}</span>`).join(' ') : '<span class="st st-sin">sin artículo</span>'}</td>
+      <td class="act"><button class="ib" data-ed="${esc(it.id)}" title="Editar">✎</button></td></tr>`;
+  });
+  t+=`<tr class="total"><td>TOTAL ANEXO I</td><td class="num">${units(R.totCon)}</td>`; R.CON.forEach(c=>t+=`<td class="num">${units(R.items.reduce((s,i)=>s+(i.ent[c]||0),0))}</td>`); t+=`<td class="num">${units(R.totEntMap)}</td><td class="num">${units(R.totCon-R.totEntMap)}</td><td class="num">${R.totCon?pctStr(R.totEntMap/R.totCon):'—'}</td><td colspan="2"></td></tr></tbody>`;
+  $('enTblCon').innerHTML=t;
+  $('enTblCon').querySelectorAll('[data-ed]').forEach(b=>b.addEventListener('click',()=>enModalContratoItem(b.dataset.ed)));
+  // sin renglón
+  let z='<thead><tr><th>Cód.</th><th>Artículo</th>'; R.CON.forEach(c=>z+=`<th class="num sub">${esc(EN_CANAL[c].nombre)}</th>`); z+='<th class="num">Total</th><th>Asignar al renglón</th></tr></thead><tbody>';
+  R.sinMapa.forEach(q=>{ const a=EN.articulos[q.art]||{}; z+=`<tr><td class="cod">${esc(a.codigo||q.art)}</td><td class="art">${esc(a.articulo||q.art)}</td>`; R.CON.forEach(c=>{ const v=q.ent[c]||0; z+=`<td class="num ${v?'':'cero'}">${v?units(v):'·'}</td>`; }); z+=`<td class="num">${units(q.tot)}</td><td><select data-asig="${esc(q.art)}" style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:5px;font-size:12px"><option value="">— elegir renglón —</option>${R.items.map(i=>`<option value="${i.id}">${esc(i.tipo)} · ${esc(i.producto)}</option>`).join('')}</select></td></tr>`; });
+  if(!R.sinMapa.length) z+=`<tr><td colspan="${4+R.CON.length}" class="empty">Todo lo entregado por contrato está asignado a un renglón</td></tr>`;
+  z+=`</tbody>`; $('enTblConSin').innerHTML=z;
+  $('enTblConSin').querySelectorAll('[data-asig]').forEach(sel=>sel.addEventListener('change',async()=>{ const id=sel.value; if(!id) return; const it=EN.contrato.items[id]; const arts=(it.arts||[]).slice(); if(!arts.includes(sel.dataset.asig)) arts.push(sel.dataset.asig); it.arts=arts; try{ await enPut('contrato/items/'+id+'/arts',arts); toast('Asignado a «'+it.producto+'»'); }catch(e){ toast('No se pudo guardar: '+e.message); } enRender(); }));
+}
+function enModalContratoItem(id){
+  const items=(EN.contrato&&EN.contrato.items)||{}; const it=id? (items[id]||{}) : {}; const R=enCalcContrato();
+  const tipos=[...new Set(Object.values(items).map(i=>i&&i.tipo).filter(Boolean))];
+  const arts=Object.entries(EN.articulos).filter(x=>x[1]).sort((a,b)=>((a[1].orden||9999)-(b[1].orden||9999)));
+  const sel=new Set(it.arts||[]);
+  const enOtro=a=>{ for(const [k,v] of Object.entries(items)){ if(k!==id && v && (v.arts||[]).includes(a)) return v.producto; } return null; };
+  const body=`<div class="en-form">
+    <div><label class="fld">Tipo</label><input class="ctl" id="enC_tipo" value="${esc(it.tipo||'')}" list="enDlTipo"><datalist id="enDlTipo">${tipos.map(t=>`<option value="${esc(t)}">`).join('')}</datalist></div>
+    <div style="grid-column:span 2"><label class="fld">Producto (como dice el anexo)</label><input class="ctl" id="enC_prod" value="${esc(it.producto||'')}"></div>
+    <div><label class="fld">Cantidad anual</label><input class="ctl" type="number" min="0" step="1" id="enC_cant" value="${it.cantidad||''}"></div>
+    <div class="full"><label class="fld">Artículos RUG que cumplen este renglón</label><input class="ctl" id="enC_q" placeholder="Filtrar…" style="max-width:260px;margin-bottom:6px">
+      <div id="enC_lista" style="max-height:300px;overflow:auto;border:1px solid var(--gray-200);border-radius:8px;padding:6px 10px">
+      ${arts.map(([k,a])=>{ const otro=enOtro(k); const e=R.ent[k]; const tot=e?R.CON.reduce((s,c)=>s+(e[c]||0),0):0; return `<label class="toggle" data-txt="${esc(normHdr([a.codigo,a.articulo,a.color].join(' ')))}" style="display:flex;gap:8px;padding:3px 0;font-weight:500;${otro?'color:var(--gray-400)':''}"><input type="checkbox" data-art="${esc(k)}" ${sel.has(k)?'checked':''}> <span class="cod" style="min-width:72px;font-family:var(--font-c)">${esc(a.codigo||'—')}</span> <span>${esc(a.articulo)}${a.color?' · '+esc(a.color):''}</span> <span class="muted" style="margin-left:auto;white-space:nowrap">${tot?units(tot)+' u.':''}${otro?' · en «'+esc(otro)+'»':''}</span></label>`; }).join('')}
+      </div></div>
+  </div>`;
+  const ovl=enModal(id?'Renglón del contrato':'Nuevo renglón del contrato', body, `${id?'<button class="btn ghost" id="enC_del" style="margin-right:auto;color:var(--red)">Borrar renglón</button>':''}<button class="btn ghost" data-x>Cancelar</button><button class="btn red" id="enC_ok">Guardar</button>`, true);
+  ovl.querySelector('#enC_q').addEventListener('input',e=>{ const q=normHdr(e.target.value); ovl.querySelectorAll('#enC_lista label').forEach(l=>l.style.display=(!q||l.dataset.txt.includes(q))?'':'none'); });
+  ovl.querySelector('#enC_ok').addEventListener('click',async()=>{
+    const nid=id||('c'+Date.now().toString(36)); const arts=[...ovl.querySelectorAll('#enC_lista input:checked')].map(i=>i.dataset.art);
+    const prod=String(ovl.querySelector('#enC_prod').value||'').trim(); if(!prod){ toast('Cargá el producto'); return; }
+    const nuevo={ ...it, tipo:String(ovl.querySelector('#enC_tipo').value||'').trim(), producto:prod, cantidad:Math.max(0,Math.round(+ovl.querySelector('#enC_cant').value||0)), arts, orden: it.orden || (Object.values(items).reduce((m,i)=>Math.max(m,(i&&i.orden)||0),0)+1) };
+    if(!EN.contrato) EN.contrato={}; if(!EN.contrato.items) EN.contrato.items={}; EN.contrato.items[nid]=nuevo;
+    try{ await enPut('contrato/items/'+nid,nuevo); toast('Renglón guardado'); }catch(e){ toast('No se pudo guardar: '+e.message); }
+    ovl.remove(); enRender();
+  });
+  const del=ovl.querySelector('#enC_del'); if(del) del.addEventListener('click',async()=>{ if(!confirm(`¿Borrar el renglón «${it.producto}»?`)) return; delete EN.contrato.items[id]; try{ await enDel('contrato/items/'+id); }catch(e){ toast('No se pudo borrar: '+e.message); } ovl.remove(); enRender(); });
+}
+function enExportarContrato(){
+  const R=enCalcContrato(); const t=CONFIG.temporadaVigente; const hoy=enFmtFecha(enHoy());
+  const cols=[{h:'Tipo',w:14},{h:'Producto del anexo',w:36},{h:'Contrato',w:10,t:'int'}]; R.CON.forEach(c=>cols.push({h:EN_CANAL[c].nombre,w:10,t:'int'})); cols.push({h:'Entregado',w:11,t:'int'},{h:'Resta',w:10,t:'int'},{h:'% cumpl.',w:10,t:'pct'},{h:'Artículos RUG',w:40});
+  const filas=R.items.map(i=>{ const f=[i.tipo||'',i.producto,+i.cantidad||0]; R.CON.forEach(c=>f.push(i.ent[c]||0)); f.push(i.entTot,i.resta,i.cantidad?i.entTot/i.cantidad:0,i.arts.map(a=>(EN.articulos[a]||{}).codigo||a).join(', ')); return f; });
+  const tot=['TOTAL','',R.totCon]; R.CON.forEach(c=>tot.push(R.items.reduce((s,i)=>s+(i.ent[c]||0),0))); tot.push(R.totEntMap,R.totCon-R.totEntMap,R.totCon?R.totEntMap/R.totCon:0,'');
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, hojaEstilizada(`Contrato EDLP ${t} · ANEXO I vs. entregado`, `${(EN.contrato&&EN.contrato.fuente)||''} · al ${hoy}`, cols, filas, tot), 'Contrato');
+  const cols2=[{h:'Código',w:10},{h:'Artículo',w:40}]; R.CON.forEach(c=>cols2.push({h:EN_CANAL[c].nombre,w:10,t:'int'})); cols2.push({h:'Total',w:10,t:'int'});
+  XLSX.utils.book_append_sheet(wb, hojaEstilizada('Entregado por contrato sin renglón del anexo', `al ${hoy}`, cols2, R.sinMapa.map(q=>{ const a=EN.articulos[q.art]||{}; const f=[a.codigo||q.art,a.articulo||q.art]; R.CON.forEach(c=>f.push(q.ent[c]||0)); f.push(q.tot); return f; }), null), 'Sin renglón');
+  XLSX.writeFile(wb, `Contrato_EDLP_${t}_${enHoy()}.xlsx`);
+}
+
 /* ---- MAPA remito → disciplina (el sistema factura el contrato a un solo cliente) ---- */
 function enModalRemitos(){
   const porNro={};
@@ -2270,6 +2374,8 @@ function enInit(){
   $('enSelCanal').addEventListener('change',()=>{ enSt.canal=$('enSelCanal').value; enRender(); });
   $('enBtnExcel').addEventListener('click',enExportarExcel);
   $('enBtnManual').addEventListener('click',()=>enModalEntrega({}));
+  $('enBtnConItem').addEventListener('click',()=>enModalContratoItem(null));
+  $('enBtnConExcel').addEventListener('click',enExportarContrato);
   $('enBtnRemitos').addEventListener('click',enModalRemitos);
   $('enBtnNuevoArt').addEventListener('click',()=>enModalArticulo(null));
   $('enBtnImportar').addEventListener('click',()=>{ enFileTarget='entregas'; $('enFile').click(); });
