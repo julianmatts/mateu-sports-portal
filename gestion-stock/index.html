@@ -4614,6 +4614,7 @@ const MS_MES_NUM = {1:'ENERO',2:'FEBRERO',3:'MARZO',4:'ABRIL',5:'MAYO',6:'JUNIO'
 const MS_MES_ORDEN = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
 
 function msCargaHtml(){
+  msCargarPubApi();
   const c = MS._carga;
   let html = '<div class="ms-card" style="padding:18px 20px;max-width:920px;margin:0 auto">'+
     '<div style="font-weight:600;font-size:15px;margin-bottom:8px">Actualizar datos de RATIO</div>'+
@@ -4639,22 +4640,26 @@ function msCargaHtml(){
       ' · <b>Comentarios:</b> '+c.comments.length+'</div>';
     if(c.errores.length) html += '<div class="nota-regla" style="margin-top:10px">'+
       c.errores.slice(0,25).map(esc).join('<br>')+(c.errores.length>25?'<br>… y '+(c.errores.length-25)+' más':'')+'</div>';
-    // «Publicar al portal» necesita el token de GitHub, que vive SOLO en el
-    // navegador que lo pegó (el de Juli). Sin token no se muestra el botón: antes
-    // salía un prompt pidiendo un token de GitHub que el otro no tiene ni entiende.
-    const conToken = msGhTieneToken();
+    // Publicar sale por /api/publicar-stock (el token de GitHub vive en Cloudflare
+    // y cualquiera de la lista publica con su PIN). Si esa Function no está
+    // configurada, queda el camino viejo: el token en el localStorage de Juli.
+    const porServidor = msPuedePublicarServidor(), conToken = msGhTieneToken();
+    const puede = porServidor || conToken;
     html += '<div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">'+
-      (conToken ? '<button class="ms-send" id="msCargaPublicar" style="padding:10px 18px">Publicar al portal (commit + deploy)</button>' : '')+
-      '<button class="'+(conToken?'ms-open':'ms-send')+'" id="msCargaDescargar" style="padding:10px 18px">Descargar datos-meses-stock.js</button>'+
+      (puede ? '<button class="ms-send" id="msCargaPublicar" style="padding:10px 18px">Publicar al portal (commit + deploy)</button>' : '')+
+      '<button class="'+(puede?'ms-open':'ms-send')+'" id="msCargaDescargar" style="padding:10px 18px">Descargar datos-meses-stock.js</button>'+
       '<button class="ms-open" id="msCargaProbar" style="padding:10px 18px">Probar en esta sesión</button>'+
     '</div>'+
     '<div id="msPubEstado" style="margin-top:10px;font-size:13px;color:#5A6072"></div>'+
-    (conToken
+    (porServidor
+      ? '<div style="margin-top:6px;font-size:12px;color:#8A8FA3">«Publicar» sube el mes a <b>main</b> y Cloudflare republica el sitio en ~1 minuto. '+
+        'Te va a pedir tu <b>PIN del portal</b> para confirmar que sos vos.</div>'
+      : conToken
       ? '<div style="margin-top:6px;font-size:12px;color:#8A8FA3">«Publicar» commitea directo a <b>main</b> con tu token de GitHub, que queda guardado solo en este navegador. '+
         '<a href="#" id="msPubToken" style="color:#8A8FA3">Cambiar token…</a></div>'
-      : '<div class="nota-regla" style="margin-top:10px">Publicar al portal lo hace <b>Juli</b>: el token de GitHub queda guardado solo en su navegador, '+
-        'así que desde acá el botón no aparece. Los datos ya están bien leídos — apretá <b>«Descargar datos-meses-stock.js»</b> y pasáselo, '+
-        'o avisale para que publique él. Con <b>«Probar en esta sesión»</b> podés revisar el resultado antes.'+
+      : '<div class="nota-regla" style="margin-top:10px">Desde este usuario todavía no se puede publicar. Los datos ya están bien leídos: apretá '+
+        '<b>«Descargar datos-meses-stock.js»</b> y pasáselo a Juli, o avisale para que publique él. Con <b>«Probar en esta sesión»</b> '+
+        'podés revisar el resultado antes.'+
         '<br><a href="#" id="msPubToken" style="color:#5A6072">Tengo el token de GitHub, quiero publicar yo…</a></div>');
   }
   html += '</div>';
@@ -5020,6 +5025,54 @@ function msCargaProbar(){
    lo pega Juli una vez y queda en localStorage de SU navegador. */
 const MS_REPO = {owner:'julianmatts', repo:'mateu-sports-portal', branch:'main', path:'gestion-stock/datos-meses-stock.js'};
 
+/* ---------- Publicar por /api/publicar-stock (token del lado del servidor) ----
+   Es el camino normal: el token de GitHub vive en Cloudflare y publica
+   cualquiera de la lista con su PIN del portal. Si la Function no está
+   configurada (o se prueba en local), `disponible` viene en false y el módulo
+   cae al token guardado en el navegador. */
+const MS_PUB_API = '/api/publicar-stock';
+
+function msCargarPubApi(){
+  if(MS._pub !== undefined) return;
+  MS._pub = null;                                   // pidiendo
+  const listo = j=>{ MS._pub = (j && typeof j.disponible==='boolean') ? j : {disponible:false, quienes:[]};
+    if(MS.tab==='carga') msRender(); };
+  fetch(MS_PUB_API, {headers:{'Accept':'application/json'}})
+    .then(r=> r.ok ? r.json() : null).then(listo).catch(()=> listo(null));
+}
+
+function msPuedePublicarServidor(){
+  const mail = String((SESSION && SESSION.email) || '').toLowerCase();
+  return !!(MS._pub && MS._pub.disponible && mail && (MS._pub.quienes||[]).indexOf(mail) >= 0);
+}
+
+async function msPublicarServidor(){
+  const c = MS._carga;
+  if(!c || !c.data) return;
+  const btn = document.getElementById('msCargaPublicar'), est = document.getElementById('msPubEstado');
+  const decir = (msg, err)=>{ if(est){ est.textContent = msg; est.style.color = err ? '#CC0000' : '#5A6072'; } };
+  const pin = (prompt('Para publicar el mes al portal, ingresá tu PIN del portal (4 dígitos).')||'').trim();
+  if(!pin){ decir('Publicación cancelada.', true); return; }
+  c.data.anio = c.anio;
+  const txt = 'window.STOCK_DATA = '+JSON.stringify(c.data)+';\nwindow.STOCK_COMMENTS = '+JSON.stringify(c.comments)+';\n';
+  if(btn) btn.disabled = true;
+  decir('Publicando… (subiendo '+(Math.round(txt.length/1048576*10)/10)+' MB)');
+  try{
+    const r = await fetch(MS_PUB_API, {method:'POST', headers:{
+      'Content-Type':'text/plain',
+      'X-Mateu-Email': String((SESSION && SESSION.email) || ''),
+      'X-Mateu-Pin': pin,
+      'X-Mateu-Meta': JSON.stringify({anio:c.anio, meses:(c.data.meses||[]).map(m=> MS_MLAB[m]||m)})
+    }, body: msB64Utf8(txt)});
+    const j = await r.json().catch(()=> null);
+    if(!r.ok || !j || !j.ok) throw new Error((j && j.error) ||
+      ('el servidor respondió '+r.status+' (si se repite, avisale a Juli: puede ser el límite de Cloudflare con un archivo tan grande).'));
+    decir('\u2705 Publicado (commit '+j.commit+'). Cloudflare actualiza el sitio en ~1 minuto.');
+  }catch(err){
+    decir('No se pudo publicar: '+err.message+' Plan B: «Descargar datos-meses-stock.js» y pasáselo a Juli.', true);
+  }finally{ if(btn) btn.disabled = false; }
+}
+
 function msGhTieneToken(){
   try{ return !!localStorage.getItem('gs_github_token'); }catch(e){ return false; }
 }
@@ -5044,6 +5097,7 @@ function msB64Utf8(str){
 async function msCargaPublicar(){
   const c = MS._carga;
   if(!c || !c.data) return;
+  if(msPuedePublicarServidor()) return msPublicarServidor();
   const btn = document.getElementById('msCargaPublicar'), est = document.getElementById('msPubEstado');
   const decir = (msg, err)=>{ if(est){ est.textContent = msg; est.style.color = err ? '#CC0000' : '#5A6072'; } };
   const token = msGhToken(false);

@@ -340,16 +340,35 @@ Cuando no encuentra los encabezados, el error **lista las hojas y los encabezado
 en vez de un mensaje genérico. ⚠️ El export tiene que traer el **mes completo con todos los
 rubros**: si sube uno solo (p.ej. el de Calzado), los demás quedan sin ese mes y figuran «sin
 dato» — el resumen de la carga lo avisa en ámbar. Publica con el botón
-**«Publicar al portal»**: commitea `datos-meses-stock.js` a `main` vía la API de
-GitHub (token fine-grained de Juli, solo ese repo, Contents RW, guardado en
-localStorage `gs_github_token` de su navegador) y Cloudflare deploya solo.
+**«Publicar al portal»**: commitea `datos-meses-stock.js` a `main` y Cloudflare deploya solo.
 Plan B: descargar el `.js`, reemplazar y push a mano.
-⚠️ **El token es de un solo navegador**: quien no lo tiene (Daniel, David) **no ve el botón**
-(`msGhTieneToken`); en su lugar aparece una nota que explica que publica Juli y deja
-«Descargar datos-meses-stock.js» como acción principal, más el link «Tengo el token…» por si
-alguien lo pega. Antes salía un `prompt()` pidiendo un token de GitHub — eso era el «error»
-que reportaba Daniel el 08/09/2026. Si GitHub rechaza el token (401/403), el mensaje avisa que
-los fine-grained **caducan** y hay que renovarlo.
+
+**Quién puede publicar (09/09/2026, pedido de Juli: «que Daniel pueda cargarlo todos los meses
+sin mi confirmación»).** El commit lo hace la Pages Function **`functions/api/publicar-stock.js`**
+con un token de GitHub que vive **en Cloudflare**, no en el navegador:
+- `GET /api/publicar-stock` → `{disponible, quienes}`; el módulo lo consulta al abrir
+  «Actualizar datos» (`msCargarPubApi`) y muestra el botón si el mail de la sesión está en la
+  lista (`msPuedePublicarServidor`).
+- `POST` con el `.js` **ya en base64 como cuerpo de texto plano** y los datos chicos en headers
+  (`X-Mateu-Email`, `X-Mateu-Pin`, `X-Mateu-Meta`). Va así a propósito: el dataset pesa ~3 MB
+  (4 MB en base64) y hacerle `JSON.parse` + base64 dentro de la Function quemaría el CPU;
+  la Function solo lo revisa y lo reenvía (el cuerpo de GitHub se arma concatenando, después de
+  validar que el base64 no tenga caracteres raros).
+- El endpoint es público, así que el permiso se valida ahí: **mail en la lista + PIN correcto**
+  contra `discontinuos-mateu/usuarios` (mismo criterio que el login), y solo se puede escribir
+  ESE archivo y solo si empieza con `window.STOCK_DATA = {`. El token nunca baja al navegador.
+- **Falta configurar en Cloudflare Pages → Settings → Environment variables (Production):
+  `GITHUB_TOKEN`** como *secret* — fine-grained, acceso SOLO a `mateu-sports-portal`, permiso
+  «Contents: Read and write». Opcional `PUBLICAN_STOCK` (mails separados por coma; por defecto
+  `julian@mateu.com.ar,producto@mateu.com.ar` — `producto@` es la cuenta de Daniel y David).
+  ⚠️ Los tokens fine-grained **caducan**: cuando pase, la Function devuelve «GitHub rechazó el
+  token del servidor» y hay que renovarlo en Cloudflare.
+- **Respaldo**: sin `GITHUB_TOKEN` configurado, `disponible:false` y el módulo cae al camino
+  viejo (token fine-grained en localStorage `gs_github_token` del navegador de Juli). Sin
+  ninguno de los dos NO se muestra el botón: aparece una nota que deja «Descargar
+  datos-meses-stock.js» como acción principal y el link «Tengo el token…». Antes salía un
+  `prompt()` pidiendo un token de GitHub a quien no lo tenía — ese era el «error» que reportaba
+  Daniel el 08/09/2026 y por el que agosto nunca se publicó.
 
 **Forma correcta de regenerar el año completo — usar el generador:**
 
