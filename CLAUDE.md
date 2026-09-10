@@ -313,7 +313,17 @@ Código en el mismo `index.html`, bloque «ENTREGAS EDLP» (funciones con prefij
   `orden`; la tabla muestra «← se completa con … · tomó N» y «→ cedió N»). Hoy: «media» y «media 2»
   (300 c/u) toman de «medias entrenamiento» (arts RUG942 + RUG943 + RUG533 pico) solo las comunes
   RUG942/943; la pico RUG533 solo cuenta como entrenamiento; las tubo (`noSuma`) no cuentan nunca.
-  Se edita en el ✎ del renglón («Se completa con el excedente de otro renglón»). Se edita en Entregas →
+  Se edita en el ✎ del renglón («Se completa con el excedente de otro renglón»). La misma regla
+  existe **por artículo** para el control general / por canal (`enCalc`, campo `tomaDe:[ids]` del
+  artículo, editable en el ✎ como «Se completa con la entrega de…»): la media de juego no existe como
+  código (`X-MEDIA-…-HOME/AWAY`, nota «= media entrenamiento + tubo»), así que se completa canal por
+  canal hasta su pedido con RUG943 / RUG942 y el excedente queda en la media de entrenamiento; las
+  celdas muestran ↙N (tomó) / ↗N (cedió) y el detalle lo aclara. Las medias tubo figuran como
+  constancia (cantidades por disciplina, en cursiva) sin sumar: bloque «MEDIAS TUBO» al pie de la
+  tabla del contrato y filas `noSuma` en control general / por canal.
+- «Por canal» lista todo lo que tiene pedido **o entrega** en el canal (los «sin pedido» también,
+  p.ej. 2 manga larga + 2 crop en Protocolo), así el total de la tabla cierra con la tarjeta; se
+  quitó el tilde «Solo artículos con pedido». `#vistaEnt.wrap` va a todo el ancho de la pantalla. Se edita en Entregas →
   **«🗂 Remitos → disciplina»** (`enModalRemitos`: cambiar la disciplina reescribe las entregas ya
   cargadas de ese remito; «fuera del control» las saca) y en la propia importación (elegir la
   disciplina en una fila la copia a las demás filas del mismo remito y queda guardada).

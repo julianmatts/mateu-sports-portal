@@ -161,6 +161,11 @@ table.grid tr.total td.num{ color:#fff; }
 .mtab:focus-visible{ outline:2px solid var(--red); outline-offset:-2px; }
 
 /* ============ ENTREGAS EDLP ============ */
+#vistaEnt.wrap{ max-width:none; padding:18px 18px 60px; }
+.en-arts{ display:flex; flex-wrap:wrap; gap:3px; max-width:340px; }
+.en-arts .en-canal-tag{ white-space:nowrap; font-size:10px; padding:1px 6px; }
+.en-nota{ font-size:10.5px; color:var(--gray-600); margin-top:2px; white-space:nowrap; }
+table.grid.en small.flujo{ font-size:10px; color:var(--gray-400); margin-left:3px; font-family:var(--font-c); }
 .en-sub{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
 .en-sub button{ background:#fff; border:1px solid var(--gray-300); border-radius:20px; padding:7px 14px; font-family:var(--font-c); font-weight:600; font-size:13px; letter-spacing:.5px; color:var(--gray-600); }
 .en-sub button.on{ background:var(--navy); border-color:var(--navy); color:#fff; }
@@ -507,7 +512,7 @@ table.grid.en .ib.del:hover{ border-color:var(--red); color:var(--red); }
         <div class="en-tools">
           <label class="fld" style="margin:0">Canal</label>
           <select class="ctl" id="enSelCanal"></select>
-          <label class="toggle"><input type="checkbox" id="enSoloPed" checked> Solo artículos con pedido</label>
+          <span class="muted" style="font-size:12px">Se listan los artículos con pedido o con entrega en este canal (los «sin pedido» también, para que el total cierre).</span>
           <span class="sp"></span>
           <button class="btn ghost sm" onclick="window.print()">🖨 Imprimir</button>
         </div>
@@ -1703,6 +1708,7 @@ function enCanalDe(txt){
   for(const k in EN_ALIAS){ if(k.length>=5 && t.includes(k)) return EN_ALIAS[k]; }
   return null;
 }
+const enArtLbl = a => { const x=EN.articulos[a]||{}; if(x.codigo) return x.codigo; const n=String(x.articulo||a).replace(/ESTUDIANTES 2026/i,'').replace(/\s+/g,' ').trim(); return n.length>18? n.slice(0,17)+'…' : n; };
 const enTagCanal = id => { const k=EN_CANAL[id]; return k? `<span class="en-canal-tag ${k.grupo==='Mayoristas'?'may':''}">${esc(k.nombre)}</span>` : '<span class="en-canal-tag">?</span>'; };
 const enNombreArt = (art,codigo) => { const a=EN.articulos[art]; return (a&&a.articulo) || codigo || art || ''; };
 function enMeses(){ const s=new Set(); Object.values(EN.articulos).forEach(a=>{ if(a&&a.oc) Object.keys(a.oc).forEach(m=>s.add(m)); }); return [...s].sort(); }
@@ -1714,9 +1720,18 @@ function enEstado(p,e){ if(!p&&!e) return 'na'; if(!p&&e) return 'extra'; if(!e)
 function enCalc(){
   const ent={};
   Object.values(EN.entregas||{}).forEach(e=>{ if(!e||!e.art||!e.canal) return; const a=ent[e.art]=ent[e.art]||{}; a[e.canal]=(a[e.canal]||0)+(+e.cant||0); });
+  // Desborde por artículo (Juli 09/09/2026): un artículo con `tomaDe:[ids]` (p.ej. la media de juego, que no existe
+  // como código: es media entrenamiento + tubo) se completa hasta su pedido, canal por canal, con la entrega de
+  // esos artículos; lo que sobra queda en el origen (la media de entrenamiento propiamente dicha).
+  const tomado={}, cedido={};
+  Object.entries(EN.articulos||{}).filter(([id,a])=>a&&Array.isArray(a.tomaDe)&&a.tomaDe.length).sort((x,y)=>((x[1].orden||9999)-(y[1].orden||9999))).forEach(([id,a])=>{
+    EN_CANALES.forEach(k=>{ const c=k.id; let need=(+((a.pedido||{})[c]||0))-(((ent[id]||{})[c])||0); if(need<=0) return;
+      a.tomaDe.forEach(src=>{ if(need<=0||!ent[src]) return; const disp=ent[src][c]||0; if(disp<=0) return; const q=Math.min(disp,need);
+        ent[src][c]-=q; (ent[id]=ent[id]||{})[c]=(ent[id][c]||0)+q; (tomado[id]=tomado[id]||{})[c]=(tomado[id][c]||0)+q; (cedido[src]=cedido[src]||{})[c]=(cedido[src][c]||0)+q; need-=q; }); });
+  });
   const rows=Object.entries(EN.articulos||{}).filter(x=>x[1]).map(([id,a])=>{
     const c={}; let ped=0, en=0;
-    EN_CANALES.forEach(k=>{ const p=+((a.pedido||{})[k.id]||0), e=+((ent[id]||{})[k.id]||0); c[k.id]={ped:p,ent:e,resta:p-e,estado:enEstado(p,e)}; if(!a.noSuma){ ped+=p; en+=e; } });
+    EN_CANALES.forEach(k=>{ const p=+((a.pedido||{})[k.id]||0), e=+((ent[id]||{})[k.id]||0); c[k.id]={ped:p,ent:e,resta:p-e,estado:enEstado(p,e),tomado:((tomado[id]||{})[k.id]||0),cedido:((cedido[id]||{})[k.id]||0)}; if(!a.noSuma){ ped+=p; en+=e; } });
     const ocTot=Object.values(a.oc||{}).reduce((s,v)=>s+(+v||0),0);
     return { id, a, c, ped, ent, resta:ped-en, ocTot };
   }).sort((x,y)=>((x.a.orden||9999)-(y.a.orden||9999)) || String(x.a.articulo||'').localeCompare(String(y.a.articulo||'')));
@@ -1830,7 +1845,7 @@ function enRenderControl(){
     totOC+=r.ocTot; h+=`<td class="num ${r.ocTot?'':'cero'}">${r.ocTot?units(r.ocTot):'·'}</td>`;
     canales.forEach(k=>{ const c=r.c[k.id]; if(!r.a.noSuma){ tot[k.id].ped+=c.ped; tot[k.id].ent+=c.ent; }
       h+=`<td class="num ped gl"><input type="number" min="0" step="1" value="${c.ped||''}" data-art="${esc(r.id)}" data-canal="${k.id}" placeholder="·" title="Pedido ${esc(k.nombre)} (editá y salí de la celda para guardar)"></td>`
-        +`<td class="num ent ${c.ent?'':'cero'}" data-art="${esc(r.id)}" data-canal="${k.id}" title="Ver / cargar entregas">${c.ent?units(c.ent):'·'}</td>`
+        +`<td class="num ent ${c.ent?'':'cero'}" data-art="${esc(r.id)}" data-canal="${k.id}" title="${c.tomado?'Incluye '+units(c.tomado)+' tomadas de '+esc((r.a.tomaDe||[]).map(x=>(EN.articulos[x]||{}).codigo||x).join(', '))+' · ':''}${c.cedido?'Cedió '+units(c.cedido)+' al artículo que se completa con este · ':''}Ver / cargar entregas">${c.ent?units(c.ent):'·'}${c.tomado?`<small class="flujo">↙${units(c.tomado)}</small>`:''}${c.cedido?`<small class="flujo">↗${units(c.cedido)}</small>`:''}</td>`
         +`<td class="num ${c.resta<0?'neg':c.resta>0?'pend':'cero'}">${(c.ped||c.ent)?units(c.resta):'·'}</td>`; });
     if(fc){ const c=r.c[fc]; h+=`<td><span class="st st-${c.estado}">${EN_ST_LBL[c.estado]}</span></td>`; }
     h+='</tr>';
@@ -1861,7 +1876,6 @@ async function enGuardarPedido(art,canal,val){
 /* ---- POR CANAL (réplica de las hojas "ANÁLISIS <canal>") ---- */
 function enRenderCanal(){
   const R=enCalc(); const k=EN_CANAL[enSt.canal]||EN_CANALES[0]; enSt.canal=k.id; $('enSelCanal').value=k.id;
-  const solo=$('enSoloPed').checked;
   const t=R.tot[k.id];
   const conPed=R.rows.filter(r=>!r.a.noSuma && r.c[k.id].ped>0);
   const nOk=conPed.filter(r=>r.c[k.id].estado==='ok').length, nPend=conPed.filter(r=>r.c[k.id].estado==='pend').length, nSin=conPed.filter(r=>r.c[k.id].estado==='sin').length;
@@ -1869,15 +1883,15 @@ function enRenderCanal(){
     + `<div class="en-kpi ok"><h4>Completos</h4><div class="n">${nOk}<small> / ${conPed.length}</small></div><div class="d">artículos con pedido cubierto</div></div>`
     + `<div class="en-kpi medio"><h4>Pendientes</h4><div class="n">${nPend}</div><div class="d">con entrega parcial</div></div>`
     + `<div class="en-kpi bajo"><h4>Sin entrega</h4><div class="n">${nSin}</div><div class="d">pedidos que todavía no salieron</div></div>`;
-  const rows=R.rows.filter(r=>{ const c=r.c[k.id]; return solo? c.ped>0 : (c.ped>0||c.ent>0); });
+  const rows=R.rows.filter(r=>{ const c=r.c[k.id]; return c.ped>0||c.ent>0; });
   let h='<thead><tr><th>Artículo</th><th>Cód.</th><th class="num">Pedido</th><th class="num">Entregado</th><th class="num">Resto</th><th class="num">% cumpl.</th><th>Estado</th></tr></thead><tbody>';
   let linea=null;
   rows.forEach(r=>{
     const ln=r.a.linea||'SIN LÍNEA';
     if(ln!==linea){ linea=ln; h+=`<tr class="linea"><td colspan="7">${esc(ln)}</td></tr>`; }
     const c=r.c[k.id]; const x=c.ped? c.ent/c.ped : null;
-    h+=`<tr class="${r.a.noSuma?'nosuma':''}"><td class="art">${esc(r.a.articulo)}${r.a.color?` <span class="muted" style="font-weight:400">· ${esc(r.a.color)}</span>`:''}</td><td class="cod">${esc(r.a.codigo||'—')}</td>
-      <td class="num">${c.ped?units(c.ped):'·'}</td><td class="num ent" data-art="${esc(r.id)}" data-canal="${k.id}" title="Ver / cargar entregas">${c.ent?units(c.ent):'·'}</td>
+    h+=`<tr class="${r.a.noSuma?'nosuma':''}"><td class="art">${esc(r.a.articulo)}${r.a.color?` <span class="muted" style="font-weight:400">· ${esc(r.a.color)}</span>`:''}${r.a.nota?`<div class="en-nota">${esc(r.a.nota)}</div>`:''}</td><td class="cod">${esc(r.a.codigo||'—')}</td>
+      <td class="num">${c.ped?units(c.ped):'·'}</td><td class="num ent" data-art="${esc(r.id)}" data-canal="${k.id}" title="${c.tomado?'Incluye '+units(c.tomado)+' tomadas de '+esc((r.a.tomaDe||[]).map(x=>(EN.articulos[x]||{}).codigo||x).join(', '))+' · ':''}${c.cedido?'Cedió '+units(c.cedido)+' · ':''}Ver / cargar entregas">${c.ent?units(c.ent):'·'}${c.tomado?`<small class="flujo">↙${units(c.tomado)}</small>`:''}${c.cedido?`<small class="flujo">↗${units(c.cedido)}</small>`:''}</td>
       <td class="num ${c.resta<0?'neg':c.resta>0?'pend':'cero'}">${units(c.resta)}</td><td class="num">${x==null?'—':pctStr(x)}</td><td><span class="st st-${c.estado}">${EN_ST_LBL[c.estado]}</span></td></tr>`;
   });
   if(!rows.length) h+='<tr><td colspan="7" class="empty">Este canal no tiene pedidos cargados</td></tr>';
@@ -1930,8 +1944,8 @@ const enOptsCanal = sel => EN_CANALES.map(k=>`<option value="${k.id}" ${k.id===s
 function enAbrirDetalle(art,canal){
   const a=EN.articulos[art]; const k=EN_CANAL[canal]; if(!a||!k) return;
   const lst=enListaEntregas(e=>e.art===art&&e.canal===canal).reverse();
-  const ped=+((a.pedido||{})[canal]||0), ent=lst.reduce((s,e)=>s+(+e.cant||0),0);
-  const body=`<div class="acc-grid" style="margin-bottom:12px"><div class="acc-card"><h3>${esc(a.articulo)}</h3><div class="acc-sub">${esc(a.codigo||'sin código')}${a.color?' · '+esc(a.color):''}${a.linea?' · '+esc(a.linea):''} · ${enTagCanal(canal)}</div></div>
+  const ped=+((a.pedido||{})[canal]||0); const cc=((enCalc().rows.find(r=>r.id===art)||{}).c||{})[canal]||{}; const ent=lst.reduce((s,e)=>s+(+e.cant||0),0)+(cc.tomado||0)-(cc.cedido||0);
+  const body=`<div class="acc-grid" style="margin-bottom:12px"><div class="acc-card"><h3>${esc(a.articulo)}</h3><div class="acc-sub">${esc(a.codigo||'sin código')}${a.color?' · '+esc(a.color):''}${a.linea?' · '+esc(a.linea):''} · ${enTagCanal(canal)}</div>${a.nota?`<div class="en-nota" style="white-space:normal">${esc(a.nota)}</div>`:''}${cc.tomado?`<div class="en-nota" style="white-space:normal">Incluye <b>${units(cc.tomado)}</b> tomadas de ${esc((a.tomaDe||[]).map(x=>(EN.articulos[x]||{}).codigo||x).join(', '))} para completar el pedido.</div>`:''}${cc.cedido?`<div class="en-nota" style="white-space:normal">Cedió <b>${units(cc.cedido)}</b> al artículo que se completa con este (queda el excedente).</div>`:''}</div>
     <div class="acc-card"><div style="display:flex;gap:18px;flex-wrap:wrap"><div><div class="acc-sub">Pedido</div><div class="acc-num">${units(ped)}</div></div><div><div class="acc-sub">Entregado</div><div class="acc-num">${units(ent)}</div></div><div><div class="acc-sub">Resta</div><div class="acc-num" style="color:${ped-ent<0?'var(--red)':ped-ent>0?'var(--amber)':'var(--green)'}">${units(ped-ent)}</div></div></div></div></div>
     <div class="tbl-wrap"><table class="grid en" style="min-width:0"><thead><tr><th>Fecha</th><th>Comprobante</th><th class="num">Cant.</th><th>Origen</th><th></th></tr></thead><tbody>
     ${lst.length? lst.map(e=>`<tr><td style="white-space:nowrap">${enFmtFecha(e.fecha)}</td><td>${esc(e.comprobante||'')}${e.nota?`<div class="muted" style="font-size:11px">${esc(e.nota)}</div>`:''}</td><td class="num">${units(e.cant)}</td><td class="muted" style="font-size:11px">${esc(e.origen==='excel'?'Excel':e.origen==='import'?'Sistema':e.origen==='acum'?'Acumulado':'Manual')}</td><td class="act"><button class="ib del" data-del="${esc(e.id)}">✕</button></td></tr>`).join('') : '<tr><td colspan="5" class="empty">Sin entregas todavía</td></tr>'}
@@ -2010,7 +2024,8 @@ function enModalArticulo(id){
     <div class="full"><label class="fld">Orden de compra por mes (unidades)</label><div class="en-oc" id="enA_oc">${ocM.map(m=>`<label>${enMesLbl(m)} <input type="number" min="0" step="1" data-mes="${m}" value="${(a.oc||{})[m]||''}"></label>`).join('')}
       <label>＋ mes <select id="enA_ocMes" class="ctl" style="width:auto;padding:4px 6px;font-size:13px">${(()=>{ let o=''; for(let y=anio-1;y<=anio+1;y++) for(let m=1;m<=12;m++){ const k=y+'-'+String(m).padStart(2,'0'); if(!ocM.includes(k)) o+=`<option value="${k}">${enMesLbl(k)}</option>`; } return o; })()}</select><button class="btn ghost sm" id="enA_ocAdd" type="button">Agregar</button></label></div></div>
     <div class="full"><label class="fld">Pedido por canal (unidades)</label><div class="en-oc">${EN_CANALES.map(k=>`<label>${esc(k.nombre)} <input type="number" min="0" step="1" data-canal="${k.id}" value="${(a.pedido||{})[k.id]||''}"></label>`).join('')}</div></div>
-    <div class="full"><label class="toggle"><input type="checkbox" id="enA_nosuma" ${a.noSuma?'checked':''}> No suma al total (p.ej. medias tubo que se cuentan aparte)</label></div>
+    <div class="full"><label class="fld">Se completa con la entrega de (códigos separados por coma, opcional)</label><input class="ctl" id="enA_toma" value="${esc((a.tomaDe||[]).map(x=>(EN.articulos[x]||{}).codigo||x).join(', '))}" placeholder="p.ej. RUG943 — llena el pedido de este artículo canal por canal; el excedente queda en el otro"></div>
+    <div class="full"><label class="toggle"><input type="checkbox" id="enA_nosuma" ${a.noSuma?'checked':''}> No suma al total (p.ej. medias tubo: figuran las cantidades como constancia pero no cuentan)</label></div>
     <div class="full"><label class="fld">Nota</label><input class="ctl" id="enA_nota" value="${esc(a.nota||'')}"></div>
   </div>`;
   const ovl=enModal(id?'Editar artículo':'Nuevo artículo', body, `<button class="btn ghost" data-x>Cancelar</button><button class="btn red" id="enA_ok">Guardar</button>`, true);
@@ -2024,6 +2039,7 @@ function enModalArticulo(id){
     const nid=id||enArtId(cod,nom);
     if(!id && EN.articulos[nid]){ toast('Ya existe un artículo con ese código'); return; }
     const nuevo={ ...(a||{}), codigo:cod, articulo:nom, color:up(g('#enA_color')), genero:up(g('#enA_gen')), silueta:up(g('#enA_sil')), origen:up(g('#enA_ori')), proveedor:up(g('#enA_prov')), linea:up(g('#enA_lin')), oc, pedido, noSuma:ovl.querySelector('#enA_nosuma').checked||null, nota:g('#enA_nota'), orden:a.orden||enOrdenSig() };
+    const idxT=enIdxCod(); const tomaDe=g('#enA_toma').split(',').map(x=>enCod(x)).filter(Boolean).map(x=>idxT[x]||null).filter(Boolean); if(tomaDe.length) nuevo.tomaDe=tomaDe; else delete nuevo.tomaDe;
     delete nuevo.nuevo; Object.keys(nuevo).forEach(k=>{ if(nuevo[k]===''||nuevo[k]===null) delete nuevo[k]; });
     EN.articulos[nid]=nuevo;
     if(cod && cod!==enCod(a.codigo)) Object.values(EN.entregas).forEach(e=>{ if(e&&e.art===nid) e.codigo=cod; });
@@ -2229,9 +2245,12 @@ function enRenderContrato(){
     const x=it.cantidad? it.entTot/it.cantidad : null;
     t+=`<tr><td class="art">${esc(it.producto)}</td><td class="num">${units(it.cantidad||0)}</td>`; R.CON.forEach(c=>{ const v=it.ent[c]||0; t+=`<td class="num ${v?'':'cero'}">${v?units(v):'·'}</td>`; });
     t+=`<td class="num">${it.entTot?units(it.entTot):'·'}</td><td class="num ${it.resta<0?'neg':it.resta>0?'pend':'cero'}">${units(it.resta)}</td><td class="num">${x==null?'—':pctStr(x)}</td>
-      <td style="max-width:260px">${it.arts.length? it.arts.map(a=>`<span class="en-canal-tag" title="${esc(enNombreArt(a,a))}">${esc((EN.articulos[a]||{}).codigo||a)}</span>`).join(' ') : (it.tomaDe?'':'<span class="st st-sin">sin artículo</span>')}${it.tomaDe?(()=>{ const src=R.items.find(x=>x.id===it.tomaDe); return `<div class="muted" style="font-size:11px;margin-top:2px">← se completa con ${esc((it.tomaArts||[]).map(a=>(EN.articulos[a]||{}).codigo||a).join(', ')||'todo')} de «${esc(src?src.producto:it.tomaDe)}»${it.tomado?' · tomó '+units(it.tomado):''}</div>`; })():''}${it.cedido?`<div class="muted" style="font-size:11px;margin-top:2px">→ cedió ${units(it.cedido)} a las medias de juego (queda el excedente)</div>`:''}</td>
+      <td><div class="en-arts">${it.arts.length? it.arts.map(a=>`<span class="en-canal-tag" title="${esc(enNombreArt(a,a))}">${esc(enArtLbl(a))}</span>`).join('') : (it.tomaDe?'':'<span class="st st-sin">sin artículo</span>')}</div>${it.tomaDe?(()=>{ const src=R.items.find(x=>x.id===it.tomaDe); return `<div class="en-nota" title="Se completa hasta su cantidad con ${esc((it.tomaArts||[]).map(a=>enArtLbl(a)).join(', '))} de «${esc(src?src.producto:it.tomaDe)}»">↙ ${units(it.tomado||0)} de «${esc(src?src.producto:it.tomaDe)}»</div>`; })():''}${it.cedido?`<div class="en-nota">↗ cedió ${units(it.cedido)} a media de juego</div>`:''}</td>
       <td class="act"><button class="ib" data-ed="${esc(it.id)}" title="Editar">✎</button></td></tr>`;
   });
+  const tubos=Object.entries(EN.articulos).filter(([id,a])=>a&&a.noSuma).map(([id,a])=>{ const e={}; let tot=0; Object.values(EN.entregas||{}).forEach(m=>{ if(!m||m.art!==id||!R.CON.includes(m.canal)) return; if(m.fecha&&!String(m.fecha).startsWith(String(CONFIG.temporadaVigente))) return; e[m.canal]=(e[m.canal]||0)+(+m.cant||0); tot+=(+m.cant||0); }); return {id,a,e,tot}; }).filter(x=>x.tot);
+  if(tubos.length){ t+=`<tr class="linea"><td colspan="${7+R.CON.length}">MEDIAS TUBO · constancia de lo entregado (no suman unidades: son la pantorrillera que completa la media de juego)</td></tr>`;
+    tubos.forEach(x=>{ t+=`<tr class="nosuma"><td class="art">${esc(x.a.articulo)}</td><td class="num">·</td>`; R.CON.forEach(c=>{ const v=x.e[c]||0; t+=`<td class="num ${v?'':'cero'}">${v?units(v):'·'}</td>`; }); t+=`<td class="num">${units(x.tot)}</td><td class="num">·</td><td class="num">·</td><td><div class="en-arts"><span class="en-canal-tag">${esc(x.a.codigo||x.id)}</span></div></td><td></td></tr>`; }); }
   t+=`<tr class="total"><td>TOTAL ANEXO I</td><td class="num">${units(R.totCon)}</td>`; R.CON.forEach(c=>t+=`<td class="num">${units(R.items.reduce((s,i)=>s+(i.ent[c]||0),0))}</td>`); t+=`<td class="num">${units(R.totEntMap)}</td><td class="num">${units(R.totCon-R.totEntMap)}</td><td class="num">${R.totCon?pctStr(R.totEntMap/R.totCon):'—'}</td><td colspan="2"></td></tr></tbody>`;
   $('enTblCon').innerHTML=t;
   $('enTblCon').querySelectorAll('[data-ed]').forEach(b=>b.addEventListener('click',()=>enModalContratoItem(b.dataset.ed)));
@@ -2394,7 +2413,7 @@ function enInit(){
   document.querySelectorAll('.mtab').forEach(b=>b.addEventListener('click',()=>enSetTab(b.dataset.tab)));
   document.querySelectorAll('#enSub button').forEach(b=>b.addEventListener('click',()=>enSetSub(b.dataset.sub)));
   ['enQ','enQEnt','enQArt'].forEach(id=>{ let tm; $(id).addEventListener('input',()=>{ clearTimeout(tm); tm=setTimeout(enRender,180); }); });
-  ['enFLinea','enFCanal','enFEstado','enVerOC','enFCanalEnt','enSoloPed'].forEach(id=>$(id).addEventListener('change',enRender));
+  ['enFLinea','enFCanal','enFEstado','enVerOC','enFCanalEnt'].forEach(id=>$(id).addEventListener('change',enRender));
   $('enSelCanal').addEventListener('change',()=>{ enSt.canal=$('enSelCanal').value; enRender(); });
   $('enBtnExcel').addEventListener('click',enExportarExcel);
   $('enBtnManual').addEventListener('click',()=>enModalEntrega({}));
