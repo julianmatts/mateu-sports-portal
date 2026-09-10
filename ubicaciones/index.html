@@ -2645,7 +2645,13 @@ function f8ParseLineas(wb){
   // primera columna de talles/cantidades = después de la última columna de texto
   const base = Math.max(cO,cC,cA,cD,5)+1;
   // rótulo del talle de una columna: primera celda no vacía de la cabecera hacia arriba
+  // (solo para F8 sin columna de curva; con curva manda la fila de la curva del artículo)
   const lblTalle = ci=>{ for(let i=hi;i>=0;i--){ const v=(rows[i]||[])[ci]; if(v!=null && String(v).trim()!=='') return String(v).trim(); } return ''; };
+  const curva = f8DetectarCurvas(rows, hi, base, tc);
+  // artículos cuya fila no dice la curva («Todo», vacía): se usa la del mismo código en otra fila
+  const curvaCod = {};
+  if(curva) for(const r of rows.slice(hi+1)){ const v=r&&r[curva.col], c=r&&String(r[cC]||'').trim(); if(c && curva.filas[v]!=null && curvaCod[c]==null) curvaCod[c]=v; }
+  const celda = v=> v==null ? '' : String(v).trim();
   // sin columna DESTINO → formato matriz: una columna por sucursal destino entre base y TOTAL
   const dcols=[]; if(cD<0) for(let ci=base;ci<tc;ci++) if(H[ci]&&ci!==cO&&ci!==cC&&ci!==cA) dcols.push(ci);
   const lineas=[];
@@ -2653,7 +2659,11 @@ function f8ParseLineas(wb){
     if(!r || !r[1]) continue;
     // el valor del total puede estar 1-2 columnas a la derecha del rótulo (merges)
     let t=null; for(let ci=tc;ci<=tc+2&&ci<r.length;ci++) if(typeof r[ci]==='number'){ t=r[ci]; break; }
-    if(t===null){ const fin=tc>base?tc:r.length; const ns=[]; for(let ci=base;ci<fin&&ci<r.length;ci++) if(typeof r[ci]==='number') ns.push(r[ci]); t=ns.reduce((a,b)=>a+b,0); }
+    if(t===null){
+      // sin total: suma de las columnas de talle (con curva, sin contar el número de curva)
+      const fin=tc>base?tc:r.length; const cols = curva ? curva.cols : Array.from({length:Math.max(0,fin-base)},(_,k)=>base+k);
+      t = cols.reduce((s,ci)=> s + (typeof r[ci]==='number' ? r[ci] : 0), 0);
+    }
     // Destino «Todo X» sin unidades = mandar todo lo que haya (regla de Juli 26/08):
     // entra sin cantidades ni talles, marcado como todo
     const dRaw = cD>=0 ? String(r[cD]||'').trim() : '';
@@ -2665,9 +2675,26 @@ function f8ParseLineas(wb){
       if(o&&c&&d){
         if(esTodo){ lineas.push({o,d,c,a,t:0,todo:1}); continue; }
         const tt={};
-        for(let ci=base;ci<tc&&ci<r.length;ci++){
-          const v=r[ci]; if(typeof v!=='number'||v<=0) continue;
-          const lb=lblTalle(ci); if(lb && lb.toUpperCase()!=='TOTAL') tt[lb]=(tt[lb]||0)+v;
+        if(curva){
+          // el rótulo sale de la fila de la curva del artículo; «UNI» = talle único.
+          // Sin curva conocida no se inventan talles: la línea va solo con la cantidad.
+          const cv = r[curva.col];
+          const k = curva.filas[cv]!=null ? cv : curvaCod[c];
+          // sin curva, todo en la primera columna y esa columna rotulada UNI (accesorios) = talle único
+          const pos = curva.cols.filter(ci=> typeof r[ci]==='number' && r[ci]>0);
+          const unico = celda(cv).toUpperCase()==='UNI' || (k==null && pos.length===1 && pos[0]===curva.cols[0] &&
+            Object.values(curva.filas).some(i=> celda((rows[i]||[])[pos[0]]).toUpperCase()==='UNI'));
+          const fila = !unico && k!=null ? (rows[curva.filas[k]]||[]) : null;
+          if(unico || fila) for(const ci of curva.cols){
+            const v=r[ci]; if(typeof v!=='number'||v<=0) continue;
+            const lb = unico ? 'UNI' : celda(fila[ci]);
+            if(lb && lb.toUpperCase()!=='TOTAL') tt[lb]=(tt[lb]||0)+v;
+          }
+        } else {
+          for(let ci=base;ci<tc&&ci<r.length;ci++){
+            const v=r[ci]; if(typeof v!=='number'||v<=0) continue;
+            const lb=lblTalle(ci); if(lb && lb.toUpperCase()!=='TOTAL') tt[lb]=(tt[lb]||0)+v;
+          }
         }
         const L={o,d,c,a,t}; if(Object.keys(tt).length) L.tt=tt;
         lineas.push(L);
@@ -2676,6 +2703,30 @@ function f8ParseLineas(wb){
     else for(const ci of dcols){ const v=r[ci]; if(typeof v==='number'&&v>0&&o&&c) lineas.push({o,d:H[ci],c,a,t:v}); }
   }
   return lineas;
+}
+
+// Curvas de talle del F8: arriba de ORIGEN hay una fila por curva (calzado US, europeo,
+// niños, letras…) numeradas 1, 2, 3… en la columna que va justo antes de los talles, y
+// cada artículo lleva en esa misma columna el número de SU curva. Antes se tomaba siempre
+// la fila de más abajo (XXS/XS/S…): a una zapatilla le salían talles de ropa, y el número
+// de curva se contaba como un talle más («7×2»).
+// Devuelve {col, filas:{n: índice de fila}, cols:[columnas de talle]} o null (F8 sin curvas).
+function f8DetectarCurvas(rows, hi, base, tc){
+  const fin = tc>base ? tc : Math.max(base+1, ...rows.slice(0,hi+1).map(r=>(r||[]).length));
+  const lleno = v=> v!=null && String(v).trim()!=='';
+  for(let col=base; col<=base+2 && col<fin; col++){
+    const filas={}; let n=0;
+    for(let i=0;i<=hi;i++){
+      const v=(rows[i]||[])[col];
+      if(Number.isInteger(v) && v>=1 && v<=20 && filas[v]==null){ filas[v]=i; n++; }
+    }
+    if(n<2 || filas[1]==null || filas[2]==null || filas[2]<filas[1]) continue;
+    const cols=[];
+    for(let ci=col+1; ci<fin; ci++)
+      if(Object.values(filas).some(i=>{ const x=(rows[i]||[])[ci]; return lleno(x) && String(x).trim().toUpperCase()!=='TOTAL'; })) cols.push(ci);
+    if(cols.length) return {col, filas, cols};
+  }
+  return null;
 }
 
 function pickingImportarF8(file){

@@ -738,7 +738,15 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   y el TOTAL, solo en el formato con columna DESTINO; el formato matriz no las trae)
   y el recorrido impreso muestra por artículo un renglón por destino con cantidad y
   talles («CITY BELL ×4 — 40×2 · 41»). Talles de letra en orden de ropa (XS→S→M→L→XL),
-  ×1 se omite. Los destinos **«Todo X» sin unidades** ahora entran a la lista (antes
+  ×1 se omite. ⚠ **El F8 trae VARIAS curvas de talle (10/09/2026)**: arriba de ORIGEN hay
+  una fila por curva (1 = niños 10/10-/11…, 2 = US 3/3.5/4…, 3 = 17…42, 4 = 30…56, 5 = 30.5…,
+  6/7 = UNI/XXS/XS/S…), numeradas en la columna que va justo antes de los talles (col. G), y
+  cada artículo lleva en esa columna el número de SU curva. `f8DetectarCurvas` las detecta y
+  el rótulo sale de la fila de la curva del artículo; antes se usaba siempre la de más abajo
+  (a una zapatilla le salían XXS/XS…) y el número de curva se sumaba como un talle («7×2»).
+  Filas con «Todo» o vacío en esa columna toman la curva del mismo código en otra fila;
+  «UNI» = talle único; sin curva conocida la línea va solo con la cantidad (no se inventan
+  talles). Validado con los F8 de Daniel y David (abr–ago 2026): suma de talles = total. Los destinos **«Todo X» sin unidades** ahora entran a la lista (antes
   se descartaban por total 0) marcados «TODO lo que haya», sin cantidad ni talles.
 - **Dos depósitos en Diagonal 80 (27/08/2026)**: el mapa `DEPOSITOS_SUC` de
   `ubicaciones/index.html` asigna rangos de estantería → piso (slug `diagonal`:
