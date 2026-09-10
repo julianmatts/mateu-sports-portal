@@ -246,6 +246,19 @@ con todo visible. Para probar el diseño sin navegador ni sesión:
 `node scripts/gen-presentacion-stock.js 2026-09 salida.html` (ejecuta el script del
 módulo con un DOM simulado y datos reales de Firebase).
 
+## Presentación de regalías — publicar en Cloudflare (`regalias/`, 10/09/2026)
+
+La presentación del mes se comparte por link desde un **proyecto aparte de Cloudflare Pages por
+subida directa**, `regalias-ruge-mateu` → https://regalias-ruge-mateu.pages.dev. **NO se commitea al
+portal**: el repo `julianmatts/mateu-sports-portal` es público y la presentación es confidencial
+(Netlify quedó sin créditos, por eso no se usa). En el paso ⑦, además de «Generar presentación
+(.html)» (para verla local), está **«☁ Publicar en Cloudflare»** (`publicarPresentacion`): en el
+mismo clic abre `CF_PAGES_DASH` (`dash.cloudflare.com/?to=/:account/pages/view/<proyecto>`, sin ID de
+cuenta en el código) y baja `regalias-<mes>-<año>.zip` con la presentación como `index.html` (el
+navegador no puede bajar una carpeta y Pages acepta un único zip; `zipUnArchivo` + `crc32` = zip sin
+comprimir, sin librería). El panel `#pubPasos` indica Create deployment → soltar el zip → Save and
+Deploy, con «Copiar link». Publicar un mes reemplaza al anterior (el link es uno solo).
+
 ## Entregas EDLP (pestaña de `regalias/`, 06/09/2026)
 
 Digitaliza el Excel «RUGE 2026 – Seguimiento de Entregas por Canal» de Juli (carpeta

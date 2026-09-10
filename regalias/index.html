@@ -441,9 +441,11 @@ table.grid.en .ib.del:hover{ border-color:var(--red); color:var(--red); }
     <div class="step-hd"><div class="step-num">7</div><h2>Presentación <span class="sub">— slide comercial del mes</span></h2></div>
     <div class="step-bd">
       <div class="row" style="align-items:center">
-        <button class="btn red" id="btnPreso" disabled>Generar presentación (.html)</button>
-        <span class="muted">Un HTML autocontenido con los KPIs, el desglose y la evolución mensual, listo para presentar.</span>
+        <button class="btn" id="btnPreso" disabled>Generar presentación (.html)</button>
+        <button class="btn red" id="btnPublicar" disabled>☁ Publicar en Cloudflare</button>
+        <span class="muted">Un HTML autocontenido con los KPIs, el desglose y la evolución mensual. «Publicar» baja el zip listo para subir y te abre Cloudflare.</span>
       </div>
+      <div id="pubPasos" class="banner info hidden" style="margin:12px 0 0"></div>
     </div>
   </section>
 
@@ -1158,7 +1160,7 @@ function liquidar(opts){
     acumEdlpFin:prev.edlp+sumEdlpU, acumRugeFin:prev.ruge+sumRugeU };
 
   renderConsolidado(); renderAcumulador();
-  $('btnExport').disabled=false; $('btnGuardarLedger').disabled=false; $('btnPreso').disabled=false;
+  $('btnExport').disabled=false; $('btnGuardarLedger').disabled=false; $('btnPreso').disabled=false; $('btnPublicar').disabled=false;
   $('btnExportRDA').disabled = !(RESULT.rda && RESULT.rda.lineas.length);
   $('expHint').textContent='Listo para descargar.';
   if(opts && opts.reabierta) return;   // reabierta de la base: no se vuelve a guardar ni se avisa
@@ -1311,7 +1313,7 @@ function renderRevision(){
 }
 function postCambioRevision(){
   renderRevision(); renderAcumulador();
-  $('btnExport').disabled=true; $('btnGuardarLedger').disabled=true; $('btnPreso').disabled=true; $('btnExportRDA').disabled=true;
+  $('btnExport').disabled=true; $('btnGuardarLedger').disabled=true; $('btnPreso').disabled=true; $('btnPublicar').disabled=true; $('pubPasos').classList.add('hidden'); $('btnExportRDA').disabled=true;
   $('consolidado').innerHTML='<div class="empty">Cambió la revisión. Volvé a tocar <b>Liquidar mes</b>.</div>';
   $('expHint').textContent='Volvé a liquidar tras revisar.';
 }
@@ -1783,19 +1785,85 @@ function buildPresentacionDATA(){
     conceptos, months:buildMonths(R.mesKey)
   };
 }
-function generarPresentacion(){
-  if(!RESULT){ toast('Liquidá primero'); return; }
-  if(typeof PRESENTACION_TPL!=='string' || !PRESENTACION_TPL){ toast('Falta la plantilla embebida'); return; }
+// HTML final de la presentación (plantilla + DATA del mes liquidado)
+function htmlPresentacion(){
+  if(!RESULT){ toast('Liquidá primero'); return null; }
+  if(typeof PRESENTACION_TPL!=='string' || !PRESENTACION_TPL){ toast('Falta la plantilla embebida'); return null; }
   const data=buildPresentacionDATA();
   // el <\/ evita cerrar el <script> del HTML generado si algún string trajera </...
   const inject='<script>window.__DATA__='+JSON.stringify(data).replace(/<\//g,'<\\/')+';<\/script>';
-  const out=PRESENTACION_TPL.replace('</head>', inject+'\n</head>');
-  const blob=new Blob([out],{type:'text/html;charset=utf-8'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=`Regalias_RUGE_EDLP_${data.mes}_${data.anio}.html`;
+  return { data, out:PRESENTACION_TPL.replace('</head>', inject+'\n</head>') };
+}
+function descargarBlob(blob, nombre){
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nombre;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+}
+function generarPresentacion(){
+  const p=htmlPresentacion(); if(!p) return;
+  descargarBlob(new Blob([p.out],{type:'text/html;charset=utf-8'}), `Regalias_RUGE_EDLP_${p.data.mes}_${p.data.anio}.html`);
   toast('Presentación descargada');
+}
+
+/* ------------------------------------------------------------
+   PUBLICAR EN CLOUDFLARE (pedido de Juli 10/09/2026)
+   La presentación vive en un proyecto aparte de Cloudflare Pages por subida directa
+   (NO en el repo del portal, que es público). El navegador no puede bajar una carpeta,
+   pero Pages acepta un único zip: se arma uno con la presentación como index.html y se
+   abre el proyecto en otra pestaña para tocar «Create deployment» y soltarlo.
+   ------------------------------------------------------------ */
+const CF_PAGES_PROYECTO='regalias-ruge-mateu';
+const CF_PAGES_URL='https://'+CF_PAGES_PROYECTO+'.pages.dev';
+// ?to=/:account/… entra con la cuenta logueada, sin escribir el ID de cuenta en el código
+const CF_PAGES_DASH='https://dash.cloudflare.com/?to=/:account/pages/view/'+CF_PAGES_PROYECTO;
+
+function crc32(bytes){
+  let t=crc32.t;
+  if(!t){ t=crc32.t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); t[n]=c>>>0; } }
+  let c=0xFFFFFFFF;
+  for(let i=0;i<bytes.length;i++) c=t[(c^bytes[i])&0xFF]^(c>>>8);
+  return (c^0xFFFFFFFF)>>>0;
+}
+// Zip de un solo archivo, sin comprimir (método «store»): 200 KB no justifican una librería
+function zipUnArchivo(nombre, texto){
+  const enc=new TextEncoder(), data=enc.encode(texto), name=enc.encode(nombre), crc=crc32(data);
+  const d=new Date();
+  const hora=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1);
+  const fecha=((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate();
+  const loc=new DataView(new ArrayBuffer(30)), cen=new DataView(new ArrayBuffer(46)), fin=new DataView(new ArrayBuffer(22));
+  [[0,0x04034b50,4],[4,20,2],[6,0x0800,2],[10,hora,2],[12,fecha,2],[14,crc,4],[18,data.length,4],[22,data.length,4],[26,name.length,2]]
+    .forEach(([o,v,n])=> n===4 ? loc.setUint32(o,v,true) : loc.setUint16(o,v,true));
+  [[0,0x02014b50,4],[4,20,2],[6,20,2],[8,0x0800,2],[12,hora,2],[14,fecha,2],[16,crc,4],[20,data.length,4],[24,data.length,4],[28,name.length,2]]
+    .forEach(([o,v,n])=> n===4 ? cen.setUint32(o,v,true) : cen.setUint16(o,v,true));
+  [[0,0x06054b50,4],[8,1,2],[10,1,2],[12,46+name.length,4],[16,30+name.length+data.length,4]]
+    .forEach(([o,v,n])=> n===4 ? fin.setUint32(o,v,true) : fin.setUint16(o,v,true));
+  return new Blob([loc,name,data,cen,name,fin],{type:'application/zip'});
+}
+function publicarPresentacion(){
+  const p=htmlPresentacion(); if(!p) return;
+  const zip=`regalias-${String(p.data.mes).toLowerCase()}-${p.data.anio}.zip`;
+  // la pestaña se abre dentro del mismo clic: si se abre después, el navegador la bloquea
+  const w=window.open(CF_PAGES_DASH,'_blank');
+  if(w) w.opener=null;
+  descargarBlob(zipUnArchivo('index.html', p.out), zip);
+  const box=$('pubPasos');
+  box.innerHTML=`<div class="ic">☁</div><div style="flex:1">
+    <div>Se descargó <b>${esc(zip)}</b>${w?' y se abrió Cloudflare en otra pestaña':''}. Para dejar la presentación de <b>${esc(p.data.mes)} ${p.data.anio}</b> en línea:</div>
+    <ol style="margin:8px 0 8px 18px; line-height:1.7">
+      <li>En el proyecto <b>${CF_PAGES_PROYECTO}</b> tocá <b>Create deployment</b>${w?'':` (<a href="${CF_PAGES_DASH}" target="_blank" rel="noopener">abrir Cloudflare</a>)`}.</li>
+      <li>Arrastrá <b>${esc(zip)}</b> desde Descargas tal cual, sin descomprimirlo.</li>
+      <li>Tocá <b>Save and Deploy</b>. En unos segundos queda en <a href="${CF_PAGES_URL}" target="_blank" rel="noopener">${CF_PAGES_URL.replace('https://','')}</a>.</li>
+    </ol>
+    <div class="row" style="gap:8px; align-items:center">
+      <button class="btn sm" id="pubCopiar">⧉ Copiar link</button>
+      <a class="btn ghost sm" href="${CF_PAGES_DASH}" target="_blank" rel="noopener" style="text-decoration:none">Abrir Cloudflare</a>
+      <span class="muted" style="font-size:12px">El link es siempre el mismo: publicar un mes reemplaza la presentación del anterior.</span>
+    </div></div>`;
+  box.classList.remove('hidden');
+  $('pubCopiar').addEventListener('click',()=>{
+    navigator.clipboard.writeText(CF_PAGES_URL).then(()=>toast('Link copiado')).catch(()=>prompt('Copiá el link:', CF_PAGES_URL));
+  });
+  if(!w) toast('El navegador bloqueó la pestaña de Cloudflare: usá «Abrir Cloudflare»');
 }
 
 /* ============================================================
@@ -2723,6 +2791,7 @@ function enInit(){
   $('btnExportRDA').addEventListener('click',exportarRDA);
   $('btnGuardarLedger').addEventListener('click',guardarMesEnLedger);
   $('btnPreso').addEventListener('click',generarPresentacion);
+  $('btnPublicar').addEventListener('click',publicarPresentacion);
   $('kwAdd').addEventListener('click',()=>{ const v=up($('kwInput').value); if(v && !KEYWORDS.map(up).includes(v)){ KEYWORDS.push(v); saveKeywords(); renderKeywords(); renderRevision(); } $('kwInput').value=''; });
   $('kwInput').addEventListener('keydown',e=>{ if(e.key==='Enter') $('kwAdd').click(); });
   $('btnCarry').addEventListener('click',async()=>{
@@ -2737,7 +2806,7 @@ function enInit(){
       ? `<div class="empty">Este mes tiene una liquidación guardada. <button class="btn sm red" data-abrir="${k}">Reabrirla</button> o cargá archivos nuevos y tocá <b>Liquidar mes</b>.</div>`
       : '<div class="empty">Cambió el período. Tocá <b>Liquidar mes</b>.</div>';
     const b=$('consolidado').querySelector('[data-abrir]'); if(b) b.addEventListener('click',()=>abrirLiquidacion(b.dataset.abrir));
-    $('btnExport').disabled=true; $('btnGuardarLedger').disabled=true; $('btnPreso').disabled=true; $('btnExportRDA').disabled=true; }));
+    $('btnExport').disabled=true; $('btnGuardarLedger').disabled=true; $('btnPreso').disabled=true; $('btnPublicar').disabled=true; $('pubPasos').classList.add('hidden'); $('btnExportRDA').disabled=true; }));
 
   renderKeywords(); renderRevision(); renderAcumulador(); renderLedger(); renderLiqGuardadas();
   enInit();   // pestaña Entregas EDLP
