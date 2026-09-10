@@ -332,8 +332,10 @@ Código en el mismo `index.html`, bloque «ENTREGAS EDLP» (funciones con prefij
   producto → códigos RUG hecho por nombre** (p.ej. «camiseta home» = RUG858 + RUG974 + RUG975;
   «media» = medias home + RUG950; gorro, chinelas, guantes, cuellos, botineros, socks y térmicas
   cortas sin artículo). `enCalcContrato`: entregado = todo lo que salió a las 5 disciplinas del
-  contrato en el año (por `fecha`; **incluye** los artículos `noSuma`, porque el contrato cuenta
-  medias), por renglón y por disciplina; lo entregado sin renglón se lista abajo con un select
+  contrato en el año (por `fecha`; **excluye** los artículos `noSuma` = medias tubo RUG949/950/957/958/959:
+  regla de Juli 09/09/2026, la tubo es la pantorrillera que completa la media de juego = media
+  entrenamiento + tubo, así que el renglón «media» del anexo se cumple con RUG943 y «media 2» con
+  RUG942), por renglón y por disciplina; lo entregado sin renglón se lista abajo con un select
   para asignarlo (juveniles «pertenencia» RUG259/261/464/466/250/796 y kids quedan ahí).
   ✎ por renglón (`enModalContratoItem`: cantidad, tipo, producto y checklist de artículos, avisa
   si ya está en otro renglón), «+ Renglón», «⇩ Excel» (`enExportarContrato`). Al 09/09/2026:

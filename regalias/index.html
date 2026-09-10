@@ -524,7 +524,7 @@ table.grid.en .ib.del:hover{ border-color:var(--red); color:var(--red); }
           <button class="btn ghost sm" id="enBtnConExcel">⇩ Excel</button>
         </div>
         <div class="en-kpis" id="enConKpis"></div>
-        <div class="banner info" style="margin-bottom:10px"><span class="ic">📜</span><span>Cada renglón del <b>ANEXO I</b> del contrato se cruza con los códigos RUG que lo cumplen (tocá ✎ para cambiar la cantidad o los artículos). <b>Entregado</b> = todo lo que salió al cliente del contrato en el año, por disciplina. Lo que se entregó y no está asignado a ningún renglón aparece abajo, para que lo ubiques.</span></div>
+        <div class="banner info" style="margin-bottom:10px"><span class="ic">📜</span><span>Cada renglón del <b>ANEXO I</b> del contrato se cruza con los códigos RUG que lo cumplen (tocá ✎ para cambiar la cantidad o los artículos). <b>Entregado</b> = todo lo que salió al cliente del contrato en el año, por disciplina; las <b>medias tubo no suman</b> (son la pantorrillera que completa la media de juego). Lo que se entregó y no está asignado a ningún renglón aparece abajo, para que lo ubiques.</span></div>
         <div class="tbl-wrap"><table class="grid en" id="enTblCon"></table></div>
         <div class="acc-card" style="margin-top:14px">
           <h3>📦 Entregado por contrato sin renglón del anexo</h3>
@@ -2189,8 +2189,9 @@ const enConCanales = () => EN_CANALES.filter(k=>k.grupo==='Contrato').map(k=>k.i
 function enCalcContrato(){
   const C=EN.contrato||{}; const CON=enConCanales(); const anio=String(CONFIG.temporadaVigente);
   const items=Object.entries(C.items||{}).filter(x=>x[1]).map(([id,it])=>({id,...it, arts:(it.arts||[]).slice()})).sort((a,b)=>(a.orden||0)-(b.orden||0));
-  // entregado en el año por artículo × disciplina (todo lo que salió por contrato, sin excluir "no suma")
-  const ent={}; Object.values(EN.entregas||{}).forEach(e=>{ if(!e||!CON.includes(e.canal)) return; if(e.fecha&&!String(e.fecha).startsWith(anio)) return; const a=ent[e.art]=ent[e.art]||{}; a[e.canal]=(a[e.canal]||0)+(+e.cant||0); });
+  // entregado en el año por artículo × disciplina. Los artículos «no suma» (medias tubo = pantorrillera que
+  // completa la media de juego; regla de Juli 09/09/2026) no cuentan como unidades, acá ni en el resto del módulo.
+  const ent={}; Object.values(EN.entregas||{}).forEach(e=>{ if(!e||!CON.includes(e.canal)) return; if(e.fecha&&!String(e.fecha).startsWith(anio)) return; const a0=EN.articulos[e.art]; if(a0&&a0.noSuma) return; const a=ent[e.art]=ent[e.art]||{}; a[e.canal]=(a[e.canal]||0)+(+e.cant||0); });
   const usado={};
   items.forEach(it=>{ it.ent={}; it.entTot=0; it.arts.forEach(a=>{ usado[a]=(usado[a]||0)+1; const x=ent[a]||{}; CON.forEach(c=>{ it.ent[c]=(it.ent[c]||0)+(x[c]||0); it.entTot+=(x[c]||0); }); }); it.resta=(+it.cantidad||0)-it.entTot; });
   const sinMapa=Object.entries(ent).filter(([a])=>!usado[a]).map(([a,x])=>({art:a, ent:x, tot:CON.reduce((s,c)=>s+(x[c]||0),0)})).filter(z=>z.tot).sort((a,b)=>b.tot-a.tot);
