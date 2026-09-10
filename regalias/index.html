@@ -450,7 +450,7 @@ table.grid.en .ib.del:hover{ border-color:var(--red); color:var(--red); }
   <section class="step">
     <div class="step-hd">
       <div class="step-num">📦</div>
-      <h2>Entregas EDLP <span id="enTemp"></span> <span class="sub">— pedido vs. entregado por canal: mayoristas (SuperFútbol, TiendaPincha) y contrato (Plantel, Femenino, Reserva, Juvenil, Protocolo)</span></h2>
+      <h2>Entregas EDLP <span id="enTemp"></span> <span class="sub">— pedido vs. entregado por canal: mayoristas (SuperFútbol, TiendaPincha) y contrato (Plantel, Femenino, Reserva, Juvenil, Protocolo, Prensa y fotografía, Campaña socios)</span></h2>
       <span class="badge-ok" id="enSync" style="background:var(--gray-100); color:var(--gray-600);">CARGANDO…</span>
     </div>
     <div class="step-bd">
@@ -1650,6 +1650,8 @@ const EN_CANALES = [
   { id:'res',     nombre:'Reserva',       grupo:'Contrato' },
   { id:'juv',     nombre:'Juvenil',       grupo:'Contrato' },
   { id:'prot',    nombre:'Protocolo',     grupo:'Contrato' },
+  { id:'prensa',  nombre:'Prensa y fotografía', grupo:'Contrato' },
+  { id:'socios',  nombre:'Campaña socios',      grupo:'Contrato' },
 ];
 const EN_CANAL = {}; EN_CANALES.forEach(c=>EN_CANAL[c.id]=c);
 // Cómo llama el sistema (categoría del remito / cliente) o el Excel a cada canal.
@@ -1660,6 +1662,8 @@ const EN_ALIAS = {
   'RESERVA':'res', 'RES':'res',
   'FUTBOL JUVENIL':'juv', 'FJ':'juv', 'JUVENIL':'juv', 'JUVENILES':'juv', 'INFERIORES':'juv',
   'PROTOCOLO':'prot',
+  'PRENSA':'prensa', 'FOTOGRAFIA':'prensa', 'PRENSA Y FOTOGRAFIA':'prensa',
+  'CAMPANA SOCIOS':'socios', 'CAMPAÑA SOCIOS':'socios', 'SOCIOS':'socios',
   'SUPERFUTBOL':'spf', 'SUPER FUTBOL':'spf', 'SPF':'spf', 'PINCHA STORE':'spf', '30709250716':'spf',
   'TIENDAPINCHA':'tp', 'TIENDA PINCHA':'tp', 'TP':'tp', 'CLUB ESTUDIANTES DE LA PLATA':'tp', '30528412285':'tp',
   // el cliente del contrato: la disciplina sale del mapa de remitos (pseudo-canal 'contrato')
@@ -2141,7 +2145,7 @@ async function enImportarEntregas(file){
       ${sinCanal?`<label class="fld" style="margin:0">Canal para los sin ${nContrato?'disciplina':'canal'}</label><select class="ctl" id="enI_defCanal"><option value="">— dejar afuera —</option>${enOptsCanal('')}</select>`:''}
     </div>
     <div class="tbl-wrap" style="max-height:420px;overflow:auto"><table class="grid en" style="min-width:0" id="enI_tbl"><thead><tr><th><input type="checkbox" id="enI_all" checked></th>${det.mensual?'<th>Fecha</th>':''}<th>Canal</th><th>Comprobante</th><th>Cód.</th><th>Artículo</th><th class="num">Cant.</th><th class="num acum-col">Ya entregado</th><th class="num acum-col">Diferencia</th><th>Estado</th></tr></thead><tbody>
-    ${filas.map(f=>`<tr class="en-imp-row ${(f.ya||f.excl)?'skip':''}" data-i="${f.i}"><td><input type="checkbox" data-chk ${(f.ya||f.excl)?'':'checked'}></td>${det.mensual?`<td style="white-space:nowrap">${enFmtFecha(f.fecha)}</td>`:''}<td><select data-canal style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:5px;font-size:12px"><option value="">— elegir —</option>${enOptsCanal(f.canal)}${f.contrato?`<option value="${EN_REM_X}" ${f.excl?'selected':''}>Fuera del control (prensa, fotos…)</option>`:''}</select>${f.otro?`<div class="muted" style="font-size:10.5px">${esc(f.otro)}</div>`:''}${f.contrato?`<div class="muted" style="font-size:10.5px">contrato · rem. ${esc(f.nro)}</div>`:''}</td><td>${esc(f.comprobante)}</td><td class="cod">${esc(f.codigo)}${f.base?`<div class="muted" style="font-size:10.5px">→ ${esc(f.base)}</div>`:''}</td><td>${esc(f.art?enNombreArt(f.art,f.codigo):(f.desc||'—'))}${f.art?'':' <span class="st st-extra">nuevo</span>'}</td><td class="num ${f.cant<0?'neg':''}">${units(f.cant)}</td><td class="num acum-col" data-ya></td><td class="num acum-col" data-dif></td><td>${f.ya?'<span class="st st-na">ya cargada</span>':f.excl?'<span class="st st-na">fuera del control</span>':f.sinMapa?'<span class="st st-pend">sin disciplina</span>':'<span class="st st-ok">nueva</span>'}</td></tr>`).join('')}
+    ${filas.map(f=>`<tr class="en-imp-row ${(f.ya||f.excl)?'skip':''}" data-i="${f.i}"><td><input type="checkbox" data-chk ${(f.ya||f.excl)?'':'checked'}></td>${det.mensual?`<td style="white-space:nowrap">${enFmtFecha(f.fecha)}</td>`:''}<td><select data-canal style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:5px;font-size:12px"><option value="">— elegir —</option>${enOptsCanal(f.canal)}${f.contrato?`<option value="${EN_REM_X}" ${f.excl?'selected':''}>Fuera del control</option>`:''}</select>${f.otro?`<div class="muted" style="font-size:10.5px">${esc(f.otro)}</div>`:''}${f.contrato?`<div class="muted" style="font-size:10.5px">contrato · rem. ${esc(f.nro)}</div>`:''}</td><td>${esc(f.comprobante)}</td><td class="cod">${esc(f.codigo)}${f.base?`<div class="muted" style="font-size:10.5px">→ ${esc(f.base)}</div>`:''}</td><td>${esc(f.art?enNombreArt(f.art,f.codigo):(f.desc||'—'))}${f.art?'':' <span class="st st-extra">nuevo</span>'}</td><td class="num ${f.cant<0?'neg':''}">${units(f.cant)}</td><td class="num acum-col" data-ya></td><td class="num acum-col" data-dif></td><td>${f.ya?'<span class="st st-na">ya cargada</span>':f.excl?'<span class="st st-na">fuera del control</span>':f.sinMapa?'<span class="st st-pend">sin disciplina</span>':'<span class="st st-ok">nueva</span>'}</td></tr>`).join('')}
     </tbody></table></div>`;
   const ovl=enModal('Importar entregas del sistema', body, `<button class="btn ghost" data-x>Cancelar</button><button class="btn red" id="enI_ok">Cargar las marcadas</button>`, true);
   const tbl=ovl.querySelector('#enI_tbl'), chkAcum=ovl.querySelector('#enI_acum'), chkVar=ovl.querySelector('#enI_var');
@@ -2193,7 +2197,17 @@ function enCalcContrato(){
   // completa la media de juego; regla de Juli 09/09/2026) no cuentan como unidades, acá ni en el resto del módulo.
   const ent={}; Object.values(EN.entregas||{}).forEach(e=>{ if(!e||!CON.includes(e.canal)) return; if(e.fecha&&!String(e.fecha).startsWith(anio)) return; const a0=EN.articulos[e.art]; if(a0&&a0.noSuma) return; const a=ent[e.art]=ent[e.art]||{}; a[e.canal]=(a[e.canal]||0)+(+e.cant||0); });
   const usado={};
-  items.forEach(it=>{ it.ent={}; it.entTot=0; it.arts.forEach(a=>{ usado[a]=(usado[a]||0)+1; const x=ent[a]||{}; CON.forEach(c=>{ it.ent[c]=(it.ent[c]||0)+(x[c]||0); it.entTot+=(x[c]||0); }); }); it.resta=(+it.cantidad||0)-it.entTot; });
+  items.forEach(it=>{ it.ent={}; it.entTot=0; it.arts.forEach(a=>{ usado[a]=(usado[a]||0)+1; const x=ent[a]||{}; CON.forEach(c=>{ it.ent[c]=(it.ent[c]||0)+(x[c]||0); it.entTot+=(x[c]||0); }); }); });
+  // Desborde (regla de Juli 09/09/2026 para las medias): un renglón con `tomaDe` se completa hasta su
+  // cantidad con las unidades de los artículos `tomaArts` de otro renglón (la media de entrenamiento común
+  // llena primero las medias de juego); lo que sobra queda en el renglón de origen. Se resuelve en orden.
+  const tomado={};
+  items.forEach(it=>{ if(!it.tomaDe) return; const src=items.find(x=>x.id===it.tomaDe); if(!src) return;
+    const arts=(it.tomaArts&&it.tomaArts.length? it.tomaArts : src.arts).filter(a=>src.arts.includes(a));
+    let need=Math.max(0,(+it.cantidad||0)-it.entTot); it.tomado=0;
+    arts.forEach(a=>{ if(need<=0) return; const x=ent[a]||{}; CON.forEach(c=>{ if(need<=0) return; const disp=(x[c]||0)-((tomado[a]||{})[c]||0); if(disp<=0) return; const q=Math.min(disp,need); (tomado[a]=tomado[a]||{})[c]=((tomado[a]||{})[c]||0)+q; it.ent[c]=(it.ent[c]||0)+q; it.entTot+=q; src.ent[c]-=q; src.entTot-=q; src.cedido=(src.cedido||0)+q; it.tomado+=q; need-=q; }); });
+  });
+  items.forEach(it=>{ it.resta=(+it.cantidad||0)-it.entTot; });
   const sinMapa=Object.entries(ent).filter(([a])=>!usado[a]).map(([a,x])=>({art:a, ent:x, tot:CON.reduce((s,c)=>s+(x[c]||0),0)})).filter(z=>z.tot).sort((a,b)=>b.tot-a.tot);
   const totCon=items.reduce((s,i)=>s+(+i.cantidad||0),0), totEntMap=items.reduce((s,i)=>s+i.entTot,0);
   const porCanal={}; CON.forEach(c=>porCanal[c]=Object.values(ent).reduce((s,x)=>s+(x[c]||0),0));
@@ -2215,7 +2229,7 @@ function enRenderContrato(){
     const x=it.cantidad? it.entTot/it.cantidad : null;
     t+=`<tr><td class="art">${esc(it.producto)}</td><td class="num">${units(it.cantidad||0)}</td>`; R.CON.forEach(c=>{ const v=it.ent[c]||0; t+=`<td class="num ${v?'':'cero'}">${v?units(v):'·'}</td>`; });
     t+=`<td class="num">${it.entTot?units(it.entTot):'·'}</td><td class="num ${it.resta<0?'neg':it.resta>0?'pend':'cero'}">${units(it.resta)}</td><td class="num">${x==null?'—':pctStr(x)}</td>
-      <td style="max-width:260px">${it.arts.length? it.arts.map(a=>`<span class="en-canal-tag" title="${esc(enNombreArt(a,a))}">${esc((EN.articulos[a]||{}).codigo||a)}</span>`).join(' ') : '<span class="st st-sin">sin artículo</span>'}</td>
+      <td style="max-width:260px">${it.arts.length? it.arts.map(a=>`<span class="en-canal-tag" title="${esc(enNombreArt(a,a))}">${esc((EN.articulos[a]||{}).codigo||a)}</span>`).join(' ') : (it.tomaDe?'':'<span class="st st-sin">sin artículo</span>')}${it.tomaDe?(()=>{ const src=R.items.find(x=>x.id===it.tomaDe); return `<div class="muted" style="font-size:11px;margin-top:2px">← se completa con ${esc((it.tomaArts||[]).map(a=>(EN.articulos[a]||{}).codigo||a).join(', ')||'todo')} de «${esc(src?src.producto:it.tomaDe)}»${it.tomado?' · tomó '+units(it.tomado):''}</div>`; })():''}${it.cedido?`<div class="muted" style="font-size:11px;margin-top:2px">→ cedió ${units(it.cedido)} a las medias de juego (queda el excedente)</div>`:''}</td>
       <td class="act"><button class="ib" data-ed="${esc(it.id)}" title="Editar">✎</button></td></tr>`;
   });
   t+=`<tr class="total"><td>TOTAL ANEXO I</td><td class="num">${units(R.totCon)}</td>`; R.CON.forEach(c=>t+=`<td class="num">${units(R.items.reduce((s,i)=>s+(i.ent[c]||0),0))}</td>`); t+=`<td class="num">${units(R.totEntMap)}</td><td class="num">${units(R.totCon-R.totEntMap)}</td><td class="num">${R.totCon?pctStr(R.totEntMap/R.totCon):'—'}</td><td colspan="2"></td></tr></tbody>`;
@@ -2238,6 +2252,9 @@ function enModalContratoItem(id){
     <div><label class="fld">Tipo</label><input class="ctl" id="enC_tipo" value="${esc(it.tipo||'')}" list="enDlTipo"><datalist id="enDlTipo">${tipos.map(t=>`<option value="${esc(t)}">`).join('')}</datalist></div>
     <div style="grid-column:span 2"><label class="fld">Producto (como dice el anexo)</label><input class="ctl" id="enC_prod" value="${esc(it.producto||'')}"></div>
     <div><label class="fld">Cantidad anual</label><input class="ctl" type="number" min="0" step="1" id="enC_cant" value="${it.cantidad||''}"></div>
+    <div class="full"><label class="fld">Se completa con el excedente de otro renglón (opcional)</label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><select class="ctl" id="enC_toma" style="max-width:320px"><option value="">— no —</option>${Object.entries(items).filter(([k,v])=>v&&k!==id).sort((a,b)=>((a[1].orden||0)-(b[1].orden||0))).map(([k,v])=>`<option value="${k}" ${it.tomaDe===k?'selected':''}>${esc(v.tipo||'')} · ${esc(v.producto)}</option>`).join('')}</select><span class="muted" style="font-size:12px">Primero se llena este renglón hasta su cantidad con esos artículos; lo que sobra queda en el otro.</span></div>
+      <div id="enC_tomaArts" class="en-oc" style="margin-top:6px"></div></div>
     <div class="full"><label class="fld">Artículos RUG que cumplen este renglón</label><input class="ctl" id="enC_q" placeholder="Filtrar…" style="max-width:260px;margin-bottom:6px">
       <div id="enC_lista" style="max-height:300px;overflow:auto;border:1px solid var(--gray-200);border-radius:8px;padding:6px 10px">
       ${arts.map(([k,a])=>{ const otro=enOtro(k); const e=R.ent[k]; const tot=e?R.CON.reduce((s,c)=>s+(e[c]||0),0):0; return `<label class="toggle" data-txt="${esc(normHdr([a.codigo,a.articulo,a.color].join(' ')))}" style="display:flex;gap:8px;padding:3px 0;font-weight:500;${otro?'color:var(--gray-400)':''}"><input type="checkbox" data-art="${esc(k)}" ${sel.has(k)?'checked':''}> <span class="cod" style="min-width:72px;font-family:var(--font-c)">${esc(a.codigo||'—')}</span> <span>${esc(a.articulo)}${a.color?' · '+esc(a.color):''}</span> <span class="muted" style="margin-left:auto;white-space:nowrap">${tot?units(tot)+' u.':''}${otro?' · en «'+esc(otro)+'»':''}</span></label>`; }).join('')}
@@ -2245,10 +2262,15 @@ function enModalContratoItem(id){
   </div>`;
   const ovl=enModal(id?'Renglón del contrato':'Nuevo renglón del contrato', body, `${id?'<button class="btn ghost" id="enC_del" style="margin-right:auto;color:var(--red)">Borrar renglón</button>':''}<button class="btn ghost" data-x>Cancelar</button><button class="btn red" id="enC_ok">Guardar</button>`, true);
   ovl.querySelector('#enC_q').addEventListener('input',e=>{ const q=normHdr(e.target.value); ovl.querySelectorAll('#enC_lista label').forEach(l=>l.style.display=(!q||l.dataset.txt.includes(q))?'':'none'); });
+  const selToma=ovl.querySelector('#enC_toma'), boxToma=ovl.querySelector('#enC_tomaArts');
+  const pintaToma=()=>{ const src=items[selToma.value]; if(!src){ boxToma.innerHTML=''; return; } const cur=new Set(it.tomaDe===selToma.value? (it.tomaArts||src.arts||[]) : (src.arts||[])); boxToma.innerHTML=(src.arts||[]).map(a=>`<label class="toggle"><input type="checkbox" data-toma="${esc(a)}" ${cur.has(a)?'checked':''}> ${esc((EN.articulos[a]||{}).codigo||a)}</label>`).join('')||'<span class="muted">ese renglón no tiene artículos</span>'; };
+  selToma.addEventListener('change',pintaToma); pintaToma();
   ovl.querySelector('#enC_ok').addEventListener('click',async()=>{
     const nid=id||('c'+Date.now().toString(36)); const arts=[...ovl.querySelectorAll('#enC_lista input:checked')].map(i=>i.dataset.art);
     const prod=String(ovl.querySelector('#enC_prod').value||'').trim(); if(!prod){ toast('Cargá el producto'); return; }
+    const tomaDe=ovl.querySelector('#enC_toma').value||null; const tomaArts=tomaDe? [...ovl.querySelectorAll('#enC_tomaArts input:checked')].map(i=>i.dataset.toma) : null;
     const nuevo={ ...it, tipo:String(ovl.querySelector('#enC_tipo').value||'').trim(), producto:prod, cantidad:Math.max(0,Math.round(+ovl.querySelector('#enC_cant').value||0)), arts, orden: it.orden || (Object.values(items).reduce((m,i)=>Math.max(m,(i&&i.orden)||0),0)+1) };
+    if(tomaDe){ nuevo.tomaDe=tomaDe; nuevo.tomaArts=tomaArts; } else { delete nuevo.tomaDe; delete nuevo.tomaArts; }
     if(!EN.contrato) EN.contrato={}; if(!EN.contrato.items) EN.contrato.items={}; EN.contrato.items[nid]=nuevo;
     try{ await enPut('contrato/items/'+nid,nuevo); toast('Renglón guardado'); }catch(e){ toast('No se pudo guardar: '+e.message); }
     ovl.remove(); enRender();
@@ -2273,7 +2295,7 @@ function enModalRemitos(){
   Object.entries(EN.entregas).forEach(([id,e])=>{ if(!e||!e.nro) return; const r=porNro[e.nro]=porNro[e.nro]||{u:0,n:0,fecha:'',ids:[]}; r.u+=+e.cant||0; r.n++; r.ids.push(id); if(!r.fecha||(e.fecha&&e.fecha<r.fecha)) r.fecha=e.fecha||r.fecha; });
   const nros=[...new Set([...Object.keys(EN.remitos||{}),...Object.keys(porNro)])].sort((a,b)=>(+b)-(+a));
   const lbl=o=>o==='drive'?'Drive':o==='excel'?'Excel':o==='manual'?'A mano':o||'';
-  const filaHtml=nro=>{ const m=EN.remitos[nro]||{}; const d=porNro[nro]||{u:0,n:0,fecha:''}; return `<tr data-nro="${esc(nro)}"><td class="cod">${esc(nro)}</td><td style="white-space:nowrap">${enFmtFecha(d.fecha)}</td><td class="num">${d.n?units(d.u):'·'}</td><td class="num">${d.n||'·'}</td><td><select data-rem style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:5px;font-size:12px"><option value="">— sin disciplina —</option>${enOptsCanal(m.canal)}<option value="${EN_REM_X}" ${m.canal===EN_REM_X?'selected':''}>Fuera del control (prensa, fotos…)</option></select></td><td class="muted" style="font-size:11px">${esc(lbl(m.origen))}${m.por?' · '+esc(String(m.por).split('@')[0]):''}</td></tr>`; };
+  const filaHtml=nro=>{ const m=EN.remitos[nro]||{}; const d=porNro[nro]||{u:0,n:0,fecha:''}; return `<tr data-nro="${esc(nro)}"><td class="cod">${esc(nro)}</td><td style="white-space:nowrap">${enFmtFecha(d.fecha)}</td><td class="num">${d.n?units(d.u):'·'}</td><td class="num">${d.n||'·'}</td><td><select data-rem style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:5px;font-size:12px"><option value="">— sin disciplina —</option>${enOptsCanal(m.canal)}<option value="${EN_REM_X}" ${m.canal===EN_REM_X?'selected':''}>Fuera del control</option></select></td><td class="muted" style="font-size:11px">${esc(lbl(m.origen))}${m.por?' · '+esc(String(m.por).split('@')[0]):''}</td></tr>`; };
   const body=`<div class="banner info"><span class="ic">🗂</span><span>El sistema factura el contrato al cliente <b>RUGE CONTRATO</b> sin decir a qué disciplina fue. Acá va el número de cada remito con su disciplina (la que dice la carpeta del Drive de remitos firmados). Al importar el reporte de ventas, el portal usa esta lista; lo que falta lo elegís en la importación y queda guardado.</span></div>
     <div class="en-tools" style="margin:8px 0"><input class="ctl" id="enR_q" placeholder="Buscar nro…" style="max-width:140px"><span class="sp"></span><input class="ctl" id="enR_nro" placeholder="Nro de remito nuevo" style="max-width:150px"><select class="ctl" id="enR_canal"><option value="">— disciplina —</option>${enOptsCanal('')}<option value="${EN_REM_X}">Fuera del control</option></select><button class="btn sm" id="enR_add">+ Agregar</button></div>
     <div class="tbl-wrap" style="max-height:440px;overflow:auto"><table class="grid en" style="min-width:0" id="enR_tbl"><thead><tr><th>Remito</th><th>Fecha</th><th class="num">Unid.</th><th class="num">Reng.</th><th>Disciplina</th><th>Origen</th></tr></thead><tbody>${nros.map(filaHtml).join('')||'<tr><td colspan="6" class="empty">Todavía no hay remitos mapeados</td></tr>'}</tbody></table></div>`;

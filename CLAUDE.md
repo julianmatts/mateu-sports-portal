@@ -303,7 +303,17 @@ Código en el mismo `index.html`, bloque «ENTREGAS EDLP» (funciones con prefij
   remitos que había tomado del Excel y sumó la NcI 6708 → Plantel, 53920 (no está en el reporte) y
   54064 → carpeta «Campaña socios» = `x` (fuera del control, 50 RUG858 de julio). Mapa al 09/09/2026:
   Fútbol Profesional 52, Femenino 11, Reserva 11, Juvenil 5 (+ 53922 a mano, camisetas RUG259/261),
-  Protocolo 3, fuera del control 3 (prensa 53866, fotografía 53880, campaña socios 54064). Se edita en Entregas →
+  Protocolo 3, **Prensa y fotografía** (`prensa`: 53866 + 53880) y **Campaña socios** (`socios`:
+  54064): estas dos son disciplinas del contrato desde el 09/09/2026 (pedido de Juli, como Protocolo),
+  así que `x` queda solo para lo que de verdad no entra (RRHH). Con eso el contrato concilia EXACTO
+  con la estadística de ventas: 13.255 brutas.
+- **Desborde entre renglones del contrato (regla de Juli 09/09/2026 para las medias)**: un renglón
+  con `tomaDe:<id>` + `tomaArts:[…]` se llena primero, hasta su `cantidad`, con las unidades de esos
+  artículos del otro renglón; el excedente queda en el origen (`enCalcContrato`, en orden de
+  `orden`; la tabla muestra «← se completa con … · tomó N» y «→ cedió N»). Hoy: «media» y «media 2»
+  (300 c/u) toman de «medias entrenamiento» (arts RUG942 + RUG943 + RUG533 pico) solo las comunes
+  RUG942/943; la pico RUG533 solo cuenta como entrenamiento; las tubo (`noSuma`) no cuentan nunca.
+  Se edita en el ✎ del renglón («Se completa con el excedente de otro renglón»). Se edita en Entregas →
   **«🗂 Remitos → disciplina»** (`enModalRemitos`: cambiar la disciplina reescribe las entregas ya
   cargadas de ese remito; «fuera del control» las saca) y en la propia importación (elegir la
   disciplina en una fila la copia a las demás filas del mismo remito y queda guardada).
