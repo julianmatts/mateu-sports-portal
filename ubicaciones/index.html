@@ -974,10 +974,22 @@ function saveLS(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e)
 function readLS(k){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):null; }catch(e){ return null; } }
 function delLS(k){ try{ localStorage.removeItem(k); }catch(e){} }
 
-async function fetchJSON(url){
-  const r = await fetch(url);
-  if(!r.ok) throw new Error('HTTP '+r.status);
-  return r.json();
+/* Todo pedido a Firebase lleva un tope de tiempo. Con internet inestable un
+   fetch puede quedar colgado minutos sin fallar: frenaba el refresco y dejaba
+   la búsqueda por código de barras en «Buscando…» para siempre (reclamo del
+   puesto de consulta, 10/09/2026). Pasado el tope se corta y se reintenta. */
+const FETCH_TIMEOUT_MS = 15000;
+async function fetchJSON(url, ms){
+  const ctrl = window.AbortController ? new AbortController() : null;
+  let timer;
+  const tope = new Promise((_, rej)=>{
+    timer = setTimeout(()=>{ if(ctrl) ctrl.abort(); rej(new Error('timeout')); }, ms || FETCH_TIMEOUT_MS);
+  });
+  try{
+    const r = await Promise.race([fetch(url, ctrl ? {signal:ctrl.signal} : undefined), tope]);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return await Promise.race([r.json(), tope]);
+  } finally { clearTimeout(timer); }
 }
 const putJSON   = (url,d)=>fetch(url,{method:'PUT',  body:JSON.stringify(d),headers:{'Content-Type':'application/json'}});
 const patchJSON = (url,d)=>fetch(url,{method:'PATCH',body:JSON.stringify(d),headers:{'Content-Type':'application/json'}});
@@ -1061,7 +1073,12 @@ async function eanRemoto(q){
       if(!(ck in _eanCache)) _eanCache[ck] = fetchJSON(EAN_FB+'/suf/'+suf+'.json').then(k=> k ? fetchJSON(EAN_FB+'/'+k+'.json') : null);
       rec = await _eanCache[ck];
     }
-  }catch(e){ return null; }
+  }catch(e){
+    // sin conexión o tardó demasiado: el error NO queda en el cache (si no, ese
+    // código daba «no vinculado» o quedaba colgado hasta recargar la página)
+    delete _eanCache[g]; delete _eanCache['s'+suf];
+    return {error:true};
+  }
   if(!rec || !rec.codigo) return null;
   const key = fbKey(rec.codigo);
   return {key: DATA.articulos[key] ? key : null, codigo:rec.codigo, t:rec.t||'', origen:'mapa'};
@@ -1302,7 +1319,12 @@ const sucPath = ()=> FB + '/sucursales/' + SUC;
     // Modo mostrador del salón: directo a Buscar, sin selector de perfiles.
     // Los perfiles se cargan igual: firman los comentarios de los artículos.
     SUC = SESSION.sucursal;
-    cargarPerfiles().then(montarApp);
+    // sin internet al arrancar, los perfiles no pueden trabar la pantalla del
+    // salón: a los 8 s se monta igual (el buscador reintenta solo)
+    let montado = false;
+    const montarUnaVez = ()=>{ if(!montado){ montado = true; montarApp(); } };
+    cargarPerfiles().then(montarUnaVez, montarUnaVez);
+    setTimeout(montarUnaVez, 8000);
   } else {
     montarGlobal();
   }
@@ -1659,7 +1681,18 @@ function wireStatic(){
    estanterias, feedback) se baja únicamente cuando `rev` cambió, o cada 10 min
    como red de seguridad (por si escribe un cliente viejo que no marca rev,
    o se edita a mano en la consola de Firebase). */
-let lastRev = null, lastFullTs = 0;
+/* Sin conexión (10/09/2026): un pedido que falla devuelve `undefined` y NUNCA
+   pisa lo que ya estaba. Antes, si internet se cortaba a mitad de la descarga
+   del catálogo, `articulos` quedaba vacío y el puesto no encontraba nada
+   durante 10 minutos (hasta la siguiente descarga completa). La búsqueda es
+   local: con el catálogo en memoria sigue funcionando aunque no haya red. */
+let lastRev = null, lastFullTs = 0, fullVer = 0, lastFullStr = '';
+function avisoSinConexion(){
+  const n = Object.keys(DATA.articulos||{}).length;
+  showErr(n && lastSyncTs
+    ? 'Sin conexión a internet. La búsqueda sigue funcionando con los datos de las '+fmtHora(lastSyncTs)+'. Reintentando…'
+    : 'Sin conexión con la base de Ubicaciones. Reintentando…');
+}
 async function refrescarDatos(){
   if(!SUC) return false;
   const [meta, consultas, reposicion] = await Promise.all([
@@ -1670,24 +1703,38 @@ async function refrescarDatos(){
   if(meta===undefined && consultas===undefined){
     // puede ser base vacía o sin conexión: probamos un fetch que distinga
     try{ await fetchJSON(sucPath()+'/config.json'); hideErr(); }
-    catch(e){ showErr('Sin conexión con la base de Ubicaciones. Reintentando…'); return false; }
+    catch(e){ avisoSinConexion(); return false; }
   } else hideErr();
   const rev = meta ? (meta.rev||null) : null;
-  if(!DATA.__full || rev !== lastRev || (Date.now()-lastFullTs) > 600000){
+  let ok = meta!==undefined && consultas!==undefined;
+  // si `meta` no llegó no se sabe si cambió `rev`: no se baja el catálogo por eso
+  if(!DATA.__full || (meta!==undefined && rev !== lastRev) || (Date.now()-lastFullTs) > 600000){
     const [articulos, estanterias, feedback] = await Promise.all([
-      fetchJSON(sucPath()+'/articulos.json').catch(()=>null),
-      fetchJSON(sucPath()+'/estanterias.json').catch(()=>null),
-      fetchJSON(sucPath()+'/feedback.json').catch(()=>null),
+      fetchJSON(sucPath()+'/articulos.json', 90000).catch(()=>undefined),   // ~1,4 MB: más margen
+      fetchJSON(sucPath()+'/estanterias.json').catch(()=>undefined),
+      fetchJSON(sucPath()+'/feedback.json').catch(()=>undefined),
     ]);
-    DATA = { articulos:articulos||{}, estanterias:estanterias||{}, meta:meta||{}, consultas:consultas||{}, feedback:feedback||{}, reposicion:reposicion||{}, __full:true };
-    lastRev = rev; lastFullTs = Date.now();
-  } else {
-    DATA.meta = meta||{};
-    DATA.consultas = consultas||{};
-    DATA.reposicion = reposicion||{};
+    if(articulos!==undefined && estanterias!==undefined){
+      DATA.articulos = articulos||{};
+      DATA.estanterias = estanterias||{};
+      if(feedback!==undefined) DATA.feedback = feedback||{};
+      DATA.__full = true;
+      if(meta!==undefined) lastRev = rev;
+      lastFullTs = Date.now();
+      // el catálogo se compara solo cuando se baja (antes se serializaba TODO cada 5 s)
+      const s = JSON.stringify([DATA.articulos, DATA.estanterias, DATA.feedback]);
+      if(s!==lastFullStr){ lastFullStr = s; fullVer++; }
+    } else {
+      ok = false;   // se cortó a mitad: queda el catálogo anterior y se reintenta en la próxima vuelta
+      avisoSinConexion();
+    }
   }
-  lastSyncTs = Date.now();
-  const hash = JSON.stringify(DATA);
+  if(meta!==undefined) DATA.meta = meta||{};
+  if(consultas!==undefined) DATA.consultas = consultas||{};
+  if(reposicion!==undefined) DATA.reposicion = reposicion||{};
+  DATA.meta = DATA.meta||{}; DATA.consultas = DATA.consultas||{}; DATA.reposicion = DATA.reposicion||{}; DATA.feedback = DATA.feedback||{};
+  if(ok) lastSyncTs = Date.now();
+  const hash = fullVer+'|'+JSON.stringify([DATA.meta, DATA.consultas, DATA.reposicion]);
   if(hash!==lastHash){ lastHash=hash; return true; }
   return false;
 }
@@ -1696,31 +1743,45 @@ function hayUiBloqueante(){
   return $('sheetOverlay').classList.contains('show') || $('modalOverlay').classList.contains('show');
 }
 
-async function pollLoop(){
+/* Un solo ciclo de refresco a la vez. Cada arranque abre una «generación»
+   nueva y el ciclo viejo, al terminar su pedido, se retira en vez de
+   reprogramarse. Antes, si un pedido quedaba colgado mientras la pantalla se
+   apagaba y prendía, se sumaban ciclos en paralelo y al volver internet todos
+   bajaban el catálogo a la vez (el puesto se trababa). */
+let pollGen = 0;
+async function pollLoop(gen, primera){
   try{
     const cambio = await refrescarDatos();
-    if(cambio && !hayUiBloqueante()) renderVistaActiva();
-    if(cambio && $('histOverlay').classList.contains('show')) renderHistorial();
-    if(cambio && $('repOverlay').classList.contains('show')) renderRepone();
-    if(cambio) reponeBadge();
+    if(gen!==pollGen) return;
+    if(primera){ renderVistaActiva(); reponeBadge(); podarConsultas(); }
+    else {
+      if(cambio && !hayUiBloqueante()) renderVistaActiva();
+      if(cambio && $('histOverlay').classList.contains('show')) renderHistorial();
+      if(cambio && $('repOverlay').classList.contains('show')) renderRepone();
+      if(cambio) reponeBadge();
+    }
     renderStatusbar();
   }catch(e){}
-  pollTimer = setTimeout(pollLoop, POLL_MS);
+  if(gen!==pollGen || document.hidden) return;
+  pollTimer = setTimeout(()=> pollLoop(gen), POLL_MS);
 }
 
 function iniciarPolling(){
   detenerPolling();
-  refrescarDatos().then(()=>{ renderVistaActiva(); renderStatusbar(); reponeBadge(); podarConsultas(); });
-  pollTimer = setTimeout(pollLoop, POLL_MS);
+  pollLoop(pollGen, true);
   if(!window.__syncTicker) window.__syncTicker = setInterval(renderSyncLabel, 1000);
 }
-function detenerPolling(){ if(pollTimer){ clearTimeout(pollTimer); pollTimer=null; } }
+function detenerPolling(){ pollGen++; if(pollTimer){ clearTimeout(pollTimer); pollTimer=null; } }
 
 // Con la pestaña en segundo plano no se pollea (ahorra cuota de Firebase
 // en los puestos que quedan abiertos todo el día); al volver, se refresca.
 document.addEventListener('visibilitychange', ()=>{
   if(document.hidden){ detenerPolling(); }
   else if(SUC && $('app').style.display==='block'){ lastFullTs=0; iniciarPolling(); }
+});
+// volvió internet: refrescar ya, sin esperar la próxima vuelta
+window.addEventListener('online', ()=>{
+  if(SUC && $('app').style.display==='block' && !document.hidden) iniciarPolling();
 });
 
 function renderVistaActiva(){
@@ -2199,6 +2260,14 @@ function pintarResultadoEan(q, r){
     autoRegTimer = setTimeout(()=> registrarBusqueda({q:searchQuery.trim(), key:r.key, n:1}), 300);
     return;
   }
+  if(r && r.error){
+    // se cortó internet: no es «sin vincular», es que no se pudo preguntar
+    cont.innerHTML = '<div class="empty">No se pudo consultar el código de barras <b>'+esc(eanDigits(q))+'</b>: no hay conexión a internet.'+
+      '<br><span class="hint">Probá de nuevo en unos segundos, o buscá el artículo por nombre o código.</span></div>'+
+      '<div style="text-align:center;margin-top:8px"><button class="btn btn-primary" id="btnReintEan">↻ Reintentar</button></div>';
+    $('btnReintEan').addEventListener('click', ()=> renderResultados());
+    return;
+  }
   cont.innerHTML = '<div class="empty">'+
     (r && r.codigo
       ? 'El código de barras es del artículo <b>'+esc(r.codigo)+'</b>'+(r.t?' (talle '+esc(r.t)+')':'')+', que <b>no está en el stock de hoy</b> de esta sucursal.'
@@ -2449,6 +2518,7 @@ async function procesarEscaneo(codigo){
     if(searchQuery!==codigo) return;   // ya se escaneó otra cosa
     if(r && r.key) art = r.key;
     else {
+      if(r && r.error){ toast('Sin conexión: no se pudo consultar el código de barras. Probá de nuevo.'); return; }
       if(!(r && r.codigo) && (canAssign() || MODE==='puesto')) toastAccion('Código de barras sin vincular: '+eanDigits(codigo), 'Vincular', ()=> abrirSheetVincularEan(codigo));
       return;   // renderResultados / pintarResultadoEan ya muestran el detalle
     }

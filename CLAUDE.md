@@ -812,6 +812,18 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
     códigos que no estaban (de a 250, sin pisar nunca un vínculo existente), así sirven en
     todas las sucursales. El resumen de la carga muestra cuántos y el ⇩ Excel del módulo
     suma la columna «Cód. barras». Tests: `node --test lib/ean.test.js`.
+- **Sin conexión (10/09/2026, reclamo del puesto «a veces no busca»)**: la búsqueda es
+  local (catálogo en memoria), así que tiene que seguir andando aunque se corte internet.
+  `fetchJSON` lleva tope de tiempo (15 s; el catálogo 90 s) — antes un pedido colgado no
+  fallaba nunca. `refrescarDatos` **nunca pisa con vacío**: un pedido fallido devuelve
+  `undefined` y se conserva lo anterior (antes un corte a mitad de la descarga dejaba
+  `articulos` en `{}` y el puesto no encontraba nada por 10 min). Aviso `avisoSinConexion`
+  («la búsqueda sigue funcionando con los datos de las HH:MM»), refresco inmediato con el
+  evento `online`, un solo ciclo de polling por «generación» (`pollGen`: los ciclos colgados
+  ya no se suman al apagar/prender la pantalla) y el catálogo se serializa para comparar solo
+  cuando se baja, no cada 5 s. El EAN que no se pudo consultar muestra «No se pudo consultar…
+  ↻ Reintentar» y el error no queda en `_eanCache`. El puesto monta la pantalla a los 8 s
+  aunque los perfiles no respondan.
 - **Artículos nuevos sin ubicar** (prioridad del depósito): «nuevo» = `fechaAlta`
   posterior a la **primera carga** de la sucursal (cada carga graba un único
   timestamp; así el día 1 no se marca todo) y ≤ `NUEVO_DIAS` (7). Se destacan con
