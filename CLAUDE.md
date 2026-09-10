@@ -369,8 +369,12 @@ llamarse **SubRub** y apareció una columna **Año**. Sin reconocer el segmento,
 detecta como jerárquico, cae al lector plano y ahí el daño es silencioso: suma las filas de
 totales con las de detalle (stock ~3× inflado), inventa la marca «Total» y **no fusiona** —
 publicar eso borraba ene–jul. Por eso `seg` acepta `SEGMENTO`/`SUBRUB`/`SUBRUBRO` y, si viene
-columna `AÑO`, ese año manda sobre el del campo de la pantalla. Si el sistema vuelve a renombrar
-algo, sumar el alias ANTES de publicar y mirar que el resumen diga «Fusión: …».
+columna `AÑO`, ese año manda sobre el del campo de la pantalla. **Y para que el próximo rename no
+vuelva a depender de un programador (09/09/2026):** si ningún alias pega, la columna de segmento se
+busca **por contenido** — la columna de texto, con pocos valores distintos, que trae la fila «Total»
+de cada marca (lo avisa en el resumen); y si aun así no aparece pero el archivo TIENE filas de
+totales, la carga **se frena con un error** en vez de leerse plana. Ojo: las filas «Total» están al
+FINAL del archivo, así que esas dos búsquedas recorren todas las filas, no las primeras N.
 Cuando no encuentra los encabezados, el error **lista las hojas y los encabezados que leyó**
 en vez de un mensaje genérico. ⚠️ El export tiene que traer el **mes completo con todos los
 rubros**: si sube uno solo (p.ej. el de Calzado), los demás quedan sin ese mes y figuran «sin

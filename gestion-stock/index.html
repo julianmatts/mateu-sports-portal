@@ -4722,6 +4722,46 @@ function msParseRatioFlat(wb, anio, fileName){
     return {errorFatal:'No encontré la fila de encabezados. Hace falta SUCURSAL, RUBRO, MARCA, STOCK y VENTAS (Vtas.cant.) en alguna hoja, en las primeras 30 filas. Lo que leí en el archivo — '+diag,
       errores, comments:[], nFilas:0, nMarcas:0};
   }
+  // El nombre de la columna de segmento cambia solo (SEGMENTO en julio, SubRub en
+  // agosto). Si ningún alias pegó, se la busca POR CONTENIDO: es la columna de
+  // texto, con pocos valores distintos, que trae la fila «Total» de cada marca.
+  // Así un rename nuevo no manda la carga de vuelta a un programador.
+  if(map.seg===undefined){
+    const usadas = {}; for(const k in map) usadas[map[k]] = 1;
+    const hasta = rows.length;   // las filas «Total» suelen estar al final: se recorre todo
+    let mejor = -1, mejorN = 0;
+    const ancho = Math.max.apply(null, [0].concat(rows.slice(hIdx, hasta).map(r=> (r||[]).length)));
+    for(let col=0; col<ancho; col++){
+      if(usadas[col]) continue;
+      const vals = {}; let n = 0, totales = 0, numericos = 0;
+      for(let i=hIdx+1;i<hasta;i++){
+        const v = (rows[i]||[])[col];
+        if(v===null || v===undefined || v==='') continue;
+        n++;
+        if(typeof v==='number') numericos++;
+        const t = normStr(v); vals[t] = 1;
+        if(t==='TOTAL') totales++;
+      }
+      const distintos = Object.keys(vals).length;
+      if(!n || totales===0 || numericos>n*0.2 || distintos>40) continue;
+      if(totales > mejorN){ mejorN = totales; mejor = col; }
+    }
+    if(mejor>=0){
+      map.seg = mejor;
+      const rot = String((rows[hIdx]||[])[mejor]||'').trim();
+      errores.push('La columna de segmento se llama «'+(rot||'sin nombre')+'»: la reconocí por su contenido.');
+    }
+  }
+  // Red de seguridad: si el archivo trae filas de totales (Marca="Total") y aun así
+  // no hay columna de segmento, NO se puede leer plano — sumaría los totales con el
+  // detalle (stock inflado) y encima no fusionaría. Mejor frenar y avisar.
+  if(map.seg===undefined){
+    let conTotal = 0;
+    for(let i=hIdx+1;i<rows.length;i++) if(normStr((rows[i]||[])[map.marca])==='TOTAL'){ conTotal++; break; }
+    if(conTotal) return {errorFatal:'El archivo trae filas de totales (Marca «Total») pero no encuentro la columna de segmento '+
+      '(SEGMENTO / SubRub). Leerlo así sumaría los totales con el detalle y publicaría el stock inflado. '+
+      'Avisá para agregar el nombre nuevo de esa columna.', errores, comments:[], nFilas:0, nMarcas:0};
+  }
   // Si el archivo trae columna AÑO (el export de agosto 2026 en adelante), manda
   // ese año y no el del campo de la pantalla: evita publicar un mes con el año
   // equivocado sin que nadie lo note.
