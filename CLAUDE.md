@@ -27,7 +27,7 @@ mateu-sports-portal/
 ├── data/indicadores/   # salida particionada (un JSON por sucursal + cadena.json) que consume el módulo
 ├── regalias/           # Liquidador de Regalías RUGE/EDLP (Estudiantes): clasifica ventas, aplica escalas, exporta el Excel del mes y genera la presentación comercial (plantilla-presentacion.html, embebida en index.html)
 ├── evaluaciones/       # Evaluaciones de Supervisor: carga semanal operativa+actitudinal por sucursal, ranking, gráficos y vista de encargado. Escribe a Firebase (base evaluaciones-mateu). Ver "Evaluaciones de Supervisor" abajo.
-├── barrida/            # Análisis de Reserva Depósito Central: cruce semanal (subir Excel) de la reserva del depósito central con las ventas por sucursal → alertas de reposición posible y de reserva parada. Firebase: reusa recepciones-mateu (nodo barrida/). Ver "Análisis de Reserva Depósito Central" abajo.
+├── barrida/            # Análisis de Reserva Depósito Central: pestaña «Barrida de reserva» (cruce semanal de la reserva del depósito con las ventas por sucursal → reposición posible y reserva parada) y pestaña «Reparto inicial» (lo que entró, remito por remito, desde la estadística de remitos). Firebase: reusa recepciones-mateu (nodo barrida/). Ver "Análisis de Reserva Depósito Central" y "Reparto inicial" abajo.
 ├── objetivos/          # Objetivos de Venta Semanal: gerencia carga el objetivo (Meta) de venta por sucursal por semana (subiendo el Excel "PMS Objetivos" o a mano) → dashboard vs. real; cada sucursal ve su objetivo en Indicadores. Firebase: reusa recepciones-mateu (nodo objetivos/). Ver "Objetivos de Venta Semanal" abajo.
 ├── capacitaciones/     # Academia de Ventas FUNCIONAL: cursos y programas del capacitador, avance por persona con quiz, certificados, equipo/ranking y encuestas. Ver "Academia de Ventas" abajo. (Las pantallas .dc.html son el prototipo original de Design; quedan de referencia.)
 ├── tareas/             # Tareas de la Sucursal: Cambio de precios, Sectores de marcas, Limpieza (checklist) y Vidrieras (alerta por días sin cambios), con foto antes/después y comparativa. Firebase: reusa recepciones-mateu (nodo tareas/). Ver "Tareas de la Sucursal" abajo.
@@ -1273,6 +1273,57 @@ Indicadores, ver abajo).
 
 **Puesta en marcha: ya funciona (usa `recepciones-mateu`, que está en vivo). No hace
 falta crear ninguna base.**
+
+## Reparto inicial (pestaña de `barrida/`, 10/09/2026)
+
+Pedido de Juli: **diferenciar la barrida de reserva del reparto inicial, en dos pestañas**. La
+pestaña «Reposición» pasó a llamarse **«Barrida de reserva»** (sin cambios: reporte de stock +
+estadística de ventas) y se sumó **«Reparto inicial»**, que reparte lo que **entró** y se alimenta
+de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `barrida/index.html`
+(funciones `rep*`, estado `state.rep`).
+
+- **Entrada**: el CSV pivot «Estad remitos <año>.csv» (una columna Cant.recibido + Costo por mes,
+  encabezados de texto vacíos → las columnas se reconocen por contenido en `repParseRemitos`: nro
+  de remito `0005-000…`, ID ITEM, código, marca, rubro, subrubro, disciplina, tipo), el Excel
+  «Remitos de ingreso» (mismo pivot con encabezados) o un export con columna Remito + columnas de
+  talle. Se elige el **mes de ingreso** y se marcan los remitos (los ya repartidos se ocultan).
+- ⚠ **El export de remitos NO trae talles.** Cada artículo se abre con la curva que tiene hoy en la
+  **reserva del depósito** (el mismo reporte de stock de la Barrida, `repReserva`; también sirve el
+  stock global con las filas «Depósito»), repartida entre sus remitos por la cantidad de cada uno
+  (`repTallesDe`, mayor resto). Si la reserva tiene menos que lo que entró, se reparte lo que hay y
+  la tira lo avisa («N u. de los remitos ya no están en la reserva»). Si el sistema saca la
+  estadística de remitos abierta por talle, se usan esos talles exactos.
+- **A quién y en qué orden** (`repCandidatos`/`cmpReparto`): la marca tiene que estar en la
+  **Asignación de Marcas** de la sucursal (`asignacion_marcas/data` = calzado, `data_indumentaria`;
+  accesorios mira las dos; sin asignación cargada entra igual con el rango más bajo; marcas «niño»
+  solo para artículos de niño; si la marca tiene disciplinas, la del artículo tiene que estar —
+  tilde); **Mateu Kids (`SOLO_NINO`) no recibe adulto**. Orden: ya lo recibió en un reparto
+  anterior (memoria, tilde) → marca principal/niño > especial > secundaria → **categoría** →
+  **venta** de la marca en el rubro el último mes de Meses de Stock (`ventasMarcaDe`, en tres
+  niveles respecto de la que más vende) → **meses de stock** (menos = antes). Destinos por defecto:
+  todas menos los outlets; Diagonal 80 entra (`SUC_EXTRA`, la Barrida todavía no la toma).
+- **Cuánto** (`repRepartirArt`): talles centrales 2 unidades (hasta 3 si alcanza), resto 1; a una
+  sucursal no se le manda una curva rota (mínimo de talles + algún central); el excedente se sigue
+  repartiendo de a una por talle (tilde); **queda ~1 curva en el depósito** (1 por talle con 2 o
+  más, en el remito que más tiene del artículo). Todo parametrizable en «2 · Cómo repartir».
+- **Talles centrales** (`CENTRALES_DEF`, editables en pantalla y compartidos en
+  `barrida/repartoConfig/centrales`): calzado dama 37/37.5/38 AR + US 5.5/6/6.5 (Puma UK
+  4.5/5/5.5), hombre 41/41.5/42 AR + US 8.5/9/9.5 (Puma UK 8/8.5/9); indumentaria dama S-M, hombre
+  y unisex M-L, niño 10-12 (+10A/12A/YM). Los US/UK se calibraron con la estadística de ventas real
+  del 08/09/2026. Calzado niño/unisex/infante no tiene regla: los talles del medio del artículo.
+- **Un artículo en varios remitos** se reparte junto (una curva por sucursal) y cada unidad sale del
+  remito que más le cubre / que ya le está dando a esa sucursal.
+- **Salida**: vista «Por remito» (una tarjeta por remito con cada artículo, sucursales en orden de
+  prioridad con sus casilleros de talle y «Queda en el depósito»), «Por sucursal» y «Sin repartir»
+  (con el motivo); ⇩ Excel con **una hoja por remito** (para imprimir en su ubicación) + resumen por
+  sucursal; 🖨 Imprimir.
+- **Firebase** (`recepciones-mateu/barrida/`): `repartos/<AAAA-MM-DD_HHMMSS>` = `{meta, remitos,
+  porSuc}` (porSuc agrupado por slug, por si después lo lee Indicadores/Picking),
+  `remitosRepartidos/<nro>` = `{rep, fecha, por}` y `repartoHist/<idItem>/<slug>` = `{t:[[talle,q]],
+  ts, rep}` (memoria de 120 días). «Borrar» un reparto guardado devuelve sus remitos a pendiente y
+  lo descuenta de la memoria.
+- Probado el 10/09/2026 con «Estad remitos 2026.csv» (2.102 remitos) + el reporte de stock del
+  depósito de Puma: 9 remitos de septiembre → 540 u. a 14 sucursales, 77 quedan.
 
 ## Panel General de Logística (`logistica/`, 08/09/2026)
 
