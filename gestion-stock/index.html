@@ -4689,10 +4689,11 @@ function msParseRatioFlat(wb, anio, fileName){
     suc:['SUCURSAL','SUCURSALES','SUC','TIENDA','LOCAL'],
     rubro:['RUBRO','RUBROS'],
     marca:['MARCA','MARCAS'],
-    seg:['SEGMENTO','SEGMENTOS','SEG','GENERO'],
+    seg:['SEGMENTO','SEGMENTOS','SEG','SUBRUB','SUBRUBRO','SUBRUBROS','GENERO'],
     stock:['STOCK','STOCKCANT','CANTSTOCK','EXISTENCIA','EXISTENCIAS'],
     ventas:['VENTAS','VENTA','VTASCANT','CANTVTAS','VTAS','VENTASCANT','UNIDADESVENDIDAS','VENDIDO'],
     ratio:['RATIO'],
+    anio:['AÑO','ANO','ANIO','YEAR','EJERCICIO'],
     com:['COMENTARIO','COMENTARIOS','OBSERVACION','OBSERVACIONES']};
   const clave = v=> normStr(v).replace(/[.\s]/g,'');
   const ALIAS_K = {}; for(const k in ALIAS) ALIAS_K[k] = ALIAS[k].map(clave);
@@ -4721,6 +4722,17 @@ function msParseRatioFlat(wb, anio, fileName){
     return {errorFatal:'No encontré la fila de encabezados. Hace falta SUCURSAL, RUBRO, MARCA, STOCK y VENTAS (Vtas.cant.) en alguna hoja, en las primeras 30 filas. Lo que leí en el archivo — '+diag,
       errores, comments:[], nFilas:0, nMarcas:0};
   }
+  // Si el archivo trae columna AÑO (el export de agosto 2026 en adelante), manda
+  // ese año y no el del campo de la pantalla: evita publicar un mes con el año
+  // equivocado sin que nadie lo note.
+  let anioArchivo = null;
+  if(map.anio!==undefined){
+    for(let i=hIdx+1;i<Math.min(rows.length,hIdx+40);i++){
+      const v = toNumber((rows[i]||[])[map.anio]);
+      if(v>=2000 && v<=2100){ anioArchivo = v; break; }
+    }
+    if(anioArchivo && anioArchivo!==anio) errores.push('El archivo dice AÑO '+anioArchivo+': uso ese año para el dataset.');
+  }
   // Sin columna MES el mes sale del nombre del archivo («RATIO AGOSTO.xls»).
   const mesFijo = map.mes===undefined ? msMesDeNombre(fileName) : null;
   if(map.mes===undefined && !mesFijo)
@@ -4738,8 +4750,11 @@ function msParseRatioFlat(wb, anio, fileName){
   if(map.seg!==undefined){
     for(let i=hIdx+1;i<rows.length;i++){
       const r = rows[i]||[];
-      if(normStr(r[map.marca])==='TOTAL' && normStr(r[map.seg])==='TOTAL')
-        return msParseRatioJer(wb, rows, hIdx, map, anio, errores, mesDeFila);
+      if(normStr(r[map.marca])==='TOTAL' && normStr(r[map.seg])==='TOTAL'){
+        const res = msParseRatioJer(wb, rows, hIdx, map, anioArchivo||anio, errores, mesDeFila);
+        if(anioArchivo) res.anio = anioArchivo;
+        return res;
+      }
     }
   }
   const mesesSet = new Set(), sucursales = {}, comments = [];
@@ -4807,7 +4822,8 @@ function msParseRatioFlat(wb, anio, fileName){
     const n = node && node.serie[cm.mes];
     cm.ratio = n ? n.ratio : null;
   }
-  return {data:{anio, meses, thresholds, sucursales}, comments, errores, nFilas, nMarcas};
+  return {data:{anio:anioArchivo||anio, meses, thresholds, sucursales}, comments, errores, nFilas, nMarcas,
+    anio: anioArchivo||undefined};
 }
 
 /* Export jerárquico de RATIO (el reporte mensual tal cual sale del sistema,

@@ -359,6 +359,15 @@ el mes nuevo con los ya publicados (no los pisa). El lector es tolerante (08/09/
 busca los encabezados en **cualquier hoja** y en las **primeras 30 filas**, compara los
 nombres de columna sin puntos ni espacios (`Vtas.cant.` = `Vtas. Cant.` = `Ventas`), y si
 el archivo no trae columna **MES** lo deduce del nombre («RATIO AGOSTO.xls», `msMesDeNombre`).
+⚠️ **El sistema cambia los encabezados de un mes al otro.** Julio vino
+`Mes · Sucursal · Rubro · Marca · SEGMENTO · Stock · Vtas.cant. · ratio` y agosto
+`Año · Mes · Sucursal · Rubro · MARCA · SubRub · Stock · Ventas · Ratio`: el segmento pasó a
+llamarse **SubRub** y apareció una columna **Año**. Sin reconocer el segmento, el archivo NO se
+detecta como jerárquico, cae al lector plano y ahí el daño es silencioso: suma las filas de
+totales con las de detalle (stock ~3× inflado), inventa la marca «Total» y **no fusiona** —
+publicar eso borraba ene–jul. Por eso `seg` acepta `SEGMENTO`/`SUBRUB`/`SUBRUBRO` y, si viene
+columna `AÑO`, ese año manda sobre el del campo de la pantalla. Si el sistema vuelve a renombrar
+algo, sumar el alias ANTES de publicar y mirar que el resumen diga «Fusión: …».
 Cuando no encuentra los encabezados, el error **lista las hojas y los encabezados que leyó**
 en vez de un mensaje genérico. ⚠️ El export tiene que traer el **mes completo con todos los
 rubros**: si sube uno solo (p.ej. el de Calzado), los demás quedan sin ese mes y figuran «sin
