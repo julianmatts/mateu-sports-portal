@@ -363,6 +363,13 @@ Código en el mismo `index.html`, bloque «ENTREGAS EDLP» (funciones con prefij
   ✎ por renglón (`enModalContratoItem`: cantidad, tipo, producto y checklist de artículos, avisa
   si ya está en otro renglón), «+ Renglón», «⇩ Excel» (`enExportarContrato`). Al 09/09/2026:
   12.644 entregadas (11.902 en renglones + 742 fuera del anexo) = 97,3 %.
+- **Criterio de Juli (09/09/2026) para leer el cruce**: el ANEXO I es un marco para dar orden; lo
+  que manda es el total de **13.000 prendas anuales**, y el reparto por renglón varía según el uso
+  de la temporada. Mientras el total no llegue a 13.000, las entregas siguen por contrato aunque un
+  renglón esté pasado (p.ej. camiseta home) y otros con faltante. No plantear cada excedente por
+  renglón como «se factura»: la cláusula 8.4 se aplica al total. Las medias comunes son un solo
+  artículo para juego y entrenamiento (no hay «de más» real ahí); «mochilas» del anexo = solo RUG845
+  (bolsos y morrales van sin renglón).
 - Pendiente/no digitalizado: el corte S1/S2 (ene-jun / jul-ago) de las hojas ANÁLISIS
   SUPERFUTBOL/TIENDAPINCHA (el pedido es un solo número por canal).
 
