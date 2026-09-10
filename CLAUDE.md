@@ -315,7 +315,10 @@ Código en el mismo `index.html`, bloque «ENTREGAS EDLP» (funciones con prefij
   24.291 u.; respaldo del saldo en el `seed-entregas-2026.json` de la sesión del 06/09): SuperFútbol
   4.019, Tienda Pincha 7.628, Plantel 9.013, Femenino 771, Reserva 648, Juvenil 975, Protocolo 154.
   Quedaron sin disciplina el remito 54064 (jul, 50 RUG858) y la NcI 6708 (−12 RUG887): la importación
-  los vuelve a mostrar hasta que Juli los asigne. 15 códigos del reporte no estaban en el maestro
+  los vuelve a mostrar hasta que Juli los asigne. **Conciliación 09/09/2026 (tarde)**: mayoristas exactos
+  (4.019 / 7.628); contrato 13.200 = 13.255 del reporte − 17 (prensa 53866 + fotografía 53880, fuera
+  del control) − 38 (54064 y NcI 6708 sin disciplina). Ojo: `RX_COD` acepta hasta 3 letras al final
+  (`RUG858SS` = sin sponsor, Femenino/Reserva); con `[A-Z]?` esos 35 renglones (556 u.) no entraban. 15 códigos del reporte no estaban en el maestro
   (RUG944–948, 957–959, 974/975, 464/466, 533, 601, 796) y se crearon marcados «NUEVO».
 - **Vista «📜 Contrato» (09/09/2026)**: cruza el contrato oficial con lo entregado. **El contrato
   oficial es la «PROPUESTA DE SPONSOR TÉCNICO EdeLP – MATEU 2025 (07.10.2024)»** (docx en
