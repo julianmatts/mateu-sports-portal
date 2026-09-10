@@ -1846,8 +1846,8 @@ function enRenderControl(){
     canales.forEach(k=>{ const c=r.c[k.id]; if(!r.a.noSuma){ tot[k.id].ped+=c.ped; tot[k.id].ent+=c.ent; }
       h+=`<td class="num ped gl"><input type="number" min="0" step="1" value="${c.ped||''}" data-art="${esc(r.id)}" data-canal="${k.id}" placeholder="·" title="Pedido ${esc(k.nombre)} (editá y salí de la celda para guardar)"></td>`
         +`<td class="num ent ${c.ent?'':'cero'}" data-art="${esc(r.id)}" data-canal="${k.id}" title="${c.tomado?'Incluye '+units(c.tomado)+' tomadas de '+esc((r.a.tomaDe||[]).map(x=>(EN.articulos[x]||{}).codigo||x).join(', '))+' · ':''}${c.cedido?'Cedió '+units(c.cedido)+' al artículo que se completa con este · ':''}Ver / cargar entregas">${c.ent?units(c.ent):'·'}${c.tomado?`<small class="flujo">↙${units(c.tomado)}</small>`:''}${c.cedido?`<small class="flujo">↗${units(c.cedido)}</small>`:''}</td>`
-        +`<td class="num ${c.resta<0?'neg':c.resta>0?'pend':'cero'}">${(c.ped||c.ent)?units(c.resta):'·'}</td>`; });
-    if(fc){ const c=r.c[fc]; h+=`<td><span class="st st-${c.estado}">${EN_ST_LBL[c.estado]}</span></td>`; }
+        +`<td class="num ${r.a.noSuma?'cero':c.resta<0?'neg':c.resta>0?'pend':'cero'}">${r.a.noSuma?'·':(c.ped||c.ent)?units(c.resta):'·'}</td>`; });
+    if(fc){ const c=r.c[fc]; h+=`<td>${r.a.noSuma?'<span class="st st-na">No suma</span>':`<span class="st st-${c.estado}">${EN_ST_LBL[c.estado]}</span>`}</td>`; }
     h+='</tr>';
   });
   if(!rows.length) h+=`<tr><td colspan="99" class="empty">Sin artículos para ese filtro</td></tr>`;
@@ -1892,7 +1892,7 @@ function enRenderCanal(){
     const c=r.c[k.id]; const x=c.ped? c.ent/c.ped : null;
     h+=`<tr class="${r.a.noSuma?'nosuma':''}"><td class="art">${esc(r.a.articulo)}${r.a.color?` <span class="muted" style="font-weight:400">· ${esc(r.a.color)}</span>`:''}${r.a.nota?` <span class="muted" title="${esc(r.a.nota)}" style="cursor:help;font-weight:400;font-size:12px" aria-label="${esc(r.a.nota)}">ⓘ</span>`:''}</td><td class="cod">${esc(r.a.codigo||'—')}</td>
       <td class="num">${c.ped?units(c.ped):'·'}</td><td class="num ent" data-art="${esc(r.id)}" data-canal="${k.id}" title="${c.tomado?'Incluye '+units(c.tomado)+' tomadas de '+esc((r.a.tomaDe||[]).map(x=>(EN.articulos[x]||{}).codigo||x).join(', '))+' · ':''}${c.cedido?'Cedió '+units(c.cedido)+' · ':''}Ver / cargar entregas">${c.ent?units(c.ent):'·'}${c.tomado?`<small class="flujo">↙${units(c.tomado)}</small>`:''}${c.cedido?`<small class="flujo">↗${units(c.cedido)}</small>`:''}</td>
-      <td class="num ${c.resta<0?'neg':c.resta>0?'pend':'cero'}">${units(c.resta)}</td><td class="num">${x==null?'—':pctStr(x)}</td><td><span class="st st-${c.estado}">${EN_ST_LBL[c.estado]}</span></td></tr>`;
+      <td class="num ${r.a.noSuma?'cero':c.resta<0?'neg':c.resta>0?'pend':'cero'}">${r.a.noSuma?'·':units(c.resta)}</td><td class="num">${r.a.noSuma?'·':x==null?'—':pctStr(x)}</td><td>${r.a.noSuma?'<span class="st st-na">No suma</span>':`<span class="st st-${c.estado}">${EN_ST_LBL[c.estado]}</span>`}</td></tr>`;
   });
   if(!rows.length) h+='<tr><td colspan="7" class="empty">Este canal no tiene pedidos cargados</td></tr>';
   h+=`<tr class="total"><td colspan="2">TOTAL ${esc(k.nombre.toUpperCase())}</td><td class="num">${units(t.ped)}</td><td class="num">${units(t.ent)}</td><td class="num">${units(t.ped-t.ent)}</td><td class="num">${t.ped?pctStr(t.ent/t.ped):'—'}</td><td></td></tr></tbody>`;
