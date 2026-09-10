@@ -70,8 +70,39 @@ meses = {
  '2026-04': {'edlpUnidades':6351,'rugeUnidades':307,'retail':5414,'mayor':2498,'unidades':7912, 'regalia':84784137.15,'importe':514199682.30},
  '2026-05': {'edlpUnidades':4375,'rugeUnidades':630,'retail':5959,'mayor':658, 'unidades':6617, 'regalia':82369718.66,'importe':468401719.27},
  '2026-06': {'edlpUnidades':4633,'rugeUnidades':562,'retail':5857,'mayor':799, 'unidades':6656, 'regalia':74889584.80,'importe':417287788.34},
+ '2026-07': {'edlpUnidades':2420,'rugeUnidades':409,'retail':3651,'mayor':166, 'unidades':3817, 'regalia':41897173.81,'importe':231485661.97},
 }
-out = {'meses':meses, 'rda':{k:rda[k] for k in sorted(rda)}}
+
+# Historial de unidades por concepto = cuadro A:H del CONSOLIDADO. Sale del último
+# Excel de liquidación a mano, que ya trae todos los meses anteriores. El Excel que
+# exporta el módulo lo repite en valores (los meses que se liquidan en la app se
+# guardan en el ledger con el mismo formato, campo `conc`).
+HIST = r"C:\Users\julia\OneDrive\Desktop\EDLP 2026\Regalias ruge\Regalias Julio 2026\Regalias Ruge SE y EDLP Julio 2026.xlsx"
+
+def leer_consolidado(p):
+    wb = openpyxl.load_workbook(p, data_only=True)
+    ws = wb['CONSOLIDADO']
+    n = lambda v: int(round(float(v))) if v not in (None, '') else 0
+    out = {}
+    for r in ws.iter_rows(min_row=2, max_row=25, max_col=8, values_only=True):
+        mm = MES_NUM.get(str(r[0] or '').upper().strip())
+        concepto = str(r[1] or '').upper().strip()
+        if not mm or all(v in (None, '') for v in r[2:8]): continue
+        d = out.setdefault("2026-%02d" % mm, {'may':0,'edlp':0,'ruge':0,'acc':0,'ruge2da':0,'edlp2da':0,'edlpAnt':0})
+        if concepto == 'MAYORISTA': d['may'] = n(r[2])
+        elif concepto == 'MATEU':
+            d['edlp'], d['ruge'], d['acc'], d['ruge2da'], d['edlp2da'], d['edlpAnt'] = [n(v) for v in r[2:8]]
+    wb.close()
+    return out
+
+cons = leer_consolidado(HIST)
+for k, d in sorted(cons.items()):
+    m = meses.get(k)
+    retail = d['edlp']+d['ruge']+d['acc']+d['ruge2da']+d['edlp2da']+d['edlpAnt']
+    ok = m and m['edlpUnidades']==d['edlp']+d['may'] and m['rugeUnidades']==d['ruge'] and m['retail']==retail and m['mayor']==d['may']
+    print('consolidado', k, d, 'OK' if ok else '<-- NO CUADRA con meses')
+
+out = {'meses':meses, 'consolidado':cons, 'rda':{k:rda[k] for k in sorted(rda)}}
 js = "// Generado desde las liquidaciones reales de Juli (Excels 'Regalias Ruge SE y EDLP <mes> 2026'\n"
 js += "// y 'DETALLE VENTA RUGE DEPORTES AMATEURS'). Regenerar con el script del chat si cambian.\n"
 js += "// Marzo incluye el ajuste de +$363.780,63 (109 prendas EDLP 26 al 15% cuando correspondia 20%).\n"

@@ -993,24 +993,25 @@ function escalaMarginal(lineas, acumPrev, tramos){
   let axis=acumPrev;
   const out=lineas.map(l=>{
     const u=Math.max(0,Math.round(l.cant)), m=l.importe;
-    if(u===0){ const t=tramoEn(axis,tramos); return {...l, regalia:m*t.pct, effRate:t.pct}; }
-    let rem=u, a=axis, reg=0;
+    if(u===0){ const t=tramoEn(axis,tramos); return {...l, regalia:m*t.pct, effRate:t.pct, porPct:{[t.pct]:m*t.pct}}; }
+    let rem=u, a=axis, reg=0; const porPct={};
     while(rem>0){
       const t=tramoEn(a,tramos);
       const cap = t.hasta===Infinity ? rem : Math.max(0, t.hasta - a);
       const take = cap===0 ? rem : Math.min(rem, cap);
-      reg += m*(take/u)*t.pct;
+      const parte = m*(take/u)*t.pct;
+      reg += parte; porPct[t.pct]=(porPct[t.pct]||0)+parte;
       a+=take; rem-=take;
     }
     axis+=u;
-    return {...l, regalia:reg, effRate: m? reg/m : tramoEn(axis,tramos).pct };
+    return {...l, regalia:reg, effRate: m? reg/m : tramoEn(axis,tramos).pct, porPct };
   });
   return { lineas:out, acumFinal:axis };
 }
 function escalaAcumFinal(lineas, acumPrev, tramos){
   const totalU=lineas.reduce((s,l)=>s+Math.max(0,Math.round(l.cant)),0);
   const pct=tramoEn(acumPrev+totalU-1<0?acumPrev:acumPrev+totalU-1, tramos).pct; // tramo del último acumulado
-  const out=lineas.map(l=>({...l, regalia:l.importe*pct, effRate:pct}));
+  const out=lineas.map(l=>({...l, regalia:l.importe*pct, effRate:pct, porPct:{[pct]:l.importe*pct}}));
   return { lineas:out, acumFinal:acumPrev+totalU };
 }
 function correrEscala(lineas, acumPrev, tramos){
@@ -1050,23 +1051,26 @@ function liquidar(){
   const rugeTramos=[{hasta:CONFIG.rugeSE.umbral,pct:CONFIG.rugeSE.pctBajo},{hasta:Infinity,pct:CONFIG.rugeSE.pctAlto}];
   const rugeRes = escalaMarginal(rugeMin.map(x=>x.l), prev.ruge, rugeTramos); // RUGE SE siempre marginal
   const regByIdx=new Map();
-  edlpRes.lineas.forEach(r=>regByIdx.set('m'+r.idx,{regalia:r.regalia,rate:r.effRate}));
-  rugeRes.lineas.forEach(r=>regByIdx.set('m'+r.idx,{regalia:r.regalia,rate:r.effRate}));
+  edlpRes.lineas.forEach(r=>regByIdx.set('m'+r.idx,{regalia:r.regalia,rate:r.effRate,porPct:r.porPct}));
+  rugeRes.lineas.forEach(r=>regByIdx.set('m'+r.idx,{regalia:r.regalia,rate:r.effRate,porPct:r.porPct}));
 
   // 4) acumular por solapa
-  const tabs={}; TAB_ORDER.forEach(t=>tabs[t]={ tab:t, label:(TABS[t]?TABS[t].label():t), unidades:0, importe:0, regalia:0, lineas:[] });
-  function push(tab, l, importe, cant, regalia, rate, extra){
-    if(!tabs[tab]) tabs[tab]={ tab, label:(TABS[tab]?TABS[tab].label():tab), unidades:0, importe:0, regalia:0, lineas:[] };
+  // porPct = regalía abierta por % (la usa el CONSOLIDADO del Excel: columnas 5/10/15/20%)
+  const tabs={}; TAB_ORDER.forEach(t=>tabs[t]={ tab:t, label:(TABS[t]?TABS[t].label():t), unidades:0, importe:0, regalia:0, porPct:{}, lineas:[] });
+  function push(tab, l, importe, cant, regalia, rate, extra, pp){
+    if(!tabs[tab]) tabs[tab]={ tab, label:(TABS[tab]?TABS[tab].label():tab), unidades:0, importe:0, regalia:0, porPct:{}, lineas:[] };
     tabs[tab].unidades+=cant; tabs[tab].importe+=importe; tabs[tab].regalia+=regalia;
+    const P=tabs[tab].porPct, q=pp||{[rate||0]:regalia};
+    for(const k in q) P[k]=(P[k]||0)+q[k];
     tabs[tab].lineas.push({...l, _regalia:regalia, _rate:rate, ...(extra||{})});
   }
   let sumEdlpU=0, sumRugeU=0;
 
   mLines.forEach(({l,c})=>{
     if(c.tab==='RDA') return;   // RDA se liquida aparte (ver más abajo), no entra al consolidado EDLP/RUGE
-    let tab=c.tab, regalia, rate;
+    let tab=c.tab, regalia, rate, pp=null;
     if(tab==='EDLP_VIG_MIN'||tab==='RUGE_SE'){
-      const r=regByIdx.get('m'+l.idx); regalia=r?r.regalia:0; rate=r?r.rate:0;
+      const r=regByIdx.get('m'+l.idx); regalia=r?r.regalia:0; rate=r?r.rate:0; pp=r?r.porPct:null;
       if(tab==='EDLP_VIG_MIN') sumEdlpU+=Math.round(l.cant);
       if(tab==='RUGE_SE') sumRugeU+=Math.round(l.cant);
     } else if(tab==='EDLP_VIG_MIN_SALIENTE'){
@@ -1075,7 +1079,7 @@ function liquidar(){
     } else {
       rate=c.rate; regalia=l.importe*rate;
     }
-    push(tab, l, l.importe, Math.round(l.cant), regalia, rate, {_sub:c.sub, _salientePre:c.salientePre});
+    push(tab, l, l.importe, Math.round(l.cant), regalia, rate, {_sub:c.sub, _salientePre:c.salientePre}, pp);
   });
 
   // mayorista: todo a la solapa MAYORISTA (con su sub-tasa); EDLP vigente mayorista suma unidades
@@ -1303,7 +1307,7 @@ function guardarMesEnLedger(){
   if(!RESULT){ toast('Liquidá primero'); return; }
   const led=temporadaLedger();
   led.meses=led.meses||{};
-  led.meses[RESULT.mesKey]={ edlpUnidades:RESULT.edlpUnidades, rugeUnidades:RESULT.rugeUnidades, regalia:RESULT.totReg, importe:RESULT.totImp, unidades:RESULT.totU, retail:RESULT.retailU, mayor:RESULT.mayorU, ts:RESULT.mesLabel };
+  led.meses[RESULT.mesKey]={ edlpUnidades:RESULT.edlpUnidades, rugeUnidades:RESULT.rugeUnidades, regalia:RESULT.totReg, importe:RESULT.totImp, unidades:RESULT.totU, retail:RESULT.retailU, mayor:RESULT.mayorU, conc:concDeResult(RESULT), ts:RESULT.mesLabel };
   // RDA — liquidación aparte (detalle mensual para el Excel anual)
   led.rda = led.rda || { meses:{} };
   const rm=rdaMesLedger();
@@ -1446,37 +1450,159 @@ function hojaEstilizada(titulo, subtitulo, cols, filas, filaTotal){
   return ws;
 }
 
+/* ============================================================
+   EXCEL DE ENTREGA EDLP / RUGE — mismo formato que la liquidación a mano
+   ("Regalias Ruge SE y EDLP <Mes> <año>.xlsx", pedido de Juli 10/09/2026):
+   - CONSOLIDADO: A:H = historial de unidades por mes y concepto, EN VALORES
+     (meses previos de la siembra oficial o del ledger, campo `conc`; el mes
+     liquidado sale del RESULT) · J:Q = liquidación del mes con fórmulas a las
+     solapas (unidades/venta) y la regalía abierta en 5/10/15/20%.
+   - Una solapa por concepto: encabezado rojo, fila TOTAL (SUM) arriba y el detalle.
+   ============================================================ */
+const XE={ red:'E2001A', pink:'FCE4E6', dark:'222222', white:'FFFFFF', black:'000000' };
+const XE_FMT={ int:'#,##0', u:'0', money:'"$"#,##0.00', money0:'"$"#,##0', pct:'0%' };
+const _xeBd={ style:'thin', color:{rgb:XE.black} };
+const xeCol=i=>XLSX.utils.encode_col(i);
+function _xeSt(sz, bold, color, fill, h){
+  const al={ vertical:'center' }; if(h) al.horizontal=h;
+  return { font:{name:'Arial', sz, bold:!!bold, color:{rgb:color}}, fill:{patternType:'solid', fgColor:{rgb:fill}},
+    alignment:al, border:{ top:_xeBd, bottom:_xeBd, left:_xeBd, right:_xeBd } };
+}
+// celda con valor (número o texto), estilo, formato y fórmula opcional (con el valor ya calculado)
+function _xeSet(ws, ref, v, s, z, f){
+  const c = typeof v==='number' ? {t:'n', v} : {t:'s', v:(v==null?'':String(v))};
+  if(f){ c.f=f; if(c.t!=='n'){ c.t='n'; c.v=0; } }
+  if(s) c.s=s; if(z) c.z=z;
+  ws[ref]=c;
+}
+// unidades por concepto de una liquidación (mismo formato que siembra.consolidado y ledger.conc)
+function concDeResult(R){
+  const u=t=>R.tabs[t]?R.tabs[t].unidades:0;
+  return { may:u('MAYORISTA'), edlp:u('EDLP_VIG_MIN'), ruge:u('RUGE_SE'), acc:u('ACC_CALZ'),
+           ruge2da:u('RUGE_SE_2DA'), edlp2da:u('EDLP_VIG_2DA'), edlpAnt:u('EDLP_ANT') };
+}
+// historial de la temporada hasta el mes liquidado: siembra oficial > ledger > (el propio mes) RESULT
+function historialConsolidado(R){
+  const T=CONFIG.temporadaVigente, seed=((window['SIEMBRA_'+T]||{}).consolidado)||{}, led=temporadaLedger(), out={};
+  for(let i=1;i<=12;i++){
+    const k=T+'-'+String(i).padStart(2,'0');
+    if(k>R.mesKey) break;
+    if(k===R.mesKey) out[k]=concDeResult(R);
+    else if(seed[k]) out[k]=seed[k];
+    else if(led.meses && led.meses[k] && led.meses[k].conc) out[k]=led.meses[k].conc;
+  }
+  return out;
+}
+// solapa de detalle: fila 1 encabezado rojo, fila 2 TOTAL (SUM), desde la 3 el detalle con bandas
+function hojaEntrega(cols, filas){
+  const ws={}, last=Math.max(3, 2+filas.length);
+  const stHd=_xeSt(10,true,XE.white,XE.red,'center'), stTo=_xeSt(10,true,XE.white,XE.dark,'center');
+  cols.forEach((c,i)=>{
+    const L=xeCol(i), num=c.t==='int'||c.t==='money';
+    _xeSet(ws, L+'1', c.h, stHd);
+    if(num){
+      const s=filas.reduce((a,f)=>a+(+f[i]||0),0);
+      _xeSet(ws, L+'2', s, stTo, c.t==='int'?XE_FMT.int:XE_FMT.money0, `SUM(${L}3:${L}${last})`);
+    } else _xeSet(ws, L+'2', i===0?'TOTAL':'', stTo);
+    filas.forEach((f,k)=>{
+      _xeSet(ws, L+(3+k), f[i], _xeSt(10,false,XE.black,k%2?XE.pink:XE.white,num?'right':null),
+        c.t==='int'?XE_FMT.int:c.t==='money'?XE_FMT.money:null);
+    });
+  });
+  ws['!ref']=`A1:${xeCol(cols.length-1)}${Math.max(2,2+filas.length)}`;
+  ws['!cols']=cols.map(c=>({wch:c.w}));
+  return ws;
+}
+
 function exportarExcel(){
   if(!RESULT){ toast('Liquidá primero'); return; }
+  const R=RESULT, T=CONFIG.temporadaVigente, Y=yy(T), D=CONFIG.edlpAnteriorDesde;
+  const tab=t=>R.tabs[t]||{unidades:0, importe:0, regalia:0, porPct:{}, lineas:[]};
+  const usados=x=>Object.keys(x.porPct||{}).filter(k=>Math.abs(x.porPct[k])>0.005);
+
+  // nombre de la solapa EDLP vigente = los % que pagó en el mes ("EDLP 26 20%")
+  const pE=usados(tab('EDLP_VIG_MIN')).map(Number).sort((a,b)=>b-a);
+  if(!pE.length) pE.push(tramoEn(Math.max(0,R.acumEdlpFin-1), CONFIG.tramosEDLP).pct);
+  const CONC=[   // orden del cuadro del CONSOLIDADO (J:Q)
+    { t:'MAYORISTA',    label:'MAYORISTA',             hoja:'MAYORISTA' },
+    { t:'RUGE_SE',      label:'RUGE SE',               hoja:'RUGE SE' },
+    { t:'ACC_CALZ',     label:'ACC. Y CALZADO',        hoja:'ACC Y CALZ' },
+    { t:'RUGE_SE_2DA',  label:'RUGE SE 2DA Y SALE',    hoja:'RUGE SE 2DA Y SALE' },
+    { t:'EDLP_ANT',     label:`EDLP ${D} A ${yy(T-1)}`, hoja:`EDLP ${D} A ${yy(T-1)}` },
+    { t:'EDLP_VIG_2DA', label:`EDLP ${T} 2DA Y SALE`,  hoja:`EDLP ${Y} 2DA Y SALE` },
+    { t:'EDLP_VIG_MIN', label:`EDLP ${Y}`,             hoja:`EDLP ${Y} `+pE.map(p=>Math.round(p*100)+'%').join(' Y ') },
+  ];
+  if(tab('SIN_CLAS').lineas.length) CONC.push({ t:'SIN_CLAS', label:'SIN CLASIFICAR', hoja:'SIN CLASIFICAR' });
+  CONC.forEach(c=>c.hoja=safeSheetName(c.hoja));
   const wb=XLSX.utils.book_new();
-  const mesLabel=RESULT.mesLabel;
 
-  // CONSOLIDADO
-  const colsCons=[{h:'CANAL / SOLAPA',w:26,t:'text'},{h:'UNIDADES',w:12,t:'int'},{h:'VENTA $ (SIN IVA)',w:20,t:'money'},{h:'% EFECTIVO',w:12,t:'pct'},{h:'REGALÍA',w:20,t:'money'}];
-  const filasCons=RESULT.orden.map(t=>{ const x=RESULT.tabs[t]; const eff=x.importe?x.regalia/x.importe:0;
-    return [x.label, x.unidades, r2(x.importe), pv(eff), r2(x.regalia)]; });
-  const totCons=['TOTAL', RESULT.totU, r2(RESULT.totImp), pv(RESULT.totImp?RESULT.totReg/RESULT.totImp:0), r2(RESULT.totReg)];
-  XLSX.utils.book_append_sheet(wb, hojaEstilizada('CONSOLIDADO — REGALÍAS RUGE / EDLP', `${mesLabel} · Mateu Sports · importes sin IVA`, colsCons, filasCons, totCons), 'CONSOLIDADO');
+  // ---------- CONSOLIDADO ----------
+  const ws={};
+  const stH=_xeSt(16,true,XE.white,XE.red,'center'), stT=_xeSt(16,true,XE.white,XE.dark,'center');
+  const stF=(r,bold)=>_xeSt(16,bold,XE.black,r%2===0?XE.pink:XE.white,'center');   // bandas: filas pares rosa
+  // A:H — historial de unidades (valores)
+  ['MES','CONCEPTO',`EDLP ${Y}`,'RUGE SE','ACC Y CALZADO','RUGE SE 2DA Y SALE',`EDLP ${T} 2DA Y SALE`,`EDLP ${D} A ${yy(T-1)}`]
+    .forEach((h,i)=>_xeSet(ws, xeCol(i)+'1', h, stH));
+  const hist=historialConsolidado(R), campos=['edlp','ruge','acc','ruge2da','edlp2da','edlpAnt'], sumH=[0,0,0,0,0,0];
+  for(let m=0;m<12;m++){
+    const h=hist[T+'-'+String(m+1).padStart(2,'0')], rMay=2+m*2, rMat=rMay+1, nom=MESES[m].toUpperCase();
+    _xeSet(ws,'A'+rMay,nom,stF(rMay)); _xeSet(ws,'B'+rMay,'MAYORISTA',stF(rMay));
+    _xeSet(ws,'A'+rMat,nom,stF(rMat)); _xeSet(ws,'B'+rMat,'MATEU',stF(rMat));
+    campos.forEach((k,i)=>{
+      const L=xeCol(2+i);
+      _xeSet(ws, L+rMay, (h && i===0) ? (+h.may||0) : '', stF(rMay), XE_FMT.u);   // mayorista: todo en la columna EDLP, como el Excel a mano
+      _xeSet(ws, L+rMat, h ? (+h[k]||0) : '', stF(rMat), XE_FMT.u);
+      if(h) sumH[i]+=(+h[k]||0)+(i===0?(+h.may||0):0);
+    });
+  }
+  _xeSet(ws,'A26','Total',stT); _xeSet(ws,'B26','TOTAL',stT);
+  sumH.forEach((s,i)=>{ const L=xeCol(2+i); _xeSet(ws, L+'26', s, stT, XE_FMT.u, `SUM(${L}2:${L}25)`); });
 
-  // una solapa por canal
-  RESULT.orden.forEach(t=>{
-    const x=RESULT.tabs[t]; if(!x.lineas.length) return;
-    const eff=x.importe?x.regalia/x.importe:0;
-    let cols, filas, tot;
-    if(t==='MAYORISTA'){
-      cols=[{h:'CLIENTE',w:30,t:'text'},{h:'DÍA',w:6,t:'text'},{h:'NRO COMPROBANTE',w:18,t:'text'},{h:'RUBRO',w:16,t:'text'},{h:'ARTÍCULO',w:34,t:'text'},{h:'COD BARRAS',w:12,t:'text'},{h:'CANTIDAD',w:10,t:'int'},{h:'IMPORTE',w:16,t:'money'},{h:'% APLIC.',w:9,t:'pct'},{h:'REGALÍA',w:16,t:'money'}];
-      filas=x.lineas.map(l=>[l.cliente||'',l.dia||'',l.comp||'',l.rubro||'',l.articulo||'',l.cod||'',Math.round(l.cant),r2(l.importe),pv(l._rate),r2(l._regalia)]);
-      tot=['','','','','','TOTAL',x.unidades,r2(x.importe),pv(eff),r2(x.regalia)];
-    } else {
-      cols=[{h:'RUBRO',w:16,t:'text'},{h:'GRUPO 2',w:22,t:'text'},{h:'GRUPO 3',w:16,t:'text'},{h:'GRUPO 1',w:16,t:'text'},{h:'LISTA PRECIOS',w:16,t:'text'},{h:'ARTÍCULO',w:34,t:'text'},{h:'COD BARRAS',w:12,t:'text'},{h:'CANTIDAD',w:10,t:'int'},{h:'IMPORTE',w:16,t:'money'},{h:'% APLIC.',w:9,t:'pct'},{h:'REGALÍA',w:16,t:'money'}];
-      filas=x.lineas.map(l=>[l.rubro||'',l.g2||'',l.g3||'',l.g1||'',l.lista||'',l.articulo||'',l.cod||'',Math.round(l.cant),r2(l.importe),pv(l._rate),r2(l._regalia)]);
-      tot=['','','','','','','TOTAL',x.unidades,r2(x.importe),pv(eff),r2(x.regalia)];
-    }
-    XLSX.utils.book_append_sheet(wb, hojaEstilizada(x.label.toUpperCase()+' — '+mesLabel, 'Mateu Sports · Liquidación de Regalías · importes sin IVA', cols, filas, tot), safeSheetName(x.label));
+  // J:Q — liquidación del mes
+  const PCTS=[0.05,0.10,0.15,0.20];
+  ['VENTA','UNIDADES','VENTA $'].forEach((h,i)=>_xeSet(ws, xeCol(9+i)+'1', h, stH));
+  PCTS.forEach((p,i)=>_xeSet(ws, xeCol(12+i)+'1', p, stH, XE_FMT.pct));
+  _xeSet(ws,'Q1','Total',stH);
+  CONC.forEach((c,j)=>{
+    const r=2+j, x=tab(c.t), ref=`'${c.hoja.replace(/'/g,"''")}'!`, may=c.t==='MAYORISTA';
+    const us=usados(x), unico=us.length===1;
+    _xeSet(ws,'J'+r,c.label,stF(r));
+    _xeSet(ws,'K'+r,x.unidades,stF(r,true),XE_FMT.u,ref+(may?'G2':'H2'));
+    // importes SIN redondear (el formato muestra 2 decimales): así lo que recalcula Excel da al centavo lo del módulo
+    _xeSet(ws,'L'+r,x.importe,stF(r,true),XE_FMT.money,ref+(may?'H2':'I2'));
+    PCTS.forEach((p,i)=>{
+      const L=xeCol(12+i), k=us.find(q=>Math.abs(+q-p)<1e-9);
+      if(k===undefined) _xeSet(ws,L+r,'',stF(r,true),XE_FMT.money0);
+      else if(unico) _xeSet(ws,L+r,x.importe*p,stF(r,true),XE_FMT.money0,`L${r}*${L}$1`);   // un solo %: fórmula
+      else _xeSet(ws,L+r,x.porPct[k],stF(r,true),XE_FMT.money0);                             // tramo mixto: valores
+    });
+    _xeSet(ws,'Q'+r,x.regalia,stF(r,true),XE_FMT.money0,`SUM(M${r}:P${r})`);
+  });
+  const rT=2+CONC.length;
+  _xeSet(ws,'J'+rT,'TOTAL',stT);
+  _xeSet(ws,'K'+rT,R.totU,stT,XE_FMT.u,`SUM(K2:K${rT-1})`);
+  _xeSet(ws,'L'+rT,R.totImp,stT,XE_FMT.money,`SUM(L2:L${rT-1})`);
+  _xeSet(ws,'M'+rT,R.totReg,stT,XE_FMT.money0,`SUM(Q2:Q${rT-1})`);
+  ['N','O','P','Q'].forEach(L=>_xeSet(ws,L+rT,'',stT));
+  ws['!merges']=[{ s:{r:rT-1,c:12}, e:{r:rT-1,c:16} }];
+  ws['!ref']='A1:Q26';
+  ws['!cols']=[18.8,27.8,24.6,34.5,34.6,41.8,43.2,30.5,30.5,36.5,19.5,30,17.9,21.9,22.4,23.5,23.5].map(w=>({wch:w}));
+  ws['!rows']=[{hpt:29.5}].concat(Array.from({length:25},()=>({hpt:21})));
+  XLSX.utils.book_append_sheet(wb, ws, 'CONSOLIDADO');
+
+  // ---------- solapas de detalle (orden del Excel de entrega) ----------
+  const colsMin=[{h:'RUBRO',w:17},{h:'GRUPO 2',w:30},{h:'GRUPO 3',w:18},{h:'GRUPO 1',w:22},{h:'LISTA PRECIOS',w:22},{h:'ARTÍCULO',w:44},{h:'COD BARRAS',w:14},{h:'CANTIDAD',w:12,t:'int'},{h:'IMPORTE',w:18,t:'money'}];
+  const colsMay=[{h:'CLIENTE',w:42},{h:'DÍA',w:8},{h:'NRO COMPROBANTE',w:20},{h:'RUBRO',w:16},{h:'ARTÍCULO',w:47},{h:'COD BARRAS',w:13},{h:'CANTIDAD',w:12,t:'int'},{h:'IMPORTE',w:17,t:'money'}];
+  ['MAYORISTA','RUGE_SE','RUGE_SE_2DA','ACC_CALZ','EDLP_ANT','EDLP_VIG_2DA','EDLP_VIG_MIN','SIN_CLAS'].forEach(t=>{
+    const c=CONC.find(q=>q.t===t); if(!c) return;
+    const x=tab(t), may=t==='MAYORISTA';
+    const filas = may
+      ? x.lineas.map(l=>[l.cliente||'',l.dia||'',l.comp||'',l.rubro||'',l.articulo||'',l.cod||'',Math.round(l.cant),l.importe])
+      : x.lineas.map(l=>[l.rubro||'',l.g2||'',l.g3||'',l.g1||'',l.lista||'',l.articulo||'',l.cod||'',Math.round(l.cant),l.importe]);
+    XLSX.utils.book_append_sheet(wb, hojaEntrega(may?colsMay:colsMin, filas), c.hoja);
   });
 
-  const mes=MESES[+$('selMes').value].toUpperCase(), anio=$('selAnio').value;
-  XLSX.writeFile(wb, `Regalias_Ruge_SE_y_EDLP_${mes}_${anio}.xlsx`);
+  XLSX.writeFile(wb, `Regalias Ruge SE y EDLP ${MESES[+$('selMes').value]} ${$('selAnio').value}.xlsx`);
   toast('Excel descargado');
 }
 
