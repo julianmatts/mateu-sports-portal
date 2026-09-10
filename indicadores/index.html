@@ -5374,6 +5374,42 @@ function eqWire(slug, sem, eqData){
     const rc=$('eqRealCancel'); if(rc) rc.onclick=()=>{ _eqRealDraft=null; renderObjetivo(); };
   }
 }
+// Pega el día a día de la hoja REAL a cada vendedor de PMS(H). Antes exigía el nombre
+// idéntico: en Aurelius 12 (semana 31/08) PMS(H) decía «NICORA EZEQUIEL (VENDEDOR FULL)»
+// y REAL «NICORA EZEQUIEL», y el vendedor quedó sin días sin ningún aviso.
+// Orden: idéntico → mismo nombre sin lo que va entre paréntesis → parecido (el único con
+// ≥2 palabras en común) → mismo total de venta. Cada bloque de REAL se usa una sola vez.
+// Devuelve {parecido:[[pms, real]], sinDias:[nombres con venta y sin días]}.
+function vePegarDias(vendedores, dias){
+  const libres=new Map(Object.entries(dias||{}));
+  const res={parecido:[], sinDias:[]};
+  if(!libres.size) return res;
+  const tomar=(v,k)=>{ v.dias=libres.get(k); libres.delete(k); };
+  const sinPar=s=>eqNorm(String(s||'').replace(/\([^)]*\)/g,' '));
+  const pasada=(elegir)=>vendedores.forEach(v=>{
+    if(v.dias || !libres.size) return;
+    const k=elegir(v); if(k==null) return;
+    if(eqNorm(k)!==eqNorm(v.nombre) && sinPar(k)!==sinPar(v.nombre)) res.parecido.push([v.nombre,k]);
+    tomar(v,k);
+  });
+  const unico=arr=>arr.length===1?arr[0]:null;
+  pasada(v=>libres.has(v.nombre)?v.nombre:null);
+  pasada(v=>unico([...libres.keys()].filter(k=>eqNorm(k)===eqNorm(v.nombre))));
+  pasada(v=>unico([...libres.keys()].filter(k=>sinPar(k)===sinPar(v.nombre))));
+  pasada(v=>{
+    let best=0, cands=[];
+    libres.forEach((_,k)=>{ const sc=eqMatchScore(sinPar(v.nombre), sinPar(k)); if(sc<2) return;
+      if(sc>best){ best=sc; cands=[k]; } else if(sc===best) cands.push(k); });
+    return unico(cands);
+  });
+  pasada(v=>{
+    if(!(v.venta>0)) return null;
+    const tol=Math.max(1, v.venta*0.005);
+    return unico([...libres.keys()].filter(k=>Math.abs(libres.get(k).reduce((a,d)=>a+(d.v||0),0)-v.venta)<=tol));
+  });
+  res.sinDias=vendedores.filter(v=>v.venta>0 && !v.dias).map(v=>v.nombre);
+  return res;
+}
 // leer el Excel elegido → previsualizar
 async function veArchivo(file){
   if(!file) return;
@@ -5387,7 +5423,14 @@ async function veArchivo(file){
     let data=veParsePMS(wb, XLSX), info=null;
     if(data){
       const dias=veParseDias(wb, XLSX);
-      if(dias) data.vendedores.forEach(v=>{ if(dias[v.nombre]) v.dias=dias[v.nombre]; });
+      if(dias){
+        const pg=vePegarDias(data.vendedores, dias), av=[];
+        if(pg.parecido.length) av.push('Día a día pegado por parecido (el nombre no es igual en las hojas PMS(H) y REAL): '
+          +pg.parecido.map(([a,b])=>'<b>'+esc(a)+'</b> ↔ '+esc(b)).join(' · ')+'.');
+        if(pg.sinDias.length) av.push('⚠️ <b>Sin día a día:</b> '+pg.sinDias.map(esc).join(', ')
+          +'. No encontré su bloque en la hoja REAL — revisá que el nombre sea el mismo en las dos hojas.');
+        if(av.length) info=av.join('<br>');
+      }
     } else {
       // 2º la estadística de venta detallada por línea (la misma que sube gerencia en
       // la vista de todas las sucursales): trae el día a día por vendedor. Se queda

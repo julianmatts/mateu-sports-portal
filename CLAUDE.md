@@ -1428,7 +1428,10 @@ entran acá: ven su objetivo en Indicadores.
   sección Objetivo): panel desplegable "Cómo viene el equipo". El encargado sube el
   Excel de venta **abierta por vendedor** (SheetJS lazy), **previsualiza** y guarda.
   Tres formatos autodetectados en orden: (1) template PMS semanal (hoja PMS(H) +
-  día a día de la hoja REAL); (2) **la estadística detallada por línea** (26/08/2026,
+  día a día de la hoja REAL — `vePegarDias` cruza los nombres de las dos hojas: idéntico →
+  sin lo que va entre paréntesis → parecido único → mismo total de venta, y la vista previa
+  avisa quién quedó sin días; hasta el 10/09/2026 exigía el nombre idéntico y en Aurelius 12
+  «NICORA EZEQUIEL (VENDEDOR FULL)» vs. «NICORA EZEQUIEL» dejó al vendedor sin día a día); (2) **la estadística detallada por línea** (26/08/2026,
   la misma que sube gerencia en la vista Cadena — puede venir SIN columna Sucursal
   y hasta SIN encabezados: `veParseDetallado(m, sucFija)` + `veDetectarColumnas(m,
   sinSuc)` asumen la sucursal de la sesión, se quedan solo con los días de la semana
