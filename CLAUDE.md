@@ -297,10 +297,13 @@ Código en el mismo `index.html`, bloque «ENTREGAS EDLP» (funciones con prefij
   resuelve la disciplina de cada remito del cliente del contrato. Fuente humana: el Drive «REMITOS
   ENTREGAS CONTRATOS RUGE 2026 → CONTRATO PROFESIONAL → <disciplina>» donde el depósito sube el
   remito firmado con el archivo nombrado por el número (`54096.jpg` = Rem.0094-00054096;
-  `enNroRem` saca el número corto sin ceros). Sembrado 09/09/2026: 56 desde el Drive (26 Fútbol
-  Profesional, 11 Femenino, 11 Reserva, 5 Juvenil, 3 Protocolo, prensa 53866 y fotografía 53880 como
-  `x`) + 24 de enero–febrero que no están en el Drive pero la hoja «entregas al 29.06» del Excel de
-  Juli tenía como Fútbol Profesional + 53922 → Juvenil (camisetas RUG259/261). Se edita en Entregas →
+  `enNroRem` saca el número corto sin ceros). ⚠ **La lista de Drive se carga por partes al scrollear**:
+  la primera lectura (09/09 mediodía) vio solo 27 de los 53 archivos de Fútbol Profesional; la
+  relectura completa (09/09 noche, `tr[role=row][data-id]` + scroll de a 250 px) confirmó los 24
+  remitos que había tomado del Excel y sumó la NcI 6708 → Plantel, 53920 (no está en el reporte) y
+  54064 → carpeta «Campaña socios» = `x` (fuera del control, 50 RUG858 de julio). Mapa al 09/09/2026:
+  Fútbol Profesional 52, Femenino 11, Reserva 11, Juvenil 5 (+ 53922 a mano, camisetas RUG259/261),
+  Protocolo 3, fuera del control 3 (prensa 53866, fotografía 53880, campaña socios 54064). Se edita en Entregas →
   **«🗂 Remitos → disciplina»** (`enModalRemitos`: cambiar la disciplina reescribe las entregas ya
   cargadas de ese remito; «fuera del control» las saca) y en la propia importación (elegir la
   disciplina en una fila la copia a las demás filas del mismo remito y queda guardada).
