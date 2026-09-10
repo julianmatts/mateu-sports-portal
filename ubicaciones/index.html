@@ -1478,36 +1478,56 @@ function montarQuiosco(){
   }
 }
 
-/* Puente con el escáner del sistema (modo puesto): un programita en la PC
-   (scripts/puente-escaner/) detecta la ráfaga de la lectora cuando el vendedor
-   escanea PARADO EN EL SISTEMA y publica el código en scanBridge/<slug>.
-   Acá lo escuchamos por SSE y disparamos la búsqueda solos: una sola
-   escaneada sirve para el sistema Y el Buscador. */
-let sbUltimoTs = null, sbActivo = false;
+/* Puente con el escáner del sistema: un programita en la PC
+   (scripts/puente-escaner/) detecta la ráfaga de la lectora cuando el
+   vendedor escanea PARADO EN EL SISTEMA y publica el código en
+   scanBridge/<slug>. Acá lo escuchamos y disparamos el mismo circuito
+   que la lectora local (procesarEscaneo: resuelve el EAN de la etiqueta,
+   resalta la tarjeta y registra la consulta): una sola escaneada sirve
+   para el sistema Y el Buscador.
+   Escucha en vivo por SSE; si el navegador no lo soporta (Windows 7 con
+   IE) o la conexión no abre, cae a preguntar cada 2,5 s. */
+let sbVistos = new Set(), sbActivo = false, sbPoll = null, sbSse = false;
 function iniciarScanBridge(){
-  if(MODE!=='puesto' || !window.EventSource || sbActivo) return;
+  if(sbActivo || !SUC || (MODE!=='puesto' && MODE!=='sucursal')) return;
   sbActivo = true;
+  const url = FB + '/scanBridge/' + encodeURIComponent(SUC) + '.json';
   let primera = true;
+  const aplicar = rec=>{
+    if(!rec || !rec.codigo) return;
+    // ts lo pone el servidor de Firebase (así no depende del reloj de la PC)
+    const marca = String(rec.ts||'')+'|'+rec.codigo;
+    // Cada escaneo se atiende UNA vez: lo que ya estaba guardado al conectarnos
+    // es viejo, y en cada reconexión Firebase vuelve a mandar el último valor.
+    if(sbVistos.has(marca)) return;
+    sbVistos.add(marca);
+    if(sbVistos.size > 60) sbVistos = new Set([marca]);
+    // Lo primero que leemos suele ser un escaneo viejo (el que quedó guardado):
+    // se ignora, salvo que sea de recién — cuando la pantalla se abre justo
+    // después de una pasada de lectora, esa pasada tiene que salir igual.
+    // El ts lo pone el servidor de Firebase, no la PC del salón.
+    if(primera){ primera = false; if(!(rec.ts && Math.abs(Date.now()-rec.ts) < 60000)) return; }
+    if($('profileScreen').style.display==='flex') return;
+    if(rec.test || rec.codigo==='PUENTE-TEST'){ toast('📡 Puente del escáner conectado ✔'); return; }
+    toast('📡 Escaneado en el sistema: '+rec.codigo);
+    procesarEscaneo(rec.codigo);
+  };
+  const arrancarPoll = ()=>{
+    if(sbPoll) return;
+    sbPoll = setInterval(async ()=>{ try{ aplicar(await fetchJSON(url)); }catch(e){} }, 2500);
+  };
+  if(!window.EventSource){ arrancarPoll(); return; }
   try{
-    const es = new EventSource(FB + '/scanBridge/' + encodeURIComponent(SUC) + '.json');
-    es.addEventListener('put', e=>{
-      try{
-        const d = JSON.parse(e.data);
-        const rec = d && d.data;
-        const codigo = rec && rec.codigo, ts = rec && rec.ts;
-        // el primer put es el estado guardado (un escaneo viejo): se ignora
-        if(primera){ primera = false; sbUltimoTs = ts || null; return; }
-        if(!codigo || (ts && ts===sbUltimoTs)) return;
-        sbUltimoTs = ts || null;
-        $('searchInput').value = codigo;
-        searchQuery = codigo;
-        $('searchClear').style.display = 'block';
-        renderResultados();
-        toast('📡 Escaneado en el sistema: '+codigo);
-      }catch(err){}
-    });
-    // si se corta la conexión, EventSource reintenta solo
-  }catch(e){}
+    const es = new EventSource(url);
+    es.addEventListener('open', ()=>{ sbSse = true; if(sbPoll){ clearInterval(sbPoll); sbPoll = null; } });
+    const leer = e=>{ try{ const d = JSON.parse(e.data); if(d && d.path==='/') aplicar(d.data); }catch(err){} };
+    es.addEventListener('put', leer);
+    es.addEventListener('patch', leer);
+    // Si la conexión en vivo falla o no abre (proxy, navegador viejo), se
+    // pregunta por HTTP; si después abre, el 'open' apaga el polling.
+    es.addEventListener('error', ()=> arrancarPoll());
+    setTimeout(()=>{ if(!sbSse) arrancarPoll(); }, 4000);
+  }catch(e){ arrancarPoll(); }
 }
 
 /* Modo mostrador manual: cierra lo que esté abierto y vuelve al selector
@@ -1557,7 +1577,8 @@ function montarApp(){
   $('btnSalir').style.display = '';
   // Modo vidriera: la pantalla del salón esconde lo operativo (ver CSS body.puesto)
   document.body.classList.toggle('puesto', MODE==='puesto');
-  if(MODE==='puesto'){ montarQuiosco(); iniciarScanBridge(); }
+  if(MODE==='puesto') montarQuiosco();
+  iniciarScanBridge();   // puesto y sucursal: la lectora del sistema también busca acá
   $('app').style.display='block';
   if(SUC && MODE!=='puesto') cargarF8s();
   const ids = renderTabs();

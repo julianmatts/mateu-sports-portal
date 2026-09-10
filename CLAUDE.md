@@ -820,6 +820,39 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   resumen de una carga con nuevos), etiqueta «⚡ Nuevo · ingresó hoy/ayer/hace N
   días» en la tarjeta (borde ámbar), siempre primeros en la lista y marcados con ⚡
   en la impresión. Dejan de ser "nuevos" al ubicarlos (`esNuevo`, `nuevosLista`).
+- **Puente con el escáner del sistema (`scripts/puente-escaner/`, 09/09/2026)**: un
+  script de AutoHotkey corre de fondo en la PC del salón, detecta la ráfaga de la
+  lectora cuando el vendedor escanea **parado en el sistema** (tipeo velocísimo, se
+  descarta lo que tipea una persona) y publica el código en
+  `ubicaciones-mateu/scanBridge/<slug>` = `{codigo, ts, pc, test?}` (el `ts` lo pone el servidor con `.sv`).
+  El Buscador lo escucha (`iniciarScanBridge`) y dispara `procesarEscaneo`, el MISMO
+  circuito que la lectora local: resuelve el EAN de la etiqueta, resalta la tarjeta y
+  registra la consulta. Una pasada de lectora, las dos pantallas. Escucha por SSE y
+  cae a **polling cada 2,5 s** si el navegador no tiene `EventSource` (Win7 con IE),
+  si la conexión falla o si no abre en 4 s (el `open` apaga el polling); anda en los
+  modos `puesto` **y** `sucursal` (la cuenta del local también sirve, no solo
+  `NN-consulta@`). El código `PUENTE-TEST` (menú de la bandeja → «Probar el puente»)
+  no busca nada: muestra «Puente conectado ✔», que es la prueba de punta a punta.
+  Cada escaneo se atiende UNA vez (`sbVistos`, marca = `ts|codigo`): **en cada
+  reconexión Firebase reenvía el último valor del nodo**, y sin eso el quiosco
+  repetía solo el escaneo anterior. Lo primero que se lee al conectar se ignora
+  (es lo que quedó guardado), **salvo que sea de menos de 60 s** — si no, una pasada
+  hecha justo antes de que la pantalla empiece a escuchar se perdía en silencio.
+  Prueba sin Firebase ni PC del salón: `npx --yes http-server -p 8777 -s .` +
+  `node scripts/probar-puente-escaner.mjs sse|poll puesto|sucursal` (Playwright con
+  Chromium, intercepta la base con datos de prueba).
+  ⚠️ La **v1 no publicaba nada**: el PUT a Firebase se hacía asincrónico y el objeto
+  `WinHttpRequest` se liberaba al salir de la función, así que Windows cancelaba el
+  envío (ahora es sincrónico y se lee el status); además juntaba las teclas con
+  `Input` letra por letra (se le escapaban caracteres de las lectoras rápidas → ahora
+  `InputHook`, con el `Input` viejo solo de respaldo), no aceptaba el Enter del pad
+  numérico ni las lectoras sin tecla final, y del lado del Buscador escribía el texto
+  en el campo de búsqueda en vez de pasar por `procesarEscaneo` (una etiqueta EAN no
+  encontraba nada). Causas de campo que no son bugs: el sistema corriendo **como
+  administrador** (Windows no le deja ver las teclas a un programa común: hay que
+  ejecutar el puente como administrador) y **Windows 7 sin TLS 1.2** (KB3140245).
+  Todo eso está en `scripts/puente-escaner/LEEME.txt`, que es lo que se les manda a
+  las sucursales.
 
 ## Área de Producto (`equipo/`) — Control F8
 
