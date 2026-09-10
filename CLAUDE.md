@@ -1164,7 +1164,20 @@ Indicadores, ver abajo).
   a una unidad por vuelta** en orden de `cmpPrioridad`. **Excepción**: si TODAS las candidatas
   ya tienen `minSuc` o más de ese talle, el talle **se deja** en el depósito (`R.vacDejados`,
   casillero gris «se deja») para no pasarles el límite de stock del local; necesita la hoja de
-  stock por sucursal (sin ella se baja todo y lo avisa). Los artículos que se vacían salen del
+  stock por sucursal (sin ella se baja todo y lo avisa). **Mínimo del artículo (10/09/2026,
+  pedido de Juli)**: control «Mandar solo si la sucursal tiene del artículo» (`filtrosVac.minArt`,
+  default **2**; «sin mínimo» = 0): la sucursal con menos de N unidades del artículo (todos los
+  talles) queda **afuera de ese artículo entero en el modo vaciado — también de la reposición por
+  venta** (caso PUM31273108: Gonnet lo vendió pero ya no tenía, Calle 55 tenía 1; una unidad suelta
+  no arma nada). `aplicarVaciado` arma `R.vacFuera` (id → {slug: stock}), no descuenta su
+  reposición de la reserva (esas unidades se reparten entre las que sí lo tienen) y, si ninguna
+  llega al mínimo, deja los talles (`vacDejados` con `sinSuc`). `reposFusionadas` pone esas filas en
+  cero con el aviso «no va · tiene N» (se ven destildando «Solo lo que se puede mandar»); el ⇩ Excel
+  y el guardado las omiten; `meta.vaciado_param.minArt`. Necesita la hoja de stock por sucursal.
+  **Idea pendiente de Juli (10/09/2026)**: tirar los reportes de stock con los **días desde la última
+  compra** para separar «Reparto inicial» de «Barrida/Reposición» y que la barrida tome solo
+  artículos con N días (p.ej. 10) de ingreso en el depósito — falta el export con esa columna.
+  Los artículos que se vacían salen del
   reparto de «Completar curva» (bajan enteros igual). En pantalla: casilleros azules
   «+N · vaciar» y filas <span>solo vaciado</span> (sucursales que no lo vendieron pero lo
   tienen). En el ⇩ Excel la cantidad del talle = reposición + curva + vaciado. **Al guardar,
