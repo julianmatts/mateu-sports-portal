@@ -338,6 +338,7 @@ table.grid.en .ib.del:hover{ border-color:var(--red); color:var(--red); }
           <div style="font-family:var(--font-d); font-size:26px; line-height:1;" id="tempVig">—</div></div>
       </div>
       <div id="lanzBanner" class="hidden" style="margin-top:12px"></div>
+      <div id="liqGuardadas" style="margin-top:14px"></div>
     </div>
   </section>
 
@@ -643,9 +644,10 @@ const CONFIG = {
   keywordsEDLP: ['EDLP','PREMATCH','AWAY','HOME','TITULAR','SUPLENTE','ALTERNATIVA','ARQUERO','ARQ.','RETRO','ESTUDIANTES'],
 };
 
-// Persistencia. Cuando Juli cree la Realtime Database a mano, pegar la URL acá
-// y el módulo migra solo del localStorage a Firebase REST.
-const FIREBASE_DB_URL = ''; // p.ej. 'https://regalias-mateu-default-rtdb.firebaseio.com'
+// Persistencia (10/09/2026, pedido de Juli): Firebase REST en la base recepciones-mateu, nodo
+// aparte regalias/ (la misma base que ya usa la pestaña Entregas EDLP). Ahí viven el ledger, las
+// palabras EDLP y las liquidaciones guardadas; localStorage queda como copia de este navegador.
+const FIREBASE_DB_URL = 'https://recepciones-mateu-default-rtdb.firebaseio.com/regalias';
 const SESSION_KEY = 'mateu_portal_session';
 const TOOL_ID = 'regalias';
 const LS_LEDGER = 'regalias_ledger';
@@ -730,25 +732,72 @@ let RESULT = null;  // resultado de la última liquidación
    ============================================================ */
 const usaFB = () => !!FIREBASE_DB_URL;
 async function loadKeywords(){
-  if(usaFB()){ try{ const k=await fetchJSON(FIREBASE_DB_URL+'/keywordsEDLP.json'); if(Array.isArray(k)&&k.length) return k; }catch(e){} }
-  const ls=readLS(LS_KEYWORDS); return (Array.isArray(ls)&&ls.length)?ls:CONFIG.keywordsEDLP.slice();
+  const ls=readLS(LS_KEYWORDS);
+  if(usaFB()){ try{
+    const k=await fetchJSON(FIREBASE_DB_URL+'/keywordsEDLP.json');
+    if(Array.isArray(k)&&k.length) return k;
+    if(Array.isArray(ls)&&ls.length) putJSON(FIREBASE_DB_URL+'/keywordsEDLP.json', ls).catch(()=>{});   // migra las de este navegador
+  }catch(e){} }
+  return (Array.isArray(ls)&&ls.length)?ls:CONFIG.keywordsEDLP.slice();
 }
 async function saveKeywords(){
   saveLS(LS_KEYWORDS, KEYWORDS);
   if(usaFB()){ try{ await putJSON(FIREBASE_DB_URL+'/keywordsEDLP.json', KEYWORDS); }catch(e){} }
 }
+// La base manda. Si no respondió al cargar, NO se escribe encima (se pisaría con la copia vieja
+// de este navegador): se guarda solo local y se avisa.
+let LEDGER_FB_OK=false;
+const LS_LEDGER_MIG='regalias_ledger_migrado';
+// Suma a la base los meses que este navegador tenía guardados y la base no (o tiene solo sembrados).
+// Corre una sola vez por navegador, así un mes borrado desde otra PC no vuelve a aparecer.
+function fusionarLedger(base, local){
+  let cambio=false;
+  Object.keys(local||{}).forEach(t=>{
+    const L=local[t]||{}, B=base[t]=base[t]||{};
+    if(!B.carryIn && L.carryIn){ B.carryIn=L.carryIn; cambio=true; }
+    [['meses',L.meses], ['rda',L.rda&&L.rda.meses]].forEach(([tipo,src])=>{
+      Object.entries(src||{}).forEach(([k,m])=>{
+        const dst = tipo==='meses' ? (B.meses=B.meses||{}) : ((B.rda=B.rda||{}).meses=B.rda.meses||{});
+        const b=dst[k];
+        if(m && !m.seed && (!b || b.seed)){ dst[k]=m; cambio=true; }
+      });
+    });
+  });
+  return cambio;
+}
 async function loadLedger(){
-  if(usaFB()){ try{ const l=await fetchJSON(FIREBASE_DB_URL+'/ledger.json'); if(l) return l; }catch(e){} }
-  return readLS(LS_LEDGER) || {};
+  const ls=readLS(LS_LEDGER)||{};
+  if(usaFB()){
+    try{
+      const l=(await fetchJSON(FIREBASE_DB_URL+'/ledger.json'))||{};
+      LEDGER_FB_OK=true;
+      if(!readLS(LS_LEDGER_MIG)){
+        let ok=true;
+        if(fusionarLedger(l, ls)){
+          try{ const r=await putJSON(FIREBASE_DB_URL+'/ledger.json', l); ok=r.ok; if(ok) toast('Se pasaron a la base los meses guardados en este navegador'); }catch(e){ ok=false; }
+        }
+        if(ok) saveLS(LS_LEDGER_MIG, 1);
+      }
+      saveLS(LS_LEDGER, l);
+      return l;
+    }catch(e){ toast('Sin conexión con la base de regalías: se usa la copia de este navegador'); }
+  }
+  return ls;
 }
 async function saveLedger(){
   saveLS(LS_LEDGER, LEDGER);
-  if(usaFB()){ try{ await putJSON(FIREBASE_DB_URL+'/ledger.json', LEDGER); }catch(e){} }
+  if(!usaFB()) return;
+  if(!LEDGER_FB_OK){ toast('Guardado solo en este navegador: no hay conexión con la base'); return; }
+  try{ const r=await putJSON(FIREBASE_DB_URL+'/ledger.json', LEDGER); if(!r.ok) throw new Error('HTTP '+r.status); }
+  catch(e){ toast('No se pudo guardar en la base: '+e.message); }
 }
 function temporadaLedger(){
   const t=CONFIG.temporadaVigente;
-  if(!LEDGER[t]) LEDGER[t]={ carryIn:{edlp:0,rugeSE:0}, meses:{} };
-  return LEDGER[t];
+  // Firebase no guarda objetos vacíos: al leer de la base pueden faltar meses/rda/carryIn
+  const led=LEDGER[t]=LEDGER[t]||{};
+  led.carryIn=led.carryIn||{edlp:0,rugeSE:0}; led.meses=led.meses||{};
+  led.rda=led.rda||{}; led.rda.meses=led.rda.meses||{};
+  return led;
 }
 
 /* ============================================================
@@ -1033,7 +1082,7 @@ function acumuladoPrevio(mesKey){
    ============================================================ */
 function mesKeyActual(){ return $('selAnio').value+'-'+String(+$('selMes').value+1).padStart(2,'0'); }
 
-function liquidar(){
+function liquidar(opts){
   if(!MATEU || !MATEU.lines.length){ toast('Cargá primero las Ventas Mateu'); return; }
   const mesKey=mesKeyActual();
   const prev=acumuladoPrevio(mesKey);
@@ -1112,8 +1161,10 @@ function liquidar(){
   $('btnExport').disabled=false; $('btnGuardarLedger').disabled=false; $('btnPreso').disabled=false;
   $('btnExportRDA').disabled = !(RESULT.rda && RESULT.rda.lineas.length);
   $('expHint').textContent='Listo para descargar.';
+  if(opts && opts.reabierta) return;   // reabierta de la base: no se vuelve a guardar ni se avisa
   const led=temporadaLedger();
   if(led.meses && led.meses[mesKey]) toast('OJO: '+mesKey+' ya está en el ledger. Si guardás, lo pisás.');
+  guardarLiquidacion(false);   // queda en la base: al recargar se reabre sin volver a cargar nada
 }
 
 /* ============================================================
@@ -1312,7 +1363,87 @@ function guardarMesEnLedger(){
   led.rda = led.rda || { meses:{} };
   const rm=rdaMesLedger();
   if(rm) led.rda.meses[RESULT.mesKey]=rm;
-  saveLedger().then(()=>{ renderLedger(); renderAcumulador(); toast('Guardado '+RESULT.mesKey+' en el ledger'); });
+  saveLedger().then(()=>{ renderLedger(); renderAcumulador(); toast('Guardado '+RESULT.mesKey+' en el ledger'); guardarLiquidacion(true); });
+}
+
+/* ============================================================
+   LIQUIDACIONES GUARDADAS (Firebase, pedido de Juli 10/09/2026)
+   Cada mes liquidado queda en regalias/liquidaciones/<YYYY-MM> con las líneas ya
+   leídas + las asignaciones a mano (ovrTab / ovrEDLP / preLanz). Reabrirlo re-liquida
+   igual, así el Excel y la presentación salen sin volver a cargar los archivos.
+   regalias/liquidacionesIdx/<YYYY-MM> es el índice liviano para la lista.
+   Estado: «borrador» (se guarda solo al liquidar) → «guardada» (Guardar mes en el
+   ledger). Un mes guardado solo se pisa volviendo a tocar «Guardar mes».
+   ============================================================ */
+let LIQ_IDX={};
+async function cargarLiqIdx(){
+  if(!usaFB()) return {};
+  try{ return (await fetchJSON(FIREBASE_DB_URL+'/liquidacionesIdx.json'))||{}; }catch(e){ return {}; }
+}
+const _sinVacios=o=>{ Object.keys(o).forEach(k=>{ if(o[k]===undefined||o[k]===null||o[k]==='') delete o[k]; }); return o; };
+async function guardarLiquidacion(oficial){
+  if(!RESULT || !MATEU || !usaFB()) return;
+  const k=RESULT.mesKey, prev=LIQ_IDX[k];
+  if(!oficial && prev && prev.estado==='guardada') return;
+  const idx={ mesLabel:RESULT.mesLabel, estado:oficial?'guardada':'borrador', ts:Date.now(), por:(SESSION&&SESSION.email)||'',
+    unidades:RESULT.totU, importe:r2(RESULT.totImp), regalia:r2(RESULT.totReg) };
+  const full={ ...idx, archivos:{ mateu:MATEU.nombre||'', may:(MAY&&MAY.nombre)||'' }, excl:MATEU.excl||null,
+    mateu:MATEU.lines.map(l=>_sinVacios({ idx:l.idx, rubro:l.rubro, g1:l.g1, g2:l.g2, g3:l.g3, lista:l.lista, articulo:l.articulo, cod:l.cod,
+      cant:l.cant, importe:l.importe, ovrTab:l.ovrTab, ovrEDLP:l.ovrEDLP, preLanz:l.preLanz||null })),
+    may:(MAY?MAY.lines:[]).map(l=>_sinVacios({ idx:l.idx, cliente:l.cliente, dia:l.dia, comp:l.comp, rubro:l.rubro, articulo:l.articulo, cod:l.cod,
+      cant:l.cant, importe:l.importe, ovrTab:l.ovrTab })) };
+  try{
+    const r=await fetch(FIREBASE_DB_URL+'.json',{ method:'PATCH', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ ['liquidaciones/'+k]:full, ['liquidacionesIdx/'+k]:idx }) });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    LIQ_IDX[k]=idx; renderLiqGuardadas();
+    if(RESULT && RESULT.mesKey===k) $('expHint').textContent = oficial
+      ? 'Mes guardado en el ledger y en la base.'
+      : 'Listo para descargar · la liquidación quedó guardada (se reabre al volver a entrar).';
+  }catch(e){ toast('No se pudo guardar la liquidación en la base: '+e.message); }
+}
+function _lineaM(l){ return { src:'mateu', idx:+l.idx, rubro:l.rubro||'', g1:l.g1||'', g2:l.g2||'', g3:l.g3||'', lista:l.lista||'', articulo:l.articulo||'', cod:l.cod||'',
+  cant:+l.cant||0, importe:+l.importe||0, ovrTab:l.ovrTab||null, ovrEDLP:(l.ovrEDLP===true||l.ovrEDLP===false)?l.ovrEDLP:null, preLanz:!!l.preLanz }; }
+function _lineaY(l){ return { src:'may', idx:+l.idx, cliente:l.cliente||'', dia:l.dia==null?'':String(l.dia), comp:l.comp||'', rubro:l.rubro||'', articulo:l.articulo||'', cod:l.cod||'',
+  cant:+l.cant||0, importe:+l.importe||0, ovrTab:l.ovrTab||null }; }
+function _infoReabierta(tipo, D){
+  const u=D.lines.reduce((s,l)=>s+Math.round(l.cant),0), imp=D.lines.reduce((s,l)=>s+l.importe,0);
+  $(infoId(tipo)).innerHTML=`${D.nombre?'<b>'+esc(D.nombre)+'</b> · ':''}${D.lines.length} líneas · ${units(u)} u · $ ${money(imp)}<div class="meta">reabierto de la liquidación guardada · para cambiarlo, soltá otro archivo</div>`;
+}
+async function abrirLiquidacion(k){
+  let d=null;
+  try{ d=await fetchJSON(FIREBASE_DB_URL+'/liquidaciones/'+k+'.json'); }catch(e){ toast('No se pudo leer la liquidación guardada: '+e.message); return; }
+  if(!d || !Array.isArray(d.mateu) || !d.mateu.length){ toast('No hay liquidación guardada de '+k); return; }
+  $('selAnio').value=k.slice(0,4); $('selMes').value=String(+k.slice(5,7)-1);
+  MATEU={ lines:d.mateu.map(_lineaM), headers:[], mapa:{}, excl:d.excl||null, nombre:(d.archivos&&d.archivos.mateu)||'' };
+  $('dzMateu').classList.add('loaded'); $('okMateu').classList.remove('hidden'); $('mapMateu').classList.add('hidden');
+  _infoReabierta('mateu', MATEU);
+  if(Array.isArray(d.may) && d.may.length){
+    MAY={ lines:d.may.map(_lineaY), headers:[], mapa:{}, nombre:(d.archivos&&d.archivos.may)||'' };
+    $('dzMay').classList.add('loaded'); $('okMay').classList.remove('hidden'); $('mapMay').classList.add('hidden');
+    _infoReabierta('may', MAY);
+  } else {
+    MAY=null; $('dzMay').classList.remove('loaded'); $('okMay').classList.add('hidden'); $(infoId('may')).innerHTML='';
+  }
+  renderRevision(); renderLedger();
+  liquidar({ reabierta:true });
+  renderLiqGuardadas();
+  if(!RESULT) return;
+  const dif = d.regalia!=null ? Math.abs(r2(RESULT.totReg)-d.regalia) : 0;
+  if(dif>0.5) toast(`Reabierta ${RESULT.mesLabel}, pero ahora da $ ${money(RESULT.totReg)} y se había guardado $ ${money(d.regalia)} (cambió el acumulado de meses anteriores o las palabras EDLP)`);
+  else toast('Liquidación de '+RESULT.mesLabel+' reabierta');
+  $('expHint').textContent='Reabierta de la base · lista para descargar el Excel o la presentación.';
+}
+function renderLiqGuardadas(){
+  const box=$('liqGuardadas'); if(!box) return;
+  const keys=Object.keys(LIQ_IDX||{}).sort().reverse();
+  if(!keys.length){ box.innerHTML=''; return; }
+  const cuando=ts=>{ try{ return new Date(ts).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } };
+  box.innerHTML=`<label class="fld">Liquidaciones guardadas <span class="muted" style="text-transform:none">— se reabren con los archivos y las asignaciones a mano, sin volver a cargar nada</span></label>
+    <div style="display:flex; flex-wrap:wrap; gap:8px">${keys.map(k=>{ const m=LIQ_IDX[k]||{}, abierta=RESULT&&RESULT.mesKey===k;
+      const tip=(m.estado==='guardada'?'Guardada en el ledger':'Borrador: se guardó al liquidar')+(m.por?' · '+m.por:'')+(m.ts?' · '+cuando(m.ts):'');
+      return `<button class="btn sm ${abierta?'':'ghost'}" data-abrir="${k}" title="${esc(tip)}">${MESES[+k.slice(5,7)-1]} ${k.slice(0,4)} · ${m.estado==='guardada'?'✓ guardada':'borrador'} · $ ${money(m.regalia||0)}</button>`; }).join('')}</div>`;
+  box.querySelectorAll('[data-abrir]').forEach(b=>b.addEventListener('click',()=>abrirLiquidacion(b.dataset.abrir)));
 }
 // Export anual de Ruge Deportes Amateur: DETALLE MES (acumula todos los meses
 // guardados + el actual) + RESUMEN (12 meses + Total), como el archivo de Juli.
@@ -1698,11 +1829,11 @@ async function procesarArchivo(file, tipo){
 function finalizarCarga(tipo, mapa){
   const ctx=LAST[tipo];
   if(tipo==='mateu'){
-    MATEU={ lines:construirLineasMateu(ctx.aoa,ctx.hRow,mapa), headers:ctx.headers, mapa };
+    MATEU={ lines:construirLineasMateu(ctx.aoa,ctx.hRow,mapa), headers:ctx.headers, mapa, nombre:ctx.nombre };
     MATEU.excl=_exclMateu;
     $('dzMateu').classList.add('loaded'); $('okMateu').classList.remove('hidden'); $('mapMateu').classList.add('hidden');
   } else {
-    MAY={ lines:construirLineasMay(ctx.aoa,ctx.hRow,mapa), headers:ctx.headers, mapa };
+    MAY={ lines:construirLineasMay(ctx.aoa,ctx.hRow,mapa), headers:ctx.headers, mapa, nombre:ctx.nombre };
     $('dzMay').classList.add('loaded'); $('okMay').classList.remove('hidden'); $('mapMay').classList.add('hidden');
   }
   $(infoId(tipo)).innerHTML=resumenCarga(tipo);
@@ -2574,12 +2705,14 @@ function enInit(){
   MESES.forEach((m,i)=>$('selMes').insertAdjacentHTML('beforeend',`<option value="${i}">${m}</option>`));
   const anioBase=CONFIG.temporadaVigente;
   for(let a=anioBase-1;a<=anioBase+1;a++) $('selAnio').insertAdjacentHTML('beforeend',`<option value="${a}">${a}</option>`);
-  $('selMes').value=5; $('selAnio').value=anioBase; // arranca en junio de la temporada
+  { const h=new Date(); h.setDate(1); h.setMonth(h.getMonth()-1);   // arranca en el mes anterior (el que se liquida)
+    $('selMes').value=h.getMonth(); $('selAnio').value=Math.abs(h.getFullYear()-anioBase)<=1?h.getFullYear():anioBase; }
 
   // datos persistidos (para acá el script ya asignó LOGO al final del <script>)
   KEYWORDS=await loadKeywords();
   LEDGER=await loadLedger();
-  if(sembrarMesesPrevios()) await saveLedger();   // deja ene–may cargados para el acumulador
+  if(sembrarMesesPrevios()) await saveLedger();   // deja ene–jul cargados para el acumulador
+  LIQ_IDX=await cargarLiqIdx();
 
   wireDropzone($('dzMateu'),'mateu');
   wireDropzone($('dzMay'),'may');
@@ -2598,11 +2731,19 @@ function enInit(){
   });
   $('btnImportRDA').addEventListener('click',()=>$('fileRDA').click());
   $('fileRDA').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) importarRDAanual(f); e.target.value=''; });
-  ['selMes','selAnio'].forEach(id=>$(id).addEventListener('change',()=>{ RESULT=null; renderRevision(); renderAcumulador(); renderLedger();
-    $('consolidado').innerHTML='<div class="empty">Cambió el período. Tocá <b>Liquidar mes</b>.</div>'; $('btnExport').disabled=true; $('btnGuardarLedger').disabled=true; $('btnPreso').disabled=true; $('btnExportRDA').disabled=true; }));
+  ['selMes','selAnio'].forEach(id=>$(id).addEventListener('change',()=>{ RESULT=null; renderRevision(); renderAcumulador(); renderLedger(); renderLiqGuardadas();
+    const k=mesKeyActual();
+    $('consolidado').innerHTML = LIQ_IDX[k]
+      ? `<div class="empty">Este mes tiene una liquidación guardada. <button class="btn sm red" data-abrir="${k}">Reabrirla</button> o cargá archivos nuevos y tocá <b>Liquidar mes</b>.</div>`
+      : '<div class="empty">Cambió el período. Tocá <b>Liquidar mes</b>.</div>';
+    const b=$('consolidado').querySelector('[data-abrir]'); if(b) b.addEventListener('click',()=>abrirLiquidacion(b.dataset.abrir));
+    $('btnExport').disabled=true; $('btnGuardarLedger').disabled=true; $('btnPreso').disabled=true; $('btnExportRDA').disabled=true; }));
 
-  renderKeywords(); renderRevision(); renderAcumulador(); renderLedger();
+  renderKeywords(); renderRevision(); renderAcumulador(); renderLedger(); renderLiqGuardadas();
   enInit();   // pestaña Entregas EDLP
+  // al entrar reabre la última liquidación guardada: recargar la pestaña no obliga a hacer todo de nuevo
+  const ultLiq=Object.keys(LIQ_IDX).sort().pop();
+  if(ultLiq) abrirLiquidacion(ultLiq);
 })();
 
 /* ============================================================

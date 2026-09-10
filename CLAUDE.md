@@ -79,9 +79,13 @@ propio: ahí NO se incluye.**
   proyecto por dominio: `discontinuos-mateu` (usuarios del portal + gestión de
   stock), `asignacion-marcas-mateu`, `pedidos-semanales-mateu`,
   `ubicaciones-mateu` (Buscador de Artículos) y el del turnero.
-  `regalias/` guarda su ledger de acumuladores por temporada: hoy en
-  **localStorage** con `FIREBASE_DB_URL` como placeholder; cuando Juli cree
-  la base a mano (p.ej. `regalias-mateu`) y pegue la URL, migra solo a Firebase.
+  `regalias/` guarda en **`recepciones-mateu`, nodo `regalias/`** (10/09/2026): `ledger`
+  (acumuladores por temporada), `keywordsEDLP` y `liquidaciones/<YYYY-MM>` (líneas ya leídas +
+  asignaciones a mano de cada mes liquidado; índice liviano en `liquidacionesIdx`). Al entrar se
+  reabre la última liquidación, así recargar la pestaña no obliga a cargar todo de nuevo. Se guarda
+  como «borrador» al liquidar y como «guardada» con «Guardar mes en el ledger» (un mes guardado solo
+  se pisa con ese botón). localStorage queda como copia del navegador; el ledger viejo de cada
+  navegador se fusiona a la base una sola vez (`regalias_ledger_migrado`).
   `condiciones/` usa **localStorage** (no tiene backend). `equipo/` guarda los
   F8s y el control manual en la base del turnero (`turnero-mateu`, nodo `equipo/`).
   `evaluaciones/` escribe a su propia base Firebase `evaluaciones-mateu`.
