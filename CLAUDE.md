@@ -1228,7 +1228,7 @@ Indicadores, ver abajo).
   es «reserva chica»). Compras y el snapshot del histórico usan `totalDepo`; un artículo con solo
   mercadería nueva y sin venta no es reserva parada. Como cambia lo que se reparte, el cambio llama a
   `recalcular()`, que rehace el cruce con los archivos y lo ya bajado de la base (`state._proc`, lo
-  guarda `procesarBarrida`) y deja la semana «sin guardar». En pantalla: casillero ámbar
+  guarda `procesarBarrida`) y deja la semana «sin guardar». En pantalla: casillero violeta
   **«nuevo · N d»** (`esNuevoRet(d)`: `d.nv` unidades nuevas, `d.nd` días; se ve con «Ver los talles
   que no hay», no cuenta como faltante ni «hay que comprar», no va al Excel), pill «nuevo · sin
   repartir», «Stock reserva» con «+N» nuevas y en la tira de resumen «N u. nuevas sin repartir».
@@ -1280,6 +1280,15 @@ Indicadores, ver abajo).
   (✓ completo · ⚠ parcial · ✗ sin salir · + sin estar en la barrida), tilde «Solo lo que falta
   enviar» y un **% de cumplimiento** en la tira de resumen. Si esa semana ya está guardada, el
   cruce se guarda en `barridas/<lunes>/transf` y vuelve al abrirla del histórico.
+- **Amarillo = va menos, rojo = no va nada; talles en orden (11/09/2026, pedido de Juli)**: en la
+  columna Talles, el casillero que **recibe algo pero menos de lo pedido** (`0 < s < v`, la reserva no
+  alcanzó y por prioridad le tocó menos) es **amarillo** (clase `corto`, pill «⚠ recortado» también
+  amarillo); **rojo** (`rec`) queda solo para los que **no reciben nada** (`s = 0`: se lo llevó otra
+  sucursal, o «no hay» con borde punteado). Lo nuevo retenido pasó a **violeta** para no confundirse con
+  el amarillo. En el ⇩ Excel, igual: celda en 0 roja, celda con menos de lo pedido amarilla
+  (`BRAND.cortoBg/cortoTxt`). Los casilleros de la fila (reposición + curva + vaciado + «se deja») van
+  en **un solo recorrido de menor a mayor talle** (`cmpTalle`; `curvaChips`/`vacChips`/`dejChips`
+  devuelven `[{t,h}]` y la fila los intercala; a igual talle, reposición primero).
 - **Dos rojos distintos en los talles (08/09/2026, no se entendían)**: el casillero rojo decía
   siempre «pedía N» y mezclaba dos cosas. Ahora `talleChip` separa **«no hay»** (borde punteado,
   `d.r<=0`: el depósito no tiene NINGUNA de ese talle — no se la llevó nadie, hay que pedírsela
