@@ -1684,6 +1684,22 @@ entran acá: ven su objetivo en Indicadores.
   CALZADO/INDUMENTARIA/… de la estadística detallada) → «Mix de la semana» en el
   desplegable de cada vendedor. La matemática del reparto tiene **tests**:
   `node --test lib/reparto.test.js` (extraen las funciones del propio index.html).
+- **Ritmo por vendedor (11/09/2026, pedido de Juli: «que el número quede ahí» y el encargado
+  se lo pase al vendedor con seguridad, sin sacar la cuenta a ojo)**: en «Cómo viene el
+  equipo» de Mi Sucursal, cada tarjeta muestra bajo el nombre **«⏱ N% del ritmo · para el
+  ★ 120%: $X por día · meta: $Y por día (Ju·Vi·Sá)»** y el desplegable abre el bloque
+  (`eqRitmoBloque`): debería llevar / lleva / ritmo, a cuánto cierra si sigue así, y dos
+  recuadros (su meta y ★ 120%) con lo que falta, el promedio por día y el mismo monto abierto
+  según la curva de cada día. Cálculo en `eqRitmoPersona(venta, objDias, diasSet, sem, hoy)`
+  sobre su objetivo por día (`eqSharesDia` × meta): esperado = objetivo de los días ya cargados
+  (un día transcurrido sin venta en el local sale, como en `ritmoEsperado`); «por día» = lo que
+  falta ÷ los días que le quedan **con horas** después del último día cargado; semana terminada
+  → no se pide nada; si la venta cargada quedó atrás de hoy lo avisa. Botón **«⧉ Copiar ritmo
+  del equipo»** (texto para WhatsApp, `eqRitmoLinea`). Tests en `lib/reparto.test.js`.
+  ⚠ Mismo día: `eqDiasSet` ahora cuenta un día como cargado **solo si el local vendió algo**
+  (`veVentaDia` > 0). La plantilla PMS trae los días que no pasaron con venta 0 (Vie/Sáb en 0
+  un jueves) y contarlos daba la semana por completa: el ritmo del local no salía y tickets/hora
+  sumaba horas de días sin venta.
 
 **Puesta en marcha: ya funciona (usa `recepciones-mateu`, en vivo). No hace falta
 crear ninguna base.**

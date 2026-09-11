@@ -367,6 +367,24 @@ html .top-in{padding-top:calc(12px + env(safe-area-inset-top,0px))}
 .eqv-tot .eqv-st .l{color:#aab6d0}
 .eqv-tot .eqv-st .v{color:#fff}
 .eqv-tot .eqv-st .v.big{color:#fff}
+/* ritmo por vendedor (11/09/2026): cuánto le falta por día para su meta y el ★ 120% */
+.eqv-rit{font-size:12.5px;color:var(--navy)}
+.eqv-rit .kv-num{font-size:14px}
+.eqv-rit-d{color:var(--muted);font-size:11.5px}
+.eqr{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.eqr-txt{font-size:12.5px;margin-bottom:8px}
+.eqr-g{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.eqr-t{border:1px solid var(--border);border-radius:9px;padding:8px 11px;background:#fff}
+.eqr-l{font-family:var(--font-c);font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+.eqr-t.box120 .eqr-l{color:var(--red)}
+.eqr-v{font-family:'Saira',var(--font-c),sans-serif;font-style:italic;font-weight:800;font-size:22px;color:var(--navy);line-height:1.1;margin-top:2px}
+.eqr-v small{font-family:var(--font-c);font-style:normal;font-weight:600;font-size:12px;color:var(--muted)}
+.eqr-v.ok{color:var(--ok,#16a34a)}
+.eqr-s{font-size:11.5px;color:var(--muted)}
+.eqr-dias{display:flex;gap:4px 10px;flex-wrap:wrap;margin-top:5px;font-size:11.5px;color:var(--muted)}
+.eqr-dias b{color:var(--navy);font-weight:700}
+.eqr-hint{font-size:11px;color:var(--muted);margin-top:7px}
+@media(max-width:640px){.eqr-g{grid-template-columns:1fr}}
 @media(max-width:640px){
   .eqv-head{padding:10px 12px}
   .eqv-stats{margin-left:0;width:100%;justify-content:space-between;gap:6px 10px}
@@ -4288,10 +4306,12 @@ function eqKpisDe(x){
 // días presentes en la data de la semana actual ('lu','ma','mi'…) para comparar
 // la venta contra la semana anterior A LA MISMA ALTURA (si no, a mitad de semana
 // la comparación contra la semana completa daría siempre en contra)
+// Un día cuenta como cargado solo si el LOCAL vendió algo ese día: la plantilla PMS trae
+// los días que todavía no pasaron con venta 0 (Vie/Sáb en 0 un jueves), y contarlos
+// cerraba la semana antes de tiempo (ritmo apagado, horas de más en tickets/hora).
 function eqDiasSet(ve){
-  const s=new Set();
-  (ve&&ve.vendedores||[]).forEach(x=>(x.dias||[]).forEach(d=>{ const p=eqNorm(String(d.d||'')).slice(0,2); if(p) s.add(p); }));
-  return s;
+  const vd=veVentaDia(ve);
+  return new Set(Object.keys(vd).filter(k=>vd[k]>0));
 }
 function eqVentaAltura(prevX, diasSet){
   if(!prevX) return null;
@@ -4313,11 +4333,103 @@ function eqPrevMatcher(prevVe){
     return prevVe.vendedores[best];
   };
 }
+/* --- Ritmo por vendedor (11/09/2026, pedido de Juli): cuánto lleva cada uno contra lo
+   que «debería» llevar con los días ya cargados, y cuánto tiene que vender POR DÍA en lo
+   que le queda de la semana para llegar a su meta y al ★ 120%. Así el encargado le pasa
+   el número con seguridad, sin sacar la cuenta a ojo. Base: su objetivo por día
+   (eqSharesDia × meta). Igual que ritmoEsperado, un día ya transcurrido sin venta en el
+   local (feriado, cerrado) sale de lo esperado. `hoy` (Date) dice si la semana ya
+   terminó (entonces no se pide nada por día) y qué día es hoy. --- */
+function eqRitmoPersona(venta, objDias, diasSet, sem, hoy){
+  if(!Array.isArray(objDias)) return null;
+  const meta=objDias.reduce((a,x)=>a+(+x||0),0);
+  if(!(meta>=1)) return null;
+  const dias=diasSet||new Set();
+  const idxUlt=Math.max(-1, ...EQ_DOW.map((d,i)=>dias.has(d)?i:-1));
+  let esperado=0; const quedan=[];
+  EQ_DOW.forEach((d,i)=>{
+    const o=+objDias[i]||0; if(o<1) return;          // día sin horas: no suma ni se le pide
+    if(i<=idxUlt){ if(dias.has(d)) esperado+=o; }
+    else quedan.push({i, o});
+  });
+  let pasada=false, hoyIdx=-1;
+  const p=String(sem||'').split('-').map(Number);
+  if(hoy && p.length===3 && p[0]){
+    const lun=new Date(p[0],p[1]-1,p[2]), h0=new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate());
+    const dd=Math.round((h0-lun)/86400000);
+    if(dd>=7) pasada=true; else if(dd>=0) hoyIdx=dd;
+  }
+  const va=Math.max(0,+venta||0), idx=esperado>=1 ? va/esperado : null;
+  const q=pasada?[]:quedan, sumQ=q.reduce((a,x)=>a+x.o,0);
+  // lo que falta para llegar a G: parejo por día y abierto según la curva de cada día
+  const hasta=G=>{ const falta=Math.max(0,G-va);
+    return {obj:G, falta, ok:falta<1, porDia:q.length?falta/q.length:null,
+      dias:sumQ>0?q.map(x=>({i:x.i, v:x.o*falta/sumQ})):[]}; };
+  return {meta, s120:meta*1.2, venta:va, esperado, idx,
+    // al ritmo que viene: lo vendido + lo que le queda de objetivo × su ritmo
+    proy:(idx!=null && q.length) ? va+sumQ*idx : null,
+    ult:idxUlt>=0?EQ_DOW[idxUlt]:null, quedan:q, pasada, hoyIdx,
+    // la venta cargada no llega hasta ayer: el «por día» incluye días que ya pasaron
+    atrasada: hoyIdx>idxUlt+1,
+    aMeta:hasta(meta), a120:hasta(meta*1.2)};
+}
+const eqRitCol = i => i>=1?'var(--ok,#16a34a)':i>=0.9?'#d97706':'#dc2626';
+const eqRitDias = r => r.quedan.map(x=>x.i===r.hoyIdx?'Hoy':EQ_DIAS[x.i]).join('·');
+// línea corta bajo el nombre (tarjeta cerrada): lo que el encargado le dice al vendedor
+function eqRitmoSub(r){
+  if(!r) return null;
+  const ritmo = r.idx!=null ? '<b style="color:'+eqRitCol(r.idx)+'">⏱ '+Math.round(r.idx*100)+'% del ritmo</b> · ' : '';
+  if(!r.quedan.length){
+    if(r.a120.ok) return '<span class="eqv-rit">★ Llegó al 120% de su meta</span>';
+    if(r.aMeta.ok) return '<span class="eqv-rit">✓ Llegó a su meta</span>';
+    return null;
+  }
+  if(r.a120.ok) return '<span class="eqv-rit">'+ritmo+'★ ya pasó el 120% de su meta</span>';
+  return '<span class="eqv-rit">'+ritmo
+    +'para el ★ 120%: <b class="kv-num">'+objMoney(r.a120.porDia)+'</b> por día'
+    +(r.aMeta.ok?' · ✓ meta cumplida':' · meta: <b>'+objMoney(r.aMeta.porDia)+'</b> por día')
+    +' <span class="eqv-rit-d">('+eqRitDias(r)+')</span></span>';
+}
+// bloque del desplegable: la lectura del ritmo + lo que falta por día (meta y ★ 120%)
+function eqRitmoBloque(r){
+  if(!r || !r.quedan.length) return '';
+  const DL=i=> i===r.hoyIdx?'Hoy':EQ_DIAS[i];
+  let h='<div class="eqr">';
+  if(r.idx!=null){
+    const dif=r.venta-r.esperado;
+    h+='<div class="eqr-txt">⏱ Con la venta hasta el <b>'+(DOW_NOMBRE[r.ult]||r.ult)+'</b> debería llevar <b>'+objMoney(r.esperado)+'</b> y lleva <b>'+objMoney(r.venta)+'</b>: '
+      +'<b style="color:'+eqRitCol(r.idx)+'">'+Math.round(r.idx*100)+'% del ritmo</b> ('+(dif>=0?'+':'−')+objMoney(Math.abs(dif))+')'
+      +(r.proy!=null?'. Si sigue así, cierra la semana en <b>'+objMoney(r.proy)+'</b> ('+Math.round(r.proy/r.meta*100)+'% de su meta).':'.')+'</div>';
+  } else {
+    h+='<div class="eqr-txt">⏱ Todavía no hay venta cargada de sus días: lo que tiene que vender por día es su objetivo diario.</div>';
+  }
+  const tile=(lbl,a,cls)=>'<div class="eqr-t'+(cls?' '+cls:'')+'"><div class="eqr-l">'+lbl+'</div>'
+    +(a.ok
+      ? '<div class="eqr-v ok">✓ Cumplido</div><div class="eqr-s">lleva '+objMoney(r.venta)+' de '+objMoney(a.obj)+'</div>'
+      : '<div class="eqr-v">'+objMoney(a.porDia)+' <small>por día</small></div>'
+        +'<div class="eqr-s">le faltan '+objMoney(a.falta)+' en '+r.quedan.length+' día'+(r.quedan.length===1?'':'s')+'</div>'
+        +(a.dias.length>1?'<div class="eqr-dias">'+a.dias.map(d=>'<span>'+DL(d.i)+' <b>'+objMoney(d.v)+'</b></span>').join('')+'</div>':''))
+    +'</div>';
+  h+='<div class="eqr-g">'+tile('Para su meta · '+objMoney(r.meta), r.aMeta)+tile('★ 120% · '+objMoney(r.s120), r.a120, 'box120')+'</div>';
+  h+='<div class="eqr-hint">«Por día» = lo que falta repartido parejo entre los días que le quedan con horas; debajo, abierto según cuánto se vende cada día en tu sucursal.'
+    +(r.atrasada?' <b>Ojo:</b> '+(r.ult?'la venta cargada llega hasta el '+(DOW_NOMBRE[r.ult]||r.ult):'todavía no hay venta cargada esta semana')+' y ya pasaron días: cargala para que el número sea justo.':'')+'</div>';
+  return h+'</div>';
+}
+// renglón para copiar (WhatsApp)
+function eqRitmoLinea(nombre, r){
+  const n=titleCase(String(nombre||'').trim()), rit=r.idx!=null?' ('+Math.round(r.idx*100)+'% del ritmo)':'';
+  if(r.a120.ok) return '• '+n+': lleva '+objMoney(r.venta)+rit+' · ★ ya pasó el 120% de su meta';
+  return '• '+n+': lleva '+objMoney(r.venta)+rit+' · para el ★ 120%: '+objMoney(r.a120.porDia)+' por día'
+    +(r.aMeta.ok?' · ✓ meta cumplida':' · meta: '+objMoney(r.aMeta.porDia)+' por día')+' ('+eqRitDias(r)+')';
+}
+let _eqRitmoTxt=null;   // texto de «⧉ Copiar ritmo del equipo» (lo arma eqDistribHtml)
+
 // contenido del desplegable por vendedor: KPIs con flechas vs. semana anterior,
 // insight a trabajar (o felicitación si mejoró en todo) y el día a día
-function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias, metaInd, horasInd){
+function eqDetalleHtml(nombre, cur, prevX, diasSet, notaMin, objDias, metaInd, horasInd, rit){
   let h='';
   if(notaMin) h+='<div style="font-size:12px;color:var(--muted,#6B7A99);margin-bottom:8px">'+notaMin+'</div>';
+  h+=eqRitmoBloque(rit);
   if(!cur || !(cur.venta>0)){
     h+='<p class="hint" style="margin:0">Todavía sin ventas registradas esta semana.</p>';
     // aun sin venta, el vendedor ve su objetivo de cada día
@@ -4475,8 +4587,12 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
       +'</div>';
   }
   h+='<div class="eqv">';
+  const hoy=new Date(), ritLineas=[];
   rows.forEach(row=>{
     const pct = (row.venta&&row.meta) ? row.venta/row.meta : 0;
+    // ritmo del vendedor: lo que lleva vs. lo esperado y cuánto le falta por día (meta y ★ 120%)
+    const rit = (!row.fuera && metaVal && row.objDias) ? eqRitmoPersona(row.venta, row.objDias, diasSet, sem, hoy) : null;
+    if(rit && rit.quedan.length) ritLineas.push(eqRitmoLinea(row.nombre, rit));
     const part = totReal ? row.venta/totReal : 0, wp=Math.round(part*100);
     // datos para el desplegable: el registro del Excel (KPIs/día a día) o el real manual
     const cur = row.veRow ? (row.src==='manual' ? {...row.veRow, venta:row.venta} : row.veRow)
@@ -4499,10 +4615,14 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
       ? 'Mínimo: <b>'+objMoney(row.min)+'</b> · Meta: <b>'+objMoney(row.meta)+'</b> · participa el '+(row.share*100).toFixed(1)+'% de la meta del equipo'
       : (row.fuera?'No está en el equipo de esta semana — si corresponde, sumalo desde ✎ Equipo y horas.':null);
     h+=eqCardHtml({ idx:row.idx, nombre:row.nombre, tags, fuera:row.fuera,
-      sub:(!row.fuera && row.share)?'Participa el '+(row.share*100).toFixed(1)+'% de la meta del equipo':(row.fuera?'Vendió sin estar en el equipo de la semana':(row.horas?null:'Sin horas asignadas esta semana')),
+      sub:eqRitmoSub(rit) || ((!row.fuera && row.share)?'Participa el '+(row.share*100).toFixed(1)+'% de la meta del equipo':(row.fuera?'Vendió sin estar en el equipo de la semana':(row.horas?null:'Sin horas asignadas esta semana'))),
       stats, part: totReal?part:null,
-      detalle: eqDetalleHtml(row.nombre, cur, prevM(row.nombre, row.id), diasSet, notaMin, row.objDias, (!row.fuera&&row.share)?row.meta:0, row.fuera?0:(row.horasSem||0)) });
+      detalle: eqDetalleHtml(row.nombre, cur, prevM(row.nombre, row.id), diasSet, notaMin, row.objDias, (!row.fuera&&row.share)?row.meta:0, row.fuera?0:(row.horasSem||0), rit) });
   });
+  const ultI=Math.max(-1, ...EQ_DOW.map((d,i)=>diasSet.has(d)?i:-1));
+  _eqRitmoTxt = ritLineas.length
+    ? '⏱ Ritmo del equipo · '+(sucName||slug)+' · '+objSemTag(sem)+(ultI>=0?' · venta hasta el '+DOW_NOMBRE[EQ_DOW[ultI]]:'')+'\n'+ritLineas.join('\n')
+    : null;
   // total
   const totHs=equipo.reduce((a,p)=>a+eqHorasPersona(p),0), totSh=shares.reduce((a,x)=>a+x,0);
   const tst=[{l:'Horas venta', v:fmt2(totHs)+' h'}];
@@ -4522,6 +4642,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
       +'<button type="button" id="eqEditar" class="tb-btn">✎ Equipo y horas</button>'
       +'<button type="button" id="eqRealBtn" class="tb-btn">✎ Cargar venta real</button>'
       +'<button type="button" id="veUpload" class="tb-btn">⇧ Excel de venta</button>'
+      +(_eqRitmoTxt?'<button type="button" id="eqRitmoCopy" class="tb-btn" title="Copia lo que le falta por día a cada vendedor para mandarlo por WhatsApp">⧉ Copiar ritmo del equipo</button>':'')
       +(actu?'<span class="hint" style="margin:0">Equipo actualizado el '+esc(actu)+'.</span>':'')+'</div>';
   }
   return h;
@@ -5351,6 +5472,13 @@ function eqWire(slug, sem, eqData){
     try{ await Equipo.vincular(slug, b.dataset.id, b.dataset.n); await cargarPadron(slug, true); renderObjetivo(); renderEquipoSuc(); }
     catch(err){ alert('No se pudo vincular: '+(err.message||err)); b.disabled=false; }
   });
+  // copiar el ritmo de cada vendedor (lo que le falta por día) para mandarlo por WhatsApp
+  const rc=$('eqRitmoCopy'); if(rc) rc.onclick=()=>{
+    const txt=_eqRitmoTxt; if(!txt) return;
+    const ok=()=>{ const t=rc.textContent; rc.textContent='✓ Copiado'; setTimeout(()=>{ rc.textContent=t; },1600); };
+    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok).catch(()=>prompt('Copiá el ritmo del equipo:', txt));
+    else prompt('Copiá el ritmo del equipo:', txt);
+  };
   // carga manual de la venta real
   const rb=$('eqRealBtn'); if(rb) rb.onclick=()=>{
     const real={}; eqSanea(eqData&&eqData.equipo||[]).forEach(p=>{ const k=eqKey(p), k2=eqKeyName(p.nombre); const v=(eqData.real&&(eqData.real[k]>0?eqData.real[k]:eqData.real[k2]))||0; if(v>0) real[k]=v; });
