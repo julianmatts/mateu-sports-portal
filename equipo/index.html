@@ -488,11 +488,17 @@ function fbKeyMail(m){return (m||'').toLowerCase().trim().replace(/\./g,',');}
 function convKeyDe(a,b){return [fbKeyMail(a),fbKeyMail(b)].sort().join('__');}
 let _usuarios=null;
 async function usuariosPortal(){if(_usuarios)return _usuarios;try{_usuarios=await (await fetch(USUARIOS_URL)).json()||{};}catch(e){_usuarios={};}return _usuarios;}
-async function emailsDeSucursal(slug){
+// Las cuentas de depósito (deposito.<suc>@) y de puesto de consulta (consulta.<suc>@) son
+// mails FICTICIOS: no existen en el servidor. Reciben el directo de la Bandeja, pero NUNCA
+// un mail real — cada rebote gasta un envío de EmailJS (11/09/2026 se agotaron los créditos).
+const ROLES_SIN_MAIL=new Set(['deposito','puesto']);
+const mailFicticio=m=>/^(deposito|consulta)[.\-_]/i.test(String(m||'').trim());
+async function cuentasDeSucursal(slug){
   const us=await usuariosPortal();const out=[];
   for(const k in us){const u=us[k];if(!u||!u.email)continue;
-    // también la cuenta de depósito del local (NN-deposito@): arma el envío desde el Buscador → F8s
-    if(((u.rol==='sucursal'||u.rol==='deposito')&&u.sucursal===slug)||(u.rol==='outlet'&&u.outlet_id===slug))out.push(u.email);}
+    // también la cuenta de depósito del local: arma el envío desde el Buscador → F8s
+    if(((u.rol==='sucursal'||u.rol==='deposito')&&u.sucursal===slug)||(u.rol==='outlet'&&u.outlet_id===slug))
+      out.push({email:u.email,rol:u.rol});}
   return out;
 }
 async function repartirF8(entry,prevs){
@@ -528,13 +534,15 @@ async function notificarF8(porSlug,entry){
   const p=String(entry.date).split('-');const f=(p[2]||'')+'/'+(p[1]||'');
   const NOMBRE_SLUG={};for(const canon in SLUG_EQ)NOMBRE_SLUG[SLUG_EQ[canon]]=sucBonito(canon);
   for(const slug in porSlug){
-    const mails=await emailsDeSucursal(slug);
+    const cuentas=await cuentasDeSucursal(slug);
     const arts=porSlug[slug].length;
     const texto='📦 F8 nuevo del '+f+' ('+entry.operator+'): tenés '+arts+' artículo'+(arts===1?'':'s')+' para enviar. Entrá a Mi Sucursal → «F8 para armar»: mirá el detalle, descargalo y CONFIRMALO artículo por artículo cuando lo hagas.';
-    for(const a of mails){
+    for(const {email:a,rol} of cuentas){
       if((a||'').toLowerCase()===de.toLowerCase())continue;
       await fetch(MENSAJES_URL+'/directos/'+convKeyDe(de,a)+'.json',{method:'POST',body:JSON.stringify({de,texto,ts}),headers:{'Content-Type':'application/json'}}).catch(()=>null);
       n++;
+      // mail real solo a las cuentas del local (sucursal/outlet), nunca a depósito ni puesto
+      if(ROLES_SIN_MAIL.has(rol)||mailFicticio(a))continue;
       if(window.emailjs)try{
         await emailjs.send(EJS_SERVICE,EJS_TEMPLATE_F8,{to_email:a,sucursal:NOMBRE_SLUG[slug]||slug,fecha:f,operador:entry.operator,arts});
         mailsOk++;

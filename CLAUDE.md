@@ -957,7 +957,10 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   (`window.F8Descargas`, se incluye SIN defer). Las usan Mi Sucursal («F8 para armar») y la
   pestaña **F8s del Buscador de Artículos**, que es donde lo ve, lo baja y lo confirma la
   **cuenta de depósito** de la sucursal (no entra a Mi Sucursal). El aviso de F8 nuevo también
-  le llega (`emailsDeSucursal` suma el rol `deposito`); link directo `ubicaciones/?tab=f8s`.
+  le llega por la Bandeja (`cuentasDeSucursal` suma el rol `deposito`); link directo `ubicaciones/?tab=f8s`.
+  ⚠ **Mail real (EmailJS) solo a las cuentas `sucursal`/`outlet`** (11/09/2026): `deposito.<suc>@` y
+  `consulta.<suc>@` son mails ficticios — rebotaban y agotaron los créditos de EmailJS. `notificarF8`
+  los saltea por rol (`ROLES_SIN_MAIL`) y por prefijo (`mailFicticio`); solo reciben el directo.
   Dos botones. **«⇩ Descargar F8»** (`descargarF8`, ExcelJS por cdnjs) arma la
   **planilla OFICIAL del operador** solo con las líneas de la sucursal: **Daniel** = hoja
   `Hoja1`, logo arriba a la izquierda, «F / 8», fecha, «DANIEL» + nro «NF8-…», 7 curvas en
