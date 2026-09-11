@@ -972,7 +972,10 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   (cero en rojo, con borde los talles que pide el F8; la lista de retiro del Buscador también las lleva,
   `pickingStockTallesHtml`), «sin ubicar» / «no está en el
   stock» aparte y firmas; desde ahí «Descargar Excel» (`recorridoExcel`). Las dos marcan
-  `descargado`. Para eso **equipo/ guarda más datos al repartir** (`parseF8` +
+  `descargado`. **Corregir la confirmación** (mismo día): en un F8 ya confirmado cada fila tiene «✎ Corregir»
+  (Mi Sucursal `f8EdCelda`/`f8EdGuardar`, Buscador `f8uEdCelda`/`f8uEdGuardar`; gerencia no corrige) → ✓/✗ +
+  motivo → PATCH solo de `conf/lineas/<i>` = `{ok, motivo, ed:{ts, por, antes:{ok, motivo}}}` + `conf/editado`;
+  la fila dice «(corregido)» y el Seguimiento de equipo/ «· corregida». Los F8 abiertos quedan abiertos al repintar. Para eso **equipo/ guarda más datos al repartir** (`parseF8` +
   `f8DetectarCurvas`, copia de la de ubicaciones/): por línea `m` marca, `ds` descripción,
   `cv` lo que dice la columna de curva («4», «Todo», «UNI»), `k` curva resuelta, `x` la
   columna H del de Daniel y `q = [[índice de talle, unidades]]`; por doc `curvas =

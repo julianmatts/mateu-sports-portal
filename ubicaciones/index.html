@@ -1981,7 +1981,7 @@ function matchArticulo(a, q){
 /* ══════════ F8s del Área de Producto: recorrido de armado + confirmación ══════════ */
 const EQUIPO_FB = 'https://turnero-mateu-default-rtdb.firebaseio.com/equipo/f8suc';
 const MOTIVOS_F8 = ['Se vendió antes de armar el envío','Producto fallado / no está en condiciones','No se encontró en el local','El stock del sistema no coincide (no lo tenemos)','Otro motivo'];
-let _F8DOCS = null, _f8Draft = {};
+let _F8DOCS = null, _f8Draft = {}, _f8uAbiertos = new Set(), _f8uEdit = {};
 
 async function cargarF8s(){
   if(!SUC) return;
@@ -2039,7 +2039,7 @@ async function renderF8s(){
   if(!lista.length){ v.innerHTML='<div class="hint" style="padding:24px;text-align:center">No hay F8s recibidos del Área de Producto todavía.</div>'; return; }
   const puedeConf = MODE==='sucursal';
   const fmtF = f=>{ const p=String(f||'').split('-'); return p.length===3 ? p[2]+'/'+p[1] : f; };
-  let html = '<div class="hint" style="margin:12px 0 14px">Cada F8 llega con el <b>recorrido de armado</b> según las ubicaciones de tu depósito (en orden de estantería'+depositosOrdenTxt()+'). Bajá el <b>F8</b> (la planilla oficial de David o Daniel, con la curva de talles) o la <b>planilla de recorrido</b> para imprimir, juntá la mercadería, marcá ✓ lo enviado y ✗ + motivo lo que no, y enviá la confirmación.</div>';
+  let html = '<div class="hint" style="margin:12px 0 14px">Cada F8 llega con el <b>recorrido de armado</b> según las ubicaciones de tu depósito (en orden de estantería'+depositosOrdenTxt()+'). Bajá el <b>F8</b> (la planilla oficial de David o Daniel, con la curva de talles) o la <b>planilla de recorrido</b> para imprimir, juntá la mercadería, marcá ✓ lo enviado y ✗ + motivo lo que no, y enviá la confirmación. Si te equivocaste, corregí el artículo con <b>✎ Corregir</b>.</div>';
   lista.forEach(d=>{
     const filas = f8Filas(d);
     const pend = !d.conf;
@@ -2048,7 +2048,7 @@ async function renderF8s(){
     const chip = pend
       ? '<span style="background:rgba(204,0,0,.1);color:#CC0000;border:1px solid rgba(204,0,0,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;white-space:nowrap">PENDIENTE</span>'
       : '<span style="background:rgba(0,168,107,.1);color:#00a86b;border:1px solid rgba(0,168,107,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;white-space:nowrap">✓ CONFIRMADO</span>';
-    html += '<details class="est-card" '+(pend?'open':'')+' style="margin-bottom:14px" data-f8="'+esc(d.id)+'">'
+    html += '<details class="est-card" '+(pend||_f8uAbiertos.has(d.id)?'open':'')+' style="margin-bottom:14px" data-f8="'+esc(d.id)+'" ontoggle="f8uToggle(this)">'
       +'<summary class="est-head" style="cursor:pointer;list-style:none"><span class="nm">F8 del '+esc(fmtF(d.fecha))+' · '+esc(d.operador||'')+'</span><span class="cnt">'+filas.length+' art. · '+ubicadas+' ubicados</span>&nbsp;'+chip+'</summary>'
       +'<div style="padding:12px">'
       +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
@@ -2062,9 +2062,7 @@ async function renderF8s(){
       const cant = L.todo ? 'Todo' : (L.t||'');
       let celda='—';
       if(!pend){
-        const c=(d.conf.lineas||{})[f.i]||{};
-        celda = c.ok===true ? '<span style="color:#00a86b;font-weight:700">✓ Enviado</span>'
-          : c.ok===false ? '<span style="color:#CC0000;font-weight:700">✗</span> <span class="hint" style="margin:0">'+esc(c.motivo||'')+'</span>' : '—';
+        celda = f8uEdCelda(d, f.i, (d.conf.lineas||{})[f.i]||{}, puedeConf);
       }else if(puedeConf){
         const dr=(_f8Draft[d.id]||{})[f.i]||{};
         celda='<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
@@ -2098,6 +2096,45 @@ async function renderF8s(){
   actualizarBadgeF8();
 }
 function f8Doc2(id){ return f8Lista().find(x=>x.id===id); }
+// Corregir la confirmación de un artículo ya enviada (11/09/2026): mismo circuito que Mi Sucursal —
+// se escribe solo conf/lineas/<i> con quién, cuándo y cómo estaba antes
+function f8uToggle(el){ if(el.open) _f8uAbiertos.add(el.dataset.f8); else _f8uAbiertos.delete(el.dataset.f8); }
+function f8uEdCelda(d, i, c, puede){
+  const e=_f8uEdit[d.id+'|'+i], idq='\''+esc(d.id)+'\','+i;
+  const txt = c.ok===true ? '<span style="color:#00a86b;font-weight:700">✓ Enviado</span>'
+    : c.ok===false ? '<span style="color:#CC0000;font-weight:700">✗</span> <span class="hint" style="margin:0">'+esc(c.motivo||'')+'</span>' : '—';
+  const corr = c.ed ? ' <span class="hint" style="margin:0" title="Corregido por '+esc(c.ed.por||'')+' el '+esc(new Date(c.ed.ts).toLocaleString('es-AR'))+'">(corregido)</span>' : '';
+  if(!e) return txt+corr+(puede?' <button type="button" onclick="f8uEdAbrir('+idq+')" title="Corregir la confirmación de este artículo" style="border:1px solid var(--gray-200);background:#fff;border-radius:6px;padding:2px 8px;cursor:pointer;font-size:12px;margin-left:4px">✎ Corregir</button>':'');
+  const bt=(ok,t,col,bg)=>'<button type="button" onclick="f8uEdMarcar('+idq+','+ok+')" style="border:1px solid '+(e.ok===ok?col+';background:'+bg:'var(--gray-200);background:#fff')+';border-radius:6px;padding:3px 9px;cursor:pointer;font-weight:700;color:'+col+'">'+t+'</button>';
+  return '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'+bt(true,'✓','#00a86b','rgba(0,168,107,.15)')+bt(false,'✗','#CC0000','rgba(204,0,0,.12)')
+    +(e.ok===false?'<select onchange="f8uEdMotivo('+idq+',this.value)" style="font-size:12px;max-width:210px"><option value="">Motivo…</option>'+MOTIVOS_F8.map(m=>'<option'+(e.motivo===m?' selected':'')+'>'+esc(m)+'</option>').join('')+'</select>':'')
+    +'<button type="button" class="btn-pri" style="padding:4px 10px;font-size:12px" onclick="f8uEdGuardar('+idq+')">Guardar</button>'
+    +'<button type="button" class="btn-sec" style="padding:4px 10px;font-size:12px" onclick="f8uEdCancelar('+idq+')">Cancelar</button></div>';
+}
+function f8uEdAbrir(id,i){
+  if(MODE!=='sucursal') return;
+  const d=f8Doc2(id); if(!d||!d.conf) return;
+  const c=(d.conf.lineas||{})[i]||{};
+  _f8uEdit[id+'|'+i]={ok:c.ok, motivo:c.motivo||''}; _f8uAbiertos.add(id); renderF8s();
+}
+function f8uEdMarcar(id,i,ok){ const e=_f8uEdit[id+'|'+i]; if(!e) return; e.ok=ok; if(ok) e.motivo=''; renderF8s(); }
+function f8uEdMotivo(id,i,m){ const e=_f8uEdit[id+'|'+i]; if(e) e.motivo=m; }
+function f8uEdCancelar(id,i){ delete _f8uEdit[id+'|'+i]; renderF8s(); }
+async function f8uEdGuardar(id,i){
+  const d=f8Doc2(id), e=_f8uEdit[id+'|'+i]; if(MODE!=='sucursal'||!d||!d.conf||!e) return;
+  if(e.ok!==true&&e.ok!==false){ toast('Marcá ✓ (enviado) o ✗ (no enviado).'); return; }
+  if(e.ok===false&&!e.motivo){ toast('Elegí el motivo del ✗.'); return; }
+  const antes=(d.conf.lineas||{})[i]||{};
+  if(antes.ok===e.ok&&(antes.motivo||'')===(e.ok?'':e.motivo)){ delete _f8uEdit[id+'|'+i]; renderF8s(); return; }
+  const ts=Date.now();
+  const nueva={ok:e.ok, motivo:e.ok?'':e.motivo,
+    ed:{ts, por:(SESSION&&SESSION.email)||'', antes:{ok:(antes.ok===true||antes.ok===false)?antes.ok:'', motivo:antes.motivo||''}}};
+  const r=await f8Patch2(id,{['conf/lineas/'+i]:nueva, 'conf/editado':ts});
+  if(!r||!r.ok){ toast('No se pudo guardar la corrección. Probá de nuevo.'); return; }
+  delete _f8uEdit[id+'|'+i];
+  toast('Confirmación corregida ✓');
+  renderF8s();
+}
 function f8uMarcar(id,i,ok){ const m=(_f8Draft[id]=_f8Draft[id]||{}); m[i]={ok, motivo:ok?'':(m[i]&&m[i].motivo)||''}; renderF8s(); }
 function f8uMotivo(id,i,mot){ const m=(_f8Draft[id]=_f8Draft[id]||{}); m[i]={ok:false, motivo:mot}; f8uProg(id); }
 function f8uProg(id){

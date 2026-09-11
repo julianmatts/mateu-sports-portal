@@ -925,7 +925,7 @@ footer b{color:var(--navy)}
     <section class="sec" id="secF8" style="display:none">
       <div class="sec-label">Área de Producto</div>
       <h2 class="sec-title">F8 <em>para armar</em></h2>
-      <p class="hint">Pedidos de transferencia que el Área de Producto le hizo a tu sucursal. Bajá el <b>F8</b> (la planilla oficial de David o Daniel, con la curva de talles) o la <b>planilla de recorrido</b> (cada artículo con su ubicación en tu depósito, en orden de estantería, con destino y talles), armá el envío y <b>confirmá artículo por artículo</b>: tildá lo enviado y marcá con cruz (y motivo) lo que no se pudo enviar.</p>
+      <p class="hint">Pedidos de transferencia que el Área de Producto le hizo a tu sucursal. Bajá el <b>F8</b> (la planilla oficial de David o Daniel, con la curva de talles) o la <b>planilla de recorrido</b> (cada artículo con su ubicación en tu depósito, en orden de estantería, con destino y talles), armá el envío y <b>confirmá artículo por artículo</b>: tildá lo enviado y marcá con cruz (y motivo) lo que no se pudo enviar. Si te equivocaste, cada artículo se puede corregir con <b>✎ Corregir</b> aunque ya hayas enviado la confirmación.</p>
       <div class="card pad" id="f8SucCard"></div>
     </section>
 
@@ -6016,7 +6016,7 @@ function bMacro(r){
 /* ══════════ F8 para armar (Área de Producto → sucursal) ══════════ */
 const EQUIPO_F8_URL='https://turnero-mateu-default-rtdb.firebaseio.com/equipo/f8suc';
 const MOTIVOS_F8=['Se vendió antes de armar el envío','Producto fallado / no está en condiciones','No se encontró en el local','El stock del sistema no coincide (no lo tenemos)','Otro motivo'];
-let _f8SucDocs=null, _f8ConfDraft={};
+let _f8SucDocs=null, _f8ConfDraft={}, _f8Abiertos=new Set(), _f8Edit={};
 /* --- «F8 para armar» de la vista Cadena (30/08): modo CONTROL — quién está al día
    con los F8 repartidos por el Área de Producto y quién los tiene sin confirmar.
    Baja equipo/f8suc completo una vez (solo gerencia, cacheado en _f8CadDocs);
@@ -6215,7 +6215,7 @@ function paintF8Suc(){
     const chip=pend
       ?'<span style="background:rgba(204,0,0,.1);color:#CC0000;border:1px solid rgba(204,0,0,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">PENDIENTE DE CONFIRMAR</span>'
       :'<span style="background:rgba(0,168,107,.1);color:#00a86b;border:1px solid rgba(0,168,107,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">✓ CONFIRMADO</span>';
-    html+='<details class="bgrupo" data-f8="'+esc(d.id)+'" ontoggle="f8Visto(this)">'
+    html+='<details class="bgrupo" data-f8="'+esc(d.id)+'"'+(_f8Abiertos.has(d.id)?' open':'')+' ontoggle="f8Visto(this)">'
       +'<summary><b>F8 del '+esc(fmtF(d.fecha))+'</b> · '+esc(d.operador||'')+' · '+tot+' artículo'+(tot===1?'':'s')+' · '+chip+'</summary>'
       +'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0">'
       +'<button type="button" class="btn" style="background:var(--navy);color:#fff" title="La planilla oficial del F8 de '+esc(d.operador||'Producto')+', con la curva de talles, solo con los artículos de tu sucursal" onclick="f8Descargar(\''+esc(d.id)+'\')">⇩ Descargar F8</button>'
@@ -6228,10 +6228,7 @@ function paintF8Suc(){
       const cant=L.todo?'Todo':(L.t||'');
       let celda;
       if(!pend){
-        const c=(conf.lineas||{})[i]||{};
-        celda=c.ok===true?'<span style="color:#00a86b;font-weight:700">✓ Enviado</span>'
-          :c.ok===false?'<span style="color:#CC0000;font-weight:700">✗ No enviado</span> <span class="hint" style="margin:0">'+esc(c.motivo||'')+'</span>'
-          :'—';
+        celda=f8EdCelda(d,i,(conf.lineas||{})[i]||{});
       }else{
         const dr=(_f8ConfDraft[d.id]||{})[i]||{};
         celda='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
@@ -6255,6 +6252,8 @@ function paintF8Suc(){
 function f8Doc(id){return _f8SucDocs&&Object.values(_f8SucDocs.docs).find(x=>x&&x.id===id);}
 function f8Patch(id,body){return fetch(EQUIPO_F8_URL+'/'+encodeURIComponent(_f8SucDocs.slug)+'/'+encodeURIComponent(id)+'.json',{method:'PATCH',body:JSON.stringify(body),headers:{'Content-Type':'application/json'}}).catch(()=>null);}
 function f8Visto(el){
+  // recuerda qué F8 están abiertos: al repintar (marcar ✓/✗, corregir) no se cierran solos
+  if(el.open)_f8Abiertos.add(el.dataset.f8); else _f8Abiertos.delete(el.dataset.f8);
   if(!el.open||esGerencia)return;
   const d=f8Doc(el.dataset.f8);
   if(d&&!d.visto){d.visto=Date.now();f8Patch(d.id,{visto:d.visto});}
@@ -6268,6 +6267,45 @@ function f8Opts(d){
 }
 function f8Descargar(id){ const d=f8Doc(id); if(d) F8Descargas.descargarF8(d,f8Opts(d)); }
 function f8Recorrido(id){ const d=f8Doc(id); if(d) F8Descargas.abrirRecorrido(d,f8Opts(d)); }
+// Corregir la confirmación de un artículo ya enviada (11/09/2026, pedido de Juli): «✎ Corregir» en la fila →
+// ✓/✗ + motivo → Guardar. Se escribe solo esa línea (conf/lineas/<i>) con quién, cuándo y cómo estaba antes.
+function f8ConfTxt(c){
+  return c.ok===true?'<span style="color:#00a86b;font-weight:700">✓ Enviado</span>'
+    :c.ok===false?'<span style="color:#CC0000;font-weight:700">✗ No enviado</span> <span class="hint" style="margin:0">'+esc(c.motivo||'')+'</span>':'—';
+}
+function f8EdCelda(d,i,c){
+  const e=_f8Edit[d.id+'|'+i], idq='\''+esc(d.id)+'\','+i;
+  const corr=c.ed?' <span class="hint" style="margin:0" title="Corregido por '+esc(c.ed.por||'')+' el '+esc(new Date(c.ed.ts).toLocaleString('es-AR'))+'">(corregido)</span>':'';
+  if(!e) return f8ConfTxt(c)+corr+(esGerencia?'':' <button type="button" onclick="f8EdAbrir('+idq+')" title="Corregir la confirmación de este artículo" style="border:1px solid var(--line,#dce3f0);background:#fff;border-radius:6px;padding:2px 8px;cursor:pointer;font-size:12px;margin-left:4px">✎ Corregir</button>');
+  const bt=(ok,txt,col,bg)=>'<button type="button" onclick="f8EdMarcar('+idq+','+ok+')" style="border:1px solid '+(e.ok===ok?col+';background:'+bg:'var(--line,#dce3f0);background:#fff')+';border-radius:6px;padding:4px 10px;cursor:pointer;font-weight:700;color:'+col+'">'+txt+'</button>';
+  return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+bt(true,'✓','#00a86b','rgba(0,168,107,.15)')+bt(false,'✗','#CC0000','rgba(204,0,0,.12)')
+    +(e.ok===false?'<select onchange="f8EdMotivo('+idq+',this.value)" style="font-size:12px;max-width:230px"><option value="">Elegí el motivo…</option>'+MOTIVOS_F8.map(m=>'<option'+(e.motivo===m?' selected':'')+'>'+esc(m)+'</option>').join('')+'</select>':'')
+    +'<button type="button" class="btn btn-primary btn-sm" onclick="f8EdGuardar('+idq+')">Guardar</button>'
+    +'<button type="button" class="btn btn-sm" onclick="f8EdCancelar('+idq+')">Cancelar</button></div>';
+}
+function f8EdAbrir(id,i){
+  if(esGerencia) return;
+  const d=f8Doc(id); if(!d||!d.conf) return;
+  const c=(d.conf.lineas||{})[i]||{};
+  _f8Edit[id+'|'+i]={ok:c.ok, motivo:c.motivo||''}; _f8Abiertos.add(id); paintF8Suc();
+}
+function f8EdMarcar(id,i,ok){ const e=_f8Edit[id+'|'+i]; if(!e) return; e.ok=ok; if(ok) e.motivo=''; paintF8Suc(); }
+function f8EdMotivo(id,i,m){ const e=_f8Edit[id+'|'+i]; if(e) e.motivo=m; }
+function f8EdCancelar(id,i){ delete _f8Edit[id+'|'+i]; paintF8Suc(); }
+async function f8EdGuardar(id,i){
+  const d=f8Doc(id), e=_f8Edit[id+'|'+i]; if(esGerencia||!d||!d.conf||!e) return;
+  if(e.ok!==true&&e.ok!==false){ alert('Marcá ✓ (enviado) o ✗ (no enviado).'); return; }
+  if(e.ok===false&&!e.motivo){ alert('Elegí el motivo del ✗.'); return; }
+  const lineas=d.conf.lineas||(d.conf.lineas={}), antes=lineas[i]||{};
+  if(antes.ok===e.ok&&(antes.motivo||'')===(e.ok?'':e.motivo)){ delete _f8Edit[id+'|'+i]; paintF8Suc(); return; }
+  const ts=Date.now();
+  const nueva={ok:e.ok, motivo:e.ok?'':e.motivo,
+    ed:{ts, por:(SESSION&&SESSION.email)||'', antes:{ok:(antes.ok===true||antes.ok===false)?antes.ok:'', motivo:antes.motivo||''}}};
+  const r=await f8Patch(id,{['conf/lineas/'+i]:nueva, 'conf/editado':ts});
+  if(!r||!r.ok){ alert('No se pudo guardar la corrección. Revisá la conexión y probá de nuevo.'); return; }
+  lineas[i]=nueva; d.conf.editado=ts; delete _f8Edit[id+'|'+i];
+  paintF8Suc();
+}
 function f8Marcar(id,i,ok){
   if(esGerencia)return;
   const m=(_f8ConfDraft[id]=_f8ConfDraft[id]||{});
