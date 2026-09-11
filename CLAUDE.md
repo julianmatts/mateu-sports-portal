@@ -1330,6 +1330,35 @@ Indicadores, ver abajo).
     y, si alcanza, a 3 (cuenta lo que tiene + lo que le va por venta; respeta el tope). Casillero verde
     «+1 · tiene 1» (`engChips`). Se guarda dentro de `curva/<slug>/talles` con `tiene` (Indicadores:
     columna «Te mandan»; `abrirBarrida` lo separa de los faltantes por ese campo).
+  - **Abrir a más sucursales** (Juli 11/09/2026, a partir del informe «reparto automático vs. manual» de
+    Puma: el depósito, a mano, le manda a sucursales que NO tienen el artículo cuando lleva días en la
+    reserva y lo que baja por venta igual deja mercadería parada). Cuarto paso automático, después de
+    venta → vaciado → curva (`aplicarReparto()` = `aplicarVaciado` + `aplicarUnidadesCurva` +
+    `aplicarAmpliar`), con la reserva que dejaron los otros. **Artículo**: calzado o indumentaria, sin
+    mercadería nueva, cuya compra más nueva (mínimo de «Días u.compra» entre sus talles, `ampBase` en
+    `computar`) es de hace **N días o más, N = el mismo número de «Ingreso»** (`filtros.diasNuevo`,
+    default 10: lo más nuevo va por el Reparto inicial); no entra si es reserva chica. **Candidatas**:
+    sucursales con menos del mínimo del artículo del vaciado (`filtrosVac.minArt`, 2) que esa semana no
+    reciben nada de él, con la marca en Asignación de Marcas (`repCandidatos`/`repAsig`, igual que el
+    Reparto inicial; sin asignación cargada no entra) y con menos de 6 meses de stock en la marca-rubro.
+    **Nunca Aurelius** (Juli: trabaja canal moda y modelos puntuales de cada marca, p.ej. en adidas solo
+    Originals) **ni los locales Adidas** (`ampExcluida`); **los outlets recién desde los 40 días**
+    (`filtrosAmp.outletDias`, editable en pantalla). **Cuánto**: curva de arranque de `repRepartirArt`
+    (2 en los centrales —«hasta 3 si alcanza»—, 1 en el resto, mínimo 3 talles y algún central, sin
+    excedente) y queda 1 por talle en el depósito; la que tiene 1 unidad suelta cuenta como que no lo
+    tiene (si no, recibía un talle suelto); respeta el tope de calzado. Si lo que sobra del artículo
+    queda en menos de 3 talles (después de dejar la reserva) no se abre: sería una curva rota
+    (`R.ampSinCurva`). Pantalla: bloque turquesa
+    «Abrir a más sucursales» (parámetros + unidades/líneas/artículos + cuántos artículos viejos no
+    tienen ninguna sucursal para abrir o no arman curva), casilleros turquesa «+N · abrir», pill
+    «sucursal nueva», «Ver solo: Otras sucursales», suma al ⇩ Excel. Al guardar se SUMA a
+    `reposicion/<slug>` (campo `ampliar`, `soloAmpliar` + `diasDeposito` en las filas nuevas;
+    `meta.ampliar_param`), así Indicadores y el Picking no cambian. Prueba 11/09 con los reportes reales
+    de Puma (escrituras a Firebase bloqueadas): 32 artículos califican, 22 se abren (201 u. en 35
+    líneas), 10 sin sucursal para abrir y 13 que no arman curva. ⚠ En
+    los artículos con más diferencia del informe (CARINA MIA, REBOUND V6) no hay a quién abrir: ya los
+    tienen las 11 sucursales de línea y lo que falta son Aurelius (excluida) y outlets (tienen menos de
+    40 días), así que esa diferencia no la explica esta regla.
 - **Amarillo = va menos, rojo = no va nada; talles en orden (11/09/2026, pedido de Juli)**: en la
   columna Talles, el casillero que **recibe algo pero menos de lo pedido** (`0 < s < v`, la reserva no
   alcanzó y por prioridad le tocó menos) es **amarillo** (clase `corto`, pill «⚠ recortado» también
