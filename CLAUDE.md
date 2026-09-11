@@ -953,6 +953,31 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   muestra quién está al día y quién tiene F8 sin confirmar (tabla: sucursal, F8,
   artículos, hace cuántos días, estado sin abrir/visto/descargado), con el filtro
   por línea. El detalle sigue en equipo/.
+- **Descargas del F8 (11/09/2026, pedido de Juli)** — `shared/f8-descargas.js`
+  (`window.F8Descargas`, se incluye SIN defer). Las usan Mi Sucursal («F8 para armar») y la
+  pestaña **F8s del Buscador de Artículos**, que es donde lo ve, lo baja y lo confirma la
+  **cuenta de depósito** de la sucursal (no entra a Mi Sucursal). El aviso de F8 nuevo también
+  le llega (`emailsDeSucursal` suma el rol `deposito`); link directo `ubicaciones/?tab=f8s`.
+  Dos botones. **«⇩ Descargar F8»** (`descargarF8`, ExcelJS por cdnjs) arma la
+  **planilla OFICIAL del operador** solo con las líneas de la sucursal: **Daniel** = hoja
+  `Hoja1`, logo arriba a la izquierda, «F / 8», fecha, «DANIEL» + nro «NF8-…», 7 curvas en
+  G1:G7 con los talles desde la I, encabezado negro en la fila 7 (ORIGEN · MARCA · CODIGO ·
+  ARTÍCULO · DESCRIPCIÓN · DESTINO) y TOTAL en la AI; **David** = hoja `F8`, logo en B3:C8,
+  «F8 ACCESORIOS» + fecha, 6 curvas en G3:G8 con talles desde la H, encabezado en la fila 9
+  (sin MARCA) y Total en la AF. **«🖨 Planilla de recorrido»** (`abrirRecorrido`) abre una hoja
+  imprimible (A4 apaisado) con cada artículo agrupado por estantería/módulo según las
+  ubicaciones del Buscador (`ubicaciones-mateu/sucursales/<slug>/articulos|estanterias`,
+  cruce por Id.item y código como en su pestaña F8s; pisos de Diagonal en `DEPOSITOS`, copia del mapa del Buscador),
+  destino con cantidad y talles, stock de los talles pedidos, «sin ubicar» / «no está en el
+  stock» aparte y firmas; desde ahí «Descargar Excel» (`recorridoExcel`). Las dos marcan
+  `descargado`. Para eso **equipo/ guarda más datos al repartir** (`parseF8` +
+  `f8DetectarCurvas`, copia de la de ubicaciones/): por línea `m` marca, `ds` descripción,
+  `cv` lo que dice la columna de curva («4», «Todo», «UNI»), `k` curva resuelta, `x` la
+  columna H del de Daniel y `q = [[índice de talle, unidades]]`; por doc `curvas =
+  [{n, t:[rótulos]}]` y `hdr = {nro, titulo}`. Los F8 repartidos antes no tenían talles: se
+  completaron el 11/09 los de 14-08 (David) y 19-08 (Daniel), que estaban en Descargas
+  (verificado línea por línea); 21, 24 y 26-08 bajan con el total solo y una nota. Sin
+  `curvas` en el doc se usan las del operador horneadas en `F8_CURVAS_DEF`.
 - **Firebase** (`turnero-mateu`, nodo `equipo/`): `f8s/<id>` (objeto por id, alta
   con PATCH — así las subidas simultáneas no se pisan), `ctrl` (registro manual,
   legacy), `transf` (export vigente `{archivo,subido,por,filas:[[o,c,d,art,env]]}`),

@@ -798,6 +798,7 @@ footer b{color:var(--navy)}
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
 <script src="../shared/equipo.js"></script>
+<script src="../shared/f8-descargas.js"></script>
 <script src="../shared/marca.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <!-- Academia de Ventas: resumen de capacitación (se inyecta solo; ver capacitaciones/resumen-widget.js) -->
@@ -924,7 +925,7 @@ footer b{color:var(--navy)}
     <section class="sec" id="secF8" style="display:none">
       <div class="sec-label">Área de Producto</div>
       <h2 class="sec-title">F8 <em>para armar</em></h2>
-      <p class="hint">Pedidos de transferencia que el Área de Producto le hizo a tu sucursal. Descargalo, armá el envío y <b>confirmá artículo por artículo</b>: tildá lo enviado y marcá con cruz (y motivo) lo que no se pudo enviar. 💡 En el <b>Buscador de Artículos → pestaña F8s</b> está el <b>recorrido de armado</b> con la ubicación de cada artículo en tu depósito, en orden de estantería (ahí también se puede confirmar).</p>
+      <p class="hint">Pedidos de transferencia que el Área de Producto le hizo a tu sucursal. Bajá el <b>F8</b> (la planilla oficial de David o Daniel, con la curva de talles) o la <b>planilla de recorrido</b> (cada artículo con su ubicación en tu depósito, en orden de estantería, con destino y talles), armá el envío y <b>confirmá artículo por artículo</b>: tildá lo enviado y marcá con cruz (y motivo) lo que no se pudo enviar.</p>
       <div class="card pad" id="f8SucCard"></div>
     </section>
 
@@ -6217,10 +6218,12 @@ function paintF8Suc(){
     html+='<details class="bgrupo" data-f8="'+esc(d.id)+'" ontoggle="f8Visto(this)">'
       +'<summary><b>F8 del '+esc(fmtF(d.fecha))+'</b> · '+esc(d.operador||'')+' · '+tot+' artículo'+(tot===1?'':'s')+' · '+chip+'</summary>'
       +'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0">'
-      +'<button type="button" class="btn" onclick="f8Descargar(\''+esc(d.id)+'\')">⇩ Descargar planilla</button>'
+      +'<button type="button" class="btn" style="background:var(--navy);color:#fff" title="La planilla oficial del F8 de '+esc(d.operador||'Producto')+', con la curva de talles, solo con los artículos de tu sucursal" onclick="f8Descargar(\''+esc(d.id)+'\')">⇩ Descargar F8</button>'
+      +'<button type="button" class="btn" title="Cada artículo con su ubicación en tu depósito (Buscador de Artículos), en orden de estantería, con destino y talles" onclick="f8Recorrido(\''+esc(d.id)+'\')">🖨 Planilla de recorrido</button>'
       +(pend?'<span class="hint" style="margin:0" id="f8prog-'+esc(d.id)+'"></span>':'')
       +'</div>';
-    html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Código</th><th class="L">Descripción</th><th class="L">Destino</th><th>Cant.</th><th class="L">'+(pend?'¿Lo enviaste?':'Confirmación')+'</th></tr></thead><tbody>';
+    const conTalles=(d.lineas||[]).some(L=>F8Descargas.tallesDe(d,L).length);
+    html+='<div class="tbl-wrap"><table><thead><tr><th class="L">Código</th><th class="L">Artículo</th><th class="L">Descripción</th><th class="L">Destino</th><th>Cant.</th>'+(conTalles?'<th class="L">Talles</th>':'')+'<th class="L">'+(pend?'¿Lo enviaste?':'Confirmación')+'</th></tr></thead><tbody>';
     (d.lineas||[]).forEach((L,i)=>{
       const cant=L.todo?'Todo':(L.t||'');
       let celda;
@@ -6237,7 +6240,8 @@ function paintF8Suc(){
           +(dr.ok===false?'<select onchange="f8Motivo(\''+esc(d.id)+'\','+i+',this.value)" style="font-size:12px;max-width:230px"><option value="">Elegí el motivo…</option>'+MOTIVOS_F8.map(m=>'<option'+(dr.motivo===m?' selected':'')+'>'+esc(m)+'</option>').join('')+'</select>':'')
           +'</div>';
       }
-      html+='<tr><td class="L" style="font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:nowrap">'+esc(L.c||'')+'</td><td class="L">'+esc(L.a||'')+'</td><td class="L">'+esc(L.d||'')+'</td><td>'+esc(String(cant))+'</td><td class="L">'+celda+'</td></tr>';
+      html+='<tr><td class="L" style="font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:nowrap">'+esc(L.c||'')+'</td><td class="L">'+esc(L.a||'')+'</td><td class="L">'+(L.ds?esc(L.ds):'<span class="muted">—</span>')+'</td><td class="L">'+esc(L.d||'')+'</td><td>'+esc(String(cant))+'</td>'
+        +(conTalles?'<td class="L" style="font-size:12px;white-space:nowrap">'+esc(F8Descargas.tallesTxt(F8Descargas.tallesDe(d,L)))+'</td>':'')+'<td class="L">'+celda+'</td></tr>';
     });
     html+='</tbody></table></div>';
     if(pend)html+='<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="btn btn-primary" id="f8btn-'+esc(d.id)+'" onclick="f8Confirmar(\''+esc(d.id)+'\')">Enviar confirmación</button><span class="hint" style="margin:0">Respondé todos los artículos (y el motivo de cada ✗) para poder enviarla.</span></div>';
@@ -6255,17 +6259,15 @@ function f8Visto(el){
   const d=f8Doc(el.dataset.f8);
   if(d&&!d.visto){d.visto=Date.now();f8Patch(d.id,{visto:d.visto});}
 }
-function f8Descargar(id){
-  const d=f8Doc(id); if(!d) return;
-  const filas=[['Código','Artículo (Id.item)','Descripción','Destino','Cantidad']]
-    .concat((d.lineas||[]).map(L=>[L.c||'',L.a||'','',L.d||'',L.todo?'Todo':(L.t||'')]));
-  const csv='﻿'+filas.map(r=>r.map(v=>String(v).replace(/;/g,',')).join(';')).join('\r\n');
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-  a.download='F8 '+d.fecha+' '+_f8SucDocs.slug+'.csv'; a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  if(!esGerencia&&!d.descargado){d.descargado=Date.now();f8Patch(id,{descargado:d.descargado});}
+/* --- Descargas del F8 (11/09/2026): el F8 oficial del operador y la planilla de recorrido viven en
+   shared/f8-descargas.js, que también usa la pestaña F8s del Buscador (ahí lo ve la cuenta de depósito). --- */
+function f8NombreSuc(slug){ const f=SLUG_SUC[slug]||OUTLET_SUC[slug]||''; return f ? f.replace(/^\d+-\s*/,'').replace(/^MS\s+/,'') : nombreBonito(slug); }
+function f8Opts(d){
+  const slug=_f8SucDocs.slug;
+  return {slug, sucursal:f8NombreSuc(slug), alDescargar:()=>{ if(!esGerencia&&!d.descargado){ d.descargado=Date.now(); f8Patch(d.id,{descargado:d.descargado}); } }};
 }
+function f8Descargar(id){ const d=f8Doc(id); if(d) F8Descargas.descargarF8(d,f8Opts(d)); }
+function f8Recorrido(id){ const d=f8Doc(id); if(d) F8Descargas.abrirRecorrido(d,f8Opts(d)); }
 function f8Marcar(id,i,ok){
   if(esGerencia)return;
   const m=(_f8ConfDraft[id]=_f8ConfDraft[id]||{});

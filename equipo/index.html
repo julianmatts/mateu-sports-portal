@@ -491,7 +491,8 @@ async function usuariosPortal(){if(_usuarios)return _usuarios;try{_usuarios=awai
 async function emailsDeSucursal(slug){
   const us=await usuariosPortal();const out=[];
   for(const k in us){const u=us[k];if(!u||!u.email)continue;
-    if((u.rol==='sucursal'&&u.sucursal===slug)||(u.rol==='outlet'&&u.outlet_id===slug))out.push(u.email);}
+    // también la cuenta de depósito del local (NN-deposito@): arma el envío desde el Buscador → F8s
+    if(((u.rol==='sucursal'||u.rol==='deposito')&&u.sucursal===slug)||(u.rol==='outlet'&&u.outlet_id===slug))out.push(u.email);}
   return out;
 }
 async function repartirF8(entry,prevs){
@@ -509,7 +510,7 @@ async function repartirF8(entry,prevs){
     (porSlug[slug]=porSlug[slug]||[]).push(L);
   }
   for(const slug in porSlug){
-    const doc={id:entry.id,fecha:entry.date,operador:entry.operator,archivo:entry.filename,ts:Date.now(),lineas:porSlug[slug],visto:0,descargado:0,conf:null};
+    const doc={id:entry.id,fecha:entry.date,operador:entry.operator,archivo:entry.filename,ts:Date.now(),lineas:porSlug[slug],curvas:entry.curvas||null,hdr:entry.hdr||null,visto:0,descargado:0,conf:null};
     patch[slug+'/'+entry.id]=doc;
     (_F8SUC[slug]=_F8SUC[slug]||{})[entry.id]=doc;
   }
@@ -517,7 +518,7 @@ async function repartirF8(entry,prevs){
   renderSeguimiento();
   const slugs=Object.keys(porSlug);
   if(sinSlug.size)showToast('Sin sucursal en el portal (no se reparte): '+[...sinSlug].join(', '),true);
-  if(slugs.length&&confirm('F8 repartido a '+slugs.length+' sucursal(es): cada una ya lo ve en Mi Sucursal.\n\n¿Avisarles ahora por la Bandeja del portal?')){
+  if(slugs.length&&confirm('F8 repartido a '+slugs.length+' sucursal(es): cada una ya lo ve en Mi Sucursal (y su cuenta de depósito, en el Buscador de Artículos → F8s).\n\n¿Avisarles ahora por la Bandeja del portal?')){
     notificarF8(porSlug,entry).then(r=>showToast('Avisos enviados: '+r+' ✓'));
   }
 }
@@ -893,6 +894,24 @@ function selectF8Activo(){
 // ═══════════════ CARGAR F8 ═══════════════
 const BRAND_MAP2=[['ADI','Adidas'],['NIK','Nike'],['PUM','Puma'],['RUG','RUGE-EDLP'],['MAT','Mateu'],['UMB','Umbro'],['UA','Under Armour'],['NB2','New Balance'],['CHV','Chevignon'],['VAN','Vans'],['GIV','Givova'],['TOP','Topper'],['KAP','Kappa'],['COL','Columbia'],['HEA','Head'],['AUR','Aurelius'],['SAU','Saucony'],['FIL','Fila'],['RBK','Reebok']];
 function detectBrand(code){if(!code)return'Otros';const s=String(code);for(const[p,b]of BRAND_MAP2)if(s.startsWith(p))return b;return'Otros';}
+// Curvas de talle del F8: arriba de ORIGEN hay una fila por curva (niños, US, europeo, letras…)
+// numeradas 1, 2, 3… en la columna que va justo antes de los talles, y cada artículo lleva en esa
+// columna el número de SU curva. Copia de f8DetectarCurvas de ubicaciones/: mantener en sintonía.
+// Devuelve {col, filas:{n: índice de fila}, cols:[columnas de talle]} o null (F8 sin curvas).
+function f8DetectarCurvas(rows,hi,base,tc){
+  const fin=tc>base?tc:Math.max(base+1,...rows.slice(0,hi+1).map(r=>(r||[]).length));
+  const lleno=v=>v!=null&&String(v).trim()!=='';
+  for(let col=base;col<=base+2&&col<fin;col++){
+    const filas={};let n=0;
+    for(let i=0;i<=hi;i++){const v=(rows[i]||[])[col];if(Number.isInteger(v)&&v>=1&&v<=20&&filas[v]==null){filas[v]=i;n++;}}
+    if(n<2||filas[1]==null||filas[2]==null||filas[2]<filas[1])continue;
+    const cols=[];
+    for(let ci=col+1;ci<fin;ci++)
+      if(Object.values(filas).some(i=>{const x=(rows[i]||[])[ci];return lleno(x)&&String(x).trim().toUpperCase()!=='TOTAL';}))cols.push(ci);
+    if(cols.length)return{col,filas,cols};
+  }
+  return null;
+}
 function parseF8(wb){
   const ws=wb.Sheets[wb.SheetNames[0]];
   const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
@@ -911,11 +930,43 @@ function parseF8(wb){
   const cC0=findCol('CODIGO','CÓDIGO','COD');const cC=cC0>=0?cC0:2;
   const cA0=findCol('ARTICULO','ARTÍCULO','DESCRIPCION','DESCRIPCIÓN');const cA=cA0>=0?cA0:3;
   const cM=findCol('MARCA');
+  const cDs0=findCol('DESCRIPCION','DESCRIPCIÓN');const cDs=cDs0!==cA?cDs0:-1;
   // Primera columna de talles/cantidades = después de la última columna de texto de la cabecera
   const base=Math.max(cO,cC,cA,cD,5)+1;
   // Sin columna DESTINO → formato matriz: una columna por sucursal destino entre base y TOTAL
   const dcols=[];if(cD<0)for(let ci=base;ci<tc;ci++)if(H[ci]&&ci!==cO&&ci!==cC&&ci!==cA)dcols.push(ci);
   const dr=rows.slice(hi+1);const bc={};let wm=[];let tr=0;const lineas=[];
+  // Curvas de talle y detalle por línea (11/09/2026): Mi Sucursal arma con esto el F8 oficial del
+  // operador y el recorrido con talles. La columna donde está el VALOR del total manda hasta dónde
+  // llegan los talles (en el de Daniel el rótulo TOTAL está en AG y la suma en AI).
+  let tv=tc;{let best=-1;for(let ci=tc;ci<=tc+2;ci++){let n=0;for(const r of dr)if(r&&typeof r[ci]==='number')n++;if(n>best){best=n;tv=ci;}}}
+  const curva=cD>=0?f8DetectarCurvas(rows,hi,base,tv):null;
+  const txt=v=>v==null?'':String(v).trim();
+  const curvaCod={};
+  if(curva)for(const r of dr){const v=r&&r[curva.col],c=r&&txt(r[cC]);if(c&&curva.filas[v]!=null&&curvaCod[c]==null)curvaCod[c]=v;}
+  let curvas=null,hdr=null;
+  if(curva)curvas=Object.keys(curva.filas).map(Number).sort((a,b)=>a-b).map(n=>{
+    const fila=rows[curva.filas[n]]||[];
+    // rótulos de la curva; afuera lo que no es un talle (fechas, «DANIEL», «NF8-296»)
+    const t=curva.cols.map(ci=>{const v=fila[ci];if(typeof v==='number')return v>999?'':String(v);const s=txt(v);return /^(NF8|DANIEL|DAVID|TOTAL)/i.test(s)?'':s;});
+    while(t.length&&t[t.length-1]==='')t.pop();
+    return{n,t};
+  });
+  for(let i=0;i<hi;i++)for(const v of rows[i]||[]){const s=typeof v==='string'?v.trim():'';if(!s)continue;
+    if(/^NF8-?\d+$/i.test(s))(hdr=hdr||{}).nro=s;else if(/^F8\s+\S/i.test(s)&&!(hdr&&hdr.titulo))(hdr=hdr||{}).titulo=s.replace(/\s+/g,' ');}
+  // m = marca · ds = descripción · cv = lo que dice la columna de curva · k = curva resuelta ·
+  // x = columna entre la curva y el primer talle (la H del de Daniel) · q = [[índice de talle, unidades]]
+  const extras=L=>{const r=L._r;delete L._r;
+    if(cM>=0&&txt(r[cM]))L.m=txt(r[cM]);
+    if(cDs>=0&&txt(r[cDs]))L.ds=txt(r[cDs]);
+    if(!curva)return L;
+    const cv=r[curva.col];if(txt(cv))L.cv=typeof cv==='number'?cv:txt(cv);
+    const k=curva.filas[cv]!=null?cv:curvaCod[L.c];if(k!=null)L.k=k;
+    for(let ci=curva.col+1;ci<curva.cols[0];ci++)if(txt(r[ci])){L.x=typeof r[ci]==='number'?r[ci]:txt(r[ci]);break;}
+    const q=[];curva.cols.forEach((ci,i)=>{const v=r[ci];if(typeof v==='number'&&v>0)q.push([i,v]);});
+    if(q.length)L.q=q;
+    return L;
+  };
   for(const r of dr){
     if(!r[1])continue;tr++;
     // El valor del total puede estar 1-2 columnas a la derecha del rótulo (celdas combinadas);
@@ -933,13 +984,13 @@ function parseF8(wb){
       const b=(cM>=0&&r[cM])?String(r[cM]).trim().toLowerCase().replace(/[.#$/\[\]]/g,'-').replace(/\b\p{L}/gu,c=>c.toUpperCase()):detectBrand(r[cC]);
       bc[b]=(bc[b]||0)+1;
       const o=String((cO>=0?r[cO]:r[1])||'').trim();const c=String(r[cC]||'').trim();const a=String(r[cA]||'').trim();
-      if(cD>=0){const d=dRaw;if(o&&c&&d)lineas.push(esTodo?{o,d,c,a,t:0,todo:1}:{o,d,c,a,t});}
+      if(cD>=0){const d=dRaw;if(o&&c&&d)lineas.push(extras(esTodo?{o,d,c,a,t:0,todo:1,_r:r}:{o,d,c,a,t,_r:r}));}
       else for(const ci of dcols){const v=r[ci];if(typeof v==='number'&&v>0&&o&&c)lineas.push({o,d:H[ci],c,a,t:v});}
     }
   }
   const ua=new Set(wm.map(w=>w.r[cA]).filter(Boolean)).size;
   const tu=Math.round(wm.reduce((s,w)=>s+w.t,0));
-  return{totalRows:tr,withMovCount:wm.length,uniqueArts:ua,totalUnits:tu,brandCounts:bc,topBrands:Object.entries(bc).sort((a,b)=>b[1]-a[1]).slice(0,6),lineas};
+  return{totalRows:tr,withMovCount:wm.length,uniqueArts:ua,totalUnits:tu,brandCounts:bc,topBrands:Object.entries(bc).sort((a,b)=>b[1]-a[1]).slice(0,6),lineas,curvas,hdr};
 }
 function handleFile(e,op){const f=e.target.files[0];if(f)readF8(f,op);}
 function dzDrag(e,w){e.preventDefault();document.getElementById('dz-'+w).classList.add('drag-over');}

@@ -681,6 +681,7 @@ body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
 <script src="../shared/equipo.js"></script>
+<script src="../shared/f8-descargas.js"></script>
 <script src="../shared/marca.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <!-- Header unificado del shell: barra Menú + logo + calendario retail + drawer -->
@@ -1276,6 +1277,9 @@ let lastHash = '';
 let lastSyncTs = 0;
 let pollTimer = null;
 let tabActiva = 'buscar';
+// ?tab=f8s abre directo la pestaña F8s (link del aviso de F8 nuevo para la cuenta de depósito). Se guarda
+// aparte y se aplica la primera vez que la pestaña existe: antes de elegir el perfil algo puede volver a Buscar.
+let _tabUrl = (()=>{ try{ return new URLSearchParams(location.search).get('tab')==='f8s' ? 'f8s' : null; }catch(e){ return null; } })();
 let searchQuery = '';
 let suAbierto = false;     // sección SIN UBICAR expandida
 let suSoloNuevos = false;  // filtro "⚡ Nuevos" de la sección SIN UBICAR
@@ -1605,7 +1609,8 @@ function montarApp(){
   if(SUC && MODE!=='puesto') cargarF8s();
   const ids = renderTabs();
   // si la vista activa ya no corresponde (p.ej. Perfiles al pasar de encargado a vendedor), a Buscar
-  setTab(ids.includes(tabActiva) || (tabActiva==='perfiles' && canManage()) ? tabActiva : 'buscar');
+  if(_tabUrl && ids.includes(_tabUrl)){ setTab(_tabUrl); _tabUrl=null; }
+  else setTab(ids.includes(tabActiva) || (tabActiva==='perfiles' && canManage()) ? tabActiva : 'buscar');
   iniciarPolling();
   resetInactividad();
 }
@@ -2029,10 +2034,11 @@ async function renderF8s(){
   if(!lista.length){ v.innerHTML='<div class="hint" style="padding:24px;text-align:center">No hay F8s recibidos del Área de Producto todavía.</div>'; return; }
   const puedeConf = MODE==='sucursal';
   const fmtF = f=>{ const p=String(f||'').split('-'); return p.length===3 ? p[2]+'/'+p[1] : f; };
-  let html = '<div class="hint" style="margin:12px 0 14px">Cada F8 llega con el <b>recorrido de armado</b> según las ubicaciones de tu depósito (en orden de estantería'+depositosOrdenTxt()+'). Juntá la mercadería, marcá ✓ lo enviado y ✗ + motivo lo que no, y enviá la confirmación.</div>';
+  let html = '<div class="hint" style="margin:12px 0 14px">Cada F8 llega con el <b>recorrido de armado</b> según las ubicaciones de tu depósito (en orden de estantería'+depositosOrdenTxt()+'). Bajá el <b>F8</b> (la planilla oficial de David o Daniel, con la curva de talles) o la <b>planilla de recorrido</b> para imprimir, juntá la mercadería, marcá ✓ lo enviado y ✗ + motivo lo que no, y enviá la confirmación.</div>';
   lista.forEach(d=>{
     const filas = f8Filas(d);
     const pend = !d.conf;
+    const conTalles = (d.lineas||[]).some(L=>F8Descargas.tallesDe(d,L).length);
     const ubicadas = filas.filter(f=>f.ord.ne<9999).length;
     const chip = pend
       ? '<span style="background:rgba(204,0,0,.1);color:#CC0000;border:1px solid rgba(204,0,0,.3);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;white-space:nowrap">PENDIENTE</span>'
@@ -2041,11 +2047,11 @@ async function renderF8s(){
       +'<summary class="est-head" style="cursor:pointer;list-style:none"><span class="nm">F8 del '+esc(fmtF(d.fecha))+' · '+esc(d.operador||'')+'</span><span class="cnt">'+filas.length+' art. · '+ubicadas+' ubicados</span>&nbsp;'+chip+'</summary>'
       +'<div style="padding:12px">'
       +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
-      +'<button type="button" class="btn-sec" onclick="f8Imprimir(\''+esc(d.id)+'\')">🖨 Imprimir recorrido</button>'
-      +'<button type="button" class="btn-sec" onclick="f8Csv(\''+esc(d.id)+'\')">⇩ Descargar</button>'
+      +'<button type="button" class="btn-pri" onclick="f8DescargarF8(\''+esc(d.id)+'\')" title="La planilla oficial del F8 de '+esc(d.operador||'Producto')+', con la curva de talles, solo con los artículos de esta sucursal">⇩ Descargar F8</button>'
+      +'<button type="button" class="btn-sec" onclick="f8Imprimir(\''+esc(d.id)+'\')" title="Cada artículo con su ubicación, en orden de estantería, con destino y talles: para imprimir o bajar en Excel">🖨 Planilla de recorrido</button>'
       +(pend&&puedeConf?'<span class="hint" style="margin:0;align-self:center" id="f8uProg-'+esc(d.id)+'"></span>':'')
       +'</div>';
-    html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;border-bottom:2px solid var(--navy)"><th style="padding:6px 8px">#</th><th style="padding:6px 8px">Ubicación</th><th style="padding:6px 8px">Código</th><th style="padding:6px 8px">Descripción</th><th style="padding:6px 8px">Stock</th><th style="padding:6px 8px">Destino</th><th style="padding:6px 8px">Cant.</th><th style="padding:6px 8px">'+(pend?'¿Enviado?':'Confirmación')+'</th></tr></thead><tbody>';
+    html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;border-bottom:2px solid var(--navy)"><th style="padding:6px 8px">#</th><th style="padding:6px 8px">Ubicación</th><th style="padding:6px 8px">Código</th><th style="padding:6px 8px">Descripción</th><th style="padding:6px 8px">Stock</th><th style="padding:6px 8px">Destino</th><th style="padding:6px 8px">Cant.</th>'+(conTalles?'<th style="padding:6px 8px">Talles</th>':'')+'<th style="padding:6px 8px">'+(pend?'¿Enviado?':'Confirmación')+'</th></tr></thead><tbody>';
     filas.forEach((f,ordIdx)=>{
       const L=f.L, sin=f.ord.ne>=9999;
       const cant = L.todo ? 'Todo' : (L.t||'');
@@ -2066,10 +2072,11 @@ async function renderF8s(){
         +'<td style="padding:6px 8px;color:var(--gray-400)">'+(ordIdx+1)+'</td>'
         +'<td style="padding:6px 8px;font-weight:700;'+(sin?'color:#e6900a':'color:var(--navy)')+'" '+(f.ord.todas&&f.ord.todas!==f.ord.nom?'title="'+esc(f.ord.todas)+'"':'')+'>'+esc(f.ord.nom)+'</td>'
         +'<td style="padding:6px 8px;font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:nowrap">'+esc(L.c||'')+'</td>'
-        +'<td style="padding:6px 8px">'+esc((f.art&&f.art.descripcion)||L.a||'')+'</td>'
+        +'<td style="padding:6px 8px">'+esc((f.art&&f.art.descripcion)||L.ds||L.a||'')+'</td>'
         +'<td style="padding:6px 8px">'+(f.art?esc(String(f.art.stock??'')):'<span class="hint" style="margin:0">no está</span>')+'</td>'
         +'<td style="padding:6px 8px">'+esc(L.d||'')+'</td>'
         +'<td style="padding:6px 8px;font-weight:700">'+esc(String(cant))+'</td>'
+        +(conTalles?'<td style="padding:6px 8px;font-size:12px;white-space:nowrap">'+esc(F8Descargas.tallesTxt(F8Descargas.tallesDe(d,L)))+'</td>':'')
         +'<td style="padding:6px 8px">'+celda+'</td></tr>';
     });
     html += '</tbody></table></div>';
@@ -2108,33 +2115,17 @@ async function f8uConfirmar(id){
   toast('Confirmación enviada ✓');
   renderF8s();
 }
-function f8RecorridoFilas(id){
-  const d=f8Doc2(id); if(!d) return null;
-  return {d, filas:f8Filas(d)};
+// Descargas: el F8 oficial del operador y la planilla de recorrido (shared/f8-descargas.js, las mismas
+// de Mi Sucursal). Usa el stock y las estanterías que el Buscador ya tiene en memoria.
+function f8Opts2(d){
+  // el stock en memoria solo si ya cargó (recién elegido el perfil puede estar bajando): si no, lo baja el helper
+  const cargado = Object.keys(DATA.articulos||{}).length>0;
+  return {slug:SUC, sucursal:(SUCURSAL_BY_SLUG[SUC]||{}).nombre||SUC,
+    datos: cargado ? {arts:DATA.articulos, ests:DATA.estanterias||{}} : null,
+    alDescargar:()=>{ if(MODE==='sucursal'&&!d.descargado){ d.descargado=Date.now(); f8Patch2(d.id,{descargado:d.descargado}); } }};
 }
-function f8Csv(id){
-  const r=f8RecorridoFilas(id); if(!r) return;
-  const filas=[['#','Ubicación','Código','Id.item','Descripción','Stock','Destino','Cantidad']]
-    .concat(r.filas.map((f,i)=>[i+1, f.ord.nom, f.L.c||'', f.L.a||'', (f.art&&f.art.descripcion)||'', f.art?(f.art.stock??''):'', f.L.d||'', f.L.todo?'Todo':(f.L.t||'')]));
-  const csv='﻿'+filas.map(x=>x.map(v=>String(v).replace(/;/g,',')).join(';')).join('\r\n');
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-  a.download='Recorrido F8 '+r.d.fecha+' '+SUC+'.csv'; a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  if(MODE==='sucursal'&&!r.d.descargado){ r.d.descargado=Date.now(); f8Patch2(id,{descargado:r.d.descargado}); }
-}
-function f8Imprimir(id){
-  const r=f8RecorridoFilas(id); if(!r) return;
-  const w=window.open('','_blank'); if(!w){ toast('El navegador bloqueó la ventana de impresión.'); return; }
-  const rows=r.filas.map((f,i)=>'<tr'+(f.ord.ne>=9999?' style="background:#fdf3e3"':'')+'><td>'+(i+1)+'</td><td><b>'+esc(f.ord.nom)+'</b></td><td style="font-family:monospace">'+esc(f.L.c||'')+'</td><td>'+esc((f.art&&f.art.descripcion)||f.L.a||'')+'</td><td>'+esc(f.L.d||'')+'</td><td style="text-align:center;font-weight:700">'+esc(String(f.L.todo?'Todo':(f.L.t||'')))+'</td><td style="width:34px;border:1px solid #999"></td></tr>').join('');
-  w.document.write('<html><head><title>Recorrido F8 '+esc(r.d.fecha)+'</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}h2{margin:0 0 2px}table{border-collapse:collapse;width:100%;margin-top:12px}th,td{border:1px solid #ccc;padding:5px 7px;text-align:left}th{background:#0B1527;color:#fff}</style></head><body>'
-    +'<h2>Recorrido de armado — F8 del '+esc(r.d.fecha)+'</h2><div>'+esc(r.d.operador||'')+' · '+r.filas.length+' artículos · Sucursal: '+esc(SUC)+' · en orden de estantería'+esc(depositosOrdenTxt())+'</div>'
-    +'<table><thead><tr><th>#</th><th>Ubicación</th><th>Código</th><th>Descripción</th><th>Destino</th><th>Cant.</th><th>✓</th></tr></thead><tbody>'+rows+'</tbody></table>'
-    +'<script>window.print()<\/script></body></html>');
-  w.document.close();
-  const d=r.d;
-  if(MODE==='sucursal'&&!d.descargado){ d.descargado=Date.now(); f8Patch2(id,{descargado:d.descargado}); }
-}
+function f8DescargarF8(id){ const d=f8Doc2(id); if(d) F8Descargas.descargarF8(d,f8Opts2(d)); }
+function f8Imprimir(id){ const d=f8Doc2(id); if(d) F8Descargas.abrirRecorrido(d,f8Opts2(d)); }
 
 // Exporta la planilla completa (respaldo / reemplazo de la vieja planilla de Drive)
 function exportarExcel(){
