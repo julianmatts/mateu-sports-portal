@@ -2299,12 +2299,14 @@ palabra) en vez del de Mateu, título «… — Aurelius» y app instalable prop
   `header.js`, login) por el isotipo oficial de Aurelius (escudo + corona, PNG del identificador que
   pasó Juli, embebido en `marca.js` como data URI a 200 px) y lo envuelve en un lockup
   `.marca-lockup` = isotipo + la **palabra AURELIUS oficial** (`img.marca-word`, PNG blanco del
-  identificador, 110 px de alto, también embebido). Le saca el filtro `brightness(0) invert(1)`; el
-  alto del isotipo lo sigue poniendo cada módulo y la palabra tiene alto fijo por contexto (15 px en
-  headers, 11/10 en celular). En los headers va **horizontal** (isotipo + palabra); en el **login y
-  el modal «Acceso Aurelius» va APILADO** (escudo 58 px arriba, palabra 14 px centrada abajo, como
-  el logo completo oficial — pedido de Juli 07/09: «la corona con el escudo arriba de la palabra,
-  centrado, no en un lateral»). Un MutationObserver cubre lo que se inyecta después.
+  identificador, 110 px de alto, también embebido). Le saca el filtro `brightness(0) invert(1)`.
+  **Headers y pantallas de ingreso (11/09/2026, pedido de Juli): el logo completo APILADO oficial**
+  (variante 1-08 del identificador: escudo a color arriba, palabra blanca abajo; UNA sola imagen
+  `APILADO_AU`, 240 px de alto embebida, clase `img.marca-apilado`). Va donde el logo cuelga de
+  `SEL_APILADO` (`.msh-logo`, `.top`, `.logo` de Indicadores, `.login-head`, `.login-logo` del
+  Turnero, `.pss-logo` del puesto y el modal «Acceso Aurelius»): 52 px en headers (44 en celular),
+  96 px en el login del Portal, 80 en los otros ingresos. En el resto (decks, impresiones, etiquetas
+  chicas) sigue el lockup horizontal isotipo + palabra. Un MutationObserver cubre lo que se inyecta después.
   ⚠ No volver a dibujar el escudo ni las letras a mano: la primera versión (SVG propio) quedó mal y
   Juli pidió el original. Los 14 PNG del identificador (isotipo, logo apilado y palabra, a color y en
   rojo/negro/blanco) están en su carpeta de Drive «id aurelius…».
