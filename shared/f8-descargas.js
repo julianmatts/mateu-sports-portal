@@ -344,28 +344,34 @@ async function abrirRecorrido(d,opts){
 }
 function recorridoHtml(d,opts,R,clave){
   const suc=nombreSuc(opts);
+  // un renglón por destino con Destino · Cant. · Talles, como la tabla del F8; los datos del artículo
+  // ocupan todos sus renglones (rowspan) y el bloque no se corta entre páginas
   const fila=(g,mod)=>{
-    const st=stockTalles(g);
-    const dest=g.dest.map(x=>'<div class="pdest"><b>'+esc(destNombre(x))+'</b> '
-      +(x.todo?'<span class="todo">TODO lo que haya</span>'+(x.n?' ×'+x.n:''):'×'+x.n+(x.tt.length?' <span class="ptall">'+esc(tallesTxt(x.tt))+'</span>':''))+'</div>').join('');
-    return '<tr><td class="chk"></td>'+(mod!==null?'<td class="mod">'+esc(mod||'—')+'</td>':'')
-      +'<td class="cod">'+esc(g.c)+(g.a?'<div class="id">#'+esc(g.a)+'</div>':'')+'</td>'
-      +'<td>'+esc(g.ds||'')+(g.m?' <span class="gris">'+esc(g.m)+'</span>':'')+(g.otras&&g.otras.length?'<div class="gris">También en: '+esc(g.otras.join(' / '))+'</div>':'')+'</td>'
-      +'<td class="cant">'+esc(cantTxt(g))+'</td><td>'+dest+'</td>'
-      +'<td class="stk">'+(g.art?'<b>'+esc(String(g.art.stock==null?'':g.art.stock))+'</b>'+(st.length?'<div class="tchs">'+st.map(([t,n,p])=>'<span class="tch'+(n<=0?' cero':'')+(p?' ped':'')+'">'+esc(t)+' <b>'+n+'</b></span>').join('')+'</div>':''):'—')+'</td></tr>';
+    const st=stockTalles(g), dests=g.dest.length?g.dest:[{d:'—',n:0,todo:false,tt:[]}];
+    const rs=dests.length>1?' rowspan="'+dests.length+'"':'';
+    const art='<td class="chk"'+rs+'></td>'+(mod!==null?'<td class="mod"'+rs+'>'+esc(mod||'—')+'</td>':'')
+      +'<td class="cod"'+rs+'>'+esc(g.c)+(g.a?'<div class="id">#'+esc(g.a)+'</div>':'')+'</td>'
+      +'<td'+rs+'>'+esc(g.ds||'')+(g.m?' <span class="gris">'+esc(g.m)+'</span>':'')+(g.otras&&g.otras.length?'<div class="gris">También en: '+esc(g.otras.join(' / '))+'</div>':'')+'</td>'
+      +'<td class="cant"'+rs+'>'+esc(cantTxt(g))+'</td>';
+    const stk='<td class="stk"'+rs+'>'+(g.art?'<b>'+esc(String(g.art.stock==null?'':g.art.stock))+'</b>'+(st.length?'<div class="tchs">'+st.map(([t,n,p])=>'<span class="tch'+(n<=0?' cero':'')+(p?' ped':'')+'">'+esc(t)+' <b>'+n+'</b></span>').join('')+'</div>':''):'—')+'</td>';
+    return '<tbody class="art">'+dests.map((x,i)=>'<tr>'+(i?'':art)
+      +'<td class="dest">'+esc(destNombre(x))+'</td>'
+      +'<td class="cant2">'+(x.todo&&!x.n?'Todo':x.n)+'</td>'
+      +'<td class="tll">'+(x.todo?'<span class="todo">TODO lo que haya</span>':(x.tt.length?esc(tallesTxt(x.tt)):'<span class="gris">—</span>'))+'</td>'
+      +(i?'':stk)+'</tr>').join('')+'</tbody>';
   };
-  const thead=mod=>'<thead><tr><th class="chk">OK</th>'+(mod?'<th>Módulo</th>':'')+'<th>Código</th><th>Descripción</th><th>Retirar</th><th>Destino y talles</th><th>Stock</th></tr></thead>';
+  const thead=mod=>'<thead><tr><th class="chk">OK</th>'+(mod?'<th>Módulo</th>':'')+'<th>Código</th><th>Descripción</th><th>Retirar</th><th>Destino</th><th>Cant.</th><th>Talles</th><th>Stock</th></tr></thead>';
   let body='';
   R.grupos.forEach(gr=>{
     body+='<h2>'+esc(gr.e.nombre)+(gr.piso?' <span class="piso">'+esc(gr.piso)+'</span>':'')+' <span class="n">'+gr.items.length+' art.</span></h2>'
-      +'<table>'+thead(true)+'<tbody>'+gr.items.map(g=>fila(g,g.u.mod)).join('')+'</tbody></table>';
+      +'<table>'+thead(true)+gr.items.map(g=>fila(g,g.u.mod)).join('')+'</table>';
   });
   if(R.sinUbicar.length) body+='<h2 class="alerta">Sin ubicar en el Buscador <span class="n">'+R.sinUbicar.length+' art.</span></h2>'
     +'<p class="nota">Están en tu stock pero no tienen estantería asignada: buscalos en el depósito.</p>'
-    +'<table>'+thead(false)+'<tbody>'+R.sinUbicar.map(g=>fila(g,null)).join('')+'</tbody></table>';
+    +'<table>'+thead(false)+R.sinUbicar.map(g=>fila(g,null)).join('')+'</table>';
   if(R.noEsta.length) body+='<h2 class="alerta">'+(R.conStock?'No están en el stock del Buscador':'Sin ubicaciones')+' <span class="n">'+R.noEsta.length+' art.</span></h2>'
     +'<p class="nota">'+esc(notaNoEsta(R))+'</p>'
-    +'<table>'+thead(false)+'<tbody>'+R.noEsta.map(g=>fila(g,null)).join('')+'</tbody></table>';
+    +'<table>'+thead(false)+R.noEsta.map(g=>fila(g,null)).join('')+'</table>';
   return '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
     +'<title>Recorrido F8 '+esc(fechaTxt(d.fecha,'-'))+' - '+esc(suc)+'</title><style>'
     +'body{font-family:Arial,Helvetica,sans-serif;color:#0B1527;margin:0;background:#f5f7fc}'
@@ -379,7 +385,8 @@ function recorridoHtml(d,opts,R,clave){
     +'h2 .n{font-weight:400;opacity:.75;font-size:12px}h2 .piso{background:#CC0000;border-radius:3px;padding:1px 6px;font-size:11px;margin-left:4px}h2.alerta{background:#8a5a00}'
     +'.nota{font-size:11px;color:#44506a;margin:0 0 5px}'
     +'table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #9aa3b5;padding:5px 7px;text-align:left;vertical-align:top}'
-    +'th{background:#e9edf5;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px}tr{page-break-inside:avoid}'
+    +'th{background:#e9edf5;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px}tr,tbody.art{page-break-inside:avoid}tbody.art{border-top:2px solid #0B1527}'
+    +'.dest{white-space:nowrap;font-weight:700}.cant2{text-align:center;font-weight:700;white-space:nowrap}.tll{font-weight:700;font-size:12.5px;white-space:nowrap}'
     +'.chk{width:28px;text-align:center}.mod{white-space:nowrap;font-weight:700}.cod{font-family:Consolas,monospace;white-space:nowrap}'
     +'.id,.gris{color:#6b7a99;font-size:10.5px}.cant{text-align:center;font-weight:700;font-size:14px;white-space:nowrap}.stk{min-width:90px;max-width:260px}.cero{color:#CC0000;font-weight:700}'
     +'.tchs{margin-top:3px;line-height:1.7}.tch{display:inline-block;border:1px solid #c5ccd9;border-radius:4px;padding:0 5px;margin:0 3px 2px 0;font-size:10.5px;white-space:nowrap;color:#44506a}.tch b{color:#0B1527}'
@@ -396,7 +403,7 @@ function recorridoHtml(d,opts,R,clave){
     +'<div class="sub">F8 del '+esc(fechaTxt(d.fecha))+' · '+esc(d.operador||'')+(d.hdr&&d.hdr.nro?' · '+esc(d.hdr.nro):'')
     +' · '+R.arts+' artículo'+(R.arts===1?'':'s')+' · '+R.unidades+' unidad'+(R.unidades===1?'':'es')+(R.todos?' + '+R.todos+' «todo lo que haya»':'')
     +' · en orden de estantería'+esc(ordenTxt(R))+'</div></div></div>'
-    +'<div class="ley">Marcá OK cada artículo al juntarlo. «Destino y talles»: a dónde va, cuántas unidades y qué talles (40×2 = dos del 40). «TODO lo que haya» = mandar todo el stock de ese artículo. «Stock»: lo de tu última carga en el Buscador, talle por talle como en la pantalla (en rojo los que están en cero; con borde grueso, los que pide el F8).</div>'
+    +'<div class="ley">Marcá OK cada artículo al juntarlo. Un renglón por destino con la cantidad y los talles, como en la tabla del F8 (40×2 = dos del 40). «TODO lo que haya» = mandar todo el stock de ese artículo. «Stock»: lo de tu última carga en el Buscador, talle por talle como en la pantalla (en rojo los que están en cero; con borde grueso, los que pide el F8).</div>'
     +(body||'<p class="nota">El F8 no tiene artículos.</p>')
     +'<div class="firmas"><div>Armó</div><div>Controló</div><div>Fecha</div></div>'
     +'</div></body></html>';
