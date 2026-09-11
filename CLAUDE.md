@@ -1280,6 +1280,31 @@ Indicadores, ver abajo).
   (✓ completo · ⚠ parcial · ✗ sin salir · + sin estar en la barrida), tilde «Solo lo que falta
   enviar» y un **% de cumplimiento** en la tira de resumen. Si esa semana ya está guardada, el
   cruce se guarda en `barridas/<lunes>/transf` y vuelve al abrirla del histórico.
+- **Reparto automático + tope de calzado + agrandar la curva (11/09/2026, pedido de Juli)** — reemplaza
+  lo de los tildes que se describe más arriba:
+  - **«Completar curva» y «Vaciar la reserva chica» se aplican SIEMPRE** («no encuentro escenario donde no
+    quiera»): ya no hay tildes. La curva va siempre que haya stock por sucursal (`R.conStock`) y el
+    vaciado siempre que haya artículos de reserva chica; `reposFusionadas` suma los dos a las filas, el
+    guardado siempre graba `curva/<slug>` y suma el vaciado a la reposición. Sus parámetros (bloques
+    verde y azul) quedan siempre a la vista. El ex «modo» vaciado es ahora un filtro de vista: grupo
+    **«Ver solo»** con `filtros.verSoloCurva` / `filtros.verSoloVac` (título y Excel «Vaciado» cuando
+    está puesto «Reserva chica»).
+  - **Tope de calzado** (`filtros.topeCalzado`, default **3**, select «Calzado · Tope por talle en la
+    sucursal»: sin tope / 2–5): con lo que se le manda, la sucursal no pasa de N unidades de ese talle,
+    aunque haya vendido más. Se aplica en `computar` (objetivo = mín(vendido, N − lo que tiene); campos
+    `d.tiene` y `d.top`; totales en `R.tope`), en `aplicarUnidadesCurva` (`capDe`) y en `aplicarVaciado`
+    (`cabe`: si ninguna puede recibir, el talle «se deja» con `tope`). Necesita el stock por sucursal;
+    cambiarlo llama a `recalcular()`. Casillero «de 13 · tiene 2» y, con «Ver los talles que no hay»,
+    gris «— · tiene 3» para los que no van.
+  - **Agrandar la curva** (`filtrosCur.centralHasta`, default **3**, select «Talles centrales con poco
+    stock»: no agrandar / llevar a 2 / llevar a 3 si alcanza): en los talles **centrales** (la misma
+    tabla del Reparto inicial, `centralesDe` → `repCentrales`; al procesar se bajan los editados de
+    `repartoConfig/centrales`) donde la sucursal tiene 1 o 2, `computar` arma `row.engrosa=[{t,r,q,s}]`
+    (y crea la fila de curva aunque no le falte ningún talle). `aplicarUnidadesCurva`, después de los
+    talles faltantes y con la reserva que queda, sube por **rondas en orden de prioridad**: todas a 2
+    y, si alcanza, a 3 (cuenta lo que tiene + lo que le va por venta; respeta el tope). Casillero verde
+    «+1 · tiene 1» (`engChips`). Se guarda dentro de `curva/<slug>/talles` con `tiene` (Indicadores:
+    columna «Te mandan»; `abrirBarrida` lo separa de los faltantes por ese campo).
 - **Amarillo = va menos, rojo = no va nada; talles en orden (11/09/2026, pedido de Juli)**: en la
   columna Talles, el casillero que **recibe algo pero menos de lo pedido** (`0 < s < v`, la reserva no
   alcanzó y por prioridad le tocó menos) es **amarillo** (clase `corto`, pill «⚠ recortado» también
