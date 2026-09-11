@@ -52,7 +52,7 @@
     ubicaciones:        { name:'Buscador de Artículos',      icon:'📍' },
     regalias:           { name:'Regalías RUGE / EDLP',       icon:'⚽' },
     presupuesto:        { name:'Presupuesto de Compras',     icon:'💰' },
-    barrida:            { name:'Análisis de Reserva Depósito Central', icon:'🧹' },
+    barrida:            { name:'Reparto de Mercadería', icon:'🧹' },
     picking:            { name:'Picking',                    icon:'📋' },
     objetivos:          { name:'Objetivos de Venta',         icon:'🎯' },
     rrhh:               { name:'Recursos Humanos',           icon:'🧑‍💼' },

@@ -27,7 +27,7 @@ mateu-sports-portal/
 ├── data/indicadores/   # salida particionada (un JSON por sucursal + cadena.json) que consume el módulo
 ├── regalias/           # Liquidador de Regalías RUGE/EDLP (Estudiantes): clasifica ventas, aplica escalas, exporta el Excel del mes y genera la presentación comercial (plantilla-presentacion.html, embebida en index.html)
 ├── evaluaciones/       # Evaluaciones de Supervisor: carga semanal operativa+actitudinal por sucursal, ranking, gráficos y vista de encargado. Escribe a Firebase (base evaluaciones-mateu). Ver "Evaluaciones de Supervisor" abajo.
-├── barrida/            # Análisis de Reserva Depósito Central: pestaña «Barrida de reserva» (cruce semanal de la reserva del depósito con las ventas por sucursal → reposición posible y reserva parada) y pestaña «Reparto inicial» (lo que entró, remito por remito, desde la estadística de remitos). Firebase: reusa recepciones-mateu (nodo barrida/). Ver "Análisis de Reserva Depósito Central" y "Reparto inicial" abajo.
+├── barrida/            # «Reparto de Mercadería» (ex Análisis de Reserva Depósito Central): pestaña «Barrida de reserva» (cruce semanal de la reserva del depósito con las ventas por sucursal → reposición posible y reserva parada) y pestaña «Reparto inicial» (lo que entró, remito por remito, desde la estadística de remitos). Firebase: reusa recepciones-mateu (nodo barrida/). Ver "Análisis de Reserva Depósito Central" y "Reparto inicial" abajo.
 ├── objetivos/          # Objetivos de Venta Semanal: gerencia carga el objetivo (Meta) de venta por sucursal por semana (subiendo el Excel "PMS Objetivos" o a mano) → dashboard vs. real; cada sucursal ve su objetivo en Indicadores. Firebase: reusa recepciones-mateu (nodo objetivos/). Ver "Objetivos de Venta Semanal" abajo.
 ├── capacitaciones/     # Academia de Ventas FUNCIONAL: cursos y programas del capacitador, avance por persona con quiz, certificados, equipo/ranking y encuestas. Ver "Academia de Ventas" abajo. (Las pantallas .dc.html son el prototipo original de Design; quedan de referencia.)
 ├── tareas/             # Tareas de la Sucursal: Cambio de precios, Sectores de marcas, Limpieza (checklist) y Vidrieras (alerta por días sin cambios), con foto antes/después y comparativa. Firebase: reusa recepciones-mateu (nodo tareas/). Ver "Tareas de la Sucursal" abajo.
@@ -1041,8 +1041,9 @@ server, pero Juli eligió mantenerlo consistente con el resto (seguridad blanda)
 
 ## Análisis de Reserva Depósito Central
 
-`barrida/` (carpeta/URL se mantiene; el nombre visible es "Análisis de Reserva
-Depósito Central") es un `index.html` self-contained (lee la sesión del Portal, sin
+`barrida/` (carpeta/URL se mantiene; el nombre visible es **«Reparto de Mercadería»** desde el
+11/09/2026 — antes "Análisis de Reserva Depósito Central"; se cambia en `TOOLS` del Portal, de
+`header.js` y de Indicadores, en `tutorial.js` y en el `<title>`) es un `index.html` self-contained (lee la sesión del Portal, sin
 login propio). Lo corre el **depósito / gerencia** semana a semana (típico: los lunes) para
 decidir la reposición de la semana anterior. La ve el rol `admin` o quien tenga la
 herramienta `barrida` en su lista; las sucursales NO entran acá (ven su aviso en
@@ -1199,9 +1200,8 @@ Indicadores, ver abajo).
   llega al mínimo, deja los talles (`vacDejados` con `sinSuc`). `reposFusionadas` pone esas filas en
   cero con el aviso «no va · tiene N» (se ven destildando «Solo lo que se puede mandar»); el ⇩ Excel
   y el guardado las omiten; `meta.vaciado_param.minArt`. Necesita la hoja de stock por sucursal.
-  **Idea pendiente de Juli (10/09/2026)**: tirar los reportes de stock con los **días desde la última
-  compra** para separar «Reparto inicial» de «Barrida/Reposición» y que la barrida tome solo
-  artículos con N días (p.ej. 10) de ingreso en el depósito — falta el export con esa columna.
+  La separación «Reparto inicial» / «Barrida» por días desde la última compra (idea de Juli del
+  10/09/2026) quedó hecha el 11/09: ver «No repartir lo nuevo» abajo.
   Los artículos que se vacían salen del
   reparto de «Completar curva» (bajan enteros igual). En pantalla: casilleros azules
   «+N · vaciar» y filas <span>solo vaciado</span> (sucursales que no lo vendieron pero lo
@@ -1210,6 +1210,37 @@ Indicadores, ver abajo).
   es la misma mercadería que baja, y así lo ven sin cambios Indicadores y el Picking), con el
   campo `vaciado` por fila y `meta.vaciado_param`. ⚠️ Pendiente que definió Juli: usar la
   **curva de talles** (velocidad de venta por talle) como criterio adicional.
+- **No repartir lo nuevo — «Días u.compra» (11/09/2026, pedido de Juli)**: el reporte de stock del
+  depósito ahora trae, **por talle**, dos columnas: `Stock` y `Días u.compra` (días desde la última
+  compra de ese talle). Viene con **dos filas de encabezado**: arriba el talle repetido dos veces y
+  abajo «Stock | Días u.compra | Stock | …» (+ `Total | Total` al final, que se descarta; el total de
+  días es el mínimo de la fila). `detectarCols` lo reconoce (`conDias`: alguna columna de la zona de
+  talles dice «compra»/«días») y toma el rótulo del talle de la fila de ARRIBA; cada talle queda con
+  `idx` (stock) y `diasIdx`. `filasDeHoja` devuelve `dias:{talle:d}`. Sin esa columna todo sigue
+  igual. Los días **varían entre talles del mismo artículo** (p.ej. CAVEN III: 7–9.5 con 0 días y
+  10–11 con 48), así que el filtro es **por talle**. **0 días = compró hoy** (validado: los artículos
+  en 0 son justo los de los remitos 0005-00047640/43, los últimos de septiembre).
+  Control en el grupo «Ingreso» del panel: tilde **«No repartir lo que ingresó hace menos de [N]
+  días»** (`filtros.sinNuevos` + `filtros.diasNuevo`, default 10, se recuerdan en `barrida_prefs`;
+  cambiar el número ya prende el tilde). Se aplica en `computar`: el talle con compra de hace menos
+  de N días sale de la reserva repartible (`R.nuevos[t]={q,d}`, `R.nuevoU`; `R.totalDepo` = todo lo
+  que hay) → no baja **por venta, ni por curva, ni por vaciado** (un artículo con mercadería nueva no
+  es «reserva chica»). Compras y el snapshot del histórico usan `totalDepo`; un artículo con solo
+  mercadería nueva y sin venta no es reserva parada. Como cambia lo que se reparte, el cambio llama a
+  `recalcular()`, que rehace el cruce con los archivos y lo ya bajado de la base (`state._proc`, lo
+  guarda `procesarBarrida`) y deja la semana «sin guardar». En pantalla: casillero ámbar
+  **«nuevo · N d»** (`esNuevoRet(d)`: `d.nv` unidades nuevas, `d.nd` días; se ve con «Ver los talles
+  que no hay», no cuenta como faltante ni «hay que comprar», no va al Excel), pill «nuevo · sin
+  repartir», «Stock reserva» con «+N» nuevas y en la tira de resumen «N u. nuevas sin repartir».
+  Una barrida abierta del historial no trae días: el control queda deshabilitado. Se guarda
+  `meta.dias_param = {reservaConDias, activa, dias, unidades, articulos}`. El «Reparto inicial» lee el
+  reporte nuevo igual (`repReserva` usa `filasDeHoja`), todavía sin usar los días.
+- **Pestañas por usuario e Historial (11/09/2026, pedido de Juli)**: `logistica@` y `deposito@`
+  (`SOLO_REPARTO_MAILS`) ven solo **Barrida de reserva** y **Reparto inicial** (se les quita Reserva
+  parada; Compras ya era solo de `COMPRAS_MAILS`). La pestaña «Histórico» **ya no existe para nadie**:
+  es el botón **«🕘 Historial»** a la derecha de la barra de pestañas, que abre un panel (`#histPop`,
+  fuera de `#view`, `pintarHistorial`/`abrirHistorial`/`cerrarHistorial`) con **buscador** por fecha
+  («08/09», «2026-09»), mes o año; «Abrir →» llama a `abrirBarrida`. Se cierra con clic afuera o Esc.
 - **Reparto por artículo, no por sucursal (08/09/2026, aclaración de Juli)**: el depósito agarra
   el artículo y lo reparte a todas las sucursales de una (ir local por local sería doble trabajo).
   Por eso el orden por defecto de la tabla y del Excel es **`sortRep.k='art'`**: los artículos que

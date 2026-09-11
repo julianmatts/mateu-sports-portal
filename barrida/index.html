@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Análisis de Reserva — Depósito Central · Mateu Sports</title>
+<title>Reparto de Mercadería — Depósito Central · Mateu Sports</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -44,6 +44,22 @@ img,svg{max-width:100%}
 .tab .badge{display:inline-block;min-width:18px;padding:0 5px;margin-left:6px;border-radius:10px;background:#e6ebf5;
   color:var(--navy-mid);font-family:var(--font-b);font-size:11px;font-weight:700;line-height:18px;text-align:center}
 .tab.on .badge{background:var(--red);color:#fff}
+/* Historial: botón arriba a la derecha (reemplaza a la pestaña «Histórico») + panel con buscador */
+.tabs .hist-btn{margin-left:auto;align-self:center;display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border:1px solid var(--border);
+  border-radius:8px;background:#fff;color:var(--navy);font-family:var(--font-c);font-size:13.5px;font-weight:600;letter-spacing:.4px;cursor:pointer;white-space:nowrap}
+.tabs .hist-btn:hover,.tabs .hist-btn.on{border-color:var(--navy);background:#f5f7fc}
+.hist-pop{position:fixed;right:18px;z-index:60;width:min(380px,calc(100vw - 24px));max-height:70vh;display:flex;flex-direction:column;
+  background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 14px 40px rgba(11,21,39,.18)}
+.hist-pop .hp-h{display:flex;align-items:center;gap:8px;padding:12px 14px 8px}
+.hist-pop .hp-h b{font-family:var(--font-c);font-size:15px;color:var(--navy);letter-spacing:.3px}
+.hist-pop .hp-q{margin:0 14px 8px;width:auto}
+.hist-pop .hp-list{overflow-y:auto;padding:0 6px 8px}
+.hist-pop .hp-it{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:none;text-align:left;cursor:pointer;font:inherit}
+.hist-pop .hp-it:hover{background:#f5f7fc}
+.hist-pop .hp-it .hl{font-weight:600;color:var(--navy);font-size:13.5px}
+.hist-pop .hp-it .hs{font-size:12px;color:var(--muted)}
+.hist-pop .hp-it .go{margin-left:auto;font-family:var(--font-c);font-size:12px;font-weight:700;color:var(--red)}
+.hist-pop .hp-vacio{padding:14px;font-size:13px;color:var(--muted);text-align:center}
 
 main{max-width:1600px;margin:0 auto;padding:20px 18px 80px}
 
@@ -161,6 +177,9 @@ main{max-width:1600px;margin:0 auto;padding:20px 18px 80px}
 .resu .lnkr{border:0;background:none;padding:0;font:inherit;cursor:pointer;text-decoration:underline dotted}
 .resu .c-rep b{color:#92400e}
 .resu .c-env b{color:#127a3a}
+.resu .c-nuevo b{color:#92400e}
+.fgrupo .inp.dias{width:62px;padding:4px 6px;text-align:center}
+.fgrupo .suf{font-size:13px;color:var(--navy-mid)}
 .env-ok,.env-par,.env-no,.env-ex{display:inline-block;padding:2px 8px;border-radius:20px;font-weight:800;font-variant-numeric:tabular-nums;font-size:12.5px}
 .env-ok{background:#eafaf0;color:#127a3a} .env-par{background:#fef3c7;color:#92400e}
 .env-no{background:#fdeaea;color:var(--bad)} .env-ex{background:#eef2fb;color:var(--navy-mid)}
@@ -185,6 +204,7 @@ tbody tr:hover td{background:#f8f9fe}
 .pill.fuera{background:#f1f4fa;color:var(--muted)}
 .pill.rep2{background:#fef3c7;color:#92400e}
 .pill.rec2{background:#fff7ed;color:#9a3412}
+.pill.nuevo{background:#fef3c7;color:#92400e}
 .talles{font-size:12px;color:var(--muted);font-family:var(--font-c)}
 /* los casilleros envuelven en vez de estirar la tabla hasta salirse de la pantalla */
 td.talles .tw{display:flex;flex-wrap:wrap;align-items:flex-start;max-width:560px}
@@ -210,6 +230,10 @@ td.talles .tw{display:flex;flex-wrap:wrap;align-items:flex-start;max-width:560px
 .tgx.vac{border-color:#bcd2f2}                       /* vaciar la reserva chica: baja todo lo que queda */
 .tgx.vac .txl{background:#e6eefb;color:#1e40af;border-bottom-color:#bcd2f2}
 .tgx.vac .txn{color:#1e40af}
+.tgx.nuevo{border-color:#f5d9a8;border-style:dashed}  /* hay stock, pero es mercadería nueva (filtro de días de ingreso): no se reparte */
+.tgx.nuevo .txl{background:#fef3c7;color:#92400e;border-bottom-color:#f5d9a8}
+.tgx.nuevo .txn,.tgx.nuevo .txr{color:#92400e}
+.tgx.nuevo .txn{font-size:13px}
 .tgx.off{opacity:.55}
 .tgx.off .txn{color:var(--muted-light);font-size:12px;padding-top:4px}
 .sug-badge{display:inline-block;min-width:34px;padding:2px 9px;border-radius:20px;background:#eafaf0;color:#127a3a;font-weight:800;font-variant-numeric:tabular-nums}
@@ -305,7 +329,7 @@ td.talles .tw{display:flex;flex-wrap:wrap;align-items:flex-start;max-width:560px
 .rcent label{font-family:var(--font-c);font-size:12.5px;font-weight:600;color:var(--navy-mid)}
 .rcent input{width:100%;padding:6px 9px;font-size:13px}
 @media print{
-  [class^="msh-"],[class*=" msh-"],.tabs,#repCarga,#repSel,#repParam,.segbar,.ayuda,.noprint,.toast{display:none!important}
+  [class^="msh-"],[class*=" msh-"],.tabs,.hist-pop,#repCarga,#repSel,#repParam,.segbar,.ayuda,.noprint,.toast{display:none!important}
   body{background:#fff} main{padding:0;max-width:none}
   .rcard{break-inside:auto;box-shadow:none} .rart{break-inside:avoid}
 }
@@ -330,8 +354,9 @@ td.talles .tw{display:flex;flex-wrap:wrap;align-items:flex-start;max-width:560px
   <button class="tab" data-tab="reparto">Reparto inicial <span class="badge" id="bRepIni">0</span></button>
   <button class="tab" data-tab="compras">Compras <span class="badge" id="bCom">0</span></button>
   <button class="tab" data-tab="parada">Reserva parada <span class="badge" id="bPar">0</span></button>
-  <button class="tab" data-tab="historico">Histórico</button>
+  <button type="button" class="hist-btn" id="btnHist" aria-expanded="false" aria-controls="histPop" title="Barridas guardadas: buscar y abrir una semana">🕘 Historial</button>
 </nav>
+<div class="hist-pop" id="histPop" hidden></div>
 
 <main>
   <div class="banner warn" id="cfgBanner" style="display:none"></div>
@@ -379,6 +404,10 @@ const SESSION = readSession();
 // alguien, agregar el mail acá.
 const COMPRAS_MAILS = ['julian@mateu.com.ar','julian.demarco@mateu.com.ar'];
 const puedeCompras = () => COMPRAS_MAILS.includes(String((SESSION&&SESSION.email)||'').trim().toLowerCase());
+// logistica@ y deposito@ ven solo las dos pestañas con las que trabajan: Barrida de reserva y
+// Reparto inicial (pedido de Juli 11/09/2026). El historial está para todos en el botón de arriba.
+const SOLO_REPARTO_MAILS = ['logistica@mateu.com.ar','deposito@mateu.com.ar'];
+const soloReparto = () => SOLO_REPARTO_MAILS.includes(String((SESSION&&SESSION.email)||'').trim().toLowerCase());
 if(!SESSION || !SESSION.rol){ location.replace('../'); }
 // La barrida la corre el depósito / gerencia. Las sucursales ven su aviso en Indicadores.
 const puedeVer = SESSION && (SESSION.rol==='admin' || (SESSION.herramientas||[]).includes('barrida'));
@@ -539,9 +568,12 @@ function prioTxt(r){
 // La misma sucursal ya tenía este artículo en la barrida anterior: o no se ejecutó el envío,
 // o el artículo rota fuerte y hay que recomprarlo. Devuelve las unidades de aquella vez.
 function repiteDe(r){ const P=state.resultado&&state.resultado.previa; return P? (P.map[r.id+'|'+r.slug]||0) : 0; }
-const faltaEn = r => Object.values(r.talles||{}).some(d=>d.v>0 && d.s<d.v);   // algún talle recortado (la reserva no alcanzó)
+const faltaEn = r => Object.values(r.talles||{}).some(d=>d.v>0 && d.s<d.v && !esNuevoRet(d));   // algún talle recortado (la reserva no alcanzó)
 // algún talle vendido que el depósito NO tiene: no hay nada que repartir, hay que comprarlo
-const sinStockEn = r => Object.values(r.talles||{}).some(d=>d.v>0 && d.r<=0);
+const sinStockEn = r => Object.values(r.talles||{}).some(d=>d.v>0 && d.r<=0 && !esNuevoRet(d));
+// talle que el depósito SÍ tiene, pero todo es mercadería nueva (compra de hace menos de N días,
+// tilde «No repartir lo nuevo»): no es faltante ni recompra, va por el Reparto inicial
+function esNuevoRet(d){ return !!(d && d.nv>0 && d.r<=0); }
 // recortada por el REPARTO (había reserva del talle pero se la llevó otra sucursal con más prioridad);
 // distinto de «sin reserva» (r=0), que es señal de recompra a la marca
 const recortadaPorPrio = r => Object.values(r.talles||{}).some(d=>d.v>0 && d.r>0 && d.s<d.v);
@@ -576,7 +608,10 @@ const state = {
   histKeys:[],                           // lunes con barrida guardada
   // curva = tilde «Completar curva de talles» de Reposición: fusiona en cada fila los talles
   // que la sucursal no tiene y sí hay en reserva (y suma filas de sucursales que solo tienen curva)
-  filtros:{ suc:'', rubro:'', marca:'', discs:[], subrubros:[], tipoprod:'', q:'', soloSugerido:true, excluirVarios:true, soloFaltante:false, soloRepite:false, soloSinEnviar:false, verRojos:false, curva:false, vaciar:false },
+  filtros:{ suc:'', rubro:'', marca:'', discs:[], subrubros:[], tipoprod:'', q:'', soloSugerido:true, excluirVarios:true, soloFaltante:false, soloRepite:false, soloSinEnviar:false, verRojos:false, curva:false, vaciar:false,
+    // «No repartir lo nuevo» (reporte de reserva con «Días u.compra», pedido de Juli 11/09/2026):
+    // el talle con una compra de hace menos de diasNuevo días no se reparte en la barrida
+    sinNuevos:false, diasNuevo:10 },
   mselOpen:null,   // panel multi-select abierto (se conserva entre renders)
   filtrosPar:{ rubro:'', marca:'', q:'', excluirVarios:true, soloCronica:false },
   filtrosCom:{ rubro:'', marca:'', q:'', excluirVarios:true, minVendido:3, topN:20, vista:'sin' },
@@ -652,14 +687,33 @@ function detectarCols(matrix){
   // fila; si se contara como talle, duplicaría el stock).
   const desdeIdx = Math.max(cols.cod, cols.id, cols.desc);
   const talles=[];
-  for(let j=desdeIdx+1;j<H.length;j++){
-    const lbl=String(matrix[headerIdx][j]==null?'':matrix[headerIdx][j]).trim();
-    if(lbl!=='' && normName(lbl)!=='total') talles.push({idx:j,label:lbl});
+  // Reporte de stock con «Días u.compra» (desde 11/09/2026): cada talle trae DOS columnas,
+  // Stock y los días desde su última compra, y el rótulo del talle viene en la fila de ARRIBA
+  // (la de encabezados dice «Stock | Días u.compra | Stock | …»). Cada talle queda con su
+  // columna de stock (idx) y la de días (diasIdx). El «Total | Total» del final se descarta
+  // igual que antes (el de días es el mínimo de la fila).
+  const esDias = h => /compra/.test(h) || /^d.?as\b/.test(h);
+  const conDias = headerIdx>0 && H.slice(desdeIdx+1).some(esDias);
+  if(conDias){
+    const arriba = matrix[headerIdx-1]||[];
+    const rot = j => String(arriba[j]==null?'':arriba[j]).trim();
+    for(let j=desdeIdx+1;j<H.length;j++){
+      if(esDias(H[j])) continue;
+      const lbl=rot(j);
+      if(lbl==='' || normName(lbl)==='total') continue;
+      const dj = (j+1<H.length && esDias(H[j+1]) && (rot(j+1)===lbl || rot(j+1)==='')) ? j+1 : -1;
+      talles.push({idx:j, label:lbl, diasIdx:dj});
+    }
+  } else {
+    for(let j=desdeIdx+1;j<H.length;j++){
+      const lbl=String(matrix[headerIdx][j]==null?'':matrix[headerIdx][j]).trim();
+      if(lbl!=='' && normName(lbl)!=='total') talles.push({idx:j,label:lbl});
+    }
   }
   // Si detecté el ID (o la 1ª col es Sucursal) y hay talles, listo. Si no, la hoja
   // vino con los encabezados descriptivos en blanco (sólo rotulados los talles):
   // caemos al modo posicional, que no exige esos encabezados.
-  if((cols.id>=0 || cols.suc===0) && talles.length>0) return { headerIdx, cols, talles };
+  if((cols.id>=0 || cols.suc===0) && talles.length>0) return { headerIdx, cols, talles, conDias };
   return detectarColsPosicional(matrix);
 }
 
@@ -735,7 +789,7 @@ async function cargarFilesComo(tipo, fileList){
         const c=clasificarHoja(sh, file.name); if(!c) return;
         let t=c.tipo;
         if(c.cols.suc>=0 && (tipo==='ventas'||tipo==='stock')) t=tipo;
-        state.files[t]={ archivo:file.name, hoja:sh.name, matrix:c.matrix, headerIdx:c.headerIdx, cols:c.cols, talles:c.talles };
+        state.files[t]={ archivo:file.name, hoja:sh.name, matrix:c.matrix, headerIdx:c.headerIdx, cols:c.cols, talles:c.talles, conDias:!!c.conDias };
         if(t==='stock') huboStock=true;
         n++;
       });
@@ -837,8 +891,10 @@ function filasDeHoja(f){
     const row=f.matrix[i];
     const id=String(row[f.cols.id]==null?'':row[f.cols.id]).trim();
     if(!id) continue;
-    const talles={}; let total=0;
-    f.talles.forEach(t=>{ const q=num(row[t.idx]); if(q!==0){ talles[t.label]=(talles[t.label]||0)+q; total+=q; } });
+    const talles={}, dias={}; let total=0;
+    f.talles.forEach(t=>{ const q=num(row[t.idx]); if(q!==0){ talles[t.label]=(talles[t.label]||0)+q; total+=q;
+      // días desde la última compra del talle (solo el reporte que los trae); repetido → la más reciente
+      if(t.diasIdx>=0){ const d=num(row[t.diasIdx]); dias[t.label] = dias[t.label]==null ? d : Math.min(dias[t.label], d); } } });
     out.push({
       id,
       suc: f.cols.suc>=0 ? String(row[f.cols.suc]||'').trim() : '',
@@ -851,7 +907,7 @@ function filasDeHoja(f){
         desc: String(row[f.cols.desc]||'').trim(),
         cod:  f.cols.cod>=0?String(row[f.cols.cod]||'').trim():'',
       },
-      talles, total,
+      talles, dias, total,
     });
   }
   return out;
@@ -1187,11 +1243,29 @@ function computar(histPrev, histSnaps){
   // ---- reserva ----
   const reserva={};
   filasDeHoja(fR).forEach(r=>{
-    if(!reserva[r.id]) reserva[r.id]={ meta:r.meta, talles:{}, total:0 };
+    if(!reserva[r.id]) reserva[r.id]={ meta:r.meta, talles:{}, total:0, dias:{} };
     const R=reserva[r.id];
     Object.entries(r.talles).forEach(([t,q])=>{ R.talles[t]=(R.talles[t]||0)+q; });
+    Object.entries(r.dias||{}).forEach(([t,d])=>{ R.dias[t] = R.dias[t]==null ? d : Math.min(R.dias[t], d); });
     R.total+=r.total;
     if(!R.meta.desc && r.meta.desc) R.meta=r.meta;
+  });
+  // ---- NO REPARTIR LO NUEVO (reporte de reserva con «Días u.compra») ----
+  // Con el tilde puesto, el talle que tuvo una compra hace menos de N días sale de la reserva
+  // repartible: no baja por venta, ni por curva, ni por vaciado (es mercadería recién ingresada,
+  // la reparte el Reparto inicial). 0 días = compró hoy. Se guarda aparte en R.nuevos para
+  // mostrarlo; R.totalDepo es todo lo que hay en el depósito (para el histórico y Compras).
+  const conDias = !!(fR && fR.conDias);
+  const N = (conDias && state.filtros.sinNuevos) ? Math.max(1, state.filtros.diasNuevo|0) : 0;
+  let nuevosU=0, nuevosArts=0;
+  Object.values(reserva).forEach(R=>{
+    R.totalDepo=R.total; R.nuevos={}; R.nuevoU=0;
+    if(!N) return;
+    Object.entries(R.talles).forEach(([t,q])=>{
+      const d=R.dias[t];
+      if(q>0 && d!=null && d<N){ R.nuevos[t]={q, d}; R.nuevoU+=q; R.total-=q; delete R.talles[t]; }
+    });
+    if(R.nuevoU){ nuevosU+=R.nuevoU; nuevosArts++; }
   });
   // ---- ventas (por sucursal, solo destinos válidos; Depósito/otros quedan afuera) ----
   const ventas={};   // id -> { porSuc:{slug:{nombre,total,talles}}, totalCadena, meta }
@@ -1228,7 +1302,9 @@ function computar(histPrev, histSnaps){
   const reposicion=[];   // una fila por (artículo × sucursal candidata)
   const parada=[];
   Object.entries(reserva).forEach(([id,R])=>{
-    if(R.total<=0) return;
+    // un artículo que solo tiene mercadería nueva igual arma sus filas (en cero) si se vendió:
+    // así se ve por qué no baja; si no se vendió, no es reserva parada, es ingreso reciente
+    if(R.total<=0 && !R.nuevoU) return;
     const V=ventas[id];
     if(V && V.totalCadena>0){
       const media = esMediaMateu(R.meta);   // medias Mateu: repone el mínimo del talle vendido
@@ -1241,7 +1317,8 @@ function computar(histPrev, histSnaps){
           const min = media ? mediasMin(t) : 0;
           const objetivo = min>0 ? min : vq;
           const s = Math.min(objetivo, rq);
-          if(vq>0||rq>0) detTalles[t]={v:objetivo, r:rq, s, vend:vq, piso:min>0};
+          const nv = R.nuevos[t];            // unidades nuevas del talle retenidas por el filtro de días
+          if(vq>0||rq>0) detTalles[t]=Object.assign({v:objetivo, r:rq, s, vend:vq, piso:min>0}, nv?{nv:nv.q, nd:nv.d}:{});
           sugerido+=s;
         });
         reposicion.push({
@@ -1249,11 +1326,11 @@ function computar(histPrev, histSnaps){
           codigo:R.meta.cod||V.meta.cod||'', desc:R.meta.desc||V.meta.desc||'',
           marca:R.meta.marca||V.meta.marca||'', rubro:R.meta.rubro||V.meta.rubro||'', tipo:R.meta.tipo||V.meta.tipo||'',
           genero:R.meta.genero||V.meta.genero||'', disc:R.meta.disc||V.meta.disc||'',
-          vendido:S.total, reservaTotal:R.total, sugerido, talles:detTalles, pisoMedias:media,
+          vendido:S.total, reservaTotal:R.total, reservaNueva:R.nuevoU, sugerido, talles:detTalles, pisoMedias:media,
           pr: prioInfo(slug, R.meta.marca||V.meta.marca||'', R.meta.rubro||V.meta.rubro||''),
         });
       });
-    } else {
+    } else if(R.total>0) {
       // sin venta en toda la cadena -> reserva parada
       const reciente = histPrev ? !(id in histPrev) : null;   // null = primera barrida, sin histórico
       let semanas=1;
@@ -1296,7 +1373,8 @@ function computar(histPrev, histSnaps){
   // parámetros desde la pantalla sin volver a procesar el Excel.
   const vaciado=[];
   Object.entries(reserva).forEach(([id,R])=>{
-    if(R.total<=0 || R.total>VAC_TOPE || !esVaciable(R.meta.rubro)) return;
+    // un artículo al que le está entrando mercadería nueva no es «reserva chica»: no se vacía
+    if(R.total<=0 || R.nuevoU>0 || R.total>VAC_TOPE || !esVaciable(R.meta.rubro)) return;
     const V=ventas[id], S0=stock[id];
     const slugs=new Set();
     if(V) Object.keys(V.porSuc).forEach(sl=>slugs.add(sl));
@@ -1363,7 +1441,7 @@ function computar(histPrev, histSnaps){
   Object.entries(ventas).forEach(([id,V])=>{
     if(V.totalCadena<=0) return;
     const R=reserva[id];
-    const reservaTotal = R? R.total : 0;
+    const reservaTotal = R? R.totalDepo : 0;     // para Compras cuenta todo lo que hay, también lo nuevo
     compras.push({
       id, codigo:(R&&R.meta.cod)||V.meta.cod||'',
       desc:(R&&R.meta.desc)||V.meta.desc||'', marca:(R&&R.meta.marca)||V.meta.marca||'',
@@ -1374,7 +1452,7 @@ function computar(histPrev, histSnaps){
   });
 
   // snapshot de reserva de esta semana (para futuras barridas)
-  const snapshot={}; Object.entries(reserva).forEach(([id,R])=>{ if(R.total>0) snapshot[id]=R.total; });
+  const snapshot={}; Object.entries(reserva).forEach(([id,R])=>{ if(R.totalDepo>0) snapshot[id]=R.totalDepo; });
 
   const sucSet = new Set(reposicion.map(r=>r.slug));
   const noVarios = a => !/varios|facturacion/i.test(a.rubro+' '+a.tipo);
@@ -1382,6 +1460,7 @@ function computar(histPrev, histSnaps){
   const notable = c => c.vendido>=3 && noVarios(c);
   return {
     reposicion, parada, compras, curva, vaciado, vacDejados:{}, vacArts:{}, curvaTalles, conStock:!!sRows, stockOrigen: fS ? 'archivo' : (sRows ? 'base' : ''), snapshot,
+    conDias, diasNuevo:N, nuevos:{ unidades:nuevosU, articulos:nuevosArts },
     totales:{
       curva_lineas: 0, curva_unidades: 0,      // los completa aplicarUnidadesCurva()
       vac_lineas: 0, vac_unidades: 0, vac_dejados: 0,   // los completa aplicarVaciado()
@@ -1402,7 +1481,7 @@ function computar(histPrev, histSnaps){
 /* ============================================================
    VISTAS
    ============================================================ */
-function setTab(t){ if(t==='compras' && !puedeCompras()) t='reposicion';
+function setTab(t){ if((t==='compras' && !puedeCompras()) || (t==='parada' && soloReparto()) || t==='historico') t='reposicion';
   state.tab=t; document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t)); render();
   // Reparto inicial: memoria de envíos, remitos ya repartidos y talles centrales (una vez por visita)
   if(t==='reparto' && !state.rep.cargado) repCargarMemoria().then(()=>{ if(state.tab==='reparto') render(); });
@@ -1412,7 +1491,7 @@ function render(){
   const R=state.resultado;
   if(state.tab==='reposicion') guardarPrefs();   // el corte del depósito se recuerda en este navegador
   $('bRep').textContent = R? R.totales.lineas_reposicion : 0;
-  $('bPar').textContent = R? R.totales.items_parados : 0;
+  const bpa=$('bPar'); if(bpa) bpa.textContent = R? R.totales.items_parados : 0;
   const bc=$('bCom'); if(bc) bc.textContent = R? (R.totales.compras_sin_reserva||0) : 0;
   const bi=$('bRepIni'); if(bi) bi.textContent = state.rep.res ? (state.rep.res.totales.remitos||0) : Object.keys(state.rep.sel).length;
   const v=$('view');
@@ -1420,7 +1499,6 @@ function render(){
   else if(state.tab==='reparto') v.innerHTML=viewReparto();
   else if(state.tab==='compras') v.innerHTML=viewCompras();
   else if(state.tab==='parada') v.innerHTML=viewParada();
-  else if(state.tab==='historico') v.innerHTML=viewHistorico();
   wire();
 }
 
@@ -1486,6 +1564,11 @@ function cargaHtml(){
       +'<span class="sep">|</span>prioridad: vendido · '+(pf.stock?'meses de stock ('+esc(String(pf.stock).replace('meses de stock ',''))+')':'<span class="warn">sin meses de stock</span>')+' · categoría'+(nRec?' · <b>'+fmtInt(nRec)+'</b> líneas recortadas':'')
       +'<span class="sep">|</span>'+(guardada?'<span class="ok">✓ guardada</span> (las sucursales ya la ven en Indicadores)':'<span class="warn">sin guardar</span>')
       +(R.sinHistorial?' · <span class="muted">primera barrida: sin histórico para «ingreso reciente»</span>':'')
+      +(R.conDias
+        ? '<span class="sep">|</span>'+(R.diasNuevo
+          ? 'sin repartir lo nuevo: <b>'+fmtInt(R.nuevos.unidades)+'</b> u. con compra de hace menos de '+R.diasNuevo+' días'
+          : '<span class="muted" title="El reporte de reserva trae «Días u.compra»: con el tilde «No repartir lo que ingresó hace menos de N días» de la tabla, la mercadería nueva queda para el Reparto inicial">la reserva trae días de última compra</span>')
+        : '')
       +'</div>';
   } else {
     html+='<div class="carga-res muted">Subí <b>ventas por sucursal</b> y <b>reserva del depósito</b> (o arrastrá los Excel acá): se procesa solo. El <b>stock por sucursal</b> abierto por talle es opcional y habilita «Completar curva».</div>';
@@ -1559,6 +1642,17 @@ function viewReposicion(){
       +(R.previa?chk('fRepite',f.soloRepite,'Solo lo que se repite','Solo las líneas que ya estaban en la barrida del '+lunesLabel(R.previa.semana)+' para esa misma sucursal'):'')
       +(state.transf?chk('fSinEnv',f.soloSinEnviar,'Solo lo que falta enviar','Solo las líneas que el sistema todavía no registra como transferidas (o salieron a medias)'):'')
     +'</div><div class="fsep"></div>'
+    +(function(){
+      // No repartir lo nuevo: solo con el reporte de reserva que trae «Días u.compra» por talle
+      const ok=!!R.conDias;
+      const tip = ok
+        ? 'Usa la columna «Días u.compra» del reporte de reserva: el talle que tuvo una compra hace menos de estos días no se reparte (ni por venta, ni curva, ni vaciado). Es mercadería recién ingresada: la reparte el Reparto inicial. 0 días = compró hoy.'
+        : (state._proc ? 'El reporte de reserva cargado no trae la columna «Días u.compra» por talle: sacalo de nuevo del sistema con esa columna.' : 'Para usarlo, cargá el reporte de reserva con la columna «Días u.compra» (una barrida abierta desde el historial no trae los días).');
+      return '<div class="fgrupo" title="'+esc(tip)+'"><span class="glab">Ingreso</span>'
+        +chk('fNuevos', ok && f.sinNuevos, 'No repartir lo que ingresó hace menos de', '', !ok)
+        +'<input type="number" class="inp dias" id="fDiasNuevo" min="1" max="365" step="1" value="'+esc(f.diasNuevo)+'"'+(ok?'':' disabled')+' aria-label="Días desde la última compra">'
+        +'<span class="suf"'+(ok?'':' style="opacity:.55"')+'>días</span></div><div class="fsep"></div>';
+    })()
     +'<div class="fgrupo"><span class="glab">Además</span>'
       +chk('fCurva',f.curva,'Completar curva de talles'+(R.conStock?'':' <small>(sin stock por sucursal)</small>'),
         R.conStock?'Le manda a cada sucursal los talles que no tiene y sí hay en el depósito':'Subí también el stock por sucursal abierto por talle en la tarjeta de arriba', !R.conStock)
@@ -1618,6 +1712,7 @@ function viewReposicion(){
     +'<span><b>'+fmtInt(uTot)+'</b> unidades a bajar'+(desg.length?' <small>('+desg.join(' · ')+')</small>':'')+'</span>'
     +(nFalta?'<button type="button" class="c-falta lnkr" id="verFaltaBtn" title="'+(verRojos?'Ocultar los talles que no se pueden reponer':'Ver en rojo los talles que la sucursal vendió y el depósito no puede reponer')+'"><b>'+fmtInt(nFalta)+'</b> con faltante de talle: la reserva no alcanza '+(verRojos?'▴':'▾')+'</button>':'')
     +(artVacios?'<span class="c-cero"><b>'+fmtInt(artVacios)+'</b> artículos salen enteros del depósito</span>':'')
+    +((R.diasNuevo && R.nuevos && R.nuevos.unidades)?'<span class="c-nuevo" title="Talles con una compra de hace menos de '+R.diasNuevo+' días: no se reparten en la barrida (van por el Reparto inicial). Con «Ver los talles que no hay» se ven en ámbar en cada fila."><b>'+fmtInt(R.nuevos.unidades)+'</b> u. nuevas sin repartir <small>('+fmtInt(R.nuevos.articulos)+' artículos · menos de '+R.diasNuevo+' días)</small></span>':'')
     +(R.previa?(function(){ const n=rows.filter(r=>repiteDe(r)>0).length; return n?'<span class="c-rep"><b>'+fmtInt(n)+'</b> ya estaban en la barrida del '+lunesLabel(R.previa.semana)+'</span>':''; })():'')
     +(state.transf?(function(){ let env=0, ped=0, falta=0;
         rows.forEach(r=>{ const e=estadoEnvio(r); if(!e||e.k==='extra') return; ped+=r.sugerido; env+=Math.min(e.e,r.sugerido); if(e.k!=='ok') falta++; });
@@ -1637,6 +1732,9 @@ function viewReposicion(){
     const pillPiso = piso?' <span class="pill rec" title="Medias Mateu: para el talle vendido se repone el mínimo (S:12 M:24 L:36 XL:12), aunque haya vendido menos">piso medias</span>':'';
     const pillCurva = r.soloCurva?' <span class="pill curva" title="No vendió el artículo esta semana, pero lo tiene incompleto: solo talles de curva">solo curva</span>':'';
     const pillVac = r.soloVaciado?' <span class="pill vac" title="No vendió el artículo esta semana, pero lo tiene en stock: recibe parte de la reserva que se vacía">solo vaciado</span>':'';
+    // vendió talles que en el depósito son todos mercadería nueva (filtro de días de ingreso)
+    const nNuevo = Object.values(r.talles||{}).filter(d=>d.v>0 && esNuevoRet(d)).length;
+    const pillNuevo = (nNuevo && R.diasNuevo) ? ' <span class="pill nuevo" title="'+nNuevo+' de los talles que vendió solo tienen mercadería nueva en el depósito (compra de hace menos de '+R.diasNuevo+' días): no se reparten en la barrida">nuevo · sin repartir</span>' : '';
     const rep = repiteDe(r);
     const pillRep = rep?' <span class="pill rep2" title="La semana del '+lunesLabel(R.previa.semana)+' ya se le sugirieron '+fmtInt(rep)+' unidades de este artículo. Si no se envió, va de nuevo; si se envió y volvió a vender, el artículo rota y conviene recomprarlo.">↻ repite</span>':'';
     const prio = r.prio ? '<span class="pill '+(r.prio===1?'rec':'suc')+'" title="Prioridad '+r.prio+' de '+r.prioDe+' sucursales que piden este artículo · '+esc(prioTxt(r))+'">'+r.prio+' de '+r.prioDe+'</span>' : '—';
@@ -1652,12 +1750,12 @@ function viewReposicion(){
     const detBadge = [ (r.curvaU>0?fmtInt(r.curvaU)+' para completar la curva':''), (r.vacU>0?fmtInt(r.vacU)+' por vaciar la reserva':'') ].filter(Boolean).join(' + ');
     const badgeTitle = detBadge ? ' title="'+fmtInt(r.sugRep||0)+' por venta + '+detBadge+'"' : '';
     html+='<tr><td><span class="pill suc">'+esc(r.sucNombre)+'</span></td>'
-      +'<td class="desc rep" title="'+esc(r.desc)+'"><span class="dtxt">'+esc(r.desc||'—')+'</span>'+pillPiso+pillCurva+pillVac+pillRep+((falta&&verRojos)?(sinStockEn(r)
+      +'<td class="desc rep" title="'+esc(r.desc)+'"><span class="dtxt">'+esc(r.desc||'—')+'</span>'+pillPiso+pillCurva+pillVac+pillRep+pillNuevo+((falta&&verRojos)?(sinStockEn(r)
         ? ' <span class="pill falta" title="Vendió talles que el depósito no tiene: no hay nada que bajar, hay que pedírselos a la marca">⚠ hay que comprar</span>'
         : ' <span class="pill rec2" title="Hay stock del talle pero no alcanza para todas las sucursales que lo piden: por prioridad esta recibe menos de lo que vendió">⚠ recortado</span>'):'')+'</td>'
       +'<td class="mono">'+esc(r.codigo||r.id)+'</td><td>'+esc(r.marca)+'</td>'
       +'<td class="num">'+prio+'</td>'
-      +'<td class="num mono">'+fmtInt(r.vendido)+'</td><td class="num mono" style="color:var(--muted)">'+fmtInt(r.reservaTotal)+'</td>'
+      +'<td class="num mono">'+fmtInt(r.vendido)+'</td><td class="num mono" style="color:var(--muted)"'+(r.reservaNueva?' title="'+fmtInt(r.reservaTotal)+' para repartir + '+fmtInt(r.reservaNueva)+' nuevas (compra de hace menos de '+R.diasNuevo+' días) que no se reparten"':'')+'>'+fmtInt(r.reservaTotal)+(r.reservaNueva?' <small style="color:#92400e;font-weight:700">+'+fmtInt(r.reservaNueva)+'</small>':'')+'</td>'
       +'<td class="num"><span class="sug-badge'+(r.sugerido>0?'':' zero')+'"'+badgeTitle+'>'+fmtInt(r.sugerido)+((r.curvaU>0||r.vacU>0)?' <small style="font-weight:600;opacity:.8">(+'+fmtInt((r.curvaU||0)+(r.vacU||0))+')</small>':'')+'</span></td>'
       +'<td class="num mono"><span class="queda'+(queda[r.id]===0?' cero':'')+'" title="'+(queda[r.id]===0?'El artículo se baja entero: no queda nada en el depósito':'Quedan '+fmtInt(queda[r.id]||0)+' unidades de este artículo en el depósito')+'">'+fmtInt(queda[r.id]||0)+'</span></td>'
       +(state.transf?(function(){ const e=estadoEnvio(r); if(!e) return '<td class="num mono" style="color:var(--muted-light)">—</td>';
@@ -1673,7 +1771,7 @@ function viewReposicion(){
 function viewCompras(){
   if(!puedeCompras()) return '';   // por si se llega por otro camino
   const R=state.resultado;
-  if(!R) return '<div class="state"><div class="big-ic">⚙️</div>Cargá los Excel de la semana en la pestaña Reposición.</div>';
+  if(!R) return '<div class="state"><div class="big-ic">⚙️</div>Cargá los Excel de la semana en la pestaña Barrida de reserva.</div>';
   if(!R.compras) return '<div class="state"><div class="big-ic">🛒</div>Esta barrida se guardó antes de la vista Compras. Volvé a procesar el Excel para verla.</div>';
   const f=state.filtrosCom;
   const aplica = c => (!f.excluirVarios || !/varios|facturacion/i.test(c.rubro+' '+c.tipo))
@@ -1769,7 +1867,7 @@ function seccionCompras(titulo, rows, lim){
 
 function viewParada(){
   const R=state.resultado;
-  if(!R) return '<div class="state"><div class="big-ic">⚙️</div>Cargá los Excel de la semana en la pestaña Reposición.</div>';
+  if(!R) return '<div class="state"><div class="big-ic">⚙️</div>Cargá los Excel de la semana en la pestaña Barrida de reserva.</div>';
   const f=state.filtrosPar;
   let rows=R.parada.slice();
   if(f.excluirVarios) rows=rows.filter(r=>!/varios|facturacion/i.test(r.rubro+' '+r.tipo));
@@ -1834,10 +1932,14 @@ function curvaIdx(){ const o={}; curvaRows().forEach(r=>{ o[r.id+'|'+r.slug]=r; 
 function talleChip(t, d, row){
   const piso = row && row.pisoMedias;
   const rec = d.s < d.v;                       // recibe menos de lo que pidió
-  const nohay = rec && d.r<=0;                 // el depósito NO tiene ese talle → comprarle a la marca
+  const nuevo = rec && esNuevoRet(d);          // hay, pero todo es mercadería nueva (filtro de días): no se reparte
+  const nohay = rec && d.r<=0 && !nuevo;       // el depósito NO tiene ese talle → comprarle a la marca
   const vend = (piso?'el mínimo del talle es ':'vendió ')+d.v;
   let pie, tip;
-  if(nohay){
+  if(nuevo){
+    pie='nuevo · '+d.nd+' d';
+    tip='Talle '+t+': '+vend+'. En el depósito hay '+d.nv+', pero la última compra fue hace '+d.nd+' días: es mercadería nueva y no se reparte en la barrida (va por el Reparto inicial).';
+  } else if(nohay){
     pie='no hay';
     tip='Talle '+t+': '+vend+' y el depósito NO tiene ninguna. No es que se la llevó otra sucursal: no hay stock — hay que pedírselo a la marca.';
   } else if(rec){
@@ -1847,7 +1949,8 @@ function talleChip(t, d, row){
     pie='de '+d.r;
     tip='Talle '+t+': '+vend+', en el depósito hay '+d.r+' y se le mandan '+d.s+'.';
   }
-  return '<span class="tgx'+(rec?' rec':'')+(nohay?' nohay':'')+' n-'+(nivelTalle(row,t)||'x')+'" title="'+esc(tip+curvaTip(row,t))+'">'
+  if(d.nv>0 && !nuevo) tip+=' Además hay '+d.nv+' nuevas (compra de hace '+d.nd+' días) que no se reparten.';
+  return '<span class="tgx'+(nuevo?' nuevo':(rec?' rec':''))+(nohay?' nohay':'')+' n-'+(nivelTalle(row,t)||'x')+'" title="'+esc(tip+curvaTip(row,t))+'">'
     +'<span class="txl">'+esc(t)+'</span><span class="txn">'+d.s+'</span><span class="txr">'+esc(pie)+'</span></span>';
 }
 // chips de la curva de una fila: talles faltantes que se mandan (verde) y los que no (gris)
@@ -1874,19 +1977,52 @@ function curvaChips(faltan, row){
   }).join('');
 }
 
-function viewHistorico(){
-  let html='<div class="sec-head"><div><h1>Histórico de barridas</h1>'
-    +'<div class="sub">Semanas guardadas en la base. Abrí una para ver su reposición y reserva parada.</div></div>'
-    +'<button class="btn btn-outline btn-sm" id="btnRecargarHist">↻ Recargar</button></div>';
-  if(!FIREBASE_DB_URL) return html+'<div class="banner warn">Sin base configurada: no hay histórico. Pegá la URL en <code>FIREBASE_DB_URL</code>.</div>';
-  if(!state.histKeys.length) return html+'<div class="state"><div class="big-ic">🗂️</div>Todavía no hay barridas guardadas.</div>';
-  state.histKeys.slice().sort().reverse().forEach(k=>{
+/* ---------- Historial (botón arriba a la derecha) ----------
+   Reemplaza a la pestaña «Histórico» (pedido de Juli 11/09/2026): un panel con buscador que
+   lista las semanas guardadas. Se busca por fecha («08/09», «2026-09»), mes («septiembre») o año.
+   Vive fuera de #view, así que render() no lo borra mientras está abierto. */
+function histTexto(k){ const [y,m,d]=String(k).split('-'); return [lunesLabel(k), k, d+'/'+m, MESES_ES[+m]||'', y].join(' ').toLowerCase(); }
+function pintarHistorial(){
+  const pop=$('histPop'); if(!pop || pop.hidden) return;
+  if(!$('histQ')){
+    pop.innerHTML='<div class="hp-h"><b>Historial de barridas</b>'
+      +'<button type="button" class="lnk" id="histRecargar" style="margin-left:auto" title="Volver a leer las semanas guardadas">↻ Recargar</button></div>'
+      +'<input class="inp hp-q" id="histQ" type="search" placeholder="Buscar: 08/09, septiembre, 2026…" autocomplete="off">'
+      +'<div class="hp-list" id="histList"></div>';
+    $('histQ').oninput=pintarHistorial;
+    $('histRecargar').onclick=async()=>{ $('histList').innerHTML='<div class="hp-vacio">Cargando…</div>'; await cargarHistKeys(); pintarHistorial(); };
+    $('histList').onclick=e=>{ const b=e.target.closest('[data-hist]'); if(!b) return; cerrarHistorial(); abrirBarrida(b.dataset.hist); };
+  }
+  const list=$('histList');
+  if(!FIREBASE_DB_URL){ list.innerHTML='<div class="hp-vacio">Sin base configurada: no hay historial.</div>'; return; }
+  if(!state.histCargado){ list.innerHTML='<div class="hp-vacio">Cargando…</div>'; return; }
+  if(!state.histKeys.length){ list.innerHTML='<div class="hp-vacio">Todavía no hay barridas guardadas.</div>'; return; }
+  const toks=String($('histQ').value||'').toLowerCase().split(/\s+/).filter(Boolean);
+  const keys=state.histKeys.slice().sort().reverse().filter(k=>{ const tx=histTexto(k); return toks.every(t=>tx.includes(t)); });
+  if(!keys.length){ list.innerHTML='<div class="hp-vacio">Ninguna semana coincide con «'+esc($('histQ').value)+'».</div>'; return; }
+  list.innerHTML=keys.map(k=>{ const [y,m]=k.split('-');
     const cur = state.resultado && state.resultadoSemana===k;
-    html+='<div class="histrow"><div><div class="hl">Semana del '+esc(lunesLabel(k))+(cur?' · <span class="pill suc">cargada</span>':'')+'</div>'
-      +'<div class="hs">'+esc(k)+'</div></div>'
-      +'<button class="btn btn-outline btn-sm" data-hist="'+esc(k)+'">Abrir</button></div>';
-  });
-  return html;
+    return '<button type="button" class="hp-it" data-hist="'+esc(k)+'"><div><div class="hl">Semana del '+esc(lunesLabel(k))+(cur?' <span class="pill suc">abierta</span>':'')+'</div>'
+      +'<div class="hs">'+esc((MESES_ES[+m]||'')+' '+y)+'</div></div><span class="go">Abrir →</span></button>'; }).join('');
+}
+function abrirHistorial(){
+  const pop=$('histPop'), btn=$('btnHist'); if(!pop||!btn) return;
+  pop.style.top=Math.round($('tabs').getBoundingClientRect().bottom+6)+'px';
+  pop.hidden=false; btn.classList.add('on'); btn.setAttribute('aria-expanded','true');
+  pintarHistorial();
+  const q=$('histQ'); if(q){ q.focus(); q.select(); }
+  if(FIREBASE_DB_URL) cargarHistKeys().then(pintarHistorial);   // siempre fresco al abrir
+}
+function cerrarHistorial(){
+  const pop=$('histPop'), btn=$('btnHist'); if(!pop||pop.hidden) return;
+  pop.hidden=true; if(btn){ btn.classList.remove('on'); btn.setAttribute('aria-expanded','false'); }
+}
+function wireHistorial(){
+  const btn=$('btnHist'), pop=$('histPop'); if(!btn||!pop) return;
+  btn.onclick=e=>{ e.stopPropagation(); if(pop.hidden) abrirHistorial(); else cerrarHistorial(); };
+  document.addEventListener('click', e=>{ if(!pop.hidden && !pop.contains(e.target) && e.target!==btn) cerrarHistorial(); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') cerrarHistorial(); });
+  window.addEventListener('resize', cerrarHistorial);
 }
 
 /* encabezado ordenable */
@@ -1957,7 +2093,6 @@ function wire(){
   if(state.tab==='reparto') wireReparto();
   if(state.tab==='compras') wireCompras();
   if(state.tab==='parada') wireParada();
-  if(state.tab==='historico') wireHistorico();
 }
 
 function wireCompras(){
@@ -2013,12 +2148,31 @@ async function procesarBarrida(){
     state.resultado=computar(histPrev, histSnaps);
     state.resultado.prioFuentes={ stock: PRIO.stock?('meses de stock '+PRIO.stockMes):'', cats: PRIO.catsOrigen||'' };
     state.resultado.previa = prevRep;              // qué se le sugirió a cada sucursal la semana pasada
+    // lo ya bajado de la base, para recalcular sin volver a pedirlo (recalcular())
+    state._proc = { histPrev, histSnaps, prioFuentes:state.resultado.prioFuentes, previa:prevRep };
     state.transf=null;                            // el cruce de transferencias es de la semana que se abrió
     aplicarVaciado(); aplicarUnidadesCurva();
     state.resultadoSemana=null;
     render();
     toast('Barrida procesada','ok');
   }catch(err){ console.error(err); toast('Error al procesar: '+(err.message||err),'err'); }
+}
+
+// Rehace el cruce con los mismos archivos y lo que ya se bajó de la base (histórico, semana
+// previa, meses de stock, stock de la semana). Para los parámetros que cambian QUÉ reserva se
+// reparte (los días de ingreso), que viven en computar() y no en los aplicar…() de pantalla.
+function recalcular(){
+  const P=state._proc;
+  if(!P || !state.files.ventas || !state.files.reserva){ render(); return; }
+  try{
+    const transf=state.transf;
+    state.resultado=computar(P.histPrev, P.histSnaps);
+    state.resultado.prioFuentes=P.prioFuentes; state.resultado.previa=P.previa;
+    state.transf=transf;
+    aplicarVaciado(); aplicarUnidadesCurva();
+    state.resultadoSemana=null;                    // cambió lo que se reparte: hay que volver a guardar
+  }catch(err){ console.error(err); toast('Error al recalcular: '+(err.message||err),'err'); }
+  render();
 }
 
 async function guardarBarrida(){
@@ -2072,6 +2226,8 @@ async function guardarBarrida(){
       archivo_stock:(state.files.stock||{}).archivo||'',
       curva_param:{ activa:!!state.filtros.curva, unidades:fc.unidades, soloHuecos:fc.soloHuecos, soloRotan:fc.soloRotan, minTalles:fc.minTalles, incluirParados:fc.incluirParados },
       vaciado_param:{ activa:!!state.filtros.vaciar, max:state.filtrosVac.max, minSuc:state.filtrosVac.minSuc, minArt:state.filtrosVac.minArt },
+      // no repartir lo nuevo: talles con compra de hace menos de `dias` días (0 = sin filtro)
+      dias_param:{ reservaConDias:!!R.conDias, activa:!!R.diasNuevo, dias:R.diasNuevo||0, unidades:(R.nuevos||{}).unidades||0, articulos:(R.nuevos||{}).articulos||0 },
       prioFuentes: R.prioFuentes||null,
       totales:R.totales },
     reposicion:repBySlug,
@@ -2112,6 +2268,12 @@ function wireReposicion(){
     render(); };
   const ay=$('ayudaRep'); if(ay) ay.ontoggle=()=>{ try{ localStorage.setItem('barrida_ayuda', ay.open?'1':'0'); }catch(e){} };
   const vac=$('fVaciar'); if(vac) vac.onchange=e=>{ f.vaciar=e.target.checked; aplicarVaciado(); aplicarUnidadesCurva(); render(); };
+  // no repartir lo nuevo: cambia qué reserva se reparte → se rehace el cruce (sin bajar nada)
+  const nv=$('fNuevos'); if(nv) nv.onchange=e=>{ f.sinNuevos=e.target.checked; recalcular(); };
+  const dn=$('fDiasNuevo'); if(dn) dn.onchange=e=>{ const n=parseInt(e.target.value,10);
+    f.diasNuevo = (isFinite(n) && n>0) ? Math.min(365,n) : 10;
+    f.sinNuevos = true;                             // elegir los días ya es pedir el filtro
+    recalcular(); };
   const vMax=$('vMax'); if(vMax) vMax.onchange=e=>{ state.filtrosVac.max=parseInt(e.target.value,10)||5; aplicarVaciado(); aplicarUnidadesCurva(); render(); };
   const vMin=$('vMin'); if(vMin) vMin.onchange=e=>{ state.filtrosVac.minSuc=parseInt(e.target.value,10)||3; aplicarVaciado(); aplicarUnidadesCurva(); render(); };
   const vMinArt=$('vMinArt'); if(vMinArt) vMinArt.onchange=e=>{ const n=parseInt(e.target.value,10); state.filtrosVac.minArt=isFinite(n)?n:2; aplicarVaciado(); aplicarUnidadesCurva(); render(); };
@@ -2176,15 +2338,11 @@ function wireSort(which){
 }
 let _deb=null; function renderDebounce(){ clearTimeout(_deb); _deb=setTimeout(render,180); }
 
-function wireHistorico(){
-  const rc=$('btnRecargarHist'); if(rc) rc.onclick=async()=>{ await cargarHistKeys(); render(); };
-  document.querySelectorAll('[data-hist]').forEach(b=>b.onclick=()=>abrirBarrida(b.dataset.hist));
-}
-
 async function cargarHistKeys(){
   if(!FIREBASE_DB_URL) return;
   try{ const b=await fbGet(ROOT+'/barridas','shallow=true'); state.histKeys = b? Object.keys(b) : []; }
-  catch(e){ state.histKeys=[]; }
+  catch(e){ state.histKeys=state.histKeys||[]; }
+  state.histCargado=true;
 }
 
 async function abrirBarrida(sem){
@@ -2211,6 +2369,7 @@ async function abrirBarrida(sem){
     }); });
     const conStock = curva.length>0 || !!(b.meta && b.meta.archivo_stock);
     state.resultado={ reposicion, parada:b.parada||[], compras:b.compras||null, curva, vaciado:[], vacDejados:{}, conStock, snapshot:{}, totales:(b.meta&&b.meta.totales)||{}, sinHistorial:false };
+    state._proc=null;                         // viene de la base: no hay archivos para recalcular
     if(b.meta && b.meta.curva_param){ const cp=b.meta.curva_param; ['unidades','soloHuecos','soloRotan','minTalles','incluirParados'].forEach(k=>{ if(cp[k]!=null) state.filtrosCur[k]=cp[k]; }); }
     state.filtros.curva = curva.length>0;   // el tilde queda como se guardó
     // el vaciado ya viene sumado a las filas guardadas: el tilde no tiene nada que recalcular
@@ -2443,7 +2602,7 @@ async function exportRepXlsx(){
   if(!rows.length){ toast('No hay filas para exportar','err'); return; }
   // columnas de talle: las que se mandan y, solo si se piden, las que quedaron en cero;
   // más los talles de «Completar curva» y del vaciado.
-  const set=new Set(); rows.forEach(r=>{ Object.entries(r.talles).forEach(([t,d])=>{ if(d.s>0 || (verRojos&&d.v>0&&d.s<d.v)) set.add(t); }); (r.curvaFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); (r.vacFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); });
+  const set=new Set(); rows.forEach(r=>{ Object.entries(r.talles).forEach(([t,d])=>{ if(d.s>0 || (verRojos&&d.v>0&&d.s<d.v&&!esNuevoRet(d))) set.add(t); }); (r.curvaFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); (r.vacFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); });
   const talles=[...set].sort(cmpTalle);
   const lbl=exportLabels(f.rubro, f.marca, [f.tipoprod, f.discs.join('+'), f.subrubros.join('+')]);
   const uCurva=rows.reduce((a,x)=>a+(x.curvaU||0),0), uVac=rows.reduce((a,x)=>a+(x.vacU||0),0);
@@ -2457,7 +2616,7 @@ async function exportRepXlsx(){
     rows, talles,
     // cantidad a mandar = reposición por venta + talles de curva + vaciado de esa sucursal
     // el 0 rojo del talle que no se puede reponer solo sale si se pidió verlo en pantalla
-    celda:(row,t)=>{ const d=row.talles[t]; const sug=(d?d.s:0)+curvaS(row,t)+vacS(row,t); const esFalta=!!(d&&d.v>0&&d.s<d.v&&verRojos); return { val: sug>0?sug:(esFalta?0:null), falta:esFalta }; },
+    celda:(row,t)=>{ const d=row.talles[t]; const sug=(d?d.s:0)+curvaS(row,t)+vacS(row,t); const esFalta=!!(d&&d.v>0&&d.s<d.v&&verRojos&&!esNuevoRet(d)); return { val: sug>0?sug:(esFalta?0:null), falta:esFalta }; },
     derecha:[ {h:'Total',val:r=>r.sugerido,total:true} ],
     archivo:(f.vaciar?'vaciado-reserva':'reposicion')+lbl.file+'-'+state.semana+'.xlsx',
   });
@@ -3366,13 +3525,15 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab)
 (function init(){
   cargarPrefs();
   if(!puedeCompras()){ const b=document.querySelector('[data-tab="compras"]'); if(b) b.remove(); if(state.tab==='compras') state.tab='reposicion'; }
+  if(soloReparto()){ const b=document.querySelector('[data-tab="parada"]'); if(b) b.remove(); if(state.tab==='parada') state.tab='reposicion'; }
+  wireHistorial();
   if(!FIREBASE_DB_URL){
     $('cfgBanner').style.display='block';
     $('cfgBanner').innerHTML='⚙️ <b>Falta la base:</b> pegá la URL de <code>barrida-mateu</code> en la constante <code>FIREBASE_DB_URL</code>. Podés cargar y ver barridas, pero no se guarda el histórico ni el aviso a sucursales.';
   }
   render();
   // El histórico se trae en segundo plano para no bloquear la UI si la base tarda/no existe.
-  if(FIREBASE_DB_URL) cargarHistKeys().then(()=>{ if(state.tab==='historico') render(); });
+  if(FIREBASE_DB_URL) cargarHistKeys().then(pintarHistorial);
   // ¿ya subieron el stock por sucursal de esta semana? (lo usan todas las barridas de la semana)
   if(FIREBASE_DB_URL) cargarStockSemana();
 })();
