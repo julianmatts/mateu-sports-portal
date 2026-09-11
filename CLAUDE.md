@@ -440,9 +440,13 @@ con un token de GitHub que vive **en Cloudflare**, no en el navegador:
 - El endpoint es público, así que el permiso se valida ahí: **mail en la lista + PIN correcto**
   contra `discontinuos-mateu/usuarios` (mismo criterio que el login), y solo se puede escribir
   ESE archivo y solo si empieza con `window.STOCK_DATA = {`. El token nunca baja al navegador.
-- **Falta configurar en Cloudflare Pages → Settings → Environment variables (Production):
-  `GITHUB_TOKEN`** como *secret* — fine-grained, acceso SOLO a `mateu-sports-portal`, permiso
-  «Contents: Read and write». Opcional `PUBLICAN_STOCK` (mails separados por coma; por defecto
+- **`GITHUB_TOKEN` configurado el 11/09/2026** en el proyecto **Pages** `mateu-sports-portal` (el de
+  `mateu-sports-portal.pages.dev`) → Settings → Variables and Secrets, como *Secret*, vence el
+  **11/09/2027** — fine-grained, acceso SOLO a `mateu-sports-portal`, permiso «Contents: Read and
+  write». Un secreto nuevo toma efecto recién en el deploy siguiente (Deployments → ⋯ → Retry
+  deployment); se verifica con `GET /api/publicar-stock` → `"disponible":true`.
+  ⚠️ En «Workers & Pages» hay además un **Worker con el mismo nombre** (solo archivos estáticos,
+  con «Latest build failed»): NO es el que publica el sitio y ahí no se pueden cargar variables. Opcional `PUBLICAN_STOCK` (mails separados por coma; por defecto
   `julian@mateu.com.ar,producto@mateu.com.ar` — `producto@` es la cuenta de Daniel y David).
   ⚠️ Los tokens fine-grained **caducan**: cuando pase, la Function devuelve «GitHub rechazó el
   token del servidor» y hay que renovarlo en Cloudflare.
