@@ -1347,7 +1347,12 @@ Indicadores, ver abajo).
     reciben nada de él, con la marca en Asignación de Marcas (`repCandidatos`/`repAsig`, igual que el
     Reparto inicial; sin asignación cargada no entra) y con menos de 6 meses de stock en la marca-rubro.
     **Nunca Aurelius** (Juli: trabaja canal moda y modelos puntuales de cada marca, p.ej. en adidas solo
-    Originals) **ni los locales Adidas** (`ampExcluida`); **los outlets recién desde los 40 días**
+    Originals) **ni los locales Adidas** (`ampExcluida`). **Y al revés tampoco (11/09/2026, caso Court Vision
+    Low negro NIKDH2987002 del informe Nike automático vs. manual): un artículo que en el stock por sucursal
+    está SOLO en Aurelius es modelo del canal moda: se abre ÚNICAMENTE a Ecommerce, la web de Aurelius**
+    (`AMP_WEB_AURELIUS`; es lo que hizo el depósito a mano con ese artículo: 11 pares a ecom). A la web no se
+    le aplica el tope de 6 meses de stock (su ratio es el de toda la web). Ni Mateu ni outlets; contador
+    `R.ampAurelius` en el bloque turquesa. Ese día eran 103 de los 452 Nike con stock. **Los outlets recién desde los 40 días**
     (`filtrosAmp.outletDias`, editable en pantalla). **Cuánto**: curva de arranque de `repRepartirArt`
     (2 en los centrales —«hasta 3 si alcanza»—, 1 en el resto, mínimo 3 talles y algún central, sin
     excedente) y queda 1 por talle en el depósito; la que tiene 1 unidad suelta cuenta como que no lo

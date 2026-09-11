@@ -1317,10 +1317,11 @@ function vacIdx(){ const o={}; vacRows().forEach(r=>{ o[r.id+'|'+r.slug]=r; }); 
      los talles centrales y 1 en el resto, sin curvas rotas (3 talles y algún central), tope de calzado. */
 const AMP_MS_EXCESO = 6;                      // con 6+ meses de stock en la marca-rubro la sucursal no recibe
 const AMP_MIN_TALLES = 3;
+const AMP_WEB_AURELIUS = 'ecommerce';        // un modelo que solo tiene Aurelius se abre únicamente a la web
 const ampExcluida = slug => { const c=catDe(slug); return c==='aurelius' || c==='adidas' || /^aurelius/.test(slug); };
 function aplicarAmpliar(){
   const R=state.resultado; if(!R) return;
-  R.ampliar=[]; R.ampSinCand=0; R.ampSinCurva=0; R.ampNota='';
+  R.ampliar=[]; R.ampSinCand=0; R.ampSinCurva=0; R.ampAurelius=0; R.ampNota='';
   const T=R.totales||(R.totales={});
   T.amp_unidades=0; T.amp_lineas=0; T.amp_arts=0; T.amp_elegibles=0;
   if(!R.ampBase) return;                           // barrida abierta del historial: ya viene sumado a la reposición
@@ -1345,6 +1346,12 @@ function aplicarAmpliar(){
   const vacArts=R.vacArts||{};
   R.ampBase.forEach(A=>{
     if(A.dias<N || vacArts[A.id]) return;          // mercadería nueva, o reserva chica (la baja el vaciado)
+    // modelo del canal Aurelius (Juli 11/09/2026, caso Court Vision Low negro): si las únicas sucursales
+    // que lo tienen son Aurelius, no se abre a los locales Mateu ni a los outlets: la única que puede
+    // recibirlo es Ecommerce (la web de Aurelius), como hace el depósito a mano
+    const conStockSuc=Object.keys(A.stockSuc||{}).filter(sl=>((A.stockSuc[sl]||{}).total||0)>0);
+    const soloAur=conStockSuc.length>0 && conStockSuc.every(sl=>/^aurelius/.test(sl) || catDe(sl)==='aurelius');
+    if(soloAur) R.ampAurelius++;
     const libre={}; Object.entries(A.resTalles).forEach(([t,q])=>{ const l=q-(usado[A.id+'|'+t]||0); if(l>0) libre[t]=l; });
     // lo que sobra tiene que alcanzar para una curva (3 talles, después de dejar la reserva del depósito):
     // si quedó todo en uno o dos talles, mandarlo a una sucursal nueva sería una curva rota
@@ -1353,12 +1360,14 @@ function aplicarAmpliar(){
     T.amp_elegibles++;
     const G=repGrupo(A);
     const destinos=Object.keys(REP_SUC).filter(slug=>{
+      if(soloAur && slug!==AMP_WEB_AURELIUS) return false;
       if(ampExcluida(slug) || recibe[A.id+'|'+slug]) return false;
       if(catDe(slug)==='outlet' && A.dias<NO) return false;
       const S=A.stockSuc[slug]; return !(S && S.total>=MINART);
     });
+    // a la web de Aurelius no se le aplica el tope de meses de stock: su ratio es el de toda la web
     const cands=repCandidatos(A, G, destinos)
-      .filter(c=>c.asig && c.asig.tipo!=='sin' && !(c.pr && c.pr.ms!=null && c.pr.ms>=AMP_MS_EXCESO));
+      .filter(c=>c.asig && c.asig.tipo!=='sin' && (soloAur || !(c.pr && c.pr.ms!=null && c.pr.ms>=AMP_MS_EXCESO)));
     if(!cands.length){ R.ampSinCand++; return; }
     // la que tiene 1 unidad suelta cuenta como que no lo tiene: recibe una curva de arranque entera
     // (si se le pasara lo que tiene, repRepartirArt la completaría de a un talle y quedaría una curva rota)
@@ -1913,7 +1922,8 @@ function viewReposicion(){
         +'<div class="mres"><b>'+fmtInt(T.amp_unidades||0)+'</b> unidades en <b>'+fmtInt(T.amp_lineas||0)+'</b> líneas (<b>'+fmtInt(T.amp_arts||0)+'</b> artículos)'
         +(R.ampSinCand?' · <b>'+fmtInt(R.ampSinCand)+'</b> artículos con reserva vieja y ninguna sucursal para abrir':'')
         +(R.ampSinCurva?' · <b>'+fmtInt(R.ampSinCurva)+'</b> con lo que sobra en menos de '+AMP_MIN_TALLES+' talles (no arma curva)':'')
-        +'<br><small style="color:var(--muted)">A las sucursales que no lo tienen (menos de '+Math.max(1,fv.minArt|0)+' u.) y tienen la marca asignada. No entran Aurelius, los locales Adidas ni las que tienen '+AMP_MS_EXCESO+' o más meses de stock en la marca.</small></div></div>';
+        +(R.ampAurelius?' · <b>'+fmtInt(R.ampAurelius)+'</b> modelos que solo tiene Aurelius (esos se abren solo a Ecommerce)':'')
+        +'<br><small style="color:var(--muted)">A las sucursales que no lo tienen (menos de '+Math.max(1,fv.minArt|0)+' u.) y tienen la marca asignada. No entran Aurelius, los locales Adidas ni las que tienen '+AMP_MS_EXCESO+' o más meses de stock en la marca. Un artículo que solo está en las Aurelius va únicamente a Ecommerce (la web de Aurelius).</small></div></div>';
     }
   }
   if(!rows.length) return html+'<div class="state"><div class="big-ic">📭</div>Sin candidatos para estos filtros.</div>';
