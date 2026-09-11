@@ -968,7 +968,9 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   imprimible (A4 apaisado) con cada artículo agrupado por estantería/módulo según las
   ubicaciones del Buscador (`ubicaciones-mateu/sucursales/<slug>/articulos|estanterias`,
   cruce por Id.item y código como en su pestaña F8s; pisos de Diagonal en `DEPOSITOS`, copia del mapa del Buscador),
-  destino con cantidad y talles, stock de los talles pedidos, «sin ubicar» / «no está en el
+  destino con cantidad y talles, stock por talle con las mismas fichitas de la tarjeta del Buscador
+  (cero en rojo, con borde los talles que pide el F8; la lista de retiro del Buscador también las lleva,
+  `pickingStockTallesHtml`), «sin ubicar» / «no está en el
   stock» aparte y firmas; desde ahí «Descargar Excel» (`recorridoExcel`). Las dos marcan
   `descargado`. Para eso **equipo/ guarda más datos al repartir** (`parseF8` +
   `f8DetectarCurvas`, copia de la de ubicaciones/): por línea `m` marca, `ds` descripción,

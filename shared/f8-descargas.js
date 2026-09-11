@@ -313,11 +313,12 @@ function armarRecorrido(d,slug,U){
   return {grupos:lista, sinUbicar, noEsta, zonas, error:!!U.error, conStock:Object.keys(U.arts).length>0,
     arts:vals.length, unidades:vals.reduce((s,g)=>s+g.cant,0), todos:vals.filter(g=>g.todo).length};
 }
-// Stock de los talles pedidos, según la última carga del Buscador: [[talle, stock]]
+// Stock por talle de la última carga del Buscador, todos los talles y en el orden de la tarjeta en
+// pantalla: [[talle, stock, lo pide el F8]]
 function stockTalles(g){
-  const st={}; Object.values((g.art&&g.art.talles)||{}).forEach(x=>{ if(x&&x.t!=null&&!/^total$/i.test(String(x.t))) st[String(x.t).trim()]=+x.c||0; });
-  const pedidos=[...new Set(g.dest.flatMap(x=>x.tt.map(p=>p[0])))];
-  return pedidos.filter(t=>st[t]!=null).map(t=>[t,st[t]]);
+  const pedidos=new Set(g.dest.flatMap(x=>x.tt.map(p=>p[0])));
+  return Object.values((g.art&&g.art.talles)||{}).filter(x=>x&&x.t!=null&&!/^total$/i.test(String(x.t)))
+    .map(x=>{ const t=String(x.t).trim(); return [t, +x.c||0, pedidos.has(t)]; });
 }
 function cantTxt(g){ return g.todo ? (g.cant>0 ? g.cant+' + Todo' : 'Todo') : String(g.cant); }
 function destNombre(x){ return x.todo ? x.d.replace(/^todo\s+/i,'') : x.d; }
@@ -351,7 +352,7 @@ function recorridoHtml(d,opts,R,clave){
       +'<td class="cod">'+esc(g.c)+(g.a?'<div class="id">#'+esc(g.a)+'</div>':'')+'</td>'
       +'<td>'+esc(g.ds||'')+(g.m?' <span class="gris">'+esc(g.m)+'</span>':'')+(g.otras&&g.otras.length?'<div class="gris">También en: '+esc(g.otras.join(' / '))+'</div>':'')+'</td>'
       +'<td class="cant">'+esc(cantTxt(g))+'</td><td>'+dest+'</td>'
-      +'<td class="stk">'+(g.art?esc(String(g.art.stock==null?'':g.art.stock))+(st.length?'<div class="ptall">'+st.map(([t,n])=>'<span'+(n<=0?' class="cero"':'')+'>'+esc(t)+': '+n+'</span>').join(' · ')+'</div>':''):'—')+'</td></tr>';
+      +'<td class="stk">'+(g.art?'<b>'+esc(String(g.art.stock==null?'':g.art.stock))+'</b>'+(st.length?'<div class="tchs">'+st.map(([t,n,p])=>'<span class="tch'+(n<=0?' cero':'')+(p?' ped':'')+'">'+esc(t)+' <b>'+n+'</b></span>').join('')+'</div>':''):'—')+'</td></tr>';
   };
   const thead=mod=>'<thead><tr><th class="chk">OK</th>'+(mod?'<th>Módulo</th>':'')+'<th>Código</th><th>Descripción</th><th>Retirar</th><th>Destino y talles</th><th>Stock</th></tr></thead>';
   let body='';
@@ -380,7 +381,9 @@ function recorridoHtml(d,opts,R,clave){
     +'table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #9aa3b5;padding:5px 7px;text-align:left;vertical-align:top}'
     +'th{background:#e9edf5;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px}tr{page-break-inside:avoid}'
     +'.chk{width:28px;text-align:center}.mod{white-space:nowrap;font-weight:700}.cod{font-family:Consolas,monospace;white-space:nowrap}'
-    +'.id,.gris{color:#6b7a99;font-size:10.5px}.cant{text-align:center;font-weight:700;font-size:14px;white-space:nowrap}.stk{white-space:nowrap}.cero{color:#CC0000;font-weight:700}'
+    +'.id,.gris{color:#6b7a99;font-size:10.5px}.cant{text-align:center;font-weight:700;font-size:14px;white-space:nowrap}.stk{min-width:90px;max-width:260px}.cero{color:#CC0000;font-weight:700}'
+    +'.tchs{margin-top:3px;line-height:1.7}.tch{display:inline-block;border:1px solid #c5ccd9;border-radius:4px;padding:0 5px;margin:0 3px 2px 0;font-size:10.5px;white-space:nowrap;color:#44506a}.tch b{color:#0B1527}'
+    +'.tch.cero{background:#fdf1f1;border-color:#efb9b9;color:#b45454}.tch.cero b{color:#CC0000}.tch.ped{border:2px solid #0B1527;padding:0 4px}'
     +'.pdest{line-height:1.4}.pdest+.pdest{border-top:1px dotted #c5ccd9;margin-top:2px;padding-top:2px}.ptall{color:#44506a;font-size:11px}.todo{color:#CC0000;font-weight:700;font-size:11px}'
     +'.firmas{display:flex;gap:30px;margin-top:28px;font-size:12px}.firmas div{flex:1;border-top:1px solid #0B1527;padding-top:4px}'
     +'@media print{body{background:#fff}.bar{display:none}.hoja{max-width:none;padding:0}@page{size:A4 landscape;margin:10mm}}'
@@ -393,7 +396,7 @@ function recorridoHtml(d,opts,R,clave){
     +'<div class="sub">F8 del '+esc(fechaTxt(d.fecha))+' · '+esc(d.operador||'')+(d.hdr&&d.hdr.nro?' · '+esc(d.hdr.nro):'')
     +' · '+R.arts+' artículo'+(R.arts===1?'':'s')+' · '+R.unidades+' unidad'+(R.unidades===1?'':'es')+(R.todos?' + '+R.todos+' «todo lo que haya»':'')
     +' · en orden de estantería'+esc(ordenTxt(R))+'</div></div></div>'
-    +'<div class="ley">Marcá OK cada artículo al juntarlo. «Destino y talles»: a dónde va, cuántas unidades y qué talles (40×2 = dos del 40). «TODO lo que haya» = mandar todo el stock de ese artículo. «Stock»: lo de tu última carga en el Buscador (en rojo, los talles pedidos que figuran en cero).</div>'
+    +'<div class="ley">Marcá OK cada artículo al juntarlo. «Destino y talles»: a dónde va, cuántas unidades y qué talles (40×2 = dos del 40). «TODO lo que haya» = mandar todo el stock de ese artículo. «Stock»: lo de tu última carga en el Buscador, talle por talle como en la pantalla (en rojo los que están en cero; con borde grueso, los que pide el F8).</div>'
     +(body||'<p class="nota">El F8 no tiene artículos.</p>')
     +'<div class="firmas"><div>Armó</div><div>Controló</div><div>Fecha</div></div>'
     +'</div></body></html>';
@@ -408,7 +411,7 @@ function armarRecorridoExcel(ExcelJS,d,opts,R){
   const NAVY='FF0B1527', BLA={argb:'FFFFFFFF'}, GRIS={argb:'FF6B7A99'};
   const sol=c=>({type:'pattern',pattern:'solid',fgColor:{argb:c}});
   const fino={style:'thin',color:{argb:'FFC5CCD9'}}, todo4={top:fino,left:fino,bottom:fino,right:fino};
-  const cols=[['OK',5],['Ubicación',24],['Módulo',12],['Código',22],['Id.item',10],['Descripción',42],['Retirar',9],['Destino',20],['Unid.',7],['Talles',30],['Stock',8],['Stock de los talles',24]];
+  const cols=[['OK',5],['Ubicación',24],['Módulo',12],['Código',22],['Id.item',10],['Descripción',42],['Retirar',9],['Destino',20],['Unid.',7],['Talles',30],['Stock',8],['Stock por talle',36]];
   const N=cols.length;
   cols.forEach(([,w],i)=>{ ws.getColumn(i+1).width=w; });
   ws.mergeCells(1,1,1,N);
@@ -431,10 +434,10 @@ function armarRecorridoExcel(ExcelJS,d,opts,R){
         r++;
         const vals=[ '', ubicTxt(g), g.u?(g.u.mod||''):'', g.c, num(g.a), g.ds||'', j?'':cantTxt(g),
           destNombre(de), de.todo&&!de.n?'TODO':de.n, tallesTxt(de.tt), j?'':(g.art?(+g.art.stock||0):''),
-          j?'':st.map(([t,n])=>t+': '+n).join(' · ') ];
+          j?'':st.map(([t,n,p])=>(p?'['+t+' '+n+']':t+' '+n)).join(' · ') ];
         vals.forEach((v,i)=>{
           const c=ws.getCell(r,i+1); c.value=v; c.border=todo4;
-          c.alignment={vertical:'top',wrapText:i===5||i===9,horizontal:[0,6,8,10].includes(i)?'center':'left'};
+          c.alignment={vertical:'top',wrapText:i===5||i===9||i===11,horizontal:[0,6,8,10].includes(i)?'center':'left'};
           const f={name:'Calibri',size:11,bold:i===3||i===6};
           if(j && i>=1 && i<=5) f.color=GRIS;     // renglones extra del mismo artículo: los datos repetidos en gris
           c.font=f;

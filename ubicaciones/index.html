@@ -656,6 +656,11 @@ body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
   #printArea .pdest{ line-height:1.35; }
   #printArea .pdest + .pdest{ border-top:1px dotted #ccc; margin-top:2px; padding-top:2px; }
   #printArea .ptall{ color:#444; font-size:10px; }
+  /* stock por talle, como las fichitas de la tarjeta (cero en rojo, con borde los que pide el F8) */
+  #printArea .tchs{ margin-top:2px; line-height:1.7; }
+  #printArea .tch{ display:inline-block; border:1px solid #bbb; border-radius:3px; padding:0 4px; margin:0 3px 2px 0; font-size:10px; white-space:nowrap; }
+  #printArea .tch.cero{ color:#b00; border-color:#e3a3a3; background:#fdf1f1; }
+  #printArea .tch.ped{ border:2px solid #000; padding:0 3px; }
 }
 
 /* ============ MOBILE (≤560px) ============
@@ -2832,6 +2837,14 @@ function pickingDestHtml(dest, destT, todoD){
     return '<div class="pdest"><b>'+esc(d)+'</b> ×'+n+(tt?' <span class="ptall">('+esc(tt)+')</span>':'')+'</div>';
   }).join('');
 }
+// Stock por talle para el recorrido impreso: las mismas fichitas que la tarjeta en pantalla
+// (sin la fila «Total»); con borde grueso los talles que pide el F8 importado
+function pickingStockTallesHtml(a, inf){
+  const tt = Array.isArray(a&&a.talles) ? a.talles.filter(x=>x && x.t!=null && !/^total$/i.test(String(x.t))) : [];
+  if(!tt.length) return '';
+  const pedidos = new Set(); Object.values((inf&&inf.destT)||{}).forEach(d=>Object.keys(d||{}).forEach(t=>pedidos.add(String(t))));
+  return '<div class="tchs">'+tt.map(x=>'<span class="tch'+(+x.c>0?'':' cero')+(pedidos.has(String(x.t))?' ped':'')+'">'+esc(x.t)+' <b>'+(+x.c||0)+'</b></span>').join('')+'</div>';
+}
 // Cantidad a retirar: número, «Todo» (destino sin unidades) o la mezcla de ambos
 function pickingCantTxt(g){
   const hayTodo = g.todoD && Object.keys(g.todoD).length;
@@ -2901,7 +2914,7 @@ function pickingImprimir(){
           const inf = pickingInfo[k];
           return '<tr><td class="chk"></td><td>'+esc(a.codigo)+'</td><td>'+esc(a.descripcion||'')+'</td>'+
             (conF8?'<td><b>'+(inf?pickingCantTxt(inf):'—')+'</b></td><td>'+(inf?pickingDestHtml(inf.dest, inf.destT, inf.todoD):'—')+'</td>':'')+
-            '<td>'+esc(a.stock)+'</td><td>'+esc(mod)+'</td></tr>';
+            '<td><b>'+esc(a.stock)+'</b>'+pickingStockTallesHtml(a, inf)+'</td><td>'+esc(mod)+'</td></tr>';
         }).join('')+'</table>';
     }).join('')+
     (pickingNoStock.length
