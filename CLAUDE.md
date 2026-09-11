@@ -936,7 +936,7 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   de origen a `equipo/f8suc/<slug>/<f8id>` (mapa `SLUG_EQ` canónico→slug del
   Portal) con aviso opcional por directo de la Bandeja. La sucursal lo ve en
   **Mi Sucursal → «F8 para armar»** (`secF8` en `indicadores/`): visto al abrirlo,
-  descarga en planilla, y **confirmación artículo por artículo** (✓ enviado / ✗ +
+  dos descargas (ver abajo), y **confirmación artículo por artículo** (✓ enviado / ✗ +
   motivo de `MOTIVOS_F8`). En equipo/: tabla «Seguimiento del circuito»
   (recibido/visto/descargado/confirmado) y el cruce suma dos estados: 
   **Justificado** (✗ con motivo, sin transferencia — cuenta para la efectividad) y
@@ -2302,10 +2302,13 @@ palabra) en vez del de Mateu, título «… — Aurelius» y app instalable prop
   identificador, 110 px de alto, también embebido). Le saca el filtro `brightness(0) invert(1)`.
   **Headers y pantallas de ingreso (11/09/2026, pedido de Juli): el logo completo APILADO oficial**
   (variante 1-08 del identificador: escudo a color arriba, palabra blanca abajo; UNA sola imagen
-  `APILADO_AU`, 240 px de alto embebida, clase `img.marca-apilado`). Va donde el logo cuelga de
+  `APILADO_AU`, 240 px de alto embebida, clase `img.marca-apilado`). **El escudo va al 80 % del
+  original** (pedido de Juli el mismo día: «achicar un poco la corona que quede proporcional»; se
+  recompuso con PIL escudo + separación escalados y la palabra al 100 %). Va donde el logo cuelga de
   `SEL_APILADO` (`.msh-logo`, `.top`, `.logo` de Indicadores, `.login-head`, `.login-logo` del
-  Turnero, `.pss-logo` del puesto y el modal «Acceso Aurelius»): 52 px en headers (44 en celular),
-  96 px en el login del Portal, 80 en los otros ingresos. En el resto (decks, impresiones, etiquetas
+  Turnero, `.pss-logo` del puesto y el modal «Acceso Aurelius»): 43 px en headers (37 en celular),
+  80 px en el login del Portal, 66 en los otros ingresos (la palabra queda del mismo tamaño que con el
+  escudo entero). En el resto (decks, impresiones, etiquetas
   chicas) sigue el lockup horizontal isotipo + palabra. Un MutationObserver cubre lo que se inyecta después.
   ⚠ No volver a dibujar el escudo ni las letras a mano: la primera versión (SVG propio) quedó mal y
   Juli pidió el original. Los 14 PNG del identificador (isotipo, logo apilado y palabra, a color y en
