@@ -879,6 +879,17 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   repetía solo el escaneo anterior. Lo primero que se lee al conectar se ignora
   (es lo que quedó guardado), **salvo que sea de menos de 60 s** — si no, una pasada
   hecha justo antes de que la pantalla empiece a escuchar se perdía en silencio.
+  **Cada pantalla sigue a UNA PC (12/09/2026, reclamo del puesto «toma las búsquedas de los
+  otros puestos y me las pisa»)**: `scanBridge/<slug>` es de la SUCURSAL, así que un escaneo en
+  cualquier PC del salón le cambiaba la búsqueda a todas las pantallas (y cada una lo registraba
+  en el historial con el perfil de SU puesto). Ahora `sbAceptar(pc)` filtra por la PC elegida
+  (`ubic_scan_pc_<slug>` en localStorage: `'<PC>'` · `''` ninguna · `'*'` todas; sin elegir anda
+  como siempre **mientras se haya visto una sola PC** —`ubic_scan_pcs_<slug>`—, y al aparecer la
+  segunda deja de seguir escaneos ajenos y avisa). Se elige con el botón **📡 Escáner**
+  (`abrirModalEscaner`; en el puesto va en el pie, en la cuenta de sucursal en la barra de estado)
+  o tocando «Es esta PC» en el cartel de **«Probar el puente»** —que se OFRECE, no empareja solo:
+  la prueba la reciben todas las pantallas de la sucursal—. El escaneo ajeno no se pierde: lo
+  registra en el historial la pantalla de la PC donde se escaneó.
   Prueba sin Firebase ni PC del salón: `npx --yes http-server -p 8777 -s .` +
   `node scripts/probar-puente-escaner.mjs sse|poll puesto|sucursal` (Playwright con
   Chromium, intercepta la base con datos de prueba).

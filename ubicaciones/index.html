@@ -80,6 +80,22 @@ html .hdr{padding-top:calc(10px + env(safe-area-inset-top,0px))}
 .statusbar .st-right{ margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; gap:5px; }
 .statusbar .sync{ font-size:11px; color:var(--gray-400); white-space:nowrap; }
 .statusbar #btnCargarStock{ white-space:nowrap; }
+.statusbar #btnEscaner{ white-space:nowrap; }
+#btnEscaner.pend{ border-color:var(--red); color:var(--red); font-weight:700; }
+.puesto-foot .pf-esc #btnEscaner{
+  margin-left:8px; padding:3px 9px; font-size:11px; letter-spacing:1px;
+  background:transparent; color:rgba(255,255,255,.45); border-color:rgba(255,255,255,.25);
+}
+.puesto-foot .pf-esc #btnEscaner.pend{ color:#fff; border-color:var(--red); background:rgba(204,0,0,.35); }
+.esc-ops{ display:flex; flex-direction:column; gap:8px; }
+.esc-op{
+  display:flex; flex-direction:column; gap:2px; text-align:left; cursor:pointer;
+  border:1px solid var(--gray-200); border-radius:10px; padding:10px 12px; background:#fff;
+}
+.esc-op:hover{ border-color:var(--navy); }
+.esc-op.on{ border-color:var(--navy); background:rgba(11,21,39,.05); }
+.esc-op .t{ font-weight:700; color:var(--navy); }
+.esc-op .s{ font-size:12px; color:var(--gray-400); }
 .carga-warn{ color:var(--red); font-weight:600; }
 .carga-ok{ color:var(--green); }
 
@@ -731,6 +747,8 @@ body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
     <span id="stCarga">—</span>
     <div class="st-right">
       <span class="sync" id="stSync"></span>
+      <!-- puente con el escáner del sistema: qué PC sigue esta pantalla -->
+      <button class="btn btn-outline btn-sm" id="btnEscaner" style="display:none" title="Qué PC del salón sigue esta pantalla cuando se escanea parado en el sistema" onclick="abrirModalEscaner()">📡 Escáner</button>
       <!-- carga del stock del día (solo encargado/admin): debajo del "Actualizado hace…" -->
       <button class="btn btn-primary btn-sm" id="btnCargarStock" style="display:none" title="Subir el Excel de stock del día (export plano o planilla de ubicaciones)">📎 Cargar stock del día</button>
     </div>
@@ -1489,11 +1507,13 @@ function montarQuiosco(){
   const foot = document.createElement('div');
   foot.className = 'puesto-foot'; foot.id = 'puestoFoot';
   const info = SUCURSAL_BY_SLUG[SUC];
-  foot.innerHTML = '<span class="pf-suc">'+esc(info?info.nombre:SUC)+'</span>'+
+  foot.innerHTML = '<span class="pf-suc">'+esc(info?info.nombre:SUC)+' <span class="pf-esc"></span></span>'+
     '<span class="pf-frase">DESDE 1905 JUNTO AL DEPORTE</span>'+
     '<span class="pf-salir"></span>';
   document.body.appendChild(foot);
   foot.querySelector('.pf-salir').appendChild($('btnSalir'));
+  foot.querySelector('.pf-esc').appendChild($('btnEscaner'));   // el puesto es el que más lo necesita
+  pintarBotonEscaner();
   // los botones van junto al calendario; header.js monta con defer, por eso el reintento
   const mover = ()=>{
     const cal = document.querySelector('.msh-cal');
@@ -1517,15 +1537,57 @@ function montarQuiosco(){
    resalta la tarjeta y registra la consulta): una sola escaneada sirve
    para el sistema Y el Buscador.
    Escucha en vivo por SSE; si el navegador no lo soporta (Windows 7 con
-   IE) o la conexión no abre, cae a preguntar cada 2,5 s. */
+   IE) o la conexión no abre, cae a preguntar cada 2,5 s.
+
+   CADA PANTALLA SIGUE A UNA SOLA PC (12/09/2026, reclamo del puesto: «toma
+   las búsquedas de los otros puestos de la misma sucursal y me pisa la
+   búsqueda»). El nodo `scanBridge/<slug>` es de la SUCURSAL, así que un
+   escaneo en cualquier PC del salón le cambiaba la búsqueda a TODAS las
+   pantallas (y encima cada una lo registraba en el historial con el perfil
+   de SU puesto). Ahora:
+   - mientras haya una sola PC escaneando en la sucursal, anda como siempre,
+     sin configurar nada;
+   - apenas aparece una segunda PC, la pantalla deja de seguir escaneos
+     ajenos y avisa para elegir cuál es la suya (botón «📡 Escáner»);
+   - desde la PC de esta pantalla, «Probar el puente» (menú del puente, al
+     lado del reloj) la deja emparejada sola: es la forma recomendada.
+   El escaneo ajeno no se pierde: queda en el historial, registrado por la
+   pantalla de la PC donde se escaneó. */
 let sbVistos = new Set(), sbActivo = false, sbPoll = null, sbSse = false;
+let sbPcs = {}, sbAvisado = false, sbUltPc = '';
+function sbClavePc(){ return 'ubic_scan_pc_'+SUC; }      // '' ninguna · '*' todas · '<PC>' esa
+function sbClavePcs(){ return 'ubic_scan_pcs_'+SUC; }    // PCs vistas {nombre: ts}
+function sbPcElegida(){ const v = readLS(sbClavePc()); return (v===null||v===undefined) ? null : String(v); }
+function sbElegirPc(v){ saveLS(sbClavePc(), String(v)); sbAvisado = false; pintarBotonEscaner(); }
+function sbVerPc(pc){
+  if(!pc) return;
+  sbUltPc = pc;
+  const nueva = !sbPcs[pc];
+  sbPcs[pc] = Date.now();
+  if(nueva){ saveLS(sbClavePcs(), sbPcs); pintarBotonEscaner(); }
+}
+// ¿este escaneo es para esta pantalla?
+function sbAceptar(pc){
+  const el = sbPcElegida();
+  if(el==='*') return true;               // «todas», elegido a mano
+  if(el==='') return false;               // «ninguna»: pantalla sin escáner propio
+  if(el) return !pc || pc===el;           // la suya (un puente viejo sin `pc` no se filtra)
+  if(Object.keys(sbPcs).length <= 1) return true;   // una sola PC en la sucursal: como siempre
+  if(!sbAvisado){
+    sbAvisado = true;
+    toastAccion('📡 Hay más de una PC escaneando en esta sucursal. Elegí cuál es esta pantalla para que no te cambien la búsqueda.', 'Elegir', abrirModalEscaner);
+  }
+  return false;
+}
 function iniciarScanBridge(){
   if(sbActivo || !SUC || (MODE!=='puesto' && MODE!=='sucursal')) return;
   sbActivo = true;
   const url = FB + '/scanBridge/' + encodeURIComponent(SUC) + '.json';
   let primera = true;
+  sbPcs = readLS(sbClavePcs()) || {};
   const aplicar = rec=>{
     if(!rec || !rec.codigo) return;
+    sbVerPc(rec.pc || '');
     // ts lo pone el servidor de Firebase (así no depende del reloj de la PC)
     const marca = String(rec.ts||'')+'|'+rec.codigo;
     // Cada escaneo se atiende UNA vez: lo que ya estaba guardado al conectarnos
@@ -1539,7 +1601,19 @@ function iniciarScanBridge(){
     // El ts lo pone el servidor de Firebase, no la PC del salón.
     if(primera){ primera = false; if(!(rec.ts && Math.abs(Date.now()-rec.ts) < 60000)) return; }
     if($('profileScreen').style.display==='flex') return;
-    if(rec.test || rec.codigo==='PUENTE-TEST'){ toast('📡 Puente del escáner conectado ✔'); return; }
+    // La prueba la lanza alguien parado EN esa PC, pero la reciben todas las
+    // pantallas de la sucursal: por eso se ofrece emparejar, no se empareja solo
+    // (si no, una prueba en la PC del fondo le robaría el escáner a las demás).
+    if(rec.test || rec.codigo==='PUENTE-TEST'){
+      const pc = rec.pc||'';
+      if(pc && sbPcElegida()!==pc)
+        toastAccion('📡 Puente conectado ✔ · la prueba salió de '+pc+'. Si es esta PC, tocá el botón y esta pantalla sigue solo sus escaneos.',
+          'Es esta PC', ()=>{ sbElegirPc(pc); toast('Listo: esta pantalla sigue los escaneos de '+pc+'.'); });
+      else toast('📡 Puente del escáner conectado ✔'+(pc?' · '+pc:''));
+      return;
+    }
+    // escaneo de otra PC del salón: no se toca esta pantalla (lo registra la suya)
+    if(!sbAceptar(rec.pc||'')) return;
     toast('📡 Escaneado en el sistema: '+rec.codigo);
     procesarEscaneo(rec.codigo);
   };
@@ -1559,6 +1633,49 @@ function iniciarScanBridge(){
     es.addEventListener('error', ()=> arrancarPoll());
     setTimeout(()=>{ if(!sbSse) arrancarPoll(); }, 4000);
   }catch(e){ arrancarPoll(); }
+}
+
+/* Botón «📡 Escáner»: en el puesto va en el pie (junto al nombre de la
+   sucursal) y en la cuenta de sucursal, en la barra de estado. Solo aparece
+   cuando el puente publicó algo en esta sucursal (si nadie escanea, no
+   molesta). Avisa en rojo cuando hay varias PCs y esta pantalla todavía no
+   eligió la suya. */
+function pintarBotonEscaner(){
+  const b = $('btnEscaner'); if(!b) return;
+  const pcs = Object.keys(sbPcs), el = sbPcElegida();
+  const varias = pcs.length > 1 && el === null;
+  b.style.display = pcs.length ? 'inline-flex' : 'none';
+  b.textContent = varias ? '📡 Elegí la PC del escáner'
+    : (el && el!=='*' && el!=='') ? '📡 '+el : '📡 Escáner';
+  b.classList.toggle('pend', varias);
+}
+function abrirModalEscaner(){
+  const el = sbPcElegida();
+  const pcs = Object.keys(sbPcs).sort();
+  const opt = (val, tit, sub, act)=>
+    '<button type="button" class="esc-op'+(act?' on':'')+'" data-pc="'+esc(val)+'">'+
+      '<span class="t">'+esc(tit)+'</span><span class="s">'+esc(sub)+'</span></button>';
+  $('modalBody').innerHTML =
+    '<div class="modal-title">📡 Escáner del sistema</div>'+
+    '<div class="hint" style="margin-bottom:12px">Cuando alguien escanea un artículo parado en el sistema, el código llega a esta pantalla. '+
+      'Si el salón tiene varias PCs, cada pantalla tiene que seguir <b>la suya</b>: si no, un escaneo en otra PC te cambia la búsqueda en el medio de una consulta. '+
+      'Lo que se escanea en otra PC no se pierde: queda en el historial, cargado desde esa pantalla.</div>'+
+    '<div class="esc-ops">'+
+      pcs.map(pc=> opt(pc, pc, 'Seguir los escaneos de esta PC'+(sbUltPc===pc?' · fue la última en escanear':''), el===pc)).join('')+
+      opt('', 'Ninguna', 'Esta pantalla no sigue ningún escáner (solo búsquedas a mano)', el==='')+
+      opt('*', 'Todas', 'Seguir los escaneos de cualquier PC de la sucursal (como antes)', el==='*')+
+    '</div>'+
+    '<div class="hint" style="margin-top:12px">La forma más fácil de acertar: en la PC de <b>esta</b> pantalla, tocá el ícono del puente al lado del reloj y elegí <b>«Probar el puente»</b>. Esta pantalla se queda con esa PC sola.</div>'+
+    '<div class="modal-footer"><button class="btn btn-navy" id="escCerrar">Listo</button></div>';
+  $('modalOverlay').classList.add('show');
+  $('modalBody').querySelectorAll('.esc-op').forEach(b=> b.addEventListener('click', ()=>{
+    sbElegirPc(b.dataset.pc);
+    toast(b.dataset.pc==='' ? 'Esta pantalla ya no sigue los escaneos.'
+      : b.dataset.pc==='*' ? 'Esta pantalla sigue los escaneos de cualquier PC.'
+      : 'Listo: esta pantalla sigue los escaneos de '+b.dataset.pc+'.');
+    cerrarModal();
+  }));
+  $('escCerrar').addEventListener('click', cerrarModal);
 }
 
 /* Modo mostrador manual: cierra lo que esté abierto y vuelve al selector
@@ -1804,6 +1921,7 @@ function renderVistaActiva(){
 
 function renderStatusbar(){
   $('btnCargarStock').style.display = (SUC && canStock()) ? 'inline-flex' : 'none';
+  pintarBotonEscaner();
   if(!SUC){ $('stCarga').innerHTML=''; renderSyncLabel(); return; }
   const m = DATA.meta || {};
   if(!m.ultimaCargaStock){
