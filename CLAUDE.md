@@ -1497,6 +1497,21 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
   selección lo avisa y no se detecta nada. Probado 12/09 con «Estad remitos 2026.csv» + el reporte de
   stock con días de Puma: de 17 artículos nuevos, 16 venían en los remitos de septiembre y 1
   (BORUSSIA C TT, compra de hace 7 días) no estaba en ninguno → se repartió por la tarjeta nueva.
+- **Lo repartido le llega a la sucursal (12/09/2026)**: al guardar, además del documento del
+  reparto se escribe **`barrida/repartoSuc/<slug>/<key>`** = `{fecha, por, u, arts:[{id, codigo,
+  desc, marca, rubro, genero, remito, sugerido, talles:[{t,s}]}]}` — cada local baja SOLO su nodo,
+  misma seguridad blanda que la reposición de la barrida, y los talles van con el mismo shape para
+  no tocar a los consumidores. Se poda lo de más de `REP_SUC_DIAS` (60) días al guardar, y borrar un
+  reparto también borra lo de cada sucursal. Lo leen dos:
+  **Mi Sucursal** (`indicadores/`, sección **«Mercadería nueva que te baja»** `secReparto` /
+  `renderRepartoSuc`+`paintRepartoSuc`, en la banda «En curso» justo debajo de «Reposición
+  disponible»): el último reparto abierto con artículo · código · marca · talles · unidades, y los 3
+  anteriores plegados. Es de solo lectura y no hay que pedirlo — ya está decidido que baja, a
+  diferencia de la reposición.
+  **Picking**: `repartoDe(slug)` (el último reparto de esa sucursal) + el check **«Incluir el
+  Reparto inicial»** en «Crear picking»; al elegir el destino avisa cuántas unidades tiene esperando,
+  si el artículo ya venía por la barrida le suma los talles, y las sucursales que solo tienen reparto
+  entran igual a la lista de destinos (`DATA.bar.repSlugs`).
 - **Firebase** (`recepciones-mateu/barrida/`): `repartos/<AAAA-MM-DD_HHMMSS>` = `{meta, remitos,
   porSuc}` (porSuc agrupado por slug, por si después lo lee Indicadores/Picking),
   `remitosRepartidos/<nro>` = `{rep, fecha, por}` y `repartoHist/<idItem>/<slug>` = `{t:[[talle,q]],

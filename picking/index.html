@@ -167,6 +167,23 @@ async function cargar(){
     const [meta,slugsObj]=await Promise.all([ fbGet(BARR+'/barridas/'+lk+'/meta'), fbGet(BARR+'/barridas/'+lk+'/reposicion','shallow=true') ]);
     DATA.bar.meta=meta||null; DATA.bar.slugs = slugsObj?Object.keys(slugsObj).sort((a,b)=>cmp(nombreSuc(a),nombreSuc(b))):[];
   }
+  // sucursales con Reparto inicial (los ingresos nuevos que el depósito ya repartió): pueden no
+  // estar en la barrida de la semana, así que se suman a la lista de destinos
+  try{
+    const rs=await fbGet(BARR+'/repartoSuc','shallow=true');
+    DATA.bar.repSlugs = rs?Object.keys(rs):[];
+    DATA.bar.repSlugs.forEach(sl=>{ if(!DATA.bar.slugs.includes(sl)) DATA.bar.slugs.push(sl); });
+    DATA.bar.slugs.sort((a,b)=>cmp(nombreSuc(a),nombreSuc(b)));
+  }catch(e){ DATA.bar.repSlugs=[]; }
+}
+// último Reparto inicial de una sucursal: {fecha, u, arts:[{id,codigo,desc,marca,rubro,sugerido,talles:[{t,s}]}]}
+async function repartoDe(slug){
+  DATA.bar.repCache = DATA.bar.repCache||{};
+  if(DATA.bar.repCache[slug]!==undefined) return DATA.bar.repCache[slug];
+  let d=null; try{ d=await fbGet(BARR+'/repartoSuc/'+slug); }catch(e){ d=null; }
+  const ks=Object.keys(d||{}).filter(k=>d[k] && (d[k].arts||[]).length).sort();
+  const ult = ks.length ? d[ks[ks.length-1]] : null;
+  DATA.bar.repCache[slug]=ult; return ult;
 }
 // carga (y cachea) la reposición de una sucursal
 async function repoDe(slug){
@@ -403,7 +420,7 @@ function imprimirPick(nro){
 function subtab(id,label,n){ return '<button class="subtab'+(state.pkTab===id?' on':'')+'" data-st="'+id+'">'+esc(label)+(n?(' ('+n+')'):'')+'</button>'; }
 
 async function abrirNuevoPicking(){
-  if(!DATA.bar.ultima){ toast('No hay una barrida cargada para crear pickings','bad'); return; }
+  if(!DATA.bar.ultima && !(DATA.bar.repSlugs||[]).length){ toast('No hay una barrida ni un reparto cargados para crear pickings','bad'); return; }
   const marcas=[...new Set((await cargarCombos()).map(c=>c.marca))].sort(cmp);
   const rubros=[...new Set(DATA.bar.combos.map(c=>c.rubro))].sort(cmp);
   openModal(
@@ -416,6 +433,7 @@ async function abrirNuevoPicking(){
     + '<div class="fld"><label>Rubro (opcional)</label><select class="sel" id="npRubro"><option value="">Todos</option>'
     + rubros.map(r=>'<option>'+esc(r)+'</option>').join('')+'</select></div></div>'
     + '<div class="fld" style="margin-top:4px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="npCurva" checked> Incluir «Completar curva» (talles que la sucursal no tiene y hay en reserva)</label></div>'
+    + '<div class="fld" style="margin-top:2px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="npReparto"> Incluir el <b>Reparto inicial</b> (lo que el depósito repartió de los ingresos nuevos)</label><div class="hint" id="npRepHint" style="margin:2px 0 0"></div></div>'
     + '<div id="npPrev" class="hint"></div>'
     + '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cancelar</button>'
     + '<button class="btn btn-outline" id="npPreview">Previsualizar</button>'
@@ -447,15 +465,39 @@ async function abrirNuevoPicking(){
         }
       });
     }
+    // Reparto inicial: lo que el depósito ya repartió de los ingresos nuevos (no sale de la
+    // barrida). Si el artículo ya va en el pick, se le suman los talles.
+    if($('npReparto') && $('npReparto').checked){
+      const r=await repartoDe(dest);
+      (r && r.arts || []).filter(pasa).forEach(it=>{
+        const talles=(it.talles||[]).filter(t=>num(t.s)>0).map(t=>({t:t.t,s:num(t.s)}));
+        if(!talles.length) return;
+        const key=x=>String(x.codigo||x.id||'');
+        const ya=items.find(x=>key(x)===key(it));
+        if(ya){ talles.forEach(t=>{ const e=ya.talles.find(x=>x.t===t.t); if(e) e.s+=t.s; else ya.talles.push(t); ya.requested_qty+=t.s; }); }
+        else items.push({ codigo:it.codigo, desc:it.desc, marca:it.marca||'—', rubro:it.rubro||'—', id:it.id, talles, requested_qty:talles.reduce((a,t)=>a+t.s,0), reparto:true });
+      });
+    }
     return items;
   };
+  // al elegir el destino se avisa si tiene un Reparto inicial esperando
+  $('npDest').addEventListener('change', async()=>{
+    const h=$('npRepHint'); if(!h) return;
+    const dest=$('npDest').value; if(!dest){ h.textContent=''; return; }
+    h.textContent='Buscando el reparto…';
+    const r=await repartoDe(dest);
+    if(!r){ h.textContent='Esta sucursal no tiene ningún Reparto inicial guardado.'; return; }
+    const f=String(r.fecha||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    h.innerHTML='Tiene <b>'+fmtInt(r.u||0)+'</b> unidades de <b>'+(r.arts||[]).length+'</b> artículos repartidas el <b>'+(f?f[3]+'/'+f[2]:esc(r.fecha||''))+'</b>.';
+  });
   $('npPreview').onclick=async()=>{
     const b=$('npPreview'); b.disabled=true;
     try{ items=await armar(); if(items===null){ b.disabled=false; return; }
       let u=0; items.forEach(i=>u+=i.requested_qty);
+      const nRep=items.filter(i=>i.reparto).length;
       const sinZona=items.filter(i=>!zonaDe(i.marca,i.rubro)).length;
       $('npPrev').innerHTML = items.length
-        ? ('Se van a incluir <b>'+items.length+'</b> SKUs · <b>'+fmtInt(u)+'</b> unidades.'+(sinZona?(' <b style="color:var(--warn)">'+sinZona+' SKUs sin zona asignada (irán al final del recorrido).</b>'):' Todos con zona.'))
+        ? ('Se van a incluir <b>'+items.length+'</b> SKUs · <b>'+fmtInt(u)+'</b> unidades.'+(nRep?(' <b>'+nRep+'</b> del Reparto inicial.'):'')+(sinZona?(' <b style="color:var(--warn)">'+sinZona+' SKUs sin zona asignada (irán al final del recorrido).</b>'):' Todos con zona.'))
         : 'No hay ítems para ese filtro.';
       $('npCrear').disabled = !items.length;
     }catch(e){ toast(e.message,'bad'); }

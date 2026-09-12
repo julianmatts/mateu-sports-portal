@@ -3025,7 +3025,8 @@ async function exportComXlsx(){
    ============================================================ */
 const REP_SUC = Object.assign({}, SLUG_SUC, SUC_EXTRA, OUTLET_SUC);
 const nombreSuc = slug => REP_SUC[slug]||slug;
-const REP_MEM_DIAS = 120;                  // la memoria de envíos vale 4 meses
+const REP_MEM_DIAS = 120;
+const REP_SUC_DIAS = 60;                   // cuánto queda en Mi Sucursal / Picking lo repartido                  // la memoria de envíos vale 4 meses
 const REP_PREFS = 'barrida_reparto_prefs';
 const MESES_ES = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const RX_REMITO = /^\d{4}-\d{6,}$/;
@@ -3537,6 +3538,25 @@ async function repGuardar(){
   // la tarjeta «sin remito» no marca ningún remito como repartido (no lo es); lo que evita repetirla
   // es la memoria de envíos por artículo
   R.remitos.forEach(rm=>{ if(rm.nro!==REP_NUEVO) upd['remitosRepartidos/'+repKey(rm.nro)]={ rep:key, fecha:meta.fecha, por:meta.por }; });
+  // ---- lo de cada sucursal, en su propio nodo ----
+  // `repartoSuc/<slug>/<key>` es lo que la sucursal ve en Mi Sucursal y lo que el Picking suma al
+  // pick: baja SOLO lo suyo (misma seguridad blanda que la reposición de la barrida). Los talles
+  // van como [{t,s}], igual que la barrida, así los dos consumidores no cambian.
+  const porSucNodo={};
+  R.remitos.forEach(rm=>rm.arts.forEach(x=>x.lineas.forEach(l=>{
+    const o=porSucNodo[l.slug]||(porSucNodo[l.slug]={ fecha:meta.fecha, por:meta.por, u:0, arts:[] });
+    o.u+=l.u;
+    o.arts.push({ id:x.art.id, codigo:x.art.cod||'', desc:x.art.desc||'', marca:x.art.marca||'', rubro:x.art.rubro||'', genero:x.art.genero||'',
+      remito: rm.nro===REP_NUEVO ? '' : rm.nro, sugerido:l.u, talles:paresT(l.t).map(pp=>({t:pp[0], s:pp[1]})) });
+  })));
+  Object.entries(porSucNodo).forEach(([slug,o])=>{ upd['repartoSuc/'+slug+'/'+key]=o; });
+  // se podan los repartos viejos de cada sucursal (más de REP_SUC_DIAS días)
+  try{
+    const limite = new Date(Date.now()-REP_SUC_DIAS*864e5).toISOString().slice(0,10);
+    const viejos = await Promise.all(Object.keys(porSucNodo).map(async slug=>{
+      try{ return [slug, Object.keys((await conTimeout(fbGet(ROOT+'/repartoSuc/'+slug,'shallow=true'),8000))||{})]; }catch(e){ return [slug,[]]; } }));
+    viejos.forEach(([slug,ks])=>ks.forEach(k=>{ if(k.slice(0,10) < limite) upd['repartoSuc/'+slug+'/'+k]=null; }));
+  }catch(e){ /* si no se pueden podar, se guarda igual */ }
   try{
     const b=$('repGuardar'); if(b){ b.disabled=true; b.textContent='Guardando…'; }
     await fbPut(ROOT+'/repartos/'+key, { meta, remitos, porSuc });
@@ -3579,6 +3599,7 @@ async function repBorrar(key){
       const cur=deParesT(e.t); Object.entries(t).forEach(([tt,q])=>{ cur[tt]=Math.max(0,(cur[tt]||0)-q); });
       const pr=paresT(cur); upd['repartoHist/'+k]= pr.length ? { t:pr, ts:e.ts||Date.now(), rep:e.rep||'' } : null; });
     Object.entries(S.repartidos||{}).forEach(([nk,v])=>{ if(v && v.rep===key) upd['remitosRepartidos/'+nk]=null; });
+    Object.keys((b&&b.porSuc)||{}).forEach(slug=>{ upd['repartoSuc/'+slug+'/'+key]=null; });   // y lo que veía cada sucursal
     await fbPatch(ROOT, upd);
     if(S.abierto && S.abierto.key===key){ S.abierto=null; S.res=null; }
     if(S.res && S.res.guardadoKey===key) S.res.guardadoKey=null;

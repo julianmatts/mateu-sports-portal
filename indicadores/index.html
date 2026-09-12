@@ -1020,6 +1020,13 @@ footer b{color:var(--navy)}
       <div class="card pad" id="barridaCard"></div>
     </section>
 
+    <section class="sec" id="secReparto" style="display:none">
+      <div class="sec-label">Depósito central</div>
+      <h2 class="sec-title">Mercadería nueva <em>que te baja</em></h2>
+      <p class="hint">Lo que el depósito <b>ya repartió</b> de los ingresos nuevos y te tocó a vos: esto <b>no hay que pedirlo</b>, sale para tu sucursal. Cada artículo va con los talles que te mandan.</p>
+      <div class="card pad" id="repartoCard"></div>
+    </section>
+
     <section class="sec" id="secDeposito" style="display:none">
       <div class="sec-label">Depósito central</div>
       <h2 class="sec-title">Qué te mandó <em>el depósito</em></h2>
@@ -1945,7 +1952,7 @@ async function render(){
     $('cadenaView').style.display='none';
     $('content').style.display='block';
     mostrarEmpty('Tu sucursal todavía no tiene datos de indicadores cargados.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); renderDeposito(); renderF8Suc(); renderTareasSuc(); renderComp(); renderNov(); renderEquipoSuc(); }
+    if(slugActual()){ renderObjetivo(); renderBarrida(); renderRepartoSuc(); renderDeposito(); renderF8Suc(); renderTareasSuc(); renderComp(); renderNov(); renderEquipoSuc(); }
     return;
   }
 
@@ -2013,7 +2020,7 @@ async function render(){
     mostrarEmpty(Object.values(SOLO_OBJ_SUC).includes(sucName)
       ? '<b>'+esc(sucName)+'</b> todavía no tiene datos de indicadores cargados (sí su objetivo y equipo).'
       : 'No hay datos de <b>'+esc(sucName)+'</b> para '+esc(perLabel(per))+'.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); renderDeposito(); renderF8Suc(); renderTareasSuc(); renderComp(); renderNov(); renderEquipoSuc(); }
+    if(slugActual()){ renderObjetivo(); renderBarrida(); renderRepartoSuc(); renderDeposito(); renderF8Suc(); renderTareasSuc(); renderComp(); renderNov(); renderEquipoSuc(); }
     return;
   }
   // la semana elegida tiene que existir en esta sucursal/período
@@ -2034,7 +2041,7 @@ async function render(){
   $('printCtx').textContent = (sucName||'') + ' · ' + perLabel(per);
   const ecom = sucName===ECOM;
   $('secCanales').style.display = ecom?'':'none';
-  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secDeposito','secF8','secTareas','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secSemViva','secRubrosViva'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
+  if(ecom){ ['secEq','secMix','secPlantilla','secTbl','secRubros','secSem','secBarrida','secReparto','secDeposito','secF8','secTareas','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secSemViva','secRubrosViva'].forEach(id=>$(id).style.display='none'); const ld=$('vivaLoad'); if(ld) ld.style.display='none'; pintarZonas(); }
   const seg=document.querySelector('.seg'); if(seg) seg.style.display = ecom?'none':'flex';
   renderKPIs();
   renderDiagnostico();
@@ -2047,15 +2054,15 @@ async function render(){
   renderNov();            // novedades del mes (el calendario del encargado)
   renderEquipoSuc();      // el padrón de la sucursal (Mi equipo)
   if(ecom){ renderCanales(); }
-  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderRubros(); renderSem(); renderObjetivo(); renderBarrida(); renderDeposito(); renderF8Suc(); renderTareasSuc(); }
+  else { renderEq(); renderMix(); renderPlantilla(); renderTbl(); renderRubros(); renderSem(); renderObjetivo(); renderBarrida(); renderRepartoSuc(); renderDeposito(); renderF8Suc(); renderTareasSuc(); }
   _kbVisible=false; $('kpiBar').classList.remove('show'); kpiBarScroll();   // re-evaluar la mini-barra con la vista nueva
 }
 
 function mostrarEmpty(msg){
   // Objetivo / Reposición se muestran igual si hay slug (las pinta su propio render)
   const conSlug = !!slugActual();
-  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secDeposito','secF8','secTareas','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secObjMesCierre','secSemViva','secRubrosViva']
-    .filter(id=>!(conSlug && /^(sec(Barrida|Objetivo|SemViva|RubrosViva|Tareas)|kpisSemBox|puenteBox)/.test(id))).forEach(id=>$(id).style.display='none');
+  ['secEq','secMix','secCov','secPlantilla','secTbl','secRubros','secSem','secHeat','secBarrida','secReparto','secDeposito','secF8','secTareas','secObjetivo','secObjetivoMes','kpisSemBox','puenteBox','secObjMesCierre','secSemViva','secRubrosViva']
+    .filter(id=>!(conSlug && /^(sec(Barrida|Reparto|Objetivo|SemViva|RubrosViva|Tareas)|kpisSemBox|puenteBox)/.test(id))).forEach(id=>$(id).style.display='none');
   pintarZonas();
   $('cobNota').style.display='none';
   $('diagBox').style.display='none';
@@ -7210,6 +7217,51 @@ function paintDeposito(){
   html+='<div><div class="sec-label" style="margin-bottom:6px">Artículos que más llegaron</div>'+(o.top||[]).slice(0,10).map(t=>'<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px solid #edf0f5"><span style="white-space:normal">'+t[0]+' <span style="color:var(--muted)">· '+t[1]+'</span></span><b style="font-family:var(--font-c);white-space:nowrap">'+fmtN(t[2])+'</b></div>').join('')+'</div></div>';
   $('depositoCard').innerHTML = html;
   const s=$('depSel'); if(s) s.addEventListener('change', ()=>{ _depYm=s.value; paintDeposito(); });
+}
+/* ---------- «Mercadería nueva que te baja» (Reparto inicial de barrida/) ----------
+   El depósito reparte los ingresos nuevos remito por remito y guarda lo de CADA sucursal en
+   barrida/repartoSuc/<slug>/<fecha_hora> = {fecha, por, u, arts:[{…, talles:[{t,s}]}]} (el módulo
+   poda los de más de 60 días). Acá se baja solo el nodo de la sucursal, como la reposición.
+   Es de solo lectura: ya está decidido que baja. */
+let _repSucData=null;
+async function renderRepartoSuc(){
+  const sec=$('secReparto'); if(!sec) return;
+  sec.style.display='none';
+  if(!BARRIDA_URL) return;
+  const slug=slugActual(); if(!slug) return;
+  const target=sucName;
+  let d=null;
+  try{ d=await fetch(BARRIDA_URL.replace(/\/+$/,'')+'/barrida/repartoSuc/'+encodeURIComponent(slug)+'.json').then(r=>r.ok?r.json():null); }catch(e){ return; }
+  if(sucName!==target) return;      // cambió de sucursal mientras bajaba
+  const keys=Object.keys(d||{}).filter(k=>d[k] && (d[k].arts||[]).length).sort().reverse();
+  if(!keys.length){ pintarZonas(); return; }
+  _repSucData={keys, d};
+  paintRepartoSuc();
+  sec.style.display=''; pintarZonas();
+}
+function paintRepartoSuc(){
+  const D=_repSucData; if(!D) return;
+  const fechaLbl = f => { const m=String(f||'').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/); return m ? m[3]+'/'+m[2]+' '+m[4] : (f||''); };
+  const diasDe = f => { const m=String(f||'').match(/^(\d{4})-(\d{2})-(\d{2})/); if(!m) return null;
+    const hoy=new Date(); return Math.floor((Date.UTC(hoy.getFullYear(),hoy.getMonth(),hoy.getDate())-Date.UTC(+m[1],+m[2]-1,+m[3]))/86400000); };
+  const tabla = arts => {
+    let h='<div class="tbl-wrap"><table><thead><tr><th class="L">Artículo</th><th class="L">Código</th><th class="L">Marca</th><th class="L">Talles</th><th>Unid.</th></tr></thead><tbody>';
+    arts.slice().sort((a,b)=>(b.sugerido||0)-(a.sugerido||0)).forEach(x=>{
+      const tt=(Array.isArray(x.talles)?x.talles:[]).filter(t=>t.s>0).map(t=>t.t+'×'+t.s).join('  ');
+      h+='<tr><td class="L">'+esc(x.desc||x.codigo||x.id)+'</td>'
+        +'<td class="L" style="font-family:ui-monospace,Consolas,monospace;font-size:12.5px;white-space:nowrap">'+esc(x.codigo||x.id||'—')+'</td>'
+        +'<td class="L">'+esc(x.marca||'')+'</td><td class="L">'+esc(tt||'—')+'</td><td><b>'+fmtN(x.sugerido||0)+'</b></td></tr>';
+    });
+    return h+'</tbody></table></div>';
+  };
+  const ult=D.d[D.keys[0]], dias=diasDe(ult.fecha);
+  let html='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+    +'<div style="font-size:15px"><b>'+fmtN(ult.u||0)+'</b> unidades de <b>'+(ult.arts||[]).length+'</b> artículo'+((ult.arts||[]).length===1?'':'s')+'</div>'
+    +'<div class="hint" style="margin:0">Repartido el '+esc(fechaLbl(ult.fecha))+(dias===0?' · <b style="color:var(--vivo)">hoy</b>':dias===1?' · ayer':dias>1?' · hace '+dias+' días':'')+'</div></div>';
+  html+=tabla(ult.arts||[]);
+  D.keys.slice(1,4).forEach(k=>{ const r=D.d[k];
+    html+='<details class="bgrupo" style="margin-top:8px"><summary><b>'+esc(fechaLbl(r.fecha))+'</b> · '+(r.arts||[]).length+' art. · '+fmtN(r.u||0)+' u</summary>'+tabla(r.arts||[])+'</details>'; });
+  $('repartoCard').innerHTML=html;
 }
 async function renderBarrida(){
   const sec=$('secBarrida'); if(!sec) return;
