@@ -1797,7 +1797,7 @@ window.addEventListener('online', ()=>{
 function renderVistaActiva(){
   if(AUDIT) return; // auditoría en curso: no pisar las marcas con el polling
   if(tabActiva==='buscar') renderBuscar();
-  else if(tabActiva==='f8s') renderF8s();
+  else if(tabActiva==='f8s') refrescarF8sAuto();
   else if(tabActiva==='estanterias'){ moduloVista ? renderVistaModulo() : renderEstanterias(); }
   else if(tabActiva==='resumen') {} // el resumen se actualiza a demanda
 }
@@ -1983,10 +1983,45 @@ const EQUIPO_FB = 'https://turnero-mateu-default-rtdb.firebaseio.com/equipo/f8su
 const MOTIVOS_F8 = ['Se vendió antes de armar el envío','Producto fallado / no está en condiciones','No se encontró en el local','El stock del sistema no coincide (no lo tenemos)','Otro motivo'];
 let _F8DOCS = null, _f8Draft = {}, _f8uAbiertos = new Set(), _f8uEdit = {};
 
+/* Refresco de la pestaña F8s (12/09/2026, reclamo del depósito: «se la pasa
+   actualizando y es incómoda de usar»). El polling general corre cada 5 s y
+   antes REPINTABA la pestaña entera en cada vuelta: parpadeaba el «Cargando
+   F8s…», se perdía el scroll y lo que se estaba marcando quedaba a mitad de
+   camino. Ahora:
+   - los F8 se consultan cada F8_REFRESH_MS (30 s), no cada 5 s;
+   - el HTML se rehace SOLO si lo que bajó es distinto de lo que está en
+     pantalla (`_f8Hash` vs. `_f8HashPintado`) y nadie está marcando
+     (`f8Ocupado`); si está ocupado, el repintado espera a la próxima vuelta,
+     porque el hash pintado no se actualiza hasta que se pinta de verdad;
+   - los ✓ / ✗ / ✎ Corregir repintan SU celda, no toda la tabla. */
+const F8_REFRESH_MS = 30000;
+let _f8Hash = '', _f8HashPintado = null, _f8UltFetch = 0;
+
 async function cargarF8s(){
-  if(!SUC) return;
-  try{ _F8DOCS = await fetchJSON(EQUIPO_FB+'/'+encodeURIComponent(SUC)+'.json'); }catch(e){ _F8DOCS=null; }
+  if(!SUC) return false;
+  _f8UltFetch = Date.now();
+  // un pedido que falla NO pisa los F8 que ya están en memoria (como refrescarDatos)
+  try{
+    const docs = await fetchJSON(EQUIPO_FB+'/'+encodeURIComponent(SUC)+'.json');
+    _F8DOCS = docs;
+    _f8Hash = JSON.stringify(docs||null);
+  }catch(e){ return false; }
   actualizarBadgeF8();
+  return _f8Hash !== _f8HashPintado;
+}
+// ¿el usuario está en medio de algo? (marcas sin enviar, una corrección abierta
+// o el foco dentro de la pestaña): entonces no se le mueve la pantalla
+function f8Ocupado(){
+  if(Object.keys(_f8uEdit).length) return true;
+  for(const id in _f8Draft) if(Object.keys(_f8Draft[id]||{}).length) return true;
+  const a = document.activeElement, v = $('view-f8s');
+  return !!(a && v && a!==document.body && v.contains(a));
+}
+async function refrescarF8sAuto(){
+  if(tabActiva!=='f8s') return;
+  if(_f8HashPintado===null){ renderF8s(); return; }
+  if(Date.now()-_f8UltFetch >= F8_REFRESH_MS) await cargarF8s();
+  if(_f8Hash!==_f8HashPintado && !f8Ocupado()) pintarF8s();
 }
 function f8Lista(){ return Object.values(_F8DOCS||{}).filter(Boolean).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))); }
 function actualizarBadgeF8(){
@@ -2033,10 +2068,23 @@ function f8Filas(d){
 }
 async function renderF8s(){
   const v = $('view-f8s'); if(!v) return;
-  v.innerHTML = '<div class="hint" style="padding:20px">Cargando F8s…</div>';
+  // el cartel de carga solo la primera vez: si ya hay algo en pantalla, se deja
+  if(_f8HashPintado===null) v.innerHTML = '<div class="hint" style="padding:20px">Cargando F8s…</div>';
   await cargarF8s();
+  pintarF8s();
+}
+function pintarF8s(){
+  const v = $('view-f8s'); if(!v) return;
+  const sy = window.scrollY;   // no perder el scroll al repintar
+  _f8HashPintado = _f8Hash;
   const lista = f8Lista();
-  if(!lista.length){ v.innerHTML='<div class="hint" style="padding:24px;text-align:center">No hay F8s recibidos del Área de Producto todavía.</div>'; return; }
+  if(!lista.length){
+    v.innerHTML = _f8Hash
+      ? '<div class="hint" style="padding:24px;text-align:center">No hay F8s recibidos del Área de Producto todavía.</div>'
+      : '<div class="hint" style="padding:24px;text-align:center">No se pudieron consultar los F8 (sin conexión). Reintentando…</div>';
+    if(!_f8Hash) _f8HashPintado = null;   // que vuelva a intentar cuando haya red
+    return;
+  }
   const puedeConf = MODE==='sucursal';
   const fmtF = f=>{ const p=String(f||'').split('-'); return p.length===3 ? p[2]+'/'+p[1] : f; };
   let html = '<div class="hint" style="margin:12px 0 14px">Cada F8 llega con el <b>recorrido de armado</b> según las ubicaciones de tu depósito (en orden de estantería'+depositosOrdenTxt()+'). Bajá el <b>F8</b> (la planilla oficial de David o Daniel, con la curva de talles) o la <b>planilla de recorrido</b> para imprimir, juntá la mercadería, marcá ✓ lo enviado y ✗ + motivo lo que no, y enviá la confirmación. Si te equivocaste, corregí el artículo con <b>✎ Corregir</b>.</div>';
@@ -2060,17 +2108,7 @@ async function renderF8s(){
     filas.forEach((f,ordIdx)=>{
       const L=f.L, sin=f.ord.ne>=9999;
       const cant = L.todo ? 'Todo' : (L.t||'');
-      let celda='—';
-      if(!pend){
-        celda = f8uEdCelda(d, f.i, (d.conf.lineas||{})[f.i]||{}, puedeConf);
-      }else if(puedeConf){
-        const dr=(_f8Draft[d.id]||{})[f.i]||{};
-        celda='<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
-          +'<button type="button" onclick="f8uMarcar(\''+esc(d.id)+'\','+f.i+',true)" style="border:1px solid '+(dr.ok===true?'#00a86b;background:rgba(0,168,107,.15)':'var(--gray-200);background:#fff')+';border-radius:6px;padding:3px 9px;cursor:pointer;font-weight:700;color:#00a86b">✓</button>'
-          +'<button type="button" onclick="f8uMarcar(\''+esc(d.id)+'\','+f.i+',false)" style="border:1px solid '+(dr.ok===false?'#CC0000;background:rgba(204,0,0,.12)':'var(--gray-200);background:#fff')+';border-radius:6px;padding:3px 9px;cursor:pointer;font-weight:700;color:#CC0000">✗</button>'
-          +(dr.ok===false?'<select onchange="f8uMotivo(\''+esc(d.id)+'\','+f.i+',this.value)" style="font-size:12px;max-width:210px"><option value="">Motivo…</option>'+MOTIVOS_F8.map(m=>'<option'+(dr.motivo===m?' selected':'')+'>'+esc(m)+'</option>').join('')+'</select>':'')
-          +'</div>';
-      }
+      const celda = f8uCeldaHtml(d, f.i, puedeConf);
       html += '<tr style="border-bottom:1px solid var(--gray-200)'+(sin?';background:rgba(230,144,10,.06)':'')+'">'
         +'<td style="padding:6px 8px;color:var(--gray-400)">'+(ordIdx+1)+'</td>'
         +'<td style="padding:6px 8px;font-weight:700;'+(sin?'color:#e6900a':'color:var(--navy)')+'" '+(f.ord.todas&&f.ord.todas!==f.ord.nom?'title="'+esc(f.ord.todas)+'"':'')+'>'+esc(f.ord.nom)+'</td>'
@@ -2080,13 +2118,14 @@ async function renderF8s(){
         +'<td style="padding:6px 8px">'+esc(L.d||'')+'</td>'
         +'<td style="padding:6px 8px;font-weight:700">'+esc(String(cant))+'</td>'
         +(conTalles?'<td style="padding:6px 8px;font-size:12px;white-space:nowrap">'+esc(F8Descargas.tallesTxt(F8Descargas.tallesDe(d,L)))+'</td>':'')
-        +'<td style="padding:6px 8px">'+celda+'</td></tr>';
+        +'<td style="padding:6px 8px" data-f8c="'+esc(d.id)+'|'+f.i+'">'+celda+'</td></tr>';
     });
     html += '</tbody></table></div>';
     if(pend&&puedeConf) html += '<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="btn-pri" id="f8uBtn-'+esc(d.id)+'" onclick="f8uConfirmar(\''+esc(d.id)+'\')">Enviar confirmación</button><span class="hint" style="margin:0">Respondé todos los artículos (cada ✗ con su motivo).</span></div>';
     html += '</div></details>';
   });
   v.innerHTML = html;
+  if(sy && window.scrollY!==sy) window.scrollTo(0, sy);
   lista.forEach(d=>{
     if(!d.conf){
       f8uProg(d.id);
@@ -2099,6 +2138,25 @@ function f8Doc2(id){ return f8Lista().find(x=>x.id===id); }
 // Corregir la confirmación de un artículo ya enviada (11/09/2026): mismo circuito que Mi Sucursal —
 // se escribe solo conf/lineas/<i> con quién, cuándo y cómo estaba antes
 function f8uToggle(el){ if(el.open) _f8uAbiertos.add(el.dataset.f8); else _f8uAbiertos.delete(el.dataset.f8); }
+// La celda «¿Enviado?» de un artículo. Se pinta sola (sin rehacer la tabla) cada
+// vez que se toca ✓ / ✗ / ✎ Corregir, así no salta el scroll mientras se arma.
+function f8uCeldaHtml(d, i, puede){
+  if(d.conf) return f8uEdCelda(d, i, (d.conf.lineas||{})[i]||{}, puede);
+  if(!puede) return '—';
+  const dr=(_f8Draft[d.id]||{})[i]||{}, idq='\''+esc(d.id)+'\','+i;
+  return '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
+    +'<button type="button" onclick="f8uMarcar('+idq+',true)" style="border:1px solid '+(dr.ok===true?'#00a86b;background:rgba(0,168,107,.15)':'var(--gray-200);background:#fff')+';border-radius:6px;padding:3px 9px;cursor:pointer;font-weight:700;color:#00a86b">✓</button>'
+    +'<button type="button" onclick="f8uMarcar('+idq+',false)" style="border:1px solid '+(dr.ok===false?'#CC0000;background:rgba(204,0,0,.12)':'var(--gray-200);background:#fff')+';border-radius:6px;padding:3px 9px;cursor:pointer;font-weight:700;color:#CC0000">✗</button>'
+    +(dr.ok===false?'<select onchange="f8uMotivo('+idq+',this.value)" style="font-size:12px;max-width:210px"><option value="">Motivo…</option>'+MOTIVOS_F8.map(m=>'<option'+(dr.motivo===m?' selected':'')+'>'+esc(m)+'</option>').join('')+'</select>':'')
+    +'</div>';
+}
+function f8uRepintarCelda(id, i){
+  const d=f8Doc2(id), v=$('view-f8s'); if(!d||!v) return;
+  const clave=id+'|'+i;
+  const td=Array.prototype.find.call(v.querySelectorAll('td[data-f8c]'), t=>t.dataset.f8c===clave);
+  if(td) td.innerHTML=f8uCeldaHtml(d, i, MODE==='sucursal');
+  else pintarF8s();   // no está en pantalla (se repintó por otro lado): se rehace
+}
 function f8uEdCelda(d, i, c, puede){
   const e=_f8uEdit[d.id+'|'+i], idq='\''+esc(d.id)+'\','+i;
   const txt = c.ok===true ? '<span style="color:#00a86b;font-weight:700">✓ Enviado</span>'
@@ -2115,27 +2173,29 @@ function f8uEdAbrir(id,i){
   if(MODE!=='sucursal') return;
   const d=f8Doc2(id); if(!d||!d.conf) return;
   const c=(d.conf.lineas||{})[i]||{};
-  _f8uEdit[id+'|'+i]={ok:c.ok, motivo:c.motivo||''}; _f8uAbiertos.add(id); renderF8s();
+  _f8uEdit[id+'|'+i]={ok:c.ok, motivo:c.motivo||''}; _f8uAbiertos.add(id); f8uRepintarCelda(id,i);
 }
-function f8uEdMarcar(id,i,ok){ const e=_f8uEdit[id+'|'+i]; if(!e) return; e.ok=ok; if(ok) e.motivo=''; renderF8s(); }
+function f8uEdMarcar(id,i,ok){ const e=_f8uEdit[id+'|'+i]; if(!e) return; e.ok=ok; if(ok) e.motivo=''; f8uRepintarCelda(id,i); }
 function f8uEdMotivo(id,i,m){ const e=_f8uEdit[id+'|'+i]; if(e) e.motivo=m; }
-function f8uEdCancelar(id,i){ delete _f8uEdit[id+'|'+i]; renderF8s(); }
+function f8uEdCancelar(id,i){ delete _f8uEdit[id+'|'+i]; f8uRepintarCelda(id,i); }
 async function f8uEdGuardar(id,i){
   const d=f8Doc2(id), e=_f8uEdit[id+'|'+i]; if(MODE!=='sucursal'||!d||!d.conf||!e) return;
   if(e.ok!==true&&e.ok!==false){ toast('Marcá ✓ (enviado) o ✗ (no enviado).'); return; }
   if(e.ok===false&&!e.motivo){ toast('Elegí el motivo del ✗.'); return; }
   const antes=(d.conf.lineas||{})[i]||{};
-  if(antes.ok===e.ok&&(antes.motivo||'')===(e.ok?'':e.motivo)){ delete _f8uEdit[id+'|'+i]; renderF8s(); return; }
+  if(antes.ok===e.ok&&(antes.motivo||'')===(e.ok?'':e.motivo)){ delete _f8uEdit[id+'|'+i]; f8uRepintarCelda(id,i); return; }
   const ts=Date.now();
   const nueva={ok:e.ok, motivo:e.ok?'':e.motivo,
     ed:{ts, por:(SESSION&&SESSION.email)||'', antes:{ok:(antes.ok===true||antes.ok===false)?antes.ok:'', motivo:antes.motivo||''}}};
   const r=await f8Patch2(id,{['conf/lineas/'+i]:nueva, 'conf/editado':ts});
   if(!r||!r.ok){ toast('No se pudo guardar la corrección. Probá de nuevo.'); return; }
   delete _f8uEdit[id+'|'+i];
+  d.conf.lineas=d.conf.lineas||{}; d.conf.lineas[i]=nueva; d.conf.editado=ts;
+  _f8Hash=JSON.stringify(_F8DOCS||null); _f8HashPintado=_f8Hash;   // el cambio ya quedó en pantalla
   toast('Confirmación corregida ✓');
-  renderF8s();
+  f8uRepintarCelda(id,i);
 }
-function f8uMarcar(id,i,ok){ const m=(_f8Draft[id]=_f8Draft[id]||{}); m[i]={ok, motivo:ok?'':(m[i]&&m[i].motivo)||''}; renderF8s(); }
+function f8uMarcar(id,i,ok){ const m=(_f8Draft[id]=_f8Draft[id]||{}); m[i]={ok, motivo:ok?'':(m[i]&&m[i].motivo)||''}; f8uRepintarCelda(id,i); f8uProg(id); }
 function f8uMotivo(id,i,mot){ const m=(_f8Draft[id]=_f8Draft[id]||{}); m[i]={ok:false, motivo:mot}; f8uProg(id); }
 function f8uProg(id){
   const d=f8Doc2(id); if(!d) return;

@@ -982,7 +982,14 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   `descargado`. **Corregir la confirmación** (mismo día): en un F8 ya confirmado cada fila tiene «✎ Corregir»
   (Mi Sucursal `f8EdCelda`/`f8EdGuardar`, Buscador `f8uEdCelda`/`f8uEdGuardar`; gerencia no corrige) → ✓/✗ +
   motivo → PATCH solo de `conf/lineas/<i>` = `{ok, motivo, ed:{ts, por, antes:{ok, motivo}}}` + `conf/editado`;
-  la fila dice «(corregido)» y el Seguimiento de equipo/ «· corregida». Los F8 abiertos quedan abiertos al repintar. Para eso **equipo/ guarda más datos al repartir** (`parseF8` +
+  la fila dice «(corregido)» y el Seguimiento de equipo/ «· corregida». Los F8 abiertos quedan abiertos al repintar.
+  ⚠ **La pestaña F8s no se repinta sola (12/09/2026, reclamo del depósito: «se la pasa actualizando»)**:
+  el polling general del Buscador corre cada 5 s y antes rehacía toda la pestaña en cada vuelta (parpadeo del
+  «Cargando F8s…», scroll perdido, marcas a medio hacer). Ahora los F8 se consultan cada `F8_REFRESH_MS` (30 s)
+  y el HTML se rehace SOLO si lo bajado es distinto de lo que está en pantalla (`_f8Hash` vs. `_f8HashPintado`,
+  `refrescarF8sAuto`) y nadie está marcando (`f8Ocupado`: marcas sin enviar, una corrección abierta o el foco
+  dentro de la pestaña); los ✓ / ✗ / ✎ Corregir repintan SU celda (`f8uCeldaHtml`/`f8uRepintarCelda`, td con
+  `data-f8c`), no la tabla. `renderF8s` = bajar + `pintarF8s`; `pintarF8s` = solo DOM (conserva el scroll). Para eso **equipo/ guarda más datos al repartir** (`parseF8` +
   `f8DetectarCurvas`, copia de la de ubicaciones/): por línea `m` marca, `ds` descripción,
   `cv` lo que dice la columna de curva («4», «Todo», «UNI»), `k` curva resuelta, `x` la
   columna H del de Daniel y `q = [[índice de talle, unidades]]`; por doc `curvas =
