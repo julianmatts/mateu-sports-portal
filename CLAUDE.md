@@ -890,6 +890,15 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   o tocando «Es esta PC» en el cartel de **«Probar el puente»** —que se OFRECE, no empareja solo:
   la prueba la reciben todas las pantallas de la sucursal—. El escaneo ajeno no se pierde: lo
   registra en el historial la pantalla de la PC donde se escaneó.
+  **Se vincula sola (12/09/2026, pedido de Juli: «que no tengan que elegir la PC»)**: el puente
+  escucha el teclado de TODA la PC, así que al escanear con el Buscador abierto pasan las dos
+  cosas juntas — la lectora escribe en la página y el puente de ESA PC publica el mismo código.
+  Si lo que llega del puente es el **eco** de un escaneo que la pantalla acaba de leer por teclado
+  (`sbMarcarLocal` en el `keydown` + `sbEsEco`, ventana `SB_ECO_MS` = 8 s), esa PC es la suya: se
+  empareja sola y el eco no se vuelve a procesar. El botón 📡 Escáner queda para corregir a mano o
+  para una pantalla sin lectora propia; el puente suma **«Vincular la pantalla de esta PC»** en el
+  menú de la bandeja, que abre `ubicaciones/?pc=<NOMBRE>` (parámetro que empareja sin escanear; el
+  evento `storage` repinta el botón en las otras pestañas). AHK v2.1.
   Prueba sin Firebase ni PC del salón: `npx --yes http-server -p 8777 -s .` +
   `node scripts/probar-puente-escaner.mjs sse|poll puesto|sucursal` (Playwright con
   Chromium, intercepta la base con datos de prueba).

@@ -1555,6 +1555,28 @@ function montarQuiosco(){
    pantalla de la PC donde se escaneó. */
 let sbVistos = new Set(), sbActivo = false, sbPoll = null, sbSse = false;
 let sbPcs = {}, sbAvisado = false, sbUltPc = '';
+
+/* SE VINCULA SOLA (12/09/2026, pedido de Juli: «que no tengan que elegir la PC»).
+   El puente escucha el teclado de TODA la PC, no solo el sistema. Entonces,
+   cuando alguien escanea con esta pantalla abierta, pasan las dos cosas a la
+   vez: la lectora escribe en la página (el escaneo local de acá abajo) y el
+   puente de ESA MISMA PC publica el mismo código. Si lo que llega del puente
+   es el eco de un escaneo que acabamos de leer por teclado, esa PC es la
+   nuestra: la pantalla se vincula sola y no hay nada que elegir. Además el eco
+   no se vuelve a procesar (ya lo hizo la lectora local).
+   El botón «📡 Escáner» queda para los casos raros (pantalla sin lectora
+   propia, o corregir a mano). */
+const SB_ECO_MS = 8000;
+let sbLocales = [];
+function sbMarcarLocal(codigo){
+  const c = String(codigo||'').trim(); if(!c) return;
+  sbLocales.push({c, ts:Date.now()});
+  if(sbLocales.length > 10) sbLocales.shift();
+}
+function sbEsEco(codigo){
+  const c = String(codigo||'').trim(), t = Date.now();
+  return sbLocales.some(x => x.c===c && t-x.ts < SB_ECO_MS);
+}
 function sbClavePc(){ return 'ubic_scan_pc_'+SUC; }      // '' ninguna · '*' todas · '<PC>' esa
 function sbClavePcs(){ return 'ubic_scan_pcs_'+SUC; }    // PCs vistas {nombre: ts}
 function sbPcElegida(){ const v = readLS(sbClavePc()); return (v===null||v===undefined) ? null : String(v); }
@@ -1575,7 +1597,7 @@ function sbAceptar(pc){
   if(Object.keys(sbPcs).length <= 1) return true;   // una sola PC en la sucursal: como siempre
   if(!sbAvisado){
     sbAvisado = true;
-    toastAccion('📡 Hay más de una PC escaneando en esta sucursal. Elegí cuál es esta pantalla para que no te cambien la búsqueda.', 'Elegir', abrirModalEscaner);
+    toastAccion('📡 Hay más de una PC escaneando en esta sucursal: por ahora esta pantalla no sigue ninguna. Escaneá una etiqueta acá y se vincula sola con la lectora de esta PC.', 'Elegir a mano', abrirModalEscaner);
   }
   return false;
 }
@@ -1585,6 +1607,14 @@ function iniciarScanBridge(){
   const url = FB + '/scanBridge/' + encodeURIComponent(SUC) + '.json';
   let primera = true;
   sbPcs = readLS(sbClavePcs()) || {};
+  // ?pc=NOMBRE vincula la pantalla a esa PC sin tocar nada (lo usa «Vincular la
+  // pantalla de esta PC» del puente, y sirve para el acceso directo del quiosco)
+  try{
+    const pcUrl = (new URLSearchParams(location.search).get('pc')||'').trim();
+    if(pcUrl){ sbVerPc(pcUrl); sbElegirPc(pcUrl); toast('📡 Esta pantalla sigue los escaneos de '+pcUrl+'.'); }
+  }catch(e){}
+  // otra pestaña del mismo navegador cambió la PC (el link de arriba)
+  window.addEventListener('storage', e=>{ if(e.key===sbClavePc()) pintarBotonEscaner(); });
   const aplicar = rec=>{
     if(!rec || !rec.codigo) return;
     sbVerPc(rec.pc || '');
@@ -1611,6 +1641,15 @@ function iniciarScanBridge(){
           'Es esta PC', ()=>{ sbElegirPc(pc); toast('Listo: esta pantalla sigue los escaneos de '+pc+'.'); });
       else toast('📡 Puente del escáner conectado ✔'+(pc?' · '+pc:''));
       return;
+    }
+    // ¿es el eco del escaneo que la lectora acaba de escribir en esta pantalla?
+    // entonces el puente que lo publicó es el de ESTA PC: queda vinculada sola
+    if(sbEsEco(rec.codigo)){
+      if(rec.pc && sbPcElegida()!==rec.pc){
+        sbElegirPc(rec.pc);
+        toast('📡 Listo: esta pantalla quedó vinculada a la lectora de esta PC ('+rec.pc+').');
+      }
+      return;   // ya se procesó por teclado: no se repite
     }
     // escaneo de otra PC del salón: no se toca esta pantalla (lo registra la suya)
     if(!sbAceptar(rec.pc||'')) return;
@@ -1658,14 +1697,15 @@ function abrirModalEscaner(){
   $('modalBody').innerHTML =
     '<div class="modal-title">📡 Escáner del sistema</div>'+
     '<div class="hint" style="margin-bottom:12px">Cuando alguien escanea un artículo parado en el sistema, el código llega a esta pantalla. '+
-      'Si el salón tiene varias PCs, cada pantalla tiene que seguir <b>la suya</b>: si no, un escaneo en otra PC te cambia la búsqueda en el medio de una consulta. '+
-      'Lo que se escanea en otra PC no se pierde: queda en el historial, cargado desde esa pantalla.</div>'+
+      'Si el salón tiene varias PCs, cada pantalla sigue <b>la suya</b>: si no, un escaneo en otra PC te cambia la búsqueda en el medio de una consulta. '+
+      '<b>Se vincula sola</b>: la primera vez que alguien escanea una etiqueta con esta pantalla abierta, queda con la lectora de esta PC. '+
+      'Esto es para corregirlo a mano. Lo que se escanea en otra PC no se pierde: queda en el historial, cargado desde esa pantalla.</div>'+
     '<div class="esc-ops">'+
       pcs.map(pc=> opt(pc, pc, 'Seguir los escaneos de esta PC'+(sbUltPc===pc?' · fue la última en escanear':''), el===pc)).join('')+
       opt('', 'Ninguna', 'Esta pantalla no sigue ningún escáner (solo búsquedas a mano)', el==='')+
       opt('*', 'Todas', 'Seguir los escaneos de cualquier PC de la sucursal (como antes)', el==='*')+
     '</div>'+
-    '<div class="hint" style="margin-top:12px">La forma más fácil de acertar: en la PC de <b>esta</b> pantalla, tocá el ícono del puente al lado del reloj y elegí <b>«Probar el puente»</b>. Esta pantalla se queda con esa PC sola.</div>'+
+    '<div class="hint" style="margin-top:12px">Si no querés elegir de la lista: escaneá una etiqueta con esta pantalla abierta y se vincula sola. También sirve, en la PC de <b>esta</b> pantalla, el ícono del puente al lado del reloj → <b>«Vincular la pantalla de esta PC»</b>.</div>'+
     '<div class="modal-footer"><button class="btn btn-navy" id="escCerrar">Listo</button></div>';
   $('modalOverlay').classList.add('show');
   $('modalBody').querySelectorAll('.esc-op').forEach(b=> b.addEventListener('click', ()=>{
@@ -2711,6 +2751,7 @@ document.addEventListener('keydown', e=>{
   if(e.key === 'Enter' || e.key === 'Tab'){
     if(scanBuf.length >= SCAN_MIN_LEN){
       e.preventDefault(); // solo si es un escaneo real; el Tab manual sigue navegando
+      sbMarcarLocal(scanBuf);   // con esto la pantalla se vincula sola a la PC del puente
       procesarEscaneo(scanBuf);
     }
     scanBuf = '';

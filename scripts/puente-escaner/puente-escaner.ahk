@@ -1,6 +1,6 @@
 ; ============================================================
 ; PUENTE ESCANER - Mateu Sports (Buscador de Articulos)
-; Version 2.0
+; Version 2.1
 ; ------------------------------------------------------------
 ; Corre de fondo en la PC del salon. Cuando el vendedor escanea
 ; una etiqueta PARADO EN EL SISTEMA (o en cualquier ventana),
@@ -33,12 +33,13 @@
 SetBatchLines, -1
 SetWorkingDir, %A_ScriptDir%
 
-global VERSION, FB_BASE, SLUGS, CFG, SLUG, URL, MODO
+global VERSION, FB_BASE, PORTAL, SLUGS, CFG, SLUG, URL, MODO
 global BUF, T0, TULT, ULT_COD, ULT_TICK
 global EST_HORA, EST_COD, EST_TXT, N_OK, N_ERR, IH
 
-VERSION := "2.0"
+VERSION := "2.1"
 FB_BASE := "https://ubicaciones-mateu-default-rtdb.firebaseio.com/scanBridge/"
+PORTAL  := "https://mateu-sports-portal.pages.dev/ubicaciones/"
 ; mismas sucursales que el Portal (SUCURSALES de ubicaciones/index.html)
 SLUGS   := "calle-12,city-bell,diagonal,calle-47,calle-49,los-hornos,plaza,berisso,ensenada,kids,aurelius-12,aurelius-5,aurelius-cb,adidas-12,adidas,originals,ecommerce,deposito"
 CFG     := A_ScriptDir . "\config.ini"
@@ -60,6 +61,7 @@ URL := FB_BASE . SLUG . ".json"
 ; --- menu de la bandeja (al lado del reloj) ---
 Menu, Tray, NoStandard
 Menu, Tray, Add, Probar el puente, MenuProbar
+Menu, Tray, Add, Vincular la pantalla de esta PC, MenuVincular
 Menu, Tray, Add, Ver estado, MenuEstado
 Menu, Tray, Add
 Menu, Tray, Add, Cambiar sucursal, MenuSucursal
@@ -228,6 +230,19 @@ MenuProbar:
         MsgBox, 48, Puente escaner Mateu, % "No se pudo publicar: " . err . "`n`nQue mirar:`n1) Que la PC tenga internet (abri el Portal en el navegador).`n2) En Windows 7: falta TLS 1.2. Instalar la actualizacion KB3140245 de Microsoft y su ""Easy Fix"", y reiniciar.`n3) Si hay proxy o firewall, habilitar ubicaciones-mateu-default-rtdb.firebaseio.com"
     else
         MsgBox, 48, Puente escaner Mateu, % "No se pudo publicar: " . err . "`n`nAvisale a Juli con esta pantalla."
+return
+
+; Si el salon tiene varias PC con puente, cada pantalla del Buscador sigue a
+; UNA. Normalmente se vincula sola (la primera etiqueta que se escanea con esa
+; pantalla abierta la deja emparejada con la lectora de esa PC). Esto es el
+; atajo para hacerlo sin escanear: abre el Buscador con el nombre de esta PC.
+MenuVincular:
+    pc := Limpiar(A_ComputerName)
+    Run, % PORTAL . "?pc=" . pc, , UseErrorLevel
+    if (ErrorLevel)
+        MsgBox, 48, Puente escaner Mateu, % "No se pudo abrir el navegador.`n`nAbri a mano esta direccion en la PC:`n`n" . PORTAL . "?pc=" . pc
+    else
+        MsgBox, 64, Puente escaner Mateu, % "Se abrio el Buscador con el nombre de esta PC (" . pc . ").`n`nEsa pantalla ya quedo vinculada al escaner de esta PC: los escaneos de las otras PC del salon no le van a cambiar la busqueda.`n`nPodes cerrar la pestana que se abrio; si el Buscador ya estaba abierto en otra ventana del MISMO navegador, tambien toma el cambio."
 return
 
 MenuEstado:
