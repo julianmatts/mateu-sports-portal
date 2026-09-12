@@ -1988,13 +1988,16 @@ let _F8DOCS = null, _f8Draft = {}, _f8uAbiertos = new Set(), _f8uEdit = {};
    antes REPINTABA la pestaña entera en cada vuelta: parpadeaba el «Cargando
    F8s…», se perdía el scroll y lo que se estaba marcando quedaba a mitad de
    camino. Ahora:
-   - los F8 se consultan cada F8_REFRESH_MS (30 s), no cada 5 s;
+   - los F8 se consultan cada F8_REFRESH_MS (5 min), no cada 5 s: un F8 nuevo
+     llega una o dos veces por día y además avisa por la Bandeja, así que no
+     hace falta mirar más seguido; entrar a la pestaña y el botón «↻ Buscar F8
+     nuevos» consultan al toque;
    - el HTML se rehace SOLO si lo que bajó es distinto de lo que está en
      pantalla (`_f8Hash` vs. `_f8HashPintado`) y nadie está marcando
      (`f8Ocupado`); si está ocupado, el repintado espera a la próxima vuelta,
      porque el hash pintado no se actualiza hasta que se pinta de verdad;
    - los ✓ / ✗ / ✎ Corregir repintan SU celda, no toda la tabla. */
-const F8_REFRESH_MS = 30000;
+const F8_REFRESH_MS = 300000;   // 5 min (Juli 12/09/2026: 30 s era demasiado seguido)
 let _f8Hash = '', _f8HashPintado = null, _f8UltFetch = 0;
 
 async function cargarF8s(){
@@ -2016,6 +2019,15 @@ function f8Ocupado(){
   for(const id in _f8Draft) if(Object.keys(_f8Draft[id]||{}).length) return true;
   const a = document.activeElement, v = $('view-f8s');
   return !!(a && v && a!==document.body && v.contains(a));
+}
+// «↻ Buscar F8 nuevos»: consulta ya, sin esperar la vuelta de los 5 min.
+// Lo que esté marcado a medias se conserva (los ✓/✗ viven en _f8Draft).
+async function f8Actualizar(){
+  const b=$('f8Refrescar'); if(b){ b.disabled=true; b.textContent='Buscando…'; }
+  _f8UltFetch = 0;
+  await cargarF8s();
+  pintarF8s();
+  toast('F8 actualizados');
 }
 async function refrescarF8sAuto(){
   if(tabActiva!=='f8s') return;
@@ -2079,15 +2091,17 @@ function pintarF8s(){
   _f8HashPintado = _f8Hash;
   const lista = f8Lista();
   if(!lista.length){
-    v.innerHTML = _f8Hash
-      ? '<div class="hint" style="padding:24px;text-align:center">No hay F8s recibidos del Área de Producto todavía.</div>'
-      : '<div class="hint" style="padding:24px;text-align:center">No se pudieron consultar los F8 (sin conexión). Reintentando…</div>';
+    v.innerHTML = (_f8Hash
+      ? '<div class="hint" style="padding:24px 24px 10px;text-align:center">No hay F8s recibidos del Área de Producto todavía.</div>'
+      : '<div class="hint" style="padding:24px 24px 10px;text-align:center">No se pudieron consultar los F8 (sin conexión). Reintentando…</div>')
+      + '<div style="text-align:center"><button type="button" class="btn-sec" id="f8Refrescar" onclick="f8Actualizar()">↻ Buscar F8 nuevos</button></div>';
     if(!_f8Hash) _f8HashPintado = null;   // que vuelva a intentar cuando haya red
     return;
   }
   const puedeConf = MODE==='sucursal';
   const fmtF = f=>{ const p=String(f||'').split('-'); return p.length===3 ? p[2]+'/'+p[1] : f; };
-  let html = '<div class="hint" style="margin:12px 0 14px">Cada F8 llega con el <b>recorrido de armado</b> según las ubicaciones de tu depósito (en orden de estantería'+depositosOrdenTxt()+'). Bajá el <b>F8</b> (la planilla oficial de David o Daniel, con la curva de talles) o la <b>planilla de recorrido</b> para imprimir, juntá la mercadería, marcá ✓ lo enviado y ✗ + motivo lo que no, y enviá la confirmación. Si te equivocaste, corregí el artículo con <b>✎ Corregir</b>.</div>';
+  let html = '<div style="display:flex;justify-content:flex-end;margin:12px 0 -4px"><button type="button" class="btn-sec" id="f8Refrescar" onclick="f8Actualizar()" title="Consultar si el Área de Producto mandó un F8 nuevo (la pestaña se actualiza sola cada 5 minutos)">↻ Buscar F8 nuevos</button></div>';
+  html += '<div class="hint" style="margin:12px 0 14px">Cada F8 llega con el <b>recorrido de armado</b> según las ubicaciones de tu depósito (en orden de estantería'+depositosOrdenTxt()+'). Bajá el <b>F8</b> (la planilla oficial de David o Daniel, con la curva de talles) o la <b>planilla de recorrido</b> para imprimir, juntá la mercadería, marcá ✓ lo enviado y ✗ + motivo lo que no, y enviá la confirmación. Si te equivocaste, corregí el artículo con <b>✎ Corregir</b>.</div>';
   lista.forEach(d=>{
     const filas = f8Filas(d);
     const pend = !d.conf;

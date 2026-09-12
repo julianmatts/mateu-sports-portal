@@ -985,7 +985,9 @@ estadística de transferencias del sistema. Calibrado con archivos reales 25/08/
   la fila dice «(corregido)» y el Seguimiento de equipo/ «· corregida». Los F8 abiertos quedan abiertos al repintar.
   ⚠ **La pestaña F8s no se repinta sola (12/09/2026, reclamo del depósito: «se la pasa actualizando»)**:
   el polling general del Buscador corre cada 5 s y antes rehacía toda la pestaña en cada vuelta (parpadeo del
-  «Cargando F8s…», scroll perdido, marcas a medio hacer). Ahora los F8 se consultan cada `F8_REFRESH_MS` (30 s)
+  «Cargando F8s…», scroll perdido, marcas a medio hacer). Ahora los F8 se consultan cada `F8_REFRESH_MS`
+  (**5 min**; 30 s le pareció demasiado seguido a Juli — un F8 nuevo llega una o dos veces por día y además
+  avisa por la Bandeja, y entrar a la pestaña o el botón **«↻ Buscar F8 nuevos»** (`f8Actualizar`) consultan al toque)
   y el HTML se rehace SOLO si lo bajado es distinto de lo que está en pantalla (`_f8Hash` vs. `_f8HashPintado`,
   `refrescarF8sAuto`) y nadie está marcando (`f8Ocupado`: marcas sin enviar, una corrección abierta o el foco
   dentro de la pestaña); los ✓ / ✗ / ✎ Corregir repintan SU celda (`f8uCeldaHtml`/`f8uRepintarCelda`, td con
