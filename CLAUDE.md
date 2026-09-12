@@ -1479,6 +1479,24 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
   prioridad con sus casilleros de talle y «Queda en el depósito»), «Por sucursal» y «Sin repartir»
   (con el motivo); ⇩ Excel con **una hoja por remito** (para imprimir en su ubicación) + resumen por
   sucursal; 🖨 Imprimir.
+- **El hueco entre los dos reportes (12/09/2026, planteo de Juli)**: esta pestaña sale de la
+  estadística de **remitos** y la Barrida del reporte de **stock** con «Días u.compra», así que un
+  artículo puede tener compra de hace pocos días (la Barrida no lo reparte: lo ve nuevo) y no figurar
+  en ningún remito de la lista — sin nadie que lo reparta. Ahora el corte en días es **UNO SOLO para
+  las dos pestañas** (`state.filtros.diasNuevo`, editable desde las dos; en el Reparto está en el
+  grupo «Ingreso» del panel 2) y el Reparto inicial, además de los remitos marcados, suma solo esos
+  artículos: `repNuevosSinRemito` (talles con `dias < N` que no vienen por un remito elegido y que no
+  se repartieron en los últimos N días según la memoria) los mete como un artículo más con el remito
+  virtual `REP_NUEVO`, que sale en su propia tarjeta **«Ingresó hace poco · sin remito»** (violeta,
+  hoja «Sin remito» en el Excel). Se puede armar el reparto **solo con eso**, sin marcar ningún
+  remito. El tilde «Sumar lo que ingresó hace poco y no está en los remitos» lo apaga. La tarjeta
+  virtual NO marca remitos como repartidos (no lo son): lo que evita repetirla es la memoria por
+  artículo. `repReserva` ahora guarda también `dias`, `meta` y `conDias` (y se cachea por archivo);
+  cada artículo muestra hace cuántos días entró lo que hay en el depósito, y si ya pasó los N días
+  aclara que lo toma la Barrida. Sin la columna «Días u.compra» en el reporte de stock, la tarjeta de
+  selección lo avisa y no se detecta nada. Probado 12/09 con «Estad remitos 2026.csv» + el reporte de
+  stock con días de Puma: de 17 artículos nuevos, 16 venían en los remitos de septiembre y 1
+  (BORUSSIA C TT, compra de hace 7 días) no estaba en ninguno → se repartió por la tarjeta nueva.
 - **Firebase** (`recepciones-mateu/barrida/`): `repartos/<AAAA-MM-DD_HHMMSS>` = `{meta, remitos,
   porSuc}` (porSuc agrupado por slug, por si después lo lee Indicadores/Picking),
   `remitosRepartidos/<nro>` = `{rep, fecha, por}` y `repartoHist/<idItem>/<slug>` = `{t:[[talle,q]],

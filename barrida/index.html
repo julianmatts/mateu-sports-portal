@@ -335,6 +335,11 @@ td.talles .tw{display:flex;flex-wrap:wrap;align-items:flex-start;max-width:560px
 .rqueda td{background:#fafbfe}
 .tgx.rq .txn{color:var(--muted)}
 .rvacio{padding:10px 16px;font-size:13px;color:var(--muted)}
+.rcard.rsr{border-left-color:#6d28d9}
+.rcard.rsr .rhead{background:#f6f3ff}
+.rsel-nota{font-size:12.5px;color:var(--muted);margin:2px 0 10px}
+.rsel-nota.on{background:#f6f3ff;border:1px solid #ddd6fe;color:#5b21b6;border-radius:9px;padding:8px 12px}
+.resu .c-nuevo b{color:#6d28d9}
 .rcent{display:grid;grid-template-columns:minmax(160px,auto) 1fr;gap:6px 12px;align-items:center;margin:8px 0 10px;max-width:760px}
 .rcent label{font-family:var(--font-c);font-size:12.5px;font-weight:600;color:var(--navy-mid)}
 .rcent input{width:100%;padding:6px 9px;font-size:13px}
@@ -3027,7 +3032,7 @@ const RX_REMITO = /^\d{4}-\d{6,}$/;
 const sinAcento = s => String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'');
 const normMarca = s => sinAcento(s).toLowerCase().replace(/[^a-z0-9]/g,'');
 const repKey = s => String(s==null?'':s).trim().replace(/[.#$\[\]\/]/g,'_') || '_';   // clave Firebase
-const repNroCorto = nro => { const p=String(nro||'').split('-').pop().replace(/^0+/,''); return p||String(nro||''); };
+const repNroCorto = nro => { if(nro===REP_NUEVO) return 'Sin remito'; const p=String(nro||'').split('-').pop().replace(/^0+/,''); return p||String(nro||''); };
 const sumT = t => Object.values(t||{}).reduce((a,q)=>a+(q>0?q:0),0);
 const paresT = t => Object.keys(t||{}).filter(k=>t[k]>0).sort(cmpTalle).map(k=>[k,t[k]]);
 const deParesT = p => { const o={}; (p||[]).forEach(x=>{ if(x&&x.length>=2&&num(x[1])>0) o[String(x[0])]=(o[String(x[0])]||0)+num(x[1]); }); return o; };
@@ -3067,7 +3072,7 @@ state.rep = {
   mes:'', sel:{},         // mes de ingreso elegido ('' = todo) y remitos marcados
   f:{ marca:'', rubro:'', q:'', verRepartidos:false },
   destinos:null,          // slugs destino (null = todas menos los outlets)
-  param:{ uCentral:2, maxCentral:3, uResto:1, reserva:1, minTalles:3, excedente:true, respetarDisc:true, memoria:true, excluirVarios:true },
+  param:{ uCentral:2, maxCentral:3, uResto:1, reserva:1, minTalles:3, excedente:true, respetarDisc:true, memoria:true, excluirVarios:true, huerfanos:true },
   centrales:null,         // talles centrales editados (se comparten en repartoConfig/centrales)
   res:null, vista:'remito', selOpen:true,
   hist:null, repartidos:{}, guardados:[], cargado:false, abierto:null,
@@ -3181,13 +3186,55 @@ async function repCargarArchivo(file){
 function repFuenteReserva(){ return state.files.reserva || state.files.stock || null; }
 function repReserva(){
   const f=repFuenteReserva(); if(!f) return null;
+  const C=state.rep._resCache;                       // el archivo se relee en cada render: se cachea
+  if(C && C.f===f) return C.map;
   const out={};
   filasDeHoja(f).forEach(r=>{
     if(f.cols.suc>=0 && !/deposito/i.test(sinAcento(r.suc))) return;
-    const o=out[r.id]||(out[r.id]={talles:{}, total:0});
-    Object.entries(r.talles).forEach(([t,q])=>{ o.talles[t]=(o.talles[t]||0)+q; }); o.total+=r.total;
+    const o=out[r.id]||(out[r.id]={talles:{}, dias:{}, total:0, meta:r.meta, conDias:!!f.conDias});
+    Object.entries(r.talles).forEach(([t,q])=>{ o.talles[t]=(o.talles[t]||0)+q;
+      // días desde la última compra del talle (los trae el reporte de stock nuevo): la más reciente
+      const d=r.dias?r.dias[t]:null; if(d!=null) o.dias[t] = o.dias[t]==null ? d : Math.min(o.dias[t], d); });
+    o.total+=r.total;
+    if(!o.meta.desc && r.meta.desc) o.meta=r.meta;
     // el Excel «Remitos de ingreso» no trae ID ITEM, solo el código: también se busca por ahí
     if(r.meta.cod) out['cod:'+r.meta.cod.toUpperCase()]=o;
+  });
+  state.rep._resCache={f, map:out};
+  return out;
+}
+
+/* ---------- el hueco entre los dos reportes (Juli, 12/09/2026) ----------
+   El Reparto inicial sale de la estadística de REMITOS y la Barrida del reporte de STOCK con
+   «Días u.compra». Un artículo puede tener compra de hace pocos días en el stock y no figurar en
+   ningún remito de la lista (o directamente no estar en la estadística): la Barrida no lo reparte
+   —lo ve nuevo— y sin esto tampoco lo repartiría el Reparto inicial. Esos artículos se suman
+   solos, en una tarjeta aparte «Ingresó hace poco · sin remito», con las mismas reglas. El corte
+   en días es UNO SOLO para las dos pestañas: `state.filtros.diasNuevo`. */
+const REP_NUEVO = '__nuevo__';
+// hace cuántos días se repartió por última vez este artículo (memoria de envíos); null si nunca
+function repRepartidoHace(id){
+  const H=state.rep.hist, e=H&&H[repKey(id)]; if(!e) return null;
+  let ts=0; Object.values(e).forEach(x=>{ if(x && x.ts>ts) ts=x.ts; });
+  return ts ? Math.floor((Date.now()-ts)/864e5) : null;
+}
+function repNuevosSinRemito(reserva, idsSel, N){
+  const out=[];
+  if(!reserva || !N) return out;
+  Object.keys(reserva).forEach(id=>{
+    if(id.indexOf('cod:')===0) return;                       // alias por código del mismo artículo
+    const R=reserva[id]; if(!R || !R.conDias) return;
+    const cod=(R.meta&&R.meta.cod)||'';
+    if(idsSel.has(id) || (cod && idsSel.has('cod:'+cod.toUpperCase()))) return;   // ya viene por un remito
+    const talles={}; let u=0, dias=null;
+    Object.entries(R.talles).forEach(([t,q])=>{ const d=R.dias?R.dias[t]:null;
+      if(q>0 && d!=null && d<N){ talles[t]=q; u+=q; dias = dias==null ? d : Math.min(dias,d); } });
+    if(!u) return;
+    const hace=repRepartidoHace(id);
+    if(hace!=null && hace<N) return;                         // ya se repartió cuando era nuevo
+    const m=R.meta||{};
+    out.push({ id, cod, desc:m.desc||'', marca:m.marca||'', rubro:m.rubro||'', genero:m.genero||'', disc:m.disc||'', tipo:m.tipo||'',
+      rem:[{ nro:REP_NUEVO, u, talles }], sinRemito:true, diasDepo:dias });
   });
   return out;
 }
@@ -3369,7 +3416,9 @@ function repRepartirArt(perRem, cands, central, P){
 /* ---------- cálculo del reparto de los remitos elegidos ---------- */
 function repCalcular(){
   const S=state.rep, D=S.data, P=S.param, m=S.mes;
-  const reserva = D.conTalles ? null : repReserva();
+  // la reserva se lee siempre: da los talles cuando el remito no los trae, los días de cada
+  // artículo y los ingresos recientes que no están en ningún remito
+  const reserva = repReserva();
   const arts=new Map();
   D.filas.forEach(f=>{
     if(!S.sel[f.remito]) return;
@@ -3377,6 +3426,14 @@ function repCalcular(){
     let a=arts.get(f.id); if(!a){ a={ id:f.id, cod:f.cod, desc:f.desc, marca:f.marca, rubro:f.rubro, genero:f.genero, disc:f.disc, tipo:f.tipo, rem:[] }; arts.set(f.id,a); }
     a.rem.push({ nro:f.remito, u, talles:f.talles?Object.assign({},f.talles):null });
   });
+  // ingresos recientes que no figuran en los remitos elegidos (el hueco entre los dos reportes)
+  const N = Math.max(0, state.filtros.diasNuevo|0);
+  let sinRemitoN=0;
+  if(P.huerfanos && reserva && N){
+    const idsSel=new Set();
+    arts.forEach((a,id)=>{ idsSel.add(id); if(a.cod) idsSel.add('cod:'+String(a.cod).toUpperCase()); });
+    repNuevosSinRemito(reserva, idsSel, N).forEach(a=>{ arts.set(a.id, a); sinRemitoN++; });
+  }
   // una tarjeta por remito elegido que tenga unidades en el mes
   const remOut={};
   arts.forEach(a=>a.rem.forEach(r=>{ if(!remOut[r.nro]) remOut[r.nro]={ nro:r.nro, marcas:new Set(), rubros:new Set(), arts:[], uRep:0, uQueda:0, uSin:0 }; }));
@@ -3396,6 +3453,10 @@ function repCalcular(){
     const cands=repCandidatos(a, C.G, destinos);
     const out=repRepartirArt(tl.perRem, cands, C.set, P);
     Object.assign(a, { estimado:tl.estimado, faltan:tl.faltan, centrales:[...C.set], regla:C.regla, grupo:C.G.key });
+    if(a.diasDepo==null && reserva){    // hace cuántos días entró lo que hay hoy en el depósito
+      const Rr=reserva[a.id] || (a.cod && reserva['cod:'+String(a.cod).toUpperCase()]);
+      if(Rr && Rr.conDias){ const ds=Object.values(Rr.dias||{}).filter(d=>d!=null); if(ds.length) a.diasDepo=Math.min.apply(null, ds); }
+    }
     if(!out.lineas.length) sin.push({ a, u:a.uTot, motivo: cands.length ? 'no alcanza para armar una curva: queda todo en el depósito' : 'ninguna sucursal destino tiene la marca asignada para este tipo de artículo', queda:true });
     tl.perRem.forEach((r,i)=>{
       const R0=remOut[r.nro]; if(!R0) return;
@@ -3414,6 +3475,7 @@ function repCalcular(){
   return {
     remitos, porSuc:Object.values(porSuc).sort((x,y)=>y.u-x.u), sin,
     totales:{ remitos:remitos.length, arts:arts.size, u:uTot, uRep, uQueda, sucursales:Object.keys(porSuc).length, sinRep:sin.length, estimados,
+      sinRemito:sinRemitoN, dias:N,
       // unidades de los remitos que la reserva de hoy ya no tiene (salieron antes de cargar el stock)
       faltan:[...arts.values()].reduce((s,a)=>s+(a.faltan||0),0) },
     fuenteTalles: D.conTalles ? 'export' : ((repFuenteReserva()||{}).archivo||''),
@@ -3423,7 +3485,7 @@ function repCalcular(){
 function repDestinos(){ const S=state.rep; if(Array.isArray(S.destinos)) return S.destinos.filter(s=>REP_SUC[s]); return Object.keys(REP_SUC).filter(s=>catDe(s)!=='outlet'); }
 async function repArmar(){
   const S=state.rep; if(!S.data) return;
-  if(!Object.keys(S.sel).length){ toast('Marcá al menos un remito','err'); return; }
+  if(!Object.keys(S.sel).length && !S.param.huerfanos){ toast('Marcá al menos un remito','err'); return; }
   if(!S.data.conTalles && !repFuenteReserva()){ toast('Para abrir por talle falta el reporte de stock del depósito (el mismo de la Barrida)','err'); return; }
   if(!PRIO.cargado){ toast('Cargando asignación de marcas, categorías y meses de stock…'); try{ await conTimeout(cargarPrioridad(),20000); }catch(e){ PRIO.cargado=true; } }
   if(!S.cargado) await repCargarMemoria();
@@ -3472,7 +3534,9 @@ async function repGuardar(){
   const upd={}, ahora=Date.now();
   Object.values(suma).forEach(x=>{ const tot=Object.assign({}, repHistDe(x.id, x.slug)||{}); Object.entries(x.t).forEach(([t,q])=>{ tot[t]=(tot[t]||0)+q; });
     upd['repartoHist/'+repKey(x.id)+'/'+x.slug]={ t:paresT(tot), ts:ahora, rep:key }; });
-  R.remitos.forEach(rm=>{ upd['remitosRepartidos/'+repKey(rm.nro)]={ rep:key, fecha:meta.fecha, por:meta.por }; });
+  // la tarjeta «sin remito» no marca ningún remito como repartido (no lo es); lo que evita repetirla
+  // es la memoria de envíos por artículo
+  R.remitos.forEach(rm=>{ if(rm.nro!==REP_NUEVO) upd['remitosRepartidos/'+repKey(rm.nro)]={ rep:key, fecha:meta.fecha, por:meta.por }; });
   try{
     const b=$('repGuardar'); if(b){ b.disabled=true; b.textContent='Guardando…'; }
     await fbPut(ROOT+'/repartos/'+key, { meta, remitos, porSuc });
@@ -3585,6 +3649,19 @@ function repSeleccionHtml(){
     +'<div class="fgrp" style="flex:1;min-width:170px"><label for="repQ">Buscar</label><input class="inp" id="repQ" placeholder="remito, artículo, código…" value="'+esc(f.q)+'" style="width:100%"></div>'
     +'<label class="chk" style="align-self:center">'+'<input type="checkbox" id="repVerRep" '+(f.verRepartidos?'checked':'')+'> Ver los ya repartidos</label>'
     +'</div>';
+  // el hueco entre los dos reportes: ingresos recientes que no figuran en ningún remito de la lista
+  const N=Math.max(0, state.filtros.diasNuevo|0), res=repReserva();
+  if(res){
+    const conDias=Object.keys(res).some(k=>k.indexOf('cod:')!==0 && res[k].conDias);
+    if(!conDias) h+='<div class="rsel-nota">El reporte de stock cargado no trae la columna <b>Días u.compra</b>: no puedo detectar los ingresos recientes que no estén en un remito. Con el reporte nuevo del sistema se suman solos.</div>';
+    else if(S.param.huerfanos && N){
+      const ids=new Set();
+      D.filas.forEach(x=>{ if(!S.sel[x.remito]) return; const u=(D.conTalles||!S.mes)?x.total:(x.porMes[S.mes]||0);
+        if(u>0){ ids.add(x.id); if(x.cod) ids.add('cod:'+String(x.cod).toUpperCase()); } });
+      const lista=repNuevosSinRemito(res, ids, N);
+      if(lista.length) h+='<div class="rsel-nota on">➕ <b>'+fmtInt(lista.length)+'</b> artículos ('+fmtInt(lista.reduce((a,x)=>a+x.rem[0].u,0))+' u.) tienen compra de hace menos de '+N+' días en el reporte de stock y <b>no están en ningún remito de esta lista</b>: se suman solos al armar, en una tarjeta aparte. La Barrida no los reparte porque los ve nuevos.</div>';
+    }
+  }
   h+='<div class="rsel-acc">'
     +(pend.length?'<button class="btn btn-outline btn-sm" id="repMarcarVis">✓ Marcar los '+fmtInt(pend.length)+' pendientes de la lista</button>':'')
     +(selL.length||fueraDelMes?'<button class="lnk" id="repLimpiarSel">Limpiar selección</button>':'')
@@ -3630,6 +3707,11 @@ function repParamHtml(){
       +repChk('rpDisc',P.respetarDisc,'Respetar las disciplinas de la asignación','Si en Asignación de Marcas la marca tiene disciplinas (p. ej. «running, casual»), solo recibe los artículos de esas disciplinas.')
       +repChk('rpMem',P.memoria,'Completar primero a las que ya lo recibieron','Si el artículo ya se repartió en los últimos '+REP_MEM_DIAS+' días (otro remito), esas sucursales van primero y se les completa la curva con lo que les falta.')
       +repChk('rpVar',P.excluirVarios,'Excluir Varios/Facturación','Gift cards, bolsas y demás: no se reparten por curva.')
+    +'</div><div class="fsep"></div>'
+    +'<div class="fgrupo"><span class="glab">Ingreso</span>'
+      +repChk('rpHuer',P.huerfanos,'Sumar lo que ingresó hace poco y no está en los remitos',
+        'El reporte de stock del depósito dice hace cuántos días se compró cada talle. Lo que tiene menos días que este número y no figura en ningún remito de la lista se suma solo, en una tarjeta aparte: si no, no lo reparte nadie (la Barrida lo deja porque lo ve nuevo).')
+      +'<span class="chk" title="Es el mismo corte que usa la Barrida de reserva: lo que tiene menos días lo reparte esta pestaña, lo que tiene más lo reparte la Barrida">menos de <input type="number" class="inp dias" id="rpDias" min="1" max="365" step="1" value="'+Math.max(1,state.filtros.diasNuevo|0)+'" aria-label="Días desde la última compra"> días <small style="color:var(--muted)">(el mismo de la Barrida)</small></span>'
     +'</div><div style="margin-left:auto;display:flex;gap:10px;align-items:center">'
       +(S.res?'<button class="btn btn-outline btn-sm" id="repXlsx">⇩ Excel</button><button class="btn btn-outline btn-sm" id="repPrint">🖨 Imprimir</button><button class="btn btn-primary btn-sm" id="repGuardar"'+(S.res.guardadoKey?' disabled':'')+'>'+(S.res.guardadoKey?'✓ Guardado':'💾 Guardar reparto')+'</button>':'')
     +'</div></div>'
@@ -3646,6 +3728,7 @@ function repResultadoHtml(){
     +'<b>2. A quién, en orden:</b> la marca tiene que estar en la <b>Asignación de Marcas</b> de la sucursal (calzado o indumentaria; las marcas «niño» solo reciben artículos de niño) → marca principal antes que especial y secundaria → <b>categoría</b> (Cat. 1 antes que Cat. 2 / Aurelius / Adidas, y los outlets al final) → <b>venta</b> de la marca en el rubro el último mes (alta, media o baja) → <b>meses de stock</b> (menos meses, antes). Si ya recibió el artículo en un reparto anterior, va primero para completarle la curva. Pasá el mouse por la prioridad de cada fila para ver sus datos.<br>'
     +'<b>3. Cuánto:</b> <span class="tgx n-fuerte"><span class="txl">41</span><span class="txn">2</span></span> rótulo navy = talle central, va con '+S.param.uCentral+' unidades (hasta '+Math.max(S.param.uCentral,S.param.maxCentral)+' si alcanza); el resto de los talles con '+S.param.uResto+'. A una sucursal no se le manda una curva rota: tiene que llevar al menos '+S.param.minTalles+' talles y algún central.<br>'
     +'<b>4. Queda en el depósito:</b> '+(S.param.reserva?S.param.reserva+' unidad por talle de cada talle que tenga 2 o más (una curva), en el remito que más tiene del artículo':'nada')+(S.param.excedente?'; el resto se reparte':'; lo que sobra de las curvas también queda')+'.'
+    +'<br><b>5. El hueco entre los dos reportes:</b> esta pestaña sale de la estadística de <b>remitos</b> y la Barrida del reporte de <b>stock</b> con «Días u.compra». Un artículo con compra de hace menos de <b>'+(T.dias||Math.max(1,state.filtros.diasNuevo|0))+' días</b> que no figure en ningún remito de la lista no lo repartiría nadie: se suma solo en la tarjeta <b>«Ingresó hace poco · sin remito»</b>. Es el mismo número que usa la Barrida para no repartir lo nuevo: lo que tiene menos días va por acá, lo que tiene más por la Barrida.'
     +(T.estimados?'<br><span class="pill rep2">talles de la reserva</span> = el remito no trae talles: se usó la curva que tiene hoy el artículo en la reserva del depósito, repartida entre sus remitos por la cantidad de cada uno. Confirmalo al abrir la caja.':'')
     +'</div></details>';
   h+='<div class="resu"><span><b>'+fmtInt(T.remitos)+'</b> remitos</span><span><b>'+fmtInt(T.arts||0)+'</b> artículos</span>'
@@ -3654,6 +3737,7 @@ function repResultadoHtml(){
     +(T.sinRep?'<span class="c-falta"><b>'+fmtInt(T.sinRep)+'</b> artículos sin repartir</span>':'')
     +(T.estimados?'<span class="c-rep"><b>'+fmtInt(T.estimados)+'</b> con talles de la reserva</span>':'')
     +(T.faltan?'<span title="La reserva del depósito que se cargó tiene menos unidades que las que entraron por estos remitos: esas ya salieron (o el stock es de antes del ingreso). Se reparte lo que hay."><b>'+fmtInt(T.faltan)+'</b> u. de los remitos ya no están en la reserva</span>':'')
+    +(T.sinRemito?'<span class="c-nuevo" title="Tienen compra de hace menos de '+T.dias+' días en el reporte de stock y no figuran en ningún remito de la lista: la Barrida los deja por nuevos, así que se reparten acá."><b>'+fmtInt(T.sinRemito)+'</b> artículos nuevos sin remito</span>':'')
     +'<span style="margin-left:auto">'+(R.guardadoKey?'<span class="ok" style="color:var(--ok);font-weight:700">✓ guardado</span>':'<span style="color:var(--warn);font-weight:700">sin guardar</span>')+'</span></div>';
   h+='<div class="segbar">'+[['remito','Por remito',T.remitos],['sucursal','Por sucursal',T.sucursales||0],['sin','Sin repartir',T.sinRep||0]]
     .filter(([k])=>k!=='sin'||!S.abierto).map(([k,l,n])=>'<button data-rvista="'+k+'" class="'+(S.vista===k?'on':'')+'">'+l+' <span class="n">'+fmtInt(n)+'</span></button>').join('')+'</div>';
@@ -3661,9 +3745,12 @@ function repResultadoHtml(){
   return h;
 }
 function repVistaRemitos(){
-  const R=state.rep.res; let h='';
+  const R=state.rep.res, N=(R.totales||{}).dias||0; let h='';
   R.remitos.forEach(rm=>{
-    h+='<div class="rcard"><div class="rhead"><span class="rnro">Remito '+esc(repNroCorto(rm.nro))+'</span><small class="mono">'+esc(rm.nro)+'</small>'
+    const sr = rm.nro===REP_NUEVO;    // los ingresos recientes que no están en ningún remito
+    h+='<div class="rcard'+(sr?' rsr':'')+'"><div class="rhead">'
+      +(sr ? '<span class="rnro">Ingresó hace poco</span><small>sin remito · compra de hace menos de '+N+' días · el depósito los tiene sueltos, no en una caja de remito</small>'
+           : '<span class="rnro">Remito '+esc(repNroCorto(rm.nro))+'</span><small class="mono">'+esc(rm.nro)+'</small>')
       +'<span class="rmeta">'+esc(rm.marca||'')+(rm.rubro?' · '+esc(rm.rubro):'')+'</span>'
       +'<span class="rtot"><b>'+fmtInt(rm.uRep)+'</b> a repartir · <span class="queda'+(rm.uQueda?'':' cero')+'">'+fmtInt(rm.uQueda)+' quedan</span>'+(rm.uSin?' · <span style="color:var(--bad)">'+fmtInt(rm.uSin)+' sin repartir</span>':'')+'</span></div>';
     if(!rm.arts.length) h+='<div class="rvacio">Nada para repartir de este remito'+(rm.uSin?': mirá la pestaña «Sin repartir».'
@@ -3672,6 +3759,8 @@ function repVistaRemitos(){
       h+='<div class="rart"><div class="rart-h"><span class="mono">'+esc(a.cod||a.id)+'</span><b>'+esc(a.desc||'—')+'</b><small>ID '+esc(a.id)+(a.genero?' · '+esc(stripNN(a.genero)):'')+'</small>'
         +(a.estimado?'<span class="pill rep2" title="El remito no trae talles: se usó la curva que tiene hoy en la reserva del depósito'+(a.faltan?'. La reserva tiene '+fmtInt(a.faltan)+' unidades menos que el remito (ya salió algo).':'')+'">talles de la reserva</span>':'')
         +(a.enRemitos>1?'<span class="pill suc" title="Entró en '+a.enRemitos+' remitos: se repartió junto, una sola curva por sucursal">en '+a.enRemitos+' remitos</span>':'')
+        +(a.sinRemito?'<span class="pill nuevo" title="Tiene compra de hace '+(a.diasDepo||0)+' días en el reporte de stock pero no aparece en ningún remito de la lista: la Barrida no lo reparte por nuevo, así que se suma acá">ingresó hace '+(a.diasDepo||0)+' d</span>'
+          :(a.diasDepo!=null && N && a.diasDepo>=N ? '<small title="Lo que hay hoy en el depósito de este artículo entró hace '+a.diasDepo+' días: ya lo toma la Barrida de reserva">hace '+a.diasDepo+' días en el depósito</small>' : ''))
         +(a.regla?'<small title="'+esc(a.regla)+'">'+esc(a.regla)+'</small>':'')+'</div>';
       h+='<table class="rtbl"><tbody>';
       x.lineas.slice().sort((p,q)=>(p.prio||99)-(q.prio||99)).forEach(l=>{
@@ -3741,7 +3830,11 @@ function wireReparto(){
   const num1=(id,k)=>on(id,'onchange',e=>{ S.param[k]=parseInt(e.target.value,10)||0; repRecalc(); });
   num1('rpUC','uCentral'); num1('rpMC','maxCentral'); num1('rpUR','uResto'); num1('rpMin','minTalles'); num1('rpRes','reserva');
   const bool=(id,k)=>on(id,'onchange',e=>{ S.param[k]=e.target.checked; repRecalc(); });
-  bool('rpExc','excedente'); bool('rpDisc','respetarDisc'); bool('rpMem','memoria'); bool('rpVar','excluirVarios');
+  bool('rpExc','excedente'); bool('rpDisc','respetarDisc'); bool('rpMem','memoria'); bool('rpVar','excluirVarios'); bool('rpHuer','huerfanos');
+  // el corte en días es el mismo para las dos pestañas (lo guarda barrida_prefs)
+  on('rpDias','onchange',e=>{ const n=parseInt(e.target.value,10);
+    state.filtros.diasNuevo = (isFinite(n)&&n>0) ? Math.min(365,n) : 10; state.filtros.sinNuevos=true;
+    guardarPrefs(); repRecalc(); });
   const dest=$('repDest');
   if(dest){
     dest.ontoggle=()=>{ state.mselOpen = dest.open ? 'repDest' : (state.mselOpen==='repDest' ? null : state.mselOpen); };
@@ -3806,9 +3899,10 @@ async function repExportXlsx(){
   const nombres=new Set();
   rems.forEach(rm=>{
     const talles=[...new Set([].concat(...rm.arts.map(x=>[].concat(...x.lineas.map(l=>Object.keys(l.t)), Object.keys(x.queda)))))].sort(cmpTalle);
-    let nom=('R '+repNroCorto(rm.nro)+' '+(rm.marca||'')).replace(/[\[\]:*?\/\\]/g,' ').slice(0,31).trim(); while(nombres.has(nom)) nom=(nom.slice(0,28)+' '+nombres.size).slice(0,31); nombres.add(nom);
+    const sr = rm.nro===REP_NUEVO;
+    let nom=((sr?'Sin remito ':'R '+repNroCorto(rm.nro)+' ')+(rm.marca||'')).replace(/[\[\]:*?\/\\]/g,' ').slice(0,31).trim(); while(nombres.has(nom)) nom=(nom.slice(0,28)+' '+nombres.size).slice(0,31); nombres.add(nom);
     const izq=['Código','Artículo','Descripción','Destino'];
-    const h=repHoja(wb, nom, 'REPARTO INICIAL · REMITO '+repNroCorto(rm.nro), (rm.nro+'  ·  '+(rm.marca||'')+(rm.rubro?'  ·  '+rm.rubro:'')+'  ·  '+fmtInt(rm.uRep)+' u. a repartir · '+fmtInt(rm.uQueda)+' quedan  ·  '+fecha).toUpperCase(),
+    const h=repHoja(wb, nom, sr?'REPARTO INICIAL · INGRESÓ HACE POCO (SIN REMITO)':'REPARTO INICIAL · REMITO '+repNroCorto(rm.nro), ((sr?'COMPRA DE HACE MENOS DE '+((R.totales||{}).dias||0)+' DÍAS':rm.nro)+'  ·  '+(rm.marca||'')+(rm.rubro?'  ·  '+rm.rubro:'')+'  ·  '+fmtInt(rm.uRep)+' u. a repartir · '+fmtInt(rm.uQueda)+' quedan  ·  '+fecha).toUpperCase(),
       [...izq, ...talles, 'Total'], [16,11,36,22, ...talles.map(()=>7), 9], izq.length);
     let r=h.hr+1;
     rm.arts.forEach(x=>{ const a=x.art, C=new Set(a.centrales||[]);
