@@ -885,10 +885,16 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   en el historial con el perfil de SU puesto). Ahora `sbAceptar(pc)` filtra por la PC elegida
   (`ubic_scan_pc_<slug>` en localStorage: `'<PC>'` · `''` ninguna · `'*'` todas; sin elegir anda
   como siempre **mientras se haya visto una sola PC** —`ubic_scan_pcs_<slug>`—, y al aparecer la
-  segunda deja de seguir escaneos ajenos y avisa). Se elige con el botón **📡 Escáner**
-  (`abrirModalEscaner`; en el puesto va en el pie, en la cuenta de sucursal en la barra de estado)
-  o tocando «Es esta PC» en el cartel de **«Probar el puente»** —que se OFRECE, no empareja solo:
-  la prueba la reciben todas las pantallas de la sucursal—. El escaneo ajeno no se pierde: lo
+  segunda deja de seguir escaneos ajenos y avisa). **La pantalla se vincula SOLA** (12/09/2026, pedido de Juli «que no tengan que elegir»): el
+  puente escucha el teclado de TODA la PC, así que si alguien escana con esa pantalla a la vista,
+  la lectora escribe en la página (`sbMarcarLocal` en el handler de la lectora local) **y** el
+  puente de esa misma PC publica el mismo código; cuando llega el eco (`sbEsEco`, ventana de 8 s)
+  esa PC es la propia → se empareja sin preguntar y el eco no se reprocesa. Respaldos para la
+  pantalla donde nunca escanean: **`?pc=NOMBRE`** en la URL (lo abre «Vincular la pantalla de esta
+  PC» del menú del puente, v2.1 del `.ahk`; el evento `storage` avisa a las otras pestañas) y el
+  botón **📡 Escáner** (`abrirModalEscaner`; en el puesto va en el pie, en la cuenta de sucursal en
+  la barra de estado). El cartel de «Probar el puente» OFRECE emparejar, nunca lo hace solo: la
+  prueba la reciben todas las pantallas de la sucursal. El escaneo ajeno no se pierde: lo
   registra en el historial la pantalla de la PC donde se escaneó.
   **Se vincula sola (12/09/2026, pedido de Juli: «que no tengan que elegir la PC»)**: el puente
   escucha el teclado de TODA la PC, así que al escanear con el Buscador abierto pasan las dos
