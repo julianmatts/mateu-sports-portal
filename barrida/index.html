@@ -596,9 +596,19 @@ function deportePrioDe(r){
   if(r._dp==null) r._dp = esDeporteEsp(r) ? DEPORTE_PRIO[r.slug] : 9;
   return r._dp;
 }
+// Marca estratégica «por meses de stock» (ficha de la marca, p.ej. Puma, Juli 13/09/2026): la sucursal con
+// menos meses de stock de la marca va primero, antes que la venta y la categoría
+function fichaPrioMS(marca, rubro){
+  const F=PRIO.fichas; if(!F) return false;
+  const r=sinAcento(stripNN(rubro)).toUpperCase(), rub=/CALZ/.test(r)?'calzado':/INDUM/.test(r)?'indumentaria':'';
+  const f=rub && F[rub] && F[rub][normMarca(marca)];
+  return !!(f && f.prioMS);
+}
 function cmpPrioridad(a,b){
   const na=ninoPrioDe(a), nb=ninoPrioDe(b); if(na!==nb) return na-nb;
   const da=deportePrioDe(a), db=deportePrioDe(b); if(da!==db) return da-db;
+  if(a._pms==null) a._pms=fichaPrioMS(a.marca, a.rubro);
+  if(a._pms){ const ma=(a.pr&&a.pr.ms!=null)?a.pr.ms:Infinity, mb=(b.pr&&b.pr.ms!=null)?b.pr.ms:Infinity; if(ma!==mb) return ma-mb; }
   if((b.vendido||0)!==(a.vendido||0)) return (b.vendido||0)-(a.vendido||0);
   if((b.vendTalle||0)!==(a.vendTalle||0)) return (b.vendTalle||0)-(a.vendTalle||0);
   const ma=(a.pr&&a.pr.ms!=null)?a.pr.ms:Infinity, mb=(b.pr&&b.pr.ms!=null)?b.pr.ms:Infinity;
@@ -3570,7 +3580,7 @@ function repCandidatos(a, G, destinos){
     const asig=repAsig(slug, a, G); if(!asig) return;
     const vm=ventasMarcaDe(slug, a.marca, a.rubro);
     const kidsArt = G.g==='nino' || G.g==='infante';
-    out.push({ slug, sucNombre:nombreSuc(slug), asig, plana:!!asig.plana, ninoPrio:(kidsArt && NINO_PRIO[slug]) ? 0 : 1, deportePrio:(DEPORTE_PRIO[slug] && esDeporteEsp(a)) ? DEPORTE_PRIO[slug] : 9, pr:prioInfo(slug, a.marca, a.rubro),
+    out.push({ slug, sucNombre:nombreSuc(slug), asig, plana:!!asig.plana, ninoPrio:(kidsArt && NINO_PRIO[slug]) ? 0 : 1, deportePrio:(DEPORTE_PRIO[slug] && esDeporteEsp(a)) ? DEPORTE_PRIO[slug] : 9, prioMS:fichaPrioMS(a.marca, a.rubro), pr:prioInfo(slug, a.marca, a.rubro),
       venta:vm?vm.v:0, ventaNivel:vm?vm.nivel:'', hist:P.memoria?repHistDe(a.id, slug):null });
   });
   // la venta pesa en tres niveles (alta / media / baja respecto de la que más vende): así los
@@ -3586,6 +3596,8 @@ function cmpReparto(a,b){
   const oa=(a.asig&&a.asig.orden)||99, ob=(b.asig&&b.asig.orden)||99;          // «Prioridad» de la ficha de la marca (1 = primera)
   if(oa!==ob) return oa-ob;
   if((a.deportePrio||9)!==(b.deportePrio||9)) return (a.deportePrio||9)-(b.deportePrio||9); // deportes: Diagonal 80, City Bell
+  if(a.prioMS && b.prioMS){                                                    // marca estratégica: por meses de stock
+    const ma=(a.pr&&a.pr.ms!=null)?a.pr.ms:Infinity, mb=(b.pr&&b.pr.ms!=null)?b.pr.ms:Infinity; if(ma!==mb) return ma-mb; }
   const ha=a.hist?0:1, hb=b.hist?0:1; if(ha!==hb) return ha-hb;               // ya lo recibió: se le completa primero
   if(a.asig.rank!==b.asig.rank) return a.asig.rank-b.asig.rank;               // asignación de marcas
   if(a.pr.catRank!==b.pr.catRank) return a.pr.catRank-b.pr.catRank;           // categoría

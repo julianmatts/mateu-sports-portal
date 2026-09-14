@@ -1538,6 +1538,11 @@ admin, «ficha de la marca ▸».
   (outletizadas); ON solo Ecommerce 1.ª, D80 2.ª, CB 3.ª y Aurelius 5 casual; Salomon solo Cat 1 y Ecommerce,
   adventure; Timberland solo Aurelius 5 y 12; The North Face solo Diagonal 80; Umbro prioritaria solo en Cat
   2 y outlets, fútbol; Vans solo Aurelius.
+- **Marca estratégica «por meses de stock» (13/09/2026, Puma)**: tilde de la ficha a nivel marca
+  (`prioMS:true`, «Repartir por meses de stock»): en `cmpReparto` y en `cmpPrioridad` de la barrida, después
+  de niño (Kids/Gonnet) y de deportes (D80/CB), va primero la sucursal con menos meses de stock de la marca,
+  antes que la venta y la categoría (`fichaPrioMS`). Puma: todos los Mateu en todas las categorías, sin
+  restricción de disciplina. Adidas y Nike (también estratégicas) todavía no lo tienen prendido.
 - **«Outlets como local de línea» (13/09/2026)**: tilde de la columna Outlets de la ficha (`comoLinea`), para
   marcas de PVP bajo (hoy Atomik y Head): los outlets entran a los destinos por defecto del Reparto inicial
   y a «Abrir a más sucursales» sin esperar `filtrosAmp.outletDias` (`fichaOutletLinea`). Además: Skechers
