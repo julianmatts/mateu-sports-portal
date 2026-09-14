@@ -1313,6 +1313,27 @@ Indicadores, ver abajo).
   es el botón **«🕘 Historial»** a la derecha de la barra de pestañas, que abre un panel (`#histPop`,
   fuera de `#view`, `pintarHistorial`/`abrirHistorial`/`cerrarHistorial`) con **buscador** por fecha
   («08/09», «2026-09»), mes o año; «Abrir →» llama a `abrirBarrida`. Se cierra con clic afuera o Esc.
+- **Barridas por MARCA + RUBRO (13/09/2026, pedido de Juli)**: el depósito barre «Adidas calzado»,
+  «Nike calzado», «X indumentaria»… por separado. Antes cada «Guardar semana» escribía la semana
+  entera y la marca siguiente pisaba a la anterior. Ahora `computar` devuelve `R.segmentos`
+  (`segDe(marca,rubro)` = marca normalizada + rubro sin «NN-») y `guardarBarrida` baja la semana
+  guardada y la **fusiona** (`fusionarSemana`): conserva las filas de reposición / curva / parada /
+  compras de las OTRAS marcas-rubros y reemplaza solo las de las que trae el archivo (compras solo
+  guarda lo de lo barrido); recalcula `meta.totales` (`totalesSemana`) y registra
+  `meta.partes/<marca|rubro>` = `{marca, rubro, articulos, unidades, generado_en, generado_por,
+  archivos}`. Si esa marca-rubro ya estaba guardada pide confirmación (no al volver a guardar una
+  semana abierta del historial). `reservaHist/<lunes>` se escribe con PATCH (suma). La tarjeta de
+  carga muestra «Ya guardado esta semana: Adidas · CALZADO …» (`cargarPartesSemana` /
+  `partesSemanaHtml`; en ámbar ↻ la que se pisaría). Mi Sucursal y el Picking no cambian: leen
+  `barridas/<lunes>`, que ahora tiene todo lo barrido en la semana. **El stock por sucursal también
+  se guarda por partes**: `stockSuc/<lunes>/partes/<firmaSegs>` = `{meta:{…, segs, marcas}, data}`;
+  `cargarStockSemana` junta los meta de todas las partes (con el formato viejo `{meta,data}` de
+  respaldo) y `asegurarStockData` fusiona los data (la carga más nueva manda). Si el stock guardado
+  no trae la marca-rubro que se está barriendo, la tarjeta lo avisa. «No repartir lo que ingresó
+  hace menos de N días» **viene prendido por defecto** (prefs `v:2`: el valor apagado de las
+  preferencias viejas no se toma). En el **Reparto inicial**, los ingresos sin remito
+  (`repNuevosSinRemito`) se limitan a las marcas-rubros de los remitos marcados, o a los filtros
+  Marca/Rubro si no hay remitos (`repFiltroSegSel`), así un reparto de Puma no arrastra lo nuevo de Nike.
 - **Reparto por artículo, no por sucursal (08/09/2026, aclaración de Juli)**: el depósito agarra
   el artículo y lo reparte a todas las sucursales de una (ir local por local sería doble trabajo).
   Por eso el orden por defecto de la tabla y del Excel es **`sortRep.k='art'`**: los artículos que
@@ -1479,8 +1500,13 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
   **reserva del depósito** (el mismo reporte de stock de la Barrida, `repReserva`; también sirve el
   stock global con las filas «Depósito»), repartida entre sus remitos por la cantidad de cada uno
   (`repTallesDe`, mayor resto). Si la reserva tiene menos que lo que entró, se reparte lo que hay y
-  la tira lo avisa («N u. de los remitos ya no están en la reserva»). Si el sistema saca la
-  estadística de remitos abierta por talle, se usan esos talles exactos.
+  la tira lo avisa («N u. de los remitos ya no están en la reserva»). **Abierta por talle
+  (13/09/2026, Juli: lo más probable es que la saquen así para repartir curvas y no totales)**: si el
+  export trae los talles se usan exactos, sin estimar, en cualquiera de las tres formas que lee
+  `repParseRemitos`: columnas por talle (con columna Remito), **una fila por remito × artículo × talle**
+  con columna «Talle» (por nombre `Talle/Talla/Size`, o por contenido: ≥90 % de valores que son talles
+  y pocos distintos) + Cantidad, o **el pivot mensual con columna de talle** (guarda `tallesMes` y el
+  selector de mes sigue andando: `repUDe` / `repTallesMes`). Todavía sin validar con el export real.
 - **A quién y en qué orden** (`repCandidatos`/`cmpReparto`): la marca tiene que estar en la
   **Asignación de Marcas** de la sucursal (`asignacion_marcas/data` = calzado, `data_indumentaria`;
   accesorios mira las dos; sin asignación cargada entra igual con el rango más bajo; marcas «niño»
@@ -1534,8 +1560,12 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
   disponible»): el último reparto abierto con artículo · código · marca · talles · unidades, y los 3
   anteriores plegados. Es de solo lectura y no hay que pedirlo — ya está decidido que baja, a
   diferencia de la reposición.
-  **Picking**: `repartoDe(slug)` (el último reparto de esa sucursal) + el check **«Incluir el
-  Reparto inicial»** en «Crear picking»; al elegir el destino avisa cuántas unidades tiene esperando,
+  **Picking**: `repartoDe(slug)` junta **todos los repartos pendientes** de esa sucursal (13/09/2026:
+  se reparte por marca, así que puede haber varios): los de los últimos `REP_PICK_DIAS` (30) días,
+  menos lo que ya se llevó un picking de ese destino (cada picking guarda `origen.repartos` = claves
+  usadas; con filtro de marca/rubro solo cuenta esa parte); el mismo artículo en dos repartos suma
+  talles. El check **«Incluir los Repartos iniciales pendientes»** viene marcado; al elegir el destino
+  avisa cuántos repartos (con fechas) y unidades tiene esperando,
   si el artículo ya venía por la barrida le suma los talles, y las sucursales que solo tienen reparto
   entran igual a la lista de destinos (`DATA.bar.repSlugs`).
 - **Firebase** (`recepciones-mateu/barrida/`): `repartos/<AAAA-MM-DD_HHMMSS>` = `{meta, remitos,

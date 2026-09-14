@@ -269,6 +269,9 @@ td.talles .tw{display:flex;flex-wrap:wrap;align-items:flex-start;max-width:560px
 .carga-res{margin-top:8px;font-size:12px;color:var(--navy);line-height:1.55}
 .carga-res.muted{color:var(--muted)}
 .carga-res .sep{color:var(--muted-light);margin:0 10px}
+.cpartes{font-size:12px;color:var(--navy-mid)}
+.cparte{display:inline-block;background:#eafaf0;color:#127a3a;border-radius:20px;padding:1px 9px;margin:1px 2px;font-family:var(--font-c);font-size:11.5px;font-weight:600;white-space:nowrap}
+.cparte.pisa{background:#fef3c7;color:#92400e}
 .carga-res .ok{color:var(--ok);font-weight:700}.carga-res .warn{color:var(--warn);font-weight:700}.carga-res .muted{color:var(--muted)}
 .desc{max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* en Reposición el nombre se recorta solo, para que los chips (piso medias · solo curva ·
@@ -630,7 +633,7 @@ const state = {
     topeCalzado:3,
     // «No repartir lo nuevo» (reporte de reserva con «Días u.compra», pedido de Juli 11/09/2026):
     // el talle con una compra de hace menos de diasNuevo días no se reparte en la barrida
-    sinNuevos:false, diasNuevo:10 },
+    sinNuevos:true, diasNuevo:10 },   // prendido por defecto (Juli 13/09/2026): lo nuevo va por el Reparto inicial
   mselOpen:null,   // panel multi-select abierto (se conserva entre renders)
   filtrosPar:{ rubro:'', marca:'', q:'', excluirVarios:true, soloCronica:false },
   filtrosCom:{ rubro:'', marca:'', q:'', excluirVarios:true, minVendido:3, topN:20, vista:'sin' },
@@ -835,14 +838,23 @@ const cargarFiles = fl => cargarFilesComo(null, fl);
    (un talle como "8.5" es ilegal de clave en Firebase). Si no hay archivo cargado, la barrida
    usa el guardado de la semana elegida (se baja recién al procesar). Un archivo nuevo lo pisa. */
 function stockDataDesdeHoja(fS){
-  const data={}; let filas=0;
+  const data={}, segs={}; let filas=0;
   filasDeHoja(fS).forEach(v=>{
     const m=NAME2SLUG[normName(v.suc)]; if(!m) return;
     const pares=Object.entries(v.talles).filter(([t,q])=>q>0).map(([t,q])=>[t,q]);
     if(!pares.length) return;
+    const k=segDe(v.meta.marca, v.meta.rubro); if(!segs[k]) segs[k]={ marca:String(v.meta.marca||'').trim(), rubro:stripNN(v.meta.rubro) };
     const d=(data[v.id]=data[v.id]||{}); d[m.slug]=(d[m.slug]||[]).concat(pares); filas++;
   });
-  return {data, filas};
+  return {data, filas, segs};
+}
+// clave de la parte del stock guardado: sus marcas-rubros (así el stock de «Adidas · Calzado» de
+// la semana se reemplaza con el de Adidas calzado y no pisa el de Nike)
+function firmaSegs(segs){
+  const txt=Object.keys(segs).sort().join('+'), k=repKey(txt);
+  if(k.length<=150) return k||'_';
+  let h=5381; for(let i=0;i<txt.length;i++) h=((h<<5)+h+txt.charCodeAt(i))>>>0;
+  return 'varias_'+Object.keys(segs).length+'_'+h.toString(36);
 }
 // Filas de stock para el cruce: {id, slug, nombre, talles:{t:q}, meta}. Del archivo cargado
 // (manda) o del guardado de la semana; null si no hay ninguno.
@@ -866,13 +878,17 @@ function stockRows(){
 }
 async function guardarStockSemana(){
   const fS=state.files.stock; if(!fS||!FIREBASE_DB_URL) return;
-  const {data,filas}=stockDataDesdeHoja(fS);
-  const meta={ archivo:fS.archivo, hoja:fS.hoja, subido:nowISO(), por:SESSION.email||'', semana:state.semana, ids:Object.keys(data).length, filas };
+  const {data,filas,segs}=stockDataDesdeHoja(fS);
+  const marcas=Object.values(segs).map(sg=>segLbl(sg.marca,sg.rubro));
+  const meta={ archivo:fS.archivo, hoja:fS.hoja, subido:nowISO(), por:SESSION.email||'', semana:state.semana, ids:Object.keys(data).length, filas,
+    segs:Object.keys(segs), marcas };
   try{
     toast('Guardando el stock por sucursal de la semana…');
-    await fbPut(ROOT+'/stockSuc/'+state.semana, {meta, data});
-    state.stockSem={ semana:state.semana, meta, data };
-    toast('Stock por sucursal guardado para la semana del '+lunesLabel(state.semana)+' ✓','ok');
+    // por partes (13/09/2026): cada marca-rubro reemplaza SU parte y deja las demás
+    await fbPut(ROOT+'/stockSuc/'+state.semana+'/partes/'+firmaSegs(segs), {meta, data});
+    state._stockGuardado=state.semana+'|'+fS.archivo;
+    state.stockSem=null; await cargarStockSemana();
+    toast('Stock por sucursal guardado para la semana del '+lunesLabel(state.semana)+(marcas.length&&marcas.length<=3?' · '+marcas.join(', '):'')+' ✓','ok');
     render();
   }catch(e){ toast('No se pudo guardar el stock en la base: '+(e.message||e),'err'); }
 }
@@ -882,10 +898,25 @@ async function cargarStockSemana(){
   if(state.stockSem && state.stockSem.semana===sem) return;
   state.stockSem=null;
   try{
-    const meta=await conTimeout(fbGet(ROOT+'/stockSuc/'+sem+'/meta'),8000);
+    // partes por marca-rubro (desde el 13/09/2026); si no hay, el formato viejo de una sola carga
+    const ks=await conTimeout(fbGet(ROOT+'/stockSuc/'+sem+'/partes','shallow=true'),8000);
     if(state.semana!==sem) return;          // cambiaron la semana mientras bajaba
-    if(meta){ state.stockSem={ semana:sem, meta, data:null }; render(); if(state.resultado && !state.resultado.conStock && state.files.ventas && state.files.reserva) procesarBarrida(); }
-    else render();
+    let metas=[];
+    if(ks && Object.keys(ks).length){
+      metas=(await Promise.all(Object.keys(ks).map(k=>conTimeout(fbGet(ROOT+'/stockSuc/'+sem+'/partes/'+k+'/meta'),8000).then(m=>m?Object.assign({k},m):null).catch(()=>null)))).filter(Boolean);
+    } else {
+      const m=await conTimeout(fbGet(ROOT+'/stockSuc/'+sem+'/meta'),8000);
+      if(m) metas=[Object.assign({k:null},m)];
+    }
+    if(state.semana!==sem) return;
+    if(metas.length){
+      metas.sort((a,b)=>cmp(a.subido||'',b.subido||''));
+      const ult=metas[metas.length-1];
+      const meta={ archivo:metas.map(m=>m.archivo).join(' + '), ids:metas.reduce((a,m)=>a+(m.ids||0),0), subido:ult.subido, por:ult.por,
+        partes:metas, segs:metas.every(m=>Array.isArray(m.segs)) ? [].concat(...metas.map(m=>m.segs)) : null, marcas:[].concat(...metas.map(m=>m.marcas||[])) };
+      state.stockSem={ semana:sem, meta, data:null };
+      render(); if(state.resultado && !state.resultado.conStock && state.files.ventas && state.files.reserva) procesarBarrida();
+    } else render();
   }catch(e){ /* sin base / sin red: se sigue sin stock guardado */ }
 }
 // baja el detalle del stock guardado (recién cuando hace falta para procesar)
@@ -893,7 +924,13 @@ async function asegurarStockData(){
   const ss=state.stockSem;
   if(state.files.stock || !ss || ss.data || ss.semana!==state.semana) return;
   toast('Bajando el stock por sucursal de la semana…');
-  ss.data = (await conTimeout(fbGet(ROOT+'/stockSuc/'+ss.semana+'/data'),60000)) || {};
+  const data={};
+  // de la parte más vieja a la más nueva: si un artículo vino en dos cargas, manda la última
+  for(const m of ((ss.meta&&ss.meta.partes)||[{k:null}])){
+    const ruta = m.k==null ? ROOT+'/stockSuc/'+ss.semana+'/data' : ROOT+'/stockSuc/'+ss.semana+'/partes/'+m.k+'/data';
+    Object.assign(data, (await conTimeout(fbGet(ruta),60000)) || {});
+  }
+  ss.data=data;
 }
 
 // Ventas ↔ stock por sucursal: mismo layout, así que si la detección por nombre se
@@ -1656,13 +1693,17 @@ function computar(histPrev, histSnaps){
 
   // snapshot de reserva de esta semana (para futuras barridas)
   const snapshot={}; Object.entries(reserva).forEach(([id,R])=>{ if(R.totalDepo>0) snapshot[id]=R.totalDepo; });
+  // marcas-rubros que se barren en este archivo (el depósito barre por marca + rubro): al guardar,
+  // solo esas se reemplazan en la semana
+  const segmentos={}; Object.values(reserva).forEach(R=>{ if(!(R.totalDepo>0)) return; const k=segDe(R.meta.marca, R.meta.rubro);
+    if(!segmentos[k]) segmentos[k]={ marca:String(R.meta.marca||'').trim(), rubro:stripNN(R.meta.rubro), articulos:0 }; segmentos[k].articulos++; });
 
   const sucSet = new Set(reposicion.map(r=>r.slug));
   const noVarios = a => !/varios|facturacion/i.test(a.rubro+' '+a.tipo);
   // "notable" = mejor vendido (>=3 u. en la semana), mismo umbral que el filtro por defecto de la vista Compras.
   const notable = c => c.vendido>=3 && noVarios(c);
   return {
-    reposicion, parada, compras, curva, vaciado, ampBase, ampliar:[], vacDejados:{}, vacArts:{}, curvaTalles, conStock:!!sRows, stockOrigen: fS ? 'archivo' : (sRows ? 'base' : ''), snapshot,
+    reposicion, parada, compras, curva, vaciado, ampBase, ampliar:[], vacDejados:{}, vacArts:{}, curvaTalles, conStock:!!sRows, stockOrigen: fS ? 'archivo' : (sRows ? 'base' : ''), snapshot, segmentos,
     conDias, diasNuevo:N, nuevos:{ unidades:nuevosU, articulos:nuevosArts },
     tope:{ tope:TOPE, unidades:topeU, talles:topeTalles },
     totales:{
@@ -1721,7 +1762,7 @@ function cargaHtml(){
       return '<div class="cbtn"><button type="button" class="btn btn-outline btn-sm" data-cargar="stock" title="Guardado en la base para la semana del '+esc(lunesLabel(ss.semana))+' · '+esc(m.archivo||'')+' · subido '+esc(sub)+(m.por?' por '+esc(m.por):'')+'. Subí otro archivo para reemplazarlo.">✓ '+esc(label)+'</button>'
         +'<div class="cfile" title="'+esc(m.archivo||'')+' · '+fmtInt(m.ids||0)+' artículos">de la semana · '+esc(m.archivo||'guardado')+'</div></div>';
     }
-    const guardado = (tipo==='stock' && f && ssOk && ss.meta.archivo===f.archivo) ? ' <span class="ok" title="Guardado para la semana: las próximas barridas de esta semana lo usan solas">✓ semana</span>' : '';
+    const guardado = (tipo==='stock' && f && ssOk && String(ss.meta.archivo||'').split(' + ').includes(f.archivo)) ? ' <span class="ok" title="Guardado para la semana: las próximas barridas de esta semana lo usan solas">✓ semana</span>' : '';
     return '<div class="cbtn"><button type="button" class="btn '+(f?'btn-outline':'btn-primary')+' btn-sm" data-cargar="'+tipo+'">'+(f?'✓ ':'⇧ ')+esc(label)+'</button>'
       +(f ? '<div class="cfile" title="'+esc(f.archivo)+' · hoja «'+esc(f.hoja)+'» · '+f.talles.length+' talles">'+esc(f.archivo)+swap+guardado+'</div>' : '<div class="cfile muted">'+(opc?'opcional':'sin cargar')+'</div>')+'</div>'; };
   // Con la barrida ya procesada la tarjeta se pliega: queda una línea con los archivos,
@@ -1739,6 +1780,7 @@ function cargaHtml(){
         +chip(!!T,'Transferencias',T?T.archivo:'')
       +'</div>'
       +'<span class="csem">Semana del <b>'+esc(lunesLabel(state.semana))+'</b></span>'
+      +partesSemanaHtml(true)
       +'<button class="btn btn-outline btn-sm" id="btnProcesar"'+(listo?'':' disabled')+'>↻ Reprocesar</button>'
       +'<div style="margin-left:auto;display:flex;gap:10px;align-items:center">'
         +(state.resultadoSemana===state.semana?'<span class="ok" style="font-size:12px">✓ guardada</span>':'<span class="warn" style="font-size:12px">sin guardar</span>')
@@ -1768,6 +1810,10 @@ function cargaHtml(){
       +'<span class="sep">|</span>prioridad: vendido · '+(pf.stock?'meses de stock ('+esc(String(pf.stock).replace('meses de stock ',''))+')':'<span class="warn">sin meses de stock</span>')+' · categoría'+(nRec?' · <b>'+fmtInt(nRec)+'</b> líneas recortadas':'')
       +'<span class="sep">|</span>'+(guardada?'<span class="ok">✓ guardada</span> (las sucursales ya la ven en Indicadores)':'<span class="warn">sin guardar</span>')
       +(R.sinHistorial?' · <span class="muted">primera barrida: sin histórico para «ingreso reciente»</span>':'')
+      +(function(){ const ss=state.stockSem; if(R.stockOrigen!=='base' || !ss || !ss.meta || !Array.isArray(ss.meta.segs)) return '';
+          const falt=Object.keys(R.segmentos||{}).filter(k=>!ss.meta.segs.includes(k)); if(!falt.length) return '';
+          return '<span class="sep">|</span><span class="warn">el stock por sucursal guardado de la semana no trae '+falt.slice(0,3).map(k=>esc(segLbl(R.segmentos[k].marca,R.segmentos[k].rubro))).join(', ')+(falt.length>3?'…':'')+': subilo para completar curva y tope de esa marca</span>'; })()
+      +partesSemanaHtml(false)
       +(R.conDias
         ? '<span class="sep">|</span>'+(R.diasNuevo
           ? 'sin repartir lo nuevo: <b>'+fmtInt(R.nuevos.unidades)+'</b> u. con compra de hace menos de '+R.diasNuevo+' días'
@@ -1790,7 +1836,7 @@ function wireCarga(){
   card.ondragleave=()=>card.classList.remove('over');
   card.ondrop=async e=>{ e.preventDefault(); card.classList.remove('over'); await cargarFilesComo(null, e.dataTransfer.files); };
   // cambiar la semana: el stock guardado es por semana → se busca el de la nueva
-  const sem=$('semInput'); if(sem) sem.onchange=e=>{ state.semana=e.target.value; state.stockSem=null; render(); cargarStockSemana(); };
+  const sem=$('semInput'); if(sem) sem.onchange=e=>{ state.semana=e.target.value; state.stockSem=null; state.partesSem=null; render(); cargarStockSemana(); cargarPartesSemana(); };
   const bp=$('btnProcesar'); if(bp) bp.onclick=procesarBarrida;
   const bg=$('btnGuardar'); if(bg) bg.onclick=guardarBarrida;
   card.querySelectorAll('[data-swap]').forEach(b=>b.onclick=swapVentasStock);
@@ -2320,12 +2366,14 @@ function ayudaAbierta(){ try{ return localStorage.getItem('barrida_ayuda')!=='0'
 const PREFS_KEY='barrida_prefs';
 function guardarPrefs(){
   try{ const f=Object.assign({}, state.filtros); delete f.q;
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ f, fc:state.filtrosCur, fv:state.filtrosVac, fa:state.filtrosAmp, sort:state.sortRep })); }catch(e){}
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ v:2, f, fc:state.filtrosCur, fv:state.filtrosVac, fa:state.filtrosAmp, sort:state.sortRep })); }catch(e){}
 }
 function cargarPrefs(){
   try{
     const p=JSON.parse(localStorage.getItem(PREFS_KEY)||'null'); if(!p) return;
-    if(p.f) Object.keys(state.filtros).forEach(k=>{ if(k!=='q' && p.f[k]!=null) state.filtros[k]=p.f[k]; });
+    // v2 (13/09/2026): «No repartir lo nuevo» pasó a venir prendido; las preferencias viejas lo
+    // tenían apagado por defecto, así que ese valor no se toma de ellas (una sola vez)
+    if(p.f) Object.keys(state.filtros).forEach(k=>{ if(k!=='q' && p.f[k]!=null && !(k==='sinNuevos' && p.v!==2)) state.filtros[k]=p.f[k]; });
     if(p.fc) Object.assign(state.filtrosCur, p.fc);
     if(p.fv) Object.assign(state.filtrosVac, p.fv);
     if(p.fa) Object.assign(state.filtrosAmp, p.fa);
@@ -2446,6 +2494,63 @@ function recalcular(){
   render();
 }
 
+/* ---------- Barridas por MARCA + RUBRO (13/09/2026, pedido de Juli) ----------
+   El depósito no barre todo el depósito de una: hace «Adidas calzado», «Nike calzado», «X
+   indumentaria»… Antes cada «Guardar semana» escribía la semana entera y la marca siguiente pisaba
+   a la anterior (Mi Sucursal y el Picking veían solo la última). Ahora cada guardado SUMA su pedazo:
+   se conserva lo que ya estaba de otras marcas-rubros y se reemplaza solo lo de las que trae esta
+   barrida. `meta.partes/<marca|rubro>` dice qué se guardó, cuándo y quién. Mi Sucursal y el Picking
+   no cambian: siguen leyendo barridas/<lunes>, que ahora tiene todo lo barrido en la semana. */
+const segDe = (marca, rubro) => normMarca(marca)+'|'+stripNN(rubro).toUpperCase().trim();
+const segLbl = (marca, rubro) => (String(marca||'').trim()||'—')+' · '+(stripNN(rubro)||'—');
+function totalesSemana(rep, cur, parada, base){
+  const t=Object.assign({}, base||{});
+  const filas=[].concat(...Object.values(rep||{}).map(a=>a||[])), filasC=[].concat(...Object.values(cur||{}).map(a=>a||[]));
+  t.lineas_reposicion=filas.length; t.unidades_sugeridas=filas.reduce((a,r)=>a+(num(r.sugerido)||0),0);
+  t.items_reponibles=new Set(filas.map(r=>r.id)).size; t.sucursales=Object.keys(rep||{}).length;
+  t.curva_lineas=filasC.length; t.curva_unidades=filasC.reduce((a,r)=>a+(num(r.sugerido)||0),0);
+  t.items_parados=(parada||[]).length; t.unidades_paradas=(parada||[]).reduce((a,r)=>a+(num(r.reservaTotal)||0),0);
+  return t;
+}
+function fusionarSemana(prev, payload, segs, R){
+  const claves=Object.keys(segs||{});
+  const partes=Object.assign({}, (prev&&prev.meta&&prev.meta.partes)||{});
+  const esMio = r => !!(r && segs[segDe(r.marca, r.rubro)]);
+  const ahora=nowISO();
+  const uDe = (bySlug,k) => [].concat(...Object.values(bySlug||{}).map(a=>a||[])).filter(r=>segDe(r.marca,r.rubro)===k).reduce((a,r)=>a+(num(r.sugerido)||0),0);
+  claves.forEach(k=>{ const kk=repKey(k), sg=segs[k];
+    if(R && R.desdeBase && partes[kk]) return;                 // se volvió a guardar la misma semana: se deja el registro original
+    partes[kk]={ seg:k, marca:sg.marca||'', rubro:sg.rubro||'', articulos:sg.articulos||0, unidades:uDe(payload.reposicion,k)+uDe(payload.curva,k),
+      generado_en:ahora, generado_por:SESSION.email||'', archivo_reserva:(state.files.reserva||{}).archivo||'',
+      archivo_ventas:(state.files.ventas||{}).archivo||'', archivo_stock:(state.files.stock||{}).archivo||'' }; });
+  if(!prev || !claves.length){ payload.meta.partes=partes; return payload; }
+  const porSlug = (viejo, nuevo) => { const out={};
+    Object.entries(viejo||{}).forEach(([slug,arr])=>{ const q=(arr||[]).filter(r=>r && !esMio(r)); if(q.length) out[slug]=q; });
+    Object.entries(nuevo||{}).forEach(([slug,arr])=>{ out[slug]=(out[slug]||[]).concat(arr||[]); });
+    return out; };
+  const lista = (viejo, nuevo) => (viejo||[]).filter(r=>r && !esMio(r)).concat(nuevo||[]);
+  const reposicion=porSlug(prev.reposicion, payload.reposicion), curva=porSlug(prev.curva, payload.curva);
+  const parada=lista(prev.parada, payload.parada);
+  // Compras sale de las ventas (pueden venir de todas las marcas): solo se guarda lo de lo barrido
+  const compras=lista(prev.compras, (payload.compras||[]).filter(esMio));
+  const meta=Object.assign({}, payload.meta, { partes, totales:totalesSemana(reposicion, curva, parada, payload.meta.totales) });
+  const out={ meta, reposicion, curva, parada, compras };
+  if(prev.transf) out.transf=prev.transf;
+  return out;
+}
+// qué marcas-rubros ya se guardaron en la semana elegida (liviano: solo meta/partes)
+async function cargarPartesSemana(){
+  const sem=state.semana; if(!FIREBASE_DB_URL) return;
+  try{ const p=await conTimeout(fbGet(ROOT+'/barridas/'+sem+'/meta/partes'),8000); if(state.semana!==sem) return; state.partesSem={ semana:sem, partes:p||{} }; render(); }catch(e){}
+}
+function partesSemanaHtml(mini){
+  const ps=state.partesSem; if(!ps || ps.semana!==state.semana) return '';
+  const partes=Object.values(ps.partes||{}); if(!partes.length) return '';
+  const mias=(state.resultado&&state.resultado.segmentos)||{}, guardada=state.resultadoSemana===state.semana;
+  const chips=partes.sort((a,b)=>cmp(a.generado_en||'',b.generado_en||'')).map(pt=>{ const pisa=!guardada && !!mias[pt.seg];
+    return '<span class="cparte'+(pisa?' pisa':'')+'" title="Guardada el '+esc(pt.generado_en||'')+(pt.generado_por?' por '+esc(pt.generado_por):'')+' · '+fmtInt(pt.unidades||0)+' u. a bajar'+(pisa?' · la barrida que tenés abierta es de esta marca: si la guardás, la reemplaza':'')+'">'+esc(segLbl(pt.marca,pt.rubro))+(pisa?' ↻':'')+'</span>'; }).join('');
+  return (mini?'':'<span class="sep">|</span>')+'<span class="cpartes">Ya guardado esta semana: '+chips+'</span>';
+}
 async function guardarBarrida(){
   if(!state.resultado){ toast('Procesá primero','err'); return; }
   if(!FIREBASE_DB_URL){ toast('Sin base configurada','err'); return; }
@@ -2524,16 +2629,29 @@ async function guardarBarrida(){
     parada:R.parada,
     compras:R.compras,
   };
+  // lo que ya se guardó esta semana de OTRAS marcas-rubros se conserva (ver fusionarSemana)
+  const segs=R.segmentos||{};
+  let prev=null;
+  try{ prev=await conTimeout(fbGet(ROOT+'/barridas/'+sem),30000); }
+  catch(e){ toast('No pude leer lo que ya se guardó esta semana: probá de nuevo en un rato (no se guardó nada)','err'); return; }
+  const yaPartes=(prev&&prev.meta&&prev.meta.partes)||{};
+  const pisa=Object.keys(segs).filter(k=>yaPartes[repKey(k)]).map(k=>{ const pt=yaPartes[repKey(k)];
+    return '• '+segLbl(pt.marca,pt.rubro)+' (guardada el '+String(pt.generado_en||'').slice(0,16)+(pt.generado_por?' por '+pt.generado_por:'')+')'; });
+  if(pisa.length && !R.desdeBase && !confirm('Esta semana ya se guardó:\n\n'+pisa.join('\n')+'\n\nSi guardás, se reemplaza con esta barrida. Las demás marcas de la semana quedan como están. ¿Seguir?')) return;
+  const semana=fusionarSemana(prev, payload, segs, R);
   try{
     const btn=$('btnGuardar'); if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
     // si el stock por sucursal vino de un archivo y no quedó guardado para ESTA semana (p.ej. se cambió la semana después de subirlo), se guarda ahora
-    if(state.files.stock && !(state.stockSem && state.stockSem.semana===sem && state.stockSem.meta && state.stockSem.meta.archivo===state.files.stock.archivo)) await guardarStockSemana();
-    await fbPut(ROOT+'/barridas/'+sem, payload);
-    await fbPut(ROOT+'/reservaHist/'+sem, R.snapshot);
+    if(state.files.stock && state._stockGuardado!==sem+'|'+state.files.stock.archivo) await guardarStockSemana();
+    await fbPut(ROOT+'/barridas/'+sem, semana);
+    // el snapshot de la reserva se SUMA al de la semana (cada marca trae sus artículos)
+    if(R.snapshot && Object.keys(R.snapshot).length) await fbPatch(ROOT+'/reservaHist/'+sem, R.snapshot);
     await fbPut(ROOT+'/ultima', sem);
+    state.partesSem={ semana:sem, partes:(semana.meta&&semana.meta.partes)||{} };
     state.resultadoSemana=sem;
     if(!state.histKeys.includes(sem)) state.histKeys.push(sem);
-    toast('Barrida guardada ✓','ok');
+    const nombres=Object.values(segs).map(sg=>segLbl(sg.marca,sg.rubro));
+    toast('Barrida guardada ✓'+(nombres.length && nombres.length<=3 ? ' · '+nombres.join(', ') : (nombres.length ? ' · '+nombres.length+' marcas-rubros' : '')),'ok');
     render();
   }catch(err){
     console.error(err);
@@ -2670,6 +2788,8 @@ async function abrirBarrida(sem){
     }); });
     const conStock = curva.length>0 || !!(b.meta && b.meta.archivo_stock);
     state.resultado={ reposicion, parada:b.parada||[], compras:b.compras||null, curva, vaciado:[], vacDejados:{}, conStock, snapshot:{}, totales:(b.meta&&b.meta.totales)||{}, sinHistorial:false };
+    { const sg={}; [].concat(reposicion, curva, b.parada||[]).forEach(r=>{ if(!r) return; const k=segDe(r.marca,r.rubro); if(!sg[k]) sg[k]={ marca:String(r.marca||'').trim(), rubro:stripNN(r.rubro), articulos:0 }; });
+      state.resultado.segmentos=sg; state.resultado.desdeBase=true; }   // volver a guardarla no pregunta: es la misma semana
     state._proc=null;                         // viene de la base: no hay archivos para recalcular
     if(b.meta && b.meta.curva_param){ const cp=b.meta.curva_param; ['unidades','soloHuecos','soloRotan','minTalles','incluirParados'].forEach(k=>{ if(cp[k]!=null) state.filtrosCur[k]=cp[k]; }); }
     if(b.meta && b.meta.curva_param && b.meta.curva_param.centralHasta!=null) state.filtrosCur.centralHasta=b.meta.curva_param.centralHasta;
@@ -3110,7 +3230,8 @@ function repParseRemitos(M, archivo){
   for(let i=0;i<lim;i++){ if((M[i]||[]).some(c=>/remito/i.test(txt(c)))){ hRow=i; break; } }
   const qcols=[], tcols=[]; let start, primeraQ;
   const ALI={ remito:/remito|comprobante/i, id:/id\.?\s*item|^item$/i, cod:/c[oó]d/i, desc:/art[ií]culo|descrip/i, marca:/^marca/i,
-    rubro:/^rubro/i, genero:/sub\s*-?rubro|g[eé]nero/i, disc:/disciplina/i, tipo:/grupo\s*1|^tipo/i, prov:/proveedor/i };
+    rubro:/^rubro/i, genero:/sub\s*-?rubro|g[eé]nero/i, disc:/disciplina/i, tipo:/grupo\s*1|^tipo/i, prov:/proveedor/i,
+    talle:/^tall?[ae]s?$|^talla|^size/i };   // estadística abierta por talle: una fila por remito × artículo × talle
   const col={};
   const porNombre=(fila, hasta)=>{ for(let j=0;j<hasta;j++){ const h=txt((M[fila]||[])[j]); if(!h) continue; for(const k in ALI){ if(col[k]==null && ALI[k].test(h)){ col[k]=j; break; } } } };
   if(cantRow>=0){
@@ -3145,6 +3266,8 @@ function repParseRemitos(M, archivo){
   pick('rubro', j=>frac(j,/^(\d{2}-)?(CALZADO|INDUMENTARIA|ACCESORIOS|VARIOS)$|^OTROS$/i), .6);
   pick('genero', j=>frac(j,/HOMBRE|DAMA|MUJER|NI.O|UNISEX|INFANT|VARIOS/i), .6);
   pick('cod', j=>{ const v=vals(j); if(!v.length) return 0; const f=v.filter(x=>/^\S{5,}$/.test(x)&&/[A-Z]/i.test(x)&&/\d/.test(x)).length/v.length; return f>=.7 ? f+new Set(v).size/v.length : 0; }, .7);
+  // columna de talle sin rótulo: casi todos los valores son talles (38, 8.5, M, XL, 10A…) y pocos distintos
+  if(!tcols.length) pick('talle', j=>{ const v=vals(j); if(v.length<5) return 0; const f=v.filter(x=>repEsTalle(x.replace(/\.0+$/,''))).length/v.length; return (f>=.9 && new Set(v).size<=80) ? f : 0; }, .89);
   pick('desc', j=>{ const v=vals(j); if(!v.length) return 0; const f=v.filter(x=>/\s/.test(x)).length/v.length; return f>=.6 ? v.reduce((a,x)=>a+x.length,0)/v.length : 0; }, 0);
   pick('disc', j=>frac(j,/RUNNING|CASUAL|TRAINING|FUTBOL|ADVENTURE|OUTDOOR|BASQUET|TENIS|PADEL|HOCKEY|NATACION|ORIGINALS|TREKKING|SKATE|VOLEY|RUGBY/i), .3);
   pick('tipo', j=>frac(j,/CALZADO|REMERA|PANTAL|CAMPER|BUZO|SHORT|MEDIA|MOCHIL|BOLSO|GORRO|CAMISET|CALZA|SANDAL|CHINEL|OJOTA|PELOTA|MUSCUL|CHOMBA|CONJUNT|MALLA|TOP|GUANTE|BERMUDA|ANTIPARR|CANILLER|GIFT/i), .4);
@@ -3158,13 +3281,28 @@ function repParseRemitos(M, archivo){
     const r=M[i]||[]; const nro=g(r,'remito'); if(!nro || /total/i.test(nro)) continue;
     const id=g(r,'id').replace(/\.0+$/,''), cod=g(r,'cod'); const k=id||cod; if(!k) continue;
     let f=map.get(nro+'|'+k);
-    if(!f){ f={ remito:nro, id:k, cod, desc:g(r,'desc'), marca:g(r,'marca'), rubro:g(r,'rubro'), genero:g(r,'genero'), disc:g(r,'disc'), tipo:g(r,'tipo'), porMes:{}, talles:tcols.length?{}:null, total:0 }; map.set(nro+'|'+k, f); }
+    const conT=tcols.length>0 || col.talle!=null;
+    if(!f){ f={ remito:nro, id:k, cod, desc:g(r,'desc'), marca:g(r,'marca'), rubro:g(r,'rubro'), genero:g(r,'genero'), disc:g(r,'disc'), tipo:g(r,'tipo'), porMes:{}, talles:conT?{}:null, total:0 }; map.set(nro+'|'+k, f); }
     if(tcols.length) tcols.forEach(q=>{ const u=numR(r[q.j]); if(u>0){ f.talles[q.t]=(f.talles[q.t]||0)+u; f.total+=u; } });
-    else qcols.forEach(q=>{ const u=numR(r[q.j]); if(u>0){ const m=q.mes!=null?String(q.mes):''; f.porMes[m]=(f.porMes[m]||0)+u; f.total+=u; } });
+    else {
+      // con columna de talle, cada fila es un talle: se abre por mes y por talle (exacto, sin estimar)
+      const t = col.talle!=null ? g(r,'talle').replace(/\.0+$/,'') : '';
+      if(col.talle!=null && (!t || /total/i.test(t))) continue;
+      qcols.forEach(q=>{ const u=numR(r[q.j]); if(u>0){ const m=q.mes!=null?String(q.mes):''; f.porMes[m]=(f.porMes[m]||0)+u; f.total+=u;
+        if(t){ f.talles[t]=(f.talles[t]||0)+u; const tm=(f.tallesMes=f.tallesMes||{}); (tm[m]=tm[m]||{})[t]=(tm[m][t]||0)+u; } } });
+    }
   }
   const filas=[...map.values()].filter(f=>f.total>0);
   const meses=[...new Set(qcols.map(q=>q.mes).filter(m=>m!=null))].filter(m=>filas.some(f=>f.porMes[String(m)]>0)).sort((a,b)=>a-b);
-  return { archivo, anio, meses, conTalles:tcols.length>0, filas, nRemitos:new Set(filas.map(f=>f.remito)).size };
+  return { archivo, anio, meses, conTalles:tcols.length>0 || col.talle!=null, filas, nRemitos:new Set(filas.map(f=>f.remito)).size };
+}
+// unidades de una fila en el mes elegido (sin meses en el archivo, todo)
+function repUDe(D, x, m){ return (!m || !(D.meses||[]).length) ? x.total : (x.porMes[m]||0); }
+// talles de una fila en el mes elegido (la estadística abierta por talle con columnas por mes)
+function repTallesMes(D, x, m){
+  if(!x.talles) return null;
+  if(m && (D.meses||[]).length && x.tallesMes) return Object.assign({}, x.tallesMes[String(m)]||{});
+  return Object.assign({}, x.talles);
 }
 async function repCargarArchivo(file){
   try{
@@ -3219,12 +3357,23 @@ function repRepartidoHace(id){
   let ts=0; Object.values(e).forEach(x=>{ if(x && x.ts>ts) ts=x.ts; });
   return ts ? Math.floor((Date.now()-ts)/864e5) : null;
 }
-function repNuevosSinRemito(reserva, idsSel, N){
+// qué marcas-rubros se están repartiendo (el depósito reparte por marca): las de los remitos
+// marcados; si no hay ninguno, los filtros Marca / Rubro de la lista. null = todas
+function repFiltroSegSel(){
+  const S=state.rep, D=S.data, m=S.mes, set=new Set();
+  if(D) D.filas.forEach(x=>{ if(!S.sel[x.remito]) return; const u=repUDe(D,x,m); if(u>0) set.add(segDe(x.marca, x.rubro)); });
+  if(set.size) return meta=>set.has(segDe(meta.marca, meta.rubro));
+  const fm=normMarca(S.f.marca), fr=stripNN(S.f.rubro).toUpperCase().trim();
+  if(fm||fr) return meta=>(!fm||normMarca(meta.marca)===fm) && (!fr||stripNN(meta.rubro).toUpperCase().trim()===fr);
+  return null;
+}
+function repNuevosSinRemito(reserva, idsSel, N, acepta){
   const out=[];
   if(!reserva || !N) return out;
   Object.keys(reserva).forEach(id=>{
     if(id.indexOf('cod:')===0) return;                       // alias por código del mismo artículo
     const R=reserva[id]; if(!R || !R.conDias) return;
+    if(acepta && !acepta(R.meta||{})) return;               // otra marca-rubro: no es de este reparto
     const cod=(R.meta&&R.meta.cod)||'';
     if(idsSel.has(id) || (cod && idsSel.has('cod:'+cod.toUpperCase()))) return;   // ya viene por un remito
     const talles={}; let u=0, dias=null;
@@ -3423,9 +3572,9 @@ function repCalcular(){
   const arts=new Map();
   D.filas.forEach(f=>{
     if(!S.sel[f.remito]) return;
-    const u = (D.conTalles||!m) ? f.total : (f.porMes[m]||0); if(u<=0) return;
+    const u = repUDe(D, f, m); if(u<=0) return;
     let a=arts.get(f.id); if(!a){ a={ id:f.id, cod:f.cod, desc:f.desc, marca:f.marca, rubro:f.rubro, genero:f.genero, disc:f.disc, tipo:f.tipo, rem:[] }; arts.set(f.id,a); }
-    a.rem.push({ nro:f.remito, u, talles:f.talles?Object.assign({},f.talles):null });
+    a.rem.push({ nro:f.remito, u, talles:repTallesMes(D, f, m) });
   });
   // ingresos recientes que no figuran en los remitos elegidos (el hueco entre los dos reportes)
   const N = Math.max(0, state.filtros.diasNuevo|0);
@@ -3433,7 +3582,7 @@ function repCalcular(){
   if(P.huerfanos && reserva && N){
     const idsSel=new Set();
     arts.forEach((a,id)=>{ idsSel.add(id); if(a.cod) idsSel.add('cod:'+String(a.cod).toUpperCase()); });
-    repNuevosSinRemito(reserva, idsSel, N).forEach(a=>{ arts.set(a.id, a); sinRemitoN++; });
+    repNuevosSinRemito(reserva, idsSel, N, repFiltroSegSel()).forEach(a=>{ arts.set(a.id, a); sinRemitoN++; });
   }
   // una tarjeta por remito elegido que tenga unidades en el mes
   const remOut={};
@@ -3616,7 +3765,7 @@ function repChips(t, centrales, queda){
 }
 function repRemitosLista(){
   const S=state.rep, D=S.data, m=S.mes, map=new Map();
-  D.filas.forEach(x=>{ const u=(D.conTalles||!m)?x.total:(x.porMes[m]||0); if(u<=0) return;
+  D.filas.forEach(x=>{ const u=repUDe(D,x,m); if(u<=0) return;
     let r=map.get(x.remito); if(!r){ r={ nro:x.remito, marcas:new Set(), rubros:new Set(), arts:0, u:0, texto:'' }; map.set(x.remito,r); }
     r.marcas.add(x.marca); r.rubros.add(stripNN(x.rubro)); r.arts++; r.u+=u; r.texto+=' '+x.desc+' '+x.cod+' '+x.id; });
   return [...map.values()].map(r=>Object.assign(r, { marca:[...r.marcas].filter(Boolean).join(' / '), rubro:[...r.rubros].filter(Boolean).join(' / '), rep:(S.repartidos||{})[repKey(r.nro)]||null }));
@@ -3677,10 +3826,10 @@ function repSeleccionHtml(){
     if(!conDias) h+='<div class="rsel-nota">El reporte de stock cargado no trae la columna <b>Días u.compra</b>: no puedo detectar los ingresos recientes que no estén en un remito. Con el reporte nuevo del sistema se suman solos.</div>';
     else if(S.param.huerfanos && N){
       const ids=new Set();
-      D.filas.forEach(x=>{ if(!S.sel[x.remito]) return; const u=(D.conTalles||!S.mes)?x.total:(x.porMes[S.mes]||0);
+      D.filas.forEach(x=>{ if(!S.sel[x.remito]) return; const u=repUDe(D,x,S.mes);
         if(u>0){ ids.add(x.id); if(x.cod) ids.add('cod:'+String(x.cod).toUpperCase()); } });
-      const lista=repNuevosSinRemito(res, ids, N);
-      if(lista.length) h+='<div class="rsel-nota on">➕ <b>'+fmtInt(lista.length)+'</b> artículos ('+fmtInt(lista.reduce((a,x)=>a+x.rem[0].u,0))+' u.) tienen compra de hace menos de '+N+' días en el reporte de stock y <b>no están en ningún remito de esta lista</b>: se suman solos al armar, en una tarjeta aparte. La Barrida no los reparte porque los ve nuevos.</div>';
+      const acepta=repFiltroSegSel(), lista=repNuevosSinRemito(res, ids, N, acepta);
+      if(lista.length) h+='<div class="rsel-nota on">➕ <b>'+fmtInt(lista.length)+'</b> artículos ('+fmtInt(lista.reduce((a,x)=>a+x.rem[0].u,0))+' u.) tienen compra de hace menos de '+N+' días en el reporte de stock y <b>no están en ningún remito de esta lista</b>'+(acepta?' (solo de las marcas y rubros que estás repartiendo)':'')+': se suman solos al armar, en una tarjeta aparte. La Barrida no los reparte porque los ve nuevos.</div>';
     }
   }
   h+='<div class="rsel-acc">'
@@ -3967,6 +4116,8 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab)
   if(FIREBASE_DB_URL) cargarHistKeys().then(pintarHistorial);
   // ¿ya subieron el stock por sucursal de esta semana? (lo usan todas las barridas de la semana)
   if(FIREBASE_DB_URL) cargarStockSemana();
+  // ¿qué marcas-rubros ya se barrieron esta semana?
+  if(FIREBASE_DB_URL) cargarPartesSemana();
 })();
 </script>
 </body>

@@ -176,14 +176,38 @@ async function cargar(){
     DATA.bar.slugs.sort((a,b)=>cmp(nombreSuc(a),nombreSuc(b)));
   }catch(e){ DATA.bar.repSlugs=[]; }
 }
-// último Reparto inicial de una sucursal: {fecha, u, arts:[{id,codigo,desc,marca,rubro,sugerido,talles:[{t,s}]}]}
+// Repartos iniciales PENDIENTES de una sucursal (13/09/2026, pedido de Juli: el depósito reparte
+// por marca, así que una sucursal puede tener varios esperando y el picking los toma todos).
+// Pendiente = de los últimos REP_PICK_DIAS días y que ningún picking creado para ese destino ya
+// se llevó (cada picking guarda en origen.repartos las claves que usó; con filtro de marca/rubro
+// solo se llevó esa parte). Devuelve {u, n, fechas, arts:[{…, reps:[claves]}]} o null.
+const REP_PICK_DIAS = 30;
 async function repartoDe(slug){
   DATA.bar.repCache = DATA.bar.repCache||{};
   if(DATA.bar.repCache[slug]!==undefined) return DATA.bar.repCache[slug];
   let d=null; try{ d=await fbGet(BARR+'/repartoSuc/'+slug); }catch(e){ d=null; }
-  const ks=Object.keys(d||{}).filter(k=>d[k] && (d[k].arts||[]).length).sort();
-  const ult = ks.length ? d[ks[ks.length-1]] : null;
-  DATA.bar.repCache[slug]=ult; return ult;
+  const lim=new Date(Date.now()-REP_PICK_DIAS*86400000).toISOString().slice(0,10);
+  // lo que ya se llevaron los pickings de esa sucursal: clave de reparto → filtros de cada picking
+  const tomados={};
+  vals(DATA.pickings||{}).forEach(P=>{ if(!P || P.destino!==slug || !P.origen || !P.origen.repartos) return;
+    [].concat(P.origen.repartos).forEach(k=>{ (tomados[k]=tomados[k]||[]).push(P.filtros||{}); }); });
+  const yaTomado=(k,it)=>(tomados[k]||[]).some(f=>(!f.marca||it.marca===f.marca) && (!f.rubro||it.rubro===f.rubro));
+  const porArt=new Map(), fechas=[]; let u=0;
+  Object.keys(d||{}).sort().forEach(k=>{ const r=d[k]; if(!r || k.slice(0,10)<lim) return;
+    let usa=false;
+    (r.arts||[]).forEach(it=>{ if(yaTomado(k,it)) return;
+      const talles=(it.talles||[]).filter(t=>num(t.s)>0); if(!talles.length) return;
+      usa=true;
+      const key=String(it.codigo||it.id||'');
+      let a=porArt.get(key);
+      if(!a){ a=Object.assign({}, it, { talles:[], sugerido:0, reps:[] }); porArt.set(key,a); }
+      talles.forEach(t=>{ const e=a.talles.find(x=>x.t===t.t); if(e) e.s+=num(t.s); else a.talles.push({t:t.t, s:num(t.s)}); a.sugerido+=num(t.s); u+=num(t.s); });
+      if(!a.reps.includes(k)) a.reps.push(k);
+    });
+    if(usa) fechas.push(r.fecha||k);
+  });
+  const out = porArt.size ? { u, n:fechas.length, fechas, arts:[...porArt.values()] } : null;
+  DATA.bar.repCache[slug]=out; return out;
 }
 // carga (y cachea) la reposición de una sucursal
 async function repoDe(slug){
@@ -424,7 +448,7 @@ async function abrirNuevoPicking(){
   const marcas=[...new Set((await cargarCombos()).map(c=>c.marca))].sort(cmp);
   const rubros=[...new Set(DATA.bar.combos.map(c=>c.rubro))].sort(cmp);
   openModal(
-    '<h2>Crear picking</h2><div class="msub">Barrida del '+esc(DATA.bar.ultima)+'. Elegí el destino y, si querés, filtrá por marca y/o rubro. El recorrido se ordena por zona.</div>'
+    '<h2>Crear picking</h2><div class="msub">'+(DATA.bar.ultima?'Barrida de la semana del '+esc(DATA.bar.ultima)+' (todas las marcas guardadas esa semana)':'Sin barrida guardada: solo Repartos iniciales')+'. Elegí el destino y, si querés, filtrá por marca y/o rubro. El recorrido se ordena por zona.</div>'
     + '<div class="grid2"><div class="fld"><label>Destino (sucursal)</label><select class="sel" id="npDest"><option value="">Elegir…</option>'
     + DATA.bar.slugs.map(s=>'<option value="'+esc(s)+'">'+esc(nombreSuc(s))+'</option>').join('')+'</select></div>'
     + '<div class="fld"><label>Prioridad</label><select class="sel" id="npPrio"><option>NORMAL</option><option>ALTA</option><option>URGENTE</option></select></div></div>'
@@ -433,15 +457,16 @@ async function abrirNuevoPicking(){
     + '<div class="fld"><label>Rubro (opcional)</label><select class="sel" id="npRubro"><option value="">Todos</option>'
     + rubros.map(r=>'<option>'+esc(r)+'</option>').join('')+'</select></div></div>'
     + '<div class="fld" style="margin-top:4px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="npCurva" checked> Incluir «Completar curva» (talles que la sucursal no tiene y hay en reserva)</label></div>'
-    + '<div class="fld" style="margin-top:2px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="npReparto"> Incluir el <b>Reparto inicial</b> (lo que el depósito repartió de los ingresos nuevos)</label><div class="hint" id="npRepHint" style="margin:2px 0 0"></div></div>'
+    + '<div class="fld" style="margin-top:2px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="npReparto" checked> Incluir los <b>Repartos iniciales</b> pendientes (lo que el depósito repartió de los ingresos nuevos)</label><div class="hint" id="npRepHint" style="margin:2px 0 0"></div></div>'
     + '<div id="npPrev" class="hint"></div>'
     + '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cancelar</button>'
     + '<button class="btn btn-outline" id="npPreview">Previsualizar</button>'
     + '<button class="btn btn-primary" id="npCrear" disabled>Crear picking</button></div>'
   );
-  let items=null;
+  let items=null, repsUsados=[];
   const armar=async()=>{
     const dest=$('npDest').value; if(!dest){ toast('Elegí el destino','bad'); return null; }
+    repsUsados=[];
     const fm=$('npMarca').value, fr=$('npRubro').value;
     const repo=await repoDe(dest);
     const pasa=it=> num(it.sugerido)>0 && (!fm||it.marca===fm) && (!fr||it.rubro===fr);
@@ -476,6 +501,7 @@ async function abrirNuevoPicking(){
         const ya=items.find(x=>key(x)===key(it));
         if(ya){ talles.forEach(t=>{ const e=ya.talles.find(x=>x.t===t.t); if(e) e.s+=t.s; else ya.talles.push(t); ya.requested_qty+=t.s; }); }
         else items.push({ codigo:it.codigo, desc:it.desc, marca:it.marca||'—', rubro:it.rubro||'—', id:it.id, talles, requested_qty:talles.reduce((a,t)=>a+t.s,0), reparto:true });
+        (it.reps||[]).forEach(k=>{ if(!repsUsados.includes(k)) repsUsados.push(k); });
       });
     }
     return items;
@@ -486,9 +512,10 @@ async function abrirNuevoPicking(){
     const dest=$('npDest').value; if(!dest){ h.textContent=''; return; }
     h.textContent='Buscando el reparto…';
     const r=await repartoDe(dest);
-    if(!r){ h.textContent='Esta sucursal no tiene ningún Reparto inicial guardado.'; return; }
-    const f=String(r.fecha||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
-    h.innerHTML='Tiene <b>'+fmtInt(r.u||0)+'</b> unidades de <b>'+(r.arts||[]).length+'</b> artículos repartidas el <b>'+(f?f[3]+'/'+f[2]:esc(r.fecha||''))+'</b>.';
+    if(!r){ h.textContent='Esta sucursal no tiene Repartos iniciales pendientes (de los últimos '+REP_PICK_DIAS+' días, sin picking).'; return; }
+    const dm=s=>{ const f=String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})/); return f?f[3]+'/'+f[2]:esc(s||''); };
+    const fs=[...new Set(r.fechas.map(dm))];
+    h.innerHTML='Tiene <b>'+r.n+'</b> reparto'+(r.n===1?'':'s')+' pendiente'+(r.n===1?'':'s')+' ('+fs.join(', ')+'): <b>'+fmtInt(r.u||0)+'</b> unidades de <b>'+r.arts.length+'</b> artículos.';
   });
   $('npPreview').onclick=async()=>{
     const b=$('npPreview'); b.disabled=true;
@@ -520,11 +547,12 @@ async function abrirNuevoPicking(){
     let seqLive=DATA.seq; try{ const s2=await fbGet(ROOT+'/seq'); if(s2!=null) seqLive=Math.max(seqLive,num(s2)); }catch(e){}
     let nro=seqLive+1; while(DATA.pickings[fbKey(nro)]) nro++;
     const P={ nro, destino:dest, estado:'PENDIENTE', prioridad:prio, filtros:{marca:fm||'',rubro:fr||''},
-      origen:{barrida:DATA.bar.ultima}, operario:'', created_at:nowISO(), creado_por:_mail, items:itemsObj };
+      origen:Object.assign({barrida:DATA.bar.ultima}, repsUsados.length?{repartos:repsUsados.slice()}:{}), operario:'', created_at:nowISO(), creado_por:_mail, items:itemsObj };
     b.disabled=true;
     try{
       await fbPut(ROOT+'/pickings/'+fbKey(nro), P);
       await fbPut(ROOT+'/seq', nro); DATA.seq=nro; DATA.pickings[fbKey(nro)]=P;
+      if(DATA.bar.repCache) delete DATA.bar.repCache[dest];   // lo que se llevó este picking deja de estar pendiente
       logEvento({event_type:'picking_created', picking_id:nro, value:{destino:dest, skus:items.length}});
       closeModal(); state.pkTab='pend'; render(); toast('PICK #'+nro+' creado','ok');
     }catch(e){ b.disabled=false; toast('No se pudo crear: '+e.message,'bad'); }
