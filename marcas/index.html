@@ -2021,12 +2021,17 @@ const TIPOS_LOCAL = [
   {k:'cat1', l:'Cat 1'}, {k:'cat2', l:'Cat 2'}, {k:'kids', l:'Mateu Kids'}, {k:'ecom', l:'Ecommerce'},
   {k:'aurelius', l:'Aurelius'}, {k:'adidas', l:'Tiendas Adidas'}, {k:'outlet', l:'Outlets'}
 ];
+// las disciplinas como las usa el sistema (cruzado el 13/09/2026 con el maestro de artículos de logística)
 const FICHA_DISC = {
-  calzado: ['Running','Casual','Training','Fútbol','Adventure','Outdoor','Básquet','Tenis','Pádel','Originals','Skate','Sandalias'],
-  indumentaria: ['Running','Training','Casual','Fútbol','Originals','Básquet','Tenis','Pádel','Hockey','Natación','Rugby','Outdoor']
+  calzado: ['Running','Casual','Training','Fútbol','Futsal','Originals','Adventure','Outdoor','Básquet','Tenis','Pádel','Vóley','Rugby','Hockey','Sandalias','Skate'],
+  indumentaria: ['Running','Training','Casual','Fútbol','Originals','Básquet','Tenis','Pádel','Hockey','Natación','Rugby','Vóley','Box','Outdoor']
 };
+const FICHA_DISC_AYUDA = { 'Fútbol':'FUTBOL 11 y FUTBOL 5 del sistema', 'Sandalias':'CALZADO VERANO del sistema (sandalias, ojotas)', 'Pádel':'PADDLE en el sistema',
+  'Outdoor':'OUTDOOR / TREKKING', 'Casual':'CASUAL / LIFESTYLE' };
 const FICHA_GEN = ['Hombre','Dama','Unisex','Niño'];
-const FICHA_CAMPOS = ['disc','modelos','genero','precioMax','nota'];
+const FICHA_CAMPOS = ['disc','modelos','genero','precioMax','nota','plana','orden','ninoLibre'];
+// curva: '' = la del reparto (centrales x2) · 'nino' = x1 plana en niño · 'todo' = x1 plana en todo
+const FICHA_PLANA = { '':'Normal (centrales x2)', nino:'x1 plana en niño', todo:'x1 plana en todo' };
 let FICHAS = { calzado:{}, indumentaria:{} };
 const FI = { marca:'', draft:null, baseTs:0, verTodos:false, dirty:false };
 
@@ -2035,8 +2040,8 @@ const fiArr = x => Array.isArray(x) ? x.filter(v => v != null && v !== '') : (x 
 function tipoDeSuc(s){ return s.id === 'ms-kids' ? 'kids' : s.id === 'ms-ecom' ? 'ecom' : s.cat; }
 function tipoLbl(k){ const t = TIPOS_LOCAL.find(x => x.k === k); return t ? t.l : k; }
 function sucsDelRubro(){ const out = []; Object.values(DATA).forEach(c => (c.sucursales || []).forEach(x => out.push(x))); return out; }
-function normBloque(b){ b = b || {}; return { disc:fiArr(b.disc), modelos:fiArr(b.modelos), genero:fiArr(b.genero), precioMax:Number(b.precioMax) || 0, nota:String(b.nota || '') }; }
-function bloqueVacio(b){ return !b || (!fiArr(b.disc).length && !fiArr(b.modelos).length && !fiArr(b.genero).length && !(Number(b.precioMax) > 0) && !String(b.nota || '').trim()); }
+function normBloque(b){ b = b || {}; return { disc:fiArr(b.disc), modelos:fiArr(b.modelos), genero:fiArr(b.genero), precioMax:Number(b.precioMax) || 0, nota:String(b.nota || ''), plana:FICHA_PLANA[b.plana] && b.plana ? b.plana : '', orden:Math.max(0, Math.round(Number(b.orden) || 0)), ninoLibre:!!b.ninoLibre }; }
+function bloqueVacio(b){ return !b || (!fiArr(b.disc).length && !fiArr(b.modelos).length && !fiArr(b.genero).length && !(Number(b.precioMax) > 0) && !String(b.nota || '').trim() && !b.plana && !(Number(b.orden) > 0) && !b.ninoLibre); }
 
 async function fichasCargar(){
   try {
@@ -2052,7 +2057,7 @@ function fichaEfectiva(marca, suc, rubro){
   const f = (FICHAS[rubro || rubroActivo] || {})[fichaKey(marca)]; if (!f) return null;
   const out = Object.assign(normBloque(f.tipos && f.tipos[tipoDeSuc(suc)]), { exc:[] });
   const exc = f.exc && f.exc[suc.id] ? normBloque(f.exc[suc.id]) : null;
-  if (exc) FICHA_CAMPOS.forEach(c => { const v = exc[c]; if (Array.isArray(v) ? v.length : (c === 'precioMax' ? v > 0 : String(v).trim())) { out[c] = v; out.exc.push(c); } });
+  if (exc) FICHA_CAMPOS.forEach(c => { const v = exc[c]; if (Array.isArray(v) ? v.length : ((c === 'precioMax' || c === 'orden') ? v > 0 : c === 'ninoLibre' ? v === true : String(v).trim())) { out[c] = v; out.exc.push(c); } });
   return bloqueVacio(out) ? null : out;
 }
 const fmtPesos = n => '$' + Math.round(n).toLocaleString('es-AR');
@@ -2064,6 +2069,9 @@ function fichaResumenHtml(suc, marca){
     + fila('Modelos', e.modelos.map(escapeHtml).join(' · '), 'modelos')
     + fila('Género', e.genero.map(escapeHtml).join(' · '), 'genero')
     + fila('Precio', e.precioMax > 0 ? 'hasta ' + fmtPesos(e.precioMax) + ' de PVP' : '', 'precioMax')
+    + fila('Niño', e.ninoLibre ? 'cualquier disciplina o modelo' : '', 'ninoLibre')
+    + fila('Curva', e.plana ? escapeHtml(FICHA_PLANA[e.plana]) : '', 'plana')
+    + fila('Prioridad', e.orden > 0 ? e.orden + '.ª en el reparto de la marca' : '', 'orden')
     + fila('Nota', escapeHtml(e.nota), 'nota')
     + '</div>';
 }
@@ -2111,7 +2119,7 @@ function fiColHtml(sc, id, titulo, sucs, puede, sub){
   const at = (act, extra) => 'data-act="' + act + '" data-sc="' + sc + '" data-id="' + escapeHtml(id) + '"' + (extra || '');
   const lista = FICHA_DISC[rubroActivo] || [];
   const extras = b.disc.filter(d => !lista.some(x => cobNorm(x) === cobNorm(d)));
-  const chip = (campo, v, on) => '<button type="button" class="fi-chip' + (on ? ' on' : '') + '" ' + at('toggle', ' data-campo="' + campo + '" data-v="' + escapeHtml(v) + '"') + (puede ? '' : ' disabled') + '>' + escapeHtml(v) + '</button>';
+  const chip = (campo, v, on) => '<button type="button" class="fi-chip' + (on ? ' on' : '') + '" ' + at('toggle', ' data-campo="' + campo + '" data-v="' + escapeHtml(v) + '"') + (puede ? '' : ' disabled') + (FICHA_DISC_AYUDA[v] ? ' title="' + escapeHtml(FICHA_DISC_AYUDA[v]) + '"' : '') + '>' + escapeHtml(v) + '</button>';
   const tag = (campo, v, i) => '<span class="fi-tag">' + escapeHtml(v) + (puede ? '<button type="button" ' + at('del', ' data-campo="' + campo + '" data-i="' + i + '"') + ' title="Quitar">×</button>' : '') + '</span>';
   const onD = d => b.disc.some(x => cobNorm(x) === cobNorm(d));
   let h = '<div class="fi-col' + (sc === 'e' ? ' exc' : '') + (sc === 't' && !sucs.length ? ' sin' : '') + '">'
@@ -2120,13 +2128,18 @@ function fiColHtml(sc, id, titulo, sucs, puede, sub){
       ? '<span class="fi-col-n" title="' + escapeHtml(sucs.map(x => x.nombre).join(', ')) + '">' + (sucs.length ? sucs.length + ' suc.' : 'no la trabaja') + '</span>'
       : '<span class="fi-col-n">' + escapeHtml(sub || '') + (puede ? ' <button type="button" class="fi-x" ' + at('exc-del') + ' title="Quitar la excepción">×</button>' : '') + '</span>')
     + '</div>';
-  h += '<div class="fi-lbl">Disciplinas / líneas</div><div class="fi-chips">' + lista.map(d => chip('disc', d, onD(d))).join('') + extras.map(d => chip('disc', d, true)).join('')
+  h += '<div class="fi-lbl">Disciplinas / líneas <span class="fi-dim">· ' + (b.disc.length ? 'lo que no esté marcado no le va' : 'ninguna marcada = todas') + '</span>'
+    + (puede && b.disc.length ? ' <button type="button" class="fi-x" style="font-size:11px" ' + at('clear', ' data-campo="disc"') + ' title="Desmarcar todas = le va cualquier disciplina">limpiar</button>' : '') + '</div><div class="fi-chips">' + lista.map(d => chip('disc', d, onD(d))).join('') + extras.map(d => chip('disc', d, true)).join('')
     + (!puede && !b.disc.length ? '<span class="fi-dim">todas</span>' : '') + '</div>';
   if (puede) h += '<input class="disc-input fi-in" placeholder="+ otra disciplina" ' + at('add', ' data-campo="disc"') + '>';
   h += '<div class="fi-lbl">Modelos puntuales</div><div class="fi-chips">' + (b.modelos.length ? b.modelos.map((v, i) => tag('modelos', v, i)).join('') : '<span class="fi-dim">todos</span>') + '</div>';
   if (puede) h += '<input class="disc-input fi-in" placeholder="+ modelo (Enter)" ' + at('add', ' data-campo="modelos"') + '>';
   h += '<div class="fi-lbl">Género</div><div class="fi-chips">' + FICHA_GEN.map(g => chip('genero', g, b.genero.includes(g))).join('')
     + (!puede && !b.genero.length ? '<span class="fi-dim">todos</span>' : '') + '</div>';
+  h += '<label class="fi-chk" style="margin:6px 0 0"><input type="checkbox" ' + at('set', ' data-campo="ninoLibre"') + (b.ninoLibre ? ' checked' : '') + (puede ? '' : ' disabled') + '> Niño: cualquier disciplina o modelo</label>';
+  h += '<div class="fi-lbl">Curva</div><select class="form-input fi-num" ' + at('set', ' data-campo="plana"') + (puede ? '' : ' disabled') + '>'
+    + Object.keys(FICHA_PLANA).map(k => '<option value="' + k + '"' + (b.plana === k ? ' selected' : '') + '>' + (sc === 'e' && !k ? 'Como su tipo de local' : FICHA_PLANA[k]) + '</option>').join('') + '</select>';
+  h += '<div class="fi-lbl">Prioridad en el reparto <span class="fi-dim">· 1 = primera; vacío = la general</span></div><input class="form-input fi-num" type="number" min="0" step="1" placeholder="general" value="' + (b.orden > 0 ? b.orden : '') + '" ' + at('set', ' data-campo="orden"') + (puede ? '' : ' disabled') + '>';
   h += '<div class="fi-lbl">Precio máximo (PVP)</div><input class="form-input fi-num" type="number" min="0" step="1000" placeholder="sin tope" value="' + (b.precioMax > 0 ? b.precioMax : '') + '" ' + at('set', ' data-campo="precioMax"') + (puede ? '' : ' disabled') + '>';
   h += '<div class="fi-lbl">Nota</div><textarea class="form-input fi-nota" rows="2" placeholder="Aclaración para Producto y el depósito" ' + at('set', ' data-campo="nota"') + (puede ? '' : ' disabled') + '>' + escapeHtml(b.nota) + '</textarea>';
   return h + '</div>';
@@ -2214,6 +2227,7 @@ async function fiGuardar(){
     const el = e.target.closest('[data-act]'); if (!el || !isAdminSession()) return;
     const d = el.dataset;
     if (d.act === 'toggle') { const b = fiBloque(d.sc, d.id); const k = b[d.campo].findIndex(x => cobNorm(x) === cobNorm(d.v)); if (k >= 0) b[d.campo].splice(k, 1); else b[d.campo].push(d.v); fiMarcar(); fiRender(); }
+    else if (d.act === 'clear') { fiBloque(d.sc, d.id)[d.campo] = []; fiMarcar(); fiRender(); }
     else if (d.act === 'del') { fiBloque(d.sc, d.id)[d.campo].splice(+d.i, 1); fiMarcar(); fiRender(); }
     else if (d.act === 'exc-add') { const sel = document.getElementById('fiExcSuc'); if (!sel || !sel.value) { showToast('Elegí la sucursal'); return; } FI.draft.exc[sel.value] = normBloque(null); fiMarcar(); fiRender(); }
     else if (d.act === 'exc-del') { if (!confirm('¿Quitar la excepción de esta sucursal?')) return; delete FI.draft.exc[d.id]; fiMarcar(); fiRender(); }
@@ -2233,7 +2247,11 @@ async function fiGuardar(){
   body.addEventListener('input', e => {
     const el = e.target; if (el.dataset.act !== 'set' || !isAdminSession()) return;
     const b = fiBloque(el.dataset.sc, el.dataset.id);
-    if (el.dataset.campo === 'precioMax') b.precioMax = Math.max(0, Number(el.value) || 0); else b.nota = el.value;
+    if (el.dataset.campo === 'precioMax') b.precioMax = Math.max(0, Number(el.value) || 0);
+    else if (el.dataset.campo === 'plana') b.plana = el.value;
+    else if (el.dataset.campo === 'ninoLibre') b.ninoLibre = el.checked;
+    else if (el.dataset.campo === 'orden') b.orden = Math.max(0, Math.round(Number(el.value) || 0));
+    else b.nota = el.value;
     fiMarcar();
   });
   body.addEventListener('change', e => {

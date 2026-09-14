@@ -1515,6 +1515,24 @@ admin, «ficha de la marca ▸».
   ficha se suma a la nota de prioridad. **El precio NO se aplica**: los reportes no traen el PVP
   (queda informativo). Las reglas fijas del código (Mateu Kids solo niño, Aurelius nunca en «abrir»)
   siguen igual. Probado 13/09 con tests en node (herencia, excepción, género, disciplina, modelo).
+- **Segunda tanda (13/09/2026, Juli cargando marca por marca)**: la ficha suma **«Curva»** (`plana`:
+  '' normal · `nino` x1 plana en niño · `todo` x1 plana; en `repRepartirArt` el candidato `plana` recibe 1
+  por talle, sin 3.ª unidad ni excedente), **«Prioridad en el reparto»** (`orden`, 1 = primera; en
+  `cmpReparto` va después de la prioridad de niño) y **«Niño: cualquier disciplina o modelo»**
+  (`ninoLibre`: la restricción de disciplina/modelo aplica solo al adulto). **Con ficha, el texto libre
+  viejo de la sucursal (`b.d`) ya no filtra** (se contradecían). Las disciplinas del chip se comparan con
+  las del sistema por equivalencias (`FICHA_DISC_RX`: Sandalias = CALZADO VERANO, Pádel = PADDLE, Fútbol =
+  FUTBOL 11/5…; la lista `FICHA_DISC` se cruzó con el maestro `logistica/arts`). **Niño siempre prioriza
+  Mateu Kids y Outlet Gonnet** (sector de niños, todas las marcas: `NINO_PRIO`, primero en `cmpReparto` y en
+  `cmpPrioridad` de la barrida; en el Reparto inicial Gonnet entra a los destinos por defecto para niño).
+  Cargado ese día (asignación rev 8 + fichas, respaldo previo en el scratchpad de la sesión): Adidas
+  (Aurelius 12 y CB también niño Originals, x1 plana), Asics (solo D80 prioridad 1, CB 2 y Aurelius 5 con
+  GEL-1130/GEL-NYC/GEL-KAYANO 14), Addnice y Footy (solo niño, todos los Mateu y outlets), 47 Street (dama
+  casual; Cat 2, outlets y Ecommerce), Converse (Aurelius primero, casual; Mateu/outlets solo Chuck Taylor
+  All Star clásicas), Crocs (Crocband y Classic, todos menos tiendas Adidas), Dr Martens (solo Aurelius 5),
+  Fila (Aurelius Disruptor/Uproot/Superbubble; Cat 1 y Ecommerce solo niño; Cat 2 y outlets running adulto +
+  niño todo), Kappa (solo outlets), Le Coq Sportif (Cat 2 y outlets, running y casual) y Montagne (Cat 2 y
+  outlets, adventure y running, adulto).
 
 ## Reparto inicial (pestaña de `barrida/`, 10/09/2026)
 

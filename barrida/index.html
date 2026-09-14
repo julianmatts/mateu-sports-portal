@@ -578,7 +578,16 @@ function prioInfo(slug, marca, rubro){
 }
 // orden de prioridad (menor = antes): vendido del artículo ↓ · vendido del talle ↓ ·
 // meses de stock ↑ (sin dato al final) · categoría (cat1 primero) · stock del artículo ↓ · nombre
+// En artículos de NIÑO van primero Mateu Kids y Outlet Gonnet (tiene sector especial de niños), en
+// todas las marcas (Juli 13/09/2026). Se usa en la barrida (venta, curva, vaciado) y en el reparto.
+const NINO_PRIO = { kids:true, gonnet:true };
+function ninoPrioDe(r){
+  if(!r || !NINO_PRIO[r.slug]) return 1;
+  if(r._np==null){ const g=repGrupo(r).g; r._np = (g==='nino'||g==='infante') ? 0 : 1; }
+  return r._np;
+}
 function cmpPrioridad(a,b){
+  const na=ninoPrioDe(a), nb=ninoPrioDe(b); if(na!==nb) return na-nb;
   if((b.vendido||0)!==(a.vendido||0)) return (b.vendido||0)-(a.vendido||0);
   if((b.vendTalle||0)!==(a.vendTalle||0)) return (b.vendTalle||0)-(a.vendTalle||0);
   const ma=(a.pr&&a.pr.ms!=null)?a.pr.ms:Infinity, mb=(b.pr&&b.pr.ms!=null)?b.pr.ms:Infinity;
@@ -3460,11 +3469,23 @@ function fichaDe(slug, marca, G){
   if(!f){ const k=Object.keys(F[rub]).find(k=>Math.min(k.length,mk.length)>=3 && (k.startsWith(mk)||mk.startsWith(k))); f=k?F[rub][k]:null; }
   if(!f) return null;
   const tipo = FICHA_TIPO_SLUG[slug] || (PRIO.cats||CAT_SEED)[slug];
-  const norm = b => ({ disc:fiLista(b&&b.disc), modelos:fiLista(b&&b.modelos), genero:fiLista(b&&b.genero), precioMax:Number(b&&b.precioMax)||0, nota:String((b&&b.nota)||'') });
+  const norm = b => ({ disc:fiLista(b&&b.disc), modelos:fiLista(b&&b.modelos), genero:fiLista(b&&b.genero), precioMax:Number(b&&b.precioMax)||0, nota:String((b&&b.nota)||''), plana:String((b&&b.plana)||''), orden:Number(b&&b.orden)||0, ninoLibre:!!(b&&b.ninoLibre) });
   const out=norm(f.tipos&&f.tipos[tipo]);
   const id=SLUG2MARCAS[slug], exc=id&&f.exc&&f.exc[id];
-  if(exc){ const e=norm(exc); ['disc','modelos','genero'].forEach(c=>{ if(e[c].length) out[c]=e[c]; }); if(e.precioMax>0) out.precioMax=e.precioMax; if(e.nota.trim()) out.nota=e.nota; }
-  return (out.disc.length||out.modelos.length||out.genero.length||out.nota.trim()) ? out : null;
+  if(exc){ const e=norm(exc); ['disc','modelos','genero'].forEach(c=>{ if(e[c].length) out[c]=e[c]; }); if(e.precioMax>0) out.precioMax=e.precioMax; if(e.nota.trim()) out.nota=e.nota; if(e.plana) out.plana=e.plana; if(e.orden>0) out.orden=e.orden; if(e.ninoLibre) out.ninoLibre=true; }
+  return (out.disc.length||out.modelos.length||out.genero.length||out.nota.trim()||out.plana||out.orden||out.ninoLibre) ? out : null;
+}
+// chip de la ficha → cómo lo escribe el sistema (13/09/2026, cruzado con las disciplinas reales de
+// Adidas: «Sandalias» = CALZADO VERANO, «Pádel» = PADDLE, «Fútbol» = FUTBOL 11 / FUTBOL 5…)
+const FICHA_DISC_RX = {
+  futbol:/futbol/, futsal:/futsal/, padel:/padel|paddle/, basquet:/basquet|basket/, tenis:/tenis|tennis/,
+  voley:/voley|volley/, sandalias:/calzado verano|sandal|ojota|chinela|slide|adilette/, 'calzado verano':/calzado verano|sandal|ojota|chinela|slide|adilette/,
+  natacion:/natacion|swim/, outdoor:/outdoor|trekking|trail/, adventure:/adventure|terrex/, casual:/casual|lifestyle|urbano/,
+  training:/training|entrenamiento/, box:/\bbox/
+};
+function fichaDiscRx(d){
+  const k=sinAcento(d).toLowerCase().trim();
+  return FICHA_DISC_RX[k] || new RegExp(k.slice(0,5).replace(/[.*+?^${}()|[\]\\]/g,'\\$&') || '^$');
 }
 // ¿el artículo entra en lo que la ficha dice que va a esa sucursal? (el precio no: los reportes no lo traen)
 function fichaPasa(fe, a, G){
@@ -3474,9 +3495,11 @@ function fichaPasa(fe, a, G){
       : G.g==='unisex' ? gs.some(x=>/unisex|hombre|dama/.test(x)) : gs.some(x=>x===G.g||x==='unisex');
     if(!ok) return false;
   }
-  if(state.rep.param.respetarDisc && (fe.disc.length || fe.modelos.length)){
+  // «Niño: cualquier disciplina o modelo» (p.ej. Fila en Cat 2: adulto solo running, niño todo)
+  const kidsArt = G.g==='nino' || G.g==='infante';
+  if(state.rep.param.respetarDisc && (fe.disc.length || fe.modelos.length) && !(kidsArt && fe.ninoLibre)){
     const disc=sinAcento(a.disc||'').toLowerCase(), txt=sinAcento([a.desc,a.disc,a.tipo].filter(Boolean).join(' ')).toLowerCase();
-    const okD=fe.disc.some(d=>{ const k=sinAcento(d).toLowerCase().slice(0,5); return k && txt.includes(k); });
+    const okD=fe.disc.some(d=>fichaDiscRx(d).test(txt));
     const okM=fe.modelos.some(m=>{ const k=sinAcento(m).toLowerCase().trim(); return k && txt.includes(k); });
     if(!okD && !okM) return !disc && !fe.modelos.length;    // sin disciplina en el artículo no se puede descartar
   }
@@ -3496,7 +3519,9 @@ function repAsig(slug, a, G){
   if(!b) return null;
   const kids = G.g==='nino' || G.g==='infante';
   if(b.t==='nino' && !kids) return null;                         // asignada solo para niño
-  const txt=sinAcento((b.d||[]).join(' ')).toLowerCase();
+  // con ficha de la marca, manda la ficha: el texto libre viejo de la sucursal ya no filtra
+  const fe=fichaDe(slug, a.marca, G);
+  const txt=fe ? '' : sinAcento((b.d||[]).join(' ')).toLowerCase();
   if(txt){
     if(kids && /adulto|hombre|dama/.test(txt) && !/nin/.test(txt)) return null;
     if(!kids && /\bnin[oa]s?\b/.test(txt) && !/adulto|hombre|dama/.test(txt)) return null;
@@ -3506,11 +3531,11 @@ function repAsig(slug, a, G){
       if(pedidas.length && disc && !pedidas.some(k=>disc.includes(k.slice(0,5)))) return null;
     }
   }
-  const fe=fichaDe(slug, a.marca, G);
   if(fe && !fichaPasa(fe, a, G)) return null;
   const rank = (b.t==='prio'||b.t==='nino') ? 1 : b.t==='especial' ? 2 : 3;
-  const notaFicha = fe ? [fe.disc.join('/'), fe.modelos.join('/'), fe.genero.join('/'), fe.nota].filter(Boolean).join(' · ') : '';
-  return { tipo:b.t||'sec', rank, nota:[(b.d&&b.d.length)?b.d.join(', '):'', notaFicha].filter(Boolean).join(' · ') };
+  const plana = !!(fe && (fe.plana==='todo' || (fe.plana==='nino' && kids)));
+  const notaFicha = fe ? [fe.disc.join('/'), fe.modelos.join('/'), fe.genero.join('/'), plana?'curva x1 plana':'', fe.nota].filter(Boolean).join(' · ') : '';
+  return { tipo:b.t||'sec', rank, plana, orden:(fe&&fe.orden>0)?fe.orden:0, nota:[(b.d&&b.d.length)?b.d.join(', '):'', notaFicha].filter(Boolean).join(' · ') };
 }
 const ASIG_LBL = { prio:'marca principal', nino:'marca de niño', especial:'marca especial', sec:'marca secundaria', sin:'sin asignación cargada' };
 function repHistDe(id, slug){
@@ -3523,7 +3548,8 @@ function repCandidatos(a, G, destinos){
   destinos.forEach(slug=>{
     const asig=repAsig(slug, a, G); if(!asig) return;
     const vm=ventasMarcaDe(slug, a.marca, a.rubro);
-    out.push({ slug, sucNombre:nombreSuc(slug), asig, pr:prioInfo(slug, a.marca, a.rubro),
+    const kidsArt = G.g==='nino' || G.g==='infante';
+    out.push({ slug, sucNombre:nombreSuc(slug), asig, plana:!!asig.plana, ninoPrio:(kidsArt && NINO_PRIO[slug]) ? 0 : 1, pr:prioInfo(slug, a.marca, a.rubro),
       venta:vm?vm.v:0, ventaNivel:vm?vm.nivel:'', hist:P.memoria?repHistDe(a.id, slug):null });
   });
   // la venta pesa en tres niveles (alta / media / baja respecto de la que más vende): así los
@@ -3535,6 +3561,9 @@ function repCandidatos(a, G, destinos){
   return out;
 }
 function cmpReparto(a,b){
+  if((a.ninoPrio||0)!==(b.ninoPrio||0)) return (a.ninoPrio||0)-(b.ninoPrio||0); // niño: Mateu Kids y Outlet Gonnet primero
+  const oa=(a.asig&&a.asig.orden)||99, ob=(b.asig&&b.asig.orden)||99;          // «Prioridad» de la ficha de la marca (1 = primera)
+  if(oa!==ob) return oa-ob;
   const ha=a.hist?0:1, hb=b.hist?0:1; if(ha!==hb) return ha-hb;               // ya lo recibió: se le completa primero
   if(a.asig.rank!==b.asig.rank) return a.asig.rank-b.asig.rank;               // asignación de marcas
   if(a.pr.catRank!==b.pr.catRank) return a.pr.catRank-b.pr.catRank;           // categoría
@@ -3571,11 +3600,13 @@ function repRepartirArt(perRem, cands, central, P){
   const hayCentral=talles.some(t=>central.has(t) && d[t]>0);
   const base=t=>central.has(t)?P.uCentral:P.uResto;
   const tope=t=>central.has(t)?Math.max(P.uCentral,P.maxCentral):P.uResto;
+  // «curva x1 plana» de la ficha de la marca: 1 por talle, sin agrandar centrales ni excedente
+  const baseS=(s,t)=>s.plana?1:base(t);
   const dist=cands.map(c=>Object.assign({}, c, { g:{}, tiene:c.hist||{}, ok:false }));
   // A · curva base
   dist.forEach(s=>{
     const g={}; let cubre=0, cubreC=false;
-    talles.forEach(t=>{ const ya=s.tiene[t]||0; const q=Math.min(Math.max(0, base(t)-ya), d[t]); if(q>0) g[t]=q; if(ya+q>0){ cubre++; if(central.has(t)) cubreC=true; } });
+    talles.forEach(t=>{ const ya=s.tiene[t]||0; const q=Math.min(Math.max(0, baseS(s,t)-ya), d[t]); if(q>0) g[t]=q; if(ya+q>0){ cubre++; if(central.has(t)) cubreC=true; } });
     const yaLoTiene=sumT(s.tiene)>0, nuevo=sumT(g);
     if(!nuevo){ s.ok=yaLoTiene; return; }
     if(!yaLoTiene && (cubre<minT || (hayCentral && !cubreC))) return;
@@ -3583,11 +3614,11 @@ function repRepartirArt(perRem, cands, central, P){
   });
   // B · 3.ª unidad en los centrales
   let hubo=true;
-  while(hubo){ hubo=false; for(const s of dist){ if(!s.ok) continue; for(const t of talles){
+  while(hubo){ hubo=false; for(const s of dist){ if(!s.ok || s.plana) continue; for(const t of talles){
     if(!central.has(t) || d[t]<=0) continue; if((s.tiene[t]||0)+(s.g[t]||0) < tope(t)){ s.g[t]=(s.g[t]||0)+1; d[t]--; hubo=true; } } } }
   // C · excedente
   if(P.excedente){ hubo=true;
-    while(hubo){ hubo=false; for(const s of dist){ if(!s.ok) continue; for(const t of talles){ if(d[t]>0){ s.g[t]=(s.g[t]||0)+1; d[t]--; hubo=true; } } } } }
+    while(hubo){ hubo=false; for(const s of dist){ if(!s.ok || s.plana) continue; for(const t of talles){ if(d[t]>0){ s.g[t]=(s.g[t]||0)+1; d[t]--; hubo=true; } } } } }
   // ---- a qué remito va cada unidad ----
   const left=perRem.map(r=>Object.assign({}, r.t)), quedaRem=perRem.map(()=>({}));
   const totLeft=i=>sumT(left[i]);
@@ -3649,7 +3680,10 @@ function repCalcular(){
     if(tl.estimado) estimados++;
     const labels=[...new Set([].concat(...tl.perRem.map(r=>Object.keys(r.t).filter(t=>r.t[t]>0))))];
     const C=repCentrales(a, labels);
-    const cands=repCandidatos(a, C.G, destinos);
+    // niño: Outlet Gonnet entra aunque los outlets estén afuera por defecto (sector de niños)
+    const kidsA = C.G.g==='nino' || C.G.g==='infante';
+    const destA = (kidsA && !Array.isArray(S.destinos) && REP_SUC.gonnet && !destinos.includes('gonnet')) ? destinos.concat('gonnet') : destinos;
+    const cands=repCandidatos(a, C.G, destA);
     const out=repRepartirArt(tl.perRem, cands, C.set, P);
     Object.assign(a, { estimado:tl.estimado, faltan:tl.faltan, centrales:[...C.set], regla:C.regla, grupo:C.G.key });
     if(a.diasDepo==null && reserva){    // hace cuántos días entró lo que hay hoy en el depósito
