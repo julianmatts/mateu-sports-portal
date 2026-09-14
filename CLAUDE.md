@@ -754,6 +754,16 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   Excel suma la columna «Talles». **Sin la columna se carga solo el total como
   siempre**; una carga sin talle borra el desglose anterior (no se muestran talles
   viejos como vigentes). La planilla de Drive no cambia.
+  **14/09/2026**: el talle también se detecta **por contenido** (`colTallePorContenido`, `RX_VAL_TALLE`):
+  en el export sin encabezados de Diagonal nunca se buscaba y los talles no salían; el encabezado acepta
+  además «Nro Talle», «Medida», «Curva», «T.». La vista previa avisa en rojo si hay varias filas por
+  artículo y no se eligió la columna de talle.
+- **Memoria de ubicaciones (14/09/2026)**: un artículo con ubicación que deja de venir en el Excel se
+  guarda en `sucursales/<slug>/ubicMemoria/<clave>` = `{ubicaciones, fechaAlta, codigo, ts}` y, cuando
+  vuelve en una carga posterior, recupera su lugar (si la estantería/módulo sigue) y su fecha de alta (no
+  sale como «nuevo»). Causa: una carga del 09/09 en Diagonal no trajo RUGE y otros; al volver entraron sin
+  lugar. Se restauraron 445 artículos (117 RUGE) desde `Downloads/respaldo-ubicaciones-diagonal-2026-09-07.json`
+  + `movimientos/` posteriores (marcadas «· recuperada»); respaldo previo en `…-2026-09-14.json`.
 - **Lista de retiro con talles del F8 (27/08/2026)**: al importar el F8 en la Lista
   de retiro, el parser captura la **curva de talles** (las columnas entre la cabecera
   y el TOTAL, solo en el formato con columna DESTINO; el formato matriz no las trae)
