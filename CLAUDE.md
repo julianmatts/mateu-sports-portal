@@ -1548,8 +1548,12 @@ admin, «ficha de la marca ▸».
   destacarse. Columna = 9 apoyacalzados con cada modelo ×3 en vertical = 3 modelos (`PARED_MOD_COL`). Mínimo
   en running: **Adidas 6 columnas (18 modelos), Nike y Puma 4 (12), el resto 2 (6)** (`PARED_COLS`,
   `PARED_COLS_DEF`). Solo Mateu Cat 1 y Cat 2 (no Kids, Aurelius ni outlets). `calcParedes(stockRows)` cuenta
-  por sucursal × marca × subrubro (HOMBRE/DAMA; unisex en los dos) los artículos de calzado running con stock
-  en `PARED_MIN_TALLES` (2) talles o más, para las marcas con running en el stock cargado que la sucursal tiene
+  por sucursal × marca × subrubro (HOMBRE/DAMA) los artículos de calzado running con stock en
+  `PARED_MIN_TALLES` (**3**) talles distintos y **al menos uno central** del subrubro (tabla de centrales del
+  Reparto inicial, `paredCentrales`/`paredValido`). **Unisex por talles** (`talleGenero`/`paredCuenta`, Juli):
+  hasta el 39 AR (7 US/UK) es dama y desde el 40 (7.5) hombre; cada subrubro se evalúa con sus talles, así un
+  unisex que llega hasta el 39 suma solo en dama (lo mismo para la prioridad, con los talles del artículo
+  que entra). Se exige a las marcas con running en el stock cargado que la sucursal tiene
   asignadas y cuya ficha deja running en ese subrubro (`repAsig` con un artículo sintético). Se muestra como
   desplegable «🧱 Paredes de running incompletas» arriba de la Barrida de reserva y del resultado del Reparto
   inicial (`paredesHtml`), y en `cmpReparto` la sucursal con la pared incompleta de esa marca-subrubro pasa

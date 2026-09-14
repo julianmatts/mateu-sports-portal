@@ -3757,12 +3757,37 @@ function repRepartirArt(perRem, cands, central, P){
    la sucursal con la pared incompleta pasa adelante con esa marca. */
 const PARED_MOD_COL = 3;                               // 9 apoyacalzados ÷ cada modelo ×3 en vertical
 const PARED_COLS = { adidas:6, nike:4, puma:4 };       // columnas mínimas; las demás marcas (2.º nivel) PARED_COLS_DEF
-const PARED_COLS_DEF = 2, PARED_MIN_TALLES = 2;
+const PARED_COLS_DEF = 2, PARED_MIN_TALLES = 3;       // 3 talles distintos con al menos 1 central (Juli 13/09/2026)
 let PAREDES = null;                                    // { semana, lista:[…], inc:{'slug|marca|GEN':…}, marcas }
 function paredMin(marca){ return (PARED_COLS[normMarca(marca)]||PARED_COLS_DEF) * PARED_MOD_COL; }
 function paredGeneros(genero){
   const g=sinAcento(stripNN(genero)).toUpperCase();
   return /DAMA|MUJER|FEMEN/.test(g) ? ['DAMA'] : /HOMBRE|MASCUL/.test(g) ? ['HOMBRE'] : /UNISEX/.test(g) ? ['HOMBRE','DAMA'] : [];
+}
+// Unisex: el género sale de los talles (Juli 13/09/2026): hasta el 39 AR es dama y desde el 40 hombre
+// (US/UK: hasta 7 dama, desde 7.5 hombre). Un unisex que llega hasta el 39 suma solo en dama.
+function talleGenero(t){
+  const n=parseFloat(String(t).replace(',','.')); if(!isFinite(n)) return '';
+  if(n>=30 && n<=50) return n<=39 ? 'DAMA' : 'HOMBRE';
+  if(n>=3 && n<=16) return n<=7 ? 'DAMA' : 'HOMBRE';
+  return '';
+}
+// talles con stock del artículo por subrubro de pared: {DAMA:[…], HOMBRE:[…]}
+function paredCuenta(meta, talles){
+  const con=Object.keys(talles||{}).filter(t=>(talles[t]||0)>0), gs=paredGeneros(meta&&meta.genero), out={};
+  if(gs.length===2) con.forEach(t=>{ const g=talleGenero(t); (g?[g]:gs).forEach(x=>(out[x]=out[x]||[]).push(t)); });
+  else gs.forEach(g=>{ if(con.length) out[g]=con; });
+  return out;
+}
+function paredCentrales(meta, g){
+  const tabla=repCentralesTabla(), key='calz-'+(g==='DAMA'?'dama':'hombre');
+  const lista=tabla[key+'|'+normMarca(meta&&meta.marca)] || tabla[key];
+  return (lista && lista.length) ? new Set(lista.map(nrmT)) : null;
+}
+// ¿se puede colgar en la pared? 3 talles distintos y alguno central del subrubro
+function paredValido(meta, g, tl){
+  const set=new Set((tl||[]).map(nrmT)); if(set.size<PARED_MIN_TALLES) return false;
+  const C=paredCentrales(meta, g); return !C || [...set].some(t=>C.has(t));
 }
 const paredRunning = m => !!m && /CALZ/i.test(sinAcento(stripNN(m.rubro||''))) && /running/i.test(sinAcento(m.disc||''));
 function paredSlugs(){ return Object.keys(REP_SUC).filter(sl=>sl!=='kids' && ['cat1','cat2'].includes(catDe(sl))); }
@@ -3772,8 +3797,9 @@ function calcParedes(rows){
   rows.forEach(v=>{
     const m=v.meta||{}; if(!paredRunning(m)) return;
     const mk=normMarca(m.marca); if(!mk) return; marcas[mk]=String(m.marca).trim();
-    if(Object.values(v.talles||{}).filter(q=>q>0).length < PARED_MIN_TALLES) return;
-    paredGeneros(m.genero).forEach(g=>{ const k=v.slug+'|'+mk+'|'+g; (tiene[k]=tiene[k]||new Set()).add(v.id); });
+    Object.entries(paredCuenta(m, v.talles)).forEach(([g,tl])=>{
+      if(!paredValido(m, g, tl)) return;
+      const k=v.slug+'|'+mk+'|'+g; (tiene[k]=tiene[k]||new Set()).add(v.id); });
   });
   const lista=[], inc={};
   paredSlugs().forEach(slug=>Object.entries(marcas).forEach(([mk,marca])=>['HOMBRE','DAMA'].forEach(g=>{
@@ -3792,7 +3818,10 @@ function calcParedes(rows){
 function paredIncompleta(slug, a){
   if(!PAREDES || !paredRunning(a)) return null;
   const mk=normMarca(a.marca);
-  for(const g of paredGeneros(a.genero)){ const o=PAREDES.inc[slug+'|'+mk+'|'+g]; if(o) return o; }
+  // el unisex se asigna por sus talles: los del artículo que entra (reserva o remitos)
+  const tl=Object.assign({}, a.resTalles||{}); (a.rem||[]).forEach(r=>Object.assign(tl, r.talles||{}));
+  const gens = Object.keys(tl).length ? Object.keys(paredCuenta(a, Object.fromEntries(Object.keys(tl).map(t=>[t,1])))) : paredGeneros(a.genero);
+  for(const g of gens){ const o=PAREDES.inc[slug+'|'+mk+'|'+g]; if(o) return o; }
   return null;
 }
 function paredesHtml(P){
@@ -3804,7 +3833,7 @@ function paredesHtml(P){
   const td='style="padding:3px 8px;border-bottom:1px solid var(--line,#e7ecf5)"';
   return '<details class="ayuda"><summary>🧱 Paredes de running incompletas: <b>'+L.length+'</b> sectores en <b>'+nSuc+'</b> sucursales</summary><div class="card-hs">'
     +'Mínimo de modelos por marca × subrubro en running (Mateu Cat 1 y Cat 2): una columna son 9 apoyacalzados con cada modelo ×3 = <b>3 modelos</b>. '
-    +'Adidas <b>6 columnas</b> (18 modelos), Nike y Puma <b>4</b> (12), el resto <b>2</b> (6). Cuenta cada artículo con stock en '+PARED_MIN_TALLES+' talles o más, según el stock por sucursal cargado. '
+    +'Adidas <b>6 columnas</b> (18 modelos), Nike y Puma <b>4</b> (12), el resto <b>2</b> (6). Cuenta cada artículo con stock en '+PARED_MIN_TALLES+' talles distintos o más y al menos uno central; un unisex suma en dama o en hombre según sus talles (hasta el 39 dama, desde el 40 hombre). Sale del stock por sucursal cargado. '
     +'En el Reparto inicial y en «Abrir a más sucursales» estas sucursales pasan adelante con esa marca.'
     +'<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;min-width:520px"><thead><tr><th '+th+'>Sucursal</th><th '+th+'>Marca</th><th '+th+'>Subrubro</th><th '+th+'>Tiene</th><th '+th+'>Mínimo</th><th '+th+'>Faltan</th></tr></thead><tbody>'
     +L.map(o=>'<tr><td '+td+'>'+esc(o.sucNombre)+'</td><td '+td+'><b>'+esc(o.marca)+'</b></td><td '+td+'>'+(o.gen==='DAMA'?'Dama':'Hombre')+'</td>'
