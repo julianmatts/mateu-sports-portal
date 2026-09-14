@@ -1739,7 +1739,7 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     sale de lo que sobra, solo si el artículo tiene `curvaDesde` unidades o más (default 12, «Dejar curva si
     el artículo tiene») y solo si llega a `reservaMin` (default 6, «Reserva mínima»); si al final queda
     menos de ese mínimo, se reparte todo.
-  - **Calzado unisex** usa los centrales de hombre y dama juntos (`calz-unisex`, editable).
+  - **Calzado unisex** usa los centrales de hombre y dama juntos (`calz-unisex`, editable). Pero si uno de los dos subrubros no tiene sus centrales completos (menos de 2 de los 3), el artículo se toma como del otro (MR530CK: 5.5/6/6.5 de dama y solo el 9 de hombre → dama; los talles de hombre van como el resto).
   - **Aurelius Calle 10 se trabaja como outlet** (`COMO_OUTLET` en `catDe`; en marcas `tipoDeSuc` → outlet):
     sale de los destinos por defecto del Reparto inicial y sigue las reglas de outlets en «Abrir».
   - **La Barrida respeta la ficha de la marca** (`fichaBloquea`): la reposición por venta, Completar curva y

@@ -3580,6 +3580,18 @@ function repCentrales(a, labels){
   const G=repGrupo(a);
   if(!G.fam) return { G, set:new Set(), regla:'accesorios: 1 unidad por talle' };
   const tabla=repCentralesTabla(); const mk=G.key+'|'+normMarca(a.marca);
+  // calzado unisex (Juli 14/09/2026): si uno de los dos subrubros no tiene sus centrales completos (menos de 2 de
+  // los 3), el artículo se toma como del otro: p.ej. MR530CK con 5.5/6/6.5 de dama y solo el 9 de hombre = dama,
+  // y los talles de hombre van como el resto (1 por sucursal)
+  if(G.key==='calz-unisex'){
+    const mm=normMarca(a.marca), L=new Set(labels.map(nrmT));
+    const dama=tabla['calz-dama|'+mm]||tabla['calz-dama']||[], homb=tabla['calz-hombre|'+mm]||tabla['calz-hombre']||[];
+    const cuenta=lst=>new Set(lst.map(nrmT).filter(t=>L.has(t))).size;
+    const dOk=cuenta(dama)>=2, hOk=cuenta(homb)>=2;
+    const usa = dOk && !hOk ? ['dama',dama] : hOk && !dOk ? ['hombre',homb] : null;
+    if(usa){ const S0=new Set(usa[1].map(nrmT)); const set=new Set(labels.filter(t=>S0.has(nrmT(t))));
+      if(set.size) return { G, set, regla:'calzado unisex tomado como '+usa[0]+' (el otro subrubro no tiene sus talles centrales completos)' }; }
+  }
   const lista = G.key ? (tabla[mk]||tabla[G.key]) : null;
   if(lista && lista.length){
     const L=new Set(lista.map(nrmT)); const set=new Set(labels.filter(t=>L.has(nrmT(t))));
@@ -3603,7 +3615,7 @@ function fichaDe(slug, marca, G){
   let f=F[rub][mk];
   if(!f){ const k=Object.keys(F[rub]).find(k=>Math.min(k.length,mk.length)>=3 && (k.startsWith(mk)||mk.startsWith(k))); f=k?F[rub][k]:null; }
   if(!f) return null;
-  const tipo = FICHA_TIPO_SLUG[slug] || (PRIO.cats||CAT_SEED)[slug];
+  const tipo = FICHA_TIPO_SLUG[slug] || catDe(slug);          // catDe: Aurelius 10 se trabaja como outlet
   const norm = b => ({ disc:fiLista(b&&b.disc), modelos:fiLista(b&&b.modelos), genero:fiLista(b&&b.genero), precioMax:Number(b&&b.precioMax)||0, nota:String((b&&b.nota)||''), plana:String((b&&b.plana)||''), orden:Number(b&&b.orden)||0, ninoLibre:!!(b&&b.ninoLibre), autoPct:Number(b&&b.autoPct)||0, sinModelos:fiLista(b&&b.sinModelos) });
   // Ecommerce se trabaja como un Cat 1 (Juli 13/09/2026): sin columna propia cargada, toma la de Cat 1
   const vacio=b=>!b || !(fiLista(b.disc).length||fiLista(b.modelos).length||fiLista(b.genero).length||b.nota||b.plana||b.orden||b.ninoLibre);
