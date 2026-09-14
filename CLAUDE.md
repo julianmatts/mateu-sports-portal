@@ -1564,7 +1564,12 @@ admin, «ficha de la marca ▸».
   `asegurarStockData` las baja (las cargas anteriores no las traen: con esas no hay alerta hasta volver a subir
   el stock). **Casual con la misma lógica (13/09/2026)**: `PARED_DISC = ['running','casual']` (`paredDisc`:
   casual/lifestyle/urbano); las columnas mínimas salen de la ficha de la marca (`pared:{running, casual}`,
-  editable en Asignación de Marcas → Fichas por marca, «Pared (columnas)», solo calzado; `paredCols`). Running
+  editable en Asignación de Marcas → Fichas por marca, «Pared (columnas)», solo calzado; `paredCols`).
+  **En la Barrida (14/09/2026)**: la pared incompleta también pesa en «Vaciar la reserva chica» (`cmpVaciado`:
+  niño → deportes → pared → `cmpPrioridad`) y en «Abrir a más sucursales» la sucursal con la pared incompleta
+  entra aunque tenga 6+ meses de stock de la marca. La reposición por venta y Completar curva no la usan (no
+  suman modelos nuevos). Mínimos de casual cargados: Adidas 4, Puma 2, Nike 2, 47 Street 2, Head 2, Atomik 2,
+  Le Coq Sportif 2. Running
   sin dato en la ficha usa la regla general; **casual sin dato no se controla**. Juli dicta los mínimos de
   casual marca por marca por chat y se cargan directo en las fichas.
 - **«Modelos automáticos» (13/09/2026, Puma en Aurelius; Juli eligió la regla automática antes que una lista

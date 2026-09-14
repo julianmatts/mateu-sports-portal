@@ -659,6 +659,15 @@ function fichaPrioMS(marca, rubro){
   const f=rub && F[rub] && F[rub][normMarca(marca)];
   return !!(f && f.prioMS);
 }
+// Vaciar la reserva chica (Juli 14/09/2026): después de niño y deportes, primero la sucursal con la pared de
+// exhibición incompleta de esa marca, disciplina y subrubro; después el orden de siempre
+function paredDeFila(r){ if(r._pw===undefined) r._pw=paredIncompleta(r.slug, r); return r._pw; }
+function cmpVaciado(a,b){
+  const na=ninoPrioDe(a), nb=ninoPrioDe(b); if(na!==nb) return na-nb;
+  const da=deportePrioDe(a), db=deportePrioDe(b); if(da!==db) return da-db;
+  const pa=paredDeFila(a)?0:1, pb=paredDeFila(b)?0:1; if(pa!==pb) return pa-pb;
+  return cmpPrioridad(a,b);
+}
 function cmpPrioridad(a,b){
   const na=ninoPrioDe(a), nb=ninoPrioDe(b); if(na!==nb) return na-nb;
   const da=deportePrioDe(a), db=deportePrioDe(b); if(da!==db) return da-db;
@@ -1407,7 +1416,7 @@ function aplicarVaciado(){
     });
   });
   Object.entries(porArt).forEach(([id,rows])=>{
-    const orden=rows.slice().sort(cmpPrioridad);
+    const orden=rows.slice().sort(cmpVaciado);          // la pared de exhibición incompleta pasa adelante
     orden.forEach((r,i)=>{ r.prio=i+1; r.prioDe=orden.length; });
     Object.entries(rows[0].resTalles||{}).forEach(([t,rq])=>{
       let disp=Math.max(0, rq-(usoRep[id+'|'+t]||0));
@@ -1509,7 +1518,7 @@ function aplicarAmpliar(){
     });
     // a la web de Aurelius no se le aplica el tope de meses de stock: su ratio es el de toda la web
     const cands=repCandidatos(A, G, destinos)
-      .filter(c=>c.asig && c.asig.tipo!=='sin' && (soloAur || !(c.pr && c.pr.ms!=null && c.pr.ms>=AMP_MS_EXCESO)));
+      .filter(c=>c.asig && c.asig.tipo!=='sin' && (soloAur || c.pared || !(c.pr && c.pr.ms!=null && c.pr.ms>=AMP_MS_EXCESO)));   // pared incompleta: se abre aunque tenga mucho stock de la marca
     if(!cands.length){ R.ampSinCand++; return; }
     // la que tiene 1 unidad suelta cuenta como que no lo tiene: recibe una curva de arranque entera
     // (si se le pasara lo que tiene, repRepartirArt la completaría de a un talle y quedaría una curva rota)
