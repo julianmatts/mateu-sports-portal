@@ -1543,6 +1543,22 @@ admin, «ficha de la marca ▸».
   de niño (Kids/Gonnet) y de deportes (D80/CB), va primero la sucursal con menos meses de stock de la marca,
   antes que la venta y la categoría (`fichaPrioMS`). Puma: todos los Mateu en todas las categorías, sin
   restricción de disciplina. Adidas y Nike (también estratégicas) todavía no lo tienen prendido.
+- **Paredes de exhibición de running (13/09/2026, Juli)**: los locales exhiben por pared (hombre de un lado,
+  dama del otro) dividida en sectores por disciplina, y cada marca necesita un mínimo de modelos para
+  destacarse. Columna = 9 apoyacalzados con cada modelo ×3 en vertical = 3 modelos (`PARED_MOD_COL`). Mínimo
+  en running: **Adidas 6 columnas (18 modelos), Nike y Puma 4 (12), el resto 2 (6)** (`PARED_COLS`,
+  `PARED_COLS_DEF`). Solo Mateu Cat 1 y Cat 2 (no Kids, Aurelius ni outlets). `calcParedes(stockRows)` cuenta
+  por sucursal × marca × subrubro (HOMBRE/DAMA; unisex en los dos) los artículos de calzado running con stock
+  en `PARED_MIN_TALLES` (2) talles o más, para las marcas con running en el stock cargado que la sucursal tiene
+  asignadas y cuya ficha deja running en ese subrubro (`repAsig` con un artículo sintético). Se muestra como
+  desplegable «🧱 Paredes de running incompletas» arriba de la Barrida de reserva y del resultado del Reparto
+  inicial (`paredesHtml`), y en `cmpReparto` la sucursal con la pared incompleta de esa marca-subrubro pasa
+  adelante (`paredIncompleta`, después de niño, «Prioridad» de la ficha y deportes; antes que meses de stock)
+  en el Reparto inicial y en «Abrir a más sucursales». Para contar hace falta marca/disciplina/subrubro de cada
+  artículo del stock por sucursal: desde este cambio `guardarStockSemana` guarda también
+  `stockSuc/<lunes>/partes/<firma>/metas/<id>` = `[marca, rubro, disciplina, subrubro, tipo]` y
+  `asegurarStockData` las baja (las cargas anteriores no las traen: con esas no hay alerta hasta volver a subir
+  el stock). Pendiente de Juli: los mínimos de casual y de otras disciplinas.
 - **«Modelos automáticos» (13/09/2026, Puma en Aurelius; Juli eligió la regla automática antes que una lista
   fija)**: campo `autoPct` del bloque de la ficha: al tipo de local le van los modelos que en los últimos
   `AUTO_MESES` (6) meses tuvieron ese % o más de sus envíos del depósito a ese tipo (sin contar outlets).

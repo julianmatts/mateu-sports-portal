@@ -933,15 +933,17 @@ const cargarFiles = fl => cargarFilesComo(null, fl);
    (un talle como "8.5" es ilegal de clave en Firebase). Si no hay archivo cargado, la barrida
    usa el guardado de la semana elegida (se baja recién al procesar). Un archivo nuevo lo pisa. */
 function stockDataDesdeHoja(fS){
-  const data={}, segs={}; let filas=0;
+  const data={}, segs={}, metas={}; let filas=0;
   filasDeHoja(fS).forEach(v=>{
     const m=NAME2SLUG[normName(v.suc)]; if(!m) return;
     const pares=Object.entries(v.talles).filter(([t,q])=>q>0).map(([t,q])=>[t,q]);
     if(!pares.length) return;
     const k=segDe(v.meta.marca, v.meta.rubro); if(!segs[k]) segs[k]={ marca:String(v.meta.marca||'').trim(), rubro:stripNN(v.meta.rubro) };
     const d=(data[v.id]=data[v.id]||{}); d[m.slug]=(d[m.slug]||[]).concat(pares); filas++;
+    // lo que hace falta para las paredes de exhibición (marca · rubro · disciplina · subrubro · tipo)
+    if(!metas[v.id]) metas[v.id]=[String(v.meta.marca||'').trim(), stripNN(v.meta.rubro), String(v.meta.disc||'').trim(), stripNN(v.meta.genero), String(v.meta.tipo||'').trim()];
   });
-  return {data, filas, segs};
+  return {data, filas, segs, metas};
 }
 // clave de la parte del stock guardado: sus marcas-rubros (así el stock de «Adidas · Calzado» de
 // la semana se reemplaza con el de Adidas calzado y no pisa el de Nike)
@@ -965,7 +967,9 @@ function stockRows(){
     const out=[];
     Object.entries(ss.data).forEach(([id,porSlug])=>{ Object.entries(porSlug||{}).forEach(([slug,pares])=>{
       const talles={}; (pares||[]).forEach(p=>{ if(p&&p.length>=2) talles[String(p[0])]=(talles[String(p[0])]||0)+num(p[1]); });
-      out.push({ id, slug, nombre:SLUG_SUC[slug]||OUTLET_SUC[slug]||slug, talles, meta:{} });
+      const mm=(ss.metas||{})[id];
+      out.push({ id, slug, nombre:SLUG_SUC[slug]||OUTLET_SUC[slug]||SUC_EXTRA[slug]||slug, talles,
+        meta: mm ? { marca:mm[0], rubro:mm[1], disc:mm[2], genero:mm[3], tipo:mm[4] } : {} });
     }); });
     return out;
   }
@@ -973,14 +977,14 @@ function stockRows(){
 }
 async function guardarStockSemana(){
   const fS=state.files.stock; if(!fS||!FIREBASE_DB_URL) return;
-  const {data,filas,segs}=stockDataDesdeHoja(fS);
+  const {data,filas,segs,metas}=stockDataDesdeHoja(fS);
   const marcas=Object.values(segs).map(sg=>segLbl(sg.marca,sg.rubro));
   const meta={ archivo:fS.archivo, hoja:fS.hoja, subido:nowISO(), por:SESSION.email||'', semana:state.semana, ids:Object.keys(data).length, filas,
     segs:Object.keys(segs), marcas };
   try{
     toast('Guardando el stock por sucursal de la semana…');
     // por partes (13/09/2026): cada marca-rubro reemplaza SU parte y deja las demás
-    await fbPut(ROOT+'/stockSuc/'+state.semana+'/partes/'+firmaSegs(segs), {meta, data});
+    await fbPut(ROOT+'/stockSuc/'+state.semana+'/partes/'+firmaSegs(segs), {meta, data, metas});
     state._stockGuardado=state.semana+'|'+fS.archivo;
     state.stockSem=null; await cargarStockSemana();
     toast('Stock por sucursal guardado para la semana del '+lunesLabel(state.semana)+(marcas.length&&marcas.length<=3?' · '+marcas.join(', '):'')+' ✓','ok');
@@ -1019,13 +1023,14 @@ async function asegurarStockData(){
   const ss=state.stockSem;
   if(state.files.stock || !ss || ss.data || ss.semana!==state.semana) return;
   toast('Bajando el stock por sucursal de la semana…');
-  const data={};
+  const data={}, metas={};
   // de la parte más vieja a la más nueva: si un artículo vino en dos cargas, manda la última
   for(const m of ((ss.meta&&ss.meta.partes)||[{k:null}])){
-    const ruta = m.k==null ? ROOT+'/stockSuc/'+ss.semana+'/data' : ROOT+'/stockSuc/'+ss.semana+'/partes/'+m.k+'/data';
-    Object.assign(data, (await conTimeout(fbGet(ruta),60000)) || {});
+    const base = m.k==null ? ROOT+'/stockSuc/'+ss.semana : ROOT+'/stockSuc/'+ss.semana+'/partes/'+m.k;
+    Object.assign(data, (await conTimeout(fbGet(base+'/data'),60000)) || {});
+    if(m.k!=null) Object.assign(metas, (await conTimeout(fbGet(base+'/metas'),60000).catch(()=>null)) || {});   // cargas desde el 13/09/2026
   }
-  ss.data=data;
+  ss.data=data; ss.metas=metas;
 }
 
 // Ventas ↔ stock por sucursal: mismo layout, así que si la detección por nombre se
@@ -1793,12 +1798,13 @@ function computar(histPrev, histSnaps){
   const segmentos={}; Object.values(reserva).forEach(R=>{ if(!(R.totalDepo>0)) return; const k=segDe(R.meta.marca, R.meta.rubro);
     if(!segmentos[k]) segmentos[k]={ marca:String(R.meta.marca||'').trim(), rubro:stripNN(R.meta.rubro), articulos:0 }; segmentos[k].articulos++; });
 
+  const paredes = calcParedes(sRows); if(paredes) PAREDES=paredes;   // paredes de running (Cat 1 y Cat 2)
   const sucSet = new Set(reposicion.map(r=>r.slug));
   const noVarios = a => !/varios|facturacion/i.test(a.rubro+' '+a.tipo);
   // "notable" = mejor vendido (>=3 u. en la semana), mismo umbral que el filtro por defecto de la vista Compras.
   const notable = c => c.vendido>=3 && noVarios(c);
   return {
-    reposicion, parada, compras, curva, vaciado, ampBase, ampliar:[], vacDejados:{}, vacArts:{}, curvaTalles, conStock:!!sRows, stockOrigen: fS ? 'archivo' : (sRows ? 'base' : ''), snapshot, segmentos,
+    reposicion, parada, compras, curva, vaciado, ampBase, ampliar:[], vacDejados:{}, vacArts:{}, curvaTalles, conStock:!!sRows, stockOrigen: fS ? 'archivo' : (sRows ? 'base' : ''), snapshot, segmentos, paredes,
     conDias, diasNuevo:N, nuevos:{ unidades:nuevosU, articulos:nuevosArts },
     tope:{ tope:TOPE, unidades:topeU, talles:topeTalles },
     totales:{
@@ -1968,6 +1974,7 @@ function viewReposicion(){
       ? 'SOLO los artículos de calzado e indumentaria con <b>hasta '+fv.max+' unidades</b> en todo el depósito: se baja lo que queda y dejan de vivir en la reserva. Destildá «Ver solo: Reserva chica» para ver todo el reparto.'
       : 'Lo que la sucursal vendió la última semana y hay en el depósito para bajarle, más <b>Completar curva</b>, <b>Vaciar la reserva chica</b> y <b>Abrir a más sucursales</b>, que se aplican solos. Abrí <b>¿Cómo se lee esta tabla?</b> para el detalle de los talles, la prioridad y las reglas.')
     +'</div></div></div>';
+  html+=paredesHtml(R.paredes);
   // ---- panel de filtros: arriba QUÉ MIRAR, abajo QUÉ MOSTRAR / QUÉ SUMAR ----
   // las opciones de tipo/disciplina/subrubro se acotan al rubro y la marca ya elegidos
   const rb = r => (!f.rubro||r.rubro===f.rubro)&&(!f.marca||r.marca===f.marca);
@@ -3639,7 +3646,7 @@ function repCandidatos(a, G, destinos){
     const asig=repAsig(slug, a, G); if(!asig) return;
     const vm=ventasMarcaDe(slug, a.marca, a.rubro);
     const kidsArt = G.g==='nino' || G.g==='infante';
-    out.push({ slug, sucNombre:nombreSuc(slug), asig, plana:!!asig.plana, ninoPrio:(kidsArt && NINO_PRIO[slug]) ? 0 : 1, deportePrio:(DEPORTE_PRIO[slug] && esDeporteEsp(a)) ? DEPORTE_PRIO[slug] : 9, prioMS:fichaPrioMS(a.marca, a.rubro), pr:prioInfo(slug, a.marca, a.rubro, a.genero),
+    out.push({ slug, sucNombre:nombreSuc(slug), asig, plana:!!asig.plana, ninoPrio:(kidsArt && NINO_PRIO[slug]) ? 0 : 1, deportePrio:(DEPORTE_PRIO[slug] && esDeporteEsp(a)) ? DEPORTE_PRIO[slug] : 9, prioMS:fichaPrioMS(a.marca, a.rubro), pared:paredIncompleta(slug, a), pr:prioInfo(slug, a.marca, a.rubro, a.genero),
       venta:vm?vm.v:0, ventaNivel:vm?vm.nivel:'', hist:P.memoria?repHistDe(a.id, slug):null });
   });
   // la venta pesa en tres niveles (alta / media / baja respecto de la que más vende): así los
@@ -3655,6 +3662,7 @@ function cmpReparto(a,b){
   const oa=(a.asig&&a.asig.orden)||99, ob=(b.asig&&b.asig.orden)||99;          // «Prioridad» de la ficha de la marca (1 = primera)
   if(oa!==ob) return oa-ob;
   if((a.deportePrio||9)!==(b.deportePrio||9)) return (a.deportePrio||9)-(b.deportePrio||9); // deportes: Diagonal 80, City Bell
+  if(!!a.pared!==!!b.pared) return a.pared ? -1 : 1;                           // pared de running incompleta: completarla
   if(a.prioMS && b.prioMS){                                                    // marca estratégica: por meses de stock
     const ma=(a.pr&&a.pr.ms!=null)?a.pr.ms:Infinity, mb=(b.pr&&b.pr.ms!=null)?b.pr.ms:Infinity; if(ma!==mb) return ma-mb; }
   const ha=a.hist?0:1, hb=b.hist?0:1; if(ha!==hb) return ha-hb;               // ya lo recibió: se le completa primero
@@ -3668,6 +3676,7 @@ function cmpReparto(a,b){
 }
 function repPrioTxt(l){
   const p=l.pr||{}, partes=[];
+  if(l.pared) partes.push('pared de running de '+l.pared.marca+' '+(l.pared.gen==='DAMA'?'dama':'hombre')+' incompleta: tiene '+l.pared.tiene+' modelos de '+l.pared.min);
   if(l.hist) partes.push('ya recibió este artículo (se le completa la curva)');
   if(l.asig) partes.push((ASIG_LBL[l.asig.tipo]||l.asig.tipo)+(l.asig.nota?' ('+l.asig.nota+')':''));
   if(p.cat) partes.push(CAT_LABEL[p.cat]||p.cat);
@@ -3734,6 +3743,74 @@ function repRepartirArt(perRem, cands, central, P){
   });
   left.forEach((l,i)=>Object.entries(l).forEach(([t,q])=>{ if(q>0) quedaRem[i][t]=(quedaRem[i][t]||0)+q; }));
   return { lineas, quedaRem, avail };
+}
+
+/* ---------- Paredes de exhibición de running (13/09/2026, pedido de Juli) ----------
+   Los locales exhiben por pared: un lado hombre, el otro dama; cada pared en sectores por disciplina
+   (running y casual son los más grandes) y dentro de cada sector cada marca necesita un mínimo de
+   modelos para destacarse. Columna = 9 apoyacalzados con cada modelo ×3 en vertical = 3 modelos por
+   columna. Mínimo en running: Adidas 6 columnas (18 modelos), Nike y Puma 4 (12), el resto 2 (6).
+   Solo Mateu Cat 1 y Cat 2 (no Kids, no Aurelius, no outlets). Cuenta cada artículo (cada color) con
+   stock en PARED_MIN_TALLES talles o más; un unisex cuenta en hombre y en dama. Se exige a las marcas
+   con running en el stock cargado que la sucursal tiene asignadas y cuya ficha deja running en ese
+   subrubro (repAsig). Se muestra como alerta y, en el Reparto inicial y en «Abrir a más sucursales»,
+   la sucursal con la pared incompleta pasa adelante con esa marca. */
+const PARED_MOD_COL = 3;                               // 9 apoyacalzados ÷ cada modelo ×3 en vertical
+const PARED_COLS = { adidas:6, nike:4, puma:4 };       // columnas mínimas; las demás marcas (2.º nivel) PARED_COLS_DEF
+const PARED_COLS_DEF = 2, PARED_MIN_TALLES = 2;
+let PAREDES = null;                                    // { semana, lista:[…], inc:{'slug|marca|GEN':…}, marcas }
+function paredMin(marca){ return (PARED_COLS[normMarca(marca)]||PARED_COLS_DEF) * PARED_MOD_COL; }
+function paredGeneros(genero){
+  const g=sinAcento(stripNN(genero)).toUpperCase();
+  return /DAMA|MUJER|FEMEN/.test(g) ? ['DAMA'] : /HOMBRE|MASCUL/.test(g) ? ['HOMBRE'] : /UNISEX/.test(g) ? ['HOMBRE','DAMA'] : [];
+}
+const paredRunning = m => !!m && /CALZ/i.test(sinAcento(stripNN(m.rubro||''))) && /running/i.test(sinAcento(m.disc||''));
+function paredSlugs(){ return Object.keys(REP_SUC).filter(sl=>sl!=='kids' && ['cat1','cat2'].includes(catDe(sl))); }
+function calcParedes(rows){
+  if(!rows || !rows.some(v=>v.meta && v.meta.marca)) return null;
+  const tiene={}, marcas={};
+  rows.forEach(v=>{
+    const m=v.meta||{}; if(!paredRunning(m)) return;
+    const mk=normMarca(m.marca); if(!mk) return; marcas[mk]=String(m.marca).trim();
+    if(Object.values(v.talles||{}).filter(q=>q>0).length < PARED_MIN_TALLES) return;
+    paredGeneros(m.genero).forEach(g=>{ const k=v.slug+'|'+mk+'|'+g; (tiene[k]=tiene[k]||new Set()).add(v.id); });
+  });
+  const lista=[], inc={};
+  paredSlugs().forEach(slug=>Object.entries(marcas).forEach(([mk,marca])=>['HOMBRE','DAMA'].forEach(g=>{
+    const G={ fam:'calz', g:g==='DAMA'?'dama':'hombre' }; G.key='calz-'+G.g;
+    const asig=repAsig(slug, { marca, rubro:'CALZADO', genero:g, disc:'RUNNING', tipo:'CALZADO ADULTO', desc:'' }, G);
+    if(!asig || asig.tipo==='sin') return;                       // la marca no va a esa pared
+    const n=(tiene[slug+'|'+mk+'|'+g]||new Set()).size, min=paredMin(marca);
+    if(n>=min) return;
+    const o={ slug, sucNombre:stripNN(nombreSuc(slug)), marca, gen:g, tiene:n, min, falta:min-n, col:Math.floor(n/PARED_MOD_COL), colMin:min/PARED_MOD_COL };
+    lista.push(o); inc[slug+'|'+mk+'|'+g]=o;
+  })));
+  lista.sort((a,b)=>cmp(a.sucNombre,b.sucNombre) || cmp(a.gen,b.gen) || b.falta-a.falta);
+  return { semana:state.semana, lista, inc, marcas:Object.values(marcas) };
+}
+// ¿esa sucursal tiene incompleta la pared de running de la marca y subrubro del artículo?
+function paredIncompleta(slug, a){
+  if(!PAREDES || !paredRunning(a)) return null;
+  const mk=normMarca(a.marca);
+  for(const g of paredGeneros(a.genero)){ const o=PAREDES.inc[slug+'|'+mk+'|'+g]; if(o) return o; }
+  return null;
+}
+function paredesHtml(P){
+  if(!P) return '';
+  const L=P.lista||[];
+  if(!L.length) return '<details class="ayuda"><summary>🧱 Paredes de running: todas las marcas llegan al mínimo en Cat 1 y Cat 2 ('+fmtInt((P.marcas||[]).length)+' marcas con running en el stock cargado)</summary></details>';
+  const nSuc=new Set(L.map(o=>o.slug)).size;
+  const th='style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border,#dce3f0);font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted,#6B7A99)"';
+  const td='style="padding:3px 8px;border-bottom:1px solid var(--line,#e7ecf5)"';
+  return '<details class="ayuda"><summary>🧱 Paredes de running incompletas: <b>'+L.length+'</b> sectores en <b>'+nSuc+'</b> sucursales</summary><div class="card-hs">'
+    +'Mínimo de modelos por marca × subrubro en running (Mateu Cat 1 y Cat 2): una columna son 9 apoyacalzados con cada modelo ×3 = <b>3 modelos</b>. '
+    +'Adidas <b>6 columnas</b> (18 modelos), Nike y Puma <b>4</b> (12), el resto <b>2</b> (6). Cuenta cada artículo con stock en '+PARED_MIN_TALLES+' talles o más, según el stock por sucursal cargado. '
+    +'En el Reparto inicial y en «Abrir a más sucursales» estas sucursales pasan adelante con esa marca.'
+    +'<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;min-width:520px"><thead><tr><th '+th+'>Sucursal</th><th '+th+'>Marca</th><th '+th+'>Subrubro</th><th '+th+'>Tiene</th><th '+th+'>Mínimo</th><th '+th+'>Faltan</th></tr></thead><tbody>'
+    +L.map(o=>'<tr><td '+td+'>'+esc(o.sucNombre)+'</td><td '+td+'><b>'+esc(o.marca)+'</b></td><td '+td+'>'+(o.gen==='DAMA'?'Dama':'Hombre')+'</td>'
+      +'<td '+td+'>'+o.tiene+' modelos <small style="opacity:.7">('+o.col+' col.)</small></td><td '+td+'>'+o.min+' <small style="opacity:.7">('+o.colMin+' col.)</small></td>'
+      +'<td '+td+'><b style="color:var(--bad,#c0392b)">'+o.falta+'</b></td></tr>').join('')
+    +'</tbody></table></div></div></details>';
 }
 
 /* ---------- cálculo del reparto de los remitos elegidos ---------- */
@@ -3817,6 +3894,8 @@ async function repArmar(){
   if(!S.data.conTalles && !repFuenteReserva()){ toast('Para abrir por talle falta el reporte de stock del depósito (el mismo de la Barrida)','err'); return; }
   if(!PRIO.cargado){ toast('Cargando asignación de marcas, categorías y meses de stock…'); try{ await conTimeout(cargarPrioridad(),20000); }catch(e){ PRIO.cargado=true; } }
   if(!S.cargado) await repCargarMemoria();
+  // paredes de running: con el stock por sucursal de la semana (archivo cargado o guardado)
+  try{ await asegurarStockData(); if(!PAREDES || PAREDES.semana!==state.semana){ const pw=calcParedes(stockRows()); if(pw) PAREDES=pw; } }catch(e){}
   try{ S.res=repCalcular(); S.abierto=null; S.selOpen=false; S.vista='remito'; render(); toast('Reparto armado','ok'); }
   catch(e){ console.error(e); toast('Error al armar el reparto: '+(e.message||e),'err'); }
 }
@@ -4087,6 +4166,7 @@ function repResultadoHtml(){
     +(T.faltan?'<span title="La reserva del depósito que se cargó tiene menos unidades que las que entraron por estos remitos: esas ya salieron (o el stock es de antes del ingreso). Se reparte lo que hay."><b>'+fmtInt(T.faltan)+'</b> u. de los remitos ya no están en la reserva</span>':'')
     +(T.sinRemito?'<span class="c-nuevo" title="Tienen compra de hace menos de '+T.dias+' días en el reporte de stock y no figuran en ningún remito de la lista: la Barrida los deja por nuevos, así que se reparten acá."><b>'+fmtInt(T.sinRemito)+'</b> artículos nuevos sin remito</span>':'')
     +'<span style="margin-left:auto">'+(R.guardadoKey?'<span class="ok" style="color:var(--ok);font-weight:700">✓ guardado</span>':'<span style="color:var(--warn);font-weight:700">sin guardar</span>')+'</span></div>';
+  if(!S.abierto) h+=paredesHtml(PAREDES);
   h+='<div class="segbar">'+[['remito','Por remito',T.remitos],['sucursal','Por sucursal',T.sucursales||0],['sin','Sin repartir',T.sinRep||0]]
     .filter(([k])=>k!=='sin'||!S.abierto).map(([k,l,n])=>'<button data-rvista="'+k+'" class="'+(S.vista===k?'on':'')+'">'+l+' <span class="n">'+fmtInt(n)+'</span></button>').join('')+'</div>';
   if(S.vista==='sucursal') h+=repVistaSuc(); else if(S.vista==='sin') h+=repVistaSin(); else h+=repVistaRemitos();
