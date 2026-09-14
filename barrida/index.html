@@ -3578,14 +3578,14 @@ function fichaDe(slug, marca, G){
   if(!f){ const k=Object.keys(F[rub]).find(k=>Math.min(k.length,mk.length)>=3 && (k.startsWith(mk)||mk.startsWith(k))); f=k?F[rub][k]:null; }
   if(!f) return null;
   const tipo = FICHA_TIPO_SLUG[slug] || (PRIO.cats||CAT_SEED)[slug];
-  const norm = b => ({ disc:fiLista(b&&b.disc), modelos:fiLista(b&&b.modelos), genero:fiLista(b&&b.genero), precioMax:Number(b&&b.precioMax)||0, nota:String((b&&b.nota)||''), plana:String((b&&b.plana)||''), orden:Number(b&&b.orden)||0, ninoLibre:!!(b&&b.ninoLibre), autoPct:Number(b&&b.autoPct)||0 });
+  const norm = b => ({ disc:fiLista(b&&b.disc), modelos:fiLista(b&&b.modelos), genero:fiLista(b&&b.genero), precioMax:Number(b&&b.precioMax)||0, nota:String((b&&b.nota)||''), plana:String((b&&b.plana)||''), orden:Number(b&&b.orden)||0, ninoLibre:!!(b&&b.ninoLibre), autoPct:Number(b&&b.autoPct)||0, sinModelos:fiLista(b&&b.sinModelos) });
   // Ecommerce se trabaja como un Cat 1 (Juli 13/09/2026): sin columna propia cargada, toma la de Cat 1
   const vacio=b=>!b || !(fiLista(b.disc).length||fiLista(b.modelos).length||fiLista(b.genero).length||b.nota||b.plana||b.orden||b.ninoLibre);
   const bloque = (tipo==='ecom' && vacio(f.tipos&&f.tipos.ecom)) ? (f.tipos&&f.tipos.cat1) : (f.tipos&&f.tipos[tipo]);
   const out=norm(bloque); out.tipo=tipo;
   const id=SLUG2MARCAS[slug], exc=id&&f.exc&&f.exc[id];
-  if(exc){ const e=norm(exc); ['disc','modelos','genero'].forEach(c=>{ if(e[c].length) out[c]=e[c]; }); if(e.precioMax>0) out.precioMax=e.precioMax; if(e.nota.trim()) out.nota=e.nota; if(e.plana) out.plana=e.plana; if(e.orden>0) out.orden=e.orden; if(e.ninoLibre) out.ninoLibre=true; if(e.autoPct>0) out.autoPct=e.autoPct; }
-  return (out.disc.length||out.modelos.length||out.genero.length||out.nota.trim()||out.plana||out.orden||out.ninoLibre||out.autoPct) ? out : null;
+  if(exc){ const e=norm(exc); ['disc','modelos','genero'].forEach(c=>{ if(e[c].length) out[c]=e[c]; }); if(e.precioMax>0) out.precioMax=e.precioMax; if(e.nota.trim()) out.nota=e.nota; if(e.plana) out.plana=e.plana; if(e.orden>0) out.orden=e.orden; if(e.ninoLibre) out.ninoLibre=true; if(e.autoPct>0) out.autoPct=e.autoPct; if(e.sinModelos.length) out.sinModelos=e.sinModelos; }
+  return (out.disc.length||out.modelos.length||out.genero.length||out.nota.trim()||out.plana||out.orden||out.ninoLibre||out.autoPct||out.sinModelos.length) ? out : null;
 }
 // chip de la ficha → cómo lo escribe el sistema (13/09/2026, cruzado con las disciplinas reales de
 // Adidas: «Sandalias» = CALZADO VERANO, «Pádel» = PADDLE, «Fútbol» = FUTBOL 11 / FUTBOL 5…)
@@ -3608,6 +3608,11 @@ function fichaOutletLinea(marca, G){
 }
 // ¿el artículo entra en lo que la ficha dice que va a esa sucursal? (el precio no: los reportes no lo traen)
 function fichaPasa(fe, a, G){
+  // «Modelos que no van» (Juli 14/09/2026: los modelos de New Balance exclusivos de Aurelius no van a Mateu)
+  if(fe.sinModelos && fe.sinModelos.length){
+    const t0=sinAcento([a.desc,a.disc,a.tipo].filter(Boolean).join(' ')).toLowerCase();
+    if(fe.sinModelos.some(m=>{ const k=sinAcento(m).toLowerCase().trim(); return k && t0.includes(k); })) return false;
+  }
   if(fe.genero.length && G.g){
     const gs=fe.genero.map(x=>sinAcento(x).toLowerCase());
     const ok = (G.g==='nino'||G.g==='infante') ? gs.some(x=>x.startsWith('nin'))
