@@ -520,8 +520,58 @@ async function cargarFichasMarcas(){
   catch(e){ PRIO.fichas={}; }
   return PRIO.fichas;
 }
+// «Modelos automáticos» de la ficha (autoPct, 13/09/2026, Puma en Aurelius): un modelo va a un tipo de local
+// si en los últimos AUTO_MESES meses al menos autoPct % de lo que el depósito mandó de ese modelo fue a ese
+// tipo (sin contar outlets). Sale de logística (envíos por artículo × sucursal); se calcula una vez por mes
+// nuevo de logística y queda guardado en barrida/modelosTipo, así no se baja el maestro cada vez.
+const LOGI='logistica', AUTO_MESES=6, AUTO={ data:null };
+function modeloDe(desc){
+  const w=sinAcento(String(desc||'')).toUpperCase().replace(/^[^A-Z0-9]+/,'').split(/\s+/)
+    .filter(t=>t && !/^(WNS|JR|PS|INF|TD|GS|BB|KID|KIDS)$/.test(t));
+  return w.slice(0,2).join(' ');
+}
+function fichasConAuto(){
+  const F=PRIO.fichas||{};
+  return Object.values(F).some(r=>Object.values(r||{}).some(f=>f && [].concat(Object.values(f.tipos||{}), Object.values(f.exc||{})).some(b=>b && Number(b.autoPct)>0)));
+}
+async function cargarAutoModelos(){
+  if(AUTO.data || !fichasConAuto()) return AUTO.data;
+  try{
+    const ks=await conTimeout(fbGet(LOGI+'/meses','shallow=true'),8000);
+    const meses=Object.keys(ks||{}).sort().slice(-AUTO_MESES); if(!meses.length) return null;
+    const ult=meses[meses.length-1];
+    const cache=await conTimeout(fbGet(ROOT+'/modelosTipo'),15000).catch(()=>null);
+    if(cache && cache.mes===ult && cache.data){ AUTO.data=cache.data; return AUTO.data; }
+    const [arts, ...envs]=await Promise.all([conTimeout(fbGet(LOGI+'/arts'),60000)]
+      .concat(meses.map(ym=>conTimeout(fbGet(LOGI+'/meses/'+ym+'/envios'),60000).catch(()=>null))));
+    const n2s={}; Object.entries(Object.assign({}, SLUG_SUC, OUTLET_SUC, SUC_EXTRA)).forEach(([sl,n])=>{ n2s[normName(n)]=sl; });
+    const data={};
+    envs.forEach(e=>{ (Array.isArray(e)?e:Object.values(e||{})).forEach(r=>{
+      if(!r) return; const A=arts && arts[r[0]]; if(!A) return;
+      const rub=/CALZ/i.test(A[0])?'calzado':/INDUM/i.test(A[0])?'indumentaria':''; if(!rub) return;
+      const sl=n2s[normName(r[1])]; if(!sl) return;
+      const tipo=FICHA_TIPO_SLUG[sl] || catDe(sl); if(!tipo) return;
+      const mk=normMarca(A[3]), mod=modeloDe(A[5]); if(!mk || !mod) return;
+      const byM=(data[rub]=data[rub]||{}), byMod=(byM[mk]=byM[mk]||{}), o=(byMod[repKey(mod)]=byMod[repKey(mod)]||{});
+      o[tipo]=(o[tipo]||0)+(Number(r[2])||0);
+    }); });
+    AUTO.data=data;
+    fbPut(ROOT+'/modelosTipo', { mes:ult, meses, generado:nowISO(), data }).catch(()=>{});
+    return data;
+  }catch(e){ return null; }
+}
+// parte de los envíos del modelo del artículo que fue a ese tipo de local (null = sin historia)
+function autoShare(marca, rubro, desc, tipo){
+  const D=AUTO.data; if(!D) return null;
+  const r=sinAcento(stripNN(rubro)).toUpperCase(), rub=/CALZ/.test(r)?'calzado':/INDUM/.test(r)?'indumentaria':'';
+  const byM=rub && D[rub] && D[rub][normMarca(marca)]; const o=byM && byM[repKey(modeloDe(desc))];
+  if(!o) return null;
+  const tot=Object.entries(o).filter(([t])=>t!=='outlet').reduce((x,[,u])=>x+(Number(u)||0),0);
+  return tot>0 ? (Number(o[tipo])||0)/tot : null;
+}
 async function cargarCategorias(){
   await cargarFichasMarcas();
+  await cargarAutoModelos();
   if(PRIO.cats) return PRIO.cats;
   try{
     const r=await conTimeout(fetch(FB_MARCAS),6000); if(!r.ok) throw new Error('HTTP '+r.status);
@@ -3495,14 +3545,14 @@ function fichaDe(slug, marca, G){
   if(!f){ const k=Object.keys(F[rub]).find(k=>Math.min(k.length,mk.length)>=3 && (k.startsWith(mk)||mk.startsWith(k))); f=k?F[rub][k]:null; }
   if(!f) return null;
   const tipo = FICHA_TIPO_SLUG[slug] || (PRIO.cats||CAT_SEED)[slug];
-  const norm = b => ({ disc:fiLista(b&&b.disc), modelos:fiLista(b&&b.modelos), genero:fiLista(b&&b.genero), precioMax:Number(b&&b.precioMax)||0, nota:String((b&&b.nota)||''), plana:String((b&&b.plana)||''), orden:Number(b&&b.orden)||0, ninoLibre:!!(b&&b.ninoLibre) });
+  const norm = b => ({ disc:fiLista(b&&b.disc), modelos:fiLista(b&&b.modelos), genero:fiLista(b&&b.genero), precioMax:Number(b&&b.precioMax)||0, nota:String((b&&b.nota)||''), plana:String((b&&b.plana)||''), orden:Number(b&&b.orden)||0, ninoLibre:!!(b&&b.ninoLibre), autoPct:Number(b&&b.autoPct)||0 });
   // Ecommerce se trabaja como un Cat 1 (Juli 13/09/2026): sin columna propia cargada, toma la de Cat 1
   const vacio=b=>!b || !(fiLista(b.disc).length||fiLista(b.modelos).length||fiLista(b.genero).length||b.nota||b.plana||b.orden||b.ninoLibre);
   const bloque = (tipo==='ecom' && vacio(f.tipos&&f.tipos.ecom)) ? (f.tipos&&f.tipos.cat1) : (f.tipos&&f.tipos[tipo]);
-  const out=norm(bloque);
+  const out=norm(bloque); out.tipo=tipo;
   const id=SLUG2MARCAS[slug], exc=id&&f.exc&&f.exc[id];
-  if(exc){ const e=norm(exc); ['disc','modelos','genero'].forEach(c=>{ if(e[c].length) out[c]=e[c]; }); if(e.precioMax>0) out.precioMax=e.precioMax; if(e.nota.trim()) out.nota=e.nota; if(e.plana) out.plana=e.plana; if(e.orden>0) out.orden=e.orden; if(e.ninoLibre) out.ninoLibre=true; }
-  return (out.disc.length||out.modelos.length||out.genero.length||out.nota.trim()||out.plana||out.orden||out.ninoLibre) ? out : null;
+  if(exc){ const e=norm(exc); ['disc','modelos','genero'].forEach(c=>{ if(e[c].length) out[c]=e[c]; }); if(e.precioMax>0) out.precioMax=e.precioMax; if(e.nota.trim()) out.nota=e.nota; if(e.plana) out.plana=e.plana; if(e.orden>0) out.orden=e.orden; if(e.ninoLibre) out.ninoLibre=true; if(e.autoPct>0) out.autoPct=e.autoPct; }
+  return (out.disc.length||out.modelos.length||out.genero.length||out.nota.trim()||out.plana||out.orden||out.ninoLibre||out.autoPct) ? out : null;
 }
 // chip de la ficha → cómo lo escribe el sistema (13/09/2026, cruzado con las disciplinas reales de
 // Adidas: «Sandalias» = CALZADO VERANO, «Pádel» = PADDLE, «Fútbol» = FUTBOL 11 / FUTBOL 5…)
@@ -3533,11 +3583,15 @@ function fichaPasa(fe, a, G){
   }
   // «Niño: cualquier disciplina o modelo» (p.ej. Fila en Cat 2: adulto solo running, niño todo)
   const kidsArt = G.g==='nino' || G.g==='infante';
-  if(state.rep.param.respetarDisc && (fe.disc.length || fe.modelos.length) && !(kidsArt && fe.ninoLibre)){
+  if(state.rep.param.respetarDisc && (fe.disc.length || fe.modelos.length || fe.autoPct>0) && !(kidsArt && fe.ninoLibre)){
     const disc=sinAcento(a.disc||'').toLowerCase(), txt=sinAcento([a.desc,a.disc,a.tipo].filter(Boolean).join(' ')).toLowerCase();
     const okD=fe.disc.some(d=>fichaDiscRx(d).test(txt));
-    const okM=fe.modelos.some(m=>{ const k=sinAcento(m).toLowerCase().trim(); return k && txt.includes(k); });
-    if(!okD && !okM) return !disc && !fe.modelos.length;    // sin disciplina en el artículo no se puede descartar
+    let okM=fe.modelos.some(m=>{ const k=sinAcento(m).toLowerCase().trim(); return k && txt.includes(k); });
+    if(!okM && fe.autoPct>0){
+      if(!AUTO.data) okM=true;                                  // sin datos de logística no se puede evaluar: no se descarta
+      else { const sh=autoShare(a.marca, a.rubro, a.desc, fe.tipo); okM = sh!=null && sh >= fe.autoPct/100; }
+    }
+    if(!okD && !okM) return !disc && !fe.modelos.length && !(fe.autoPct>0);    // sin disciplina en el artículo no se puede descartar
   }
   return true;
 }

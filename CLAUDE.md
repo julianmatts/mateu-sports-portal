@@ -1543,6 +1543,15 @@ admin, «ficha de la marca ▸».
   de niño (Kids/Gonnet) y de deportes (D80/CB), va primero la sucursal con menos meses de stock de la marca,
   antes que la venta y la categoría (`fichaPrioMS`). Puma: todos los Mateu en todas las categorías, sin
   restricción de disciplina. Adidas y Nike (también estratégicas) todavía no lo tienen prendido.
+- **«Modelos automáticos» (13/09/2026, Puma en Aurelius; Juli eligió la regla automática antes que una lista
+  fija)**: campo `autoPct` del bloque de la ficha: al tipo de local le van los modelos que en los últimos
+  `AUTO_MESES` (6) meses tuvieron ese % o más de sus envíos del depósito a ese tipo (sin contar outlets).
+  Barrida lo calcula desde logística (`logistica/arts` + `logistica/meses/<ym>/envios`, sucursal → slug →
+  tipo) agrupando por modelo = dos primeras palabras de la descripción (`modeloDe`, sin WNS/JR/PS…), una vez
+  por mes nuevo de logística, y lo guarda en `barrida/modelosTipo` = `{mes, meses, generado, data:{<rubro>:
+  {<marca>:{<modelo>:{<tipo>:u}}}}}` (`cargarAutoModelos` / `autoShare`). Un modelo sin historia no entra (se
+  agrega a mano en «Modelos puntuales», que suma con la regla); sin datos de logística no se descarta nada.
+  Puma → Aurelius con 50 %.
 - **Meses de stock por SUBRUBRO (13/09/2026, Juli: «ver por rubro, disciplina y subrubro para abastecer a
   las que menos cobertura tienen»)**: `mesesStockDe(slug, marca, rubro, genero)` toma primero el segmento de
   la marca del género del artículo (DAMA / HOMBRE / NIÑO / INFANTE / UNISEX de `datos-meses-stock.js`), después

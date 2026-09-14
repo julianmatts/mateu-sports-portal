@@ -2029,7 +2029,7 @@ const FICHA_DISC = {
 const FICHA_DISC_AYUDA = { 'Fútbol':'FUTBOL 11 y FUTBOL 5 del sistema', 'Sandalias':'CALZADO VERANO del sistema (sandalias, ojotas)', 'Pádel':'PADDLE en el sistema',
   'Outdoor':'OUTDOOR / TREKKING', 'Casual':'CASUAL / LIFESTYLE' };
 const FICHA_GEN = ['Hombre','Dama','Unisex','Niño'];
-const FICHA_CAMPOS = ['disc','modelos','genero','precioMax','nota','plana','orden','ninoLibre','comoLinea'];
+const FICHA_CAMPOS = ['disc','modelos','genero','precioMax','nota','plana','orden','ninoLibre','comoLinea','autoPct'];
 // curva: '' = la del reparto (centrales x2) · 'nino' = x1 plana en niño · 'todo' = x1 plana en todo
 const FICHA_PLANA = { '':'Normal (centrales x2)', nino:'x1 plana en niño', todo:'x1 plana en todo' };
 let FICHAS = { calzado:{}, indumentaria:{} };
@@ -2040,8 +2040,8 @@ const fiArr = x => Array.isArray(x) ? x.filter(v => v != null && v !== '') : (x 
 function tipoDeSuc(s){ return s.id === 'ms-kids' ? 'kids' : s.id === 'ms-ecom' ? 'ecom' : s.cat; }
 function tipoLbl(k){ const t = TIPOS_LOCAL.find(x => x.k === k); return t ? t.l : k; }
 function sucsDelRubro(){ const out = []; Object.values(DATA).forEach(c => (c.sucursales || []).forEach(x => out.push(x))); return out; }
-function normBloque(b){ b = b || {}; return { disc:fiArr(b.disc), modelos:fiArr(b.modelos), genero:fiArr(b.genero), precioMax:Number(b.precioMax) || 0, nota:String(b.nota || ''), plana:FICHA_PLANA[b.plana] && b.plana ? b.plana : '', orden:Math.max(0, Math.round(Number(b.orden) || 0)), ninoLibre:!!b.ninoLibre, comoLinea:!!b.comoLinea }; }
-function bloqueVacio(b){ return !b || (!fiArr(b.disc).length && !fiArr(b.modelos).length && !fiArr(b.genero).length && !(Number(b.precioMax) > 0) && !String(b.nota || '').trim() && !b.plana && !(Number(b.orden) > 0) && !b.ninoLibre && !b.comoLinea); }
+function normBloque(b){ b = b || {}; return { disc:fiArr(b.disc), modelos:fiArr(b.modelos), genero:fiArr(b.genero), precioMax:Number(b.precioMax) || 0, nota:String(b.nota || ''), plana:FICHA_PLANA[b.plana] && b.plana ? b.plana : '', orden:Math.max(0, Math.round(Number(b.orden) || 0)), ninoLibre:!!b.ninoLibre, comoLinea:!!b.comoLinea, autoPct:Math.min(100, Math.max(0, Math.round(Number(b.autoPct) || 0))) }; }
+function bloqueVacio(b){ return !b || (!fiArr(b.disc).length && !fiArr(b.modelos).length && !fiArr(b.genero).length && !(Number(b.precioMax) > 0) && !String(b.nota || '').trim() && !b.plana && !(Number(b.orden) > 0) && !b.ninoLibre && !b.comoLinea && !(Number(b.autoPct) > 0)); }
 
 async function fichasCargar(){
   try {
@@ -2059,7 +2059,7 @@ function fichaEfectiva(marca, suc, rubro){
   const tipo = tipoDeSuc(suc), propio = f.tipos && f.tipos[tipo];
   const out = Object.assign(normBloque(tipo === 'ecom' && bloqueVacio(propio) ? (f.tipos && f.tipos.cat1) : propio), { exc:[] });
   const exc = f.exc && f.exc[suc.id] ? normBloque(f.exc[suc.id]) : null;
-  if (exc) FICHA_CAMPOS.forEach(c => { const v = exc[c]; if (Array.isArray(v) ? v.length : ((c === 'precioMax' || c === 'orden') ? v > 0 : (c === 'ninoLibre' || c === 'comoLinea') ? v === true : String(v).trim())) { out[c] = v; out.exc.push(c); } });
+  if (exc) FICHA_CAMPOS.forEach(c => { const v = exc[c]; if (Array.isArray(v) ? v.length : ((c === 'precioMax' || c === 'orden' || c === 'autoPct') ? v > 0 : (c === 'ninoLibre' || c === 'comoLinea') ? v === true : String(v).trim())) { out[c] = v; out.exc.push(c); } });
   return bloqueVacio(out) ? null : out;
 }
 const fmtPesos = n => '$' + Math.round(n).toLocaleString('es-AR');
@@ -2071,6 +2071,7 @@ function fichaResumenHtml(suc, marca){
     + fila('Modelos', e.modelos.map(escapeHtml).join(' · '), 'modelos')
     + fila('Género', e.genero.map(escapeHtml).join(' · '), 'genero')
     + fila('Precio', e.precioMax > 0 ? 'hasta ' + fmtPesos(e.precioMax) + ' de PVP' : '', 'precioMax')
+    + fila('Modelos auto', e.autoPct > 0 ? 'los que tuvieron ' + e.autoPct + ' % o más de sus envíos a este tipo de local (6 meses)' : '', 'autoPct')
     + fila('Outlet', e.comoLinea ? 'recibe como local de línea' : '', 'comoLinea')
     + fila('Niño', e.ninoLibre ? 'cualquier disciplina o modelo' : '', 'ninoLibre')
     + fila('Curva', e.plana ? escapeHtml(FICHA_PLANA[e.plana]) : '', 'plana')
@@ -2137,6 +2138,7 @@ function fiColHtml(sc, id, titulo, sucs, puede, sub){
   if (puede) h += '<input class="disc-input fi-in" placeholder="+ otra disciplina" ' + at('add', ' data-campo="disc"') + '>';
   h += '<div class="fi-lbl">Modelos puntuales</div><div class="fi-chips">' + (b.modelos.length ? b.modelos.map((v, i) => tag('modelos', v, i)).join('') : '<span class="fi-dim">todos</span>') + '</div>';
   if (puede) h += '<input class="disc-input fi-in" placeholder="+ modelo (Enter)" ' + at('add', ' data-campo="modelos"') + '>';
+  h += '<div class="fi-lbl">Modelos automáticos <span class="fi-dim">· % de los envíos de los últimos 6 meses</span></div><input class="form-input fi-num" type="number" min="0" max="100" step="5" placeholder="apagado" title="Van los modelos que en los últimos 6 meses tuvieron este % o más de sus envíos a este tipo de local (sin outlets). Sale de Envíos e Ingresos." value="' + (b.autoPct > 0 ? b.autoPct : '') + '" ' + at('set', ' data-campo="autoPct"') + (puede ? '' : ' disabled') + '>';
   h += '<div class="fi-lbl">Género</div><div class="fi-chips">' + FICHA_GEN.map(g => chip('genero', g, b.genero.includes(g))).join('')
     + (!puede && !b.genero.length ? '<span class="fi-dim">todos</span>' : '') + '</div>';
   h += '<label class="fi-chk" style="margin:6px 0 0"><input type="checkbox" ' + at('set', ' data-campo="ninoLibre"') + (b.ninoLibre ? ' checked' : '') + (puede ? '' : ' disabled') + '> Niño: cualquier disciplina o modelo</label>';
@@ -2256,6 +2258,7 @@ async function fiGuardar(){
     else if (el.dataset.campo === 'plana') b.plana = el.value;
     else if (el.dataset.campo === 'ninoLibre') b.ninoLibre = el.checked;
     else if (el.dataset.campo === 'comoLinea') b.comoLinea = el.checked;
+    else if (el.dataset.campo === 'autoPct') b.autoPct = Math.min(100, Math.max(0, Math.round(Number(el.value) || 0)));
     else if (el.dataset.campo === 'orden') b.orden = Math.max(0, Math.round(Number(el.value) || 0));
     else b.nota = el.value;
     fiMarcar();
