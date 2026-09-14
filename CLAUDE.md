@@ -1746,6 +1746,10 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     Vaciar la reserva chica no le mandan a una sucursal lo que su ficha excluye (caso Atomik adulto en
     Ensenada) ni adulto a Mateu Kids; `R.fueraFicha` cuenta las líneas descartadas.
   - Pendiente: el reporte de stock que mostraba el doble que el F9 del depósito (204 vs 102, 12 vs 6).
+  - **«Modelos que no van»** (campo `sinModelos` de la ficha, `fichaPasa` lo aplica siempre, aun sin «respetar
+    disciplinas»): New Balance 9060 / 530 / 740 / 204 / 1906 son exclusivos de Aurelius → Cat 1 los excluye;
+    Ecommerce (que es la web de Mateu y de Aurelius) tiene New Balance asignada con columna propia: solo esos
+    modelos. Atomik en Diagonal 80: solo niño (excepción de la ficha).
 
 ## Panel General de Logística (`logistica/`, 08/09/2026)
 
