@@ -853,6 +853,25 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   cuando se baja, no cada 5 s. El EAN que no se pudo consultar muestra «No se pudo consultar…
   ↻ Reintentar» y el error no queda en `_eanCache`. El puesto monta la pantalla a los 8 s
   aunque los perfiles no respondan.
+- **Plano de la sucursal (14/09/2026, Ensenada)**: el plano que dibuja la sucursal en Excel (una hoja
+  por planta: «Salon», «Deposito», «Deposito 2»; cada mueble es una celda combinada **celeste
+  `FF8FC1E3`**, lo blanco con rótulo es PC/caja/baño/probador/vidriera y lo blanco sin rótulo es un
+  hueco) se convierte con `python scripts/gen-plano-sucursal.py "<xlsx>" <slug>` en
+  **`shared/planos-sucursal.js`** (`window.PLANOS_SUC[<slug>]`, fusiona con las otras sucursales) y lo
+  dibuja **`shared/plano-suc.js`** (`window.PlanoSuc`: `bloque`/`svg`/`celdaEst`/`celdaNombre`, SVG con CSS
+  `ps-` propio; proporción de celda del Excel en `aspecto`). En el salón cada mueble es un **sector**; en
+  un depósito, una **estantería**: las numeradas conservan el número y las que tienen nombre reciben los
+  números libres (Ensenada: 1–7 en Depósito, 8/9/17/18 en Depósito 2 junto a 10–16; nombre «Estantería 5 ·
+  ind. hombre»; los muebles sin rótulo = «Sin nombre N», decisión de Juli). El cruce con el Buscador es
+  **por número de estantería** (`est<N>`). En el Buscador: pestaña Estanterías con el plano (verde = con
+  artículos, tocar lleva a la tarjeta) y **«🗺 Crear las N estanterías del plano»** (pide módulos por
+  estantería; orden = depósito por depósito, por número); botón **«🗺 Plano»** en la tarjeta del artículo
+  (sus estanterías en rojo); el piso sale del plano cuando hay más de un depósito dibujado (`depositoDe`,
+  antes que `DEPOSITOS_SUC`); **«Yo repongo»** muestra el depósito y deja tocar el **sector del salón** de
+  donde se sacó (`sector:{id,nombre}` en `reposicion/<id>`, arranca con el último usado para ese artículo)
+  y el pendiente lleva «🏬 Va en el salón» + desplegable «🗺 Ver en el plano». En **Tareas → Sectores de
+  marcas**, «Dónde» se puede elegir tocando el plano del salón y el 📍 de la tarjeta lo abre. Sucursal
+  nueva = correr el generador con su Excel (sin tocar código).
 - **Artículos nuevos sin ubicar** (prioridad del depósito): «nuevo» = `fechaAlta`
   posterior a la **primera carga** de la sucursal (cada carga graba un único
   timestamp; así el día 1 no se marca todo) y ≤ `NUEVO_DIAS` (7). Se destacan con

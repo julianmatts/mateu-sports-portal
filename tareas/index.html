@@ -270,6 +270,9 @@ table.res{width:100%;border-collapse:collapse;background:#fff;border:1px solid v
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
 <script src="../shared/equipo.js"></script>
+<!-- Plano de la sucursal: el salón con sus sectores (scripts/gen-plano-sucursal.py) -->
+<script src="../shared/planos-sucursal.js"></script>
+<script src="../shared/plano-suc.js"></script>
 <script src="../shared/marca.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <!-- ExcelJS: export del resumen / cumplimiento (solo gerencia, carga diferida) -->
@@ -820,7 +823,9 @@ function tareaCard(tipo,t){
   return '<div class="card '+(hecha?'done':vencida(t)?'alerta':'')+'"><div class="tarea"><div>'
     +'<div class="t">'+esc(t.titulo)+(t.origen==='gerencia'?'<span class="tag ger">Gerencia</span>':'')+'</div>'
     +(t.detalle?'<div class="d">'+esc(t.detalle)+'</div>':'')
-    +'<div class="meta">'+(t.marca?'<span class="tag navy">'+esc(t.marca)+'</span>':'')+(t.ubicacion?'<span class="tag">📍 '+esc(t.ubicacion)+'</span>':'')+fechaTag
+    +'<div class="meta">'+(t.marca?'<span class="tag navy">'+esc(t.marca)+'</span>':'')+(t.ubicacion?(salonPlano(state.slug).length&&PlanoSuc.celdaNombre(state.slug,t.ubicacion)
+        ?'<span class="tag" style="cursor:pointer" title="Ver en el plano del salón" onclick="verSectorPlano('+q+')">📍 '+esc(t.ubicacion)+' · 🗺</span>'
+        :'<span class="tag">📍 '+esc(t.ubicacion)+'</span>'):'')+fechaTag
     +(hecha?'<span class="tag ok">✓ Hecha</span>':'<span class="tag amb">Pendiente</span>')+(t.exigeFoto&&!hecha?'<span class="tag">📷 exige foto</span>':'')+(t.recurrente?'<span class="tag">🔁 recurrente</span>':'')+'</div>'
     +'<div class="fotos">'+fotoHtml(t.fotos&&t.fotos.antes,'antes',(t.fotos&&t.fotos.antes)?'verFotos('+q+')':'subirFotoTarea('+q+',\'antes\')',(!hecha||esGerencia)&&t.fotos&&t.fotos.antes?'quitarFotoTarea('+q+',\'antes\')':'')
     +fotoHtml(t.fotos&&t.fotos.despues,'despues',(t.fotos&&t.fotos.despues)?'verFotos('+q+')':'subirFotoTarea('+q+',\'despues\')',(!hecha||esGerencia)&&t.fotos&&t.fotos.despues?'quitarFotoTarea('+q+',\'despues\')':'')+'</div>'
@@ -859,9 +864,31 @@ function formTarea(tipo, t){
     +'<div class="f2"><div class="fld"><label>Marca</label><input class="inp" id="fMarca" maxlength="40" placeholder="Ej.: Nike" value="'+esc(t.marca||'')+'"></div>'
     +(esP?'<div class="fld"><label>Vigencia (desde cuándo rige)</label><input class="inp" type="date" id="fFecha" value="'+esc(t.vigencia||'')+'"></div>'
          :'<div class="fld"><label>Fecha límite</label><input class="inp" type="date" id="fFecha" value="'+esc(t.limite||'')+'"></div>')+'</div>'
-    +(esP?'':'<div class="fld"><label>Dónde (sector / pared / góndola)</label><input class="inp" id="fUbic" maxlength="60" placeholder="Ej.: Pared derecha, entrada" value="'+esc(t.ubicacion||'')+'"></div>')
+    +(esP?'':'<div class="fld"><label>Dónde (sector / pared / góndola)</label><input class="inp" id="fUbic" maxlength="60" placeholder="Ej.: Pared derecha, entrada" value="'+esc(t.ubicacion||'')+'">'+sectorPlanoHtml(t.ubicacion)+'</div>')
     +'<div class="fld"><label>Detalle</label><textarea class="ta" id="fDetalle" placeholder="'+(esP?'Artículos, porcentaje, cartelería, lo que haga falta aclarar…':'Qué productos van, cómo tiene que quedar, referencias…')+'">'+esc(t.detalle||'')+'</textarea></div>'
     +exigeFotoHtml(t);
+}
+/* Plano del salón de la sucursal (shared/planos-sucursal.js, hoy Ensenada):
+   en «Dónde» se puede tocar el sector en vez de escribirlo, y el 📍 de la
+   tarjeta abre el plano con el sector en rojo. */
+function salonPlano(slug){ return window.PlanoSuc ? PlanoSuc.plantas(slug,'salon') : []; }
+function sectorPlanoHtml(ubic){
+  if(!salonPlano(state.slug).length) return '';
+  const c = PlanoSuc.celdaNombre(state.slug, ubic);
+  return '<details style="margin-top:6px"'+(c?' open':'')+'><summary style="cursor:pointer;font-size:12.5px;font-weight:600">🗺 Elegir el sector en el plano del salón</summary>'
+    +'<div id="fUbicPlano" onclick="pickSector(event)">'+PlanoSuc.bloque(state.slug,{tipo:'salon', pick:true, hot:new Set(c?[c.celda.id]:[]), cls:'ps-here'})+'</div></details>';
+}
+function pickSector(ev){
+  const g=ev.target.closest('[data-ps]'); const inp=$('fUbic'); if(!g||!inp) return;
+  inp.value = inp.value===g.dataset.nm ? '' : g.dataset.nm;
+  document.querySelectorAll('#fUbicPlano [data-ps]').forEach(x=>x.classList.toggle('ps-here', x.dataset.nm===inp.value));
+}
+function verSectorPlano(tipo,id){
+  const t=state.data[tipo][id]; if(!t) return;
+  const c=PlanoSuc.celdaNombre(state.slug, t.ubicacion); if(!c) return;
+  abrirHoja('🗺 '+esc(t.ubicacion), '<div class="hint" style="margin-bottom:4px">'+esc(t.titulo)+'</div>'
+    +PlanoSuc.bloque(state.slug,{tipo:'salon', hot:new Set([c.celda.id]), cls:'ps-here', leyenda:t.ubicacion}),
+    '<button class="btn btn-outline" onclick="cerrarHoja()">Cerrar</button>');
 }
 function exigeFotoHtml(t){
   const on = t && t.id!=null ? !!t.exigeFoto : esGerencia;   // nueva: gerencia exige por defecto

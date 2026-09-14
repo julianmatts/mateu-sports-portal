@@ -703,6 +703,16 @@ body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
 <script src="../shared/equipo.js"></script>
 <script src="../shared/f8-descargas.js"></script>
+<!-- Plano de la sucursal (salón + depósitos): scripts/gen-plano-sucursal.py -->
+<script src="../shared/planos-sucursal.js"></script>
+<script src="../shared/plano-suc.js"></script>
+<style>
+  .est-card.flash{box-shadow:0 0 0 3px #CC0000;transition:box-shadow .2s}
+  .plano-box{background:#fff;border:1px solid #dce3f0;border-radius:12px;padding:8px 12px;margin-bottom:12px}
+  .plano-box>summary,.rep-mapa>summary{cursor:pointer;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:13px;letter-spacing:.5px;color:#0B1527}
+  .rep-mapa{margin-top:6px}
+  .rep-sector-lbl{font-size:13px;font-weight:600;margin:6px 0 2px}
+</style>
 <script src="../shared/marca.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <!-- Header unificado del shell: barra Menú + logo + calendario retail + drawer -->
@@ -898,15 +908,35 @@ function numEstanteria(est){
   const n = parseInt(String((est&&est.nombre)||'').replace(/\D+/g,''),10);
   return isNaN(n) ? null : n;
 }
+/* Plano de la sucursal (shared/planos-sucursal.js, hoy Ensenada): salón con sus
+   sectores y depósitos con sus estanterías, dibujado por shared/plano-suc.js.
+   La estantería del Buscador se cruza con el plano por su NÚMERO (E5 ↔ est5). */
+function planoDepositos(){ return (window.PlanoSuc && SUC) ? PlanoSuc.plantas(SUC,'deposito') : []; }
+function planoSalon(){ return (window.PlanoSuc && SUC) ? PlanoSuc.plantas(SUC,'salon') : []; }
+// ids del plano (est<N>) de las estanterías donde está ubicado el artículo
+function planoUbicHot(a){
+  const hot = new Set();
+  if(!planoDepositos().length) return hot;
+  Object.values((a&&a.ubicaciones)||{}).forEach(u=>{
+    const est = (DATA.estanterias||{})[u.estanteriaId];
+    const n = est ? numEstanteria(est) : null;
+    if(n!==null && PlanoSuc.celdaEst(SUC, n)) hot.add('est'+n);
+  });
+  return hot;
+}
 // "Subsuelo" / "2° piso" para una estantería, o null si la sucursal tiene un solo depósito
 function depositoDe(est){
+  const n = numEstanteria(est);
+  // con plano de la sucursal y más de un depósito dibujado (Ensenada), el piso sale del plano
+  if(n!==null && planoDepositos().length>1){ const x = PlanoSuc.celdaEst(SUC, n); if(x) return x.planta.nombre; }
   const zonas = DEPOSITOS_SUC[SUC]; if(!zonas) return null;
-  const n = numEstanteria(est); if(n===null) return null;
+  if(n===null) return null;
   const z = zonas.find(z=> n>=z.desde && n<=z.hasta);
   return z ? z.nombre : null;
 }
 // Nota de orden para los recorridos: " — primero Subsuelo, después 2° piso"
 function depositosOrdenTxt(){
+  if(planoDepositos().length>1) return ' — primero '+planoDepositos().map(p=>p.nombre).join(', después ');
   const zonas = DEPOSITOS_SUC[SUC]; if(!zonas) return '';
   return ' — primero '+zonas.map(z=>z.nombre).join(', después ');
 }
@@ -3237,6 +3267,20 @@ function registrarMovimiento(artKey, tipo, ubicNombre){
   }).catch(()=>{});
 }
 
+// Mapa del depósito con la(s) estantería(s) del artículo en rojo
+function verEnPlano(artKey){
+  const a = DATA.articulos[artKey]; if(!a) return;
+  const hot = planoUbicHot(a);
+  $('modalBody').innerHTML =
+    '<div class="modal-title">🗺 '+esc(a.codigo)+'</div>'+
+    '<div class="hint" style="margin-bottom:6px">'+esc(a.descripcion||'')+'<br>📍 '+
+      esc(Object.values(a.ubicaciones||{}).map(u=>nombreUbicacion(u)).join(' · ')||'Sin ubicación')+'</div>'+
+    PlanoSuc.bloque(SUC, {tipo:'deposito', hot, cls:'ps-here', soloConHot:true, leyenda:'Acá está'})+
+    '<div class="modal-footer"><button class="btn btn-navy" id="planoCerrar">Cerrar</button></div>';
+  $('modalOverlay').classList.add('show');
+  $('planoCerrar').addEventListener('click', cerrarModal);
+}
+
 async function verHistorialArticulo(artKey){
   const a = DATA.articulos[artKey]; if(!a) return;
   $('modalBody').innerHTML = '<div class="modal-title">🕘 '+esc(a.codigo)+'</div><div class="hint">Cargando historial…</div>';
@@ -3298,6 +3342,7 @@ function artCardHtml(a){
           (puede?'<button class="x" data-quitar="'+uid+'" title="Quitar ubicación">✕</button>':'')+'</span>';
       }).join('')+
       (puede?'<button class="ubi-add" data-agregar="1">+ '+(sinUbi?'Asignar ubicación':'Agregar')+'</button>':'')+
+      (planoUbicHot(a).size?'<button class="ubi-add" data-plano="1" title="Ver en el plano del depósito">🗺 Plano</button>':'')+
     '</div>'+fbRow+'</div>';
 }
 
@@ -3311,6 +3356,8 @@ function wireArtCards(cont, opts){
     if(fbBtn) fbBtn.addEventListener('click', ()=> abrirSheetFeedback(key));
     const histBtn = card.querySelector('[data-histart]');
     if(histBtn) histBtn.addEventListener('click', ()=> verHistorialArticulo(key));
+    const planoBtn = card.querySelector('[data-plano]');
+    if(planoBtn) planoBtn.addEventListener('click', ()=> verEnPlano(key));
     const repBtn = card.querySelector('[data-repone]');
     if(repBtn) repBtn.addEventListener('click', ()=> abrirSheetRepone(key));
     const repOk = card.querySelector('[data-rephecho]');
@@ -3420,6 +3467,7 @@ function sheetElegirModulo(artKey, estId){
 
 function cerrarSheet(){
   $('sheetOverlay').classList.remove('show');
+  REP_SECTOR_ART = null;   // «Yo repongo»: el sector elegido se olvida al cerrar
   FB_PERFIL = null;   // puesto compartido: el próximo comentario vuelve a elegir quién firma
 }
 
@@ -3584,11 +3632,22 @@ function reponeBadge(){
   b.textContent = n; b.style.display = n ? 'block' : 'none';
 }
 
+/* Sector del salón de donde se sacó (con plano de la sucursal): se elige tocando
+   el plano y viaja en el pendiente, así el que repone sabe dónde va. Arranca con
+   el último sector usado para ese artículo. */
+let REP_SECTOR = null, REP_SECTOR_ART = null;
+
 /* Hoja para hacerse cargo: muestra dónde está en el depósito (que es lo que
    el vendedor necesita para ir a buscarlo) y con qué nombre firma. */
 function abrirSheetRepone(artKey){
   const a = DATA.articulos[artKey]; if(!a) return;
   if(repDeArticulo(artKey)){ abrirRepone(); return; }   // ya hay alguien a cargo
+  if(REP_SECTOR_ART!==artKey){
+    REP_SECTOR_ART = artKey;
+    const prev = reposiciones().find(r=>r.artKey===artKey && r.sector);
+    REP_SECTOR = prev ? prev.sector : null;
+  }
+  const hotDep = planoUbicHot(a);
   const ubis = Object.values(a.ubicaciones||{});
   const sinStock = !(+a.stock > 0);
   // en el puesto se elige el nombre (como en Comentar); en la sucursal firma el perfil activo
@@ -3610,6 +3669,15 @@ function abrirSheetRepone(artKey){
       ? '<div class="talle-chips" style="margin-bottom:6px">'+a.talles.map(x=>
           '<span class="talle-chip'+(+x.c>0?'':' cero')+'">'+esc(x.t)+' <b>'+(+x.c||0)+'</b></span>').join('')+'</div>'
       : '')+
+    (hotDep.size
+      ? PlanoSuc.bloque(SUC, {tipo:'deposito', hot:hotDep, cls:'ps-here', soloConHot:true, leyenda:'Acá está en el depósito'})
+      : '')+
+    (planoSalon().length
+      ? '<div class="fb-grupo">🏬 ¿De qué sector del salón lo sacaste?</div>'+
+        '<div class="hint">Tocá el sector en el plano (opcional): así el que repone sabe dónde va.</div>'+
+        '<div class="rep-sector-lbl" id="repSectorLbl"></div>'+
+        PlanoSuc.bloque(SUC, {tipo:'salon', pick:true, hot:new Set(REP_SECTOR?[REP_SECTOR.id]:[]), cls:'ps-here'})
+      : '')+
     (esPuesto
       ? '<div class="fb-grupo">👤 ¿Quién repone?</div>'+
         (quienes.length
@@ -3626,6 +3694,18 @@ function abrirSheetRepone(artKey){
     abrirSheetRepone(artKey);   // re-render para marcar la selección
   }));
   $('sheetBody').querySelector('[data-repok]').addEventListener('click', ()=> tomarReposicion(artKey));
+  // selección del sector sin re-renderizar la hoja (no se pierde el scroll)
+  const marcarSector = ()=>{
+    $('sheetBody').querySelectorAll('.ps-pick [data-ps]').forEach(g=>
+      g.classList.toggle('ps-here', !!REP_SECTOR && g.dataset.ps===REP_SECTOR.id));
+    const l = $('repSectorLbl');
+    if(l) l.textContent = REP_SECTOR ? 'Sector: '+REP_SECTOR.nombre : 'Ningún sector elegido';
+  };
+  $('sheetBody').querySelectorAll('.ps-pick [data-ps]').forEach(g=> g.addEventListener('click', ()=>{
+    REP_SECTOR = (REP_SECTOR && REP_SECTOR.id===g.dataset.ps) ? null : {id:g.dataset.ps, nombre:g.dataset.nm};
+    marcarSector();
+  }));
+  marcarSector();
 }
 
 async function tomarReposicion(artKey){
@@ -3636,6 +3716,7 @@ async function tomarReposicion(artKey){
   const rec = {
     artKey, codigo:a.codigo, descripcion:(a.descripcion||'').slice(0,60),
     ubic: Object.values(a.ubicaciones||{}).map(u=>nombreUbicacion(u)).join(' · ') || null,
+    sector: (planoSalon().length && REP_SECTOR) ? {id:REP_SECTOR.id, nombre:REP_SECTOR.nombre} : null,
     por: MODE==='puesto' ? FB_PERFIL.nombre : nombreOperador(),
     avatar: (firmante && firmante.avatar) || null,
     ts: Date.now(),
@@ -3673,6 +3754,17 @@ async function soltarReposicion(id){
   }catch(e){ toast('No se pudo borrar.'); }
 }
 
+// desplegable del pendiente: de dónde sacarlo (depósito) y dónde va (salón)
+function repMapaHtml(r){
+  const hotDep = planoUbicHot(DATA.articulos[r.artKey]);
+  const conSalon = r.sector && planoSalon().length;
+  if(!hotDep.size && !conSalon) return '';
+  return '<details class="rep-mapa"><summary>🗺 Ver en el plano</summary>'+
+    (hotDep.size ? PlanoSuc.bloque(SUC, {tipo:'deposito', hot:hotDep, cls:'ps-here', soloConHot:true, leyenda:'De acá se saca'}) : '')+
+    (conSalon ? PlanoSuc.bloque(SUC, {tipo:'salon', hot:new Set([r.sector.id]), cls:'ps-hot', leyenda:'Acá va'}) : '')+
+  '</details>';
+}
+
 function abrirRepone(){ cerrarSheet(); renderRepone(); $('repOverlay').classList.add('show'); }
 function cerrarRepone(){ $('repOverlay').classList.remove('show'); }
 
@@ -3687,8 +3779,10 @@ function renderRepone(){
       '<div class="info"><div class="cod">'+esc(r.codigo)+'</div>'+
       '<div class="desc">'+esc(r.descripcion||'')+'</div>'+
       (r.ubic?'<div class="ubi">📍 '+esc(r.ubic)+'</div>':'<div class="ubi">Sin ubicar</div>')+
+      (r.sector?'<div class="ubi">🏬 Va en el salón: '+esc(r.sector.nombre)+'</div>':'')+
       '<div class="quien">'+esc(r.por)+' · '+fmtHora(r.ts)+
-        (r.hecho?' → repuesto '+fmtHora(r.hecho.ts)+' por '+esc(r.hecho.por):'')+'</div></div>'+
+        (r.hecho?' → repuesto '+fmtHora(r.hecho.ts)+' por '+esc(r.hecho.por):'')+'</div>'+
+      (!r.hecho ? repMapaHtml(r) : '')+'</div>'+
       (r.hecho ? '<div class="rep-acc"><span class="hora">✓</span></div>'
                : '<div class="rep-acc"><button class="fb-done" data-rephecho="'+esc(r.id)+'">✓ Repuesto</button>'+
                  '<button class="icon-btn lite" data-repdel="'+esc(r.id)+'" title="Sacar de la lista">✕</button></div>')+
@@ -4383,6 +4477,16 @@ function renderEstanterias(){
   const counts = contarUbicados();
   let html = '';
   if(manage) html += '<button class="btn btn-navy btn-block" id="btnNuevaEst" style="margin-bottom:12px">+ Nueva estantería</button>';
+  // Plano del depósito (Ensenada): estanterías con artículos en verde; tocar una lleva a su tarjeta
+  if(planoDepositos().length){
+    const faltan = planoEstFaltantes();
+    if(manage && faltan.length)
+      html += '<button class="btn btn-block" id="btnEstPlano" style="margin-bottom:12px;background:#fff;border:1.5px dashed var(--navy);color:var(--navy)">🗺 Crear '+
+        (faltan.length===1?'la estantería que falta':'las '+faltan.length+' estanterías')+' del plano</button>';
+    const hot = new Set(ests.filter(e=>counts.porEst[e.id]).map(e=>numEstanteria(e)).filter(n=>n!==null).map(n=>'est'+n));
+    html += '<details class="plano-box" open><summary>🗺 Plano del depósito</summary>'+
+      PlanoSuc.bloque(SUC, {tipo:'deposito', hot, cls:'ps-hot', pick:true, leyenda:'Con artículos ubicados'})+'</details>';
+  }
   if(!ests.length){
     html += '<div class="empty">No hay estanterías creadas.'+(manage?'<br>Creá la primera con el botón de arriba.':'')+'</div>';
   } else {
@@ -4395,7 +4499,7 @@ function renderEstanterias(){
         ? '<div class="fb-grupo" style="font-size:13px;letter-spacing:2px;color:var(--navy);margin:16px 0 8px">'+esc(dep)+'</div>'
         : '';
       prevDep = dep;
-      return depHead+'<div class="est-card">'+
+      return depHead+'<div class="est-card" id="estcard-'+esc(e.id)+'">'+
         '<div class="est-head"><span class="nm">'+esc(e.nombre)+'</span>'+
           '<span class="cnt">'+(counts.porEst[e.id]||0)+' art.</span>'+
           (manage?
@@ -4427,8 +4531,17 @@ function renderEstanterias(){
   cont.innerHTML = html;
   cont.querySelectorAll('[data-print]').forEach(b=> b.addEventListener('click', ()=> imprimirEstanteria(b.dataset.print)));
   cont.querySelectorAll('[data-audit]').forEach(b=> b.addEventListener('click', ()=> iniciarAuditoria(b.dataset.audit)));
+  cont.querySelectorAll('.plano-box [data-ps]').forEach(g=> g.addEventListener('click', ()=>{
+    const n = parseInt(String(g.dataset.ps).replace(/\D+/g,''),10);
+    const e = estanteriasOrdenadas().find(x=>numEstanteria(x)===n);
+    const card = e && document.getElementById('estcard-'+e.id);
+    if(!card){ toast('«'+g.dataset.nm+'» todavía no está creada.'); return; }
+    card.scrollIntoView({behavior:'smooth', block:'center'});
+    card.classList.add('flash'); setTimeout(()=> card.classList.remove('flash'), 1400);
+  }));
 
   if(manage){
+    const btnP = $('btnEstPlano'); if(btnP) btnP.addEventListener('click', crearEstanteriasDelPlano);
     const btn = $('btnNuevaEst'); if(btn) btn.addEventListener('click', nuevaEstanteria);
     cont.querySelectorAll('[data-ren]').forEach(b=> b.addEventListener('click', ()=> renombrarEstanteria(b.dataset.ren)));
     cont.querySelectorAll('[data-del]').forEach(b=> b.addEventListener('click', ()=> eliminarEstanteria(b.dataset.del)));
@@ -4444,6 +4557,38 @@ function renderEstanterias(){
     moduloVista = {estId, modId};
     renderVistaModulo();
   }));
+}
+
+// estanterías del plano que todavía no existen en el Buscador (cruce por número)
+function planoEstFaltantes(){
+  const nums = new Set(estanteriasOrdenadas().map(numEstanteria).filter(n=>n!==null));
+  return planoDepositos().flatMap(pl=> pl.celdas.filter(c=> c.tipo==='estanteria' && !nums.has(c.num)));
+}
+/* Crea de una las estanterías del plano con su nombre («Estantería 5 · ind.
+   hombre») y N módulos. Orden de recorrido = depósito por depósito y, dentro de
+   cada uno, por número. No toca las que ya existen. */
+async function crearEstanteriasDelPlano(){
+  const faltan = planoEstFaltantes(); if(!faltan.length) return;
+  const r = prompt('Se crean '+faltan.length+' estanterías con los nombres del plano ('+
+    faltan.map(c=>'E'+c.num).join(', ')+').\n\n¿Cuántos módulos le pongo a cada una? Después se pueden sumar o quitar.', '4');
+  if(r===null) return;
+  const nm = Math.max(0, Math.min(40, parseInt(r,10)||0));
+  const todas = planoDepositos().flatMap((pl,pi)=> pl.celdas.filter(c=>c.tipo==='estanteria').map(c=>({c, pi})))
+    .sort((x,y)=> x.pi-y.pi || x.c.num-y.c.num).map(x=>x.c);
+  const ests = estanteriasOrdenadas();
+  const base = ests.length ? Math.max(...ests.map(e=>e.orden||0)) : 0;
+  const patch = {};
+  faltan.forEach(c=>{
+    const modulos = {};
+    for(let i=1;i<=nm;i++) modulos['mod'+i] = {nombre:'Módulo '+i, orden:i};
+    const id = DATA.estanterias['est'+c.num] ? newId('e') : 'est'+c.num;
+    patch[id] = {nombre:c.nombre, orden: base + todas.indexOf(c) + 1, modulos};
+  });
+  try{
+    await patchJSON(sucPath()+'/estanterias.json', patch);
+    Object.assign(DATA.estanterias, patch); lastHash=''; renderEstanterias(); bumpRev();
+    toast(faltan.length+' estanterías creadas ✓');
+  }catch(e){ toast('No se pudieron crear. Probá de nuevo.'); }
 }
 
 async function nuevaEstanteria(){
