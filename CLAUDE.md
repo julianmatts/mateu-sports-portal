@@ -2468,6 +2468,21 @@ lectura: `puedeMover = esAdmin || tieneTool`).
   «Personas» (una por persona, con la situación: estable / cubre / alta por validar) y
   «Movimientos», las tres con autofiltro.
 
+## Empleado del mes (`rrhh/` + Mi Sucursal, 14/09/2026)
+
+Uno por sucursal y por mes. **Lo asignan RRHH y Cristian (supervisor)** — y gerencia — desde
+**RRHH → pestaña «🏆 Empleado del mes»** (`viewEmpleadoMes` / `formEmpleadoMes`; link directo
+`rrhh/?tab=edm`): grilla de sucursales del mes elegido (‹ ›), persona del padrón activo de esa
+sucursal (legajos), motivo obligatorio, aviso si ya fue elegida otro mes. Al guardar se **publica
+en el Tablero de la Bandeja** (`para:'todos'`, solo si quien asigna está en `EDM_TABLERO` = los
+mismos de `PUBLICAN_TABLERO`) y se le avisa a la sucursal por directo. «Quitar» no borra el post.
+Se ve en **Mi Sucursal** (`secEmpMes`/`renderEmpMes`, arriba de todo en «En curso»: el último mes
+asignado + los 3 anteriores; gerencia ve el link para cambiarlo) y en el **Panel General**
+(`secEmpMesCad`/`pintarEmpMesCad`, zona En curso de todas las sucursales, el mes más nuevo con
+asignaciones, respeta el filtro por línea). Quedan afuera depósito, administración y externos.
+**Firebase** (discontinuos-mateu): `rrhh/empleadoMes/<slug>/<YYYY-MM>` = `{legajoId, nombre,
+puesto, motivo, por, en}` — agrupado por slug, cada sucursal baja solo lo suyo.
+
 ## Calendario de novedades del mes
 
 Reemplaza el Excel que los encargados mandaban mes a mes (`Calendario 08-2026.xls`:

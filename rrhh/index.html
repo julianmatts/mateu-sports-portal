@@ -150,6 +150,21 @@ table.grid .sub{font-family:var(--font-c);font-size:12px;color:var(--muted)}
   justify-content:center;font-family:var(--font-c);font-weight:700;font-size:13px;flex-shrink:0}
 .person{display:flex;align-items:center;gap:10px}
 
+/* ===== EMPLEADO DEL MES ===== */
+.edm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-bottom:18px}
+.edm-card{background:#fff;border:1px solid var(--border);border-top:3px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+.edm-card.on{border-top-color:#c9971c}
+.edm-card .suc{font-family:var(--font-c);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.edm-card .who{display:flex;align-items:center;gap:10px}
+.avatar.gold{background:linear-gradient(135deg,#e9b949,#a87a0c)}
+.edm-card .nm{font-weight:700;font-size:15px;line-height:1.2}
+.edm-card .pu{font-family:var(--font-c);font-size:12px;color:var(--muted)}
+.edm-card .mot{font-size:13px;background:#fbf6e9;border-radius:8px;padding:7px 9px;line-height:1.4}
+.edm-card .por{font-family:var(--font-c);font-size:11px;color:var(--muted)}
+.edm-card .vacio{font-size:13px;color:var(--muted)}
+.edm-card .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
+.edm-mes{font-family:var(--font-d);font-size:24px;letter-spacing:.5px;min-width:170px;text-align:center}
+
 /* ===== EMPTY ===== */
 .empty{text-align:center;padding:50px 20px;color:var(--muted)}
 .empty .ic{font-size:44px;opacity:.5}
@@ -340,6 +355,7 @@ table.grid .sub{font-family:var(--font-c);font-size:12px;color:var(--muted)}
   <button class="tab" data-tab="ausencias">Ausentismo <span class="badge" id="bAus">0</span></button>
   <button class="tab" data-tab="sanciones">Sanciones <span class="badge" id="bSan">0</span></button>
   <button class="tab" data-tab="comp">Compensatorios y horas <span class="badge" id="bComp">0</span></button>
+  <button class="tab" data-tab="edm">🏆 Empleado del mes <span class="badge" id="bEdm">0</span></button>
   <button class="tab" data-tab="calendario">Calendario</button>
   <button class="tab" data-tab="novedades">Novedades de nómina</button>
   <button class="tab" data-tab="rotacion">Rotación</button>
@@ -506,7 +522,9 @@ let FERIADOS = null;  // 'YYYY-MM-DD' -> título (del calendario retail del shel
 // Sucursal ('cargada' o 'sin' novedades). Sin esto se juntaba todo a fin de mes.
 let CALSEM = {};      // slug -> lunesISO -> {estado:'cargada'|'sin', dias, por, en}
 let CONFIG = {};      // rrhh/config: valorHora {general, horasDia, porLegajo}
-let state = { tab:'legajos', qLeg:'', fSuc:'', fEstado:'activo', fPuesto:'',
+// Empleado del mes por sucursal: lo asignan RRHH, el supervisor o gerencia.
+let EMPMES = {};      // slug -> 'YYYY-MM' -> {legajoId, nombre, puesto, motivo, por, en}
+let state = { tab:'legajos', qLeg:'', fSuc:'', fEstado:'activo', fPuesto:'', edmMes:periodoActual(),
               mapQ:'', mapPuesto:'', mapVer:'tarjetas',
               qAus:'', aSuc:'', aTipo:'', aEstado:'', qSan:'', snSuc:'', snTipo:'', novPeriodo:periodoActual(),
               cSuc:'', cEstado:'pendiente', cVer:'con',
@@ -528,6 +546,9 @@ async function init(){
     $('cfgBanner').style.display='block';
     $('cfgBanner').innerHTML='⚙️ <b>Sin base configurada.</b> Pegá la URL de Firebase en <code>FIREBASE_DB_URL</code> para guardar los datos. Podés explorar en modo demo, pero no persiste.';
   }
+  // link directo a una pestaña (p.ej. ../rrhh/?tab=edm desde el Panel General)
+  const qTab = new URLSearchParams(location.search).get('tab');
+  if(qTab && document.querySelector('.tab[data-tab="'+qTab+'"]')){ state.tab=qTab; syncTabs(); }
   cargarFeriados();
   await recargar();
   render();
@@ -561,11 +582,12 @@ async function cargarFeriados(){
 }
 async function recargar(){
   try{
-    const [leg, aus, san, comp, sol, cal, cfg, csem, mov, hp] = await Promise.all([
+    const [leg, aus, san, comp, sol, cal, cfg, csem, mov, hp, edm] = await Promise.all([
       fbGet(ROOT+'/legajos'), fbGet(ROOT+'/ausencias'), fbGet(ROOT+'/sanciones'),
       fbGet(ROOT+'/compensatorios'), fbGet(ROOT+'/solicitudes_comp'),
       fbGet(ROOT+'/calendario'), fbGet(ROOT+'/config'), fbGet(ROOT+'/calSemanas'),
-      fbGet(ROOT+'/movimientos'), fbGet(ROOT+'/horas_pend') ]);
+      fbGet(ROOT+'/movimientos'), fbGet(ROOT+'/horas_pend'), fbGet(ROOT+'/empleadoMes').catch(()=>null) ]);
+    EMPMES = edm || {};
     LEGAJOS = leg || {};
     AUSENCIAS = aus || {};
     SANCIONES = san || {};
@@ -584,6 +606,7 @@ async function recargar(){
       const g={}; Object.entries(CALEND).forEach(([k,v])=>{ if(enAlcance(k)) g[k]=v; }); CALEND=g;
       const w={}; Object.entries(CALSEM).forEach(([k,v])=>{ if(enAlcance(k)) w[k]=v; }); CALSEM=w;
       const hh={}; Object.entries(HORASP).forEach(([k,v])=>{ if(enAlcance(k)) hh[k]=v; }); HORASP=hh;
+      const em={}; Object.entries(EMPMES).forEach(([k,v])=>{ if(enAlcance(k)) em[k]=v; }); EMPMES=em;
     }
     await cargarNovedades();
   }catch(e){ console.error(e); toast('No se pudo leer Firebase','err'); }
@@ -602,6 +625,7 @@ function refrescarBadges(){
   $('bComp').textContent = solicitudes().filter(s=>(s.estado||'pendiente')==='pendiente').length + hpPendientes().length;
   const bs=$('bSan'); if(bs) bs.textContent = Object.keys(SANCIONES).length;
   const bm=$('bMap'); if(bm) bm.textContent = legs.length;   // dotación activa del mapa
+  const be=$('bEdm'); if(be){ const ss=edmSucs(); be.textContent = ss.filter(s=>edmDe(s,periodoActual())).length+'/'+ss.length; }
 }
 
 /* ============================================================
@@ -617,6 +641,7 @@ function render(){
   else if(state.tab==='mapa') v.innerHTML = viewMapa();
   else if(state.tab==='ausencias') v.innerHTML = viewAusencias();
   else if(state.tab==='comp') v.innerHTML = viewComp();
+  else if(state.tab==='edm') v.innerHTML = viewEmpleadoMes();
   else if(state.tab==='calendario') v.innerHTML = viewCalendario();
   else if(state.tab==='sanciones') v.innerHTML = viewSanciones();
   else if(state.tab==='novedades') v.innerHTML = viewNovedades();
@@ -2327,6 +2352,104 @@ async function avisarSucursal(slug, texto, extra){
 }
 
 /* ============================================================
+   EMPLEADO DEL MES — uno por sucursal y por mes. Lo asignan RRHH,
+   el supervisor (en su alcance) o gerencia. Vive en
+   rrhh/empleadoMes/<slug>/<YYYY-MM> (agrupado por slug: Mi Sucursal
+   baja solo el suyo). Al asignarlo se publica en el Tablero de la
+   Bandeja y se le avisa a la sucursal por directo.
+   ============================================================ */
+const EDM_EXCLUIR = ['administracion','externos','deposito'];
+const EDM_TABLERO = ['julian@mateu.com.ar','cristian.campion@mateu.com.ar','rrhh@mateu.com.ar'];   // = PUBLICAN_TABLERO del Portal
+const puedeAsignarEdm = esAdmin || tieneTool || esSuper;
+function edmSucs(){ return sucsVisibles().filter(s=>!EDM_EXCLUIR.includes(s)).sort((a,b)=>cmp(sucLabel(a),sucLabel(b))); }
+function edmDe(slug, mes){ return (EMPMES[slug]||{})[mes]||null; }
+// meses en que ya fue elegida una persona (para no repetir sin darse cuenta)
+function edmVecesDe(legId){
+  const out=[]; Object.values(EMPMES).forEach(ms=>Object.entries(ms||{}).forEach(([m,x])=>{ if(x && x.legajoId===legId) out.push(m); }));
+  return out.sort().reverse();
+}
+function viewEmpleadoMes(){
+  const mes=state.edmMes, sucs=edmSucs();
+  const asig=sucs.filter(s=>edmDe(s,mes));
+  const kpis=`<div class="kpis">
+    <div class="kpi ${asig.length===sucs.length?'ok':'warn'}"><div class="k">Asignados en ${esc(periodoLabel(mes))}</div><div class="v">${asig.length}<small> / ${sucs.length}</small></div>
+      <div class="s">${asig.length===sucs.length?'todas las sucursales tienen su empleado del mes':(sucs.length-asig.length)+' sucursal'+(sucs.length-asig.length===1?'':'es')+' sin asignar'}</div></div>
+  </div>`;
+  const toolbar=`<div class="toolbar">
+    <button class="btn btn-outline btn-sm" id="edmPrev">‹</button>
+    <div class="edm-mes">${esc(periodoLabel(mes))}</div>
+    <button class="btn btn-outline btn-sm" id="edmNext">›</button>
+    ${mes!==periodoActual()?'<button class="btn btn-outline btn-sm" id="edmHoy">Mes actual</button>':''}
+  </div>`;
+  const cards=sucs.map(s=>{
+    const x=edmDe(s,mes);
+    if(!x) return `<div class="edm-card"><div class="suc">${esc(sucLabel(s))}</div>
+      <div class="vacio">Sin empleado del mes asignado.</div>
+      ${puedeAsignarEdm?`<div class="acts"><button class="btn btn-primary btn-sm" data-edmset="${esc(s)}">🏆 Asignar</button></div>`:''}</div>`;
+    return `<div class="edm-card on"><div class="suc">${esc(sucLabel(s))}</div>
+      <div class="who"><span class="avatar gold">${esc(iniciales(x.nombre).toUpperCase())}</span>
+        <div><div class="nm">${esc(x.nombre)}</div><div class="pu">${esc(x.puesto||'')}</div></div></div>
+      ${x.motivo?`<div class="mot">${esc(x.motivo)}</div>`:''}
+      <div class="por">Asignado por ${esc(x.por||'—')}${x.en?' · '+esc(String(x.en).slice(0,10).split('-').reverse().join('/')):''}</div>
+      ${puedeAsignarEdm?`<div class="acts"><button class="btn btn-outline btn-sm" data-edmset="${esc(s)}">✎ Cambiar</button><button class="btn btn-outline btn-sm" data-edmdel="${esc(s)}">Quitar</button></div>`:''}</div>`;
+  }).join('');
+  const hist=[]; Object.entries(EMPMES).forEach(([s,ms])=>Object.entries(ms||{}).forEach(([m,x])=>{ if(x && m!==mes) hist.push({s,m,...x}); }));
+  hist.sort((a,b)=>cmp(b.m,a.m) || cmp(sucLabel(a.s),sucLabel(b.s)));
+  const histHtml = hist.length ? `<div class="card-h" style="margin-top:6px">Meses anteriores</div>
+    <div class="tblwrap"><table class="grid"><thead><tr><th>Mes</th><th>Sucursal</th><th>Persona</th><th>Motivo</th><th>Asignó</th></tr></thead><tbody>
+    ${hist.slice(0,60).map(h=>`<tr><td>${esc(periodoLabel(h.m))}</td><td>${esc(sucLabel(h.s))}</td><td class="nm">${esc(h.nombre)}</td><td class="sub">${esc(h.motivo||'')}</td><td class="sub">${esc(h.por||'')}</td></tr>`).join('')}
+    </tbody></table></div>` : '';
+  return `<div class="sec-head"><div><h1>Empleado del mes</h1>
+      <div class="sub">Uno por sucursal. Lo ve el local en Mi Sucursal, gerencia en el Panel General, y se publica en el Tablero de la Bandeja.</div></div></div>
+    ${kpis}${toolbar}<div class="edm-grid">${cards}</div>${histHtml}`;
+}
+function formEmpleadoMes(slug){
+  if(!puedeAsignarEdm) return;
+  const mes=state.edmMes, act=edmDe(slug,mes);
+  const gente=legajosOrden().filter(l=>(l.estado||'activo')!=='baja' && l.sucursal===slug);
+  if(!gente.length){ toast('No hay personas activas en '+sucLabel(slug)+' (cargalas en Legajos)','err'); return; }
+  const puedeTablero = EDM_TABLERO.includes((SESSION.email||'').toLowerCase());
+  const opts=gente.map(l=>{ const v=edmVecesDe(l.id).filter(m=>m!==mes).length;
+    return `<option value="${esc(l.id)}" ${act&&act.legajoId===l.id?'selected':''}>${esc(l.nombre)} · ${esc(l.puesto||'')}${v?' · ya elegida '+v+' vez'+(v===1?'':'es'):''}</option>`; }).join('');
+  const body=`
+    <div class="hintline">Empleado del mes de <b>${esc(sucLabel(slug))}</b> · <b>${esc(periodoLabel(mes))}</b>.</div>
+    <div class="f" style="margin-top:10px"><label>Persona *</label><select class="sel" id="edmLeg"><option value="">— Elegí a la persona —</option>${opts}</select></div>
+    <div class="hintline" id="edmVeces" style="margin-top:4px"></div>
+    <div class="f" style="margin-top:10px"><label>¿Por qué? *</label><textarea class="inp" id="edmMot" rows="3" placeholder="Ej: superó su objetivo todas las semanas y siempre da una mano con el equipo">${esc(act&&act.motivo||'')}</textarea></div>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-size:13.5px"><input type="checkbox" id="edmTab" ${puedeTablero?'checked':'disabled'}> Publicarlo en el Tablero de la Bandeja${puedeTablero?'':' <span class="sub">(solo Gerencia, Supervisor y RRHH)</span>'}</label>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:6px;font-size:13.5px"><input type="checkbox" id="edmDir" checked> Avisarle a la sucursal por directo</label>`;
+  openModal(act?'Cambiar empleado del mes':'Asignar empleado del mes', body, `<button class="btn btn-outline" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">🏆 Guardar</button>`);
+  $('mCancel').onclick=closeModal;
+  const sel=$('edmLeg');
+  const veces=()=>{ const v=sel.value?edmVecesDe(sel.value).filter(m=>m!==mes):[]; $('edmVeces').innerHTML = v.length?'⚠ Ya fue empleado del mes en '+esc(v.map(periodoLabel).join(', ')):''; };
+  sel.onchange=veces; veces();
+  $('mSave').onclick=async()=>{
+    const l=LEGAJOS[sel.value], motivo=$('edmMot').value.trim();
+    if(!l){ toast('Elegí a la persona','err'); return; }
+    if(!motivo){ toast('Contá por qué lo eligieron','err'); return; }
+    const btn=$('mSave'); btn.disabled=true; btn.textContent='Guardando…';
+    const data={legajoId:sel.value, nombre:l.nombre||'', puesto:l.puesto||'', motivo, por:SESSION.email||'', en:nowISO()};
+    try{
+      await fbPut(ROOT+'/empleadoMes/'+slug+'/'+mes, data);
+      (EMPMES[slug]=EMPMES[slug]||{})[mes]=data;
+      const texto='🏆 Empleado del mes · '+periodoLabel(mes)+' — '+sucLabel(slug)+': '+data.nombre+(data.puesto?' ('+data.puesto+')':'')+'. '+motivo;
+      if($('edmTab').checked && puedeTablero){
+        fetch(MENSAJES_DB_URL+'/tablero.json',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({de:SESSION.email, texto, para:'todos', ts:Date.now()})}).catch(()=>null);
+      }
+      if($('edmDir').checked) avisarSucursal(slug, texto+' ¡Felicitaciones! Lo ven en Mi Sucursal.');
+      closeModal(); render(); toast('Empleado del mes guardado','ok');
+    }catch(e){ console.error(e); btn.disabled=false; btn.textContent='🏆 Guardar'; toast('No se pudo guardar: '+(e.message||e),'err'); }
+  };
+}
+async function quitarEmpleadoMes(slug){
+  const mes=state.edmMes, x=edmDe(slug,mes); if(!x || !puedeAsignarEdm) return;
+  if(!confirm('¿Quitar a '+x.nombre+' como empleado del mes de '+sucLabel(slug)+' ('+periodoLabel(mes)+')?\n\nLo que ya se publicó en el Tablero no se borra.')) return;
+  try{ await fbPut(ROOT+'/empleadoMes/'+slug+'/'+mes, null); if(EMPMES[slug]) delete EMPMES[slug][mes]; render(); toast('Quitado','ok'); }
+  catch(e){ toast('No se pudo quitar: '+(e.message||e),'err'); }
+}
+
+/* ============================================================
    TAB 4 — CALENDARIO DE NOVEDADES
    El Excel que hoy mandan los encargados mes a mes ("Calendario
    08-2026.xls"): una grilla LUNES→DOMINGO con texto libre por día
@@ -3032,6 +3155,13 @@ function wire(){
   document.querySelectorAll('[data-hpok]').forEach(b=> b.onclick=()=>{ const [sl,id]=b.dataset.hpok.split('|'); formValidarHoras(sl,id); });
   document.querySelectorAll('[data-hpno]').forEach(b=> b.onclick=()=>{ const [sl,id]=b.dataset.hpno.split('|'); formRechazarHoras(sl,id); });
   document.querySelectorAll('[data-hpdel]').forEach(b=> b.onclick=()=>{ const [sl,id]=b.dataset.hpdel.split('|'); borrarHP(sl,id); });
+
+  // ---- Empleado del mes ----
+  if($('edmPrev')) $('edmPrev').onclick=()=>{ state.edmMes=calShift(state.edmMes,-1); render(); };
+  if($('edmNext')) $('edmNext').onclick=()=>{ state.edmMes=calShift(state.edmMes, 1); render(); };
+  if($('edmHoy')) $('edmHoy').onclick=()=>{ state.edmMes=periodoActual(); render(); };
+  document.querySelectorAll('[data-edmset]').forEach(b=> b.onclick=()=>formEmpleadoMes(b.dataset.edmset));
+  document.querySelectorAll('[data-edmdel]').forEach(b=> b.onclick=()=>quitarEmpleadoMes(b.dataset.edmdel));
 
   // ---- Calendario ----
   const cS=$('calSuc'); if(cS) cS.onchange=()=>{ state.calSuc=cS.value; render(); };

@@ -865,6 +865,14 @@ footer b{color:var(--navy)}
     </header>
     <div class="zona-cargando" id="vivaLoad">Cargando la semana en curso…</div>
 
+    <!-- Empleado del mes: lo asignan RRHH / el supervisor desde RRHH → Empleado del mes
+         (rrhh/empleadoMes/<slug>). Solo lectura acá. Lo pinta renderEmpMes. -->
+    <section class="sec" id="secEmpMes" style="display:none">
+      <div class="sec-label">Reconocimiento</div>
+      <h2 class="sec-title" id="empMesTitle">Empleado <em>del mes</em></h2>
+      <div id="empMesCard"></div>
+    </section>
+
     <section class="sec" id="secObjetivoMes" style="display:none">
       <div class="sec-label">Objetivo de venta</div>
       <h2 class="sec-title">Objetivo <em>del mes</em></h2>
@@ -969,6 +977,21 @@ footer b{color:var(--navy)}
 #secNov .nov-aviso.warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412}
 #secNov .nov-aviso.bad{background:#fdecec;border:1px solid #f5b8b8;color:#991b1b}
 @media print{ #secNov .calbar{display:none} #secNov .cald{min-height:90px;break-inside:avoid} }
+/* Empleado del mes (asignado desde RRHH) */
+.edm-hero{display:flex;align-items:center;gap:18px;flex-wrap:wrap;background:linear-gradient(135deg,#fff8e6,#fff 70%);border:1px solid #efdca6;border-left:5px solid #c9971c;border-radius:14px;padding:18px 20px}
+.edm-av{width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#e9b949,#a87a0c);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-d,inherit);font-size:28px;letter-spacing:1px;flex-shrink:0;box-shadow:0 4px 14px rgba(168,122,12,.3)}
+.edm-hero .k{font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#8a6410}
+.edm-hero .n{font-family:var(--font-d,inherit);font-size:30px;letter-spacing:.5px;line-height:1.05;color:var(--navy,#0B1527)}
+.edm-hero .p{font-family:var(--font-c,inherit);font-size:13px;color:var(--muted,#6B7A99)}
+.edm-hero .m{flex:1 1 260px;font-size:14.5px;line-height:1.45;color:var(--navy,#0B1527);font-style:italic}
+.edm-ant{margin-top:10px;font-size:13px;color:var(--muted,#6B7A99)}
+.edm-cad{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.edm-cad .c{border:1px solid var(--border,#dce3f0);border-top:3px solid #c9971c;border-radius:10px;padding:10px 12px;background:#fff}
+.edm-cad .c.vac{border-top-color:var(--border,#dce3f0);opacity:.75}
+.edm-cad .s{font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted,#6B7A99)}
+.edm-cad .n{font-weight:700;font-size:14.5px;margin-top:2px}
+.edm-cad .m{font-size:12.5px;color:var(--muted,#6B7A99);margin-top:3px;line-height:1.35}
+@media(max-width:640px){ .edm-hero .n{font-size:24px} .edm-av{width:52px;height:52px;font-size:22px} }
 /* celular: la semana editable se apila (un casillero por día, con el nombre del día adentro)
    en vez de deslizar una grilla de 920px; el mes completo de consulta sigue deslizable */
 @media(max-width:640px){
@@ -1263,6 +1286,15 @@ footer b{color:var(--navy)}
       <h2 class="sec-title" id="tareasCadTitle">Tareas de la Sucursal <em>· control</em></h2>
       <p class="hint">Quién tiene la <b>limpieza del día</b> al día, tareas de precios o sectores <b>vencidas</b> y <b>vidrieras en alerta</b> por sucursal. El detalle, las fotos y la publicación de tareas viven en <b>Tareas de la Sucursal</b>.</p>
       <div class="card pad" id="tareasCadCard"></div>
+    </section>
+
+    <!-- Empleado del mes de cada sucursal (se asigna en RRHH → Empleado del mes).
+         Respeta el filtro por línea. Lo pinta pintarEmpMesCad. -->
+    <section class="sec" id="secEmpMesCad" style="display:none">
+      <div class="sec-label">Reconocimiento</div>
+      <h2 class="sec-title" id="empMesCadTitle">Empleado <em>del mes</em></h2>
+      <p class="hint">El empleado del mes de cada sucursal. Lo asignan <b>RRHH</b> y el <b>supervisor</b> desde RRHH → Empleado del mes; al asignarlo se publica en el Tablero de la Bandeja.</p>
+      <div class="card pad" id="empMesCadCard"></div>
     </section>
     </div><!-- /zonaVivaCad -->
 
@@ -1952,7 +1984,7 @@ async function render(){
     $('cadenaView').style.display='none';
     $('content').style.display='block';
     mostrarEmpty('Tu sucursal todavía no tiene datos de indicadores cargados.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); renderRepartoSuc(); renderDeposito(); renderF8Suc(); renderTareasSuc(); renderComp(); renderNov(); renderEquipoSuc(); }
+    if(slugActual()){ renderEmpMes(); renderObjetivo(); renderBarrida(); renderRepartoSuc(); renderDeposito(); renderF8Suc(); renderTareasSuc(); renderComp(); renderNov(); renderEquipoSuc(); }
     return;
   }
 
@@ -1999,6 +2031,7 @@ async function render(){
     renderObjCadena();   // async: Firebase; pinta cuando llega
     renderF8Cad();       // async: control del circuito F8 (Firebase equipo/f8suc)
     renderTareasCad();   // async: control de Tareas de la Sucursal (Firebase tareas/)
+    renderEmpMesCad();   // async: empleado del mes de cada sucursal (Firebase rrhh/empleadoMes)
     renderObjMesCadCierre(); // async: objetivo del mes cerrado agregado, arriba de los KPIs
     renderKpiSegCad();   // switch Mes / Sem 1…N del Cierre
     renderKpisCadena();
@@ -2020,7 +2053,7 @@ async function render(){
     mostrarEmpty(Object.values(SOLO_OBJ_SUC).includes(sucName)
       ? '<b>'+esc(sucName)+'</b> todavía no tiene datos de indicadores cargados (sí su objetivo y equipo).'
       : 'No hay datos de <b>'+esc(sucName)+'</b> para '+esc(perLabel(per))+'.');
-    if(slugActual()){ renderObjetivo(); renderBarrida(); renderRepartoSuc(); renderDeposito(); renderF8Suc(); renderTareasSuc(); renderComp(); renderNov(); renderEquipoSuc(); }
+    if(slugActual()){ renderEmpMes(); renderObjetivo(); renderBarrida(); renderRepartoSuc(); renderDeposito(); renderF8Suc(); renderTareasSuc(); renderComp(); renderNov(); renderEquipoSuc(); }
     return;
   }
   // la semana elegida tiene que existir en esta sucursal/período
@@ -2050,6 +2083,7 @@ async function render(){
   renderHeat();
   renderNotas();
   renderObjMesCierre();   // objetivo del mes cerrado, arriba de los KPIs (también en Ecommerce)
+  renderEmpMes();         // empleado del mes (RRHH): también en Ecommerce
   renderComp();           // compensatorios del equipo (RRHH): también en Ecommerce
   renderNov();            // novedades del mes (el calendario del encargado)
   renderEquipoSuc();      // el padrón de la sucursal (Mi equipo)
@@ -6850,6 +6884,66 @@ async function bajaPersonaModal(slug, id, cb){
   }catch(e){ alert('No se pudo registrar la baja: '+(e.message||e)); }
 }
 
+/* ============================================================
+   EMPLEADO DEL MES — lo asignan RRHH / el supervisor en RRHH
+   (rrhh/empleadoMes/<slug>/<YYYY-MM>). Acá solo se muestra: la
+   sucursal baja solo su nodo; gerencia en Cadena baja todo.
+   ============================================================ */
+const EDM_MES=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+function edmMesLbl(m){ const [y,mm]=String(m||'').split('-'); return (EDM_MES[+mm]||mm||'')+' '+(y||''); }
+function edmIni(n){ const p=String(n||'').trim().split(/\s+/); return (((p[0]||'')[0]||'')+((p[1]||'')[0]||'')).toUpperCase(); }
+async function renderEmpMes(){
+  const sec=$('secEmpMes'), card=$('empMesCard'); if(!sec||!card) return;
+  sec.style.display='none';
+  const slug=slugActual(); if(!slug || !RRHH_DB_URL) return;
+  let d=null;
+  try{ d=await fetchJSON(RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/empleadoMes/'+encodeURIComponent(slug)+'.json'); }catch(e){ return; }
+  if(slugActual()!==slug) return;
+  const meses=Object.keys(d||{}).filter(m=>d[m]&&d[m].nombre).sort().reverse();
+  if(!meses.length){ pintarZonas(); return; }
+  const m=meses[0], x=d[m];
+  const tit=$('empMesTitle'); if(tit) tit.innerHTML='Empleado <em>del mes</em> · '+esc(edmMesLbl(m));
+  let html='<div class="edm-hero"><div class="edm-av">🏆</div>'
+    +'<div><div class="k">'+esc(edmMesLbl(m))+'</div><div class="n">'+esc(x.nombre)+'</div><div class="p">'+esc(x.puesto||'')+'</div></div>'
+    +(x.motivo?'<div class="m">«'+esc(x.motivo)+'»</div>':'')+'</div>';
+  const ant=meses.slice(1,4).map(k=>esc(edmMesLbl(k))+': <b>'+esc(d[k].nombre)+'</b>');
+  if(ant.length) html+='<div class="edm-ant">Meses anteriores — '+ant.join(' · ')+'</div>';
+  if(esGerencia) html+='<div class="edm-ant"><a href="../rrhh/?tab=edm">Asignar o cambiar en RRHH →</a></div>';
+  card.innerHTML=html; sec.style.display=''; pintarZonas();
+}
+let _empMesCad=null;
+async function renderEmpMesCad(){
+  const sec=$('secEmpMesCad'); if(!sec) return;
+  sec.style.display='none';
+  if(!vistaCadena || !esGerencia || !RRHH_DB_URL) return;
+  if(!_empMesCad){
+    try{ _empMesCad=(await fetchJSON(RRHH_DB_URL.replace(/\/+$/,'')+'/rrhh/empleadoMes.json'))||{}; }catch(e){ return; }
+  }
+  pintarEmpMesCad();
+}
+function pintarEmpMesCad(){
+  const sec=$('secEmpMesCad'), card=$('empMesCadCard'); if(!sec||!card) return;
+  const D=_empMesCad; if(!vistaCadena || !D){ sec.style.display='none'; pintarZonas(); return; }
+  // el mes que se muestra = el más nuevo que tenga alguna asignación
+  let mes=''; Object.values(D).forEach(ms=>Object.keys(ms||{}).forEach(k=>{ if(k>mes) mes=k; }));
+  if(!mes){ sec.style.display='none'; pintarZonas(); return; }
+  const todos={...SLUG_SUC, ...OUTLET_SUC, ...SOLO_OBJ_SUC};
+  const slugs=[...new Set([...Object.keys(todos), ...Object.keys(D)])]
+    .filter(s=>!['deposito','administracion','externos'].includes(s))
+    .filter(s=>{ const full=todos[s]; return !rkTipo || (full && formatoDe(full)===rkTipo); });
+  const rows=slugs.map(s=>({s, nombre:todos[s]?todos[s].replace(/^\d+-\s*/,''):nombreBonito(s), x:(D[s]||{})[mes]||null}))
+    .sort((a,b)=>(!!b.x - !!a.x) || a.nombre.localeCompare(b.nombre,'es'));
+  const n=rows.filter(r=>r.x).length;
+  const tit=$('empMesCadTitle'); if(tit) tit.innerHTML='Empleado <em>del mes</em> · '+esc(edmMesLbl(mes));
+  let html='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+    +'<div style="font-size:15px"><b>'+n+'</b> de '+rows.length+' sucursales con empleado del mes asignado</div>'
+    +'<a href="../rrhh/?tab=edm" style="font-family:var(--font-c);font-weight:700;font-size:13px;letter-spacing:.6px;text-transform:uppercase;color:var(--navy)">Asignar en RRHH →</a></div>';
+  html+='<div class="edm-cad">'+rows.map(r=> r.x
+    ? '<div class="c"><div class="s">'+esc(r.nombre)+'</div><div class="n">🏆 '+esc(r.x.nombre)+'</div><div class="m">'+esc(r.x.puesto||'')+(r.x.motivo?' · '+esc(r.x.motivo):'')+'</div></div>'
+    : '<div class="c vac"><div class="s">'+esc(r.nombre)+'</div><div class="m">Sin asignar</div></div>').join('')+'</div>';
+  card.innerHTML=html; sec.style.display=''; pintarZonas();
+}
+
 async function renderComp(){
   const sec=$('secComp'); if(!sec) return;
   sec.style.display='none';
@@ -7979,7 +8073,7 @@ function renderRankChips(){
   const presentes = new Set((CAD.sucursales||[]).filter(s=>s.sucursal!==ECOM && s.horas_contr>0).map(s=>s.formato||formatoDe(s.sucursal)));
   const chips = [''].concat(RK_LINEAS.filter(f=>presentes.has(f)));
   $('rkChips').innerHTML = chips.map(f=>`<button class="rk-chip${rkTipo===f?' on':''}" data-f="${esc(f)}">${f===''?'Todas':esc(fmtLabel(f))}</button>`).join('');
-  $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderObjCadena(); pintarF8Cad(); pintarTareasCad(); renderObjMesCadCierre(); renderKpiSegCad(); renderKpisCadena(); renderSemCad(); renderRanking(); renderCadenaTabla(); renderAnalisisCad(); });
+  $('rkChips').querySelectorAll('.rk-chip').forEach(b=>b.onclick=()=>{ rkTipo=b.dataset.f; renderObjCadena(); pintarF8Cad(); pintarTareasCad(); pintarEmpMesCad(); renderObjMesCadCierre(); renderKpiSegCad(); renderKpisCadena(); renderSemCad(); renderRanking(); renderCadenaTabla(); renderAnalisisCad(); });
   const kchips = `<button class="rk-chip${rkKpiSel==='todos'?' on':''}" data-k="todos">Todos</button>`
     + RK_KPIS.map(k=>`<button class="rk-chip${rkKpiSel===k.k?' on':''}" data-k="${k.k}">${esc(k.short)}</button>`).join('');
   $('rkKpiChips').innerHTML = kchips;
