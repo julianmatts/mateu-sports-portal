@@ -1726,6 +1726,21 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
   lo descuenta de la memoria.
 - Probado el 10/09/2026 con «Estad remitos 2026.csv» (2.102 remitos) + el reporte de stock del
   depósito de Puma: 9 remitos de septiembre → 540 u. a 14 sucursales, 77 quedan.
+- **Ajustes tras la prueba manual de Nehuen (14/09/2026, Atomik y New Balance)**:
+  - **Stock por sucursal en el Reparto inicial** (botón en la tarjeta de carga, `repStockPorId` → `REP_STOCK`):
+    en los reingresos la sucursal que ya tiene el artículo cuenta como que lo tiene (`tiene` = mayor entre lo
+    enviado hace poco y su stock) y solo se le completa la curva; también alimenta las paredes.
+  - **Curva del depósito después de las curvas base**: primero cada sucursal recibe su curva; la del depósito
+    sale de lo que sobra, solo si el artículo tiene `curvaDesde` unidades o más (default 12, «Dejar curva si
+    el artículo tiene») y solo si llega a `reservaMin` (default 6, «Reserva mínima»); si al final queda
+    menos de ese mínimo, se reparte todo.
+  - **Calzado unisex** usa los centrales de hombre y dama juntos (`calz-unisex`, editable).
+  - **Aurelius Calle 10 se trabaja como outlet** (`COMO_OUTLET` en `catDe`; en marcas `tipoDeSuc` → outlet):
+    sale de los destinos por defecto del Reparto inicial y sigue las reglas de outlets en «Abrir».
+  - **La Barrida respeta la ficha de la marca** (`fichaBloquea`): la reposición por venta, Completar curva y
+    Vaciar la reserva chica no le mandan a una sucursal lo que su ficha excluye (caso Atomik adulto en
+    Ensenada) ni adulto a Mateu Kids; `R.fueraFicha` cuenta las líneas descartadas.
+  - Pendiente: el reporte de stock que mostraba el doble que el F9 del depósito (204 vs 102, 12 vs 6).
 
 ## Panel General de Logística (`logistica/`, 08/09/2026)
 
