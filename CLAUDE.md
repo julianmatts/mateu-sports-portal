@@ -1750,6 +1750,10 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     disciplinas»): New Balance 9060 / 530 / 740 / 204 / 1906 son exclusivos de Aurelius → Cat 1 los excluye;
     Ecommerce (que es la web de Mateu y de Aurelius) tiene New Balance asignada con columna propia: solo esos
     modelos. Atomik en Diagonal 80: solo niño (excepción de la ficha).
+  - **Excedente del Reparto inicial**: «Repartir el excedente» viene **destildado** (prefs `v:2`): lo que sobra
+    después de las curvas queda de reserva (si queda menos de `reservaMin`, se reparte igual). New Balance
+    exclusivos de Aurelius: Aurelius de línea y Ecommerce prioridad 1, Aurelius 10 (columna outlet, «como local
+    de línea») prioridad 2.
 
 ## Panel General de Logística (`logistica/`, 08/09/2026)
 

@@ -3321,14 +3321,15 @@ state.rep = {
   mes:'', sel:{},         // mes de ingreso elegido ('' = todo) y remitos marcados
   f:{ marca:'', rubro:'', q:'', verRepartidos:false },
   destinos:null,          // slugs destino (null = todas menos los outlets)
-  param:{ uCentral:2, maxCentral:3, uResto:1, reserva:1, minTalles:3, excedente:true, respetarDisc:true, memoria:true, excluirVarios:true, huerfanos:true },
+  param:{ uCentral:2, maxCentral:3, uResto:1, reserva:1, minTalles:3, excedente:false,   /* el excedente queda de reserva (Juli 14/09/2026) */ respetarDisc:true, memoria:true, excluirVarios:true, huerfanos:true },
   centrales:null,         // talles centrales editados (se comparten en repartoConfig/centrales)
   res:null, vista:'remito', selOpen:true,
   hist:null, repartidos:{}, guardados:[], cargado:false, abierto:null,
 };
-function repGuardarPrefs(){ try{ localStorage.setItem(REP_PREFS, JSON.stringify({ param:state.rep.param, destinos:state.rep.destinos })); }catch(e){} }
+function repGuardarPrefs(){ try{ localStorage.setItem(REP_PREFS, JSON.stringify({ v:2, param:state.rep.param, destinos:state.rep.destinos })); }catch(e){} }
 (function repCargarPrefs(){ try{ const p=JSON.parse(localStorage.getItem(REP_PREFS)||'null'); if(!p) return;
-  if(p.param) Object.keys(state.rep.param).forEach(k=>{ if(p.param[k]!=null) state.rep.param[k]=p.param[k]; });
+  // v2 (14/09/2026): «Repartir el excedente» pasó a venir destildado; el tilde de las preferencias viejas no se toma
+  if(p.param) Object.keys(state.rep.param).forEach(k=>{ if(p.param[k]!=null && !(k==='excedente' && p.v!==2)) state.rep.param[k]=p.param[k]; });
   if(Array.isArray(p.destinos)) state.rep.destinos=p.destinos; }catch(e){} })();
 
 /* ---------- lectura de la estadística de remitos ----------
