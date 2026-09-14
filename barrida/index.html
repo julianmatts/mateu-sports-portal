@@ -1434,7 +1434,7 @@ function aplicarAmpliar(){
     const destinos=Object.keys(REP_SUC).filter(slug=>{
       if(soloAur && slug!==AMP_WEB_AURELIUS) return false;
       if(ampExcluida(slug) || recibe[A.id+'|'+slug]) return false;
-      if(catDe(slug)==='outlet' && A.dias<NO) return false;
+      if(catDe(slug)==='outlet' && A.dias<NO && !fichaOutletLinea(A.marca, G)) return false;
       const S=A.stockSuc[slug]; return !(S && S.total>=MINART);
     });
     // a la web de Aurelius no se le aplica el tope de meses de stock: su ratio es el de toda la web
@@ -3501,6 +3501,13 @@ function fichaDiscRx(d){
   const k=sinAcento(d).toLowerCase().trim();
   return FICHA_DISC_RX[k] || new RegExp(k.slice(0,5).replace(/[.*+?^${}()|[\]\\]/g,'\\$&') || '^$');
 }
+// «Outlets como local de línea» (columna Outlets de la ficha; Atomik y Head, PVP bajo): los outlets entran
+// al Reparto inicial y a «Abrir a más sucursales» sin esperar los días de outlet
+function fichaOutletLinea(marca, G){
+  const F=PRIO.fichas, rub = G.fam==='calz' ? 'calzado' : G.fam==='ind' ? 'indumentaria' : '';
+  const f=F && rub && F[rub] && F[rub][normMarca(marca)];
+  return !!(f && f.tipos && f.tipos.outlet && f.tipos.outlet.comoLinea);
+}
 // ¿el artículo entra en lo que la ficha dice que va a esa sucursal? (el precio no: los reportes no lo traen)
 function fichaPasa(fe, a, G){
   if(fe.genero.length && G.g){
@@ -3697,7 +3704,9 @@ function repCalcular(){
     const C=repCentrales(a, labels);
     // niño: Outlet Gonnet entra aunque los outlets estén afuera por defecto (sector de niños)
     const kidsA = C.G.g==='nino' || C.G.g==='infante';
-    const destA = (kidsA && !Array.isArray(S.destinos) && REP_SUC.gonnet && !destinos.includes('gonnet')) ? destinos.concat('gonnet') : destinos;
+    let destA = (kidsA && !Array.isArray(S.destinos) && REP_SUC.gonnet && !destinos.includes('gonnet')) ? destinos.concat('gonnet') : destinos;
+    if(!Array.isArray(S.destinos) && fichaOutletLinea(a.marca, C.G))
+      destA = destA.concat(Object.keys(REP_SUC).filter(sl=>catDe(sl)==='outlet' && !destA.includes(sl)));
     const cands=repCandidatos(a, C.G, destA);
     const out=repRepartirArt(tl.perRem, cands, C.set, P);
     Object.assign(a, { estimado:tl.estimado, faltan:tl.faltan, centrales:[...C.set], regla:C.regla, grupo:C.G.key });

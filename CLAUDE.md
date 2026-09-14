@@ -1538,6 +1538,14 @@ admin, «ficha de la marca ▸».
   (outletizadas); ON solo Ecommerce 1.ª, D80 2.ª, CB 3.ª y Aurelius 5 casual; Salomon solo Cat 1 y Ecommerce,
   adventure; Timberland solo Aurelius 5 y 12; The North Face solo Diagonal 80; Umbro prioritaria solo en Cat
   2 y outlets, fútbol; Vans solo Aurelius.
+- **«Outlets como local de línea» (13/09/2026)**: tilde de la columna Outlets de la ficha (`comoLinea`), para
+  marcas de PVP bajo (hoy Atomik y Head): los outlets entran a los destinos por defecto del Reparto inicial
+  y a «Abrir a más sucursales» sin esperar `filtrosAmp.outletDias` (`fichaOutletLinea`). Además: Skechers
+  (running H/D, Cat 1 y Cat 2 menos Ensenada, outlets; salió de Kids), Head (casual todos; running solo
+  outlets; fútbol Cat 2 y outlets; básquet D80 y Cat 2; calzado verano Cat 2; hockey y tenis D80 y CB),
+  Atomik (niño todo en todos; casual adulto en Cat 1, Cat 2 menos Ensenada y outlets), Salomon + Los Hornos
+  y Reebok solo outlets. Pendientes de Juli: Training de Head, Puma, Havaianas y las marcas con artículos
+  sin asignar (Topper, Rider, DC Shoes…).
 - **Ecommerce se trabaja como un Cat 1 (Juli 13/09/2026)**: en la ficha, si la columna Ecommerce está
   vacía toma la de Cat 1 (`fichaDe` en barrida, `fichaEfectiva` en marcas; la columna dice «vacío = como Cat
   1»). Solo llevan columna propia 47 Street (va a Ecommerce y no a Cat 1) y Adidas (Juli le sumó Originals y

@@ -2029,7 +2029,7 @@ const FICHA_DISC = {
 const FICHA_DISC_AYUDA = { 'Fútbol':'FUTBOL 11 y FUTBOL 5 del sistema', 'Sandalias':'CALZADO VERANO del sistema (sandalias, ojotas)', 'Pádel':'PADDLE en el sistema',
   'Outdoor':'OUTDOOR / TREKKING', 'Casual':'CASUAL / LIFESTYLE' };
 const FICHA_GEN = ['Hombre','Dama','Unisex','Niño'];
-const FICHA_CAMPOS = ['disc','modelos','genero','precioMax','nota','plana','orden','ninoLibre'];
+const FICHA_CAMPOS = ['disc','modelos','genero','precioMax','nota','plana','orden','ninoLibre','comoLinea'];
 // curva: '' = la del reparto (centrales x2) · 'nino' = x1 plana en niño · 'todo' = x1 plana en todo
 const FICHA_PLANA = { '':'Normal (centrales x2)', nino:'x1 plana en niño', todo:'x1 plana en todo' };
 let FICHAS = { calzado:{}, indumentaria:{} };
@@ -2040,8 +2040,8 @@ const fiArr = x => Array.isArray(x) ? x.filter(v => v != null && v !== '') : (x 
 function tipoDeSuc(s){ return s.id === 'ms-kids' ? 'kids' : s.id === 'ms-ecom' ? 'ecom' : s.cat; }
 function tipoLbl(k){ const t = TIPOS_LOCAL.find(x => x.k === k); return t ? t.l : k; }
 function sucsDelRubro(){ const out = []; Object.values(DATA).forEach(c => (c.sucursales || []).forEach(x => out.push(x))); return out; }
-function normBloque(b){ b = b || {}; return { disc:fiArr(b.disc), modelos:fiArr(b.modelos), genero:fiArr(b.genero), precioMax:Number(b.precioMax) || 0, nota:String(b.nota || ''), plana:FICHA_PLANA[b.plana] && b.plana ? b.plana : '', orden:Math.max(0, Math.round(Number(b.orden) || 0)), ninoLibre:!!b.ninoLibre }; }
-function bloqueVacio(b){ return !b || (!fiArr(b.disc).length && !fiArr(b.modelos).length && !fiArr(b.genero).length && !(Number(b.precioMax) > 0) && !String(b.nota || '').trim() && !b.plana && !(Number(b.orden) > 0) && !b.ninoLibre); }
+function normBloque(b){ b = b || {}; return { disc:fiArr(b.disc), modelos:fiArr(b.modelos), genero:fiArr(b.genero), precioMax:Number(b.precioMax) || 0, nota:String(b.nota || ''), plana:FICHA_PLANA[b.plana] && b.plana ? b.plana : '', orden:Math.max(0, Math.round(Number(b.orden) || 0)), ninoLibre:!!b.ninoLibre, comoLinea:!!b.comoLinea }; }
+function bloqueVacio(b){ return !b || (!fiArr(b.disc).length && !fiArr(b.modelos).length && !fiArr(b.genero).length && !(Number(b.precioMax) > 0) && !String(b.nota || '').trim() && !b.plana && !(Number(b.orden) > 0) && !b.ninoLibre && !b.comoLinea); }
 
 async function fichasCargar(){
   try {
@@ -2059,7 +2059,7 @@ function fichaEfectiva(marca, suc, rubro){
   const tipo = tipoDeSuc(suc), propio = f.tipos && f.tipos[tipo];
   const out = Object.assign(normBloque(tipo === 'ecom' && bloqueVacio(propio) ? (f.tipos && f.tipos.cat1) : propio), { exc:[] });
   const exc = f.exc && f.exc[suc.id] ? normBloque(f.exc[suc.id]) : null;
-  if (exc) FICHA_CAMPOS.forEach(c => { const v = exc[c]; if (Array.isArray(v) ? v.length : ((c === 'precioMax' || c === 'orden') ? v > 0 : c === 'ninoLibre' ? v === true : String(v).trim())) { out[c] = v; out.exc.push(c); } });
+  if (exc) FICHA_CAMPOS.forEach(c => { const v = exc[c]; if (Array.isArray(v) ? v.length : ((c === 'precioMax' || c === 'orden') ? v > 0 : (c === 'ninoLibre' || c === 'comoLinea') ? v === true : String(v).trim())) { out[c] = v; out.exc.push(c); } });
   return bloqueVacio(out) ? null : out;
 }
 const fmtPesos = n => '$' + Math.round(n).toLocaleString('es-AR');
@@ -2071,6 +2071,7 @@ function fichaResumenHtml(suc, marca){
     + fila('Modelos', e.modelos.map(escapeHtml).join(' · '), 'modelos')
     + fila('Género', e.genero.map(escapeHtml).join(' · '), 'genero')
     + fila('Precio', e.precioMax > 0 ? 'hasta ' + fmtPesos(e.precioMax) + ' de PVP' : '', 'precioMax')
+    + fila('Outlet', e.comoLinea ? 'recibe como local de línea' : '', 'comoLinea')
     + fila('Niño', e.ninoLibre ? 'cualquier disciplina o modelo' : '', 'ninoLibre')
     + fila('Curva', e.plana ? escapeHtml(FICHA_PLANA[e.plana]) : '', 'plana')
     + fila('Prioridad', e.orden > 0 ? e.orden + '.ª en el reparto de la marca' : '', 'orden')
@@ -2139,6 +2140,7 @@ function fiColHtml(sc, id, titulo, sucs, puede, sub){
   h += '<div class="fi-lbl">Género</div><div class="fi-chips">' + FICHA_GEN.map(g => chip('genero', g, b.genero.includes(g))).join('')
     + (!puede && !b.genero.length ? '<span class="fi-dim">todos</span>' : '') + '</div>';
   h += '<label class="fi-chk" style="margin:6px 0 0"><input type="checkbox" ' + at('set', ' data-campo="ninoLibre"') + (b.ninoLibre ? ' checked' : '') + (puede ? '' : ' disabled') + '> Niño: cualquier disciplina o modelo</label>';
+  if (sc === 't' && id === 'outlet') h += '<label class="fi-chk" style="margin:4px 0 0" title="Marca de PVP bajo: los outlets entran al Reparto inicial y a «Abrir a más sucursales» sin esperar los 40 días"><input type="checkbox" ' + at('set', ' data-campo="comoLinea"') + (b.comoLinea ? ' checked' : '') + (puede ? '' : ' disabled') + '> Outlets como local de línea</label>';
   h += '<div class="fi-lbl">Curva</div><select class="form-input fi-num" ' + at('set', ' data-campo="plana"') + (puede ? '' : ' disabled') + '>'
     + Object.keys(FICHA_PLANA).map(k => '<option value="' + k + '"' + (b.plana === k ? ' selected' : '') + '>' + (sc === 'e' && !k ? 'Como su tipo de local' : FICHA_PLANA[k]) + '</option>').join('') + '</select>';
   h += '<div class="fi-lbl">Prioridad en el reparto <span class="fi-dim">· 1 = primera; vacío = la general</span></div><input class="form-input fi-num" type="number" min="0" step="1" placeholder="general" value="' + (b.orden > 0 ? b.orden : '') + '" ' + at('set', ' data-campo="orden"') + (puede ? '' : ' disabled') + '>';
@@ -2252,6 +2254,7 @@ async function fiGuardar(){
     if (el.dataset.campo === 'precioMax') b.precioMax = Math.max(0, Number(el.value) || 0);
     else if (el.dataset.campo === 'plana') b.plana = el.value;
     else if (el.dataset.campo === 'ninoLibre') b.ninoLibre = el.checked;
+    else if (el.dataset.campo === 'comoLinea') b.comoLinea = el.checked;
     else if (el.dataset.campo === 'orden') b.orden = Math.max(0, Math.round(Number(el.value) || 0));
     else b.nota = el.value;
     fiMarcar();
