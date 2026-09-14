@@ -668,7 +668,12 @@ tarjetas ya renderizadas, clic = volver). Los filtros (mes/sucursal/semana) usan
 **dropdown propio** `dropSel()` (el `<select>` queda oculto como estado y dispara
 su `change` normal; `pintarZonas` mueve el wrapper). **Solo Ecommerce y Outlet
 Gonnet abren los domingos**: `pesosSinDomingo()` anula el domingo de la matriz de pesos
-para el resto (importa con la curva promedio, fallback de Diagonal 80). El objetivo
+para el resto (importa con la curva promedio, fallback de Diagonal 80). **Diagonal 80
+reparte por día con su propia venta (14/09/2026)**: `CURVA_VENTA_SUC` + `conCurvaVenta` (en
+`fetchEqPesos` y `fetchPesosSlug`) toman las últimas `CURVA_VENTA_SEM` (4) semanas completas de
+`ventaEquipo/<slug>` (terminadas y con venta los 6 días), promedian el % de cada día y reescalan
+la matriz base (el reparto entre turnos dentro del día no cambia); marca `curvaVenta` y los textos
+lo aclaran. Al 14/09: Lu 12,5 · Ma 15,2 · Mi 15,3 · Ju 15,0 · Vi 18,7 · Sá 23,4 %. El objetivo
 semanal se abre además **por día** (tira «Objetivo por día» del local con real y % cuando
 hay venta diaria, y objetivo diario por vendedor en su desplegable — `eqPesosDia`,
 `eqSharesDia`, `objDiasHtml`).

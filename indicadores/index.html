@@ -3799,6 +3799,56 @@ function pesosSinDomingo(slug, m){
   if(tot>0) ['t1','t2','t3'].forEach(t=>{ out[t]=out[t].map(v=>+(((+v||0)/tot*100).toFixed(4))); });
   return out;
 }
+// Sucursales cuya curva por DÍA sale de su propia venta de las últimas semanas
+// (Juli, 14/09/2026: Diagonal 80 abrió el 10/08 y no tiene matriz propia; el
+// promedio de las demás no refleja su semana). Se toman las últimas CURVA_VENTA_SEM
+// semanas COMPLETAS de ventaEquipo (terminadas y con venta los 6 días hábiles), se
+// promedia la participación de cada día y se reescala la matriz base: el total de
+// cada día pasa a ese %, y el reparto entre turnos dentro del día queda como estaba.
+const CURVA_VENTA_SUC = ['diagonal'];
+const CURVA_VENTA_SEM = 4;
+const _curvaVentaCache={};
+function curvaVentaReciente(slug){
+  if(_curvaVentaCache[slug]) return _curvaVentaCache[slug];
+  const base=OBJETIVOS_URL.replace(/\/+$/,'');
+  const domingo=ABRE_DOMINGO.includes(slug);
+  const hoyISO=(()=>{ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+  const finSem=lun=>{ const d=new Date(lun+'T12:00:00'); d.setDate(d.getDate()+6);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+  _curvaVentaCache[slug]=(async()=>{
+    const o=await fetch(base+'/ventaEquipo/'+encodeURIComponent(slug)+'.json?shallow=true').then(r=>r.ok?r.json():null).catch(()=>null);
+    if(!o) return null;
+    const lunes=Object.keys(o).filter(k=>/^\d{4}-\d{2}-\d{2}$/.test(k) && finSem(k)<hoyISO).sort().reverse().slice(0,CURVA_VENTA_SEM+3);
+    const dias=domingo?EQ_DOW:EQ_DOW.slice(0,6);
+    const usadas=[]; const acum=EQ_DOW.map(()=>0);
+    for(const w of lunes){
+      if(usadas.length>=CURVA_VENTA_SEM) break;
+      const vd=veVentaDia(await fetchVentaEquipo(slug, w));
+      if(!dias.every(k=>(vd[k]||0)>0)) continue;   // semana incompleta (apertura, carga parcial)
+      const tot=dias.reduce((a,k)=>a+vd[k],0);
+      EQ_DOW.forEach((k,i)=>{ if(dias.includes(k)) acum[i]+=vd[k]/tot; });
+      usadas.push(w);
+    }
+    if(!usadas.length) return null;
+    return {share:acum.map(x=>x/usadas.length), semanas:usadas.slice().sort()};
+  })();
+  return _curvaVentaCache[slug];
+}
+async function conCurvaVenta(slug, m){
+  if(!m || !m.t1 || !CURVA_VENTA_SUC.includes(slug)) return m;
+  const c=await curvaVentaReciente(slug).catch(()=>null);
+  if(!c) return m;
+  const out={t1:[],t2:[],t3:[]};
+  for(let d=0;d<7;d++){
+    const dia=['t1','t2','t3'].reduce((a,t)=>a+(+((m[t]||[])[d])||0),0);
+    ['t1','t2','t3'].forEach(t=>{
+      const w=+((m[t]||[])[d])||0;
+      out[t][d]=+((dia>0 ? w/dia : 1/3)*c.share[d]*100).toFixed(4);
+    });
+  }
+  out.curvaVenta={semanas:c.semanas};
+  return out;
+}
 function fetchEqPesos(slug){
   if(_eqPesosCache[slug]) return _eqPesosCache[slug];
   const base=OBJETIVOS_URL.replace(/\/+$/,'');
@@ -3816,7 +3866,7 @@ function fetchEqPesos(slug){
   };
   _eqPesosCache[slug]=fetch(base+'/objetivos/pesosTurnos/porSlug/'+encodeURIComponent(slug)+'.json')
     .then(r=>r.ok?r.json():null).catch(()=>null)
-    .then(p=> pesosSinDomingo(slug, (p && p.t1) ? p : horneado()));
+    .then(p=> conCurvaVenta(slug, pesosSinDomingo(slug, (p && p.t1) ? p : horneado())));
   return _eqPesosCache[slug];
 }
 function fetchEquipo(slug, sem){
@@ -3920,7 +3970,8 @@ function objDiasHtml(meta, pesos, ve){
     +'<div style="font-family:var(--font-c,inherit);font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mid);margin-bottom:6px">Objetivo por día</div>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap">'+cards+'</div>'
     +'<p class="hint" style="margin:6px 0 0">La meta de la semana repartida según la curva de venta por día de tu sucursal'
-    +(pesos.promedio?' (todavía sin curva propia: se usa el promedio de todas las sucursales)':'')+'.</p>'
+    +(pesos.curvaVenta?' (sale de la venta de tus últimas '+pesos.curvaVenta.semanas.length+' semanas completas)'
+      :pesos.promedio?' (todavía sin curva propia: se usa el promedio de todas las sucursales)':'')+'.</p>'
     +'</div>';
 }
 // match de nombres por tokens: tolera orden invertido ("NOBLE ANALIA" vs
@@ -4548,7 +4599,8 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
     h+='<p class="empty" style="margin:4px 0 8px">No hay matriz de pesos para esta sucursal — pedile a gerencia que la publique desde Objetivos → Pesos por turno.</p>';
     return h;
   }
-  if(pesos.promedio) h+='<p class="hint" style="margin:0 0 10px">Tu sucursal todavía no tiene matriz de pesos propia: la meta se reparte con el <b>promedio de todas las sucursales</b> hasta que gerencia la publique desde Objetivos → Pesos por turno.</p>';
+  if(pesos.curvaVenta) h+='<p class="hint" style="margin:0 0 10px">El peso de cada día sale de la <b>venta de tus últimas '+pesos.curvaVenta.semanas.length+' semanas completas</b>; se actualiza solo cuando se carga una semana nueva.</p>';
+  else if(pesos.promedio) h+='<p class="hint" style="margin:0 0 10px">Tu sucursal todavía no tiene matriz de pesos propia: la meta se reparte con el <b>promedio de todas las sucursales</b> hasta que gerencia la publique desde Objetivos → Pesos por turno.</p>';
   const {shares, cobertura, totalPeso}=eqShares(equipo, pesos);
   const sharesDia=eqSharesDia(equipo, pesos);   // reparto abierto por día (objetivo diario individual)
   const editReal = _eqRealDraft && _eqRealDraft.slug===slug && _eqRealDraft.sem===sem;
@@ -4883,7 +4935,7 @@ function fetchPesosSlug(slug){
     return avg;
   };
   _pesosSlugCache[slug]=fetch(base+'/objetivos/pesosTurnos/porSlug/'+encodeURIComponent(slug)+'.json')
-    .then(r=>r.ok?r.json():null).catch(()=>null).then(p=>pesosSinDomingo(slug, (p&&p.t1)?p:horneado()));
+    .then(r=>r.ok?r.json():null).catch(()=>null).then(p=>conCurvaVenta(slug, pesosSinDomingo(slug, (p&&p.t1)?p:horneado())));
   return _pesosSlugCache[slug];
 }
 // equipo con horas para una semana: el guardado de esa semana o, si no tiene horas, el último
