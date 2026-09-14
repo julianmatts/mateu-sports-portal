@@ -511,7 +511,17 @@ function cargarStockData(){
     document.head.appendChild(s);
   });
 }
+// Fichas por marca de Asignación de Marcas (13/09/2026): qué va de cada marca a cada tipo de local
+// (disciplinas, modelos, género, nota). Nodo aparte: asignacion_marcas_fichas/<calzado|indumentaria>/<marca>
+const FB_FICHAS = 'https://asignacion-marcas-mateu-default-rtdb.firebaseio.com/asignacion_marcas_fichas.json';
+async function cargarFichasMarcas(){
+  if(PRIO.fichas) return PRIO.fichas;
+  try{ const r=await conTimeout(fetch(FB_FICHAS),6000); PRIO.fichas=(r.ok && await r.json()) || {}; }
+  catch(e){ PRIO.fichas={}; }
+  return PRIO.fichas;
+}
 async function cargarCategorias(){
+  await cargarFichasMarcas();
   if(PRIO.cats) return PRIO.cats;
   try{
     const r=await conTimeout(fetch(FB_MARCAS),6000); if(!r.ok) throw new Error('HTTP '+r.status);
@@ -3437,6 +3447,42 @@ function repCentrales(a, labels){
   return { G, set, regla:'sin regla para '+(GRUPO_LBL[G.key]||'este tipo')+': los talles del medio' };
 }
 
+/* ---------- ficha de la marca por tipo de local (Asignación de Marcas → «📋 Fichas por marca») ----------
+   Cada sucursal hereda lo de su tipo (cat1, cat2, kids, ecom, aurelius, adidas, outlet) y su
+   excepción pisa campo por campo. Vacío = no restringe. */
+const FICHA_TIPO_SLUG = { kids:'kids', ecommerce:'ecom' };
+const fiLista = x => Array.isArray(x) ? x.filter(Boolean) : (x && typeof x==='object' ? Object.values(x).filter(Boolean) : []);
+function fichaDe(slug, marca, G){
+  const F=PRIO.fichas; if(!F) return null;
+  const rub = G.fam==='calz' ? 'calzado' : G.fam==='ind' ? 'indumentaria' : ''; if(!rub || !F[rub]) return null;
+  const mk=normMarca(marca); if(!mk) return null;
+  let f=F[rub][mk];
+  if(!f){ const k=Object.keys(F[rub]).find(k=>Math.min(k.length,mk.length)>=3 && (k.startsWith(mk)||mk.startsWith(k))); f=k?F[rub][k]:null; }
+  if(!f) return null;
+  const tipo = FICHA_TIPO_SLUG[slug] || (PRIO.cats||CAT_SEED)[slug];
+  const norm = b => ({ disc:fiLista(b&&b.disc), modelos:fiLista(b&&b.modelos), genero:fiLista(b&&b.genero), precioMax:Number(b&&b.precioMax)||0, nota:String((b&&b.nota)||'') });
+  const out=norm(f.tipos&&f.tipos[tipo]);
+  const id=SLUG2MARCAS[slug], exc=id&&f.exc&&f.exc[id];
+  if(exc){ const e=norm(exc); ['disc','modelos','genero'].forEach(c=>{ if(e[c].length) out[c]=e[c]; }); if(e.precioMax>0) out.precioMax=e.precioMax; if(e.nota.trim()) out.nota=e.nota; }
+  return (out.disc.length||out.modelos.length||out.genero.length||out.nota.trim()) ? out : null;
+}
+// ¿el artículo entra en lo que la ficha dice que va a esa sucursal? (el precio no: los reportes no lo traen)
+function fichaPasa(fe, a, G){
+  if(fe.genero.length && G.g){
+    const gs=fe.genero.map(x=>sinAcento(x).toLowerCase());
+    const ok = (G.g==='nino'||G.g==='infante') ? gs.some(x=>x.startsWith('nin'))
+      : G.g==='unisex' ? gs.some(x=>/unisex|hombre|dama/.test(x)) : gs.some(x=>x===G.g||x==='unisex');
+    if(!ok) return false;
+  }
+  if(state.rep.param.respetarDisc && (fe.disc.length || fe.modelos.length)){
+    const disc=sinAcento(a.disc||'').toLowerCase(), txt=sinAcento([a.desc,a.disc,a.tipo].filter(Boolean).join(' ')).toLowerCase();
+    const okD=fe.disc.some(d=>{ const k=sinAcento(d).toLowerCase().slice(0,5); return k && txt.includes(k); });
+    const okM=fe.modelos.some(m=>{ const k=sinAcento(m).toLowerCase().trim(); return k && txt.includes(k); });
+    if(!okD && !okM) return !disc && !fe.modelos.length;    // sin disciplina en el artículo no se puede descartar
+  }
+  return true;
+}
+
 /* ---------- a quién (Asignación de Marcas) y en qué orden ---------- */
 function repAsig(slug, a, G){
   if(SOLO_NINO[slug] && G.fam && G.g!=='nino' && G.g!=='infante') return null;
@@ -3460,8 +3506,11 @@ function repAsig(slug, a, G){
       if(pedidas.length && disc && !pedidas.some(k=>disc.includes(k.slice(0,5)))) return null;
     }
   }
+  const fe=fichaDe(slug, a.marca, G);
+  if(fe && !fichaPasa(fe, a, G)) return null;
   const rank = (b.t==='prio'||b.t==='nino') ? 1 : b.t==='especial' ? 2 : 3;
-  return { tipo:b.t||'sec', rank, nota:(b.d&&b.d.length)?b.d.join(', '):'' };
+  const notaFicha = fe ? [fe.disc.join('/'), fe.modelos.join('/'), fe.genero.join('/'), fe.nota].filter(Boolean).join(' · ') : '';
+  return { tipo:b.t||'sec', rank, nota:[(b.d&&b.d.length)?b.d.join(', '):'', notaFicha].filter(Boolean).join(' · ') };
 }
 const ASIG_LBL = { prio:'marca principal', nino:'marca de niño', especial:'marca especial', sec:'marca secundaria', sin:'sin asignación cargada' };
 function repHistDe(id, slug){

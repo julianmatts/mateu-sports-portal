@@ -1483,6 +1483,39 @@ Indicadores, ver abajo).
 **Puesta en marcha: ya funciona (usa `recepciones-mateu`, que está en vivo). No hace
 falta crear ninguna base.**
 
+## Asignación de Marcas — Fichas por marca (`marcas/`, 13/09/2026)
+
+Pedido de Juli: **detalle por marca de lo que va a cada tipo de local**. Antes el único detalle
+era «Disciplinas ▸ / Modelos ▸» sucursal por sucursal en texto libre (83 de 243 asignaciones de
+calzado, con grafías sueltas: «oRIGINALS», «futbo»). Ahora hay un botón **«📋 Fichas por marca»**
+(solo admin) que abre un modal ancho: se elige la marca y hay **una columna por tipo de local**
+(`TIPOS_LOCAL`: Cat 1 · Cat 2 · Mateu Kids · Ecommerce · Aurelius · Tiendas Adidas · Outlets;
+`tipoDeSuc` = `suc.cat`, salvo `ms-kids` → kids y `ms-ecom` → ecom). Por tipo: **disciplinas /
+líneas** (chips de `FICHA_DISC` por rubro + «otra»), **modelos puntuales**, **género** (Hombre /
+Dama / Unisex / Niño), **precio máximo PVP** y **nota**. Solo se muestran los tipos que tienen la
+marca asignada («Ver todos los tipos de local» los trae). Abajo, **excepciones por sucursal**: solo
+los campos cargados pisan a los de su tipo (`fichaEfectiva`). Vacío = no restringe.
+**«⤓ Traer lo cargado por sucursal»** (`fiImportar`) lee el texto libre de cada sucursal y lo
+propone en su tipo (disciplina conocida → chip; «niño» → género; el resto → modelo), para revisar y
+guardar. El modal «Disciplinas ▸» de cada sucursal muestra la ficha vigente (★ = excepción) y, para
+admin, «ficha de la marca ▸».
+- **Firebase**: nodo APARTE `asignacion-marcas-mateu/asignacion_marcas_fichas/<calzado|indumentaria>/<marca>`
+  (clave = nombre sin acentos ni símbolos, `fichaKey`) = `{marca, tipos:{<tipo>:{disc, modelos,
+  genero, precioMax, nota}}, exc:{<sucId>:{…}}, por, ts}`. No va dentro de `asignacion_marcas.json`
+  porque «Guardar» de la asignación hace PUT del documento entero y la borraría. Se guarda marca por
+  marca (PUT de esa marca; una ficha vacía se borra) con control por `ts` (avisa si otro la guardó
+  mientras se editaba). No pasa por `asignacion_marcas_log`.
+- **La usa el Reparto de Mercadería** (`barrida/`): `cargarCategorias` baja también las fichas
+  (`cargarFichasMarcas`, `PRIO.fichas`) y `repAsig` descarta la sucursal si la ficha efectiva de su
+  tipo no acepta el artículo (`fichaDe` / `fichaPasa`): **género** (niño/infante ↔ Niño; unisex
+  entra en Hombre/Dama/Unisex) y, con el tilde «respetar disciplinas», **disciplina o modelo** (basta
+  uno: la disciplina se busca en disciplina/descripción/tipo del artículo, el modelo en la
+  descripción; un artículo sin disciplina no se descarta por disciplina). Aplica al Reparto inicial
+  y a «Abrir a más sucursales» (los dos pasan por `repCandidatos`); la reposición por venta no. La
+  ficha se suma a la nota de prioridad. **El precio NO se aplica**: los reportes no traen el PVP
+  (queda informativo). Las reglas fijas del código (Mateu Kids solo niño, Aurelius nunca en «abrir»)
+  siguen igual. Probado 13/09 con tests en node (herencia, excepción, género, disciplina, modelo).
+
 ## Reparto inicial (pestaña de `barrida/`, 10/09/2026)
 
 Pedido de Juli: **diferenciar la barrida de reserva del reparto inicial, en dos pestañas**. La
