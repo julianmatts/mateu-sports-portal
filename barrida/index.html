@@ -338,6 +338,31 @@ td.talles .tw{display:flex;flex-wrap:wrap;align-items:flex-start;max-width:560px
 .rqueda td{background:#fafbfe}
 .tgx.rq .txn{color:var(--muted)}
 .rvacio{padding:10px 16px;font-size:13px;color:var(--muted)}
+.rart{padding:12px 16px 12px}
+.rart-h b{font-size:14.5px;color:var(--navy)}
+.rgrid-wrap{overflow-x:auto;margin-top:8px;border:1px solid var(--border);border-radius:9px}
+.rgrid{border-collapse:separate;border-spacing:0;font-size:13px;width:100%}
+.rgrid th{font-family:var(--font-c);font-size:12px;font-weight:700;letter-spacing:.3px;color:var(--navy-mid);text-align:center;padding:6px 6px;background:#f6f8fd;border-bottom:1px solid var(--border);white-space:nowrap}
+.rgrid th.c{background:var(--navy);color:#fff}
+.rgrid td{text-align:center;padding:6px 6px;border-bottom:1px solid #eef1f7;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rgrid .rg-t{min-width:40px}
+.rgrid td.c{background:#f3f6fc}
+.rgrid td.q{font-weight:700;color:var(--navy);font-size:14px}
+.rgrid td.vacio{color:#cfd6e4}
+.rgrid .rg-dest{text-align:left;width:230px;position:sticky;left:0;background:#fff;z-index:1}
+.rgrid th.rg-dest{background:#f6f8fd;z-index:2}
+.rgrid .rg-prio{width:74px}
+.rgrid .rg-tot{width:70px;border-left:1px solid var(--border)}
+.rgrid tbody tr:hover td{background:#fafcff}
+.rgrid tbody tr:hover td.c{background:#eaf0fa}
+.rgrid tfoot td{font-family:var(--font-c)}
+.rgrid tr.rg-sum td{background:#eef3fc;border-top:2px solid var(--border);color:var(--navy);font-weight:700;font-size:14px}
+.rgrid tr.rg-sum td.q{color:var(--navy)}
+.rgrid tr.rg-queda td{background:#fafbfe;color:var(--muted);font-weight:600;border-bottom:0}
+.rgrid tr.rg-queda td.q{color:var(--muted);font-size:13.5px}
+.rgrid tfoot td.rg-dest{font-size:11.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase}
+.rgrid tr.rg-sum td.rg-dest{background:#eef3fc}
+.rgrid tr.rg-queda td.rg-dest{background:#fafbfe}
 .rcard.rsr{border-left-color:#6d28d9}
 .rcard.rsr .rhead{background:#f6f3ff}
 .rsel-nota{font-size:12.5px;color:var(--muted);margin:2px 0 10px}
@@ -4309,13 +4334,27 @@ function repVistaRemitos(){
         +(a.sinRemito?'<span class="pill nuevo" title="Tiene compra de hace '+(a.diasDepo||0)+' días en el reporte de stock pero no aparece en ningún remito de la lista: la Barrida no lo reparte por nuevo, así que se suma acá">ingresó hace '+(a.diasDepo||0)+' d</span>'
           :(a.diasDepo!=null && N && a.diasDepo>=N ? '<small title="Lo que hay hoy en el depósito de este artículo entró hace '+a.diasDepo+' días: ya lo toma la Barrida de reserva">hace '+a.diasDepo+' días en el depósito</small>' : ''))
         +(a.regla?'<small title="'+esc(a.regla)+'">'+esc(a.regla)+'</small>':'')+'</div>';
-      h+='<table class="rtbl"><tbody>';
-      x.lineas.slice().sort((p,q)=>(p.prio||99)-(q.prio||99)).forEach(l=>{
-        h+='<tr><td class="rdest"><span class="pill suc">'+esc(stripNN(l.sucNombre))+'</span>'+(l.hist?' <span class="pill curva" title="Ya había recibido este artículo: se le completa la curva">completa</span>':'')+'</td>'
-          +'<td class="rprio"><span class="pill '+(l.prio===1?'rec':'suc')+'" title="'+esc(repPrioTxt(l))+'">'+(l.prio||'—')+' de '+(l.prioDe||'—')+'</span></td>'
-          +'<td class="talles"><div class="tw">'+repChips(l.t, a.centrales)+'</div></td><td class="num"><span class="sug-badge">'+fmtInt(l.u)+'</span></td></tr>'; });
-      if(x.uQueda>0) h+='<tr class="rqueda"><td class="rdest"><span class="pill fuera">Queda en el depósito</span></td><td></td><td class="talles"><div class="tw">'+repChips(x.queda, a.centrales, true)+'</div></td><td class="num mono">'+fmtInt(x.uQueda)+'</td></tr>';
-      h+='</tbody></table></div>';
+      // grilla: una columna por talle del artículo (las mismas en todas las filas, centrales resaltados),
+      // una fila por sucursal y al pie lo repartido y lo que queda en el depósito por talle (Juli 14/09/2026)
+      const C=new Set(a.centrales||[]), lineas=x.lineas.slice().sort((p,q)=>(p.prio||99)-(q.prio||99));
+      const tset=new Set(); lineas.forEach(l=>Object.keys(l.t||{}).forEach(t=>{ if(l.t[t]>0) tset.add(t); }));
+      Object.keys(x.queda||{}).forEach(t=>{ if(x.queda[t]>0) tset.add(t); });
+      const tl=[...tset].sort(cmpTalle);
+      const rep={}; lineas.forEach(l=>tl.forEach(t=>{ rep[t]=(rep[t]||0)+((l.t||{})[t]||0); }));
+      const totRep=tl.reduce((s0,t)=>s0+(rep[t]||0),0);
+      const celda=(q,t,cls)=>'<td class="rg-t'+(C.has(t)?' c':'')+(q>0?' '+cls:' vacio')+'">'+(q>0?fmtInt(q):'·')+'</td>';
+      h+='<div class="rgrid-wrap"><table class="rgrid"><thead><tr><th class="rg-dest">Destino</th><th class="rg-prio">Prioridad</th>'
+        +tl.map(t=>'<th class="rg-t'+(C.has(t)?' c':'')+'"'+(C.has(t)?' title="Talle central"':'')+'>'+esc(t)+'</th>').join('')
+        +'<th class="rg-tot">Total</th></tr></thead><tbody>';
+      lineas.forEach(l=>{
+        h+='<tr><td class="rg-dest"><span class="pill suc">'+esc(stripNN(l.sucNombre))+'</span>'+(l.hist||l.stock?' <span class="pill curva" title="'+(l.stock?'Ya tiene el artículo en la sucursal (reingreso): se le completa la curva':'Ya había recibido este artículo: se le completa la curva')+'">completa</span>':'')+'</td>'
+          +'<td class="rg-prio"><span class="pill '+(l.prio===1?'rec':'suc')+'" title="'+esc(repPrioTxt(l))+'">'+(l.prio||'—')+' de '+(l.prioDe||'—')+'</span></td>'
+          +tl.map(t=>celda((l.t||{})[t]||0, t, 'q')).join('')
+          +'<td class="rg-tot"><span class="sug-badge">'+fmtInt(l.u)+'</span></td></tr>'; });
+      h+='</tbody><tfoot>'
+        +'<tr class="rg-sum"><td class="rg-dest">Repartido</td><td class="rg-prio">'+fmtInt(lineas.length)+' suc.</td>'+tl.map(t=>celda(rep[t]||0, t, 'q')).join('')+'<td class="rg-tot">'+fmtInt(totRep)+'</td></tr>'
+        +'<tr class="rg-queda"><td class="rg-dest">Queda en el depósito</td><td class="rg-prio"></td>'+tl.map(t=>celda((x.queda||{})[t]||0, t, 'q')).join('')+'<td class="rg-tot">'+fmtInt(x.uQueda||0)+'</td></tr>'
+        +'</tfoot></table></div></div>';
     });
     h+='</div>';
   });

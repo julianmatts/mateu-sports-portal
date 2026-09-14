@@ -1684,7 +1684,7 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
 - **Un artículo en varios remitos** se reparte junto (una curva por sucursal) y cada unidad sale del
   remito que más le cubre / que ya le está dando a esa sucursal.
 - **Salida**: vista «Por remito» (una tarjeta por remito con cada artículo, sucursales en orden de
-  prioridad con sus casilleros de talle y «Queda en el depósito»), «Por sucursal» y «Sin repartir»
+  prioridad en una grilla con una columna por talle —centrales resaltados— y al pie las filas «Repartido» y «Queda en el depósito» por talle con su total, rediseño del 14/09/2026), «Por sucursal» y «Sin repartir»
   (con el motivo); ⇩ Excel con **una hoja por remito** (para imprimir en su ubicación) + resumen por
   sucursal; 🖨 Imprimir.
 - **El hueco entre los dos reportes (12/09/2026, planteo de Juli)**: esta pestaña sale de la
