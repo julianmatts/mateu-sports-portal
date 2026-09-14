@@ -1532,7 +1532,20 @@ admin, «ficha de la marca ▸».
   All Star clásicas), Crocs (Crocband y Classic, todos menos tiendas Adidas), Dr Martens (solo Aurelius 5),
   Fila (Aurelius Disruptor/Uproot/Superbubble; Cat 1 y Ecommerce solo niño; Cat 2 y outlets running adulto +
   niño todo), Kappa (solo outlets), Le Coq Sportif (Cat 2 y outlets, running y casual) y Montagne (Cat 2 y
-  outlets, adventure y running, adulto).
+  outlets, adventure y running, adulto), New Balance (en Mateu solo D80 1.ª y CB 2.ª; Aurelius sigue) y Nike
+  (Cat 1 y Ecommerce todo; Cat 2 running/training/fútbol; outlets running; Aurelius los «alocados» Jordan,
+  Dunk, Air Force). Después (asignación rev 11): Olympikus, Kappa y Under Armour solo outlets
+  (outletizadas); ON solo Ecommerce 1.ª, D80 2.ª, CB 3.ª y Aurelius 5 casual; Salomon solo Cat 1 y Ecommerce,
+  adventure; Timberland solo Aurelius 5 y 12; The North Face solo Diagonal 80; Umbro prioritaria solo en Cat
+  2 y outlets, fútbol; Vans solo Aurelius.
+- **Ecommerce se trabaja como un Cat 1 (Juli 13/09/2026)**: en la ficha, si la columna Ecommerce está
+  vacía toma la de Cat 1 (`fichaDe` en barrida, `fichaEfectiva` en marcas; la columna dice «vacío = como Cat
+  1»). Solo llevan columna propia 47 Street (va a Ecommerce y no a Cat 1) y Adidas (Juli le sumó Originals y
+  Skate).
+- **Deportes de especialidad (13/09/2026, Juli)**: en hockey, vóley, rugby, pádel, tenis y boxeo la
+  prioridad la tiene **Diagonal 80** (casa matriz especializada en deportes) y después **City Bell**
+  (`DEPORTE_PRIO` + `RX_DEPORTE` sobre disciplina/tipo del artículo): en `cmpReparto` después de niño y de
+  la «Prioridad» de la ficha; en `cmpPrioridad` de la barrida después de niño y antes de la venta.
 
 ## Reparto inicial (pestaña de `barrida/`, 10/09/2026)
 

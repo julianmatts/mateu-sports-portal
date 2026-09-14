@@ -2055,7 +2055,9 @@ async function fichasCargar(){
 // lo que vale para una sucursal: lo de su tipo de local, con su excepción encima
 function fichaEfectiva(marca, suc, rubro){
   const f = (FICHAS[rubro || rubroActivo] || {})[fichaKey(marca)]; if (!f) return null;
-  const out = Object.assign(normBloque(f.tipos && f.tipos[tipoDeSuc(suc)]), { exc:[] });
+  // Ecommerce se trabaja como un Cat 1: sin columna propia cargada, toma la de Cat 1
+  const tipo = tipoDeSuc(suc), propio = f.tipos && f.tipos[tipo];
+  const out = Object.assign(normBloque(tipo === 'ecom' && bloqueVacio(propio) ? (f.tipos && f.tipos.cat1) : propio), { exc:[] });
   const exc = f.exc && f.exc[suc.id] ? normBloque(f.exc[suc.id]) : null;
   if (exc) FICHA_CAMPOS.forEach(c => { const v = exc[c]; if (Array.isArray(v) ? v.length : ((c === 'precioMax' || c === 'orden') ? v > 0 : c === 'ninoLibre' ? v === true : String(v).trim())) { out[c] = v; out.exc.push(c); } });
   return bloqueVacio(out) ? null : out;
@@ -2125,7 +2127,7 @@ function fiColHtml(sc, id, titulo, sucs, puede, sub){
   let h = '<div class="fi-col' + (sc === 'e' ? ' exc' : '') + (sc === 't' && !sucs.length ? ' sin' : '') + '">'
     + '<div class="fi-col-hdr"><span class="fi-col-t">' + escapeHtml(titulo) + '</span>'
     + (sc === 't'
-      ? '<span class="fi-col-n" title="' + escapeHtml(sucs.map(x => x.nombre).join(', ')) + '">' + (sucs.length ? sucs.length + ' suc.' : 'no la trabaja') + '</span>'
+      ? '<span class="fi-col-n" title="' + escapeHtml(sucs.map(x => x.nombre).join(', ')) + '">' + (id === 'ecom' && bloqueVacio(b) ? 'vacío = como Cat 1 · ' : '') + (sucs.length ? sucs.length + ' suc.' : 'no la trabaja') + '</span>'
       : '<span class="fi-col-n">' + escapeHtml(sub || '') + (puede ? ' <button type="button" class="fi-x" ' + at('exc-del') + ' title="Quitar la excepción">×</button>' : '') + '</span>')
     + '</div>';
   h += '<div class="fi-lbl">Disciplinas / líneas <span class="fi-dim">· ' + (b.disc.length ? 'lo que no esté marcado no le va' : 'ninguna marcada = todas') + '</span>'

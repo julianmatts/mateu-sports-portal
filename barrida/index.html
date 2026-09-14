@@ -586,8 +586,19 @@ function ninoPrioDe(r){
   if(r._np==null){ const g=repGrupo(r).g; r._np = (g==='nino'||g==='infante') ? 0 : 1; }
   return r._np;
 }
+// Deportes de especialidad (hockey, vóley, rugby, pádel, tenis, boxeo): primero Diagonal 80 (casa
+// matriz especializada en deportes) y después City Bell (especialista, con menos profundidad). Juli 13/09/2026.
+const DEPORTE_PRIO = { diagonal:1, 'city-bell':2 };
+const RX_DEPORTE = /hockey|voley|volley|rugby|padel|paddle|tenis|tennis|\bbox/;
+const esDeporteEsp = r => RX_DEPORTE.test(sinAcento([r&&r.disc, r&&r.tipo].filter(Boolean).join(' ')).toLowerCase());
+function deportePrioDe(r){
+  if(!r || !DEPORTE_PRIO[r.slug]) return 9;
+  if(r._dp==null) r._dp = esDeporteEsp(r) ? DEPORTE_PRIO[r.slug] : 9;
+  return r._dp;
+}
 function cmpPrioridad(a,b){
   const na=ninoPrioDe(a), nb=ninoPrioDe(b); if(na!==nb) return na-nb;
+  const da=deportePrioDe(a), db=deportePrioDe(b); if(da!==db) return da-db;
   if((b.vendido||0)!==(a.vendido||0)) return (b.vendido||0)-(a.vendido||0);
   if((b.vendTalle||0)!==(a.vendTalle||0)) return (b.vendTalle||0)-(a.vendTalle||0);
   const ma=(a.pr&&a.pr.ms!=null)?a.pr.ms:Infinity, mb=(b.pr&&b.pr.ms!=null)?b.pr.ms:Infinity;
@@ -3470,7 +3481,10 @@ function fichaDe(slug, marca, G){
   if(!f) return null;
   const tipo = FICHA_TIPO_SLUG[slug] || (PRIO.cats||CAT_SEED)[slug];
   const norm = b => ({ disc:fiLista(b&&b.disc), modelos:fiLista(b&&b.modelos), genero:fiLista(b&&b.genero), precioMax:Number(b&&b.precioMax)||0, nota:String((b&&b.nota)||''), plana:String((b&&b.plana)||''), orden:Number(b&&b.orden)||0, ninoLibre:!!(b&&b.ninoLibre) });
-  const out=norm(f.tipos&&f.tipos[tipo]);
+  // Ecommerce se trabaja como un Cat 1 (Juli 13/09/2026): sin columna propia cargada, toma la de Cat 1
+  const vacio=b=>!b || !(fiLista(b.disc).length||fiLista(b.modelos).length||fiLista(b.genero).length||b.nota||b.plana||b.orden||b.ninoLibre);
+  const bloque = (tipo==='ecom' && vacio(f.tipos&&f.tipos.ecom)) ? (f.tipos&&f.tipos.cat1) : (f.tipos&&f.tipos[tipo]);
+  const out=norm(bloque);
   const id=SLUG2MARCAS[slug], exc=id&&f.exc&&f.exc[id];
   if(exc){ const e=norm(exc); ['disc','modelos','genero'].forEach(c=>{ if(e[c].length) out[c]=e[c]; }); if(e.precioMax>0) out.precioMax=e.precioMax; if(e.nota.trim()) out.nota=e.nota; if(e.plana) out.plana=e.plana; if(e.orden>0) out.orden=e.orden; if(e.ninoLibre) out.ninoLibre=true; }
   return (out.disc.length||out.modelos.length||out.genero.length||out.nota.trim()||out.plana||out.orden||out.ninoLibre) ? out : null;
@@ -3549,7 +3563,7 @@ function repCandidatos(a, G, destinos){
     const asig=repAsig(slug, a, G); if(!asig) return;
     const vm=ventasMarcaDe(slug, a.marca, a.rubro);
     const kidsArt = G.g==='nino' || G.g==='infante';
-    out.push({ slug, sucNombre:nombreSuc(slug), asig, plana:!!asig.plana, ninoPrio:(kidsArt && NINO_PRIO[slug]) ? 0 : 1, pr:prioInfo(slug, a.marca, a.rubro),
+    out.push({ slug, sucNombre:nombreSuc(slug), asig, plana:!!asig.plana, ninoPrio:(kidsArt && NINO_PRIO[slug]) ? 0 : 1, deportePrio:(DEPORTE_PRIO[slug] && esDeporteEsp(a)) ? DEPORTE_PRIO[slug] : 9, pr:prioInfo(slug, a.marca, a.rubro),
       venta:vm?vm.v:0, ventaNivel:vm?vm.nivel:'', hist:P.memoria?repHistDe(a.id, slug):null });
   });
   // la venta pesa en tres niveles (alta / media / baja respecto de la que más vende): así los
@@ -3564,6 +3578,7 @@ function cmpReparto(a,b){
   if((a.ninoPrio||0)!==(b.ninoPrio||0)) return (a.ninoPrio||0)-(b.ninoPrio||0); // niño: Mateu Kids y Outlet Gonnet primero
   const oa=(a.asig&&a.asig.orden)||99, ob=(b.asig&&b.asig.orden)||99;          // «Prioridad» de la ficha de la marca (1 = primera)
   if(oa!==ob) return oa-ob;
+  if((a.deportePrio||9)!==(b.deportePrio||9)) return (a.deportePrio||9)-(b.deportePrio||9); // deportes: Diagonal 80, City Bell
   const ha=a.hist?0:1, hb=b.hist?0:1; if(ha!==hb) return ha-hb;               // ya lo recibió: se le completa primero
   if(a.asig.rank!==b.asig.rank) return a.asig.rank-b.asig.rank;               // asignación de marcas
   if(a.pr.catRank!==b.pr.catRank) return a.pr.catRank-b.pr.catRank;           // categoría
