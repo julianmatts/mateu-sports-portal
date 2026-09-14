@@ -1543,6 +1543,13 @@ admin, «ficha de la marca ▸».
   de niño (Kids/Gonnet) y de deportes (D80/CB), va primero la sucursal con menos meses de stock de la marca,
   antes que la venta y la categoría (`fichaPrioMS`). Puma: todos los Mateu en todas las categorías, sin
   restricción de disciplina. Adidas y Nike (también estratégicas) todavía no lo tienen prendido.
+- **Meses de stock por SUBRUBRO (13/09/2026, Juli: «ver por rubro, disciplina y subrubro para abastecer a
+  las que menos cobertura tienen»)**: `mesesStockDe(slug, marca, rubro, genero)` toma primero el segmento de
+  la marca del género del artículo (DAMA / HOMBRE / NIÑO / INFANTE / UNISEX de `datos-meses-stock.js`), después
+  la marca y después el rubro (`msNivel` = subrubro | marca | rubro; `prioInfo` recibe el género en la
+  barrida, el vaciado, la curva y el Reparto inicial). ⚠ El reporte RATIO **no trae disciplina**: ese nivel
+  no existe en el dataset. Básquet se sumó a los deportes de especialidad (`RX_DEPORTE`), que siguen yendo
+  antes que los meses de stock.
 - **«Outlets como local de línea» (13/09/2026)**: tilde de la columna Outlets de la ficha (`comoLinea`), para
   marcas de PVP bajo (hoy Atomik y Head): los outlets entran a los destinos por defecto del Reparto inicial
   y a «Abrir a más sucursales» sin esperar `filtrosAmp.outletDias` (`fichaOutletLinea`). Además: Skechers

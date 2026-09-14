@@ -546,7 +546,7 @@ async function cargarPrioridad(){
 }
 const stripNN = s => String(s||'').replace(/^\d+\s*[-–]\s*/,'').trim();
 // meses de stock de la sucursal en la marca-rubro (último mes cargado); null sin dato
-function mesesStockDe(slug, marca, rubro){
+function mesesStockDe(slug, marca, rubro, genero){
   const D=PRIO.stock; if(!D||!D.sucursales) return null;
   const suc=D.sucursales[SLUG_SUC[slug]||OUTLET_SUC[slug]||SUC_EXTRA[slug]||'']; if(!suc||!suc.rubros) return null;
   const rk=stripNN(rubro).toUpperCase(); const R=suc.rubros[rk]; if(!R) return null;
@@ -554,6 +554,11 @@ function mesesStockDe(slug, marca, rubro){
   const ok = x => x && isFinite(x.ratio) && x.ratio>=0 && x.ventas>0;
   const mk=normName(marca); const mkey=Object.keys(R.marcas||{}).find(k=>normName(k)===mk);
   const M=mkey?R.marcas[mkey]:null;
+  // por subrubro dentro de la marca (Juli 13/09/2026: abastecer a la que menos cobertura tiene en ese
+  // subrubro); el dataset no trae disciplina. Sin dato del subrubro, la marca; sin marca, el rubro
+  const gk=sinAcento(stripNN(genero||'')).toUpperCase().trim();
+  if(M && gk && M.segmentos){ const sk=Object.keys(M.segmentos).find(k=>sinAcento(k).toUpperCase().trim()===gk); const SG=sk&&M.segmentos[sk];
+    if(SG && SG.serie && ok(SG.serie[ult])) return { ms:SG.serie[ult].ratio, nivel:'subrubro' }; }
   if(M && M.serie && ok(M.serie[ult])) return { ms:M.serie[ult].ratio, nivel:'marca' };
   if(R.serie && ok(R.serie[ult])) return { ms:R.serie[ult].ratio, nivel:'rubro' };
   return null;
@@ -572,8 +577,8 @@ function ventasMarcaDe(slug, marca, rubro){
   return null;
 }
 function catDe(slug){ return (PRIO.cats||CAT_SEED)[slug]||''; }
-function prioInfo(slug, marca, rubro){
-  const m=mesesStockDe(slug, marca, rubro), c=catDe(slug);
+function prioInfo(slug, marca, rubro, genero){
+  const m=mesesStockDe(slug, marca, rubro, genero), c=catDe(slug);
   return { ms: m?Math.round(m.ms*10)/10:null, msNivel: m?m.nivel:'', cat:c, catRank: CAT_RANK[c]||9 };
 }
 // orden de prioridad (menor = antes): vendido del artículo ↓ · vendido del talle ↓ ·
@@ -586,10 +591,10 @@ function ninoPrioDe(r){
   if(r._np==null){ const g=repGrupo(r).g; r._np = (g==='nino'||g==='infante') ? 0 : 1; }
   return r._np;
 }
-// Deportes de especialidad (hockey, vóley, rugby, pádel, tenis, boxeo): primero Diagonal 80 (casa
+// Deportes de especialidad (hockey, vóley, básquet, rugby, pádel, tenis, boxeo): primero Diagonal 80 (casa
 // matriz especializada en deportes) y después City Bell (especialista, con menos profundidad). Juli 13/09/2026.
 const DEPORTE_PRIO = { diagonal:1, 'city-bell':2 };
-const RX_DEPORTE = /hockey|voley|volley|rugby|padel|paddle|tenis|tennis|\bbox/;
+const RX_DEPORTE = /hockey|voley|volley|rugby|padel|paddle|tenis|tennis|basquet|basket|\bbox/;
 const esDeporteEsp = r => RX_DEPORTE.test(sinAcento([r&&r.disc, r&&r.tipo].filter(Boolean).join(' ')).toLowerCase());
 function deportePrioDe(r){
   if(!r || !DEPORTE_PRIO[r.slug]) return 9;
@@ -620,7 +625,7 @@ function cmpPrioridad(a,b){
 }
 // texto corto de los parámetros de prioridad de una fila (para tooltips y export)
 function prioTxt(r){
-  const p=r.pr||{}; const ms = p.ms!=null ? p.ms.toLocaleString('es-AR')+' meses de stock'+(p.msNivel==='rubro'?' (rubro)':'') : 'sin meses de stock';
+  const p=r.pr||{}; const ms = p.ms!=null ? p.ms.toLocaleString('es-AR')+' meses de stock'+(p.msNivel==='rubro'?' (rubro)':p.msNivel==='subrubro'?' (subrubro)':'') : 'sin meses de stock';
   return 'vendió '+fmtInt(r.vendido||0)+' · '+ms+' · '+(CAT_LABEL[p.cat]||'sin categoría');
 }
 // La misma sucursal ya tenía este artículo en la barrida anterior: o no se ejecutó el envío,
@@ -1580,7 +1585,7 @@ function computar(histPrev, histSnaps){
           marca:R.meta.marca||V.meta.marca||'', rubro:R.meta.rubro||V.meta.rubro||'', tipo:R.meta.tipo||V.meta.tipo||'',
           genero:R.meta.genero||V.meta.genero||'', disc:R.meta.disc||V.meta.disc||'',
           vendido:S.total, reservaTotal:R.total, reservaNueva:R.nuevoU, sugerido, talles:detTalles, pisoMedias:media,
-          pr: prioInfo(slug, R.meta.marca||V.meta.marca||'', R.meta.rubro||V.meta.rubro||''),
+          pr: prioInfo(slug, R.meta.marca||V.meta.marca||'', R.meta.rubro||V.meta.rubro||'', R.meta.genero||V.meta.genero||''),
         });
       });
     } else if(R.total>0) {
@@ -1643,7 +1648,7 @@ function computar(histPrev, histSnaps){
         reservaTotal:R.total, resTalles:R.talles, conStock:!!sRows,
         vendido:sv?sv.total:0, enSucursal:ss?ss.total:0, tallesSuc:ss?ss.talles:{},
         talles:[], sugerido:0,
-        pr: prioInfo(slug, m.marca||mv.marca||'', m.rubro||mv.rubro||''),
+        pr: prioInfo(slug, m.marca||mv.marca||'', m.rubro||mv.rubro||'', m.genero||mv.genero||''),
       });
     });
   });
@@ -1705,7 +1710,7 @@ function computar(histPrev, histSnaps){
           enSucursal:S.total, nTalles:Object.keys(S.talles).length,
           vendido:(V&&V.porSuc[slug])?V.porSuc[slug].total:0, ventaCadena:V?V.totalCadena:0, reservaTotal:R.total,
           tallesSuc:S.talles, faltan, engrosa, resTalles:R.talles, sugerido:0,
-          pr: prioInfo(slug, R.meta.marca||S0.meta.marca||'', R.meta.rubro||S0.meta.rubro||''),
+          pr: prioInfo(slug, R.meta.marca||S0.meta.marca||'', R.meta.rubro||S0.meta.rubro||'', R.meta.genero||S0.meta.genero||''),
         };
         marcarInternos(row);
         curva.push(row);
@@ -3580,7 +3585,7 @@ function repCandidatos(a, G, destinos){
     const asig=repAsig(slug, a, G); if(!asig) return;
     const vm=ventasMarcaDe(slug, a.marca, a.rubro);
     const kidsArt = G.g==='nino' || G.g==='infante';
-    out.push({ slug, sucNombre:nombreSuc(slug), asig, plana:!!asig.plana, ninoPrio:(kidsArt && NINO_PRIO[slug]) ? 0 : 1, deportePrio:(DEPORTE_PRIO[slug] && esDeporteEsp(a)) ? DEPORTE_PRIO[slug] : 9, prioMS:fichaPrioMS(a.marca, a.rubro), pr:prioInfo(slug, a.marca, a.rubro),
+    out.push({ slug, sucNombre:nombreSuc(slug), asig, plana:!!asig.plana, ninoPrio:(kidsArt && NINO_PRIO[slug]) ? 0 : 1, deportePrio:(DEPORTE_PRIO[slug] && esDeporteEsp(a)) ? DEPORTE_PRIO[slug] : 9, prioMS:fichaPrioMS(a.marca, a.rubro), pr:prioInfo(slug, a.marca, a.rubro, a.genero),
       venta:vm?vm.v:0, ventaNivel:vm?vm.nivel:'', hist:P.memoria?repHistDe(a.id, slug):null });
   });
   // la venta pesa en tres niveles (alta / media / baja respecto de la que más vende): así los
@@ -3613,7 +3618,7 @@ function repPrioTxt(l){
   if(l.asig) partes.push((ASIG_LBL[l.asig.tipo]||l.asig.tipo)+(l.asig.nota?' ('+l.asig.nota+')':''));
   if(p.cat) partes.push(CAT_LABEL[p.cat]||p.cat);
   if(l.venta!=null && l.ventaNivel) partes.push('vendió '+fmtInt(l.venta)+' u. de la '+(l.ventaNivel==='marca'?'marca':'rubro')+' el último mes');
-  partes.push(p.ms!=null ? p.ms.toLocaleString('es-AR')+' meses de stock'+(p.msNivel==='rubro'?' (rubro)':'') : 'sin meses de stock');
+  partes.push(p.ms!=null ? p.ms.toLocaleString('es-AR')+' meses de stock'+(p.msNivel==='rubro'?' (rubro)':p.msNivel==='subrubro'?' (subrubro)':'') : 'sin meses de stock');
   return 'Prioridad '+(l.prio||'—')+' de '+(l.prioDe||'—')+': '+partes.join(' · ');
 }
 
