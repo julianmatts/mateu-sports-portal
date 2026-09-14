@@ -1798,7 +1798,7 @@ function computar(histPrev, histSnaps){
   const segmentos={}; Object.values(reserva).forEach(R=>{ if(!(R.totalDepo>0)) return; const k=segDe(R.meta.marca, R.meta.rubro);
     if(!segmentos[k]) segmentos[k]={ marca:String(R.meta.marca||'').trim(), rubro:stripNN(R.meta.rubro), articulos:0 }; segmentos[k].articulos++; });
 
-  const paredes = calcParedes(sRows); if(paredes) PAREDES=paredes;   // paredes de running (Cat 1 y Cat 2)
+  const paredes = calcParedes(sRows); if(paredes) PAREDES=paredes;   // paredes de exhibición (Cat 1 y Cat 2)
   const sucSet = new Set(reposicion.map(r=>r.slug));
   const noVarios = a => !/varios|facturacion/i.test(a.rubro+' '+a.tipo);
   // "notable" = mejor vendido (>=3 u. en la semana), mismo umbral que el filtro por defecto de la vista Compras.
@@ -3676,7 +3676,7 @@ function cmpReparto(a,b){
 }
 function repPrioTxt(l){
   const p=l.pr||{}, partes=[];
-  if(l.pared) partes.push('pared de running de '+l.pared.marca+' '+(l.pared.gen==='DAMA'?'dama':'hombre')+' incompleta: tiene '+l.pared.tiene+' modelos de '+l.pared.min);
+  if(l.pared) partes.push('pared de '+(l.pared.disc||'running')+' de '+l.pared.marca+' '+(l.pared.gen==='DAMA'?'dama':'hombre')+' incompleta: tiene '+l.pared.tiene+' modelos de '+l.pared.min);
   if(l.hist) partes.push('ya recibió este artículo (se le completa la curva)');
   if(l.asig) partes.push((ASIG_LBL[l.asig.tipo]||l.asig.tipo)+(l.asig.nota?' ('+l.asig.nota+')':''));
   if(p.cat) partes.push(CAT_LABEL[p.cat]||p.cat);
@@ -3756,10 +3756,18 @@ function repRepartirArt(perRem, cands, central, P){
    subrubro (repAsig). Se muestra como alerta y, en el Reparto inicial y en «Abrir a más sucursales»,
    la sucursal con la pared incompleta pasa adelante con esa marca. */
 const PARED_MOD_COL = 3;                               // 9 apoyacalzados ÷ cada modelo ×3 en vertical
-const PARED_COLS = { adidas:6, nike:4, puma:4 };       // columnas mínimas; las demás marcas (2.º nivel) PARED_COLS_DEF
-const PARED_COLS_DEF = 2, PARED_MIN_TALLES = 3;       // 3 talles distintos con al menos 1 central (Juli 13/09/2026)
-let PAREDES = null;                                    // { semana, lista:[…], inc:{'slug|marca|GEN':…}, marcas }
-function paredMin(marca){ return (PARED_COLS[normMarca(marca)]||PARED_COLS_DEF) * PARED_MOD_COL; }
+const PARED_DISC = ['running','casual'];               // sectores de pared controlados (los más grandes)
+const PARED_COLS = { adidas:6, nike:4, puma:4 };       // running por defecto; las demás marcas PARED_COLS_DEF
+const PARED_COLS_DEF = 2, PARED_MIN_TALLES = 3;        // 3 talles distintos con al menos 1 central (Juli 13/09/2026)
+let PAREDES = null;                                    // { semana, lista:[…], inc:{'slug|marca|disc|GEN':…}, marcas }
+// columnas mínimas de la marca en el sector: las de su ficha («Pared» en Asignación de Marcas) y, en
+// running, la regla general si la ficha no dice nada. Casual sin mínimo cargado = no se controla.
+function paredCols(marca, disc){
+  const F=PRIO.fichas, f=F && F.calzado && F.calzado[normMarca(marca)];
+  const v=f && f.pared && Number(f.pared[disc]); if(v>0) return v;
+  return disc==='running' ? (PARED_COLS[normMarca(marca)]||PARED_COLS_DEF) : 0;
+}
+function paredMin(marca, disc){ return paredCols(marca, disc||'running') * PARED_MOD_COL; }
 function paredGeneros(genero){
   const g=sinAcento(stripNN(genero)).toUpperCase();
   return /DAMA|MUJER|FEMEN/.test(g) ? ['DAMA'] : /HOMBRE|MASCUL/.test(g) ? ['HOMBRE'] : /UNISEX/.test(g) ? ['HOMBRE','DAMA'] : [];
@@ -3789,54 +3797,63 @@ function paredValido(meta, g, tl){
   const set=new Set((tl||[]).map(nrmT)); if(set.size<PARED_MIN_TALLES) return false;
   const C=paredCentrales(meta, g); return !C || [...set].some(t=>C.has(t));
 }
-const paredRunning = m => !!m && /CALZ/i.test(sinAcento(stripNN(m.rubro||''))) && /running/i.test(sinAcento(m.disc||''));
+// sector de pared del artículo: 'running' | 'casual' | '' (solo calzado)
+function paredDisc(m){
+  if(!m || !/CALZ/i.test(sinAcento(stripNN(m.rubro||'')))) return '';
+  const d=sinAcento(m.disc||'').toLowerCase();
+  return /running/.test(d) ? 'running' : /casual|lifestyle|urbano/.test(d) ? 'casual' : '';
+}
+const paredRunning = m => paredDisc(m)==='running';
 function paredSlugs(){ return Object.keys(REP_SUC).filter(sl=>sl!=='kids' && ['cat1','cat2'].includes(catDe(sl))); }
 function calcParedes(rows){
   if(!rows || !rows.some(v=>v.meta && v.meta.marca)) return null;
   const tiene={}, marcas={};
   rows.forEach(v=>{
-    const m=v.meta||{}; if(!paredRunning(m)) return;
-    const mk=normMarca(m.marca); if(!mk) return; marcas[mk]=String(m.marca).trim();
+    const m=v.meta||{}, disc=paredDisc(m); if(!disc) return;
+    const mk=normMarca(m.marca); if(!mk) return; (marcas[disc]=marcas[disc]||{})[mk]=String(m.marca).trim();
     Object.entries(paredCuenta(m, v.talles)).forEach(([g,tl])=>{
       if(!paredValido(m, g, tl)) return;
-      const k=v.slug+'|'+mk+'|'+g; (tiene[k]=tiene[k]||new Set()).add(v.id); });
+      const k=v.slug+'|'+mk+'|'+disc+'|'+g; (tiene[k]=tiene[k]||new Set()).add(v.id); });
   });
   const lista=[], inc={};
-  paredSlugs().forEach(slug=>Object.entries(marcas).forEach(([mk,marca])=>['HOMBRE','DAMA'].forEach(g=>{
+  paredSlugs().forEach(slug=>PARED_DISC.forEach(disc=>Object.entries(marcas[disc]||{}).forEach(([mk,marca])=>['HOMBRE','DAMA'].forEach(g=>{
+    const min=paredMin(marca, disc); if(!(min>0)) return;         // sin mínimo cargado para ese sector
     const G={ fam:'calz', g:g==='DAMA'?'dama':'hombre' }; G.key='calz-'+G.g;
-    const asig=repAsig(slug, { marca, rubro:'CALZADO', genero:g, disc:'RUNNING', tipo:'CALZADO ADULTO', desc:'' }, G);
+    const asig=repAsig(slug, { marca, rubro:'CALZADO', genero:g, disc:disc.toUpperCase(), tipo:'CALZADO ADULTO', desc:'' }, G);
     if(!asig || asig.tipo==='sin') return;                       // la marca no va a esa pared
-    const n=(tiene[slug+'|'+mk+'|'+g]||new Set()).size, min=paredMin(marca);
+    const n=(tiene[slug+'|'+mk+'|'+disc+'|'+g]||new Set()).size;
     if(n>=min) return;
-    const o={ slug, sucNombre:stripNN(nombreSuc(slug)), marca, gen:g, tiene:n, min, falta:min-n, col:Math.floor(n/PARED_MOD_COL), colMin:min/PARED_MOD_COL };
-    lista.push(o); inc[slug+'|'+mk+'|'+g]=o;
-  })));
-  lista.sort((a,b)=>cmp(a.sucNombre,b.sucNombre) || cmp(a.gen,b.gen) || b.falta-a.falta);
-  return { semana:state.semana, lista, inc, marcas:Object.values(marcas) };
+    const o={ slug, sucNombre:stripNN(nombreSuc(slug)), marca, disc, gen:g, tiene:n, min, falta:min-n, col:Math.floor(n/PARED_MOD_COL), colMin:min/PARED_MOD_COL };
+    lista.push(o); inc[slug+'|'+mk+'|'+disc+'|'+g]=o;
+  }))));
+  lista.sort((a,b)=>cmp(a.sucNombre,b.sucNombre) || cmp(a.gen,b.gen) || cmp(a.disc,b.disc) || b.falta-a.falta);
+  const todas={}; Object.values(marcas).forEach(o=>Object.assign(todas,o));
+  return { semana:state.semana, lista, inc, marcas:Object.values(todas) };
 }
-// ¿esa sucursal tiene incompleta la pared de running de la marca y subrubro del artículo?
+// ¿esa sucursal tiene incompleta la pared de la marca, sector y subrubro del artículo?
 function paredIncompleta(slug, a){
-  if(!PAREDES || !paredRunning(a)) return null;
+  const disc=paredDisc(a); if(!PAREDES || !disc) return null;
   const mk=normMarca(a.marca);
   // el unisex se asigna por sus talles: los del artículo que entra (reserva o remitos)
   const tl=Object.assign({}, a.resTalles||{}); (a.rem||[]).forEach(r=>Object.assign(tl, r.talles||{}));
   const gens = Object.keys(tl).length ? Object.keys(paredCuenta(a, Object.fromEntries(Object.keys(tl).map(t=>[t,1])))) : paredGeneros(a.genero);
-  for(const g of gens){ const o=PAREDES.inc[slug+'|'+mk+'|'+g]; if(o) return o; }
+  for(const g of gens){ const o=PAREDES.inc[slug+'|'+mk+'|'+disc+'|'+g]; if(o) return o; }
   return null;
 }
 function paredesHtml(P){
   if(!P) return '';
   const L=P.lista||[];
-  if(!L.length) return '<details class="ayuda"><summary>🧱 Paredes de running: todas las marcas llegan al mínimo en Cat 1 y Cat 2 ('+fmtInt((P.marcas||[]).length)+' marcas con running en el stock cargado)</summary></details>';
+  if(!L.length) return '<details class="ayuda"><summary>🧱 Paredes de exhibición: todas las marcas llegan al mínimo en Cat 1 y Cat 2 ('+fmtInt((P.marcas||[]).length)+' marcas con running o casual en el stock cargado)</summary></details>';
   const nSuc=new Set(L.map(o=>o.slug)).size;
   const th='style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border,#dce3f0);font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted,#6B7A99)"';
   const td='style="padding:3px 8px;border-bottom:1px solid var(--line,#e7ecf5)"';
-  return '<details class="ayuda"><summary>🧱 Paredes de running incompletas: <b>'+L.length+'</b> sectores en <b>'+nSuc+'</b> sucursales</summary><div class="card-hs">'
-    +'Mínimo de modelos por marca × subrubro en running (Mateu Cat 1 y Cat 2): una columna son 9 apoyacalzados con cada modelo ×3 = <b>3 modelos</b>. '
-    +'Adidas <b>6 columnas</b> (18 modelos), Nike y Puma <b>4</b> (12), el resto <b>2</b> (6). Cuenta cada artículo con stock en '+PARED_MIN_TALLES+' talles distintos o más y al menos uno central; un unisex suma en dama o en hombre según sus talles (hasta el 39 dama, desde el 40 hombre). Sale del stock por sucursal cargado. '
+  return '<details class="ayuda"><summary>🧱 Paredes de exhibición incompletas: <b>'+L.length+'</b> sectores en <b>'+nSuc+'</b> sucursales</summary><div class="card-hs">'
+    +'Mínimo de modelos por marca × subrubro × disciplina (Mateu Cat 1 y Cat 2): una columna son 9 apoyacalzados con cada modelo ×3 = <b>3 modelos</b>. '
+    +'Running: Adidas <b>6 columnas</b>, Nike y Puma <b>4</b>, el resto <b>2</b>, salvo que la ficha de la marca diga otra cosa; casual: lo que tenga cargado cada marca en su ficha. '
+    +'Cuenta cada artículo con stock en '+PARED_MIN_TALLES+' talles distintos o más y al menos uno central; un unisex suma en dama o en hombre según sus talles (hasta el 39 dama, desde el 40 hombre). Sale del stock por sucursal cargado. '
     +'En el Reparto inicial y en «Abrir a más sucursales» estas sucursales pasan adelante con esa marca.'
-    +'<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;min-width:520px"><thead><tr><th '+th+'>Sucursal</th><th '+th+'>Marca</th><th '+th+'>Subrubro</th><th '+th+'>Tiene</th><th '+th+'>Mínimo</th><th '+th+'>Faltan</th></tr></thead><tbody>'
-    +L.map(o=>'<tr><td '+td+'>'+esc(o.sucNombre)+'</td><td '+td+'><b>'+esc(o.marca)+'</b></td><td '+td+'>'+(o.gen==='DAMA'?'Dama':'Hombre')+'</td>'
+    +'<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;min-width:600px"><thead><tr><th '+th+'>Sucursal</th><th '+th+'>Marca</th><th '+th+'>Disciplina</th><th '+th+'>Subrubro</th><th '+th+'>Tiene</th><th '+th+'>Mínimo</th><th '+th+'>Faltan</th></tr></thead><tbody>'
+    +L.map(o=>'<tr><td '+td+'>'+esc(o.sucNombre)+'</td><td '+td+'><b>'+esc(o.marca)+'</b></td><td '+td+'>'+(o.disc==='casual'?'Casual':'Running')+'</td><td '+td+'>'+(o.gen==='DAMA'?'Dama':'Hombre')+'</td>'
       +'<td '+td+'>'+o.tiene+' modelos <small style="opacity:.7">('+o.col+' col.)</small></td><td '+td+'>'+o.min+' <small style="opacity:.7">('+o.colMin+' col.)</small></td>'
       +'<td '+td+'><b style="color:var(--bad,#c0392b)">'+o.falta+'</b></td></tr>').join('')
     +'</tbody></table></div></div></details>';

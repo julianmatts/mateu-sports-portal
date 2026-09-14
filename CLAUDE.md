@@ -1562,7 +1562,11 @@ admin, «ficha de la marca ▸».
   artículo del stock por sucursal: desde este cambio `guardarStockSemana` guarda también
   `stockSuc/<lunes>/partes/<firma>/metas/<id>` = `[marca, rubro, disciplina, subrubro, tipo]` y
   `asegurarStockData` las baja (las cargas anteriores no las traen: con esas no hay alerta hasta volver a subir
-  el stock). Pendiente de Juli: los mínimos de casual y de otras disciplinas.
+  el stock). **Casual con la misma lógica (13/09/2026)**: `PARED_DISC = ['running','casual']` (`paredDisc`:
+  casual/lifestyle/urbano); las columnas mínimas salen de la ficha de la marca (`pared:{running, casual}`,
+  editable en Asignación de Marcas → Fichas por marca, «Pared (columnas)», solo calzado; `paredCols`). Running
+  sin dato en la ficha usa la regla general; **casual sin dato no se controla**. Juli dicta los mínimos de
+  casual marca por marca por chat y se cargan directo en las fichas.
 - **«Modelos automáticos» (13/09/2026, Puma en Aurelius; Juli eligió la regla automática antes que una lista
   fija)**: campo `autoPct` del bloque de la ficha: al tipo de local le van los modelos que en los últimos
   `AUTO_MESES` (6) meses tuvieron ese % o más de sus envíos del depósito a ese tipo (sin contar outlets).
