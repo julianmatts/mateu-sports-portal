@@ -2165,6 +2165,40 @@ function matchArticulo(a, q){
   return (a.codigo||'').toLowerCase().includes(q) || (a.descripcion||'').toLowerCase().includes(q)
     || (a.articulo ? String(a.articulo).includes(q) : false); // Id.item (planilla de Drive)
 }
+/* Etiquetas que traen el código del PROVEEDOR con el talle pegado, sin símbolo
+   (Givova, 15/09/2026: la etiqueta escanea «CGE26010109033S» y el artículo es
+   «GIVCGE26010109033», talle S). Se prueba el código tal cual y sin el prefijo de
+   marca de 3 letras; lo que sobra al final tiene que ser un talle. Devuelve
+   {key, talle} o null (también si hay más de un artículo posible). */
+const RX_TALLE_PEGADO = /^(XXXXL|XXXL|XXL|XL|XS|XXS|S|M|L|UNI|SR|JR|\d{1,2}(?:[.,]5)?|\d{1,2}A)$/;
+function codigoConTallePegado(q){
+  // sin espacios ni separadores que meten algunas lectoras («HFDC516PNH29!PN!37»); el punto queda por los talles «7.5»
+  q = String(q||'').toUpperCase().replace(/[^A-Z0-9.,]/g,'');
+  if(q.length<8 || !/[A-Z]/.test(q)) return null;
+  let mejor = null, largo = 0, empate = false;
+  for(const a of articulosLista()){
+    const c = String(a.codigo||'').toUpperCase().replace(/\s+/g,'');
+    if(!c) continue;
+    const bases = [c];
+    if(/^[A-Z]{3}/.test(c) && c.length-3>=6) bases.push(c.slice(3));
+    for(const b of bases){
+      if(b.length<6 || b.length<largo || !q.startsWith(b)) continue;
+      const suf = q.slice(b.length);
+      const talles = Array.isArray(a.talles) ? a.talles.map(x=>String(x&&x.t||'').toUpperCase().replace(/\s+/g,'')) : [];
+      let talle = suf;
+      if(suf && !(talles.includes(suf) || RX_TALLE_PEGADO.test(suf))){
+        // Head: color y curva antes del talle («CP39», «4338», «SML01XS»): solo si el talle es del artículo
+        const t = talles.filter(x=> x && suf.endsWith(x) && /^(?:[A-Z]{2,3}|\d{2})(?:\d{2})?$/.test(suf.slice(0, suf.length-x.length)))
+          .sort((x,y)=>y.length-x.length)[0];
+        if(!t) continue;
+        talle = t;
+      }
+      if(b.length>largo){ mejor = {key:a.key, talle}; largo = b.length; empate = false; }
+      else if(b.length===largo && mejor.key!==a.key) empate = true;
+    }
+  }
+  return mejor && !empate ? mejor : null;
+}
 
 /* ══════════ F8s del Área de Producto: recorrido de armado + confirmación ══════════ */
 const EQUIPO_FB = 'https://turnero-mateu-default-rtdb.firebaseio.com/equipo/f8suc';
@@ -2511,6 +2545,15 @@ function renderResultados(){
       }
     }
   }
+  // Etiqueta con el código del proveedor y el talle pegado (Givova: «CGE26010109033S»)
+  if(!res.length){
+    const p = codigoConTallePegado(q);
+    if(p){
+      res = [ {key:p.key, ...DATA.articulos[p.key]} ];
+      notaScan = '<div class="hint" style="text-align:center;margin-bottom:8px">Escaneado: <b>'+esc(q.toUpperCase())+'</b> → <b>'+esc(DATA.articulos[p.key].codigo||p.key)+'</b>'+
+        (p.talle?' · talle '+esc(p.talle):'')+'</div>';
+    }
+  }
   // Etiqueta de MARCA (EAN/UPC): primero los `eans` de los artículos de la
   // sucursal; si no, el mapa compartido en Firebase (async: se repinta al llegar).
   let eanPend = false;
@@ -2808,6 +2851,7 @@ async function procesarEscaneo(codigo){
     const matches = articulosLista().filter(a=>matchArticulo(a, codigo.toLowerCase()));
     if(matches.length===1) art = matches[0].key;
   }
+  if(!art){ const p = codigoConTallePegado(codigo); if(p) art = p.key; }   // código del proveedor + talle pegado
   // etiqueta de marca: EAN/UPC → artículo (stock de la sucursal o mapa compartido)
   if(!art && esEan(codigo)){
     const r = await eanResolver(codigo);
@@ -2888,7 +2932,9 @@ function pickingResolver(codigo){
   const key = fbKey(codigo);
   if(DATA.articulos[key]) return key;
   const matches = articulosLista().filter(a=>matchArticulo(a, String(codigo).toLowerCase()));
-  return matches.length===1 ? matches[0].key : null;
+  if(matches.length===1) return matches[0].key;
+  const p = codigoConTallePegado(codigo);
+  return p ? p.key : null;
 }
 
 async function pickingAgregar(codigo){

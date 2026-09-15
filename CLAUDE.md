@@ -856,6 +856,18 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
     códigos que no estaban (de a 250, sin pisar nunca un vínculo existente), así sirven en
     todas las sucursales. El resumen de la carga muestra cuántos y el ⇩ Excel del módulo
     suma la columna «Cód. barras». Tests: `node --test lib/ean.test.js`.
+- **Etiquetas con el código del proveedor y el talle pegado (15/09/2026, reclamo de Calle 49 por
+  Givova)**: la etiqueta de Givova escanea `CGE26010109033S` (sin el prefijo de marca y con el talle
+  al final, sin símbolo) y el artículo es `GIVCGE26010109033`. `codigoConTallePegado` prueba el
+  código tal cual y sin las 3 letras de marca, y exige que lo que sobra sea un talle (del artículo o
+  `RX_TALLE_PEGADO`); si hay más de un artículo posible no elige. **Head** mete color/curva antes del
+  talle (`HFDC516CPH29CP39`, `HFDC52243H294338`, `HFDA63001SML01XS`): ese tramo (2-3 letras o 2
+  dígitos, + 2 dígitos opcionales) se acepta solo si el talle final es uno del artículo. Se ignoran
+  los separadores que meten algunas lectoras (`HFDC516PNH29!PN!37`). Lo usan la búsqueda, el escaneo
+  y la Lista de retiro. Con el historial de Calle 49 resolvió 33 búsquedas sin resultado (15 Givova,
+  12 Head, 3 Atomik `26111344301WB37` → `ATM26111344301WB`) sin cambiar ningún código que ya
+  andaba. No se resuelven las que llegan con el primer carácter recortado (`5010103041S`): es la
+  configuración de la lectora.
 - **Sin conexión (10/09/2026, reclamo del puesto «a veces no busca»)**: la búsqueda es
   local (catálogo en memoria), así que tiene que seguir andando aunque se corte internet.
   `fetchJSON` lleva tope de tiempo (15 s; el catálogo 90 s) — antes un pedido colgado no
