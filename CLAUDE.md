@@ -1689,7 +1689,8 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
   repartiendo de a una por talle (tilde); **queda ~1 curva en el depósito** (1 por talle con 2 o
   más, en el remito que más tiene del artículo). Todo parametrizable en «2 · Cómo repartir».
 - **Talles centrales** (`CENTRALES_DEF`, editables en pantalla y compartidos en
-  `barrida/repartoConfig/centrales`): calzado dama 37/37.5/38 AR + US 7/7.5/8 (fijado por Juli 15/09/2026; Puma UK
+  `barrida/repartoConfig/centrales`): calzado dama 37/37.5/38 AR + US 5.5/6/6.5 (en una curva unisex, escala US de hombre, la dama es 7/7.5/8:
+  clave `calz-unisex-dama`, Juli 15/09/2026; Puma UK
   4.5/5/5.5), hombre 41/41.5/42 AR + US 8.5/9/9.5 (Puma UK 8/8.5/9); indumentaria dama S-M, hombre
   y unisex M-L, niño 10-12 (+10A/12A/YM). Los US/UK se calibraron con la estadística de ventas real
   del 08/09/2026. Calzado niño/unisex/infante no tiene regla: los talles del medio del artículo.
