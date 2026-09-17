@@ -642,7 +642,12 @@ function logout(){ clearSession(); location.href='../'; }
 /* ============================================================
    BOOT / NAV
    ============================================================ */
-const ROLE_LABEL = {admin:'Administrador', sucursal:'Sucursal', outlet:'Outlet'};
+const ROLE_LABEL = {admin:'Administrador', supervisor:'Supervisor', sucursal:'Sucursal', outlet:'Outlet'};
+// Gerencia = quien ve el panel de todas las sucursales. El supervisor (Cristian)
+// entra de SOLO LECTURA y solo a Discontinuos (pedido de Juli 17/09/2026): mira
+// los artículos de cada local y lo que la sucursal comentó sobre cada uno.
+function esGerencia(){ return !!(SESSION && (SESSION.rol==='admin' || SESSION.rol==='supervisor')); }
+function esSoloLectura(){ return !!(SESSION && SESSION.rol==='supervisor'); }
 
 async function boot(session){
   SESSION = session;
@@ -669,7 +674,7 @@ async function boot(session){
     await renderOutletView(session.outlet_id, $('view-outlet'), {});
   } else {
     $('hdrTitle').textContent = 'Gestión de Stock';
-    $('hdrSub').textContent = 'Panel Admin';
+    $('hdrSub').textContent = esSoloLectura() ? 'Discontinuos de las sucursales' : 'Panel Admin';
     goToView('admin-dashboard');
     await renderAdminDashboard($('view-admin-dashboard'));
   }
@@ -736,6 +741,12 @@ function setupMainTabs(session){
       renderConfigView($('view-config'));
     });
   }
+  // El supervisor solo tiene Discontinuos: se le ocultan las otras dos solapas.
+  if(esSoloLectura()){
+    document.querySelectorAll('.main-tab').forEach(b=>{ if(b.dataset.maintab!=='discontinuos') b.style.display='none'; });
+    activateMainTab('discontinuos');
+    return;
+  }
   // Pestaña inicial: Meses de Stock (pedido de Juli 04/09/2026). Los links
   // directos #ms/… o #msmarca/… también caen ahí.
   activateMainTab('meses-stock');
@@ -745,6 +756,8 @@ function updateAdminCargaAction(id){
   if(!bar || !btn) return;
   // Meses de Stock no tiene carga por Excel (los datos entran como archivo del repo)
   bar.classList.toggle('show', SESSION && SESSION.rol==='admin' && id!=='meses-stock');
+  const cfg = $('btnAdminConfig');
+  if(cfg) cfg.style.display = (SESSION && SESSION.rol==='admin') ? '' : 'none';
   btn.textContent = id==='gestion-stock' ? 'Cargar Reporte Mensual' : 'Cargar Discontinuos';
 }
 
@@ -756,9 +769,9 @@ function buildNav(session){
     tabs.push({id:'historico', label:'Histórico'});
   }
   if(session.rol==='outlet') tabs.push({id:'outlet', label:'Mi Outlet'});
-  if(session.rol==='admin'){
+  if(session.rol==='admin' || session.rol==='supervisor'){
     tabs.push({id:'admin-dashboard', label:'Dashboard'});
-    tabs.push({id:'control', label:'Control'});
+    if(session.rol==='admin') tabs.push({id:'control', label:'Control'});
   }
   tabs.forEach(t=>{
     const b = document.createElement('button');
@@ -901,6 +914,34 @@ const MOTIVOS_DISC = [
   'Otro motivo'
 ];
 
+// Avisos: cuando una sucursal comenta, le llega a Producto (Daniel y David) y al
+// supervisor por la Bandeja (pedido de Juli 17/09/2026). Es UN aviso por sucursal
+// y por día: si comenta 20 artículos no se les inunda la Bandeja; el detalle se
+// lee acá, en Discontinuos.
+const MENSAJES_DB_URL = 'https://mensajes-mateu-default-rtdb.firebaseio.com';
+const COM_AVISADOS = ['producto@mateu.com.ar','cristian.campion@mateu.com.ar'];
+function comConvKey(a,b){ return [firebaseKeyFromEmail(a), firebaseKeyFromEmail(b)].sort().join('__'); }
+async function avisarComentario(ym, slug, c){
+  if(!SESSION || ['sucursal','deposito','outlet'].indexOf(SESSION.rol)<0) return;   // lo avisa la sucursal, no gerencia
+  const de = (SESSION.email||'').toLowerCase();
+  if(!de) return;
+  const hoy = new Date().toISOString().slice(0,10);
+  const flag = FB+'/comentariosAvisos/'+ym+'/'+slug+'/'+hoy+'.json';
+  try{
+    if(await fetchJSON(flag)) return;                       // ya salió hoy
+    await putJSON(flag, {ts:Date.now(), por:SESSION.email});
+  }catch(e){ return; }
+  const texto = nombreDeSlug(slug)+' comentó artículos de sus discontinuos de '+ymToLabel(ym)+'.\n'+
+    'Último: '+[c.codigo, c.descripcion].filter(Boolean).join(' ')+' — '+comTexto(c)+'\n'+
+    'Se ven en Gestión de Stock → Discontinuos.';
+  const ts = Date.now();
+  try{
+    await Promise.all(COM_AVISADOS.map(m=>m.toLowerCase()).filter(m=>m!==de).map(a=>
+      fetch(MENSAJES_DB_URL+'/directos/'+comConvKey(de,a)+'.json',
+        {method:'POST', body:JSON.stringify({de:SESSION.email, texto, ts})}).catch(()=>null)));
+  }catch(e){}
+}
+
 // Clave estable del artículo dentro del mes+sucursal (saneada para Firebase).
 function comKey(i){
   const k = articuloKey(i) || '';
@@ -1020,6 +1061,7 @@ function abrirComentario(ctx, key){
       ctx.com[key] = obj;
       cerrarComentario();
       comRepintar(ctx, key);
+      avisarComentario(ctx.ym, ctx.slug, obj);   // best-effort, no bloquea
     }catch(e){
       btnGuardar.disabled = false;
       err.textContent = 'No se pudo guardar. Revisá la conexión e intentá de nuevo.';
@@ -1042,6 +1084,46 @@ function abrirComentario(ctx, key){
       err.classList.add('show');
     }
   });
+}
+
+/* Todos los comentarios del mes, ordenados del más nuevo al más viejo.
+   Es lo que miran el Área de Producto y el supervisor. */
+function comentariosDelMes(comMes, sucFiltro){
+  const out = [];
+  Object.keys(comMes||{}).forEach(slug=>{
+    if(sucFiltro && slug!==sucFiltro) return;
+    Object.keys(comMes[slug]||{}).forEach(k=>{
+      const c = comMes[slug][k];
+      if(c && c.motivo) out.push(Object.assign({slug, key:k}, c));
+    });
+  });
+  return out.sort((a,b)=> (b.ts||0)-(a.ts||0));
+}
+function comentariosTxt(lista, ym){
+  return 'Discontinuos '+ymToLabel(ym)+' — comentarios de las sucursales\n\n'+
+    lista.map(c=> '• '+nombreDeSlug(c.slug)+' · '+[c.codigo, c.descripcion].filter(Boolean).join(' ')+
+      '\n  '+comTexto(c)+' ('+(c.por||'')+')').join('\n');
+}
+function comentariosCardHtml(lista, ym){
+  if(!lista.length){
+    return '<div class="card"><div class="card-title">Comentarios de las sucursales</div>'+
+      '<div class="empty">Ninguna sucursal comentó todavía los discontinuos de '+ymToLabel(ym)+'. '+
+      'Los comentarios (producto separado, cruzado, no aparece…) los deja cada local en su lista y aparecen acá.</div></div>';
+  }
+  return '<div class="card">'+
+    '<div class="head-row"><div class="card-title" style="margin:0">Comentarios de las sucursales '+
+      '<span class="hint" style="font-family:var(--font-b);font-size:12px;font-weight:600;margin-left:8px;color:var(--muted)">'+fmtNum(lista.length)+' artículo(s) con comentario</span></div>'+
+      '<button class="btn btn-outline btn-sm" id="btnCopiarCom">⧉ Copiar</button>'+
+    '</div>'+
+    '<div class="table-wrap"><table><thead><tr>'+
+      '<th>Sucursal</th><th>Código</th><th>Descripción</th><th>Qué pasa</th><th>Detalle</th><th>Quién y cuándo</th>'+
+    '</tr></thead><tbody>'+
+    lista.map(c=> '<tr><td>'+esc(nombreDeSlug(c.slug))+'</td><td class="td-code">'+esc(c.codigo||'—')+'</td>'+
+      '<td>'+esc(c.descripcion||'')+(c.marca?' <span class="hint">'+esc(c.marca)+'</span>':'')+'</td>'+
+      '<td><span class="com-chip"><b>'+esc(c.motivo)+'</b></span></td>'+
+      '<td>'+(c.nota?esc(c.nota):'<span class="com-none">—</span>')+'</td>'+
+      '<td class="hint" style="white-space:nowrap">'+esc(comFirma(c))+'</td></tr>').join('')+
+    '</tbody></table></div></div>';
 }
 
 /* ============================================================
@@ -1789,6 +1871,7 @@ async function renderAdminDashboard(container){
       '<div class="card"><div class="card-title">Ranking de sucursales</div><div id="dashRanking"></div></div>'+
       '<div class="card"><div class="card-title">Evolución mensual</div><div id="dashChart"></div></div>'+
     '</div>'+
+    comentariosCardHtml(comentariosDelMes(comMes, sucFiltro), ym)+
     '<div class="card">'+
       '<div class="card-title">Buscador global <span class="hint" style="font-family:var(--font-b);font-size:12px;font-weight:600;margin-left:8px;color:var(--bad)">Filas resaltadas: repiten vs mes anterior</span></div>'+ 
       '<div class="toolbar">'+
@@ -1808,6 +1891,13 @@ async function renderAdminDashboard(container){
   $('dashMesSel').addEventListener('change', e=>{
     container.dataset.mes = e.target.value;
     renderAdminDashboard(container);
+  });
+  const btnCopiarCom = $('btnCopiarCom');
+  if(btnCopiarCom) btnCopiarCom.addEventListener('click', async ()=>{
+    const txt = comentariosTxt(comentariosDelMes(comMes, sucFiltro), ym);
+    try{ await navigator.clipboard.writeText(txt); btnCopiarCom.textContent = '✓ Copiado'; }
+    catch(e){ prompt('Copiá el texto:', txt); }
+    setTimeout(()=>{ btnCopiarCom.textContent = '⧉ Copiar'; }, 1800);
   });
   $('dashSucSel').addEventListener('change', e=>{
     container.dataset.suc = e.target.value;

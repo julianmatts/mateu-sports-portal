@@ -405,9 +405,22 @@ con otro artículo»…). Antes la sucursal solo podía avisarlo por afuera del 
   (`puedeComentar` = admin o `session.sucursal === slug`). El resto lo ve de solo lectura (chip
   como `span`, sin modal).
 - **Quién lo ve**: el **outlet** que recibe (columna «Comentario de la sucursal» en su vista y en
-  el checklist de recepción) y **gerencia** en el Dashboard (columna Comentario en el buscador
-  global). Las tres pantallas tienen el filtro **Comentario (todos / con comentario / sin
-  comentar)** y la vista de sucursal cuenta «N con comentario» al lado de los resultados.
+  el checklist de recepción) y, en el Dashboard, el **Área de Producto** (`producto@`, que ya es
+  admin) y el **supervisor**. Las tres pantallas tienen el filtro **Comentario (todos / con
+  comentario / sin comentar)** y la vista de sucursal cuenta «N con comentario» al lado de los
+  resultados. El Dashboard abre además con la tarjeta **«Comentarios de las sucursales»**
+  (`comentariosCardHtml`/`comentariosDelMes`): todos los del mes, del más nuevo al más viejo, con
+  sucursal · código · descripción · motivo · detalle · quién y cuándo, y «⧉ Copiar» para WhatsApp;
+  respeta el filtro por sucursal del panel.
+- **El supervisor entra al módulo de SOLO LECTURA** (17/09/2026): el Portal le suma
+  `gestion-stock` en `herramientasEfectivas` y en el módulo `esGerencia()`/`esSoloLectura()` le
+  dan el Dashboard pero le ocultan las solapas Reporte Mensual y Meses de Stock, la pestaña
+  Control, «Cargar Discontinuos» y el ⚙; tampoco puede comentar. Ve todas las sucursales (no se
+  filtra por `session.sucursales`: hoy Cristian cubre todo).
+- **Aviso por la Bandeja** (`avisarComentario`, best-effort): cuando **la sucursal** comenta le
+  llega un directo a `COM_AVISADOS` = `producto@` y `cristian.campion@`. Es **uno por sucursal y
+  por día** (flag `comentariosAvisos/<ym>/<slug>/<YYYY-MM-DD>`), para no inundar la Bandeja si
+  comenta 20 artículos; el detalle se lee en el módulo. Gerencia comentando no dispara aviso.
 - **En los Excel**: la última columna del «Exportar detalle para envío» pasó a ser
   «COMENTARIO / OBSERVACIONES» y se llena sola; el checklist del outlet cambia OBSERVACIONES por
   «COMENTARIO DE LA SUCURSAL»; el export general suma la columna en la hoja de cada sucursal.
@@ -418,8 +431,8 @@ con otro artículo»…). Antes la sucursal solo podía avisarlo por afuera del 
   Agrupado por slug: cada sucursal baja solo lo suyo (seguridad blanda, como el resto).
   El comentario es **por mes**: un artículo que repite el mes siguiente se comenta de nuevo (así
   se ve si el problema sigue).
-- Pendiente si Juli lo pide: avisar al Área de Producto por la Bandeja cuando una sucursal
-  comenta, y que Producto pueda responder (hoy el comentario es uno solo y editable).
+- Pendiente si Juli lo pide: que Producto/el supervisor **respondan** el comentario (hoy es uno
+  solo por artículo, editable por la sucursal y por gerencia).
 
 ## Meses de Stock — cómo regenerar `datos-meses-stock.js` desde el Excel
 
