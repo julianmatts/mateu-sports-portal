@@ -3343,6 +3343,12 @@ const GRUPO_LBL = { 'calz-dama':'calzado dama','calz-hombre':'calzado hombre','c
 const DISC_CONOCIDAS = ['running','casual','training','futbol','adventure','outdoor','basquet','basket','tenis','padel','originals','hockey','natacion','trekking','skate','voley','rugby','urbano','lifestyle'];
 // locales que venden solo niño: aunque tengan la marca asignada, no reciben artículos de adulto
 const SOLO_NINO = { 'kids':true };
+// Niño y fútbol: no tiene sentido guardar curva en el depósito, va todo al salón (Juli 17/09/2026)
+const RX_FUTBOL = /futbol|futsal/;
+function repTodoAlSalon(a, G){
+  if(G && (G.g==='nino' || G.g==='infante')) return true;
+  return RX_FUTBOL.test(sinAcento([a&&a.disc, a&&a.tipo].filter(Boolean).join(' ')).toLowerCase());
+}
 // locales que no trabajan niño, ni calzado ni indumentaria (Juli 17/09/2026: Calle 49)
 const SIN_NINO = { 'calle-49':true };
 // Aurelius (las de línea y Calle 10) trabaja casual moda: nunca fútbol ni deportes (Juli 17/09/2026),
@@ -3370,7 +3376,7 @@ state.rep = {
   mes:'', sel:{},         // mes de ingreso elegido ('' = todo) y remitos marcados
   f:{ marca:'', rubro:'', q:'', verRepartidos:false },
   destinos:null,          // slugs destino (null = todas menos los outlets)
-  param:{ uCentral:2, maxCentral:3, uResto:1, reserva:1, minTalles:3, excedente:false, ninoCurva:'prog', criterio:'abrir', reingresoProf:true,   /* el excedente queda de reserva (Juli 14/09/2026) */ respetarDisc:true, memoria:true, excluirVarios:true, huerfanos:true },
+  param:{ uCentral:2, maxCentral:3, uResto:1, reserva:1, minTalles:3, excedente:false, ninoCurva:'prog', criterio:'abrir', reingresoProf:true, todoNinoFutbol:true,   /* el excedente queda de reserva (Juli 14/09/2026) */ respetarDisc:true, memoria:true, excluirVarios:true, huerfanos:true },
   centrales:null,         // talles centrales editados (se comparten en repartoConfig/centrales)
   res:null, vista:'remito', selOpen:true,
   hist:null, repartidos:{}, guardados:[], cargado:false, abierto:null,
@@ -4074,7 +4080,11 @@ function repCalcular(){
     if(!Array.isArray(S.destinos) && fichaOutletLinea(a.marca, C.G))
       destA = destA.concat(Object.keys(REP_SUC).filter(sl=>catDe(sl)==='outlet' && !destA.includes(sl)));
     const cands=repCandidatos(a, C.G, destA);
-    const out=repRepartirArt(tl.perRem, cands, C.set, P, C.per);
+    // Niño y fútbol se reparten enteros (Juli 17/09/2026): no se deja curva en el depósito y el
+    // excedente se sigue repartiendo, como hace el depósito a mano
+    const todoP = P.todoNinoFutbol!==false && repTodoAlSalon(a, C.G);
+    const out=repRepartirArt(tl.perRem, cands, C.set, todoP ? Object.assign({}, P, { excedente:true, reserva:0 }) : P, C.per);
+    if(todoP) a.todoAlSalon = true;
     Object.assign(a, { estimado:tl.estimado, faltan:tl.faltan, centrales:[...C.set], regla:C.regla, grupo:C.G.key });
     if(a.diasDepo==null && reserva){    // hace cuántos días entró lo que hay hoy en el depósito
       const Rr=reserva[a.id] || (a.cod && reserva['cod:'+String(a.cod).toUpperCase()]);
@@ -4359,6 +4369,7 @@ function repParamHtml(){
     +fsel('Reserva mínima','rpRMin',op([[0,'sin mínimo'],[4,'4 u.'],[6,'6 u.'],[8,'8 u.'],[10,'10 u.'],[12,'12 u.']],P.reservaMin==null?6:P.reservaMin))
     +'</div><div class="frow"><div class="fgrupo"><span class="glab">Reglas</span>'
       +repChk('rpExc',P.excedente,'Repartir el excedente','Lo que sobra después de las curvas (sin contar la curva que queda en el depósito) se sigue repartiendo de a una unidad por talle, en orden de prioridad. Destildado, el excedente queda en el depósito.')
+      +repChk('rpTodoNF',P.todoNinoFutbol!==false,'Niño y fútbol: repartir todo','En los artículos de niño y de fútbol no queda curva en el depósito y el excedente se reparte entero, como lo hace el depósito a mano. Destildado, siguen las reglas generales de reserva y excedente.')
       +repChk('rpReing',P.reingresoProf!==false,'A la que ya lo tiene y lo vende, la curva entera','Con el stock por sucursal cargado: si la sucursal ya tiene el artículo y lo vende (con el archivo de ventas de la Barrida, que haya vendido ese artículo; sin él, que venda la marca en el rubro), su stock no le achica la curva. Destildado, a la que ya lo tiene solo se le completa lo que le falta.')
       +repChk('rpDisc',P.respetarDisc,'Respetar las disciplinas de la asignación','Si en Asignación de Marcas la marca tiene disciplinas (p. ej. «running, casual»), solo recibe los artículos de esas disciplinas.')
       +repChk('rpMem',P.memoria,'Completar primero a las que ya lo recibieron','Si el artículo ya se repartió en los últimos '+REP_MEM_DIAS+' días (otro remito), esas sucursales van primero y se les completa la curva con lo que les falta.')
@@ -4384,7 +4395,8 @@ function repResultadoHtml(){
     +'<b>2. A quién, en orden:</b> la marca tiene que estar en la <b>Asignación de Marcas</b> de la sucursal (calzado o indumentaria; las marcas «niño» solo reciben artículos de niño) → marca principal antes que especial y secundaria → <b>categoría</b> (Cat. 1 antes que Cat. 2 / Aurelius / Adidas, y los outlets al final) → <b>venta</b> de la marca en el rubro el último mes (alta, media o baja) → <b>meses de stock</b> (menos meses, antes). Si ya recibió el artículo en un reparto anterior, va primero para completarle la curva. Pasá el mouse por la prioridad de cada fila para ver sus datos.<br>'
     +'<b>3. Cuánto:</b> <span class="tgx n-fuerte"><span class="txl">41</span><span class="txn">2</span></span> rótulo navy = talle central, va con '+S.param.uCentral+' unidades (hasta '+Math.max(S.param.uCentral,S.param.maxCentral)+' si alcanza); el resto de los talles con '+S.param.uResto+'. A una sucursal no se le manda una curva rota: tiene que llevar al menos '+S.param.minTalles+' talles y algún central.<br>'
     +'<b>4. Queda en el depósito:</b> '+(S.param.reserva?S.param.reserva+' unidad por talle de cada talle que tenga 2 o más (una curva), solo si el artículo tiene '+(S.param.curvaDesde==null?12:S.param.curvaDesde)+' unidades o más, en el remito que más tiene del artículo':'nada')+(S.param.excedente?'; el resto se reparte':'; lo que sobra de las curvas también queda')
-      +'. Si lo que queda no llega a <b>'+(S.param.reservaMin==null?6:S.param.reservaMin)+' unidades</b>, se reparte todo. Con el <b>stock por sucursal</b> cargado, a la que ya tiene el artículo (reingreso) solo se le completa la curva.'
+      +'. Si lo que queda no llega a <b>'+(S.param.reservaMin==null?6:S.param.reservaMin)+' unidades</b>, se reparte todo.'
+      +(S.param.todoNinoFutbol!==false?' En <b>niño y fútbol</b> no queda nada: va todo al salón.':'')+' Con el <b>stock por sucursal</b> cargado, a la que ya tiene el artículo (reingreso) solo se le completa la curva.'
     +'<br><b>5. El hueco entre los dos reportes:</b> esta pestaña sale de la estadística de <b>remitos</b> y la Barrida del reporte de <b>stock</b> con «Días u.compra». Un artículo con compra de hace menos de <b>'+(T.dias||Math.max(1,state.filtros.diasNuevo|0))+' días</b> que no figure en ningún remito de la lista no lo repartiría nadie: se suma solo en la tarjeta <b>«Ingresó hace poco · sin remito»</b>. Es el mismo número que usa la Barrida para no repartir lo nuevo: lo que tiene menos días va por acá, lo que tiene más por la Barrida.'
     +(T.estimados?'<br><span class="pill rep2">talles de la reserva</span> = el remito no trae talles: se usó la curva que tiene hoy el artículo en la reserva del depósito, repartida entre sus remitos por la cantidad de cada uno. Confirmalo al abrir la caja.':'')
     +'</div></details>';
@@ -4506,7 +4518,7 @@ function wireReparto(){
   on('rpNino','onchange',e=>{ S.param.ninoCurva=e.target.value; repRecalc(); });
   on('rpCrit','onchange',e=>{ S.param.criterio=e.target.value; repRecalc(); });
   const bool=(id,k)=>on(id,'onchange',e=>{ S.param[k]=e.target.checked; repRecalc(); });
-  bool('rpExc','excedente'); bool('rpReing','reingresoProf'); bool('rpDisc','respetarDisc'); bool('rpMem','memoria'); bool('rpVar','excluirVarios'); bool('rpHuer','huerfanos');
+  bool('rpExc','excedente'); bool('rpTodoNF','todoNinoFutbol'); bool('rpReing','reingresoProf'); bool('rpDisc','respetarDisc'); bool('rpMem','memoria'); bool('rpVar','excluirVarios'); bool('rpHuer','huerfanos');
   // el corte en días es el mismo para las dos pestañas (lo guarda barrida_prefs)
   on('rpDias','onchange',e=>{ const n=parseInt(e.target.value,10);
     state.filtros.diasNuevo = (isFinite(n)&&n>0) ? Math.min(365,n) : 10; state.filtros.sinNuevos=true;

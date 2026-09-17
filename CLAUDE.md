@@ -1787,6 +1787,10 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     (`param.reingresoProf`, default sí): el stock por sucursal no le achica la curva a la sucursal que vende el
     artículo (`vendeArt`: con el archivo de ventas de la Barrida cargado, que lo haya vendido — `repVentaArt`;
     sin él, que venda la marca en el rubro). Lo repartido hace poco (memoria) sí cuenta siempre.
+  - **Niño y fútbol se reparten enteros (17/09/2026)**: tilde «Niño y fútbol: repartir todo»
+    (`param.todoNinoFutbol`, default sí): en esos artículos (`repTodoAlSalon`: género niño/infante o
+    disciplina fútbol/futsal) el reparto corre con `reserva:0` y `excedente:true`, así no queda curva en
+    el depósito, como lo hace el depósito a mano. Destildado, valen las reglas generales.
   - **Excedente del Reparto inicial**: «Repartir el excedente» viene **destildado** (prefs `v:2`): lo que sobra
     después de las curvas queda de reserva (si queda menos de `reservaMin`, se reparte igual). New Balance
     exclusivos de Aurelius: Aurelius de línea y Ecommerce prioridad 1, Aurelius 10 (columna outlet, «como local
