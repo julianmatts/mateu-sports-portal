@@ -1772,6 +1772,12 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     ficha nombre. **Aurelius Calle 10 toma la mercadería de la columna Aurelius** de la ficha (en `barrida/`
     `fichaDe` y en `marcas/` `tipoDeSuc`/`fichaEfectiva`); de la columna Outlets solo la «Prioridad» (New
     Balance). Para destinos por defecto y días de outlet sigue contando como outlet (`COMO_OUTLET`).
+  - **Calzado niño/infante — curva progresiva o chata (17/09/2026)**: no usa la tabla de centrales. Select
+    «Calzado niño» en «2 · Cómo repartir» (`param.ninoCurva`, default `prog`): **progresiva** = la mitad más chica
+    de los talles del artículo x1 y la más grande x2 (8 talles → 4 x1 + 4 x2; impar, la mitad grande lleva el del
+    medio), **chata** = x1 en todos. `repCentrales` devuelve `per` (unidades por talle) y `repRepartirArt(…, per)`
+    lo usa como base y tope (sin 3.ª unidad); «Abrir a más sucursales» también. En la Barrida (`centralesDe`)
+    niño sigue con los talles del medio.
   - **Excedente del Reparto inicial**: «Repartir el excedente» viene **destildado** (prefs `v:2`): lo que sobra
     después de las curvas queda de reserva (si queda menos de `reservaMin`, se reparte igual). New Balance
     exclusivos de Aurelius: Aurelius de línea y Ecommerce prioridad 1, Aurelius 10 (columna outlet, «como local

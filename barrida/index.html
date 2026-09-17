@@ -1559,8 +1559,8 @@ function aplicarAmpliar(){
     // la que tiene 1 unidad suelta cuenta como que no lo tiene: recibe una curva de arranque entera
     // (si se le pasara lo que tiene, repRepartirArt la completaría de a un talle y quedaría una curva rota)
     cands.forEach((c,i)=>{ c.prio=i+1; c.prioDe=cands.length; c.hist=null; c.stock=null; });
-    const central=repCentrales(A, Object.keys(A.resTalles)).set;
-    const res=repRepartirArt([{nro:'DEP', t:libre}], cands, central, P);
+    const CA=repCentrales(A, Object.keys(A.resTalles));
+    const res=repRepartirArt([{nro:'DEP', t:libre}], cands, CA.set, P, CA.per);
     let u=0;
     res.lineas.forEach(l=>{
       const S=A.stockSuc[l.slug], tiene=(S && S.talles)||{};
@@ -3370,7 +3370,7 @@ state.rep = {
   mes:'', sel:{},         // mes de ingreso elegido ('' = todo) y remitos marcados
   f:{ marca:'', rubro:'', q:'', verRepartidos:false },
   destinos:null,          // slugs destino (null = todas menos los outlets)
-  param:{ uCentral:2, maxCentral:3, uResto:1, reserva:1, minTalles:3, excedente:false,   /* el excedente queda de reserva (Juli 14/09/2026) */ respetarDisc:true, memoria:true, excluirVarios:true, huerfanos:true },
+  param:{ uCentral:2, maxCentral:3, uResto:1, reserva:1, minTalles:3, excedente:false, ninoCurva:'prog',   /* el excedente queda de reserva (Juli 14/09/2026) */ respetarDisc:true, memoria:true, excluirVarios:true, huerfanos:true },
   centrales:null,         // talles centrales editados (se comparten en repartoConfig/centrales)
   res:null, vista:'remito', selOpen:true,
   hist:null, repartidos:{}, guardados:[], cargado:false, abierto:null,
@@ -3624,6 +3624,15 @@ function repCentrales(a, labels){
   // sin regla, o el artículo no trae ninguno de esos talles: el/los del medio de su curva
   const ord=labels.slice().sort(cmpTalle); if(ord.length<3) return { G, set:new Set(), regla:'curva corta: 1 por talle' };
   const set=new Set([ord[Math.floor((ord.length-1)/2)], ord[Math.floor(ord.length/2)]]);
+  // calzado niño/infante (Juli 17/09/2026): curva «progresiva» = la mitad más chica x1 y la más grande x2
+  // (en 8 talles: los primeros 4 x1 y los últimos 4 x2; impar: la mitad más grande lleva el talle del medio),
+  // o «chata» = x1 en todos. `per` = unidades por talle; `set` queda como antes para la Barrida.
+  if(G.fam==='calz' && (G.g==='nino' || G.g==='infante')){
+    const modo=(state.rep && state.rep.param && state.rep.param.ninoCurva) || 'prog';
+    const per={}, corte=Math.floor(ord.length/2);
+    ord.forEach((t,i)=>{ per[t] = (modo==='prog' && i>=corte) ? 2 : 1; });
+    return { G, set, per, regla: modo==='prog' ? 'calzado niño, curva progresiva: '+ord.slice(0,corte).join('·')+' x1 y '+ord.slice(corte).join('·')+' x2' : 'calzado niño, curva chata: x1 en todos los talles' };
+  }
   return { G, set, regla:'sin regla para '+(GRUPO_LBL[G.key]||'este tipo')+': los talles del medio' };
 }
 
@@ -3801,7 +3810,9 @@ function repPrioTxt(l){
    Queda: ~1 curva (`reserva` por talle con 2 o más) + lo que no se repartió.
    Después cada unidad se toma de un remito: la reserva del que más tiene del artículo (una sola
    ubicación) y a cada sucursal del remito que más le cubre / que ya le está dando. */
-function repRepartirArt(perRem, cands, central, P){
+function repRepartirArt(perRem, cands, central, P, per){
+  // curva por talle fija (calzado niño progresivo/chato): cada talle lleva lo suyo, sin 3.ª unidad; «central» = los x2
+  if(per) central=new Set(Object.keys(per).filter(t=>per[t]>=2));
   const avail={}; perRem.forEach(r=>Object.entries(r.t).forEach(([t,q])=>{ if(q>0) avail[t]=(avail[t]||0)+q; }));
   const talles=Object.keys(avail).sort(cmpTalle);
   const resv={}, d={};
@@ -3812,8 +3823,8 @@ function repRepartirArt(perRem, cands, central, P){
   talles.forEach(t=>{ resv[t]=0; d[t]=avail[t]; });
   const nT=talles.filter(t=>d[t]>0).length, minT=Math.min(P.minTalles, nT);
   const hayCentral=talles.some(t=>central.has(t) && d[t]>0);
-  const base=t=>central.has(t)?P.uCentral:P.uResto;
-  const tope=t=>central.has(t)?Math.max(P.uCentral,P.maxCentral):P.uResto;
+  const base=t=>per ? (per[t]||1) : central.has(t)?P.uCentral:P.uResto;
+  const tope=t=>per ? (per[t]||1) : central.has(t)?Math.max(P.uCentral,P.maxCentral):P.uResto;
   // «curva x1 plana» de la ficha de la marca: 1 por talle, sin agrandar centrales ni excedente
   const baseS=(s,t)=>s.plana?1:base(t);
   // lo que ya tiene la sucursal: lo que se le mandó hace poco y/o su stock actual (reingresos), el mayor por talle
@@ -4033,7 +4044,7 @@ function repCalcular(){
     if(!Array.isArray(S.destinos) && fichaOutletLinea(a.marca, C.G))
       destA = destA.concat(Object.keys(REP_SUC).filter(sl=>catDe(sl)==='outlet' && !destA.includes(sl)));
     const cands=repCandidatos(a, C.G, destA);
-    const out=repRepartirArt(tl.perRem, cands, C.set, P);
+    const out=repRepartirArt(tl.perRem, cands, C.set, P, C.per);
     Object.assign(a, { estimado:tl.estimado, faltan:tl.faltan, centrales:[...C.set], regla:C.regla, grupo:C.G.key });
     if(a.diasDepo==null && reserva){    // hace cuántos días entró lo que hay hoy en el depósito
       const Rr=reserva[a.id] || (a.cod && reserva['cod:'+String(a.cod).toUpperCase()]);
@@ -4310,6 +4321,7 @@ function repParamHtml(){
     +fsel('Talles centrales','rpUC',op([[1,'1 unidad'],[2,'2 unidades'],[3,'3 unidades']],P.uCentral))
     +fsel('Centrales, si alcanza','rpMC',op([[1,'hasta 1'],[2,'hasta 2'],[3,'hasta 3'],[4,'hasta 4']],P.maxCentral))
     +fsel('Resto de los talles','rpUR',op([[1,'1 unidad'],[2,'2 unidades']],P.uResto))
+    +fsel('Calzado niño','rpNino',op([['prog','progresiva (mitad chica x1, grande x2)'],['plana','chata (x1)']],P.ninoCurva||'prog'))
     +fsel('Curva mínima por sucursal','rpMin',op([[1,'1 talle'],[2,'2 talles'],[3,'3 talles'],[4,'4 talles'],[5,'5 talles']],P.minTalles))
     +fsel('Queda en el depósito','rpRes',op([[0,'nada'],[1,'1 curva'],[2,'2 curvas']],P.reserva))
     +fsel('Dejar curva si el artículo tiene','rpCDesde',op([[0,'siempre'],[6,'6 u. o más'],[12,'12 u. o más'],[18,'18 u. o más'],[24,'24 u. o más'],[36,'36 u. o más']],P.curvaDesde==null?12:P.curvaDesde))
@@ -4327,7 +4339,7 @@ function repParamHtml(){
     +'</div><div style="margin-left:auto;display:flex;gap:10px;align-items:center">'
       +(S.res?'<button class="btn btn-outline btn-sm" id="repXlsx">⇩ Excel</button><button class="btn btn-outline btn-sm" id="repPrint">🖨 Imprimir</button><button class="btn btn-primary btn-sm" id="repGuardar"'+(S.res.guardadoKey?' disabled':'')+'>'+(S.res.guardadoKey?'✓ Guardado':'💾 Guardar reparto')+'</button>':'')
     +'</div></div>'
-    +'<details class="ayuda" style="margin:10px 0 0" id="repCentBox"'+(S._centOpen?' open':'')+'><summary>Talles centrales por tipo de artículo</summary><div class="card-hs" style="margin:6px 0 0">Los talles que van con '+P.uCentral+' unidades (hasta '+Math.max(P.uCentral,P.maxCentral)+'). En la misma lista van el talle AR y sus equivalentes US/UK, separados por coma. Calzado unisex usa los de hombre y dama juntos; calzado niño e infante no tienen regla: se toman los talles del medio de cada artículo; accesorios van 1 por talle. Los cambios se ven al instante; «Guardar para todos» los deja para las demás compus.</div>'
+    +'<details class="ayuda" style="margin:10px 0 0" id="repCentBox"'+(S._centOpen?' open':'')+'><summary>Talles centrales por tipo de artículo</summary><div class="card-hs" style="margin:6px 0 0">Los talles que van con '+P.uCentral+' unidades (hasta '+Math.max(P.uCentral,P.maxCentral)+'). En la misma lista van el talle AR y sus equivalentes US/UK, separados por coma. Calzado unisex usa los de hombre y dama juntos; calzado niño e infante no usan esta tabla: van con la curva progresiva o chata que se elige arriba («Calzado niño»); accesorios van 1 por talle. Los cambios se ven al instante; «Guardar para todos» los deja para las demás compus.</div>'
       +'<div class="rcent">'+CENTRALES_LBL.map(([k,l])=>'<label for="rc_'+esc(k)+'">'+esc(l)+'</label><input class="inp" id="rc_'+esc(k)+'" data-cent="'+esc(k)+'" value="'+esc((tabla[k]||[]).join(', '))+'">').join('')+'</div>'
       +'<div style="display:flex;gap:10px;align-items:center"><button class="btn btn-outline btn-sm" id="repCentGuardar">Guardar para todos</button><button class="lnk" id="repCentReset">Restaurar los de fábrica</button></div></details>'
     +'</div>';
@@ -4459,6 +4471,7 @@ function wireReparto(){
   // parámetros
   const num1=(id,k)=>on(id,'onchange',e=>{ S.param[k]=parseInt(e.target.value,10)||0; repRecalc(); });
   num1('rpUC','uCentral'); num1('rpMC','maxCentral'); num1('rpUR','uResto'); num1('rpMin','minTalles'); num1('rpRes','reserva'); num1('rpCDesde','curvaDesde'); num1('rpRMin','reservaMin');
+  on('rpNino','onchange',e=>{ S.param.ninoCurva=e.target.value; repRecalc(); });
   const bool=(id,k)=>on(id,'onchange',e=>{ S.param[k]=e.target.checked; repRecalc(); });
   bool('rpExc','excedente'); bool('rpDisc','respetarDisc'); bool('rpMem','memoria'); bool('rpVar','excluirVarios'); bool('rpHuer','huerfanos');
   // el corte en días es el mismo para las dos pestañas (lo guarda barrida_prefs)
