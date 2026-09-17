@@ -723,12 +723,16 @@ body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
   .plano-panel.open .pp-body{display:block}
   /* a todo el ancho de la ventana (el panel se sale del contenedor del módulo) */
   .plano-panel{width:100vw;margin-left:calc(50% - 50vw);border-radius:0;border-left:0;border-right:0}
-  /* una fila: cada plano ocupa el ancho que le pide su forma, así todos quedan
-     del mismo alto y no queda lugar desperdiciado */
-  .plano-panel .ps-wrap{display:flex;gap:14px;align-items:flex-start;margin-top:0}
+  /* dos escalones: arriba el SALÓN (izquierda) y el DEPÓSITO principal (derecha),
+     los dos bien grandes y separados; abajo los depósitos secundarios, más chicos */
+  .plano-panel .pp-fila1{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start}
+  .plano-panel .pp-fila1.sola{grid-template-columns:1fr}
+  .plano-panel .pp-fila1 .ps-svg{max-height:min(720px,70vh)}
+  .plano-panel .pp-fila2{display:flex;gap:28px;align-items:flex-start;margin-top:16px}
+  .plano-panel .pp-fila2 .ps-planta{flex:1 1 0}
+  .plano-panel .pp-fila2 .ps-svg{max-height:min(300px,30vh)}
   .plano-panel .ps-planta{min-width:0;cursor:zoom-in}
   .plano-panel .ps-planta:hover{border-color:var(--navy)}
-  .plano-panel .ps-svg{max-height:min(620px,62vh)}
   .plano-panel .ps-planta h4{display:flex;align-items:center;gap:6px}
   .plano-panel .ps-planta h4 .zoom{margin-left:auto;font-size:13px;color:var(--navy)}
   .ubi-chip.sec{background:#eef6ff;border-color:#cfe2f3}
@@ -736,13 +740,14 @@ body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
   #modalBody.plano-big{max-width:min(1500px,96vw);width:96vw}
   .plano-zoom .ps-planta{border:0;padding:0}
   .plano-zoom .ps-svg{max-height:78vh}
-  /* celular: los planos van en una tira deslizable, así no empujan los resultados */
+  /* celular: un plano abajo del otro, más bajos para no empujar los resultados */
   @media(max-width:640px){
     .plano-panel{padding:0}
     .plano-panel .pp-body{padding:0 10px 10px}
-    .plano-panel .ps-wrap{overflow-x:auto;gap:10px;-webkit-overflow-scrolling:touch;padding-bottom:4px}
-    .plano-panel .ps-planta{flex:0 0 82% !important}
-    .plano-panel .ps-svg{max-height:46vh}
+    .plano-panel .pp-fila1{grid-template-columns:1fr;gap:10px}
+    .plano-panel .pp-fila1 .ps-svg{max-height:48vh}
+    .plano-panel .pp-fila2{margin-top:10px;gap:10px}
+    .plano-panel .pp-fila2 .ps-svg{max-height:26vh}
     .plano-panel .pp-nota{font-size:12px}
   }
 </style>
@@ -3386,20 +3391,24 @@ function renderPlanoBox(){
   if(box.dataset.suc===SUC && box.firstChild){ pintarPlanoSel(false); return; }
   const P = PlanoSuc.de(SUC);
   box.dataset.suc = SUC;
+  /* Dos escalones (pedido de Juli 17/09/2026): arriba, a la izquierda el SALÓN y a
+     la derecha el DEPÓSITO principal, los dos bien grandes; abajo, los depósitos
+     secundarios más chicos (en Ensenada el Depósito 2 casi no se usa). */
+  const plantas = PlanoSuc.plantas(SUC);
+  const deps = plantas.filter(pl=>pl.tipo!=='salon');
+  const arriba = plantas.filter(pl=>pl.tipo==='salon').concat(deps.slice(0,1));
+  const abajo = deps.slice(1);
+  const tarjetaPlanta = pl =>
+    '<div class="ps-planta" data-pl="'+esc(pl.id)+'" title="Tocá para verlo en grande">'+
+      '<h4>'+esc(pl.nombre)+'<span class="zoom">⤢</span></h4>'+PlanoSuc.svg(P, pl, {})+'</div>';
   box.innerHTML =
     '<div class="plano-panel'+(planoAbierto?' open':'')+'">'+
       '<div class="pp-head" id="planoHead"><span class="tt">🗺 Dónde está</span>'+
         '<span class="pp-nota" id="planoNota"></span><span class="arrow">▾</span></div>'+
-      '<div class="pp-body"><div class="ps-wrap">'+
-        PlanoSuc.plantas(SUC).map(pl=>{
-          // el ancho de cada plano sigue su proporción (ancho/alto): así los tres
-          // quedan del mismo alto, lo más grandes que entren en la pantalla
-          // el salón es el plano con más casilleros: lleva un plus de ancho para que se lea
-          const r = ((pl.cols*(P.aspecto||1.5))/pl.filas) * (pl.tipo==='salon' ? 1.35 : 1);
-          return '<div class="ps-planta" data-pl="'+esc(pl.id)+'" style="flex:'+r.toFixed(2)+' 1 0" title="Tocá para verlo en grande">'+
-            '<h4>'+esc(pl.nombre)+'<span class="zoom">⤢</span></h4>'+PlanoSuc.svg(P, pl, {})+'</div>';
-        }).join('')+
-      '</div><div class="ps-legend">'+
+      '<div class="pp-body">'+
+        '<div class="pp-fila1'+(arriba.length===1?' sola':'')+'">'+arriba.map(tarjetaPlanta).join('')+'</div>'+
+        (abajo.length ? '<div class="pp-fila2">'+abajo.map(tarjetaPlanta).join('')+'</div>' : '')+
+      '<div class="ps-legend">'+
         '<span><i style="background:#CC0000"></i>Acá está el artículo</span>'+
         '<span><i style="background:#cfe2f3"></i>Sector del salón / estantería</span>'+
         '<span><i style="background:#eef1f7"></i>PC / caja / baño / probador</span></div></div></div>';

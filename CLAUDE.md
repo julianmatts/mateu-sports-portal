@@ -987,9 +987,11 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   (`renderPlanoBox`, plegable y recordado en localStorage `ubic_plano_open`) con el salón y el/los
   depósitos uno al lado del otro — en celular una tira deslizable horizontal. **Ocupa todo el ancho de la
   ventana** (17/09 tarde, «quedaron chicos»: el panel es full-bleed con `width:100vw` + `margin-left:
-  calc(50% - 50vw)`) y cada plano recibe el ancho que pide su forma (`flex:<ancho/alto>`, el salón ×1.35
-  por ser el que más casilleros tiene), así los tres quedan del mismo alto y sin lugar desperdiciado: a
-  1800 px el salón mide 396×591 y el Depósito 2, 914×450. Tocar un plano lo abre **en grande** en el modal
+  calc(50% - 50vw)`) y va en **dos escalones** (pedido de Juli del mismo día): arriba,
+  a la izquierda el **Salón** y a la derecha el **depósito principal**, mitad y mitad con 28 px de
+  separación y hasta 70vh de alto (a 1800 px: 866×700 cada uno); abajo, los **depósitos secundarios**
+  más chicos (hasta 30vh), porque el Depósito 2 de Ensenada casi no se usa. `renderPlanoBox` arma
+  `.pp-fila1` (salón + primer depósito) y `.pp-fila2` (el resto); en celular se apilan. Tocar un plano lo abre **en grande** en el modal
   (`abrirPlanoGrande`, hasta 78vh; `#modalBody.plano-big` lo ensancha y `cerrarModal` saca la clase). Al buscar un artículo
   (un solo resultado se elige solo; con varios, tocando la tarjeta) se **resalta en rojo con destello**
   (`PlanoSuc.destellar`, animación `ps-flash`) dónde está guardado —su estantería, que sale de la
