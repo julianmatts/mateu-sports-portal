@@ -962,7 +962,12 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   nueva = correr el generador con su Excel (sin tocar código).
   **El plano vive debajo de la barra de búsqueda (17/09/2026, pedido de Juli)**: panel `#planoBox`
   (`renderPlanoBox`, plegable y recordado en localStorage `ubic_plano_open`) con el salón y el/los
-  depósitos uno al lado del otro — en celular una tira deslizable horizontal. Al buscar un artículo
+  depósitos uno al lado del otro — en celular una tira deslizable horizontal. **Ocupa todo el ancho de la
+  ventana** (17/09 tarde, «quedaron chicos»: el panel es full-bleed con `width:100vw` + `margin-left:
+  calc(50% - 50vw)`) y cada plano recibe el ancho que pide su forma (`flex:<ancho/alto>`, el salón ×1.35
+  por ser el que más casilleros tiene), así los tres quedan del mismo alto y sin lugar desperdiciado: a
+  1800 px el salón mide 396×591 y el Depósito 2, 914×450. Tocar un plano lo abre **en grande** en el modal
+  (`abrirPlanoGrande`, hasta 78vh; `#modalBody.plano-big` lo ensancha y `cerrarModal` saca la clase). Al buscar un artículo
   (un solo resultado se elige solo; con varios, tocando la tarjeta) se **resalta en rojo con destello**
   (`PlanoSuc.destellar`, animación `ps-flash`) dónde está guardado —su estantería, que sale de la
   ubicación— y dónde se exhibe —el sector del salón—, y la cabecera del panel dice estantería · módulo ·

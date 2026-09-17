@@ -719,16 +719,30 @@ body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
   .plano-panel .pp-nota{flex:1;min-width:0;font-size:13px;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .plano-panel .pp-head .arrow{color:var(--muted);transition:transform .15s}
   .plano-panel.open .pp-head .arrow{transform:rotate(180deg)}
-  .plano-panel .pp-body{display:none;padding:0 14px 12px}
+  .plano-panel .pp-body{display:none;padding:0 20px 14px}
   .plano-panel.open .pp-body{display:block}
-  .plano-panel .ps-wrap{margin-top:0}
-  .plano-panel .ps-svg{max-height:230px}
+  /* a todo el ancho de la ventana (el panel se sale del contenedor del módulo) */
+  .plano-panel{width:100vw;margin-left:calc(50% - 50vw);border-radius:0;border-left:0;border-right:0}
+  /* una fila: cada plano ocupa el ancho que le pide su forma, así todos quedan
+     del mismo alto y no queda lugar desperdiciado */
+  .plano-panel .ps-wrap{display:flex;gap:14px;align-items:flex-start;margin-top:0}
+  .plano-panel .ps-planta{min-width:0;cursor:zoom-in}
+  .plano-panel .ps-planta:hover{border-color:var(--navy)}
+  .plano-panel .ps-svg{max-height:min(620px,62vh)}
+  .plano-panel .ps-planta h4{display:flex;align-items:center;gap:6px}
+  .plano-panel .ps-planta h4 .zoom{margin-left:auto;font-size:13px;color:var(--navy)}
   .ubi-chip.sec{background:#eef6ff;border-color:#cfe2f3}
+  /* plano abierto en grande */
+  #modalBody.plano-big{max-width:min(1500px,96vw);width:96vw}
+  .plano-zoom .ps-planta{border:0;padding:0}
+  .plano-zoom .ps-svg{max-height:78vh}
   /* celular: los planos van en una tira deslizable, así no empujan los resultados */
   @media(max-width:640px){
-    .plano-panel .ps-wrap{display:flex;overflow-x:auto;gap:10px;-webkit-overflow-scrolling:touch;padding-bottom:4px}
-    .plano-panel .ps-planta{flex:0 0 78%}
-    .plano-panel .ps-svg{max-height:190px}
+    .plano-panel{padding:0}
+    .plano-panel .pp-body{padding:0 10px 10px}
+    .plano-panel .ps-wrap{overflow-x:auto;gap:10px;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+    .plano-panel .ps-planta{flex:0 0 82% !important}
+    .plano-panel .ps-svg{max-height:46vh}
     .plano-panel .pp-nota{font-size:12px}
   }
 </style>
@@ -3377,11 +3391,19 @@ function renderPlanoBox(){
       '<div class="pp-head" id="planoHead"><span class="tt">🗺 Dónde está</span>'+
         '<span class="pp-nota" id="planoNota"></span><span class="arrow">▾</span></div>'+
       '<div class="pp-body"><div class="ps-wrap">'+
-        PlanoSuc.plantas(SUC).map(pl=>'<div class="ps-planta"><h4>'+esc(pl.nombre)+'</h4>'+PlanoSuc.svg(P, pl, {})+'</div>').join('')+
+        PlanoSuc.plantas(SUC).map(pl=>{
+          // el ancho de cada plano sigue su proporción (ancho/alto): así los tres
+          // quedan del mismo alto, lo más grandes que entren en la pantalla
+          // el salón es el plano con más casilleros: lleva un plus de ancho para que se lea
+          const r = ((pl.cols*(P.aspecto||1.5))/pl.filas) * (pl.tipo==='salon' ? 1.35 : 1);
+          return '<div class="ps-planta" data-pl="'+esc(pl.id)+'" style="flex:'+r.toFixed(2)+' 1 0" title="Tocá para verlo en grande">'+
+            '<h4>'+esc(pl.nombre)+'<span class="zoom">⤢</span></h4>'+PlanoSuc.svg(P, pl, {})+'</div>';
+        }).join('')+
       '</div><div class="ps-legend">'+
         '<span><i style="background:#CC0000"></i>Acá está el artículo</span>'+
         '<span><i style="background:#cfe2f3"></i>Sector del salón / estantería</span>'+
         '<span><i style="background:#eef1f7"></i>PC / caja / baño / probador</span></div></div></div>';
+  box.querySelectorAll('.ps-planta[data-pl]').forEach(d=> d.addEventListener('click', ()=> abrirPlanoGrande(d.dataset.pl)));
   $('planoHead').addEventListener('click', ()=>{
     planoAbierto = !planoAbierto;
     box.querySelector('.plano-panel').classList.toggle('open', planoAbierto);
@@ -3412,6 +3434,23 @@ function seleccionarArt(key, destello){
   const cambio = ARTSEL !== (key||null);
   ARTSEL = key || null;
   pintarPlanoSel(cambio && destello!==false);
+}
+
+// una planta en grande (se abre tocándola en el panel)
+function abrirPlanoGrande(plId){
+  const P = PlanoSuc.de(SUC); if(!P) return;
+  const pl = PlanoSuc.plantas(SUC).find(x=>x.id===plId); if(!pl) return;
+  const a = ARTSEL ? DATA.articulos[ARTSEL] : null;
+  const hot = a ? planoHotArt({key:ARTSEL, ...a}) : new Set();
+  $('modalBody').innerHTML =
+    '<div class="modal-title">🗺 '+esc(pl.nombre)+'</div>'+
+    (a ? '<div class="hint" style="margin-bottom:6px"><b>'+esc(a.codigo)+'</b> · '+esc(a.descripcion||'')+'</div>' : '')+
+    '<div class="plano-zoom"><div class="ps-planta">'+PlanoSuc.svg(P, pl, {hot, cls:'ps-here'})+'</div></div>'+
+    '<div class="modal-footer"><button class="btn btn-navy" id="plGrCerrar">Cerrar</button></div>';
+  $('modalBody').classList.add('plano-big');
+  $('modalOverlay').classList.add('show');
+  $('plGrCerrar').addEventListener('click', cerrarModal);
+  PlanoSuc.destellar($('modalBody'));
 }
 
 /* ---- sector del salón del artículo (se marca a mano, lo ve todo el local) ---- */
@@ -4912,7 +4951,7 @@ function mostrarResumenCarga(nuevos, actualizados, eliminados, ubicacionesImport
   });
 }
 
-function cerrarModal(){ $('modalOverlay').classList.remove('show'); }
+function cerrarModal(){ $('modalOverlay').classList.remove('show'); $('modalBody').classList.remove('plano-big'); }
 
 /* ============================================================
    VISTA ESTANTERÍAS (+ filtro inverso)
