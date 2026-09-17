@@ -98,6 +98,7 @@ img,svg{max-width:100%}
 .booking:hover{transform:translateY(-1px);box-shadow:0 3px 8px rgba(11,21,39,.12)}
 .booking .prov-name{font-family:var(--font-c);font-size:14px;font-weight:700;letter-spacing:.3px;padding-right:16px;line-height:1.15}
 .booking .prov-detail{font-family:var(--font-b);font-size:11px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.booking .exc-tag{font-family:var(--font-c);font-size:10.5px;font-weight:700;letter-spacing:.3px;color:#7a3d00;background:#fff3dd;border:1px solid #f0d9a8;border-radius:5px;padding:1px 5px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .booking .del-btn{position:absolute;top:3px;right:4px;background:transparent;border:none;cursor:pointer;font-size:15px;line-height:1;display:none;opacity:.6;color:inherit}
 .booking:hover .del-btn{display:block}
 .booking .del-btn:hover{opacity:1}
@@ -174,6 +175,14 @@ img,svg{max-width:100%}
 .dia-aviso.ok{background:#f0f8f2;border-color:var(--ok);color:#14532d}
 .dia-aviso.warn{background:#fff8ec;border-color:var(--warn);color:#7a3d00}
 .dia-aviso.nota{background:#fafbfe;border-color:var(--muted-light);color:var(--muted)}
+/* Excepción al día fijo: hay que tildarla y explicarla para poder asignar */
+.exc-box{border:1px solid #f0d9a8;background:#fffdf7;border-radius:9px;padding:10px 11px;margin:-4px 0 12px}
+.exc-check{display:flex!important;align-items:flex-start;gap:8px;font-family:var(--font-b)!important;font-size:12.5px!important;color:#7a3d00!important;text-transform:none!important;letter-spacing:0!important;font-weight:600!important;margin-bottom:8px!important;cursor:pointer;line-height:1.35}
+.exc-check input{width:16px;height:16px;margin:1px 0 0;flex-shrink:0;accent-color:var(--warn);cursor:pointer}
+.exc-box input[type=text]{margin-bottom:0!important;font-size:13px}
+.exc-box input[type=text]:disabled{background:#f4f5f8;color:var(--muted-light);cursor:not-allowed}
+.btn-primary:disabled{background:var(--muted-light);border-color:var(--muted-light);color:#fff;cursor:not-allowed}
+.btn-primary:disabled:hover{background:var(--muted-light);border-color:var(--muted-light)}
 .prov-count.zero{color:var(--muted-light);background:#fff}
 .del-prov-btn{background:transparent;border:none;cursor:pointer;color:var(--muted-light);font-size:18px;padding:0 4px;line-height:1;transition:color .12s}
 .del-prov-btn:hover{color:var(--red)}
@@ -337,8 +346,11 @@ onValue(ref(db,'providers'),snap=>{
   render();
 });
 
-async function addBooking(date,slot,providerId,note){
-  await push(ref(db,'bookings2/'+date+'/'+slot),{providerId,note:note||''});
+async function addBooking(date,slot,providerId,note,exc){
+  const b={providerId,note:note||''};
+  // Excepción al día fijo: queda registrada con el motivo y quién la comunicó
+  if(exc&&exc.motivo) b.exc={motivo:exc.motivo,por:_sess?.nombre||_sess?.email||'depósito',ts:Date.now()};
+  await push(ref(db,'bookings2/'+date+'/'+slot),b);
 }
 async function deleteBooking(date,slot,key){await remove(ref(db,'bookings2/'+date+'/'+slot+'/'+key));}
 async function blockSlot(date,slot,reason){await push(ref(db,'blocks/'+date+'/'+slot),{reason:reason||'No disponible'});}
@@ -352,7 +364,7 @@ function showToast(msg,isError=false){
   setTimeout(()=>t.className='toast',3000);
 }
 
-async function sendEmail(providerId,dateKey,slot,note){
+async function sendEmail(providerId,dateKey,slot,note,exc){
   const prov=state.providers.find(p=>p.id===providerId);
   if(!prov||!prov.email) return; // no email set, skip silently
   try{
@@ -361,7 +373,7 @@ async function sendEmail(providerId,dateKey,slot,note){
       to_name:prov.name,
       fecha:fmtDateLabel(dateKey),
       horario:slot+' hs',
-      nota:note||'Sin observaciones',
+      nota:(exc&&exc.motivo?'EXCEPCIÓN AL DÍA DE ENTREGA: '+exc.motivo+(note?' · ':''):'')+(note||(exc&&exc.motivo?'':'Sin observaciones')),
     });
     showToast('✉️ Mail enviado a '+prov.name);
   }catch(e){
@@ -413,8 +425,10 @@ function renderGrid(){
         blocks.forEach(bl=>{html+='<div class="block-tag">🔒 '+bl.reason+'<button class="unblock-btn" data-date="'+key+'" data-slot="'+slot+'" data-key="'+bl.key+'">×</button></div>';});
         bookings.forEach(b=>{
           const p=state.providers.find(p=>p.id===b.providerId)||{name:'⚠ Proveedor eliminado',bg:'#fff0f0',text:'#aa0000',color:'#cc0000'};
-          html+='<div class="booking" style="background:'+p.bg+';color:'+p.text+';border-left:3px solid '+p.color+'">'
+          const excTit=b.exc?('Excepción al día fijo · '+b.exc.motivo+(b.exc.por?' (la comunicó '+b.exc.por+')':'')):'';
+          html+='<div class="booking" style="background:'+p.bg+';color:'+p.text+';border-left:3px solid '+p.color+'"'+(excTit?' title="'+excTit.replace(/"/g,'&quot;')+'"':'')+'>'
             +'<div class="prov-name">'+p.name+'</div>'
+            +(b.exc?'<div class="exc-tag">⚠️ Excepción'+(b.exc.motivo?' · '+b.exc.motivo:'')+'</div>':'')
             +(b.note?'<div class="prov-detail">'+b.note+'</div>':'')
             +'<button class="del-btn" data-date="'+key+'" data-slot="'+slot+'" data-key="'+b.key+'">×</button></div>';
         });
@@ -445,7 +459,7 @@ function resumenDiasFijos(){
   const conDia=state.providers.filter(p=>diasDe(p).length);
   if(!conDia.length) return '';
   const txt=conDia.map(p=>'<b>'+p.name+'</b> '+diasTxtLargo(diasDe(p))).join(' · ');
-  return '📅 Días fijos de entrega: '+txt+'. Son las marcas de mayor volumen; el resto entrega cualquier día y ellas también pueden entregar fuera de su día.';
+  return '📅 Días fijos de entrega: '+txt+'. Por volumen, estas marcas entregan <b>solo esos días</b>: fuera de ellos únicamente con una excepción que les comunicamos desde el depósito. El resto de los proveedores entrega cualquier día.';
 }
 
 /* El select del turno arranca por las marcas del día y las separa del resto */
@@ -472,12 +486,23 @@ function avisoDiaHtml(prov,diaSem){
   const delDia=provsDelDia(diaSem);
   if(!dias.length){
     return delDia.length
-      ?'<div class="dia-aviso nota">El '+DAYS_FULL[diaSem-1]+' es el día fijo de <b>'+delDia.map(p=>p.name).join('</b> y <b>')+'</b>. '+(prov?prov.name:'Esta marca')+' no tiene día fijo: puede entregar igual.</div>'
+      ?'<div class="dia-aviso nota">El '+DAYS_FULL[diaSem-1]+' es el día fijo de <b>'+delDia.map(p=>p.name).join('</b> y <b>')+'</b>, pero el día no es exclusivo: '+(prov?prov.name:'esta marca')+' no tiene día fijo y puede entregar igual.</div>'
       :'<div class="dia-aviso nota">Ningún proveedor tiene día fijo el '+DAYS_FULL[diaSem-1]+'.</div>';
   }
   if(dias.includes(diaSem))
     return '<div class="dia-aviso ok">✓ '+prov.name+' tiene día fijo los <b>'+diasTxtLargo(dias)+'</b>.</div>';
-  return '<div class="dia-aviso warn">⚠️ '+prov.name+' tiene día fijo los <b>'+diasTxtLargo(dias)+'</b>. Se puede asignar igual: el día fijo es una referencia, no un bloqueo.</div>';
+  // Fuera de su día: solo se asigna si el depósito comunicó una excepción, y queda registrada
+  return '<div class="dia-aviso warn">⛔ '+prov.name+' entrega los <b>'+diasTxtLargo(dias)+'</b> y este es '+DAYS_FULL[diaSem-1].toLowerCase()+'. Solo se le puede dar el turno si le comunicamos una excepción.</div>'
+    +'<div class="exc-box">'
+    +'<label class="exc-check"><input type="checkbox" id="modal-exc-ok"> Es una excepción y se la comunicamos a '+prov.name+'</label>'
+    +'<input type="text" id="modal-exc-motivo" placeholder="Motivo de la excepción (ej: contenedor demorado, entrega acordada por teléfono)" disabled>'
+    +'</div>';
+}
+
+/* ¿El proveedor elegido necesita excepción para ese día? */
+function necesitaExcepcion(prov,diaSem){
+  const dias=diasDe(prov);
+  return !!(diaSem&&dias.length&&!dias.includes(diaSem));
 }
 
 function renderSlotModal(){
@@ -515,7 +540,7 @@ function renderEditProvModal(){
     +'<input type="email" id="edit-prov-email" placeholder="proveedor@empresa.com" value="'+(p.email||'')+'">'
     +'<label>Días fijos de entrega</label>'
     +'<div class="dias-pick" id="edit-prov-dias">'+DAYS_ES.map((d,i)=>'<button type="button" class="dia-btn'+(diasDe(p).includes(i+1)?' on':'')+'" data-dia="'+(i+1)+'">'+d+'</button>').join('')+'</div>'
-    +'<div class="field-help">Se ven en la grilla y al asignar el turno. No bloquean nada: la marca puede entregar otro día y las demás pueden usar ese día.</div>'
+    +'<div class="field-help">Con día fijo cargado, la marca solo puede entregar esos días: para darle otro día hay que registrar una excepción con su motivo. Sin días marcados, entrega cualquier día. El día fijo no reserva la jornada: las demás marcas también pueden usarla.</div>'
     +'<div class="modal-actions"><button class="btn" id="edit-prov-cancel">Cancelar</button><button class="btn btn-primary" id="edit-prov-save">Guardar</button></div>'
     +'</div></div></div>';
 }
@@ -664,22 +689,52 @@ function bindEvents(){
     if(overlay){
       overlay.addEventListener('click',e=>{if(e.target===overlay){state.modal=null;render();}});
       const provSel=document.getElementById('modal-prov'),avisoBox=document.getElementById('modal-dia-aviso');
-      if(provSel&&avisoBox) provSel.addEventListener('change',()=>{
-        avisoBox.innerHTML=avisoDiaHtml(state.providers.find(p=>p.id===provSel.value),diaSemDe(state.modal.date));
-      });
+      const saveBtn=document.getElementById('modal-save');
+      // Fuera del día fijo el turno queda bloqueado hasta tildar la excepción y escribir el motivo
+      function excActual(){
+        const prov=state.providers.find(p=>p.id===provSel.value);
+        if(!necesitaExcepcion(prov,diaSemDe(state.modal.date))) return null;
+        const ok=document.getElementById('modal-exc-ok'),mot=document.getElementById('modal-exc-motivo');
+        return {prov,ok:!!(ok&&ok.checked),motivo:(mot?mot.value:'').trim()};
+      }
+      function refrescarEstado(){
+        const e=excActual();
+        const mot=document.getElementById('modal-exc-motivo');
+        if(mot) mot.disabled=!(e&&e.ok);
+        const falta=!!e&&!(e.ok&&e.motivo);
+        saveBtn.disabled=falta;
+        saveBtn.title=falta?(e.ok?'Escribí el motivo de la excepción':'Este proveedor entrega otro día: marcá la excepción'):'';
+        saveBtn.textContent=e?'✓ Asignar como excepción':'✓ Asignar turno';
+      }
+      function bindExc(){
+        const ok=document.getElementById('modal-exc-ok'),mot=document.getElementById('modal-exc-motivo');
+        if(ok) ok.addEventListener('change',()=>{refrescarEstado();if(ok.checked&&mot)mot.focus();});
+        if(mot) mot.addEventListener('input',refrescarEstado);
+        refrescarEstado();
+      }
+      if(provSel&&avisoBox){
+        provSel.addEventListener('change',()=>{
+          avisoBox.innerHTML=avisoDiaHtml(state.providers.find(p=>p.id===provSel.value),diaSemDe(state.modal.date));
+          bindExc();
+        });
+        bindExc();
+      }
       document.getElementById('modal-cancel').addEventListener('click',()=>{state.modal=null;render();});
-      document.getElementById('modal-save').addEventListener('click',async()=>{
+      saveBtn.addEventListener('click',async()=>{
         const {date,slot}=state.modal;
-        const provId=document.getElementById('modal-prov').value;
+        const provId=provSel.value;
         const note=document.getElementById('modal-note').value.trim();
         const prov=state.providers.find(p=>p.id===provId);
+        const e=excActual();
+        if(e&&!(e.ok&&e.motivo)){refrescarEstado();return;} // no se asigna fuera del día sin excepción
+        const exc=e?{motivo:e.motivo}:null;
         // Cerrar modal inmediatamente
         state.modal=null;
         render();
         // Guardar en Firebase y enviar mail en segundo plano
-        addBooking(date,slot,provId,note);
-        sendEmail(provId,date,slot,note);
-        showToast('✅ Turno asignado a '+(prov?prov.name:provId));
+        addBooking(date,slot,provId,note,exc);
+        sendEmail(provId,date,slot,note,exc);
+        showToast((exc?'⚠️ Turno por excepción para ':'✅ Turno asignado a ')+(prov?prov.name:provId));
       });
       document.getElementById('modal-block').addEventListener('click',async()=>{
         const {date,slot}=state.modal;
