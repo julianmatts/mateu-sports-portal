@@ -1845,7 +1845,8 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     modelos. Atomik en Diagonal 80: solo niño (excepción de la ficha).
   - **Reglas fijas por sucursal (17/09/2026, informe Puma automático vs. manual)** — `reglaSucursal` en
     `barrida/`, antes que la ficha (la usan `repAsig` y `fichaBloquea`, o sea Reparto inicial, «Abrir» y la
-    Barrida): **Calle 49 no trabaja niño** (`SIN_NINO`, calzado e indumentaria); **los Aurelius (línea y
+    Barrida): **Calle 49 no trabaja niño** (`SIN_NINO`, calzado e indumentaria); **ningún Aurelius (línea ni Calle 10) recibe
+    niño** (mismo día, informe Crocs; va antes que la ficha, así que pisa el «niño Originals» de Adidas en Aurelius 12 y CB); **los Aurelius (línea y
     Calle 10) no reciben fútbol ni deportes** (`RX_AUR_DEPORTE` sobre disciplina/tipo), salvo un modelo que su
     ficha nombre. **Aurelius Calle 10 toma la mercadería de la columna Aurelius** de la ficha (en `barrida/`
     `fichaDe` y en `marcas/` `tipoDeSuc`/`fichaEfectiva`); de la columna Outlets solo la «Prioridad» (New
