@@ -960,6 +960,18 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   y el pendiente lleva «🏬 Va en el salón» + desplegable «🗺 Ver en el plano». En **Tareas → Sectores de
   marcas**, «Dónde» se puede elegir tocando el plano del salón y el 📍 de la tarjeta lo abre. Sucursal
   nueva = correr el generador con su Excel (sin tocar código).
+  **El plano vive debajo de la barra de búsqueda (17/09/2026, pedido de Juli)**: panel `#planoBox`
+  (`renderPlanoBox`, plegable y recordado en localStorage `ubic_plano_open`) con el salón y el/los
+  depósitos uno al lado del otro — en celular una tira deslizable horizontal. Al buscar un artículo
+  (un solo resultado se elige solo; con varios, tocando la tarjeta) se **resalta en rojo con destello**
+  (`PlanoSuc.destellar`, animación `ps-flash`) dónde está guardado —su estantería, que sale de la
+  ubicación— y dónde se exhibe —el sector del salón—, y la cabecera del panel dice estantería · módulo ·
+  depósito · sector (`ARTSEL`, `pintarPlanoSel`, `seleccionarArt`). Anda igual en el **puesto** del salón.
+  ⚠ **El sector del salón se marca a mano** (decisión de Juli 17/09/2026: no se deduce de la descripción):
+  botón «🏬 Sector del salón» en la tarjeta (encargado, depósito y puesto) → hoja con el plano
+  (`abrirSheetSector`); se guarda en **`articulos/<key>/salon` = `{id, nombre, por, ts}`**, lo ve todo el
+  local y el sector que se elige en «Yo repongo» también lo deja marcado. `sincronizarStock` lo conserva
+  (y lo recupera de `ubicMemoria`), así la carga del día no lo borra.
 - **Artículos nuevos sin ubicar** (prioridad del depósito): «nuevo» = `fechaAlta`
   posterior a la **primera carga** de la sucursal (cada carga graba un único
   timestamp; así el día 1 no se marca todo) y ≤ `NUEVO_DIAS` (7). Se destacan con
@@ -2073,6 +2085,29 @@ entran acá: ven su objetivo en Indicadores.
   (auto-selecciona la última publicada que el archivo cubre; si ninguna venta cae en
   la semana, bloquea Publicar). `veCriterioLinea` normaliza el rubro sin el «NN-». `veParseDetallado` (comprobantes) + `veAgregarSemana` (filtro + payloads)
   = port de `cargar-venta-semana.py`; mantener los criterios en sintonía.
+- **La venta cargada da EXACTO lo que dice el sistema (17/09/2026, pedido de Juli)** —
+  `VE_EXACTO` en `indicadores/index.html` (y `EXACTO` en `cargar-venta-semana.py`). Antes el
+  portal aplicaba dos reglas propias sobre el export y el número no cerraba con el TS: el
+  encargado veía «llegó a la meta» y el sistema le decía otra cosa, así que el módulo perdía
+  veracidad. Las dos reglas se dieron de baja **solo en la carga semanal**:
+  (1) **criterios de línea** — `veCriterioLinea` devuelve `[true,true]` siempre: suman todas
+  las líneas del export (rubro Otros, REDONDEO, INGRESO CUPON, LLAVERO COMPRA GRANDE,
+  CONCEPTOS VARIOS, envíos, promos, notas de crédito), tal cual las lista el sistema;
+  (2) **atribución por comprobante** — cada **línea** va al vendedor que la hizo, no al de la
+  línea de mayor importe del ticket: `veParseDetallado` guarda `comp.vends[<vendedor>] =
+  {cant, imp, rub}` y `veAgregarSemana` recorre eso (la metadata del comprobante — día,
+  fecha — sigue saliendo de la línea más grande). Caso que lo disparó: Diagonal 80, semana
+  37, Camila Cavalier — sistema 9.395.649 / 129 u. vs. portal 9.755.637 / 157 u.
+  ⚠️ **Los tickets del local ya no son la suma de los vendedores**: un ticket con líneas de
+  dos personas le cuenta 1 a cada una, pero para el local es **uno solo** (`sucTk`, un Set
+  de comprobantes por sucursal); venta y unidades sí son aditivas. Tests:
+  `node --test lib/venta-exacta.test.js` (extraen las funciones del propio index.html).
+  ⚠️ **El ETL mensual NO cambió**: `criterio_linea()` de `scripts/etl_indicadores.py` sigue
+  igual, así que el cierre oficial del mes y la venta semanal **pueden no cerrar entre sí**
+  (misma convivencia que los dos calendarios). Si Juli lo pide, se alinea ahí también.
+  ⚠️ **Las semanas ya guardadas conservan el criterio viejo**: para corregirlas hay que
+  volver a subir el export de esa semana (o el del mes con «⇧ Cargar venta del mes», que
+  republica todas las semanas que cubre).
   **Omnicanalidad (29/08/2026)**: los vendedores **WEB MATEU / WEB AURELIUS** en una
   sucursal física (Calle 12, Aurelius Calle 12, …) son venta de ecom facturada ahí:
   `veAgregarSemana` los **REASIGNA a Ecommerce** (la física queda igual que el

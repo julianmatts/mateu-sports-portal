@@ -21,7 +21,13 @@ def norm(s):
     s = unicodedata.normalize('NFD', str(s if s is not None else '')).encode('ascii','ignore').decode()
     return ' '.join(s.upper().split())
 
-def criterio_linea(rubro, articulo):            # copia fiel del ETL
+# La venta que ve la sucursal tiene que dar EXACTO lo que dice el sistema (Juli 17/09/2026):
+# suman todas las lineas y cada una va al vendedor que la hizo. Mismo criterio que
+# VE_EXACTO en indicadores/index.html; el ETL mensual sigue con criterio_linea().
+EXACTO = True
+
+def criterio_linea(rubro, articulo):            # sin EXACTO, copia fiel del ETL
+    if EXACTO: return (True, True)
     r, a = rubro, articulo
     if r == 'OTROS': return (False, False)
     if r == '01-VARIOS': return (False, False) if a == 'REDONDEO' else (True, True)
@@ -47,9 +53,15 @@ for r in range(3, sh.nrows):
     k = (suc, nro)
     c = comp.get(k)
     if c is None:
-        c = comp[k] = {'cant':0.0,'imp':0.0,'abs':-1,'vend':'','dow':'','dia':''}
+        c = comp[k] = {'cant':0.0,'imp':0.0,'abs':-1,'vend':'','dow':'','dia':'','vends':{}}
     if ok_c: c['cant'] += cant
     if ok_i: c['imp'] += imp
+    # ...y abierto por vendedor: cada linea va a quien la hizo (un ticket puede tener varios)
+    vlin = str(sh.cell_value(r,3)).strip() or 'SIN ASIGNAR'
+    vx = c['vends'].get(vlin)
+    if vx is None: vx = c['vends'][vlin] = {'cant':0.0,'imp':0.0}
+    if ok_c: vx['cant'] += cant
+    if ok_i: vx['imp'] += imp
     if abs(imp) > c['abs']:
         c['abs'] = abs(imp); c['vend'] = str(sh.cell_value(r,3)).strip() or 'SIN ASIGNAR'
         c['dow'] = str(sh.cell_value(r,1)).strip(); c['dia'] = str(sh.cell_value(r,2)).strip()
@@ -57,13 +69,17 @@ for r in range(3, sh.nrows):
 # 2) por sucursal → vendedor → día
 suc_v = collections.defaultdict(lambda: collections.defaultdict(lambda: {'venta':0.0,'tickets':0,'unidades':0.0,'dias':collections.defaultdict(float)}))
 nc_pos = 0
+suc_tk = collections.defaultdict(set)   # tickets del LOCAL = comprobantes distintos
 for (suc, nro), c in comp.items():
     es_nc = nro.startswith('Nc')
     if es_nc and c['imp'] > 0: nc_pos += 1
-    v = suc_v[suc][c['vend']]
-    v['venta'] += c['imp']; v['unidades'] += c['cant']
-    if not es_nc and c['cant'] > 0: v['tickets'] += 1
-    if c['imp']: v['dias'][c['dow']] += c['imp']
+    vends = c['vends'] or {c['vend'] or 'SIN ASIGNAR': {'cant':c['cant'], 'imp':c['imp']}}
+    for nombre, d in vends.items():
+        v = suc_v[suc][nombre]
+        v['venta'] += d['imp']; v['unidades'] += d['cant']
+        if not es_nc and d['cant'] > 0:
+            v['tickets'] += 1; suc_tk[suc].add(nro)
+        if d['imp']: v['dias'][c['dow']] += d['imp']
 if nc_pos: print(f'⚠ {nc_pos} notas de crédito con importe positivo (se esperaba negativo)')
 
 # 3) armar payloads
@@ -83,7 +99,9 @@ for suc, vends in sorted(suc_v.items()):
         dias = [{'d':d,'v':round(m)} for d,m in sorted(v['dias'].items(), key=lambda x: dias_orden.get(x[0],9)) if round(m)]
         lista.append({'nombre':nombre, 'venta':venta, 'tickets':tk, 'unidades':un, 'dias':dias})
     lista.sort(key=lambda x: -x['venta'])
-    total = {'venta':sum(x['venta'] for x in lista), 'tickets':sum(x['tickets'] for x in lista), 'unidades':sum(x['unidades'] for x in lista)}
+    total = {'venta':sum(x['venta'] for x in lista),
+             'tickets':len(suc_tk.get(suc, ())) or sum(x['tickets'] for x in lista),
+             'unidades':sum(x['unidades'] for x in lista)}
     updates[f'{slug}/{SEMANA}'] = {'semana':SEMANA, 'actualizado':ahora, 'por':f'julian@mateu.com.ar ({etiqueta})',
                                    'vendedores':lista, 'total':total, 'metaTienda':0, 'minimoTienda':0}
     resumen.append((slug, suc, total, len(lista)))

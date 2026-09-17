@@ -5738,8 +5738,16 @@ const VE_DOW = ['Lu','Ma','Mi','Ju','Vi','Sa','Do'];
 // código NN del sistema -> slug del Portal (Diagonal 80 no tiene datos de Indicadores pero sí objetivo)
 const VE_PFX_SLUG = (()=>{ const m={}; Object.entries(Object.assign({}, SLUG_SUC, OUTLET_SUC)).forEach(([slug,n])=>{ m[n.slice(0,2)]=slug; }); m['10']='diagonal'; return m; })();
 function veNormU(s){ return String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\s+/g,' ').trim(); }
-// [cuenta unidades, cuenta importe] — mantener en sintonía con criterio_linea() del ETL
+/* La venta que carga la sucursal tiene que dar EXACTO lo que dice el sistema (Juli,
+   17/09/2026): con los criterios de línea el encargado veía «llegó a la meta» y en el TS
+   le daba otro número, así que el módulo perdía veracidad. Con VE_EXACTO todas las líneas
+   del export suman tal cual (conceptos, cupones, varios, redondeo incluidos) y cada línea
+   va al vendedor que la hizo. El cierre mensual del ETL sigue con criterio_linea(): ese
+   circuito NO cambió. Poner VE_EXACTO=false vuelve al criterio viejo. */
+const VE_EXACTO = true;
+// [cuenta unidades, cuenta importe] — sin VE_EXACTO, mantener en sintonía con criterio_linea() del ETL
 function veCriterioLinea(rubro, art){
+  if(VE_EXACTO) return [true,true];
   rubro=rubro.replace(/^\d+-\s*/,'');       // "01-VARIOS" y "VARIOS" son lo mismo
   if(rubro==='OTROS') return [false,false];
   if(rubro==='VARIOS') return art==='REDONDEO' ? [false,false] : [true,true];
@@ -5870,11 +5878,19 @@ function veParseDetallado(matrix, sucFija){
     const cant=veNum(row[c.cant]), imp=veNum(row[c.imp]);
     const ok=veCriterioLinea(c.rubro>=0?veNormU(row[c.rubro]):'', c.art>=0?veNormU(row[c.art]):'');
     const k=suc+'|'+nro;
-    let x=comp.get(k); if(!x){ x={suc, nro, cant:0, imp:0, abs:-1, vend:'', dow:'', dia:0, fecha:null, rub:{}}; comp.set(k,x); }
+    let x=comp.get(k); if(!x){ x={suc, nro, cant:0, imp:0, abs:-1, vend:'', dow:'', dia:0, fecha:null, rub:{}, vends:{}}; comp.set(k,x); }
     if(ok[0]) x.cant+=cant;
     if(ok[1]) x.imp+=imp;
     // importe por rubro del comprobante (para el mix por rubro de la semana viva)
     if(ok[1] && imp && c.rubro>=0){ const rb=veNormU(row[c.rubro]).replace(/^\d+-\s*/,''); if(rb) x.rub[rb]=(x.rub[rb]||0)+imp; }
+    /* ...y lo mismo ABIERTO POR VENDEDOR: cada línea va a quien la hizo, como en el
+       sistema. Antes el comprobante entero se le atribuía al vendedor de la línea de
+       mayor importe, y eso movía venta y unidades de un vendedor a otro. */
+    const vLin=(c.vend>=0?veStr(row[c.vend]):'')||'SIN ASIGNAR';
+    let vx=x.vends[vLin]; if(!vx){ vx={cant:0, imp:0, rub:{}}; x.vends[vLin]=vx; }
+    if(ok[0]) vx.cant+=cant;
+    if(ok[1]) vx.imp+=imp;
+    if(ok[1] && imp && c.rubro>=0){ const rb=veNormU(row[c.rubro]).replace(/^\d+-\s*/,''); if(rb) vx.rub[rb]=(vx.rub[rb]||0)+imp; }
     if(Math.abs(imp)>x.abs){ x.abs=Math.abs(imp); x.vend=(c.vend>=0?veStr(row[c.vend]):'')||'SIN ASIGNAR';
       // día de semana normalizado y ARRASTRADO desde la última celda no vacía (merges)
       x.dow=dowFill;
@@ -5928,21 +5944,30 @@ function veAgregarSemana(res, sem){
   const hasta=veSumarDias(sem,6), esperado={};
   VE_DOW.forEach((d,i)=>{ esperado[d]=+veSumarDias(sem,i).slice(8,10); });
   const enSemana = x => x.fecha ? (x.fecha>=sem && x.fecha<=hasta) : (x.dow && x.dia ? esperado[x.dow]===x.dia : true);
-  const sucV=new Map(), dowSet=new Set(); let ncPos=0, nIn=0, nOut=0, omniN=0, omniV=0;
+  const sucV=new Map(), sucTk=new Map(), dowSet=new Set(); let ncPos=0, nIn=0, nOut=0, omniN=0, omniV=0;
   res.comps.forEach(x=>{
     if(!enSemana(x)){ nOut++; return; }
-    // omnicanalidad: WEB MATEU / WEB AURELIUS en una sucursal física es venta de ecom
-    // facturada ahí → se REASIGNA a Ecommerce (así la física coincide con el sistema
-    // y la venta no se pierde). En Ecommerce (99) son sus vendedores reales. (Juli 29/08)
-    let suc=x.suc;
-    if(/^WEB (MATEU|AURELIUS)$/.test(veNormU(x.vend)) && !/^99/.test(String(suc||''))){ omniN++; omniV+=x.imp; suc=ECOM; }
     nIn++;
     const esNc=/^Nc/.test(x.nro); if(esNc && x.imp>0) ncPos++;
-    let vs=sucV.get(suc); if(!vs){ vs=new Map(); sucV.set(suc,vs); }
-    let v=vs.get(x.vend); if(!v){ v={venta:0,tickets:0,unidades:0,dias:{}}; vs.set(x.vend,v); }
-    v.venta+=x.imp; v.unidades+=x.cant; if(!esNc && x.cant>0) v.tickets++;
-    if(x.imp){ v.dias[x.dow]=(v.dias[x.dow]||0)+x.imp; }
-    if(x.rub) for(const rb in x.rub){ v.rubros=v.rubros||{}; v.rubros[rb]=(v.rubros[rb]||0)+x.rub[rb]; }
+    // cada vendedor con lo SUYO del comprobante (un ticket puede tener líneas de varios)
+    const vends = x.vends && Object.keys(x.vends).length ? x.vends
+                : {[x.vend||'SIN ASIGNAR']:{cant:x.cant, imp:x.imp, rub:x.rub}};
+    for(const nombre in vends){
+      const d=vends[nombre];
+      // omnicanalidad: WEB MATEU / WEB AURELIUS en una sucursal física es venta de ecom
+      // facturada ahí → se REASIGNA a Ecommerce (así la física coincide con el sistema
+      // y la venta no se pierde). En Ecommerce (99) son sus vendedores reales. (Juli 29/08)
+      let suc=x.suc;
+      if(/^WEB (MATEU|AURELIUS)$/.test(veNormU(nombre)) && !/^99/.test(String(suc||''))){ omniN++; omniV+=d.imp; suc=ECOM; }
+      let vs=sucV.get(suc); if(!vs){ vs=new Map(); sucV.set(suc,vs); }
+      let v=vs.get(nombre); if(!v){ v={venta:0,tickets:0,unidades:0,dias:{}}; vs.set(nombre,v); }
+      v.venta+=d.imp; v.unidades+=d.cant; if(!esNc && d.cant>0) v.tickets++;
+      if(d.imp){ v.dias[x.dow]=(v.dias[x.dow]||0)+d.imp; }
+      if(d.rub) for(const rb in d.rub){ v.rubros=v.rubros||{}; v.rubros[rb]=(v.rubros[rb]||0)+d.rub[rb]; }
+      // tickets del LOCAL = comprobantes distintos (no la suma de los vendedores: un
+      // ticket compartido le cuenta a cada uno, pero para el local es uno solo)
+      if(!esNc && d.cant>0){ let tk=sucTk.get(suc); if(!tk){ tk=new Set(); sucTk.set(suc,tk); } tk.add(x.nro); }
+    }
     if(x.dow) dowSet.add(x.dow+'|'+x.dia);
   });
   const ord={}; VE_DOW.forEach((d,i)=>ord[d]=i);
@@ -5963,7 +5988,10 @@ function veAgregarSemana(res, sem){
       lista.push(fila);
     });
     lista.sort((a,b)=>b.venta-a.venta);
-    const total={ venta:lista.reduce((a,x)=>a+x.venta,0), tickets:lista.reduce((a,x)=>a+x.tickets,0), unidades:lista.reduce((a,x)=>a+x.unidades,0) };
+    const tkSuc=(sucTk.get(suc)||{size:0}).size;
+    const total={ venta:lista.reduce((a,x)=>a+x.venta,0),
+                  tickets: tkSuc || lista.reduce((a,x)=>a+x.tickets,0),
+                  unidades:lista.reduce((a,x)=>a+x.unidades,0) };
     porSlug[slug]={sucursal:suc, vendedores:lista, total};
   });
   const pares=Array.from(dowSet).map(k=>{ const q=k.split('|'); return {dow:q[0], dia:+q[1]}; }).sort((a,b)=>oi(a.dow)-oi(b.dow));
