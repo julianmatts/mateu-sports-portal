@@ -712,6 +712,25 @@ body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
   .plano-box>summary,.rep-mapa>summary{cursor:pointer;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:13px;letter-spacing:.5px;color:#0B1527}
   .rep-mapa{margin-top:6px}
   .rep-sector-lbl{font-size:13px;font-weight:600;margin:6px 0 2px}
+  /* panel del plano bajo el buscador */
+  .plano-panel{background:#fff;border:1px solid var(--border);border-radius:14px;margin-bottom:12px;overflow:hidden}
+  .plano-panel .pp-head{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;user-select:none}
+  .plano-panel .pp-head .tt{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:13px;letter-spacing:1px;text-transform:uppercase;color:var(--navy);white-space:nowrap}
+  .plano-panel .pp-nota{flex:1;min-width:0;font-size:13px;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .plano-panel .pp-head .arrow{color:var(--muted);transition:transform .15s}
+  .plano-panel.open .pp-head .arrow{transform:rotate(180deg)}
+  .plano-panel .pp-body{display:none;padding:0 14px 12px}
+  .plano-panel.open .pp-body{display:block}
+  .plano-panel .ps-wrap{margin-top:0}
+  .plano-panel .ps-svg{max-height:230px}
+  .ubi-chip.sec{background:#eef6ff;border-color:#cfe2f3}
+  /* celular: los planos van en una tira deslizable, así no empujan los resultados */
+  @media(max-width:640px){
+    .plano-panel .ps-wrap{display:flex;overflow-x:auto;gap:10px;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+    .plano-panel .ps-planta{flex:0 0 78%}
+    .plano-panel .ps-svg{max-height:190px}
+    .plano-panel .pp-nota{font-size:12px}
+  }
 </style>
 <script src="../shared/marca.js"></script>
 <script src="../shared/iconos.js" defer></script>
@@ -791,6 +810,8 @@ body.puesto .ubi-chip{ font-size:16px; padding:9px 14px; border-radius:8px; }
         <button class="hist-btn" id="btnRepone" title="Reposición del salón: lo que se vendió de la exhibición y falta reponer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-13.7-5.7L3 8.5"/><path d="M4 13a8 8 0 0 0 13.7 5.7L21 15.5"/><path d="M3 4.5v4h4"/><path d="M21 19.5v-4h-4"/></svg><span class="pick-badge" id="reponeBadge">0</span></button>
         <button class="hist-btn" id="btnPicking" title="Lista de retiro (recorrido por el depósito)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 13 1.6 1.6L14 11.2"/><path d="M9 17.5h6"/></svg><span class="pick-badge" id="pickBadge">0</span></button>
       </div>
+      <!-- plano de la sucursal: salón + depósitos, con el artículo buscado resaltado -->
+      <div id="planoBox"></div>
       <!-- herramientas de la lista SIN UBICAR (se ven cuando la lista está abierta) -->
       <div class="su-tools" id="suTools">
         <span class="tt">Sin ubicar</span>
@@ -2126,6 +2147,7 @@ function renderBuscar(){
   }
   $('btnCargarStock').style.display = (SUC && canStock()) ? 'inline-flex' : 'none';
 
+  renderPlanoBox();
   renderSinUbicar();
   renderResultados();
   actualizarBadges();
@@ -2573,6 +2595,13 @@ function renderResultados(){
     : (eanPend ? '<div class="empty">Buscando el código de barras “'+esc(searchQuery)+'”…</div>'
                : '<div class="empty">Sin resultados para “'+esc(searchQuery)+'”.</div>');
   wireArtCards(cont, {consulta:true});
+  // el plano sigue a la búsqueda: con un solo resultado se resalta solo
+  if(planoHay()){
+    PLANO_HINT = res.length>1 ? 'Tocá un artículo de la lista para verlo en el plano' : '';
+    if(res.length===1) seleccionarArt(res[0].key, true);
+    else if(!res.length || !res.some(r=>r.key===ARTSEL)) seleccionarArt(null);
+    else pintarPlanoSel(false);
+  }
   // TODA búsqueda queda registrada sola (no hace falta tocar el artículo)
   clearTimeout(autoRegTimer);
   if(q.length>=3 && !eanPend){
@@ -2595,6 +2624,7 @@ function pintarResultadoEan(q, r){
     const a = {key:r.key, ...DATA.articulos[r.key]};
     cont.innerHTML = eanNotaHtml(q, r) + artCardHtml(a);
     wireArtCards(cont, {consulta:true});
+    if(planoHay()) seleccionarArt(r.key, true);
     autoRegTimer = setTimeout(()=> registrarBusqueda({q:searchQuery.trim(), key:r.key, n:1}), 300);
     return;
   }
@@ -3313,6 +3343,119 @@ function registrarMovimiento(artKey, tipo, ubicNombre){
   }).catch(()=>{});
 }
 
+/* ============================================================
+   PLANO DE LA SUCURSAL EN LA BÚSQUEDA
+   Debajo del buscador van el salón y el/los depósitos. Al buscar
+   (o tocar) un artículo se resalta con destello DÓNDE ESTÁ
+   GUARDADO (su estantería, que sale de la ubicación) y DÓNDE SE
+   EXHIBE (el sector del salón, que el equipo marca a mano una vez
+   por artículo y queda para todo el local).
+   ============================================================ */
+let ARTSEL = null;                 // artículo resaltado en el plano
+let PLANO_HINT = '';               // cartel del panel cuando no hay artículo elegido
+let planoAbierto = true;
+try{ const v = localStorage.getItem('ubic_plano_open'); if(v!==null) planoAbierto = v==='1'; }catch(e){}
+
+function planoHay(){ return !!(planoDepositos().length || planoSalon().length); }
+function sectorArt(a){ return (a && a.salon && a.salon.id) ? a.salon : null; }
+// ids del plano a resaltar: estanterías del depósito + sector del salón
+function planoHotArt(a){
+  const hot = planoUbicHot(a);
+  const s = sectorArt(a);
+  if(s && PlanoSuc.celdaNombre(SUC, s.nombre)) hot.add(s.id);
+  return hot;
+}
+// el panel se dibuja UNA vez por sucursal (el poll no lo rehace: no parpadea)
+function renderPlanoBox(){
+  const box = $('planoBox'); if(!box) return;
+  if(!planoHay()){ box.innerHTML=''; box.dataset.suc=''; return; }
+  if(box.dataset.suc===SUC && box.firstChild){ pintarPlanoSel(false); return; }
+  const P = PlanoSuc.de(SUC);
+  box.dataset.suc = SUC;
+  box.innerHTML =
+    '<div class="plano-panel'+(planoAbierto?' open':'')+'">'+
+      '<div class="pp-head" id="planoHead"><span class="tt">🗺 Dónde está</span>'+
+        '<span class="pp-nota" id="planoNota"></span><span class="arrow">▾</span></div>'+
+      '<div class="pp-body"><div class="ps-wrap">'+
+        PlanoSuc.plantas(SUC).map(pl=>'<div class="ps-planta"><h4>'+esc(pl.nombre)+'</h4>'+PlanoSuc.svg(P, pl, {})+'</div>').join('')+
+      '</div><div class="ps-legend">'+
+        '<span><i style="background:#CC0000"></i>Acá está el artículo</span>'+
+        '<span><i style="background:#cfe2f3"></i>Sector del salón / estantería</span>'+
+        '<span><i style="background:#eef1f7"></i>PC / caja / baño / probador</span></div></div></div>';
+  $('planoHead').addEventListener('click', ()=>{
+    planoAbierto = !planoAbierto;
+    box.querySelector('.plano-panel').classList.toggle('open', planoAbierto);
+    try{ localStorage.setItem('ubic_plano_open', planoAbierto?'1':'0'); }catch(e){}
+    if(planoAbierto) PlanoSuc.destellar(box);
+  });
+  pintarPlanoSel(false);
+}
+// resalta sin rehacer el SVG (y hace el destello)
+function pintarPlanoSel(destello){
+  const box = $('planoBox'); if(!box || !box.firstChild) return;
+  const a = ARTSEL ? DATA.articulos[ARTSEL] : null;
+  const hot = a ? planoHotArt({key:ARTSEL, ...a}) : new Set();
+  box.querySelectorAll('[data-ps]').forEach(g=> g.classList.toggle('ps-here', hot.has(g.dataset.ps)));
+  const nota = $('planoNota');
+  if(nota){
+    if(!a) nota.innerHTML = '<span class="hint">'+(PLANO_HINT||'Buscá un artículo y te muestro dónde está')+'</span>';
+    else{
+      const ubis = Object.values(a.ubicaciones||{}).map(u=>nombreUbicacion(u));
+      const sec = sectorArt(a);
+      nota.innerHTML = '<b>'+esc(a.codigo)+'</b> · 📍 '+esc(ubis.join(' · ') || 'sin ubicar en el depósito')+
+        ' · 🏬 '+(sec ? esc(sec.nombre) : '<span class="hint">sin sector del salón</span>');
+    }
+  }
+  if(destello && planoAbierto) PlanoSuc.destellar(box);
+}
+function seleccionarArt(key, destello){
+  const cambio = ARTSEL !== (key||null);
+  ARTSEL = key || null;
+  pintarPlanoSel(cambio && destello!==false);
+}
+
+/* ---- sector del salón del artículo (se marca a mano, lo ve todo el local) ---- */
+function abrirSheetSector(artKey){
+  const a = DATA.articulos[artKey]; if(!a || !planoSalon().length) return;
+  const actual = sectorArt(a);
+  let sel = actual ? {id:actual.id, nombre:actual.nombre} : null;
+  $('sheetBody').innerHTML =
+    '<div class="sheet-title">🏬 '+esc(a.codigo)+'</div>'+
+    '<div class="sheet-sub">'+esc(a.descripcion||'')+'</div>'+
+    '<div class="fb-grupo">¿En qué sector del salón se exhibe?</div>'+
+    '<div class="hint" style="margin-bottom:4px">Tocá el sector en el plano. Queda guardado para toda la sucursal: cuando alguien busque este artículo, se le resalta ahí.</div>'+
+    '<div class="rep-sector-lbl" id="secLbl"></div>'+
+    PlanoSuc.bloque(SUC, {tipo:'salon', pick:true, hot:new Set(sel?[sel.id]:[]), cls:'ps-here'})+
+    '<button class="sheet-opt sug" id="secOk" style="margin-top:12px">✓ Guardar el sector</button>'+
+    (actual?'<button class="sheet-opt" id="secDel">✕ Quitar el sector</button>':'');
+  $('sheetOverlay').classList.add('show');
+  const marcar = ()=>{
+    $('sheetBody').querySelectorAll('.ps-pick [data-ps]').forEach(g=>
+      g.classList.toggle('ps-here', !!sel && g.dataset.ps===sel.id));
+    $('secLbl').textContent = sel ? 'Sector: '+sel.nombre : 'Todavía no elegiste el sector';
+  };
+  $('sheetBody').querySelectorAll('.ps-pick [data-ps]').forEach(g=> g.addEventListener('click', ()=>{
+    sel = (sel && sel.id===g.dataset.ps) ? null : {id:g.dataset.ps, nombre:g.dataset.nm};
+    marcar();
+  }));
+  marcar();
+  $('secOk').addEventListener('click', ()=>{
+    if(!sel){ toast('Elegí el sector en el plano 👆'); return; }
+    guardarSectorSalon(artKey, sel);
+  });
+  if($('secDel')) $('secDel').addEventListener('click', ()=> guardarSectorSalon(artKey, null));
+}
+async function guardarSectorSalon(artKey, sec){
+  const a = DATA.articulos[artKey]; if(!a) return;
+  const rec = sec ? {id:sec.id, nombre:sec.nombre, por:nombreOperador(), ts:Date.now()} : null;
+  try{
+    await patchJSON(sucPath()+'/articulos/'+artKey+'.json', {salon: rec});
+    if(rec) a.salon = rec; else delete a.salon;
+    lastHash=''; cerrarSheet(); renderVistaActiva(); pintarPlanoSel(true); bumpRev();
+    toast(rec ? 'Sector guardado ✓' : 'Sector quitado');
+  }catch(e){ toast('No se pudo guardar. Probá de nuevo.'); }
+}
+
 // Mapa del depósito con la(s) estantería(s) del artículo en rojo
 function verEnPlano(artKey){
   const a = DATA.articulos[artKey]; if(!a) return;
@@ -3389,6 +3532,12 @@ function artCardHtml(a){
       }).join('')+
       (puede?'<button class="ubi-add" data-agregar="1">+ '+(sinUbi?'Asignar ubicación':'Agregar')+'</button>':'')+
       (planoUbicHot(a).size?'<button class="ubi-add" data-plano="1" title="Ver en el plano del depósito">🗺 Plano</button>':'')+
+      (planoSalon().length
+        ? (sectorArt(a)
+            ? '<span class="ubi-chip sec" title="Sector del salón'+(a.salon.por?' · marcado por '+esc(a.salon.por):'')+'">🏬 '+esc(a.salon.nombre)+
+              (puedeComentar?'<button class="x" data-secdel="1" title="Quitar el sector">✕</button>':'')+'</span>'
+            : (puedeComentar?'<button class="ubi-add" data-sector="1" title="Marcar en qué sector del salón se exhibe">🏬 Sector del salón</button>':''))
+        : '')+
     '</div>'+fbRow+'</div>';
 }
 
@@ -3404,6 +3553,15 @@ function wireArtCards(cont, opts){
     if(histBtn) histBtn.addEventListener('click', ()=> verHistorialArticulo(key));
     const planoBtn = card.querySelector('[data-plano]');
     if(planoBtn) planoBtn.addEventListener('click', ()=> verEnPlano(key));
+    const secBtn = card.querySelector('[data-sector]');
+    if(secBtn) secBtn.addEventListener('click', ()=> abrirSheetSector(key));
+    const secDel = card.querySelector('[data-secdel]');
+    if(secDel) secDel.addEventListener('click', ()=> guardarSectorSalon(key, null));
+    // tocar la tarjeta la resalta en el plano de la sucursal
+    if(planoHay()) card.addEventListener('click', e=>{
+      if(e.target.closest('button')) return;
+      seleccionarArt(key, true);
+    });
     const repBtn = card.querySelector('[data-repone]');
     if(repBtn) repBtn.addEventListener('click', ()=> abrirSheetRepone(key));
     const repOk = card.querySelector('[data-rephecho]');
@@ -3772,8 +3930,13 @@ async function tomarReposicion(artKey){
     await putJSON(sucPath()+'/reposicion/'+id+'.json', rec);
     if(!DATA.reposicion) DATA.reposicion = {};
     DATA.reposicion[id] = rec; lastHash='';
+    // el sector elegido queda marcado en el artículo (es el mismo dato)
+    if(rec.sector && !(a.salon && a.salon.id===rec.sector.id)){
+      const s = {id:rec.sector.id, nombre:rec.sector.nombre, por:rec.por, ts:rec.ts};
+      patchJSON(sucPath()+'/articulos/'+artKey+'.json', {salon:s}).then(()=>{ a.salon = s; pintarPlanoSel(false); }).catch(()=>{});
+    }
     cerrarSheet(); renderVistaActiva(); reponeBadge(); bumpRev();
-    toast('Anotado ✓ Cuando lo repongas, marcalo como repuesto.');
+    toast('Anotado \✓ Cuando lo repongas, marcalo como repuesto.');
   }catch(e){ toast('No se pudo guardar. Probá de nuevo.'); }
 }
 
@@ -4606,6 +4769,9 @@ async function sincronizarStock(lista){
       const arr = Object.entries(art.talles).sort((x,y)=>pickingTalleCmp(x[0],y[0])).map(([t,c])=>({t,c}));
       if(arr.length) rec.talles = arr;
     }
+    // sector del salón marcado por el equipo: se conserva (y vuelve de la memoria)
+    if(p && p.salon) rec.salon = p.salon;
+    else if(!p && memo[key] && memo[key].salon) rec.salon = memo[key].salon;
     // Id.item del sistema (lo trae la planilla de Drive); se conserva si ya estaba
     if(art.articulo) rec.articulo = String(art.articulo); else if(p && p.articulo) rec.articulo = p.articulo;
     // códigos de barras de marca (columna opcional): [{e:gtin13, t:talle}]. Se
@@ -4629,7 +4795,8 @@ async function sincronizarStock(lista){
     if(out[key] || migradas.has(key)) continue;
     eliminados.push(prev[key]);
     const ub = prev[key].ubicaciones;
-    if(ub && Object.keys(ub).length) memoPatch[key] = {ubicaciones:ub, fechaAlta:prev[key].fechaAlta||null, codigo:prev[key].codigo||key, ts:now};
+    const sal = prev[key].salon || null;
+    if((ub && Object.keys(ub).length) || sal) memoPatch[key] = {ubicaciones:ub||null, salon:sal, fechaAlta:prev[key].fechaAlta||null, codigo:prev[key].codigo||key, ts:now};
   }
 
   // ubicaciones de la planilla (columna opcional): solo para artículos que

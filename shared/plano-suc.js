@@ -35,6 +35,8 @@
       '.ps-here rect{fill:var(--marca-red,#CC0000)}.ps-here text{fill:#fff}',
       '.ps-pick .ps-mueble{cursor:pointer}.ps-pick .ps-mueble:hover rect{stroke:#0B1527;stroke-width:.3}',
       '.ps-bg{fill:#fbfcfe;stroke:#dce3f0;stroke-width:.15}',
+      '.ps-flash rect{animation:psFlash 1s ease-out 3}',
+      '@keyframes psFlash{0%,100%{opacity:1}45%{opacity:.25}}',
       '.ps-legend{display:flex;gap:12px;flex-wrap:wrap;font-family:"Barlow Condensed",sans-serif;font-size:12px;color:#6B7A99;margin-top:8px}',
       '.ps-legend i{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:middle;margin-right:4px}'
     ].join('');
@@ -94,5 +96,15 @@
   function norm(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim(); }
   function celdaEst(slug, num){ num=+num; return buscar(slug, function(c){ return c.tipo==='estanteria' && c.num===num; }); }
   function celdaNombre(slug, nombre){ var n=norm(nombre); return n ? buscar(slug, function(c){ return (c.tipo==='sector'||c.tipo==='estanteria') && norm(c.nombre)===n; }) : null; }
-  window.PlanoSuc={ de:de, plantas:plantas, svg:svg, bloque:bloque, celdaEst:celdaEst, celdaNombre:celdaNombre };
+  // vuelve a disparar el destello de lo resaltado dentro de `cont`
+  function destellar(cont){
+    var gs=(cont||document).querySelectorAll('.ps-here,.ps-hot');
+    for(var i=0;i<gs.length;i++){ (function(g){
+      g.classList.remove('ps-flash');
+      void g.offsetWidth;                       // reinicia la animación
+      g.classList.add('ps-flash');
+      setTimeout(function(){ g.classList.remove('ps-flash'); }, 3200);
+    })(gs[i]); }
+  }
+  window.PlanoSuc={ de:de, plantas:plantas, svg:svg, bloque:bloque, celdaEst:celdaEst, celdaNombre:celdaNombre, destellar:destellar };
 })();
