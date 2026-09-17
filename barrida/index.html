@@ -4503,29 +4503,41 @@ async function repExportXlsx(){
   // una hoja por remito
   const nombres=new Set();
   rems.forEach(rm=>{
-    const talles=[...new Set([].concat(...rm.arts.map(x=>[].concat(...x.lineas.map(l=>Object.keys(l.t)), Object.keys(x.queda)))))].sort(cmpTalle);
+    // Cada artículo lleva SU curva (un remito puede traer adulto y niño): la hoja tiene tantas
+    // columnas de talle como el artículo con más talles, y cada bloque abre con su propia fila de talles.
+    const tallesDe=x=>[...new Set([].concat(...x.lineas.map(l=>Object.keys(l.t)), Object.keys(x.queda||{})))].sort(cmpTalle);
+    const nT=Math.max(1, ...rm.arts.map(x=>tallesDe(x).length));
     const sr = rm.nro===REP_NUEVO;
     let nom=((sr?'Sin remito ':'R '+repNroCorto(rm.nro)+' ')+(rm.marca||'')).replace(/[\[\]:*?\/\\]/g,' ').slice(0,31).trim(); while(nombres.has(nom)) nom=(nom.slice(0,28)+' '+nombres.size).slice(0,31); nombres.add(nom);
     const izq=['Código','Artículo','Descripción','Destino'];
     const h=repHoja(wb, nom, sr?'REPARTO INICIAL · INGRESÓ HACE POCO (SIN REMITO)':'REPARTO INICIAL · REMITO '+repNroCorto(rm.nro), ((sr?'COMPRA DE HACE MENOS DE '+((R.totales||{}).dias||0)+' DÍAS':rm.nro)+'  ·  '+(rm.marca||'')+(rm.rubro?'  ·  '+rm.rubro:'')+'  ·  '+fmtInt(rm.uRep)+' u. a repartir · '+fmtInt(rm.uQueda)+' quedan  ·  '+fecha).toUpperCase(),
-      [...izq, ...talles, 'Total'], [16,11,36,22, ...talles.map(()=>7), 9], izq.length);
+      [...izq, 'Talles', ...Array(nT-1).fill(''), 'Total'], [16,11,36,22, ...Array(nT).fill(7), 9], izq.length);
+    if(nT>1) h.ws.mergeCells(h.hr, izq.length+1, h.hr, izq.length+nT);
     let r=h.hr+1;
-    rm.arts.forEach(x=>{ const a=x.art, C=new Set(a.centrales||[]);
+    rm.arts.forEach(x=>{ const a=x.art, C=new Set(a.centrales||[]), talles=tallesDe(x);
+      // fila de talles del artículo (con su código y descripción)
+      const cab=[a.cod||'', a.id, (a.desc||'')+(a.estimado?' *':''), 'Destino', ...talles, ...Array(nT-talles.length).fill(null), 'Total'];
+      cab.forEach((v,j)=>{ const c=h.ws.getCell(r,j+1); c.value=v;
+        const esT = j>=izq.length && j<izq.length+nT;
+        c.font={size:esT||j===cab.length-1?10:10.5,bold:true,name:'Calibri',color:{argb:BRAND.white}};
+        c.fill={type:'pattern',pattern:'solid',fgColor:{argb:esT&&C.has(v)?'FF2D4F8A':BRAND.navyMid}};
+        c.alignment={horizontal:j<izq.length?'left':'center',vertical:'middle'}; c.border=thinBorder(BRAND.navyMid); });
+      h.ws.getRow(r).height=22; r++;
       const filas=x.lineas.slice().sort((p,q)=>(p.prio||99)-(q.prio||99)).map(l=>({dest:stripNN(l.sucNombre), t:l.t, u:l.u, queda:false}));
       if(x.uQueda>0) filas.push({dest:'DEPÓSITO (queda)', t:x.queda, u:x.uQueda, queda:true});
-      filas.forEach((fl,k)=>{
-        const vals=[a.cod||'', a.id, (a.desc||'')+(a.estimado?' *':''), fl.dest];
-        vals.forEach((v,j)=>{ const c=h.ws.getCell(r,j+1); c.value=(k===0||j===3)?v:null;
+      filas.forEach(fl=>{
+        for(let j=1;j<=izq.length;j++){ const c=h.ws.getCell(r,j); c.value=j===izq.length?fl.dest:null;
           c.font={size:10,bold:!fl.queda,italic:fl.queda,name:'Calibri',color:{argb:fl.queda?BRAND.muted:BRAND.navy}}; c.alignment={horizontal:'left',vertical:'middle'};
-          const bd=thinBorder(BRAND.border); if(k===0) bd.top={style:'medium',color:{argb:BRAND.sep}}; c.border=bd; });
-        talles.forEach((t,ti)=>{ const c=h.ws.getCell(r,izq.length+ti+1); const q=fl.t[t]||0; c.value=q>0?q:null;
+          c.border=thinBorder(BRAND.border); }
+        for(let ti=0;ti<nT;ti++){ const t=talles[ti]; const c=h.ws.getCell(r,izq.length+ti+1); const q=t!=null?(fl.t[t]||0):0; c.value=q>0?q:null;
           c.font={size:11,bold:!fl.queda,name:'Calibri',color:{argb:fl.queda?BRAND.muted:BRAND.navy}}; c.alignment={horizontal:'center',vertical:'middle'};
-          if(C.has(t) && !fl.queda) c.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.talleBand}};
-          const bd=thinBorder(BRAND.border); if(k===0) bd.top={style:'medium',color:{argb:BRAND.sep}}; c.border=bd; });
-        const ct=h.ws.getCell(r,izq.length+talles.length+1); ct.value=fl.u; ct.font={size:11,bold:true,name:'Calibri',color:{argb:fl.queda?BRAND.muted:BRAND.navy}}; ct.alignment={horizontal:'center',vertical:'middle'};
-        const bd=thinBorder(BRAND.border); if(k===0) bd.top={style:'medium',color:{argb:BRAND.sep}}; ct.border=bd;
+          if(t!=null && C.has(t) && !fl.queda) c.fill={type:'pattern',pattern:'solid',fgColor:{argb:BRAND.talleBand}};
+          c.border=thinBorder(BRAND.border); }
+        const ct=h.ws.getCell(r,izq.length+nT+1); ct.value=fl.u; ct.font={size:11,bold:true,name:'Calibri',color:{argb:fl.queda?BRAND.muted:BRAND.navy}}; ct.alignment={horizontal:'center',vertical:'middle'};
+        ct.border=thinBorder(BRAND.border);
         h.ws.getRow(r).height=22; r++;
       });
+      r++; // renglón en blanco entre artículos
     });
     if(rm.arts.some(x=>x.art.estimado)){ r++; h.ws.getCell(r,1).value='* talles tomados de la reserva del depósito (el remito no trae talles): confirmarlos al abrir la caja. Fondo celeste = talle central.'; h.ws.getCell(r,1).font={size:9,italic:true,name:'Calibri',color:{argb:BRAND.muted}}; }
   });
