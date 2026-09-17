@@ -1520,7 +1520,7 @@ function aplicarAmpliar(){
   const MINART=Math.max(1, state.filtrosVac.minArt|0);
   const TOPE=Math.max(0, f.topeCalzado|0);
   const P={ uCentral:Math.max(1, fa.uCentral|0), maxCentral:Math.max(fa.uCentral|0, fa.maxCentral|0), uResto:1,
-    reserva:Math.max(0, fa.reserva|0), minTalles:AMP_MIN_TALLES, excedente:false };
+    reserva:Math.max(0, fa.reserva|0), minTalles:AMP_MIN_TALLES, excedente:false, reingresoProf:false };
   // lo que ya baja de cada artículo (venta + curva + vaciado) y qué sucursales ya reciben algo de él
   const usado={}, recibe={};
   reposBase().forEach(r=>{
@@ -3370,7 +3370,7 @@ state.rep = {
   mes:'', sel:{},         // mes de ingreso elegido ('' = todo) y remitos marcados
   f:{ marca:'', rubro:'', q:'', verRepartidos:false },
   destinos:null,          // slugs destino (null = todas menos los outlets)
-  param:{ uCentral:2, maxCentral:3, uResto:1, reserva:1, minTalles:3, excedente:false, ninoCurva:'prog',   /* el excedente queda de reserva (Juli 14/09/2026) */ respetarDisc:true, memoria:true, excluirVarios:true, huerfanos:true },
+  param:{ uCentral:2, maxCentral:3, uResto:1, reserva:1, minTalles:3, excedente:false, ninoCurva:'prog', criterio:'abrir', reingresoProf:true,   /* el excedente queda de reserva (Juli 14/09/2026) */ respetarDisc:true, memoria:true, excluirVarios:true, huerfanos:true },
   centrales:null,         // talles centrales editados (se comparten en repartoConfig/centrales)
   res:null, vista:'remito', selOpen:true,
   hist:null, repartidos:{}, guardados:[], cargado:false, abierto:null,
@@ -3755,14 +3755,27 @@ function repStockPorId(){
     Object.entries(v.talles||{}).forEach(([t,q])=>{ if(q>0) o[t]=(o[t]||0)+q; }); });
   return out;
 }
+// venta de la semana por artículo y sucursal, del archivo de ventas de la Barrida si está cargado: {id:{slug:u}}
+let _repVentaArt={ f:null, v:null };
+function repVentaArt(){
+  const fV=state.files && state.files.ventas; if(!fV) return null;
+  if(_repVentaArt.f===fV) return _repVentaArt.v;
+  const out={};
+  try{ filasDeHoja(fV).forEach(v=>{ const m=NAME2SLUG[normName(v.suc)]; if(!m || !(v.total>0)) return;
+    const o=out[v.id]||(out[v.id]={}); o[m.slug]=(o[m.slug]||0)+v.total; }); }catch(e){ return null; }
+  _repVentaArt={ f:fV, v:out }; return out;
+}
 function repCandidatos(a, G, destinos){
   const P=state.rep.param, out=[];
+  const VA=repVentaArt();
   destinos.forEach(slug=>{
     const asig=repAsig(slug, a, G); if(!asig) return;
     const vm=ventasMarcaDe(slug, a.marca, a.rubro);
+    // «lo vende»: con el archivo de ventas, que haya vendido el artículo; sin él, que venda la marca en el rubro
+    const vendeArt = VA ? !!((VA[a.id]||{})[slug]>0) : !!(vm && vm.v>0);
     const kidsArt = G.g==='nino' || G.g==='infante';
     out.push({ slug, sucNombre:nombreSuc(slug), asig, plana:!!asig.plana, ninoPrio:(kidsArt && NINO_PRIO[slug]) ? 0 : 1, deportePrio:(DEPORTE_PRIO[slug] && esDeporteEsp(a)) ? DEPORTE_PRIO[slug] : 9, prioMS:fichaPrioMS(a.marca, a.rubro), pared:paredIncompleta(slug, a), pr:prioInfo(slug, a.marca, a.rubro, a.genero),
-      venta:vm?vm.v:0, ventaNivel:vm?vm.nivel:'', hist:P.memoria?repHistDe(a.id, slug):null,
+      venta:vm?vm.v:0, ventaNivel:vm?vm.nivel:'', vendeArt, hist:P.memoria?repHistDe(a.id, slug):null,
       stock:(REP_STOCK && REP_STOCK[a.id] && Object.keys(REP_STOCK[a.id][slug]||{}).length) ? REP_STOCK[a.id][slug] : null });
   });
   // la venta pesa en tres niveles (alta / media / baja respecto de la que más vende): así los
@@ -3794,7 +3807,7 @@ function repPrioTxt(l){
   const p=l.pr||{}, partes=[];
   if(l.pared) partes.push('pared de '+(l.pared.disc||'running')+' de '+l.pared.marca+' '+(l.pared.gen==='DAMA'?'dama':'hombre')+' incompleta: tiene '+l.pared.tiene+' modelos de '+l.pared.min);
   if(l.hist) partes.push('ya recibió este artículo (se le completa la curva)');
-  if(l.stock) partes.push('ya tiene '+fmtInt(Object.values(l.stock).reduce((x,q)=>x+q,0))+' u. en la sucursal (reingreso: se le completa la curva)');
+  if(l.stock) partes.push('ya tiene '+fmtInt(Object.values(l.stock).reduce((x,q)=>x+q,0))+' u. en la sucursal ('+((state.rep.param.reingresoProf!==false && l.vendeArt)?'reingreso que se vende: recibe la curva entera igual':'reingreso: se le completa la curva')+')');
   if(l.asig) partes.push((ASIG_LBL[l.asig.tipo]||l.asig.tipo)+(l.asig.nota?' ('+l.asig.nota+')':''));
   if(p.cat) partes.push(CAT_LABEL[p.cat]||p.cat);
   if(l.venta!=null && l.ventaNivel) partes.push('vendió '+fmtInt(l.venta)+' u. de la '+(l.ventaNivel==='marca'?'marca':'rubro')+' el último mes');
@@ -3827,23 +3840,40 @@ function repRepartirArt(perRem, cands, central, P, per){
   const tope=t=>per ? (per[t]||1) : central.has(t)?Math.max(P.uCentral,P.maxCentral):P.uResto;
   // «curva x1 plana» de la ficha de la marca: 1 por talle, sin agrandar centrales ni excedente
   const baseS=(s,t)=>s.plana?1:base(t);
-  // lo que ya tiene la sucursal: lo que se le mandó hace poco y/o su stock actual (reingresos), el mayor por talle
-  const tieneDe=c=>{ const o=Object.assign({}, c.hist||{}); Object.entries(c.stock||{}).forEach(([t,q])=>{ o[t]=Math.max(o[t]||0, q); }); return o; };
+  // lo que ya tiene la sucursal: lo que se le mandó hace poco y/o su stock actual (reingresos), el mayor por talle.
+  // Reingreso que se vende (Juli 17/09/2026): si la sucursal tiene el artículo y lo vende, su stock no le achica
+  // la curva: recibe la curva entera igual (profundidad). Lo que se le mandó hace poco sí cuenta siempre.
+  const tieneDe=c=>{ const o=Object.assign({}, c.hist||{}); if(P.reingresoProf!==false && c.vendeArt) return o;
+    Object.entries(c.stock||{}).forEach(([t,q])=>{ o[t]=Math.max(o[t]||0, q); }); return o; };
   const dist=cands.map(c=>Object.assign({}, c, { g:{}, tiene:tieneDe(c), ok:false }));
-  // A · curva base
-  dist.forEach(s=>{
+  // A · curva base de UNA sucursal hasta `obj(t)` por talle; no le arma una curva rota
+  const darCurva=(s, obj)=>{
     const g={}; let cubre=0, cubreC=false;
-    talles.forEach(t=>{ const ya=s.tiene[t]||0; const q=Math.min(Math.max(0, baseS(s,t)-ya), d[t]); if(q>0) g[t]=q; if(ya+q>0){ cubre++; if(central.has(t)) cubreC=true; } });
+    talles.forEach(t=>{ const ya=(s.tiene[t]||0)+(s.g[t]||0); const q=Math.min(Math.max(0, obj(s,t)-ya), d[t]); if(q>0) g[t]=q; if(ya+q>0){ cubre++; if(central.has(t)) cubreC=true; } });
     const yaLoTiene=sumT(s.tiene)>0, nuevo=sumT(g);
-    if(!nuevo){ s.ok=yaLoTiene; return; }
-    if(!yaLoTiene && (cubre<minT || (hayCentral && !cubreC))) return;
-    Object.entries(g).forEach(([t,q])=>{ d[t]-=q; s.g[t]=q; }); s.ok=true;
-  });
-  // reserva del depósito (Juli 14/09/2026, prueba de Nehuen con New Balance): primero cada sucursal tiene su
-  // curva base; la curva del depósito sale de lo que sobra y solo si llega a RMIN unidades (si no, se reparte)
-  if(dejaCurva){
+    if(!nuevo){ s.ok=s.ok||yaLoTiene; return; }
+    if(!yaLoTiene && !s.ok && (cubre<minT || (hayCentral && !cubreC))) return;
+    Object.entries(g).forEach(([t,q])=>{ d[t]-=q; s.g[t]=(s.g[t]||0)+q; }); s.ok=true;
+  };
+  const apartarReserva=()=>{
+    if(!dejaCurva) return;
     talles.forEach(t=>{ if(d[t]>0){ const q=Math.min(P.reserva, d[t]); resv[t]=q; d[t]-=q; } });
     if(talles.reduce((x,t)=>x+resv[t],0) < RMIN) talles.forEach(t=>{ d[t]+=resv[t]; resv[t]=0; });
+  };
+  // Criterio (Juli 17/09/2026, no siempre se usa el mismo):
+  //  · «abrir» (el de siempre): curva base a TODAS por prioridad, después la reserva y la 3.ª unidad en centrales.
+  //  · «profundidad»: se aparta la reserva y cada sucursal, en orden de prioridad, recibe la curva profunda
+  //    (cada talle +1 sobre la base; centrales hasta el tope si es mayor) antes de pasar a la siguiente:
+  //    llega a menos locales pero con más unidades.
+  if(P.criterio==='profundidad'){
+    const hondo=(s,t)=>s.plana ? 1 : per ? (per[t]||1)+1 : central.has(t) ? Math.max(P.uCentral+1, P.maxCentral) : P.uResto+1;
+    apartarReserva();
+    dist.forEach(s=>darCurva(s, hondo));
+  } else {
+    dist.forEach(s=>darCurva(s, baseS));
+    // reserva del depósito (Juli 14/09/2026, prueba de Nehuen con New Balance): primero cada sucursal tiene su
+    // curva base; la curva del depósito sale de lo que sobra y solo si llega a RMIN unidades (si no, se reparte)
+    apartarReserva();
   }
   // B · 3.ª unidad en los centrales
   let hubo=true;
@@ -4321,6 +4351,7 @@ function repParamHtml(){
     +fsel('Talles centrales','rpUC',op([[1,'1 unidad'],[2,'2 unidades'],[3,'3 unidades']],P.uCentral))
     +fsel('Centrales, si alcanza','rpMC',op([[1,'hasta 1'],[2,'hasta 2'],[3,'hasta 3'],[4,'hasta 4']],P.maxCentral))
     +fsel('Resto de los talles','rpUR',op([[1,'1 unidad'],[2,'2 unidades']],P.uResto))
+    +fsel('Criterio','rpCrit',op([['abrir','abrir a más locales'],['profundidad','mayor profundidad']],P.criterio||'abrir'))
     +fsel('Calzado niño','rpNino',op([['prog','progresiva (mitad chica x1, grande x2)'],['plana','chata (x1)']],P.ninoCurva||'prog'))
     +fsel('Curva mínima por sucursal','rpMin',op([[1,'1 talle'],[2,'2 talles'],[3,'3 talles'],[4,'4 talles'],[5,'5 talles']],P.minTalles))
     +fsel('Queda en el depósito','rpRes',op([[0,'nada'],[1,'1 curva'],[2,'2 curvas']],P.reserva))
@@ -4328,6 +4359,7 @@ function repParamHtml(){
     +fsel('Reserva mínima','rpRMin',op([[0,'sin mínimo'],[4,'4 u.'],[6,'6 u.'],[8,'8 u.'],[10,'10 u.'],[12,'12 u.']],P.reservaMin==null?6:P.reservaMin))
     +'</div><div class="frow"><div class="fgrupo"><span class="glab">Reglas</span>'
       +repChk('rpExc',P.excedente,'Repartir el excedente','Lo que sobra después de las curvas (sin contar la curva que queda en el depósito) se sigue repartiendo de a una unidad por talle, en orden de prioridad. Destildado, el excedente queda en el depósito.')
+      +repChk('rpReing',P.reingresoProf!==false,'A la que ya lo tiene y lo vende, la curva entera','Con el stock por sucursal cargado: si la sucursal ya tiene el artículo y lo vende (con el archivo de ventas de la Barrida, que haya vendido ese artículo; sin él, que venda la marca en el rubro), su stock no le achica la curva. Destildado, a la que ya lo tiene solo se le completa lo que le falta.')
       +repChk('rpDisc',P.respetarDisc,'Respetar las disciplinas de la asignación','Si en Asignación de Marcas la marca tiene disciplinas (p. ej. «running, casual»), solo recibe los artículos de esas disciplinas.')
       +repChk('rpMem',P.memoria,'Completar primero a las que ya lo recibieron','Si el artículo ya se repartió en los últimos '+REP_MEM_DIAS+' días (otro remito), esas sucursales van primero y se les completa la curva con lo que les falta.')
       +repChk('rpVar',P.excluirVarios,'Excluir Varios/Facturación','Gift cards, bolsas y demás: no se reparten por curva.')
@@ -4472,8 +4504,9 @@ function wireReparto(){
   const num1=(id,k)=>on(id,'onchange',e=>{ S.param[k]=parseInt(e.target.value,10)||0; repRecalc(); });
   num1('rpUC','uCentral'); num1('rpMC','maxCentral'); num1('rpUR','uResto'); num1('rpMin','minTalles'); num1('rpRes','reserva'); num1('rpCDesde','curvaDesde'); num1('rpRMin','reservaMin');
   on('rpNino','onchange',e=>{ S.param.ninoCurva=e.target.value; repRecalc(); });
+  on('rpCrit','onchange',e=>{ S.param.criterio=e.target.value; repRecalc(); });
   const bool=(id,k)=>on(id,'onchange',e=>{ S.param[k]=e.target.checked; repRecalc(); });
-  bool('rpExc','excedente'); bool('rpDisc','respetarDisc'); bool('rpMem','memoria'); bool('rpVar','excluirVarios'); bool('rpHuer','huerfanos');
+  bool('rpExc','excedente'); bool('rpReing','reingresoProf'); bool('rpDisc','respetarDisc'); bool('rpMem','memoria'); bool('rpVar','excluirVarios'); bool('rpHuer','huerfanos');
   // el corte en días es el mismo para las dos pestañas (lo guarda barrida_prefs)
   on('rpDias','onchange',e=>{ const n=parseInt(e.target.value,10);
     state.filtros.diasNuevo = (isFinite(n)&&n>0) ? Math.min(365,n) : 10; state.filtros.sinNuevos=true;

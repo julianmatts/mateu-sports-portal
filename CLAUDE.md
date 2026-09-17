@@ -1778,6 +1778,15 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     medio), **chata** = x1 en todos. `repCentrales` devuelve `per` (unidades por talle) y `repRepartirArt(…, per)`
     lo usa como base y tope (sin 3.ª unidad); «Abrir a más sucursales» también. En la Barrida (`centralesDe`)
     niño sigue con los talles del medio.
+  - **Criterio «abrir a más locales» / «mayor profundidad» (17/09/2026, Juli: no siempre se usa el mismo)**:
+    select «Criterio» (`param.criterio`, default `abrir` = lo de siempre: curva base a todas, después la reserva y
+    la 3.ª unidad). `profundidad`: se aparta primero la reserva y cada sucursal, en orden de prioridad, recibe la
+    curva profunda (cada talle +1 sobre la base; centrales hasta `maxCentral` si es mayor; niño progresivo x2/x3)
+    antes de pasar a la siguiente (`darCurva` en `repRepartirArt`). «Abrir a más sucursales» de la Barrida no cambia.
+  - **Reingreso que se vende (17/09/2026)**: tilde «A la que ya lo tiene y lo vende, la curva entera»
+    (`param.reingresoProf`, default sí): el stock por sucursal no le achica la curva a la sucursal que vende el
+    artículo (`vendeArt`: con el archivo de ventas de la Barrida cargado, que lo haya vendido — `repVentaArt`;
+    sin él, que venda la marca en el rubro). Lo repartido hace poco (memoria) sí cuenta siempre.
   - **Excedente del Reparto inicial**: «Repartir el excedente» viene **destildado** (prefs `v:2`): lo que sobra
     después de las curvas queda de reserva (si queda menos de `reservaMin`, se reparte igual). New Balance
     exclusivos de Aurelius: Aurelius de línea y Ecommerce prioridad 1, Aurelius 10 (columna outlet, «como local
