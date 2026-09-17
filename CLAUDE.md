@@ -788,6 +788,23 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   casilleros `#N/A`, y **NO suma** el stock de un artículo repetido en varios módulos
   (cada fila trae el total). Checkbox para incluir `Base de Datos` (los no ubicados
   quedan en SIN UBICAR). Un link permite forzar el otro modo.
+- **Planilla de Drive en LISTA** (modelo de Berisso, 17/09/2026): dos hojas —«UBICACION»
+  (una fila por artículo: SKU · Id.item · descripción · stock · ubicación «E20-M26») y
+  «STOCK» (el stock completo del día)—, con encabezado **solo en algunas columnas**. Va
+  por el modal de mapeo, que ahora reconoce por CONTENIDO lo que no tiene rótulo: la
+  **ubicación** (se mira qué parte de lo que TRAE parece una ubicación, no cuántas filas
+  están llenas: antes la columna se descartaba por «casi vacía» y las ubicaciones no se
+  importaban nunca), la **descripción**, y el **código de marca vs. Id.item** («Articulo»
+  rotula uno u otro según la planilla; si esa columna trae números del sistema y hay otra
+  con el SKU, el código es el SKU —la clave del módulo— y la numérica va a `articulo`; si
+  no, se perdían las filas sin Id.item: 383 de 2.403 en Berisso). Los `#N/A` del BUSCARV
+  no cuentan al mirar una columna. La **hoja de stock completo se suma en la misma carga**
+  con un tilde (como «Base de Datos» en el modelo por casilleros). Dos reglas más: el
+  **talle** solo se busca si el archivo trae varias filas por artículo (si no, la
+  heurística se quedaba con la columna de stock) y, **con ubicación y sin talle, el
+  artículo repetido en dos módulos NO suma stock** (cada fila trae el total). **Cambio de
+  clave transparente** (`sincronizarStock`): el artículo que estaba guardado por Id.item y
+  ahora llega con su SKU hereda ubicación y fecha de alta en vez de entrar como nuevo.
 - **Clave del artículo = SKU de marca** (columna «Codigo»), igual que Calle 49. El
   **Id.item** se guarda en `articulo` y se busca por él (búsqueda, escáner, picking);
   la tarjeta lo muestra como `#233282` y el export lo lleva en su columna.
