@@ -3349,6 +3349,18 @@ function repTodoAlSalon(a, G){
   if(G && (G.g==='nino' || G.g==='infante')) return true;
   return RX_FUTBOL.test(sinAcento([a&&a.disc, a&&a.tipo].filter(Boolean).join(' ')).toLowerCase());
 }
+/* Calzado de verano fuera de temporada (Juli 17/09/2026, informe Crocs automático vs. manual): de OCTUBRE a FEBRERO se
+   reparte con la curva de siempre (profundidad en los centrales); de MARZO a SEPTIEMBRE la temporada todavía no
+   arrancó y va una curva «tranquila»: x1 en todos los talles, sin centrales, sin 3.ª unidad, sin curva profunda y sin
+   repartir el excedente (lo que sobra queda en el depósito para reponer cuando arranque). Manda la fecha del reparto. */
+const RX_VERANO = /verano|sandalia|ojota|chinela/;
+const VERANO_MESES = [9,10,11,0,1];            // oct · nov · dic · ene · feb (getMonth)
+function esCalzadoVerano(a){ return RX_VERANO.test(sinAcento([a&&a.disc, a&&a.tipo].filter(Boolean).join(' ')).toLowerCase()); }
+function veranoTranquilo(a, G, hoy){
+  const P=(state.rep && state.rep.param)||{};
+  if(P.veranoCalendario===false || !G || G.fam!=='calz' || !esCalzadoVerano(a)) return false;
+  return !VERANO_MESES.includes((hoy||new Date()).getMonth());
+}
 // locales que no trabajan niño, ni calzado ni indumentaria (Juli 17/09/2026: Calle 49)
 const SIN_NINO = { 'calle-49':true };
 // Aurelius (las de línea y Calle 10) trabaja casual moda: nunca fútbol ni deportes (Juli 17/09/2026),
@@ -3605,10 +3617,31 @@ function repGrupo(a){
     : /DAMA|MUJER|FEMEN|WOMEN/.test(gen)?'dama' : /HOMBRE|MASCUL|\bMEN\b/.test(gen)?'hombre' : /UNISEX/.test(gen)?'unisex' : '';
   return { fam, g, key: fam&&g ? fam+'-'+g : '' };
 }
+/* Orden de talles del calzado de NIÑO en escala US (informe Crocs 17/09/2026): la escala infantil da la vuelta —
+   C6·C8·C10·C12·C13 y después J1·J2·J3 (en Nike/adidas 10K…13.5K y después 1Y…6Y)—, así que el 1·2·3 son los MÁS
+   GRANDES, no los más chicos. Ordenados por número, la curva progresiva salía al revés (x2 a los chicos).
+   Se detecta por la letra (J/Y = juvenil, C/K = niño) o, sin letra, por contenido: si la curva llega a 10–13.5 y
+   además trae talles de hasta 3.5, el tramo chico corrido desde el mínimo (pasos de hasta 1.5) es juvenil.
+   La escala AR (17…34) no entra nunca acá: no tiene talles de 3.5 para abajo. */
+function ordenTallesNino(labels){
+  const info=labels.map(t=>{ const s=String(t==null?'':t).trim().toUpperCase(); const n=parseFloat(s.replace(/^[A-Z]+/,'').replace(',','.'));
+    return { t, n, juv:/^[JY]|\d\s*Y$/.test(s), nin:/^[CK]|\d\s*[CK]$/.test(s) }; });
+  const nums=info.filter(x=>isFinite(x.n));
+  if(nums.length && !nums.some(x=>x.juv) && Math.max(...nums.map(x=>x.n))>=10 && Math.max(...nums.map(x=>x.n))<=13.5 && Math.min(...nums.map(x=>x.n))<=3.5){
+    const ch=nums.filter(x=>!x.nin && x.n<8).sort((a,b)=>a.n-b.n);
+    for(let i=0;i<ch.length;i++){ if(i>0 && ch[i].n-ch[i-1].n>1.5) break; ch[i].juv=true; }
+  }
+  const rk=x=>isFinite(x.n) ? (x.juv ? x.n+14 : x.n) : rankTalle(x.t);
+  return info.slice().sort((a,b)=>(rk(a)-rk(b))||cmp(a.t,b.t)).map(x=>x.t);
+}
 function repCentralesTabla(){ return Object.assign({}, CENTRALES_DEF, state.rep.centrales||{}); }
 function repCentrales(a, labels){
   const G=repGrupo(a);
   if(!G.fam) return { G, set:new Set(), regla:'accesorios: 1 unidad por talle' };
+  if(veranoTranquilo(a, G)){
+    const per={}; labels.forEach(t=>{ per[t]=1; });
+    return { G, set:new Set(), per, tranquila:true, regla:'calzado de verano fuera de temporada (marzo a septiembre): curva tranquila, x1 por talle y sin profundidad' };
+  }
   const tabla=repCentralesTabla(); const mk=G.key+'|'+normMarca(a.marca);
   // calzado unisex (Juli 14/09/2026): si uno de los dos subrubros no tiene sus centrales completos (menos de 2 de
   // los 3), el artículo se toma como del otro: p.ej. MR530CK con 5.5/6/6.5 de dama y solo el 9 de hombre = dama,
@@ -3628,7 +3661,9 @@ function repCentrales(a, labels){
     if(set.size) return { G, set, regla:'talles centrales de '+(GRUPO_LBL[G.key]||G.key)+(tabla[mk]?' ('+a.marca+')':'') };
   }
   // sin regla, o el artículo no trae ninguno de esos talles: el/los del medio de su curva
-  const ord=labels.slice().sort(cmpTalle); if(ord.length<3) return { G, set:new Set(), regla:'curva corta: 1 por talle' };
+  const esNinoCalz = G.fam==='calz' && (G.g==='nino' || G.g==='infante');
+  const ord = esNinoCalz ? ordenTallesNino(labels) : labels.slice().sort(cmpTalle);
+  if(ord.length<3) return { G, set:new Set(), regla:'curva corta: 1 por talle' };
   const set=new Set([ord[Math.floor((ord.length-1)/2)], ord[Math.floor(ord.length/2)]]);
   // calzado niño/infante (Juli 17/09/2026): curva «progresiva» = la mitad más chica x1 y la más grande x2
   // (en 8 talles: los primeros 4 x1 y los últimos 4 x2; impar: la mitad más grande lleva el talle del medio),
@@ -4082,8 +4117,11 @@ function repCalcular(){
     const cands=repCandidatos(a, C.G, destA);
     // Niño y fútbol se reparten enteros (Juli 17/09/2026): no se deja curva en el depósito y el
     // excedente se sigue repartiendo, como hace el depósito a mano
-    const todoP = P.todoNinoFutbol!==false && repTodoAlSalon(a, C.G);
-    const out=repRepartirArt(tl.perRem, cands, C.set, todoP ? Object.assign({}, P, { excedente:true, reserva:0 }) : P, C.per);
+    const todoP = !C.tranquila && P.todoNinoFutbol!==false && repTodoAlSalon(a, C.G);
+    // verano fuera de temporada: sin curva profunda ni excedente, aunque sea de niño
+    const Pa = C.tranquila ? Object.assign({}, P, { criterio:'abrir', excedente:false }) : todoP ? Object.assign({}, P, { excedente:true, reserva:0 }) : P;
+    const out=repRepartirArt(tl.perRem, cands, C.set, Pa, C.per);
+    if(C.tranquila) a.tranquila = true;
     if(todoP) a.todoAlSalon = true;
     Object.assign(a, { estimado:tl.estimado, faltan:tl.faltan, centrales:[...C.set], regla:C.regla, grupo:C.G.key });
     if(a.diasDepo==null && reserva){    // hace cuántos días entró lo que hay hoy en el depósito
@@ -4369,6 +4407,7 @@ function repParamHtml(){
     +fsel('Reserva mínima','rpRMin',op([[0,'sin mínimo'],[4,'4 u.'],[6,'6 u.'],[8,'8 u.'],[10,'10 u.'],[12,'12 u.']],P.reservaMin==null?6:P.reservaMin))
     +'</div><div class="frow"><div class="fgrupo"><span class="glab">Reglas</span>'
       +repChk('rpExc',P.excedente,'Repartir el excedente','Lo que sobra después de las curvas (sin contar la curva que queda en el depósito) se sigue repartiendo de a una unidad por talle, en orden de prioridad. Destildado, el excedente queda en el depósito.')
+      +repChk('rpVerano',P.veranoCalendario!==false,'Calzado de verano según el calendario','De octubre a febrero el calzado de verano (sandalias, ojotas, Crocs) se reparte con la curva de siempre. De marzo a septiembre la temporada todavía no arrancó: va x1 por talle, sin centrales ni profundidad, y lo que sobra queda en el depósito.'+(VERANO_MESES.includes(new Date().getMonth())?' Hoy: en temporada (curva de siempre).':' Hoy: fuera de temporada (curva tranquila).'))
       +repChk('rpTodoNF',P.todoNinoFutbol!==false,'Niño y fútbol: repartir todo','En los artículos de niño y de fútbol no queda curva en el depósito y el excedente se reparte entero, como lo hace el depósito a mano. Destildado, siguen las reglas generales de reserva y excedente.')
       +repChk('rpReing',P.reingresoProf!==false,'A la que ya lo tiene y lo vende, la curva entera','Con el stock por sucursal cargado: si la sucursal ya tiene el artículo y lo vende (con el archivo de ventas de la Barrida, que haya vendido ese artículo; sin él, que venda la marca en el rubro), su stock no le achica la curva. Destildado, a la que ya lo tiene solo se le completa lo que le falta.')
       +repChk('rpDisc',P.respetarDisc,'Respetar las disciplinas de la asignación','Si en Asignación de Marcas la marca tiene disciplinas (p. ej. «running, casual»), solo recibe los artículos de esas disciplinas.')
@@ -4518,7 +4557,7 @@ function wireReparto(){
   on('rpNino','onchange',e=>{ S.param.ninoCurva=e.target.value; repRecalc(); });
   on('rpCrit','onchange',e=>{ S.param.criterio=e.target.value; repRecalc(); });
   const bool=(id,k)=>on(id,'onchange',e=>{ S.param[k]=e.target.checked; repRecalc(); });
-  bool('rpExc','excedente'); bool('rpTodoNF','todoNinoFutbol'); bool('rpReing','reingresoProf'); bool('rpDisc','respetarDisc'); bool('rpMem','memoria'); bool('rpVar','excluirVarios'); bool('rpHuer','huerfanos');
+  bool('rpExc','excedente'); bool('rpTodoNF','todoNinoFutbol'); bool('rpVerano','veranoCalendario'); bool('rpReing','reingresoProf'); bool('rpDisc','respetarDisc'); bool('rpMem','memoria'); bool('rpVar','excluirVarios'); bool('rpHuer','huerfanos');
   // el corte en días es el mismo para las dos pestañas (lo guarda barrida_prefs)
   on('rpDias','onchange',e=>{ const n=parseInt(e.target.value,10);
     state.filtros.diasNuevo = (isFinite(n)&&n>0) ? Math.min(365,n) : 10; state.filtros.sinNuevos=true;

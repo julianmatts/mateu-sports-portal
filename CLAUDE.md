@@ -1851,6 +1851,19 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     medio), **chata** = x1 en todos. `repCentrales` devuelve `per` (unidades por talle) y `repRepartirArt(…, per)`
     lo usa como base y tope (sin 3.ª unidad); «Abrir a más sucursales» también. En la Barrida (`centralesDe`)
     niño sigue con los talles del medio.
+  - **Calzado de verano según el calendario (17/09/2026, informe Crocs automático vs. manual)**: Nehuen repartió
+    Crocs en septiembre con menos profundidad y sin centrales porque la temporada recién arranca. Tilde «Calzado de
+    verano según el calendario» (`param.veranoCalendario`, default sí; `veranoTranquilo` / `esCalzadoVerano`:
+    disciplina o tipo con verano/sandalia/ojota/chinela): **de octubre a febrero** (`VERANO_MESES`) va la curva de
+    siempre; **de marzo a septiembre** `repCentrales` devuelve `tranquila:true` con `per` = x1 en todos los talles, sin
+    centrales ni 3.ª unidad, y el reparto corre con `criterio:'abrir'` y `excedente:false` (tampoco aplica «Niño y
+    fútbol: repartir todo»): lo que sobra queda en el depósito. Manda la fecha del día en que se arma el reparto.
+    **Orden de talles de niño en escala US** (`ordenTallesNino`, mismo informe): la escala infantil da la vuelta
+    (C6·C8·C10·C12 y después J1·J2·J3; 10K…13.5K y después 1Y…); ordenados por número, la curva progresiva daba x2 a
+    los chicos. Se detecta por letra (J/Y vs. C/K) o por contenido (curva que llega a 10–13.5 y trae talles ≤ 3.5: el
+    tramo chico corrido desde el mínimo es juvenil). Pendiente del mismo informe (sin decidir): el manual no le mandó
+    Crocs niño a Diagonal 80 ni a Aurelius Calle 10, y priorizó a Ecommerce y Outlet Av. 44, que en el automático
+    quedaron últimos.
   - **Criterio «abrir a más locales» / «mayor profundidad» (17/09/2026, Juli: no siempre se usa el mismo)**:
     select «Criterio» (`param.criterio`, default `abrir` = lo de siempre: curva base a todas, después la reserva y
     la 3.ª unidad). `profundidad`: se aparta primero la reserva y cada sucursal, en orden de prioridad, recibe la
