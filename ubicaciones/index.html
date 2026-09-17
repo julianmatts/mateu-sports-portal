@@ -3923,6 +3923,78 @@ function colEanPorContenido(rows, filaHdr, usadas){
   return -1;
 }
 
+/* Columnas que la planilla de la sucursal trae SIN rótulo (la de Berisso solo
+   rotula «Articulo», «STOCK» y «UBICACIÓN»): se reconocen por su contenido.
+   Todas miran los valores NO vacíos, no el total de filas. */
+function valsDeCol(rows, filaHdr, j, tope){
+  const out = [];
+  for(let i=Math.max(filaHdr,-1)+1; i<rows.length && out.length<(tope||400); i++){
+    const v = String((rows[i]||[])[j]==null?'':(rows[i]||[])[j]).trim();
+    // los errores de fórmula del Excel (#N/A del BUSCARV que no encontró el
+    // Id.item) no cuentan: si contaran, la columna dejaba de parecer lo que es
+    if(v && !esNA(v) && !/^#[A-Za-zÁÉÍÓÚ¡]/.test(v)) out.push(v);
+  }
+  return out;
+}
+function nColsDe(rows){ return Math.max.apply(null, rows.slice(0,400).map(r=>(r||[]).length).concat([0])); }
+
+/* UBICACIÓN: puede estar llena en pocas filas (solo los artículos ubicados), así
+   que NO sirve exigir que la columna esté llena; se mira qué proporción de lo que
+   trae parece "E20-M26" / "EST 3 - MOD 37". */
+function colUbiPorContenido(rows, filaHdr, usadas){
+  let mejor=-1, mejorN=0;
+  for(let j=0, n=nColsDe(rows); j<n; j++){
+    if((usadas||[]).indexOf(j)>=0) continue;
+    const vals = valsDeCol(rows, filaHdr, j);
+    if(vals.length<3) continue;
+    const ok = vals.filter(v=>parseUbicacionTexto(v).length).length;
+    if(ok>=3 && ok/vals.length>=0.8 && ok>mejorN){ mejor=j; mejorN=ok; }
+  }
+  return mejor;
+}
+// DESCRIPCIÓN: texto con espacios (la más larga gana)
+function colDescPorContenido(rows, filaHdr, usadas){
+  let mejor=-1, mejorLen=0;
+  for(let j=0, n=nColsDe(rows); j<n; j++){
+    if((usadas||[]).indexOf(j)>=0) continue;
+    const vals = valsDeCol(rows, filaHdr, j);
+    if(vals.length<5) continue;
+    const nums = vals.filter(v=>/^-?\d+(?:[.,]\d+)?$/.test(v)).length/vals.length;
+    const esp  = vals.filter(v=>v.indexOf(' ')>=0).length/vals.length;
+    if(nums>=0.3 || esp<0.4) continue;
+    const len = vals.reduce((a,v)=>a+v.length,0)/vals.length;
+    if(len>mejorLen){ mejor=j; mejorLen=len; }
+  }
+  return mejor;
+}
+// ¿la columna es el Id.item del sistema? enteros grandes, sin letras
+function columnaEsIdItem(rows, filaHdr, j){
+  const vals = valsDeCol(rows, filaHdr, j, 300);
+  if(vals.length<5) return false;
+  const ent = vals.filter(v=>/^\d+(\.0+)?$/.test(v));
+  if(ent.length/vals.length<0.9) return false;
+  const avg = ent.reduce((a,v)=>a+parseFloat(v),0)/ent.length;
+  return avg>=1000;
+}
+/* CÓDIGO de marca (SKU): alfanumérico con letras Y dígitos, sin espacios y casi
+   todos distintos ("HAV70970001", "NIKSX4120401"). Se usa solo para corregir una
+   columna de código que en realidad trae el Id.item. */
+function colCodMarcaPorContenido(rows, filaHdr, usadas){
+  for(let j=0, n=nColsDe(rows); j<n; j++){
+    if((usadas||[]).indexOf(j)>=0) continue;
+    const vals = valsDeCol(rows, filaHdr, j);
+    if(vals.length<5) continue;
+    const cod = vals.filter(v=>/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(v)).length/vals.length;
+    const letras = vals.filter(v=>/[A-Za-z]/.test(v)).length/vals.length;
+    const nums = vals.filter(v=>/^-?\d+(?:[.,]\d+)?$/.test(v)).length/vals.length;
+    if(cod<0.9 || letras<0.6 || nums>=0.5) continue;
+    if(new Set(vals).size/vals.length<0.7) continue;          // marca/rubro repiten valores
+    if(vals.reduce((a,v)=>a+v.length,0)/vals.length<4) continue;
+    return j;
+  }
+  return -1;
+}
+
 function detectarEncabezado(rows){
   for(let i=0; i<Math.min(rows.length, 25); i++){
     const row = rows[i]||[];
@@ -3945,10 +4017,24 @@ function detectarEncabezado(rows){
       else iEan = -1;   // el encabezado dice «código de barras» pero la columna trae otra cosa (en la planilla de Drive es el SKU)
     }
     if(iEan<0) iEan = colEanPorContenido(rows, i, [iCod,iDesc,iStk,iUbi,iTalle]);
-    if(iTalle<0 && iCod>=0 && iStk>=0) iTalle = colTallePorContenido(rows, i, [iCod,iDesc,iStk,iUbi,iEan]);
+    /* «Articulo» rotula el código en unos exports y el Id.item en otros (la
+       planilla de la sucursal: «Articulo» = 66655). Si esa columna trae números
+       del sistema y hay otra con el código de marca, el código es esa —la clave
+       del módulo es el SKU— y la numérica queda como Id.item. Si no, se perdían
+       todas las filas sin Id.item (383 en la planilla de Berisso). */
+    let iArt = -1;
+    row.forEach((c,j)=>{ if(iArt<0 && j!==iCod && /^id\.?\s*item/i.test(String(c||'').trim())) iArt=j; });
+    if(iArt<0 && iCod>=0 && iCod!==iEan && columnaEsIdItem(rows, i, iCod)){
+      const cm = colCodMarcaPorContenido(rows, i, [iCod,iDesc,iStk,iUbi,iTalle,iEan]);
+      if(cm>=0){ iArt = iCod; iCod = cm; }
+    }
+    // descripción y ubicación pueden venir SIN rótulo: se buscan por contenido
+    if(iUbi<0)  iUbi  = colUbiPorContenido(rows, i, [iCod,iDesc,iStk,iTalle,iEan,iArt]);
+    if(iDesc<0) iDesc = colDescPorContenido(rows, i, [iCod,iStk,iUbi,iTalle,iEan,iArt]);
+    if(iTalle<0 && iCod>=0 && iStk>=0) iTalle = colTallePorContenido(rows, i, [iCod,iDesc,iStk,iUbi,iEan,iArt]);
     // reporte que identifica los artículos por EAN (sin columna de código del sistema)
     if(iCod<0 && iEan>=0 && iStk>=0) iCod = iEan;
-    if(iCod>=0 && iStk>=0) return {fila:i, iCod, iDesc, iStk, iUbi, iTalle, iEan};
+    if(iCod>=0 && iStk>=0) return {fila:i, iCod, iDesc, iStk, iUbi, iTalle, iEan, iArt};
   }
   return null;
 }
@@ -3980,17 +4066,28 @@ function detectarColumnasDatos(rows){
   const pick=(filtro,orden)=>{ const c=st.filter(x=>!usados.has(x.j)).filter(filtro).sort(orden)[0];
     if(c) usados.add(c.j); return c?c.j:-1; };
   const iDesc = pick(x=>x.numShare<0.3 && x.spaceShare>=0.4, (a,b)=>b.avgLen-a.avgLen);
-  const iUbi  = pick(x=>x.ubiShare>=0.5, (a,b)=>b.ubiShare-a.ubiShare);
+  // la ubicación solo la traen los artículos ubicados (en Berisso, 1.215 de 2.403
+  // filas): se busca por contenido, porque el filtro de "columna casi vacía" de
+  // arriba la dejaba afuera y las ubicaciones no se importaban nunca
+  const iUbi = colUbiPorContenido(sample, -1, Array.from(usados));
+  if(iUbi>=0) usados.add(iUbi);
   // código de barras: columna con números de 12-14 dígitos (EAN-13/UPC); va antes que Id.item para que no la confunda
   const iEan = pick(x=>x.eanShare>=0.7, (a,b)=>b.eanShare-a.eanShare);
-  // talle (export abierto por talle): antes que stock y código, que si no se lo quedan
-  const iTalle = colTallePorContenido(sample, -1, Array.from(usados).concat(st.filter(x=>x.eanShare>=0.5).map(x=>x.j)));
+  // el código va primero (es de texto, no compite con stock/talle)
+  const iCod = pick(x=>x.numShare<0.9, (a,b)=>(a.spaceShare-b.spaceShare) || (a.avgLen-b.avgLen));
+  /* El talle solo se busca si el archivo trae VARIAS filas por artículo: si cada
+     código aparece una vez, no puede venir abierto por talle y la heurística se
+     terminaba quedando con la columna de stock (hoja «STOCK» de la planilla). */
+  const codVals = iCod>=0 ? sample.map(r=>String(r[iCod]==null?'':r[iCod]).trim()).filter(v=>v!=='') : [];
+  const repetidos = codVals.length - new Set(codVals).size;
+  const iTalle = repetidos >= sample.length*0.2
+    ? colTallePorContenido(sample, -1, Array.from(usados).concat(st.filter(x=>x.eanShare>=0.5).map(x=>x.j)))
+    : -1;
   if(iTalle>=0) usados.add(iTalle);
   const numCols = st.filter(x=>!usados.has(x.j) && x.numShare>=0.9).sort((a,b)=>a.avg-b.avg);
   const iStk = numCols.length ? numCols[0].j : -1; if(iStk>=0) usados.add(iStk);
   const iArt = (numCols.length>1 && numCols[numCols.length-1].avg>=1000) ? numCols[numCols.length-1].j : -1;
   if(iArt>=0) usados.add(iArt);
-  const iCod = pick(x=>x.numShare<0.9, (a,b)=>(a.spaceShare-b.spaceShare) || (a.avgLen-b.avgLen));
   if(iCod<0 || iStk<0) return null;
   return {fila:-1, iCod, iDesc, iStk, iUbi, iArt, iEan, iTalle};
 }
@@ -4156,6 +4253,21 @@ function abrirModalDrive(wb){
   });
 }
 
+/* ¿el archivo trae, además de la hoja de ubicaciones, otra con el stock completo
+   del día? (la planilla de la sucursal son dos hojas: «UBICACION» + «STOCK», igual
+   que «Base de Datos» en el modelo por casilleros). Se reconoce por contenido: una
+   hoja distinta de la elegida, con código y stock y SIN columna de ubicación. */
+function hojaStockExtra(wb, hojaElegida){
+  for(const n of wb.SheetNames){
+    if(n===hojaElegida) continue;
+    const rows = filasDe(wb, n);
+    if(rows.length<5) continue;
+    const det = detectarEncabezado(rows) || detectarColumnasDatos(rows);
+    if(det && det.iCod>=0 && det.iStk>=0 && !(det.iUbi>=0)) return {nombre:n, rows, det};
+  }
+  return null;
+}
+
 function abrirModalMapeo(wb, hojaElegida){
   const hojas = wb.SheetNames;
   const rowsCache = wb.__rowsCache = wb.__rowsCache || {};
@@ -4171,6 +4283,8 @@ function abrirModalMapeo(wb, hojaElegida){
   const rows = rowsDe(hoja);
   // 1º encabezados con nombre; 2º sin encabezados, columnas por contenido (fila:-1)
   const det = detectarEncabezado(rows) || detectarColumnasDatos(rows) || {fila:0, iCod:-1, iDesc:-1, iStk:-1, iUbi:-1};
+  // la otra hoja del archivo puede ser el stock completo del día (se suma, opcional)
+  const hojaStk = hojaStockExtra(wb, hoja);
   // reporte que identifica los artículos por código de barras: hay que resolver
   // cada EAN al artículo antes de agrupar (cada talle tiene el suyo)
   let resolverEan = true;
@@ -4211,6 +4325,11 @@ function abrirModalMapeo(wb, hojaElegida){
       '<div class="hint" style="margin-top:4px">El EAN/UPC de la etiqueta de la marca (13 dígitos, uno por talle). Con él, escanear la etiqueta encuentra el artículo. Los códigos se suman a los que ya tiene el artículo (no se pierden los vinculados a mano) y se comparten con las demás sucursales.</div></div>'+
     '<div class="fld"><label>Columna ubicación (opcional)</label><span id="wrapUbi"></span>'+
       '<div class="hint" style="margin-top:4px">Si se importa, solo se aplica a artículos que todavía no tienen ninguna ubicación asignada en la app. Crea las estanterías/módulos que falten.</div></div>'+
+    (hojaStk
+      ? '<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:10px 0;cursor:pointer">'+
+          '<input type="checkbox" id="mapStkExtra" checked style="margin-top:2px;accent-color:var(--navy)">'+
+          'Sumar también el stock completo de la hoja «'+esc(hojaStk.nombre)+'» (es el stock del día: pisa el de esta hoja y los artículos que no estén acá quedan en SIN UBICAR)</label>'
+      : '')+
     '<div id="mapEanBox"></div>'+
     '<div id="mapPreview"></div>'+
     '<div class="modal-footer">'+
@@ -4221,6 +4340,7 @@ function abrirModalMapeo(wb, hojaElegida){
   const selHoja = $('mapHoja');
   if(selHoja) selHoja.addEventListener('change', ()=> abrirModalMapeo(wb, selHoja.value));
   if($('mapDrive')) $('mapDrive').addEventListener('click', e=>{ e.preventDefault(); abrirModalDrive(wb); });
+  if($('mapStkExtra')) $('mapStkExtra').addEventListener('change', preview);
 
   function refrescarSelects(iCod,iDesc,iStk,iUbi,iArt,iTalle,iEan){
     $('wrapCod').innerHTML  = selCol('mapCod',  iCod);
@@ -4247,6 +4367,10 @@ function abrirModalMapeo(wb, hojaElegida){
     // tiene su propio EAN: sin resolverlos, el mismo artículo entraría N veces
     const codEsEan = columnaEsEan(rows, f, iCod);
     const usarIdx = codEsEan && resolverEan && idxEan==='listo';
+    /* Con ubicación y sin talle, el artículo guardado en dos módulos viene en dos
+       filas con el MISMO total (planilla de la sucursal): sumarlas duplicaba el
+       stock. Con talle —o sin ubicación— cada fila es una parte y sí se suma. */
+    const sumarStock = iTalle>=0 || iUbi<0;
     const porCodigo = {};
     let filasLeidas = 0, eansLeidos = 0, eanResueltos = 0, eanSinVincular = 0;
     const ejSinVincular = [];
@@ -4275,7 +4399,8 @@ function abrirModalMapeo(wb, hojaElegida){
       // agrupar por código (si el reporte viene abierto por talle, se suma)
       if(!porCodigo[codigo]) porCodigo[codigo] = {codigo, descripcion:desc, stock:0, ubis:[]};
       if(!porCodigo[codigo].descripcion && desc) porCodigo[codigo].descripcion = desc;
-      porCodigo[codigo].stock += isNaN(stock)?0:stock;
+      const st = isNaN(stock)?0:stock;
+      porCodigo[codigo].stock = sumarStock ? porCodigo[codigo].stock + st : Math.max(porCodigo[codigo].stock, st);
       // con columna talle mapeada, además del total se guarda el desglose
       if(iTalle>=0){
         const tl = nrmTalle(r[iTalle]);
@@ -4302,13 +4427,44 @@ function abrirModalMapeo(wb, hojaElegida){
         }
       }
     }
-    return {lista:Object.values(porCodigo), filasLeidas, conUbi:iUbi>=0, conTalle:iTalle>=0,
+    /* Hoja de stock completo del día (la otra hoja de la planilla): pisa el stock
+       de la hoja de ubicaciones y agrega los artículos que todavía no están
+       ubicados —quedan en SIN UBICAR—, igual que «Base de Datos» en el modelo
+       por casilleros. */
+    let extra = null;
+    if(hojaStk && $('mapStkExtra') && $('mapStkExtra').checked){
+      const d = hojaStk.det, rs = hojaStk.rows;
+      const pisados = new Set(); let nuevosExtra = 0, filasExtra = 0;
+      for(let i=Math.max(d.fila,-1)+1; i<rs.length; i++){
+        const r = rs[i]||[];
+        const cod = String(r[d.iCod]===0?'0':(r[d.iCod]||'')).trim();
+        if(!cod) continue;
+        const n = parseFloat(String(r[d.iStk]).replace(',','.'));
+        const st = isNaN(n)?0:n;
+        filasExtra++;
+        if(!porCodigo[cod]){ porCodigo[cod] = {codigo:cod, descripcion:'', stock:0, ubis:[]}; nuevosExtra++; }
+        const a = porCodigo[cod];
+        // el stock del día manda: la primera fila de esta hoja reemplaza, las
+        // siguientes del mismo código suman (por si viene abierto por talle)
+        a.stock = pisados.has(cod) ? a.stock + st : st;
+        pisados.add(cod);
+        if(!a.descripcion && d.iDesc>=0){
+          const dv = String(r[d.iDesc]==null?'':r[d.iDesc]).trim();
+          if(!esDescBasura(dv, cod)) a.descripcion = dv;
+        }
+        if(!a.articulo && d.iArt>=0){
+          const av = String(r[d.iArt]==null?'':r[d.iArt]).trim(); if(av) a.articulo = av;
+        }
+      }
+      extra = {nombre:hojaStk.nombre, filas:filasExtra, nuevos:nuevosExtra};
+    }
+    return {lista:Object.values(porCodigo), filasLeidas, conUbi:iUbi>=0, conTalle:iTalle>=0, sumarStock, extra,
             conEan:(iEan>=0||codEsEan), codEsEan, eansLeidos, eanResueltos, eanSinVincular, ejSinVincular};
   }
 
   function preview(){
     const P = parsearConMapeo();
-    const {lista, filasLeidas, conUbi, conTalle, conEan, codEsEan} = P;
+    const {lista, filasLeidas, conUbi, conTalle, conEan, codEsEan, extra} = P;
     const ubicados = conUbi ? lista.filter(a=>a.ubis.length).length : 0;
     const conCodBarras = conEan ? lista.filter(a=>a.eans).length : 0;
     // el archivo identifica por EAN: se ofrece resolverlos contra lo ya conocido
@@ -4339,7 +4495,8 @@ function abrirModalMapeo(wb, hojaElegida){
     $('mapPreview').innerHTML = !lista.length
       ? '<div class="hint" style="color:var(--red)">No se leyó ningún artículo con este mapeo.</div>'
       : avisoDesc+'<div class="hint" style="margin:4px 0">'+filasLeidas+' filas leídas → <b>'+lista.length+' artículos</b>'+
-          (filasLeidas>lista.length?' (agrupados por código, stock sumado)':'')+
+          (filasLeidas>lista.length?(P.sumarStock?' (agrupados por código, stock sumado)':' (agrupados por código; el artículo repetido en dos módulos NO suma stock)'):'')+
+          (extra?' · <b>+'+extra.nuevos+'</b> de la hoja «'+esc(extra.nombre)+'» ('+extra.filas+' filas; el stock del día pisa al de esta hoja)':'')+
           (conTalle?' · <b>abierto por talle</b>':'')+
           (!conTalle && filasLeidas>lista.length*1.3?'<div style="margin-top:4px;color:var(--red)">⚠ El archivo trae varias filas por artículo (parece abierto por talle) pero no hay columna de talle elegida: elegila en «Columna talle» para que la tarjeta muestre el stock de cada talle.</div>':'')+
           (conEan?' · <b>'+conCodBarras+'</b> con código de barras ('+P.eansLeidos+' en total)':'')+
@@ -4394,6 +4551,20 @@ async function sincronizarStock(lista){
   const memoPatch = {};
   let recuperadas = 0;
   const now = Date.now();
+  /* Cambio de clave (17/09/2026, Berisso): la sucursal venía cargando con el
+     Id.item como código —la planilla rotula «Articulo» esa columna— y ahora el
+     archivo se lee bien, con el SKU de marca. Si un artículo entra con su SKU y
+     su Id.item es la clave de uno guardado, es el MISMO: hereda ubicación y fecha
+     de alta en vez de entrar como nuevo, y el viejo no cuenta como eliminado. */
+  const clavesNuevas = new Set(lista.map(a=>fbKey(a.codigo)));
+  const porIdItem = {};
+  for(const k in prev){
+    for(const id of [String(prev[k].articulo==null?'':prev[k].articulo).trim(), String(k).trim()]){
+      if(!id || clavesNuevas.has(fbKey(id))) continue;   // esa clave sigue viniendo: no cambió de clave
+      porIdItem[id] = (id in porIdItem && porIdItem[id]!==k) ? '' : k;   // Id.item repetido: no se arriesga
+    }
+  }
+  const migradas = new Set();
   const out = {};
   const nuevos = [], eliminados = [];
   let actualizados = 0;
@@ -4402,7 +4573,11 @@ async function sincronizarStock(lista){
 
   for(const art of lista){
     const key = fbKey(art.codigo);
-    const p = prev[key];
+    let p = prev[key];
+    if(!p && art.articulo){
+      const kv = porIdItem[String(art.articulo).trim()];
+      if(kv && prev[kv] && !migradas.has(kv)){ p = prev[kv]; migradas.add(kv); }
+    }
     // si el Excel trae la descripción vacía o basura (= el mismo código, el Id.item
     // o cualquier número pelado), se conserva la descripción buena que ya estaba guardada
     const descExcel = esDescBasura(art.descripcion, art.codigo) ? '' : art.descripcion;
@@ -4451,7 +4626,7 @@ async function sincronizarStock(lista){
     out[key] = rec;
   }
   for(const key in prev){
-    if(out[key]) continue;
+    if(out[key] || migradas.has(key)) continue;
     eliminados.push(prev[key]);
     const ub = prev[key].ubicaciones;
     if(ub && Object.keys(ub).length) memoPatch[key] = {ubicaciones:ub, fechaAlta:prev[key].fechaAlta||null, codigo:prev[key].codigo||key, ts:now};
