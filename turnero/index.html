@@ -70,6 +70,9 @@ img,svg{max-width:100%}
 .col-head{font-family:var(--font-c);font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:center;padding:10px 4px;border-bottom:2px solid var(--border);background:#fafbfe;line-height:1.2}
 .col-head .dn{display:block;font-family:var(--font-d);font-size:22px;letter-spacing:.5px;color:var(--navy);margin-top:1px}
 .col-head .dsub{display:block;font-size:10px;letter-spacing:.3px;text-transform:none;margin-top:2px;opacity:.85;font-weight:500}
+/* Marcas con día fijo de entrega (por volumen) — es una referencia, no un bloqueo */
+.col-head .dfijos{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;margin-top:4px}
+.dfijo-chip{font-family:var(--font-c);font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;border-radius:99px;padding:1px 7px;line-height:1.5;border:1px solid;white-space:nowrap}
 .col-head.today{color:var(--red);background:#fff2f2;border-bottom-color:var(--red)}
 .col-head.today .dn{color:var(--red)}
 .col-head.holiday{color:var(--warn);background:#fff8ec}
@@ -157,6 +160,20 @@ img,svg{max-width:100%}
 .prov-email svg,.prov-email img{flex:0 0 auto}
 .prov-email .nomail{color:var(--muted-light);font-style:italic}
 .prov-count{font-family:var(--font-c);font-size:12px;font-weight:600;letter-spacing:.4px;color:var(--navy);white-space:nowrap;background:var(--off);border:1px solid var(--border);border-radius:99px;padding:3px 10px}
+.prov-dias{font-family:var(--font-c);font-size:12px;font-weight:600;letter-spacing:.4px;white-space:nowrap;border-radius:99px;padding:3px 10px;border:1px solid var(--border);background:#fff;color:var(--muted)}
+.prov-dias.on{background:#eef3ff;border-color:#c9d8f7;color:var(--navy-mid)}
+.prov-dias.on b{color:var(--navy);font-weight:700}
+/* Selector de días fijos (modal de proveedor) */
+.dias-pick{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.dia-btn{font-family:var(--font-c);font-size:13px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:8px 12px;border-radius:9px;border:1px solid var(--border);background:#fafbfe;color:var(--muted);cursor:pointer;transition:all .14s}
+.dia-btn:hover{border-color:var(--navy-mid);color:var(--navy)}
+.dia-btn.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.field-help{font-family:var(--font-b);font-size:12px;color:var(--muted);line-height:1.45;margin:-4px 0 14px}
+/* Aviso del día fijo dentro del modal del turno */
+.dia-aviso{font-family:var(--font-b);font-size:12.5px;line-height:1.45;border-radius:9px;padding:8px 11px;margin:-4px 0 12px;border-left:3px solid}
+.dia-aviso.ok{background:#f0f8f2;border-color:var(--ok);color:#14532d}
+.dia-aviso.warn{background:#fff8ec;border-color:var(--warn);color:#7a3d00}
+.dia-aviso.nota{background:#fafbfe;border-color:var(--muted-light);color:var(--muted)}
 .prov-count.zero{color:var(--muted-light);background:#fff}
 .del-prov-btn{background:transparent;border:none;cursor:pointer;color:var(--muted-light);font-size:18px;padding:0 4px;line-height:1;transition:color .12s}
 .del-prov-btn:hover{color:var(--red)}
@@ -235,12 +252,40 @@ const fbApp=initializeApp(firebaseConfig);
 const db=getDatabase(fbApp);
 
 const DEFAULT_PROVIDERS=[
-  {id:'adidas',name:'Adidas',email:'',color:'#1a2a6c',bg:'#e8eeff',text:'#1a2a6c'},
-  {id:'puma',name:'Puma',email:'',color:'#1a6c2a',bg:'#e8f5ee',text:'#1a4a20'},
-  {id:'nike',name:'Nike',email:'',color:'#cc1122',bg:'#ffeef0',text:'#8a0a16'},
+  {id:'adidas',name:'Adidas',email:'',color:'#1a2a6c',bg:'#e8eeff',text:'#1a2a6c',dias:[1,2]},
+  {id:'puma',name:'Puma',email:'',color:'#1a6c2a',bg:'#e8f5ee',text:'#1a4a20',dias:[2,4]},
+  {id:'nike',name:'Nike',email:'',color:'#cc1122',bg:'#ffeef0',text:'#8a0a16',dias:[3]},
   {id:'wilson',name:'Wilson',email:'',color:'#b06000',bg:'#fff4e0',text:'#7a3d00'},
   {id:'topper',name:'Topper',email:'',color:'#5a1a8c',bg:'#f0e8ff',text:'#3a0a6a'},
 ];
+
+/* ===== Días fijos de entrega =====
+   Por volumen de entregas, tres marcas tienen día asignado. NO es exclusivo:
+   cualquier marca puede entregar cualquier día; esto ordena la semana y se
+   muestra como referencia en la grilla y al asignar el turno.
+   1=lunes … 5=viernes. Los defaults valen para los proveedores que todavía no
+   tienen el campo `dias` cargado en Firebase (se editan desde el ✏️). */
+const DIAS_FIJOS_DEF={adidas:[1,2],nike:[3],puma:[2,4]};
+function normNombre(s){return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');}
+function diasDe(p){
+  if(!p) return [];
+  if(Array.isArray(p.dias)) return p.dias.filter(d=>d>=1&&d<=5).sort();
+  return DIAS_FIJOS_DEF[normNombre(p.name)]||[];
+}
+function diasTxt(dias){return dias.map(d=>DAYS_ES[d-1]).join(' · ');}
+/* "lunes y martes" para los textos largos */
+function diasTxtLargo(dias){
+  const d=dias.map(n=>DAYS_FULL[n-1].toLowerCase());
+  return d.length>1?d.slice(0,-1).join(', ')+' y '+d[d.length-1]:(d[0]||'');
+}
+/* Proveedores con día fijo en ese día de la semana (1=lunes) */
+function provsDelDia(diaSem){return state.providers.filter(p=>diasDe(p).includes(diaSem));}
+/* 1..5 desde una fecha YYYY-MM-DD; 0 si cae sábado o domingo */
+function diaSemDe(dateKey){
+  const[y,m,d]=dateKey.split('-').map(Number);
+  const dow=new Date(y,m-1,d).getDay();
+  return dow>=1&&dow<=5?dow:0;
+}
 const HOLIDAYS={
   '2026-01-01':'Año Nuevo','2026-02-16':'Carnaval','2026-02-17':'Carnaval',
   '2026-03-23':'Puente turístico','2026-03-24':'Día de la Memoria',
@@ -348,7 +393,12 @@ function renderGrid(){
   dates.forEach((d,i)=>{
     const key=fmtKey(d),isToday=key===todayKey,isH=!!HOLIDAYS[key],isPte=PUENTES.has(key);
     const sub=isH?'<span class="dsub">'+HOLIDAYS[key]+'</span>':isPte?'<span class="dsub">puente</span>':isToday?'<span class="dsub">hoy</span>':'';
-    html+='<div class="col-head'+(isToday?' today':isH?' holiday':'')+'">'+DAYS_ES[i]+'<span class="dn">'+d.getDate()+'</span>'+sub+'</div>';
+    // Marcas con día fijo: se muestran aunque el día sea feriado (queda claro que esa semana corren)
+    const fijos=provsDelDia(i+1);
+    const chips=fijos.length
+      ?'<span class="dfijos">'+fijos.map(p=>'<span class="dfijo-chip" style="background:'+p.bg+';color:'+p.text+';border-color:'+p.color+'" title="'+p.name+' entrega los '+diasTxtLargo(diasDe(p))+'">'+p.name+'</span>').join('')+'</span>'
+      :'';
+    html+='<div class="col-head'+(isToday?' today':isH?' holiday':'')+'">'+DAYS_ES[i]+'<span class="dn">'+d.getDate()+'</span>'+sub+chips+'</div>';
   });
   SLOTS.forEach(slot=>{
     html+='<div class="time-label">'+slot+'</div>';
@@ -390,6 +440,46 @@ function renderLoginModal(){
     +'</div></div>';
 }
 
+/* Resumen "Adidas: Lun y Mar · Nike: Mié" para la leyenda y la vista pública */
+function resumenDiasFijos(){
+  const conDia=state.providers.filter(p=>diasDe(p).length);
+  if(!conDia.length) return '';
+  const txt=conDia.map(p=>'<b>'+p.name+'</b> '+diasTxtLargo(diasDe(p))).join(' · ');
+  return '📅 Días fijos de entrega: '+txt+'. Son las marcas de mayor volumen; el resto entrega cualquier día y ellas también pueden entregar fuera de su día.';
+}
+
+/* El select del turno arranca por las marcas del día y las separa del resto */
+function provOptions(diaSem){
+  const ini=provInicialDe(diaSem);
+  const opt=p=>'<option value="'+p.id+'"'+(ini&&p.id===ini.id?' selected':'')+'>'+p.name+(p.email?' ('+p.email+')':'')+'</option>';
+  const delDia=diaSem?provsDelDia(diaSem):[];
+  if(!delDia.length) return state.providers.map(opt).join('');
+  const resto=state.providers.filter(p=>!delDia.includes(p));
+  return '<optgroup label="Día fijo · '+DAYS_FULL[diaSem-1]+'">'+delDia.map(opt).join('')+'</optgroup>'
+    +(resto.length?'<optgroup label="Otras marcas">'+resto.map(opt).join('')+'</optgroup>':'');
+}
+function provInicialDe(diaSem){
+  const delDia=diaSem?provsDelDia(diaSem):[];
+  // Sin marca fija ese día, arranca en una sin día fijo: no tiene sentido sugerir
+  // una marca que entrega otro día y abrir el modal con la advertencia puesta
+  return delDia[0]||state.providers.find(p=>!diasDe(p).length)||state.providers[0]||null;
+}
+
+/* Nota del día fijo para el proveedor elegido en el modal del turno */
+function avisoDiaHtml(prov,diaSem){
+  if(!diaSem) return '';
+  const dias=diasDe(prov);
+  const delDia=provsDelDia(diaSem);
+  if(!dias.length){
+    return delDia.length
+      ?'<div class="dia-aviso nota">El '+DAYS_FULL[diaSem-1]+' es el día fijo de <b>'+delDia.map(p=>p.name).join('</b> y <b>')+'</b>. '+(prov?prov.name:'Esta marca')+' no tiene día fijo: puede entregar igual.</div>'
+      :'<div class="dia-aviso nota">Ningún proveedor tiene día fijo el '+DAYS_FULL[diaSem-1]+'.</div>';
+  }
+  if(dias.includes(diaSem))
+    return '<div class="dia-aviso ok">✓ '+prov.name+' tiene día fijo los <b>'+diasTxtLargo(dias)+'</b>.</div>';
+  return '<div class="dia-aviso warn">⚠️ '+prov.name+' tiene día fijo los <b>'+diasTxtLargo(dias)+'</b>. Se puede asignar igual: el día fijo es una referencia, no un bloqueo.</div>';
+}
+
 function renderSlotModal(){
   const {date,slot}=state.modal,parts=date.split('-');
   const dayIdx=getWeekDates().findIndex(d=>fmtKey(d)===date);
@@ -403,7 +493,8 @@ function renderSlotModal(){
     +'</div></div>'
     +'<div class="modal-b">'
     +'<label>Proveedor</label>'
-    +'<select id="modal-prov">'+state.providers.map(p=>'<option value="'+p.id+'">'+(p.name)+(p.email?' ('+p.email+')':'')+'</option>').join('')+'</select>'
+    +'<select id="modal-prov">'+provOptions(diaSemDe(date))+'</select>'
+    +'<div id="modal-dia-aviso">'+avisoDiaHtml(provInicialDe(diaSemDe(date)),diaSemDe(date))+'</div>'
     +'<label>Nota (opcional)</label>'
     +'<textarea id="modal-note" placeholder="Ej: entrega SS26, llegada 9:30..."></textarea>'
     +'<div class="modal-actions"><button class="btn" id="modal-cancel">Cancelar</button><button class="btn btn-primary" id="modal-save">✓ Asignar turno</button></div>'
@@ -416,12 +507,15 @@ function renderEditProvModal(){
   const p=state.editProvModal;
   return '<div class="modal-overlay" id="edit-prov-overlay"><div class="modal">'
     +'<div class="modal-h"><h3>Editar proveedor</h3>'
-    +'<div class="slot-info">Actualizá el nombre o el mail de contacto</div></div>'
+    +'<div class="slot-info">Nombre, mail de contacto y días fijos de entrega</div></div>'
     +'<div class="modal-b">'
     +'<label>Nombre</label>'
     +'<input type="text" id="edit-prov-name" value="'+p.name+'">'
     +'<label>Mail de contacto</label>'
     +'<input type="email" id="edit-prov-email" placeholder="proveedor@empresa.com" value="'+(p.email||'')+'">'
+    +'<label>Días fijos de entrega</label>'
+    +'<div class="dias-pick" id="edit-prov-dias">'+DAYS_ES.map((d,i)=>'<button type="button" class="dia-btn'+(diasDe(p).includes(i+1)?' on':'')+'" data-dia="'+(i+1)+'">'+d+'</button>').join('')+'</div>'
+    +'<div class="field-help">Se ven en la grilla y al asignar el turno. No bloquean nada: la marca puede entregar otro día y las demás pueden usar ese día.</div>'
     +'<div class="modal-actions"><button class="btn" id="edit-prov-cancel">Cancelar</button><button class="btn btn-primary" id="edit-prov-save">Guardar</button></div>'
     +'</div></div></div>';
 }
@@ -453,9 +547,11 @@ function renderMain(){
       +'<div class="legend-item"><div class="legend-dot" style="background:repeating-linear-gradient(-45deg,#fff5f5 0 3px,#ffe3e3 3px 6px);border:1px solid #f3c2c2"></div>Bloqueado</div>'
       +'<div class="legend-item"><div class="legend-dot" style="background:repeating-linear-gradient(-45deg,#fffaf0 0 3px,#fff3dd 3px 6px);border:1px solid #f0d9a8"></div>Feriado</div>'
       +'<div class="legend-item"><div class="legend-dot" style="background:#fff2f2;border:1px solid #CC0000"></div>Hoy</div>'
-      +'</div>';
+      +'</div>'
+      +(resumenDiasFijos()?'<div class="public-info" style="margin-bottom:14px">'+resumenDiasFijos()+'</div>':'');
   } else {
-    html+='<div class="public-info">🟠 Feriado sin recepción &nbsp;·&nbsp; 🟢 Libre &nbsp;·&nbsp; 🔴 Ocupado / No disponible<br>Para coordinar un turno contactá al depósito.</div>';
+    html+='<div class="public-info">🟠 Feriado sin recepción &nbsp;·&nbsp; 🟢 Libre &nbsp;·&nbsp; 🔴 Ocupado / No disponible<br>Para coordinar un turno contactá al depósito.'
+      +(resumenDiasFijos()?'<br>'+resumenDiasFijos():'')+'</div>';
   }
 
   html+='<div class="week-nav">'
@@ -468,7 +564,7 @@ function renderMain(){
     +'<div class="calendar-wrap">'+renderGrid()+'</div>';
 
   if(state.isAdmin){
-    html+='<div class="sec-head"><h2>Proveedores</h2><span class="sub">'+state.providers.length+' cargados · el mail recibe el aviso del turno</span></div>'
+    html+='<div class="sec-head"><h2>Proveedores</h2><span class="sub">'+state.providers.length+' cargados · el mail recibe el aviso del turno · ✏️ para el día fijo</span></div>'
       +'<div class="prov-card"><div class="provider-list">'+state.providers.map(p=>{
         let c=0;
         Object.values(state.bookings).forEach(day=>{Object.values(day).forEach(sl=>{Object.values(sl).forEach(b=>{if(b.providerId===p.id)c++;});});});
@@ -476,6 +572,7 @@ function renderMain(){
           +'<div class="prov-dot" style="background:'+p.color+'"></div>'
           +'<span class="prov-name-full">'+p.name+'</span>'
           +'<span class="prov-email">'+(p.email?'✉️ '+p.email:'<span class="nomail">sin mail</span>')+'</span>'
+          +(()=>{const dd=diasDe(p);return '<span class="prov-dias'+(dd.length?' on':'')+'" title="Día fijo de entrega">'+(dd.length?'📅 <b>'+diasTxt(dd)+'</b>':'sin día fijo')+'</span>';})()
           +'<span class="prov-count'+(c?'':' zero')+'">'+c+' turno'+(c!==1?'s':'')+'</span>'
           +'<button class="edit-prov-btn" data-provid="'+p.id+'" title="Editar">✏️</button>'
           +'<button class="del-prov-btn" data-provid="'+p.id+'">×</button>'
@@ -566,6 +663,10 @@ function bindEvents(){
     const overlay=document.getElementById('modal-overlay');
     if(overlay){
       overlay.addEventListener('click',e=>{if(e.target===overlay){state.modal=null;render();}});
+      const provSel=document.getElementById('modal-prov'),avisoBox=document.getElementById('modal-dia-aviso');
+      if(provSel&&avisoBox) provSel.addEventListener('change',()=>{
+        avisoBox.innerHTML=avisoDiaHtml(state.providers.find(p=>p.id===provSel.value),diaSemDe(state.modal.date));
+      });
       document.getElementById('modal-cancel').addEventListener('click',()=>{state.modal=null;render();});
       document.getElementById('modal-save').addEventListener('click',async()=>{
         const {date,slot}=state.modal;
@@ -594,11 +695,16 @@ function bindEvents(){
     if(editOverlay){
       editOverlay.addEventListener('click',e=>{if(e.target===editOverlay){state.editProvModal=null;render();}});
       document.getElementById('edit-prov-cancel').addEventListener('click',()=>{state.editProvModal=null;render();});
+      document.querySelectorAll('#edit-prov-dias .dia-btn').forEach(b=>{
+        b.addEventListener('click',()=>b.classList.toggle('on'));
+      });
       document.getElementById('edit-prov-save').addEventListener('click',async()=>{
         const newName=document.getElementById('edit-prov-name').value.trim();
         const newEmail=document.getElementById('edit-prov-email').value.trim();
         if(!newName) return;
-        const updated=state.providers.map(p=>p.id===state.editProvModal.id?{...p,name:newName,email:newEmail}:p);
+        // Se guarda siempre el array (vacío = sin día fijo), así pisa el default por nombre
+        const newDias=[...document.querySelectorAll('#edit-prov-dias .dia-btn.on')].map(b=>Number(b.dataset.dia)).sort();
+        const updated=state.providers.map(p=>p.id===state.editProvModal.id?{...p,name:newName,email:newEmail,dias:newDias}:p);
         state.editProvModal=null;
         await saveProviders(updated);
       });
