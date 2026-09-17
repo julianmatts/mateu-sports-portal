@@ -1857,8 +1857,8 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     lo usa como base y tope (sin 3.ª unidad); «Abrir a más sucursales» también. En la Barrida (`centralesDe`)
     niño sigue con los talles del medio.
   - **Calzado de verano según el calendario (17/09/2026, informe Crocs automático vs. manual)**: Nehuen repartió
-    Crocs en septiembre con menos profundidad y sin centrales porque la temporada recién arranca. Tilde «Calzado de
-    verano según el calendario» (`param.veranoCalendario`, default sí; `veranoTranquilo` / `esCalzadoVerano`:
+    Crocs en septiembre con menos profundidad y sin centrales porque la temporada recién arranca. **Regla FIJA de la
+    lógica, sin tilde ni parámetro en pantalla** (Juli: no sumar un tilde por cada criterio; `veranoTranquilo` / `esCalzadoVerano`:
     disciplina o tipo con verano/sandalia/ojota/chinela): **de octubre a febrero** (`VERANO_MESES`) va la curva de
     siempre; **de marzo a septiembre** `repCentrales` devuelve `tranquila:true` con `per` = x1 en todos los talles, sin
     centrales ni 3.ª unidad, y el reparto corre con `criterio:'abrir'` y `excedente:false` (tampoco aplica «Niño y
