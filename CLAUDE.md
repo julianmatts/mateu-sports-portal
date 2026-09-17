@@ -1765,6 +1765,13 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     disciplinas»): New Balance 9060 / 530 / 740 / 204 / 1906 son exclusivos de Aurelius → Cat 1 los excluye;
     Ecommerce (que es la web de Mateu y de Aurelius) tiene New Balance asignada con columna propia: solo esos
     modelos. Atomik en Diagonal 80: solo niño (excepción de la ficha).
+  - **Reglas fijas por sucursal (17/09/2026, informe Puma automático vs. manual)** — `reglaSucursal` en
+    `barrida/`, antes que la ficha (la usan `repAsig` y `fichaBloquea`, o sea Reparto inicial, «Abrir» y la
+    Barrida): **Calle 49 no trabaja niño** (`SIN_NINO`, calzado e indumentaria); **los Aurelius (línea y
+    Calle 10) no reciben fútbol ni deportes** (`RX_AUR_DEPORTE` sobre disciplina/tipo), salvo un modelo que su
+    ficha nombre. **Aurelius Calle 10 toma la mercadería de la columna Aurelius** de la ficha (en `barrida/`
+    `fichaDe` y en `marcas/` `tipoDeSuc`/`fichaEfectiva`); de la columna Outlets solo la «Prioridad» (New
+    Balance). Para destinos por defecto y días de outlet sigue contando como outlet (`COMO_OUTLET`).
   - **Excedente del Reparto inicial**: «Repartir el excedente» viene **destildado** (prefs `v:2`): lo que sobra
     después de las curvas queda de reserva (si queda menos de `reservaMin`, se reparte igual). New Balance
     exclusivos de Aurelius: Aurelius de línea y Ecommerce prioridad 1, Aurelius 10 (columna outlet, «como local

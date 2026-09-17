@@ -691,8 +691,8 @@ function fichaPrioMS(marca, rubro){
 // marca no le va no recibe por venta, curva ni vaciado. Sin fichas cargadas no bloquea nada.
 function fichaBloquea(slug, meta){
   const G=repGrupo(meta||{});
-  if(SOLO_NINO[slug] && G.fam && G.g!=='nino' && G.g!=='infante') return 'solo niño';
   const fe=fichaDe(slug, meta&&meta.marca, G);
+  const regla=reglaSucursal(slug, meta||{}, G, fe); if(regla) return regla;
   return (fe && !fichaPasa(fe, meta, G)) ? 'ficha de la marca' : '';
 }
 // Vaciar la reserva chica (Juli 14/09/2026): después de niño y deportes, primero la sucursal con la pared de
@@ -3343,6 +3343,27 @@ const GRUPO_LBL = { 'calz-dama':'calzado dama','calz-hombre':'calzado hombre','c
 const DISC_CONOCIDAS = ['running','casual','training','futbol','adventure','outdoor','basquet','basket','tenis','padel','originals','hockey','natacion','trekking','skate','voley','rugby','urbano','lifestyle'];
 // locales que venden solo niño: aunque tengan la marca asignada, no reciben artículos de adulto
 const SOLO_NINO = { 'kids':true };
+// locales que no trabajan niño, ni calzado ni indumentaria (Juli 17/09/2026: Calle 49)
+const SIN_NINO = { 'calle-49':true };
+// Aurelius (las de línea y Calle 10) trabaja casual moda: nunca fútbol ni deportes (Juli 17/09/2026),
+// salvo un modelo que su ficha nombre a propósito
+const RX_AUR_DEPORTE = /futbol|futsal|hockey|voley|volley|rugby|padel|paddle|tenis|tennis|basquet|basket|\bbox/;
+const esAurelius = slug => /^aurelius/.test(slug);
+// reglas fijas de la sucursal, antes que la ficha de la marca: devuelve el motivo o ''
+function reglaSucursal(slug, a, G, fe){
+  const kids = G.g==='nino' || G.g==='infante';
+  if(SOLO_NINO[slug] && G.fam && !kids) return 'solo niño';
+  if(SIN_NINO[slug] && G.fam && kids) return 'no trabaja niño';
+  if(esAurelius(slug)){
+    const txt=sinAcento([a.disc, a.tipo].filter(Boolean).join(' ')).toLowerCase();
+    if(RX_AUR_DEPORTE.test(txt)){
+      const desc=sinAcento([a.desc, a.disc, a.tipo].filter(Boolean).join(' ')).toLowerCase();
+      const nombrado = fe && fe.modelos.some(m=>{ const k=sinAcento(m).toLowerCase().trim(); return k && desc.includes(k); });
+      if(!nombrado) return 'Aurelius: no trabaja fútbol ni deportes';
+    }
+  }
+  return '';
+}
 
 state.rep = {
   data:null,              // estadística de remitos leída: {archivo, anio, meses, conTalles, filas, nRemitos}
@@ -3622,8 +3643,12 @@ function fichaDe(slug, marca, G){
   const norm = b => ({ disc:fiLista(b&&b.disc), modelos:fiLista(b&&b.modelos), genero:fiLista(b&&b.genero), precioMax:Number(b&&b.precioMax)||0, nota:String((b&&b.nota)||''), plana:String((b&&b.plana)||''), orden:Number(b&&b.orden)||0, ninoLibre:!!(b&&b.ninoLibre), autoPct:Number(b&&b.autoPct)||0, sinModelos:fiLista(b&&b.sinModelos) });
   // Ecommerce se trabaja como un Cat 1 (Juli 13/09/2026): sin columna propia cargada, toma la de Cat 1
   const vacio=b=>!b || !(fiLista(b.disc).length||fiLista(b.modelos).length||fiLista(b.genero).length||b.nota||b.plana||b.orden||b.ninoLibre);
-  const bloque = (tipo==='ecom' && vacio(f.tipos&&f.tipos.ecom)) ? (f.tipos&&f.tipos.cat1) : (f.tipos&&f.tipos[tipo]);
-  const out=norm(bloque); out.tipo=tipo;
+  let bloque = (tipo==='ecom' && vacio(f.tipos&&f.tipos.ecom)) ? (f.tipos&&f.tipos.cat1) : (f.tipos&&f.tipos[tipo]);
+  // Aurelius Calle 10 (Juli 17/09/2026): la mercadería es la de los Aurelius de línea (casual moda); de la
+  // columna Outlets solo toma la «Prioridad» (p.ej. New Balance: Aurelius 10 después de los de línea)
+  const aur10 = COMO_OUTLET[slug] && esAurelius(slug);
+  if(aur10){ const au=(f.tipos&&f.tipos.aurelius)||{}, ou=(f.tipos&&f.tipos.outlet)||{}; bloque=Object.assign({}, au, { orden: Number(ou.orden)||Number(au.orden)||0 }); }
+  const out=norm(bloque); out.tipo = aur10 ? 'aurelius' : tipo;
   const id=SLUG2MARCAS[slug], exc=id&&f.exc&&f.exc[id];
   if(exc){ const e=norm(exc); ['disc','modelos','genero'].forEach(c=>{ if(e[c].length) out[c]=e[c]; }); if(e.precioMax>0) out.precioMax=e.precioMax; if(e.nota.trim()) out.nota=e.nota; if(e.plana) out.plana=e.plana; if(e.orden>0) out.orden=e.orden; if(e.ninoLibre) out.ninoLibre=true; if(e.autoPct>0) out.autoPct=e.autoPct; if(e.sinModelos.length) out.sinModelos=e.sinModelos; }
   return (out.disc.length||out.modelos.length||out.genero.length||out.nota.trim()||out.plana||out.orden||out.ninoLibre||out.autoPct||out.sinModelos.length) ? out : null;
@@ -3677,7 +3702,7 @@ function fichaPasa(fe, a, G){
 
 /* ---------- a quién (Asignación de Marcas) y en qué orden ---------- */
 function repAsig(slug, a, G){
-  if(SOLO_NINO[slug] && G.fam && G.g!=='nino' && G.g!=='infante') return null;
+  if(reglaSucursal(slug, a, G, fichaDe(slug, a.marca, G))) return null;
   const A=PRIO.asig, id=SLUG2MARCAS[slug];
   if(!A || !id) return { tipo:'sin', rank:4, nota:'sin datos de Asignación de Marcas' };
   const listas = G.fam==='calz' ? [A.calz[id]] : G.fam==='ind' ? [A.ind[id]] : [A.calz[id], A.ind[id]];
