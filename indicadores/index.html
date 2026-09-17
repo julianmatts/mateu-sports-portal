@@ -2404,8 +2404,11 @@ function renderKPIs(){
     <div class="kpi-foot"><div class="kpi-empty" id="stockFoot">Cargando stock…</div></div></div>`;
   renderKpiCrit();
 
+  // desde el 17/09/2026 `tickets` son TODOS los del local (los mismos que el sistema) y
+  // `tickets_med` los que hizo gente con horas cargadas; los períodos viejos no lo traen
+  const tkMed = s.tickets_med != null ? s.tickets_med : s.tickets;
   $('cobNota').innerHTML = s.cobertura < 100
-    ? `Se miden <b>${fmtN(s.tickets)}</b> de los <b>${fmtN(s.tickets_todos)}</b> tickets de la sucursal (${fmt2(s.cobertura)}%). El resto lo cerró gente que no figura en el staff.`
+    ? `Se miden <b>${fmtN(tkMed)}</b> de los <b>${fmtN(s.tickets)}</b> tickets de la sucursal (${fmt2(s.cobertura)}%). El resto lo cerró gente que no figura en el staff.`
     : `Se miden los <b>${fmtN(s.tickets)}</b> tickets de la sucursal.`;
 }
 
@@ -5961,12 +5964,15 @@ function veAgregarSemana(res, sem){
       if(/^WEB (MATEU|AURELIUS)$/.test(veNormU(nombre)) && !/^99/.test(String(suc||''))){ omniN++; omniV+=d.imp; suc=ECOM; }
       let vs=sucV.get(suc); if(!vs){ vs=new Map(); sucV.set(suc,vs); }
       let v=vs.get(nombre); if(!v){ v={venta:0,tickets:0,unidades:0,dias:{}}; vs.set(nombre,v); }
-      v.venta+=d.imp; v.unidades+=d.cant; if(!esNc && d.cant>0) v.tickets++;
+      // el ticket cuenta para todo el que puso una línea, tenga unidades o no (gift cards,
+      // señas): es lo que muestra el sistema al filtrar por vendedor, y el mismo criterio
+      // del cierre mensual (etl_indicadores.py cuenta comprobante.nunique() sobre sus filas)
+      v.venta+=d.imp; v.unidades+=d.cant; if(!esNc) v.tickets++;
       if(d.imp){ v.dias[x.dow]=(v.dias[x.dow]||0)+d.imp; }
       if(d.rub) for(const rb in d.rub){ v.rubros=v.rubros||{}; v.rubros[rb]=(v.rubros[rb]||0)+d.rub[rb]; }
       // tickets del LOCAL = comprobantes distintos (no la suma de los vendedores: un
       // ticket compartido le cuenta a cada uno, pero para el local es uno solo)
-      if(!esNc && d.cant>0){ let tk=sucTk.get(suc); if(!tk){ tk=new Set(); sucTk.set(suc,tk); } tk.add(x.nro); }
+      if(!esNc){ let tk=sucTk.get(suc); if(!tk){ tk=new Set(); sucTk.set(suc,tk); } tk.add(x.nro); }
     }
     if(x.dow) dowSet.add(x.dow+'|'+x.dia);
   });

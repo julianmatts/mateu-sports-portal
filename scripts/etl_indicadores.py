@@ -249,7 +249,15 @@ def cargar_consolidado(cfg):
 
 # ── Criterios por linea (Juli, 03/08/2026) para el formato 'detallado' ──────
 # Devuelve (cuenta_unidades, cuenta_importe) segun rubro + articulo.
+# La venta del portal tiene que dar EXACTO lo que muestra el sistema (Juli 17/09/2026):
+# suman todas las lineas del export y cada una va al vendedor que la hizo. Mismo criterio
+# que VE_EXACTO en indicadores/index.html (carga semanal), para que el mes cierre con las
+# semanas. EXACTO=False vuelve a los criterios de abajo.
+EXACTO = True
+
 def criterio_linea(rubro, articulo):
+    if EXACTO:
+        return (True, True)
     r, a = rubro, articulo            # ya vienen normalizados (sin tildes, UPPER)
     if r == 'OTROS':                  # bolsas, stickers, cupones de dto., alarmas, perchas
         return (False, False)
@@ -342,21 +350,28 @@ def cargar_detallado(cfg):
             # por rubro por vendedor. El vendedor se asigna despues, por comprobante.
             l = raw.loc[sel, [0, 1, 2, 5]].copy()
             l.columns = ['sucursal', 'dia_semana', 'dia', 'comprobante']
+            if EXACTO: l['vendedor'] = raw.loc[sel, 3].fillna('SIN ASIGNAR').values
             l['rubro']    = rub[sel]
             l['cantidad'] = cant[sel].where(cant_ok[sel], 0)
             l['importe']  = imp[sel].where(imp_ok[sel], 0)
             lin_frames.append(l[(l.cantidad != 0) | (l.importe != 0)])
-            # Un comprobante = UNA fila (atomico): se suman sus lineas y la metadata
-            # (dia/hora/vendedor) la define la linea de mayor |importe| — la del articulo
-            # principal, no la del cupon: ~5% de los tickets traen lineas con otro
-            # vendedor/hora (cupones cruzados) y partirlos inflaria el importe al
-            # descartarse sola la mitad negativa de los cambios de producto.
+            # Una fila por comprobante x VENDEDOR: cada linea suma para quien la hizo,
+            # como el sistema (Juli 17/09/2026). La metadata (dia/hora) la define la linea
+            # de mayor |importe| de ese vendedor.
+            # Antes era una fila por comprobante, con todo al vendedor de la linea mas
+            # grande: partirlo era peligroso porque, al descartarse lineas por criterio,
+            # podia quedar sola la mitad negativa de un cambio de producto. Con EXACTO no
+            # se descarta ninguna linea, asi que el comprobante entero se conserva: solo
+            # se reparte entre los vendedores que lo hicieron.
+            # Los tickets se cuentan con nunique() de comprobante en todos lados, asi que
+            # un ticket compartido le cuenta 1 a cada vendedor y 1 (no 2) a la sucursal.
             f['_abs'] = f.importe.abs()
-            tot = f.groupby(['sucursal', 'comprobante'], as_index=False)[['cantidad', 'importe']].sum()
+            claves_c = ['sucursal', 'comprobante', 'vendedor'] if EXACTO else ['sucursal', 'comprobante']
+            tot = f.groupby(claves_c, as_index=False)[['cantidad', 'importe']].sum()
             meta_f = (f.sort_values('_abs', ascending=False)
-                        .drop_duplicates(['sucursal', 'comprobante'])
+                        .drop_duplicates(claves_c)
                      )[['sucursal', 'dia_semana', 'dia', 'vendedor', 'hora', 'comprobante']]
-            frames.append(meta_f.merge(tot, on=['sucursal', 'comprobante']))
+            frames.append(meta_f.merge(tot, on=claves_c))
     v = pd.concat(frames, ignore_index=True)
     return v, pd.concat(lin_frames, ignore_index=True)
 
@@ -405,7 +420,13 @@ def cargar_ventas(cfg):
 def procesar(per, cfg, st):
     v, lin = cargar_ventas(cfg)
     nc = v[v.es_nc]
-    vt = v[(~v.es_nc) & (v.cantidad > 0)].copy()          # fuera: canjes sin importe y operaciones sin unidades
+    # Ventas = todo lo que no es nota de credito (las Nc se restan aparte, en dev_i/dev_u).
+    # Con EXACTO no se descarta ningun comprobante: antes quedaban afuera los que no tienen
+    # unidades (gift cards, senas, entregas a cuenta: $72,1M en agosto 2026) y el total del
+    # portal nunca cerraba con el sistema. Ojo: esos tickets no suman unidades, asi que el
+    # UPT baja un poco respecto del criterio viejo — es el UPT que mide el sistema.
+    qcomp = v.groupby(['sucursal', 'comprobante']).cantidad.transform('sum')
+    vt = v[~v.es_nc].copy() if EXACTO else v[(~v.es_nc) & (qcomp > 0)].copy()
     vt['dia'] = vt.fecha                                  # fecha real: el período puede cruzar dos meses
     vt['sem'] = vt['dia'].apply(lambda f: semana_retail(f, cfg['desde']))     # semana retail (Lu-Do)
 
@@ -474,9 +495,16 @@ def procesar(per, cfg, st):
     vt['medible'] = [(s, p) in med for s, p in zip(vt.sucursal, vt.vendedor)]
     vm = vt[vt.medible]
 
-    suc = vm.groupby('sucursal').agg(tickets=('comprobante','nunique'), unidades=('cantidad','sum'),
+    # La venta del LOCAL es toda la que hizo, como la muestra el sistema (Juli 17/09/2026):
+    # antes contaba solo a los vendedores "medibles" (los que tienen horas de contrato) y
+    # dejaba afuera a los eventuales, la venta sin asignar y la web facturada en la sucursal
+    # — en Calle 12 eran $30M de agosto. Los medibles siguen midiéndose aparte: son los que
+    # definen la cobertura y los que aportan las horas de tickets/hora y venta/hora.
+    suc = vt.groupby('sucursal').agg(tickets=('comprobante','nunique'), unidades=('cantidad','sum'),
                                      importe=('importe','sum')).reset_index()
-    suc['tickets_todos'] = vt.groupby('sucursal').comprobante.nunique().reindex(suc.sucursal).values
+    suc['tickets_todos'] = suc.tickets
+    tk_med = vm.groupby('sucursal').comprobante.nunique()
+    suc['tickets_med'] = tk_med.reindex(suc.sucursal).fillna(0).astype(int).values
     suc = suc.merge(nc.groupby('sucursal').agg(dev_i=('importe','sum'), dev_u=('cantidad','sum')).reset_index(),
                     on='sucursal', how='left').fillna(0)
     suc['importe_neto']   = suc.importe + suc.dev_i
@@ -484,12 +512,23 @@ def procesar(per, cfg, st):
     hv  = vend[vend.horas_contr > 0]
     suc = suc.merge(hv.groupby('sucursal')[['horas_contr','h_act']].sum().reset_index(), on='sucursal', how='left')
     suc['personas']  = hv.groupby('sucursal').vendedor.nunique().reindex(suc.sucursal).values
-    suc['cobertura'] = (suc.tickets / suc.tickets_todos * 100).round(1)
+    # cobertura = qué parte de los tickets del local la hizo gente con horas cargadas
+    suc['cobertura'] = (suc.tickets_med / suc.tickets * 100).round(1)
 
+    # Ecommerce no tiene gente con horas de contrato, así que con el criterio viejo (suc
+    # salía de `vm`) no aparecía y había que sumarlo a mano. Con EXACTO `suc` ya sale de
+    # `vt`, que lo incluye: agregarlo de nuevo lo duplicaría.
     e, ne = vt[vt.sucursal == '99-Ecommerce'], nc[nc.sucursal == '99-Ecommerce']
-    if len(e):
+    if len(e) and '99-Ecommerce' in set(suc.sucursal):
+        # ya vino en `suc` (sale de vt): solo hay que completar lo que depende de las horas
+        i = suc.index[suc.sucursal == '99-Ecommerce'][0]
+        suc.loc[i, 'tickets_med'] = suc.loc[i, 'tickets']
+        suc.loc[i, 'cobertura']   = 100.0
+        suc.loc[i, 'personas']    = e.vendedor.nunique()
+        suc.loc[i, ['horas_contr', 'h_act']] = 0
+    elif len(e):
         suc = pd.concat([suc, pd.DataFrame([{'sucursal':'99-Ecommerce','tickets':e.comprobante.nunique(),
-          'tickets_todos':e.comprobante.nunique(),'unidades':e.cantidad.sum(),'importe':e.importe.sum(),
+          'tickets_todos':e.comprobante.nunique(),'tickets_med':e.comprobante.nunique(),'unidades':e.cantidad.sum(),'importe':e.importe.sum(),
           'dev_i':ne.importe.sum(),'dev_u':ne.cantidad.sum(),
           'importe_neto':e.importe.sum()+ne.importe.sum(),'unidades_netas':e.cantidad.sum()+ne.cantidad.sum(),
           'horas_contr':0,'h_act':0,'personas':e.vendedor.nunique(),'cobertura':100.0}])], ignore_index=True)
@@ -543,7 +582,9 @@ def procesar(per, cfg, st):
             out.setdefault(key, {})[s] = {'n': s, 'rango': rango_sem(s), 'tickets': int(r.tickets),
                 'unidades_netas': round(float(r.unidades_netas), 2), 'importe_neto': round(float(r.importe_neto), 2)}
         return out
-    suc_sem  = semanas_por(vm, ncw, ['sucursal'])
+    # la venta semana a semana de la sucursal, con TODOS sus vendedores (como el total del
+    # mes): con `vm` (solo medibles) las semanas no sumaban el mes ni cerraban con el sistema
+    suc_sem  = semanas_por(vt if EXACTO else vm, ncw, ['sucursal'])
     vend_sem = semanas_por(vt, ncw, ['sucursal', 'vendedor'])
     lista_sem = lambda d: [d[s] for s in range(1, n_sem + 1) if s in d]
 
@@ -561,8 +602,11 @@ def procesar(per, cfg, st):
     # Es aditivo: no toca ningun calculo existente; el modulo lo usa para el
     # apartado "venta por rubro por persona" del analisis mensual.
     if lin is not None and len(lin):
-        vend_comp = v[['sucursal','comprobante','vendedor']].drop_duplicates(['sucursal','comprobante'])
-        lm = lin.merge(vend_comp, on=['sucursal','comprobante'], how='inner')
+        if 'vendedor' in lin.columns:
+            lm = lin            # con EXACTO cada linea ya trae SU vendedor
+        else:
+            vend_comp = v[['sucursal','comprobante','vendedor']].drop_duplicates(['sucursal','comprobante'])
+            lm = lin.merge(vend_comp, on=['sucursal','comprobante'], how='inner')
         rub_v = lm.groupby(['sucursal','vendedor','rubro']).agg(
             importe=('importe','sum'), unidades=('cantidad','sum')).reset_index()
         rmap = {}
@@ -674,4 +718,4 @@ for per, d in data.items():
           f"UPT {f.unidades_netas.sum()/f.tickets.sum():.2f} · "
           f"TPH {f.tickets.sum()/f.horas_contr.sum():.2f} · "
           f"TP ${f.importe_neto.sum()/f.tickets.sum():,.0f} · "
-          f"cobertura {f.tickets.sum()/f.tickets_todos.sum()*100:.1f}%")
+          f"cobertura {f.tickets_med.sum()/f.tickets.sum()*100:.1f}%")
