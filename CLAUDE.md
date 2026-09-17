@@ -691,10 +691,33 @@ que procesó — los que no tienen archivo se saltean con aviso). Desde julio 20
 de ventas es el Excel **detallado por línea** ("Estadistica de venta - …": 6 columnas base +
 Artículo + Rubro + un par Cantidad/Importe por mes calendario; `formato='detallado'` en
 `PERIODOS`): se cargan todos los pares y el índice día+día-de-semana deja solo el período
-retail (así el 29-30/6 del par de junio entran a julio retail). Aplica los **criterios de
+retail (así el 29-30/6 del par de junio entran a julio retail). ~~Aplica los **criterios de
 Juli por línea** (`criterio_linea()`: Otros no suma; REDONDEO no; PROMOS/descuentos solo
 importe; CREDITO A FAVOR ambos; INGRESO CUPON y LLAVERO COMPRA GRANDE afuera; ENVIO solo
-importe) y agrega por comprobante atómico (metadata = línea de mayor importe). ⚠️ El export
+importe) y agrega por comprobante atómico (metadata = línea de mayor importe).~~ **Desde el
+17/09/2026 el cierre mensual va con el mismo criterio que la carga semanal: la venta del
+portal es EXACTO la del sistema** (constante `EXACTO` arriba de `criterio_linea()`; ponerla
+en `False` vuelve a todo lo tachado). Cuatro cosas cambiaron, y las cuatro apuntan a lo
+mismo — que el total de cada sucursal sea la suma de la columna Importe del export:
+(1) **ninguna línea se descarta** (`criterio_linea` devuelve `(True, True)`);
+(2) **una fila por comprobante × VENDEDOR** en vez de una por comprobante: cada línea suma
+para quien la hizo, no para el de la línea más grande (los tickets se cuentan con
+`nunique()`, así que un ticket compartido le cuenta 1 a cada vendedor y 1 —no 2— a la
+sucursal; el `lin` del mix por rubro ya trae su propio vendedor y no se mergea);
+(3) **entran los comprobantes sin unidades** — gift cards, señas, entregas a cuenta: eran
+$72,1M en agosto 2026, y el filtro `cantidad > 0` los dejaba afuera;
+(4) **la venta del local incluye a TODOS los vendedores**: antes `suc` se armaba con `vm`
+(solo los "medibles", los que tienen horas de contrato) y quedaban afuera los eventuales,
+la venta sin asignar y la web facturada en la sucursal — en Calle 12 eran $30M de agosto.
+Los medibles siguen aparte: `suc.tickets_med` (campo nuevo) son los tickets con horas
+cargadas y `cobertura` pasó a ser `tickets_med / tickets`; las horas de tickets/hora y
+venta/hora siguen saliendo solo de ellos. En el módulo, la nota de cobertura usa
+`tickets_med` con fallback a `tickets` (los períodos viejos no lo traen).
+⚠️ **Esto mueve los KPIs del cierre**: agosto 2026 pasó de UPT 1,66 · TPH 1,17 · TP
+$115.404 a **UPT 1,55 · TPH 1,27 · TP $110.729** (más tickets sobre las mismas horas y
+unidades). Validado: las 21 sucursales de agosto dan **exacto** la suma del export
+(4.882.304.876, diferencia 0,00). Al cambiar el criterio hay que **regenerar todos los
+períodos** para no comparar meses con criterios distintos. ⚠️ El export
 consolidado viejo (por comprobante) venía SIN las líneas de promo → importes sin descontar;
 `formato='consolidado'` queda soportado pero no usarlo si está el detallado. Staff:
 `Sucursales staff.xlsx` en Descargas.
@@ -1845,8 +1868,9 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     modelos. Atomik en Diagonal 80: solo niño (excepción de la ficha).
   - **Reglas fijas por sucursal (17/09/2026, informe Puma automático vs. manual)** — `reglaSucursal` en
     `barrida/`, antes que la ficha (la usan `repAsig` y `fichaBloquea`, o sea Reparto inicial, «Abrir» y la
-    Barrida): **Calle 49 no trabaja niño** (`SIN_NINO`, calzado e indumentaria); **ningún Aurelius (línea ni Calle 10) recibe
-    niño** (mismo día, informe Crocs; va antes que la ficha, así que pisa el «niño Originals» de Adidas en Aurelius 12 y CB); **los Aurelius (línea y
+    Barrida): **Calle 49 no trabaja niño** (`SIN_NINO`, calzado e indumentaria); **Aurelius no recibe niño** (mismo día, informe Crocs; va antes que la ficha, así que pisa el «niño Originals» de
+    Adidas en Aurelius 12), **salvo Aurelius City Bell, que recibe niño —calzado e indumentaria— solo de Adidas, Nike,
+    Crocs y Puma** (`AUR_NINO_MARCAS`); **los Aurelius (línea y
     Calle 10) no reciben fútbol ni deportes** (`RX_AUR_DEPORTE` sobre disciplina/tipo), salvo un modelo que su
     ficha nombre. **Aurelius Calle 10 toma la mercadería de la columna Aurelius** de la ficha (en `barrida/`
     `fichaDe` y en `marcas/` `tipoDeSuc`/`fichaEfectiva`); de la columna Outlets solo la «Prioridad» (New
@@ -2121,9 +2145,9 @@ entran acá: ven su objetivo en Indicadores.
   dos personas le cuenta 1 a cada una, pero para el local es **uno solo** (`sucTk`, un Set
   de comprobantes por sucursal); venta y unidades sí son aditivas. Tests:
   `node --test lib/venta-exacta.test.js` (extraen las funciones del propio index.html).
-  ⚠️ **El ETL mensual NO cambió**: `criterio_linea()` de `scripts/etl_indicadores.py` sigue
-  igual, así que el cierre oficial del mes y la venta semanal **pueden no cerrar entre sí**
-  (misma convivencia que los dos calendarios). Si Juli lo pide, se alinea ahí también.
+  **El ETL mensual se alineó el mismo día** (Juli: «alinear»): misma constante `EXACTO` en
+  `scripts/etl_indicadores.py` y los cuatro cambios están en «Cómo regenerar los datos»,
+  arriba. Los cuatro períodos (2026-05 … 2026-08) se regeneraron con el criterio nuevo.
   ⚠️ **Las semanas ya guardadas conservan el criterio viejo**: para corregirlas hay que
   volver a subir el export de esa semana (o el del mes con «⇧ Cargar venta del mes», que
   republica todas las semanas que cubre).

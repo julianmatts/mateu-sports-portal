@@ -3366,6 +3366,7 @@ const SIN_NINO = { 'calle-49':true };
 // Aurelius (las de línea y Calle 10) trabaja casual moda: nunca fútbol ni deportes (Juli 17/09/2026),
 // salvo un modelo que su ficha nombre a propósito
 const RX_AUR_DEPORTE = /futbol|futsal|hockey|voley|volley|rugby|padel|paddle|tenis|tennis|basquet|basket|\bbox/;
+const AUR_NINO_MARCAS = { 'aurelius-cb':['adidas','nike','crocs','puma'] };   // comparadas con normMarca
 const esAurelius = slug => /^aurelius/.test(slug);
 // reglas fijas de la sucursal, antes que la ficha de la marca: devuelve el motivo o ''
 function reglaSucursal(slug, a, G, fe){
@@ -3373,8 +3374,13 @@ function reglaSucursal(slug, a, G, fe){
   if(SOLO_NINO[slug] && G.fam && !kids) return 'solo niño';
   if(SIN_NINO[slug] && G.fam && kids) return 'no trabaja niño';
   if(esAurelius(slug)){
-    // Aurelius (las de línea y Calle 10) no recibe niño, ni calzado ni indumentaria (Juli 17/09/2026, informe Crocs)
-    if(G.fam && kids) return 'Aurelius: no recibe niño';
+    // Aurelius no recibe niño, ni calzado ni indumentaria (Juli 17/09/2026, informe Crocs). Excepción: Aurelius City Bell
+    // sí, pero solo de Adidas, Nike, Crocs y Puma (AUR_NINO_MARCAS)
+    if(G.fam && kids){
+      const mk=normMarca(a.marca), ok=AUR_NINO_MARCAS[slug];
+      if(!ok) return 'Aurelius: no recibe niño';
+      if(!ok.some(m=>mk===m || mk.startsWith(m))) return 'Aurelius City Bell: niño solo de Adidas, Nike, Crocs y Puma';
+    }
     const txt=sinAcento([a.disc, a.tipo].filter(Boolean).join(' ')).toLowerCase();
     if(RX_AUR_DEPORTE.test(txt)){
       const desc=sinAcento([a.desc, a.disc, a.tipo].filter(Boolean).join(' ')).toLowerCase();
