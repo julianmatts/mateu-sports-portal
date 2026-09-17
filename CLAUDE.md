@@ -390,6 +390,37 @@ Código en el mismo `index.html`, bloque «ENTREGAS EDLP» (funciones con prefij
 - Pendiente/no digitalizado: el corte S1/S2 (ene-jun / jul-ago) de las hojas ANÁLISIS
   SUPERFUTBOL/TIENDAPINCHA (el pedido es un solo número por canal).
 
+## Discontinuos — comentario por artículo (`gestion-stock/`, 17/09/2026)
+
+Pedido de Juli: en la lista de discontinuos de la sucursal, **poder comentar cada artículo como
+en los F8** («producto separado para problemas», «producto cruzado», «no aparece», «diferencia
+con otro artículo»…). Antes la sucursal solo podía avisarlo por afuera del portal.
+
+- **Dónde**: columna **Comentario** al final de la tabla «Detalle de artículos» y de la de «Sin
+  envío a outlet» de la vista de sucursal. Sin comentario, la celda muestra «+ Comentar»; con
+  comentario, un chip azul con el motivo y el detalle (el título del chip trae todo + quién y
+  cuándo). El modal (`abrirComentario`) tiene el **motivo** (lista fija `MOTIVOS_DISC`, la misma
+  idea que `MOTIVOS_F8`), un **detalle** libre y «Quitar comentario».
+- **Quién escribe**: la cuenta de la sucursal (incluido su `deposito`) y gerencia
+  (`puedeComentar` = admin o `session.sucursal === slug`). El resto lo ve de solo lectura (chip
+  como `span`, sin modal).
+- **Quién lo ve**: el **outlet** que recibe (columna «Comentario de la sucursal» en su vista y en
+  el checklist de recepción) y **gerencia** en el Dashboard (columna Comentario en el buscador
+  global). Las tres pantallas tienen el filtro **Comentario (todos / con comentario / sin
+  comentar)** y la vista de sucursal cuenta «N con comentario» al lado de los resultados.
+- **En los Excel**: la última columna del «Exportar detalle para envío» pasó a ser
+  «COMENTARIO / OBSERVACIONES» y se llena sola; el checklist del outlet cambia OBSERVACIONES por
+  «COMENTARIO DE LA SUCURSAL»; el export general suma la columna en la hoja de cada sucursal.
+- **Firebase** (`discontinuos-mateu`, nodo nuevo): `comentariosDisc/<YYYY-MM>/<slug>/<clave>` =
+  `{motivo, nota, codigo, articulo, descripcion, marca, por, ts}`. La **clave** es la del artículo
+  del mes (`comKey` = `articuloKey` saneada para Firebase: `cod:<código>`, o `art:<texto>` si no
+  tiene código), así el comentario sigue al artículo aunque se repita en varios renglones.
+  Agrupado por slug: cada sucursal baja solo lo suyo (seguridad blanda, como el resto).
+  El comentario es **por mes**: un artículo que repite el mes siguiente se comenta de nuevo (así
+  se ve si el problema sigue).
+- Pendiente si Juli lo pide: avisar al Área de Producto por la Bandeja cuando una sucursal
+  comenta, y que Producto pueda responder (hoy el comentario es uno solo y editable).
+
 ## Meses de Stock — cómo regenerar `datos-meses-stock.js` desde el Excel
 
 El dashboard de Meses de Stock (`gestion-stock/`) no lee el Excel: lee

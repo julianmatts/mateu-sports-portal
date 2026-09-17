@@ -212,6 +212,41 @@ tr.gs-mia:hover td{background:#eef4ff!important}
 .td-ubic{white-space:nowrap;font-size:12.5px}
 .td-ubic .ubic-sin{color:var(--warn);font-weight:700}
 .td-ubic .ubic-cargando{color:#9aa3b2}
+
+/* Comentario por artículo (discontinuos): la sucursal explica qué pasa
+   con ese artículo, igual que el motivo de un ✗ en los F8. */
+.td-com{font-size:12.5px;max-width:260px}
+.com-chip{display:inline-flex;align-items:baseline;gap:6px;max-width:250px;text-align:left;
+  background:#eef3ff;border:1px solid #b8c9f0;border-left:3px solid var(--navy-mid);border-radius:6px;
+  padding:4px 8px;font-family:var(--font-b);font-size:12px;color:var(--navy-mid);line-height:1.25}
+.com-chip:hover{background:#e3ebff;border-color:var(--navy-mid)}
+span.com-chip{cursor:default}
+span.com-chip:hover{background:#eef3ff;border-color:#b8c9f0}
+.com-chip b{font-weight:700;white-space:nowrap}
+.com-chip span{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px}
+.com-add{background:none;border:1px dashed #c5cde0;border-radius:6px;padding:4px 9px;
+  font-family:var(--font-c);font-size:11.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+.com-add:hover{border-color:var(--navy-mid);color:var(--navy-mid);background:#f4f7ff}
+.com-none{color:var(--muted-light)}
+.com-ov{position:fixed;inset:0;background:rgba(11,21,39,.45);z-index:960;display:flex;align-items:center;
+  justify-content:center;padding:20px}
+.com-box{background:#fff;border-radius:12px;box-shadow:var(--shadow-md);width:100%;max-width:520px;
+  max-height:92vh;overflow:auto;animation:rise .2s cubic-bezier(.2,.8,.2,1)}
+.com-head{background:var(--navy);color:#fff;padding:14px 20px;border-bottom:3px solid var(--red);border-radius:12px 12px 0 0}
+.com-head .t{font-family:var(--font-d);font-size:20px;letter-spacing:.5px}
+.com-head .s{font-family:var(--font-b);font-size:12.5px;color:var(--muted-light);margin-top:2px}
+.com-body{padding:18px 20px}
+.com-body label{display:block;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--muted);margin:0 0 5px}
+.com-body select,.com-body textarea{width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;
+  font-size:14px;color:var(--navy);background:#fff}
+.com-body textarea{min-height:88px;resize:vertical;font-family:var(--font-b)}
+.com-body select:focus,.com-body textarea:focus{outline:none;border-color:var(--navy-mid)}
+.com-firma{font-size:12px;color:var(--muted);margin-top:10px}
+.com-foot{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:0 20px 18px}
+.com-foot .sep{flex:1}
+.com-del{background:#fff;border:1.5px solid #f0c9c9;color:var(--bad)}
+.com-del:hover{border-color:var(--bad)}
 .no-results{padding:34px;text-align:center;color:var(--muted);font-style:italic}
 .sub-section-title{font-family:var(--font-c);font-size:13px;font-weight:700;letter-spacing:1px;
   text-transform:uppercase;color:var(--navy-mid);margin:16px 0 8px;padding-bottom:4px;border-bottom:2px solid var(--border)}
@@ -847,6 +882,169 @@ function pintarUbicaciones(scope, datos){
 }
 
 /* ============================================================
+   COMENTARIO POR ARTÍCULO (discontinuos)
+   La sucursal explica qué pasa con un artículo que le figura
+   discontinuo: producto separado por problemas, cruzado con otro,
+   no aparece, diferencia con otro artículo… Mismo espíritu que el
+   motivo de un ✗ en los F8. Lo ven el outlet que lo recibe y
+   gerencia (Dashboard). Firebase: /comentariosDisc/<ym>/<slug>/<clave>
+   ============================================================ */
+const MOTIVOS_DISC = [
+  'Producto separado para problemas',
+  'Producto cruzado con otro artículo',
+  'No aparece / no se encuentra en el local',
+  'Diferencia con otro artículo',
+  'Producto fallado / no está en condiciones',
+  'Se vendió',
+  'Ya se envió al outlet',
+  'Está en exhibición / vidriera',
+  'Otro motivo'
+];
+
+// Clave estable del artículo dentro del mes+sucursal (saneada para Firebase).
+function comKey(i){
+  const k = articuloKey(i) || '';
+  return k.replace(/[.#$\/\[\]]/g,'-').slice(0,180);
+}
+function comUrl(ym, slug, key){
+  return FB+'/comentariosDisc/'+ym+'/'+slug+(key?('/'+key):'')+'.json';
+}
+async function cargarComentarios(ym, slug){
+  try{ return (await fetchJSON(comUrl(ym, slug, null))) || {}; }catch(e){ return {}; }
+}
+// Todas las sucursales del mes (outlet y gerencia; seguridad blanda como el resto).
+async function cargarComentariosMes(ym){
+  try{ return (await fetchJSON(FB+'/comentariosDisc/'+ym+'.json')) || {}; }catch(e){ return {}; }
+}
+function comTexto(c){
+  if(!c) return '';
+  return [c.motivo||'', c.nota||''].filter(Boolean).join(' — ');
+}
+function comFirma(c){
+  if(!c) return '';
+  return (c.por ? c.por+' · ' : '')+fmtDate(c.ts);
+}
+function puedeComentar(slug){
+  return !!(SESSION && (SESSION.rol==='admin' || SESSION.sucursal===slug));
+}
+function comCeldaHtml(c, editable){
+  if(c){
+    const tit = comTexto(c)+(c.por?('\n'+comFirma(c)):'')+(editable?'\nClic para editarlo':'');
+    const cuerpo = '💬 <b>'+esc(c.motivo||'Comentario')+'</b>'+(c.nota?'<span>'+esc(c.nota)+'</span>':'');
+    return editable ? '<button type="button" class="com-chip" data-comedit="1" title="'+esc(tit)+'">'+cuerpo+'</button>'
+                    : '<span class="com-chip" title="'+esc(tit)+'">'+cuerpo+'</span>';
+  }
+  return editable ? '<button type="button" class="com-add" data-comedit="1">+ Comentar</button>'
+                  : '<span class="com-none">—</span>';
+}
+function comCelda(i, com, editable){
+  const key = comKey(i);
+  return '<td class="td-com" data-comkey="'+esc(key)+'">'+comCeldaHtml(com[key], editable)+'</td>';
+}
+// Un solo listener por contenedor: el clic sube desde el botón hasta la celda.
+function wireComentarios(scope, ctx){
+  scope.addEventListener('click', ev=>{
+    const btn = ev.target.closest('[data-comedit]');
+    if(!btn || !scope.contains(btn)) return;
+    const td = btn.closest('[data-comkey]');
+    if(!td) return;
+    abrirComentario(ctx, td.dataset.comkey);
+  });
+}
+function comRepintar(ctx, key){
+  document.querySelectorAll('.td-com[data-comkey="'+(window.CSS&&CSS.escape?CSS.escape(key):key)+'"]').forEach(td=>{
+    td.innerHTML = comCeldaHtml(ctx.com[key], ctx.editable);
+  });
+  if(typeof ctx.onCambio==='function') ctx.onCambio();
+}
+function cerrarComentario(){
+  const ov = document.getElementById('comOverlay');
+  if(ov) ov.remove();
+}
+function abrirComentario(ctx, key){
+  const i = ctx.items[key];
+  if(!i) return;
+  const c = ctx.com[key] || null;
+  const motivoActual = c && c.motivo ? c.motivo : '';
+  const opciones = MOTIVOS_DISC.slice();
+  if(motivoActual && opciones.indexOf(motivoActual)<0) opciones.push(motivoActual);
+  cerrarComentario();
+  const ov = document.createElement('div');
+  ov.className = 'com-ov'; ov.id = 'comOverlay';
+  ov.innerHTML =
+    '<div class="com-box">'+
+      '<div class="com-head">'+
+        '<div class="t">'+esc(i.codigo||i.articulo||'Artículo')+'</div>'+
+        '<div class="s">'+esc(i.descripcion||'')+(i.marca?' · '+esc(i.marca):'')+' · '+fmtNum(i.cantidad)+' u.</div>'+
+      '</div>'+
+      '<div class="com-body">'+
+        '<div class="fld"><label>Qué pasa con este artículo</label>'+
+          '<select id="comMotivo">'+
+            '<option value="">Elegí el motivo…</option>'+
+            opciones.map(m=>'<option'+(m===motivoActual?' selected':'')+'>'+esc(m)+'</option>').join('')+
+          '</select></div>'+
+        '<div class="fld" style="margin-top:14px"><label>Detalle (opcional)</label>'+
+          '<textarea id="comNota" placeholder="Ej.: está cruzado con el TOP25870, lo separamos hasta que lo corrijan.">'+esc(c&&c.nota?c.nota:'')+'</textarea></div>'+
+        (c ? '<div class="com-firma">Último comentario: '+esc(comFirma(c))+'</div>' : '')+
+        '<div class="login-err" id="comErr"></div>'+
+      '</div>'+
+      '<div class="com-foot">'+
+        (c && ctx.editable ? '<button type="button" class="btn btn-outline btn-sm com-del" id="comQuitar">Quitar comentario</button>' : '')+
+        '<div class="sep"></div>'+
+        '<button type="button" class="btn btn-outline btn-sm" id="comCancel">'+(ctx.editable?'Cancelar':'Cerrar')+'</button>'+
+        (ctx.editable ? '<button type="button" class="btn btn-primary btn-sm" id="comGuardar">Guardar</button>' : '')+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(ov);
+  if(!ctx.editable){
+    ov.querySelector('#comMotivo').disabled = true;
+    ov.querySelector('#comNota').readOnly = true;
+  }
+  ov.addEventListener('click', ev=>{ if(ev.target===ov) cerrarComentario(); });
+  document.addEventListener('keydown', function escCom(ev){
+    if(ev.key==='Escape'){ cerrarComentario(); document.removeEventListener('keydown', escCom); }
+  });
+  ov.querySelector('#comCancel').addEventListener('click', cerrarComentario);
+  const err = ov.querySelector('#comErr');
+  const btnGuardar = ov.querySelector('#comGuardar');
+  if(btnGuardar) btnGuardar.addEventListener('click', async ()=>{
+    const motivo = ov.querySelector('#comMotivo').value;
+    const nota = ov.querySelector('#comNota').value.trim();
+    if(!motivo){ err.textContent = 'Elegí el motivo.'; err.classList.add('show'); return; }
+    btnGuardar.disabled = true;
+    const obj = {motivo, nota, codigo:i.codigo||'', articulo:String(i.articulo||''), descripcion:i.descripcion||'',
+      marca:i.marca||'', por:(SESSION&&SESSION.email)||'', ts:Date.now()};
+    try{
+      const r = await putJSON(comUrl(ctx.ym, ctx.slug, key), obj);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      ctx.com[key] = obj;
+      cerrarComentario();
+      comRepintar(ctx, key);
+    }catch(e){
+      btnGuardar.disabled = false;
+      err.textContent = 'No se pudo guardar. Revisá la conexión e intentá de nuevo.';
+      err.classList.add('show');
+    }
+  });
+  const btnQuitar = ov.querySelector('#comQuitar');
+  if(btnQuitar) btnQuitar.addEventListener('click', async ()=>{
+    if(!confirm('¿Quitar el comentario de este artículo?')) return;
+    btnQuitar.disabled = true;
+    try{
+      const r = await fetch(comUrl(ctx.ym, ctx.slug, key), {method:'DELETE'});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      delete ctx.com[key];
+      cerrarComentario();
+      comRepintar(ctx, key);
+    }catch(e){
+      btnQuitar.disabled = false;
+      err.textContent = 'No se pudo quitar. Revisá la conexión e intentá de nuevo.';
+      err.classList.add('show');
+    }
+  });
+}
+
+/* ============================================================
    VISTA SUCURSAL
    ============================================================ */
 async function renderSucursalView(slug, container, opts){
@@ -860,6 +1058,9 @@ async function renderSucursalView(slug, container, opts){
   const monthData = await getMonthData(ym);
   const suc = monthData[slug] || {items:[], total:0};
   const items = suc.items || [];
+  // Comentarios que la sucursal dejó sobre cada artículo (motivo + detalle)
+  const comSuc = await cargarComentarios(ym, slug);
+  const comEditable = puedeComentar(slug);
 
   const outletAsignado = OUTLET_BY_SUCURSAL[slug];
   const esCalle12 = slug==='calle-12';
@@ -923,11 +1124,13 @@ async function renderSucursalView(slug, container, opts){
         '<select class="sel" id="sucFiltroMarca"><option value="">Marca (todas)</option></select>'+
         '<select class="sel" id="sucFiltroGrupo2"><option value="">Grupo 2 (todos)</option></select>'+
         (prevYm ? '<label class="chk-repite" title="Solo los artículos que repiten vs '+ymToLabel(prevYm)+'"><input type="checkbox" id="sucSoloRepite"> Solo repetidos</label>' : '')+
+        '<select class="sel" id="sucFiltroCom" title="Comentario de la sucursal sobre el artículo"><option value="">Comentario (todos)</option><option value="con">Con comentario</option><option value="sin">Sin comentar</option></select>'+
         '<span class="a-count" id="sucCount"></span>'+
       '</div>'+
       '<div class="table-wrap"><table id="sucTable"><thead><tr>'+
         '<th>Rubro</th><th>Grupo 2</th><th>Marca</th><th>Código</th><th>Artículo</th><th>Descripción</th><th class="r">Cant.</th><th>Destino</th>'+
         '<th title="Última ubicación asignada en el depósito, según el Buscador de Artículos">Ubicación depósito</th>'+
+        '<th title="Qué pasa con este artículo: producto separado, cruzado, no aparece, diferencia con otro…">Comentario</th>'+
       '</tr></thead><tbody></tbody></table></div>'+
       '<div id="sucNoResults" class="no-results" style="display:none">No se encontraron artículos.</div>'+
     '</div>'+
@@ -939,6 +1142,11 @@ async function renderSucursalView(slug, container, opts){
   const conEnvio = items.filter(i=>i.destino);
   const sinEnvio = items.filter(i=>!i.destino);
   const prevKeys = articuloKeySet(prevItems);
+
+  // Comentarios: un contexto por vista; el clic se delega en el contenedor.
+  const comCtx = {ym, slug, com:comSuc, editable:comEditable, items:{}, onCambio:()=>{ draw(); }};
+  items.forEach(i=>{ comCtx.items[comKey(i)] = i; });
+  wireComentarios(container, comCtx);
 
   // Última ubicación en el depósito (Buscador de Artículos): carga en paralelo
   // y pinta las celdas de las dos tablas cuando llega.
@@ -953,8 +1161,11 @@ async function renderSucursalView(slug, container, opts){
     const q = normLower($('sucSearch').value);
     const fr = $('sucFiltroRubro').value, fm = $('sucFiltroMarca').value, fg = $('sucFiltroGrupo2').value;
     const soloRep = !!(prevYm && $('sucSoloRepite') && $('sucSoloRepite').checked);
+    const fcom = $('sucFiltroCom').value;
     const filtered = conEnvio.filter(i=>{
       if(soloRep && !prevKeys[articuloKey(i)]) return false;
+      if(fcom==='con' && !comSuc[comKey(i)]) return false;
+      if(fcom==='sin' && comSuc[comKey(i)]) return false;
       if(fr && i.rubro!==fr) return false;
       if(fm && i.marca!==fm) return false;
       if(fg && i.grupo2!==fg) return false;
@@ -971,14 +1182,15 @@ async function renderSucursalView(slug, container, opts){
       tr.innerHTML = '<td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td>'+
         '<td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td>'+esc(i.descripcion)+'</td>'+
         '<td class="td-num">'+fmtNum(i.cantidad)+'</td><td>'+(i.destino?(OUTLET_BY_ID[i.destino]?OUTLET_BY_ID[i.destino].nombre:i.destino):'—')+'</td>'+
-        ubicCelda(i);
+        ubicCelda(i)+comCelda(i, comSuc, comEditable);
       tbody.appendChild(tr);
     });
     pintarUbicaciones(tbody, ubicDatos);
-    $('sucCount').textContent = filtered.length+' resultado(s)';
+    const nCom = filtered.filter(i=>comSuc[comKey(i)]).length;
+    $('sucCount').textContent = filtered.length+' resultado(s)'+(nCom?' · '+nCom+' con comentario':'');
     $('sucNoResults').style.display = filtered.length? 'none':'block';
   }
-  ['sucSearch','sucFiltroRubro','sucFiltroMarca','sucFiltroGrupo2'].concat(prevYm?['sucSoloRepite']:[]).forEach(id=>{
+  ['sucSearch','sucFiltroRubro','sucFiltroMarca','sucFiltroGrupo2','sucFiltroCom'].concat(prevYm?['sucSoloRepite']:[]).forEach(id=>{
     $(id).addEventListener('input', draw); $(id).addEventListener('change', draw);
   });
   draw();
@@ -990,8 +1202,9 @@ async function renderSucursalView(slug, container, opts){
       '<div class="collapsible-body" id="sinEnvioBody"><div class="table-wrap"><table><thead><tr>'+
         '<th>Rubro</th><th>Grupo 2</th><th>Marca</th><th>Código</th><th>Artículo</th><th>Descripción</th><th class="r">Cant.</th>'+
         '<th title="Última ubicación asignada en el depósito, según el Buscador de Artículos">Ubicación depósito</th>'+
+        '<th title="Qué pasa con este artículo: producto separado, cruzado, no aparece, diferencia con otro…">Comentario</th>'+
       '</tr></thead><tbody>'+
-      sinEnvio.map(i=>'<tr'+(prevKeys[articuloKey(i)]?' class="tr-repite"':'')+'><td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td><td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td>'+esc(i.descripcion)+'</td><td class="td-num">'+fmtNum(i.cantidad)+'</td>'+ubicCelda(i)+'</tr>').join('')+
+      sinEnvio.map(i=>'<tr'+(prevKeys[articuloKey(i)]?' class="tr-repite"':'')+'><td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td><td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td>'+esc(i.descripcion)+'</td><td class="td-num">'+fmtNum(i.cantidad)+'</td>'+ubicCelda(i)+comCelda(i, comSuc, comEditable)+'</tr>').join('')+
       '</tbody></table></div></div></div>';
     pintarUbicaciones($('sinEnvioBody'), ubicDatos);
     $('sinEnvioHead').addEventListener('click', ()=>{
@@ -1126,8 +1339,8 @@ const BRAND = {
   repeatBg:'FFFCE8E8',
   notaBg:'FFFFF8E1', notaBorder:'FFF4A025', notaText:'FF7A5B00',
 };
-const COLS_ENVIO = ['RUBRO','GRUPO 2','MARCA','CÓDIGO','ARTÍCULO','DESCRIPCIÓN','CANT.','ENVIADO','OBSERVACIONES'];
-const WIDTHS_ENVIO = [13,24,13,12,15,36,8,11,22];
+const COLS_ENVIO = ['RUBRO','GRUPO 2','MARCA','CÓDIGO','ARTÍCULO','DESCRIPCIÓN','CANT.','ENVIADO','COMENTARIO / OBSERVACIONES'];
+const WIDTHS_ENVIO = [13,24,13,12,15,36,8,11,34];
 
 async function downloadWorkbook(wb, filename){
   const buf = await wb.xlsx.writeBuffer();
@@ -1208,6 +1421,7 @@ function xlsxControlFilas(cmp){
 async function exportSucursalXlsx(slug, ym, items){
   const info = SUCURSAL_BY_SLUG[slug];
   const prevKeys = await prevKeysParaSucursal(slug, ym);
+  const comSuc = await cargarComentarios(ym, slug);
   const conEnvio = items.filter(i=>i.destino);
   const porDestino = {};
   conEnvio.forEach(i=>{ (porDestino[i.destino] = porDestino[i.destino]||[]).push(i); });
@@ -1274,13 +1488,13 @@ async function exportSucursalXlsx(slug, ym, items){
     const ordenados = porDestino[destId].slice().sort((a,b)=> a.rubro.localeCompare(b.rubro) || a.marca.localeCompare(b.marca));
     let tot = 0;
     ordenados.forEach((it, i)=>{
-      const vals = [it.rubro, it.grupo2, it.marca, it.codigo, it.articulo, it.descripcion, it.cantidad, '', ''];
+      const vals = [it.rubro, it.grupo2, it.marca, it.codigo, it.articulo, it.descripcion, it.cantidad, '', comTexto(comSuc[comKey(it)])];
       const repite = !!prevKeys[articuloKey(it)];
       vals.forEach((v, idx)=>{
         const c = ws.getCell(r, idx+1);
         c.value = v;
         c.font = {size:10.5, name:'Calibri', color:{argb:BRAND.navy}};
-        c.alignment = {horizontal: idx===6?'right':'left', vertical:'middle', wrapText: idx===5};
+        c.alignment = {horizontal: idx===6?'right':'left', vertical:'middle', wrapText: idx===5||idx===8};
         c.fill = {type:'pattern', pattern:'solid', fgColor:{argb: repite ? BRAND.repeatBg : (i%2===0 ? BRAND.white : BRAND.band)}};
         c.border = thinBorder(BRAND.border);
       });
@@ -1386,6 +1600,7 @@ async function renderOutletView(outletId, container, opts){
     return;
   }
   const monthData = await getMonthData(ym);
+  const comMes = await cargarComentariosMes(ym);   // comentarios que dejó cada sucursal
   const porSucursal = {};
   let totalGeneral = 0, calzado=0, indumentaria=0, accesorios=0;
   Object.keys(monthData).forEach(slug=>{
@@ -1431,7 +1646,7 @@ async function renderOutletView(outletId, container, opts){
     '<div id="outSections"></div>';
 
   $('outMesSel').addEventListener('change', e=> renderOutletView(outletId, container, {mes:e.target.value}));
-  $('btnExportOut').addEventListener('click', ()=> exportOutletXlsx(outletId, ym, porSucursal));
+  $('btnExportOut').addEventListener('click', ()=> exportOutletXlsx(outletId, ym, porSucursal, comMes));
 
   const allItems = [].concat(...Object.values(porSucursal));
   fillSelectOptions('outFiltroRubro', uniqueVals(allItems,'rubro'));
@@ -1450,8 +1665,8 @@ async function renderOutletView(outletId, container, opts){
       const sub = items.reduce((a,i)=>a+i.cantidad,0);
       const card = document.createElement('div'); card.className='card';
       card.innerHTML = '<div class="card-title">'+(SUCURSAL_BY_SLUG[slug]?SUCURSAL_BY_SLUG[slug].nombre:slug)+' <span style="color:var(--muted);font-family:var(--font-c);font-size:14px">('+fmtNum(sub)+' u.)</span></div>'+
-        '<div class="table-wrap"><table><thead><tr><th>Rubro</th><th>Grupo 2</th><th>Marca</th><th>Código</th><th>Artículo</th><th>Descripción</th><th class="r">Cant.</th></tr></thead><tbody>'+
-        items.map(i=>'<tr><td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td><td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td>'+esc(i.descripcion)+'</td><td class="td-num">'+fmtNum(i.cantidad)+'</td></tr>').join('')+
+        '<div class="table-wrap"><table><thead><tr><th>Rubro</th><th>Grupo 2</th><th>Marca</th><th>Código</th><th>Artículo</th><th>Descripción</th><th class="r">Cant.</th><th title="Lo que comentó la sucursal sobre este artículo">Comentario de la sucursal</th></tr></thead><tbody>'+
+        items.map(i=>'<tr><td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td><td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td>'+esc(i.descripcion)+'</td><td class="td-num">'+fmtNum(i.cantidad)+'</td>'+comCelda(i, comMes[slug]||{}, false)+'</tr>').join('')+
         '</tbody></table></div>';
       box.appendChild(card);
     });
@@ -1461,7 +1676,7 @@ async function renderOutletView(outletId, container, opts){
   draw();
 }
 
-function exportOutletXlsx(outletId, ym, porSucursal){
+function exportOutletXlsx(outletId, ym, porSucursal, comMes){
   const info = OUTLET_BY_ID[outletId];
   const rows = [];
   rows.push(['MATEU SPORTS — CHECKLIST DE RECEPCIÓN '+(info?info.nombre.toUpperCase():outletId)+' — '+ymToLabel(ym).toUpperCase()]);
@@ -1471,14 +1686,15 @@ function exportOutletXlsx(outletId, ym, porSucursal){
     const items = porSucursal[slug];
     const sucNombre = SUCURSAL_BY_SLUG[slug]? SUCURSAL_BY_SLUG[slug].nombre : slug;
     rows.push(['ORIGEN: '+sucNombre.toUpperCase()]);
-    rows.push(['RUBRO','MARCA','CÓDIGO','ARTÍCULO','DESCRIPCIÓN','CANT.','RECIBIDO','OBSERVACIONES']);
+    rows.push(['RUBRO','MARCA','CÓDIGO','ARTÍCULO','DESCRIPCIÓN','CANT.','RECIBIDO','COMENTARIO DE LA SUCURSAL']);
+    const comSuc = (comMes||{})[slug] || {};
     let tot=0;
-    items.forEach(i=>{ rows.push([i.rubro,i.marca,i.codigo,i.articulo,i.descripcion,i.cantidad,'','']); tot+=i.cantidad; });
+    items.forEach(i=>{ rows.push([i.rubro,i.marca,i.codigo,i.articulo,i.descripcion,i.cantidad,'',comTexto(comSuc[comKey(i)])]); tot+=i.cantidad; });
     rows.push(['','','','','TOTAL',tot,'','']);
     rows.push([]);
   });
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:14},{wch:14},{wch:12},{wch:16},{wch:38},{wch:8},{wch:10},{wch:22}];
+  ws['!cols'] = [{wch:14},{wch:14},{wch:12},{wch:16},{wch:38},{wch:8},{wch:10},{wch:40}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Recepción');
   XLSX.writeFile(wb, 'Recepcion_'+(info?info.nombre.replace(/\s+/g,'_'):outletId)+'_'+ym+'.xlsx');
@@ -1497,6 +1713,7 @@ async function renderAdminDashboard(container){
   const ym = container.dataset.mes || meses[0];
   container.dataset.mes = ym;
   const monthData = await getMonthData(ym);
+  const comMes = await cargarComentariosMes(ym);   // comentarios de las sucursales
   const idxActual = meses.indexOf(ym);
   const prevYm = idxActual >= 0 ? meses[idxActual+1] : null;
   const prevData = prevYm ? await getMonthData(prevYm) : null;
@@ -1579,10 +1796,11 @@ async function renderAdminDashboard(container){
         '<select class="sel" id="dashFiltroOutlet"><option value="">Outlet destino (todos)</option>'+OUTLETS_LIST.map(o=>'<option value="'+o.id+'">'+o.nombre+'</option>').join('')+'</select>'+
         '<select class="sel" id="dashFiltroRubro"><option value="">Rubro (todos)</option></select>'+
         '<select class="sel" id="dashFiltroMarca"><option value="">Marca (todas)</option></select>'+
+        '<select class="sel" id="dashFiltroCom" title="Comentario de la sucursal sobre el artículo"><option value="">Comentario (todos)</option><option value="con">Con comentario</option><option value="sin">Sin comentar</option></select>'+
         '<input class="search-box" id="dashSearch" placeholder="Buscar…">'+
         '<span class="a-count" id="dashCount"></span>'+
       '</div>'+
-      '<div class="table-wrap"><table id="dashTable"><thead><tr><th>Sucursal</th><th>Rubro</th><th>Grupo 2</th><th>Marca</th><th>Código</th><th>Artículo</th><th class="r">Cant.</th><th>Destino</th></tr></thead><tbody></tbody></table></div>'+
+      '<div class="table-wrap"><table id="dashTable"><thead><tr><th>Sucursal</th><th>Rubro</th><th>Grupo 2</th><th>Marca</th><th>Código</th><th>Artículo</th><th class="r">Cant.</th><th>Destino</th><th title="Lo que comentó la sucursal sobre este artículo">Comentario</th></tr></thead><tbody></tbody></table></div>'+
       '<div id="dashNoResults" class="no-results" style="display:none">No se encontraron artículos.</div>'+
     '</div>';
 
@@ -1620,9 +1838,12 @@ async function renderAdminDashboard(container){
 
   function draw(){
     const fs=$('dashFiltroSuc').value, fo=$('dashFiltroOutlet').value, fr=$('dashFiltroRubro').value, fm=$('dashFiltroMarca').value;
+    const fcom = $('dashFiltroCom').value;
     const q = normLower($('dashSearch').value);
     const filtered = allItems.filter(i=>{
       if(fs && i.sucursal!==fs) return false;
+      if(fcom==='con' && !(comMes[i.sucursal]||{})[comKey(i)]) return false;
+      if(fcom==='sin' && (comMes[i.sucursal]||{})[comKey(i)]) return false;
       if(fo && i.destino!==fo) return false;
       if(fr && i.rubro!==fr) return false;
       if(fm && i.marca!==fm) return false;
@@ -1633,13 +1854,13 @@ async function renderAdminDashboard(container){
     filtered.forEach(i=>{
       const tr = document.createElement('tr');
       if(i.repiteMesAnterior) tr.className = 'tr-repite';
-      tr.innerHTML = '<td>'+i.sucursalNombre+'</td><td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td><td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td class="td-num">'+fmtNum(i.cantidad)+'</td><td>'+(i.destino?(OUTLET_BY_ID[i.destino]?OUTLET_BY_ID[i.destino].nombre:i.destino):'—')+'</td>';
+      tr.innerHTML = '<td>'+i.sucursalNombre+'</td><td>'+esc(i.rubro)+'</td><td>'+esc(i.grupo2)+'</td><td>'+esc(i.marca)+'</td><td class="td-code">'+esc(i.codigo)+'</td><td>'+esc(i.articulo)+'</td><td class="td-num">'+fmtNum(i.cantidad)+'</td><td>'+(i.destino?(OUTLET_BY_ID[i.destino]?OUTLET_BY_ID[i.destino].nombre:i.destino):'—')+'</td>'+comCelda(i, comMes[i.sucursal]||{}, false);
       tbody.appendChild(tr);
     });
     $('dashCount').textContent = filtered.length+' resultado(s) (máx. 500 mostrados)';
     $('dashNoResults').style.display = filtered.length? 'none':'block';
   }
-  ['dashFiltroSuc','dashFiltroOutlet','dashFiltroRubro','dashFiltroMarca','dashSearch'].forEach(id=>{
+  ['dashFiltroSuc','dashFiltroOutlet','dashFiltroRubro','dashFiltroMarca','dashFiltroCom','dashSearch'].forEach(id=>{
     $(id).addEventListener('input', draw); $(id).addEventListener('change', draw);
   });
   draw();
@@ -1683,6 +1904,7 @@ function drillInto(tipo, id){
 
 async function exportTodoXlsx(ym, monthData, sucFiltro){
   const wb = new ExcelJS.Workbook();
+  const comMes = await cargarComentariosMes(ym);
   const sumRubro = (arr, rubro)=> (arr||[]).filter(i=>normStr(i.rubro)===rubro).reduce((a,i)=>a+(Number(i.cantidad)||0),0);
   // Con una sucursal filtrada en el dashboard, el export trae solo su pestaña (sin hoja General)
   const sucsExport = sucFiltro ? SUCURSALES.filter(s=>s.slug===sucFiltro) : SUCURSALES;
@@ -1747,9 +1969,10 @@ async function exportTodoXlsx(ym, monthData, sucFiltro){
     const prevSuc = await prevMesParaSucursal(s.slug, ym);
     const prevKeys = articuloKeySet(prevSuc.items);
     const ws = wb.addWorksheet(s.nombre.substring(0,31), {views:[{showGridLines:false}]});
-    ws.columns = [{width:14},{width:26},{width:14},{width:12},{width:16},{width:38},{width:8},{width:16}];
+    ws.columns = [{width:14},{width:26},{width:14},{width:12},{width:16},{width:38},{width:8},{width:16},{width:34}];
+    const comSuc = comMes[s.slug] || {};
     let r = 1;
-    ws.mergeCells(r,1,r,8);
+    ws.mergeCells(r,1,r,9);
     const titleCell = ws.getCell(r,1);
     titleCell.value = 'MATEU SPORTS - DISCONTINUOS '+s.nombre.toUpperCase()+' - '+ymToLabel(ym).toUpperCase();
     titleCell.font = {bold:true, color:{argb:BRAND.white}, size:13, name:'Calibri'};
@@ -1771,14 +1994,14 @@ async function exportTodoXlsx(ym, monthData, sucFiltro){
       };
       cmp = compararArticulosMes(items, prevSuc.items);
     }
-    r = xlsxKpiBlock(ws, r, 8, 'KPIS DEL MES', xlsxKpiFilas(suc.total||0, calzado, indumentaria, accesorios, vars));
+    r = xlsxKpiBlock(ws, r, 9, 'KPIS DEL MES', xlsxKpiFilas(suc.total||0, calzado, indumentaria, accesorios, vars));
     r++;
     if(cmp){
-      r = xlsxKpiBlock(ws, r, 8, 'CONTROL POR ARTÍCULO DISCONTINUO (VS '+ymToLabel(prevSuc.prevYm).toUpperCase()+')', xlsxControlFilas(cmp));
+      r = xlsxKpiBlock(ws, r, 9, 'CONTROL POR ARTÍCULO DISCONTINUO (VS '+ymToLabel(prevSuc.prevYm).toUpperCase()+')', xlsxControlFilas(cmp));
       r++;
     }
     const headerRowIdx = r;
-    ['RUBRO','GRUPO 2','MARCA','CODIGO','ARTICULO','DESCRIPCION','CANT.','DESTINO'].forEach((h,idx)=>{
+    ['RUBRO','GRUPO 2','MARCA','CODIGO','ARTICULO','DESCRIPCION','CANT.','DESTINO','COMENTARIO DE LA SUCURSAL'].forEach((h,idx)=>{
       const c = ws.getCell(r, idx+1);
       c.value = h;
       c.font = {bold:true, color:{argb:BRAND.white}, size:10.5, name:'Calibri'};
@@ -1790,13 +2013,13 @@ async function exportTodoXlsx(ym, monthData, sucFiltro){
     r++;
     items.forEach((it, i)=>{
       const destino = it.destino ? (OUTLET_BY_ID[it.destino]?OUTLET_BY_ID[it.destino].nombre:it.destino) : 'Sin envio';
-      const vals = [it.rubro,it.grupo2,it.marca,it.codigo,it.articulo,it.descripcion,it.cantidad,destino];
+      const vals = [it.rubro,it.grupo2,it.marca,it.codigo,it.articulo,it.descripcion,it.cantidad,destino,comTexto(comSuc[comKey(it)])];
       const repite = !!prevKeys[articuloKey(it)];
       vals.forEach((v,idx)=>{
         const c = ws.getCell(r, idx+1);
         c.value = v;
         c.font = {size:10.5, name:'Calibri', color:{argb:BRAND.navy}};
-        c.alignment = {horizontal: idx===6?'right':'left', vertical:'middle', wrapText: idx===5};
+        c.alignment = {horizontal: idx===6?'right':'left', vertical:'middle', wrapText: idx===5||idx===8};
         c.fill = {type:'pattern', pattern:'solid', fgColor:{argb: repite ? BRAND.repeatBg : (i%2===0 ? BRAND.white : BRAND.band)}};
         c.border = thinBorder(BRAND.border);
       });
@@ -1809,7 +2032,7 @@ async function exportTodoXlsx(ym, monthData, sucFiltro){
     ws.getCell(r,7).value = suc.total||0;
     ws.getCell(r,7).font = {bold:true, color:{argb:BRAND.navy}, name:'Calibri'};
     ws.getCell(r,7).alignment = {horizontal:'right'};
-    for(let c=1;c<=8;c++){
+    for(let c=1;c<=9;c++){
       ws.getCell(r,c).fill = {type:'pattern', pattern:'solid', fgColor:{argb:BRAND.totalBg}};
       ws.getCell(r,c).border = {top:{style:'medium',color:{argb:BRAND.navy}}};
     }
