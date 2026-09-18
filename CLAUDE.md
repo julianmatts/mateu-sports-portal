@@ -992,7 +992,11 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   a la izquierda el **Salón** y a la derecha el **depósito principal**, mitad y mitad con 28 px de
   separación y hasta 70vh de alto (a 1800 px: 866×700 cada uno); abajo, los **depósitos secundarios**
   más chicos (hasta 30vh), porque el Depósito 2 de Ensenada casi no se usa. `renderPlanoBox` arma
-  `.pp-fila1` (salón + primer depósito) y `.pp-fila2` (el resto); en celular se apilan. Tocar un plano lo abre **en grande** en el modal
+  `.pp-fila1` (salón + primer depósito) y `.pp-fila2` (el resto); en celular se apilan. **El depósito
+  donde está lo buscado sube arriba** (18/09/2026, pedido de Juli): `reordenarPlanos` (lo llama
+  `pintarPlanoSel`) mueve la tarjeta ya dibujada de ese depósito a la fila de arriba y baja las demás,
+  sin rehacer los SVG; si el artículo también está en el principal, o no hay búsqueda (la búsqueda
+  vacía llama a `seleccionarArt(null)`), vuelve el orden natural. Tocar un plano lo abre **en grande** en el modal
   (`abrirPlanoGrande`, hasta 78vh; `#modalBody.plano-big` lo ensancha y `cerrarModal` saca la clase). Al buscar un artículo
   (un solo resultado se elige solo; con varios, tocando la tarjeta) se **resalta en rojo con destello**
   (`PlanoSuc.destellar`, animación `ps-flash`) dónde está guardado —su estantería, que sale de la

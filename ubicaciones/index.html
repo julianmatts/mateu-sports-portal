@@ -2567,6 +2567,8 @@ function renderResultados(){
   }
   if(!q){
     cont.innerHTML = '<div class="hint" style="text-align:center;padding:14px 0">'+todos.length+' artículos en el depósito. Buscá por código o descripción.</div>';
+    // sin búsqueda: nada resaltado y los planos en su orden natural
+    if(planoHay()){ PLANO_HINT = ''; seleccionarArt(null); }
     return;
   }
   let res = todos.filter(a=>matchArticulo(a,q))
@@ -3428,6 +3430,7 @@ function pintarPlanoSel(destello){
   const a = ARTSEL ? DATA.articulos[ARTSEL] : null;
   const hot = a ? planoHotArt({key:ARTSEL, ...a}) : new Set();
   box.querySelectorAll('[data-ps]').forEach(g=> g.classList.toggle('ps-here', hot.has(g.dataset.ps)));
+  reordenarPlanos();
   const nota = $('planoNota');
   if(nota){
     if(!a) nota.innerHTML = '<span class="hint">'+(PLANO_HINT||'Buscá un artículo y te muestro dónde está')+'</span>';
@@ -3439,6 +3442,24 @@ function pintarPlanoSel(destello){
     }
   }
   if(destello && planoAbierto) PlanoSuc.destellar(box);
+}
+/* El depósito donde está el artículo buscado sube al lugar de arriba a la derecha
+   (pedido de Juli 18/09/2026: en Ensenada, si está en el Depósito 2, el Depósito 2
+   pasa arriba y el 1 baja). Sin búsqueda, o si está en el principal, vuelve al orden
+   natural: salón | depósito 1 arriba y el resto abajo. Mueve las tarjetas ya
+   dibujadas entre las dos filas: no rehace los SVG. */
+function reordenarPlanos(){
+  const box = $('planoBox'); if(!box) return;
+  const f1 = box.querySelector('.pp-fila1'), f2 = box.querySelector('.pp-fila2');
+  if(!f1 || !f2) return;                                   // un solo depósito: nada que rotar
+  const deps = planoDepositos().map(p=>p.id);
+  const tarjeta = id => box.querySelector('div.ps-planta[data-pl="'+id+'"]');
+  // el primero (en orden natural) que tenga algo resaltado; si ninguno, el principal
+  const arriba = deps.find(id=>{ const t = tarjeta(id); return t && t.querySelector('.ps-here'); }) || deps[0];
+  const hoy = [...f1.querySelectorAll('div.ps-planta')].map(d=>d.dataset.pl).find(id=>deps.includes(id));
+  if(hoy===arriba) return;
+  f1.appendChild(tarjeta(arriba));                         // queda después del salón
+  deps.filter(id=>id!==arriba).forEach(id=> f2.appendChild(tarjeta(id)));   // el resto abajo, en su orden
 }
 function seleccionarArt(key, destello){
   const cambio = ARTSEL !== (key||null);
