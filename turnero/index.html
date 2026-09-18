@@ -123,7 +123,7 @@ img,svg{max-width:100%}
 .modal .slot-info{font-family:var(--font-c);font-size:13px;font-weight:500;color:var(--muted);margin-top:4px;letter-spacing:.2px}
 .modal .slot-info b{color:var(--navy)}
 .modal label{font-family:var(--font-c);font-size:11px;color:var(--muted);display:block;margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:1px}
-.modal select,.modal textarea,.modal input[type=text],.modal input[type=email]{width:100%;margin-bottom:12px;font-family:var(--font-b);font-size:14px;border:1px solid var(--border);border-radius:9px;color:var(--navy);padding:9px 11px;background:#fafbfe;transition:border-color .14s,box-shadow .14s}
+.modal select,.modal textarea,.modal input[type=text],.modal input[type=email],.modal input[type=number]{width:100%;margin-bottom:12px;font-family:var(--font-b);font-size:14px;border:1px solid var(--border);border-radius:9px;color:var(--navy);padding:9px 11px;background:#fafbfe;transition:border-color .14s,box-shadow .14s}
 .modal select:focus,.modal textarea:focus,.modal input:focus{outline:none;border-color:var(--navy-mid);box-shadow:0 0 0 3px rgba(26,47,85,.12);background:#fff}
 .modal textarea{height:64px;resize:vertical}
 .modal-divider{border:none;border-top:1px solid var(--border);margin:14px 0 12px}
@@ -216,7 +216,7 @@ img,svg{max-width:100%}
   .sec-head .sub{display:none}
   /* Inputs y selects a 16px para evitar el zoom automático de iOS,
      y con más alto para que sean cómodos de tocar (~44px) */
-  .modal select,.modal textarea,.modal input[type=text],.modal input[type=email]{font-size:16px;padding:11px 12px}
+  .modal select,.modal textarea,.modal input[type=text],.modal input[type=email],.modal input[type=number]{font-size:16px;padding:11px 12px}
   .add-prov-row input{font-size:16px;padding:11px 12px}
   .login-card input{font-size:16px}
   /* Flechas de semana un poco más grandes para el dedo */
@@ -346,8 +346,9 @@ onValue(ref(db,'providers'),snap=>{
   render();
 });
 
-async function addBooking(date,slot,providerId,note,exc){
+async function addBooking(date,slot,providerId,note,exc,bultos){
   const b={providerId,note:note||''};
+  if(bultos>0) b.bultos=bultos;
   // Excepción al día fijo: queda registrada con el motivo y quién la comunicó
   if(exc&&exc.motivo) b.exc={motivo:exc.motivo,por:_sess?.nombre||_sess?.email||'depósito',ts:Date.now()};
   await push(ref(db,'bookings2/'+date+'/'+slot),b);
@@ -364,7 +365,9 @@ function showToast(msg,isError=false){
   setTimeout(()=>t.className='toast',3000);
 }
 
-async function sendEmail(providerId,dateKey,slot,note,exc){
+async function sendEmail(providerId,dateKey,slot,note,exc,bultos){
+  // Los bultos viajan dentro de la nota: el template de EmailJS no tiene un campo propio
+  if(bultos>0) note='Bultos: '+bultos+(note?' · '+note:'');
   const prov=state.providers.find(p=>p.id===providerId);
   if(!prov||!prov.email) return; // no email set, skip silently
   try{
@@ -429,6 +432,7 @@ function renderGrid(){
           html+='<div class="booking" style="background:'+p.bg+';color:'+p.text+';border-left:3px solid '+p.color+'"'+(excTit?' title="'+excTit.replace(/"/g,'&quot;')+'"':'')+'>'
             +'<div class="prov-name">'+p.name+'</div>'
             +(b.exc?'<div class="exc-tag">⚠️ Excepción'+(b.exc.motivo?' · '+b.exc.motivo:'')+'</div>':'')
+            +(b.bultos?'<div class="prov-detail"><b>'+b.bultos+'</b> bulto'+(b.bultos==1?'':'s')+'</div>':'')
             +(b.note?'<div class="prov-detail">'+b.note+'</div>':'')
             +'<button class="del-btn" data-date="'+key+'" data-slot="'+slot+'" data-key="'+b.key+'">×</button></div>';
         });
@@ -520,6 +524,8 @@ function renderSlotModal(){
     +'<label>Proveedor</label>'
     +'<select id="modal-prov">'+provOptions(diaSemDe(date))+'</select>'
     +'<div id="modal-dia-aviso">'+avisoDiaHtml(provInicialDe(diaSemDe(date)),diaSemDe(date))+'</div>'
+    +'<label>Cantidad de bultos</label>'
+    +'<input type="number" id="modal-bultos" min="0" step="1" inputmode="numeric" placeholder="Ej: 35">'
     +'<label>Nota (opcional)</label>'
     +'<textarea id="modal-note" placeholder="Ej: entrega SS26, llegada 9:30..."></textarea>'
     +'<div class="modal-actions"><button class="btn" id="modal-cancel">Cancelar</button><button class="btn btn-primary" id="modal-save">✓ Asignar turno</button></div>'
@@ -724,6 +730,7 @@ function bindEvents(){
         const {date,slot}=state.modal;
         const provId=provSel.value;
         const note=document.getElementById('modal-note').value.trim();
+        const bultos=Math.max(0,parseInt(document.getElementById('modal-bultos').value,10)||0);
         const prov=state.providers.find(p=>p.id===provId);
         const e=excActual();
         if(e&&!(e.ok&&e.motivo)){refrescarEstado();return;} // no se asigna fuera del día sin excepción
@@ -732,8 +739,8 @@ function bindEvents(){
         state.modal=null;
         render();
         // Guardar en Firebase y enviar mail en segundo plano
-        addBooking(date,slot,provId,note,exc);
-        sendEmail(provId,date,slot,note,exc);
+        addBooking(date,slot,provId,note,exc,bultos);
+        sendEmail(provId,date,slot,note,exc,bultos);
         showToast((exc?'⚠️ Turno por excepción para ':'✅ Turno asignado a ')+(prov?prov.name:provId));
       });
       document.getElementById('modal-block').addEventListener('click',async()=>{
