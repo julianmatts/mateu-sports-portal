@@ -3363,10 +3363,17 @@ function esCalzadoVerano(a){ return RX_VERANO.test(sinAcento([a&&a.disc, a&&a.ti
 const RX_TERMICA = /termic/;
 const TERMICA_MESES = [3,4,5,6,7];             // abr · may · jun · jul · ago
 function esTermica(a){ return RX_TERMICA.test(sinAcento([a&&a.disc, a&&a.tipo].filter(Boolean).join(' ')).toLowerCase()); }
+const tipoNorm = a => sinAcento(String((a&&a.tipo)||'')).toLowerCase().trim();
+const RX_TIPO_INVIERNO = /^(camperas? de invierno|chalecos?|conjuntos?)$/;      // alta abril–agosto
+const RX_TIPO_VERANO   = /^(musculosas?|bermudas?|tops?|shorts?|mallas?)$/;         // alta octubre–febrero
 // reglas de temporada: devuelve el texto de la regla si el artículo está FUERA de su temporada, o ''
 const TEMPORADAS = [
   { fam:'calz', es:esCalzadoVerano, meses:VERANO_MESES,  txt:'calzado de verano fuera de temporada (marzo a septiembre)' },
-  { fam:'ind',  es:esTermica,       meses:TERMICA_MESES, txt:'térmicas fuera de temporada (septiembre a marzo)' }
+  { fam:'ind',  es:esTermica,       meses:TERMICA_MESES, txt:'térmicas fuera de temporada (septiembre a marzo)' },
+  // Juli 18/09/2026, con los envíos ene–ago 2026 por tipo de artículo a la vista («OK todo menos camperas»: las
+  // camperas comunes NO entran, solo CAMPERAS DE INVIERNO). Se mira el TIPO de artículo entero, no la disciplina.
+  { fam:'ind',  es:a=>RX_TIPO_INVIERNO.test(tipoNorm(a)), meses:TERMICA_MESES, txt:'indumentaria de invierno fuera de temporada (septiembre a marzo)' },
+  { fam:'ind',  es:a=>RX_TIPO_VERANO.test(tipoNorm(a)),   meses:VERANO_MESES,  txt:'indumentaria de verano fuera de temporada (marzo a septiembre)' }
 ];
 function fueraDeTemporada(a, G, hoy){
   if(!G) return '';
