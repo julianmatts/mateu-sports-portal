@@ -363,6 +363,19 @@ td.talles .tw{display:flex;flex-wrap:wrap;align-items:flex-start;max-width:560px
 .rgrid tfoot td.rg-dest{font-size:11.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase}
 .rgrid tr.rg-sum td.rg-dest{background:#eef3fc}
 .rgrid tr.rg-queda td.rg-dest{background:#fafbfe}
+/* ajuste a mano del reparto */
+.rart-acc{margin-left:auto;display:flex;gap:10px;align-items:center}
+.rart.editando .rgrid-wrap{border-color:#2f6fd0;box-shadow:0 0 0 2px rgba(47,111,208,.15)}
+.pill.edit{background:#e7f0ff;color:#1d4f9e;border:1px solid #bcd3f5}
+.resu .c-edit b{color:#1d4f9e}
+.rg-in{width:46px;padding:4px 2px;text-align:center;font:inherit;font-weight:700;color:var(--navy);border:1px solid var(--border);border-radius:6px;background:#fff;-moz-appearance:textfield}
+.rg-in::-webkit-outer-spin-button,.rg-in::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.rg-in:focus{outline:2px solid #2f6fd0;outline-offset:0;border-color:#2f6fd0}
+.rg-x{border:0;background:none;color:var(--bad,#c0392b);font-size:13px;cursor:pointer;padding:2px 5px;border-radius:5px}
+.rg-x:hover{background:#fdecec}
+.rgrid tr.rg-add td{text-align:left;background:#f7faff;position:static}
+.rgrid tr.rg-add select{min-width:210px;margin-right:8px}
+.rgrid tr.rg-add small{color:var(--muted);font-size:12px;white-space:normal}
 .rcard.rsr{border-left-color:#6d28d9}
 .rcard.rsr .rhead{background:#f6f3ff}
 .rsel-nota{font-size:12.5px;color:var(--muted);margin:2px 0 10px}
@@ -3422,6 +3435,8 @@ state.rep = {
   centrales:null,         // talles centrales editados (se comparten en repartoConfig/centrales)
   res:null, vista:'remito', selOpen:true,
   hist:null, repartidos:{}, guardados:[], cargado:false, abierto:null,
+  manual:{},              // ajustes a mano antes de guardar: {'<remito>|<idItem>': {<slug>: {<talle>: unidades}}}
+  edit:null,              // clave del artículo que se está editando a mano
 };
 function repGuardarPrefs(){ try{ localStorage.setItem(REP_PREFS, JSON.stringify({ v:2, param:state.rep.param, destinos:state.rep.destinos })); }catch(e){} }
 (function repCargarPrefs(){ try{ const p=JSON.parse(localStorage.getItem(REP_PREFS)||'null'); if(!p) return;
@@ -3538,7 +3553,7 @@ async function repCargarArchivo(file){
     let D=null, err=null;
     for(const sh of hojas){ try{ D=repParseRemitos(sh.matrix, file.name); if(D.filas.length) break; }catch(e){ err=e; D=null; } }
     if(!D || !D.filas.length) throw err || new Error('No encontré remitos con unidades en «'+file.name+'».');
-    const S=state.rep; S.data=D; S.sel={}; S.res=null; S.abierto=null; S.selOpen=true;
+    const S=state.rep; S.data=D; S.sel={}; S.res=null; S.abierto=null; S.selOpen=true; S.manual={}; S.edit=null;
     S.mes = D.meses.length ? String(D.meses[D.meses.length-1]) : '';
     render();
     toast(fmtInt(D.nRemitos)+' remitos leídos'+(D.conTalles?' (con talles)':''),'ok');
@@ -4174,7 +4189,7 @@ function repCalcular(){
   const remitos=Object.values(remOut).sort((x,y)=>cmp(x.nro,y.nro));
   remitos.forEach(r=>{ r.marca=[...r.marcas].filter(Boolean).join(' / '); r.rubro=[...r.rubros].filter(Boolean).join(' / '); r.arts.sort((x,y)=>cmp(x.art.desc,y.art.desc)||cmp(x.art.id,y.art.id)); });
   const uRep=remitos.reduce((s,r)=>s+r.uRep,0), uQueda=remitos.reduce((s,r)=>s+r.uQueda,0);
-  return {
+  return repRetotalizar(repAplicarManual({
     remitos, porSuc:Object.values(porSuc).sort((x,y)=>y.u-x.u), sin,
     totales:{ remitos:remitos.length, arts:arts.size, u:uTot, uRep, uQueda, sucursales:Object.keys(porSuc).length, sinRep:sin.length, estimados,
       sinRemito:sinRemitoN, dias:N,
@@ -4182,7 +4197,92 @@ function repCalcular(){
       faltan:[...arts.values()].reduce((s,a)=>s+(a.faltan||0),0) },
     fuenteTalles: D.conTalles ? 'export' : ((repFuenteReserva()||{}).archivo||''),
     guardadoKey:null,
-  };
+  }));
+}
+
+/* ---------- ajuste a mano antes de guardar (Juli 18/09/2026) ----------
+   Por artículo de cada remito se pueden cambiar las cantidades por talle, sumar una sucursal o
+   sacarla. Lo que hay para repartir (repartido + queda) no cambia: lo que se le saca a una
+   sucursal vuelve al depósito y lo que se le agrega sale de lo que queda. Los ajustes viven en
+   `state.rep.manual` y se vuelven a aplicar arriba de cada recálculo, así cambiar un parámetro
+   no los pisa. */
+function repManKey(nro, id){ return nro+'|'+id; }
+function repPool(x){ const p={}; Object.entries(x.queda||{}).forEach(([t,q])=>{ if(q>0) p[t]=q; });
+  x.lineas.forEach(l=>Object.entries(l.t||{}).forEach(([t,q])=>{ if(q>0) p[t]=(p[t]||0)+q; })); return p; }
+function repAplicarManualX(rm, x){
+  const ov=(state.rep.manual||{})[repManKey(rm.nro, x.art.id)];
+  if(!x.auto){ x.auto={}; x.lineas.forEach(l=>{ x.auto[l.slug]=Object.assign({}, l.t); }); x.lineasAuto=x.lineas; }
+  if(!ov){ x.editado=false; return; }
+  const pool=repPool(x), usado={}, prev={}; x.lineasAuto.forEach(l=>{ prev[l.slug]=l; });
+  x.lineas=Object.keys(ov).filter(slug=>REP_SUC[slug]).map(slug=>{ const t={};
+    Object.entries(ov[slug]||{}).forEach(([tt,q])=>{ q=Math.min(Math.max(0, parseInt(q,10)||0), (pool[tt]||0)-(usado[tt]||0)); if(q>0){ t[tt]=q; usado[tt]=(usado[tt]||0)+q; } });
+    ov[slug]=Object.assign({}, t);
+    return Object.assign({}, prev[slug]||{ slug, sucNombre:nombreSuc(slug), prio:null, prioDe:null, manual:true }, { t, u:sumT(t) }); });
+  const queda={}; Object.keys(pool).forEach(t=>{ const q=pool[t]-(usado[t]||0); if(q>0) queda[t]=q; });
+  x.queda=queda; x.uQueda=sumT(queda); x.editado=true;
+}
+function repAplicarManual(R){ R.remitos.forEach(rm=>rm.arts.forEach(x=>repAplicarManualX(rm, x))); return R; }
+function repRetotalizar(R){
+  const porSuc={}, conLineas=new Set(); let editados=0;
+  R.remitos.forEach(rm=>{ rm.uRep=0; rm.uQueda=0;
+    rm.arts.forEach(x=>{ if(x.editado) editados++; x.uQueda=sumT(x.queda); rm.uQueda+=x.uQueda;
+      x.lineas.forEach(l=>{ l.u=sumT(l.t); if(!l.u) return; rm.uRep+=l.u; conLineas.add(x.art.id);
+        const ps=porSuc[l.slug]||(porSuc[l.slug]={ slug:l.slug, nombre:l.sucNombre||nombreSuc(l.slug), u:0, arts:new Set(), remitos:new Set() });
+        ps.u+=l.u; ps.arts.add(x.art.id); ps.remitos.add(rm.nro); }); }); });
+  R.porSuc=Object.values(porSuc).sort((x,y)=>y.u-x.u);
+  // un artículo que «quedaba todo en el depósito» y se repartió a mano ya no está sin repartir
+  R.sin=(R.sin||[]).filter(s=>!(s.queda && conLineas.has(s.a.id)));
+  Object.assign(R.totales, { uRep:R.remitos.reduce((s,r)=>s+r.uRep,0), uQueda:R.remitos.reduce((s,r)=>s+r.uQueda,0),
+    sucursales:R.porSuc.length, sinRep:R.sin.length, editados });
+  return R;
+}
+function repBuscarX(key){ const R=state.rep.res; if(!R) return null;
+  for(const rm of R.remitos) for(const x of rm.arts) if(repManKey(rm.nro, x.art.id)===key) return { rm, x };
+  return null; }
+function repEditable(){ const S=state.rep; return !!(S.res && !S.abierto && !S.res.guardadoKey); }
+// al cerrar la edición: se sacan las sucursales que quedaron en cero y, si quedó igual que el
+// automático, el ajuste se descarta (así el artículo vuelve a seguir los parámetros)
+function repEditPodar(key){
+  const S=state.rep, ov=S.manual[key]; if(!ov) return;
+  Object.keys(ov).forEach(s=>{ if(!sumT(ov[s])) delete ov[s]; });
+  const f=repBuscarX(key), auto=f && f.x.auto; if(!auto) return;
+  const limpio=o=>{ const r={}; Object.keys(o).forEach(s=>{ const t={}; Object.entries(o[s]||{}).forEach(([k,q])=>{ if(q>0) t[k]=q; }); if(Object.keys(t).length) r[s]=t; }); return r; };
+  const A=limpio(auto), B=limpio(ov);
+  const igual = Object.keys(A).length===Object.keys(B).length && Object.keys(A).every(s=>B[s] && Object.keys(A[s]).length===Object.keys(B[s]).length && Object.keys(A[s]).every(t=>A[s][t]===B[s][t]));
+  if(igual) delete S.manual[key];
+}
+function repEditAbrir(key){
+  const S=state.rep; if(!repEditable()) return;
+  if(S.edit && S.edit!==key) repEditPodar(S.edit);
+  const f=repBuscarX(key); if(!f) return;
+  if(!S.manual[key]){ const ov={}; f.x.lineas.forEach(l=>{ ov[l.slug]=Object.assign({}, l.t); }); S.manual[key]=ov; }
+  S.edit=key; repRecalc();
+}
+function repEditCerrar(){ const S=state.rep; if(!S.edit) return; repEditPodar(S.edit); S.edit=null; repRecalc(); }
+function repEditReset(key){
+  const S=state.rep; if(!S.manual[key]) { if(S.edit===key){ S.edit=null; render(); } return; }
+  if(!confirm('¿Descartar los cambios a mano de este artículo y volver al reparto automático?')) return;
+  delete S.manual[key]; if(S.edit===key) S.edit=null; repRecalc();
+}
+// cambio de una celda: se ajusta al tope (lo que hay de ese talle sin contar a las demás
+// sucursales) y se actualizan los totales sin redibujar, para no perder el foco al tabular
+function repEditCelda(inp){
+  const S=state.rep, key=S.edit, f=key && repBuscarX(key); if(!f) return;
+  const slug=inp.dataset.slug, t=inp.dataset.t, ov=S.manual[key]; if(!ov || !ov[slug]) return;
+  const pool=repPool(f.x), otros=f.x.lineas.reduce((s,l)=>s+(l.slug===slug?0:((l.t||{})[t]||0)),0), tope=Math.max(0,(pool[t]||0)-otros);
+  let q=Math.max(0, parseInt(inp.value,10)||0);
+  if(q>tope){ q=tope; toast('Del talle '+t+' hay '+fmtInt(pool[t]||0)+' en total: a esta sucursal le pueden ir hasta '+fmtInt(tope),'err'); }
+  if(q>0) ov[slug][t]=q; else delete ov[slug][t];
+  inp.value = q>0 ? q : '';
+  repAplicarManualX(f.rm, f.x); repRetotalizar(S.res);
+  const box=inp.closest('.rart'); if(!box) return;
+  const set=(sel,v,vacioSi0)=>{ const el=box.querySelector(sel); if(el){ el.textContent = (vacioSi0 && !v) ? '·' : fmtInt(v); if(vacioSi0) el.classList.toggle('vacio', !v); } };
+  const l=f.x.lineas.find(z=>z.slug===slug); set('[data-rtot="'+slug+'"]', l?l.u:0);
+  const rep=f.x.lineas.reduce((s,z)=>s+((z.t||{})[t]||0),0);
+  set('[data-rrep="'+CSS.escape(t)+'"]', rep, true); set('[data-rqueda="'+CSS.escape(t)+'"]', (f.x.queda||{})[t]||0, true);
+  set('[data-rrept]', f.x.lineas.reduce((s,z)=>s+z.u,0)); set('[data-rquedat]', f.x.uQueda||0);
+  const card=inp.closest('.rcard'), rt=card && card.querySelector('.rtot'); if(rt) rt.innerHTML=repRemTotHtml(f.rm);
+  const resu=$('repResu'); if(resu) resu.innerHTML=repResuInner();
 }
 function repDestinos(){ const S=state.rep; if(Array.isArray(S.destinos)) return S.destinos.filter(s=>REP_SUC[s]); return Object.keys(REP_SUC).filter(s=>catDe(s)!=='outlet'); }
 async function repArmar(){
@@ -4193,7 +4293,7 @@ async function repArmar(){
   if(!S.cargado) await repCargarMemoria();
   // paredes de running: con el stock por sucursal de la semana (archivo cargado o guardado)
   try{ await asegurarStockData(); if(!PAREDES || PAREDES.semana!==state.semana){ const pw=calcParedes(stockRows()); if(pw) PAREDES=pw; } }catch(e){}
-  try{ S.res=repCalcular(); S.abierto=null; S.selOpen=false; S.vista='remito'; render(); toast('Reparto armado','ok'); }
+  try{ S.edit=null; S.res=repCalcular(); S.abierto=null; S.selOpen=false; S.vista='remito'; render(); toast('Reparto armado','ok'); }
   catch(e){ console.error(e); toast('Error al armar el reparto: '+(e.message||e),'err'); }
 }
 function repRecalc(){ const S=state.rep; repGuardarPrefs(); if(S.res && S.data && !S.abierto){ try{ S.res=repCalcular(); }catch(e){ console.error(e); } } render(); }
@@ -4214,7 +4314,10 @@ async function repCargarMemoria(){
   S.guardados=ks.map((k,i)=>({ key:k, meta:metas[i].v||{} }));
 }
 async function repGuardar(){
-  const S=state.rep, R=S.res; if(!R || S.abierto) return;
+  const S=state.rep; if(!S.res || S.abierto) return;
+  // si quedó un artículo en edición, se cierra (saca las sucursales en cero) antes de guardar
+  if(S.edit){ repEditPodar(S.edit); S.edit=null; try{ S.res=repCalcular(); }catch(e){ console.error(e); } }
+  const R=S.res;
   if(!FIREBASE_DB_URL){ toast('Sin base configurada','err'); return; }
   if(!R.totales.uRep){ toast('No hay nada repartido para guardar','err'); return; }
   if(S.hist==null){ await repCargarMemoria(); if(S.hist==null){ toast('No pude leer la memoria de envíos: probá de nuevo en un rato','err'); return; } }
@@ -4226,8 +4329,8 @@ async function repGuardar(){
   R.remitos.forEach(rm=>{
     remitos[repKey(rm.nro)]={ nro:rm.nro, marca:rm.marca, rubro:rm.rubro, uRep:rm.uRep, uQueda:rm.uQueda,
       arts:rm.arts.map(x=>({ id:x.art.id, cod:x.art.cod||'', desc:x.art.desc||'', marca:x.art.marca||'', rubro:x.art.rubro||'', genero:x.art.genero||'',
-        estimado:!!x.art.estimado, centrales:x.art.centrales||[], enRemitos:x.art.enRemitos||1,
-        lineas:x.lineas.map(l=>({ slug:l.slug, prio:l.prio, prioDe:l.prioDe, hist:!!l.hist, t:paresT(l.t) })), queda:paresT(x.queda) })) };
+        estimado:!!x.art.estimado, centrales:x.art.centrales||[], enRemitos:x.art.enRemitos||1, editado:x.editado?true:null,
+        lineas:x.lineas.filter(l=>l.u>0).map(l=>({ slug:l.slug, prio:l.prio, prioDe:l.prioDe, hist:!!l.hist, t:paresT(l.t) })), queda:paresT(x.queda) })) };
     rm.arts.forEach(x=>x.lineas.forEach(l=>{
       (porSuc[l.slug]=porSuc[l.slug]||[]).push({ remito:rm.nro, id:x.art.id, cod:x.art.cod||'', desc:x.art.desc||'', marca:x.art.marca||'', rubro:x.art.rubro||'', genero:x.art.genero||'', t:paresT(l.t) });
       const k=repKey(x.art.id)+'/'+l.slug; const o=suma[k]||(suma[k]={id:x.art.id, slug:l.slug, t:{}}); Object.entries(l.t).forEach(([t,q])=>{ o.t[t]=(o.t[t]||0)+q; });
@@ -4266,7 +4369,7 @@ async function repGuardar(){
     await fbPatch(ROOT, upd);
     Object.entries(upd).forEach(([path,v])=>{ const [n,a,b2]=path.split('/');
       if(n==='repartoHist'){ S.hist=S.hist||{}; (S.hist[a]=S.hist[a]||{})[b2]=v; } else if(n==='remitosRepartidos') S.repartidos[a]=v; });
-    R.guardadoKey=key; S.guardados.unshift({ key, meta }); S.guardados=S.guardados.slice(0,12);
+    R.guardadoKey=key; S.manual={}; S.guardados.unshift({ key, meta }); S.guardados=S.guardados.slice(0,12);
     toast('Reparto guardado ✓','ok'); render();
   }catch(e){ console.error(e); toast('No se pudo guardar: '+(e.message||e),'err'); render(); }
 }
@@ -4282,7 +4385,7 @@ async function repAbrir(key){
         const lineas=(x.lineas||[]).map(l=>{ const t=deParesT(l.t), u=sumT(t);
           const ps=porSuc[l.slug]||(porSuc[l.slug]={ slug:l.slug, nombre:nombreSuc(l.slug), u:0, arts:new Set(), remitos:new Set() }); ps.u+=u; ps.arts.add(x.id); ps.remitos.add(rm.nro);
           return { slug:l.slug, sucNombre:nombreSuc(l.slug), prio:l.prio, prioDe:l.prioDe, hist:!!l.hist, t, u }; });
-        const queda=deParesT(x.queda); return { art, lineas, queda, uQueda:sumT(queda) }; }) }));
+        const queda=deParesT(x.queda); return { art, lineas, queda, uQueda:sumT(queda), editado:!!x.editado }; }) }));
     const T=Object.assign({ remitos:remitos.length, sinRep:0, estimados:0 }, (b.meta&&b.meta.totales)||{}); T.sinRep=0;
     S.res={ remitos, porSuc:Object.values(porSuc).sort((x,y)=>y.u-x.u), sin:[], totales:T, fuenteTalles:(b.meta||{}).fuenteTalles||'', guardadoKey:key };
     S.abierto={ key, meta:b.meta||{} }; S.vista='remito';
@@ -4469,19 +4572,27 @@ function repResultadoHtml(){
     +'<br><b>5. El hueco entre los dos reportes:</b> esta pestaña sale de la estadística de <b>remitos</b> y la Barrida del reporte de <b>stock</b> con «Días u.compra». Un artículo con compra de hace menos de <b>'+(T.dias||Math.max(1,state.filtros.diasNuevo|0))+' días</b> que no figure en ningún remito de la lista no lo repartiría nadie: se suma solo en la tarjeta <b>«Ingresó hace poco · sin remito»</b>. Es el mismo número que usa la Barrida para no repartir lo nuevo: lo que tiene menos días va por acá, lo que tiene más por la Barrida.'
     +(T.estimados?'<br><span class="pill rep2">talles de la reserva</span> = el remito no trae talles: se usó la curva que tiene hoy el artículo en la reserva del depósito, repartida entre sus remitos por la cantidad de cada uno. Confirmalo al abrir la caja.':'')
     +'</div></details>';
-  h+='<div class="resu"><span><b>'+fmtInt(T.remitos)+'</b> remitos</span><span><b>'+fmtInt(T.arts||0)+'</b> artículos</span>'
+  h+='<div class="resu" id="repResu">'+repResuInner()+'</div>';
+  if(!S.abierto) h+=paredesHtml(PAREDES);
+  h+='<div class="segbar">'+[['remito','Por remito',T.remitos],['sucursal','Por sucursal',T.sucursales||0],['sin','Sin repartir',T.sinRep||0]]
+    .filter(([k])=>k!=='sin'||!S.abierto).map(([k,l,n])=>'<button data-rvista="'+k+'" class="'+(S.vista===k?'on':'')+'">'+l+' <span class="n">'+fmtInt(n)+'</span></button>').join('')+'</div>';
+  if(S.vista==='sucursal') h+=repVistaSuc(); else if(S.vista==='sin') h+=repVistaSin(); else h+=repVistaRemitos();
+  return h;
+}
+function repRemTotHtml(rm){
+  return '<b>'+fmtInt(rm.uRep)+'</b> a repartir · <span class="queda'+(rm.uQueda?'':' cero')+'">'+fmtInt(rm.uQueda)+' quedan</span>'+(rm.uSin?' · <span style="color:var(--bad)">'+fmtInt(rm.uSin)+' sin repartir</span>':'');
+}
+function repResuInner(){
+  const S=state.rep, R=S.res, T=R.totales;
+  return '<span><b>'+fmtInt(T.remitos)+'</b> remitos</span><span><b>'+fmtInt(T.arts||0)+'</b> artículos</span>'
     +'<span><b>'+fmtInt(T.uRep||0)+'</b> unidades a <b>'+fmtInt(T.sucursales||0)+'</b> sucursales</span>'
     +'<span class="c-cero"><b>'+fmtInt(T.uQueda||0)+'</b> quedan en el depósito</span>'
     +(T.sinRep?'<span class="c-falta"><b>'+fmtInt(T.sinRep)+'</b> artículos sin repartir</span>':'')
     +(T.estimados?'<span class="c-rep"><b>'+fmtInt(T.estimados)+'</b> con talles de la reserva</span>':'')
     +(T.faltan?'<span title="La reserva del depósito que se cargó tiene menos unidades que las que entraron por estos remitos: esas ya salieron (o el stock es de antes del ingreso). Se reparte lo que hay."><b>'+fmtInt(T.faltan)+'</b> u. de los remitos ya no están en la reserva</span>':'')
     +(T.sinRemito?'<span class="c-nuevo" title="Tienen compra de hace menos de '+T.dias+' días en el reporte de stock y no figuran en ningún remito de la lista: la Barrida los deja por nuevos, así que se reparten acá."><b>'+fmtInt(T.sinRemito)+'</b> artículos nuevos sin remito</span>':'')
-    +'<span style="margin-left:auto">'+(R.guardadoKey?'<span class="ok" style="color:var(--ok);font-weight:700">✓ guardado</span>':'<span style="color:var(--warn);font-weight:700">sin guardar</span>')+'</span></div>';
-  if(!S.abierto) h+=paredesHtml(PAREDES);
-  h+='<div class="segbar">'+[['remito','Por remito',T.remitos],['sucursal','Por sucursal',T.sucursales||0],['sin','Sin repartir',T.sinRep||0]]
-    .filter(([k])=>k!=='sin'||!S.abierto).map(([k,l,n])=>'<button data-rvista="'+k+'" class="'+(S.vista===k?'on':'')+'">'+l+' <span class="n">'+fmtInt(n)+'</span></button>').join('')+'</div>';
-  if(S.vista==='sucursal') h+=repVistaSuc(); else if(S.vista==='sin') h+=repVistaSin(); else h+=repVistaRemitos();
-  return h;
+    +(T.editados?'<span class="c-edit" title="Artículos con el reparto cambiado a mano: no siguen los parámetros hasta que los vuelvas al automático"><b>'+fmtInt(T.editados)+'</b> editados a mano'+(repEditable()?' <button class="lnk noprint" data-rresetall>descartar</button>':'')+'</span>':'')
+    +'<span style="margin-left:auto">'+(R.guardadoKey?'<span class="ok" style="color:var(--ok);font-weight:700">✓ guardado</span>':'<span style="color:var(--warn);font-weight:700">sin guardar</span>')+'</span>';
 }
 function repVistaRemitos(){
   const R=state.rep.res, N=(R.totales||{}).dias||0; let h='';
@@ -4491,19 +4602,25 @@ function repVistaRemitos(){
       +(sr ? '<span class="rnro">Ingresó hace poco</span><small>sin remito · compra de hace menos de '+N+' días · el depósito los tiene sueltos, no en una caja de remito</small>'
            : '<span class="rnro">Remito '+esc(repNroCorto(rm.nro))+'</span><small class="mono">'+esc(rm.nro)+'</small>')
       +'<span class="rmeta">'+esc(rm.marca||'')+(rm.rubro?' · '+esc(rm.rubro):'')+'</span>'
-      +'<span class="rtot"><b>'+fmtInt(rm.uRep)+'</b> a repartir · <span class="queda'+(rm.uQueda?'':' cero')+'">'+fmtInt(rm.uQueda)+' quedan</span>'+(rm.uSin?' · <span style="color:var(--bad)">'+fmtInt(rm.uSin)+' sin repartir</span>':'')+'</span></div>';
+      +'<span class="rtot">'+repRemTotHtml(rm)+'</span></div>';
     if(!rm.arts.length) h+='<div class="rvacio">Nada para repartir de este remito'+(rm.uSin?': mirá la pestaña «Sin repartir».'
       :': la reserva de hoy tiene menos unidades de sus artículos que las que entraron, y las que quedan se toman de otro remito del mismo artículo.')+'</div>';
     rm.arts.forEach(x=>{ const a=x.art;
-      h+='<div class="rart"><div class="rart-h"><span class="mono">'+esc(a.cod||a.id)+'</span><b>'+esc(a.desc||'—')+'</b><small>ID '+esc(a.id)+(a.genero?' · '+esc(stripNN(a.genero)):'')+'</small>'
+      const mk=repManKey(rm.nro, a.id), ed=state.rep.edit===mk && repEditable();
+      h+='<div class="rart'+(ed?' editando':'')+'" data-rk="'+esc(mk)+'"><div class="rart-h"><span class="mono">'+esc(a.cod||a.id)+'</span><b>'+esc(a.desc||'—')+'</b><small>ID '+esc(a.id)+(a.genero?' · '+esc(stripNN(a.genero)):'')+'</small>'
         +(a.estimado?'<span class="pill rep2" title="El remito no trae talles: se usó la curva que tiene hoy en la reserva del depósito'+(a.faltan?'. La reserva tiene '+fmtInt(a.faltan)+' unidades menos que el remito (ya salió algo).':'')+'">talles de la reserva</span>':'')
         +(a.enRemitos>1?'<span class="pill suc" title="Entró en '+a.enRemitos+' remitos: se repartió junto, una sola curva por sucursal">en '+a.enRemitos+' remitos</span>':'')
         +(a.sinRemito?'<span class="pill nuevo" title="Tiene compra de hace '+(a.diasDepo||0)+' días en el reporte de stock pero no aparece en ningún remito de la lista: la Barrida no lo reparte por nuevo, así que se suma acá">ingresó hace '+(a.diasDepo||0)+' d</span>'
           :(a.diasDepo!=null && N && a.diasDepo>=N ? '<small title="Lo que hay hoy en el depósito de este artículo entró hace '+a.diasDepo+' días: ya lo toma la Barrida de reserva">hace '+a.diasDepo+' días en el depósito</small>' : ''))
-        +(a.regla?'<small title="'+esc(a.regla)+'">'+esc(a.regla)+'</small>':'')+'</div>';
+        +(a.regla?'<small title="'+esc(a.regla)+'">'+esc(a.regla)+'</small>':'')
+        +(x.editado && !ed?'<span class="pill edit" title="El reparto de este artículo se cambió a mano: no sigue los parámetros">✎ editado a mano</span>':'')
+        +(repEditable()?'<span class="rart-acc noprint">'
+          +(ed?'<button class="btn btn-primary btn-sm" data-redok>✓ Listo</button>':'<button class="btn btn-outline btn-sm" data-redit="'+esc(mk)+'" title="Cambiar a mano las cantidades por talle, sumar o sacar sucursales">✎ Editar</button>')
+          +((ed||x.editado)?'<button class="lnk" data-rreset="'+esc(mk)+'">↺ volver al automático</button>':'')+'</span>':'')
+        +'</div>';
       // grilla: una columna por talle del artículo (las mismas en todas las filas, centrales resaltados),
       // una fila por sucursal y al pie lo repartido y lo que queda en el depósito por talle (Juli 14/09/2026)
-      const C=new Set(a.centrales||[]), lineas=x.lineas.slice().sort((p,q)=>(p.prio||99)-(q.prio||99));
+      const C=new Set(a.centrales||[]), lineas=x.lineas.filter(l=>ed||l.u>0).sort((p,q)=>(p.prio||99)-(q.prio||99));
       const tset=new Set(); lineas.forEach(l=>Object.keys(l.t||{}).forEach(t=>{ if(l.t[t]>0) tset.add(t); }));
       Object.keys(x.queda||{}).forEach(t=>{ if(x.queda[t]>0) tset.add(t); });
       const tl=[...tset].sort(cmpTalle);
@@ -4513,14 +4630,24 @@ function repVistaRemitos(){
       h+='<div class="rgrid-wrap"><table class="rgrid"><thead><tr><th class="rg-dest">Destino</th><th class="rg-prio">Prioridad</th>'
         +tl.map(t=>'<th class="rg-t'+(C.has(t)?' c':'')+'"'+(C.has(t)?' title="Talle central"':'')+'>'+esc(t)+'</th>').join('')
         +'<th class="rg-tot">Total</th></tr></thead><tbody>';
+      const celdaPie=(q,t,attr)=>'<td class="rg-t q'+(C.has(t)?' c':'')+(q>0?'':' vacio')+'" '+attr+'="'+esc(t)+'">'+(q>0?fmtInt(q):'·')+'</td>';
       lineas.forEach(l=>{
-        h+='<tr><td class="rg-dest"><span class="pill suc">'+esc(stripNN(l.sucNombre))+'</span>'+(l.hist||l.stock?' <span class="pill curva" title="'+(l.stock?'Ya tiene el artículo en la sucursal (reingreso): se le completa la curva':'Ya había recibido este artículo: se le completa la curva')+'">completa</span>':'')+'</td>'
-          +'<td class="rg-prio"><span class="pill '+(l.prio===1?'rec':'suc')+'" title="'+esc(repPrioTxt(l))+'">'+(l.prio||'—')+' de '+(l.prioDe||'—')+'</span></td>'
-          +tl.map(t=>celda((l.t||{})[t]||0, t, 'q')).join('')
-          +'<td class="rg-tot"><span class="sug-badge">'+fmtInt(l.u)+'</span></td></tr>'; });
+        h+='<tr><td class="rg-dest">'+(ed?'<button class="rg-x noprint" data-rquitar="'+esc(l.slug)+'" title="Sacar esta sucursal: lo suyo vuelve al depósito">✕</button> ':'')
+          +'<span class="pill suc">'+esc(stripNN(l.sucNombre))+'</span>'+(l.hist||l.stock?' <span class="pill curva" title="'+(l.stock?'Ya tiene el artículo en la sucursal (reingreso): se le completa la curva':'Ya había recibido este artículo: se le completa la curva')+'">completa</span>':'')+'</td>'
+          +'<td class="rg-prio">'+(l.manual?'<span class="pill edit" title="Sucursal agregada a mano">a mano</span>':'<span class="pill '+(l.prio===1?'rec':'suc')+'" title="'+esc(repPrioTxt(l))+'">'+(l.prio||'—')+' de '+(l.prioDe||'—')+'</span>')+'</td>'
+          +tl.map(t=>ed ? '<td class="rg-t'+(C.has(t)?' c':'')+'"><input type="number" class="rg-in" min="0" step="1" inputmode="numeric" data-slug="'+esc(l.slug)+'" data-t="'+esc(t)+'" value="'+(((l.t||{})[t]||0)||'')+'" aria-label="'+esc(stripNN(l.sucNombre))+' talle '+esc(t)+'"></td>'
+                         : celda((l.t||{})[t]||0, t, 'q')).join('')
+          +'<td class="rg-tot"><span class="sug-badge" data-rtot="'+esc(l.slug)+'">'+fmtInt(l.u)+'</span></td></tr>'; });
+      if(ed){
+        const ya=new Set(x.lineas.map(l=>l.slug));
+        const libres=Object.keys(REP_SUC).filter(s=>!ya.has(s)).sort((p,q)=>cmp(stripNN(nombreSuc(p)),stripNN(nombreSuc(q))));
+        h+='<tr class="rg-add noprint"><td class="rg-dest" colspan="'+(tl.length+3)+'">'
+          +(libres.length?'<select class="inp" data-rsumar><option value="">+ Agregar sucursal…</option>'+libres.map(s=>'<option value="'+esc(s)+'">'+esc(stripNN(nombreSuc(s)))+'</option>').join('')+'</select>':'')
+          +' <small>Lo que le sacás a una sucursal vuelve a «Queda en el depósito»; lo que agregás sale de ahí. Tab pasa al talle siguiente.</small></td></tr>';
+      }
       h+='</tbody><tfoot>'
-        +'<tr class="rg-sum"><td class="rg-dest">Repartido</td><td class="rg-prio">'+fmtInt(lineas.length)+' suc.</td>'+tl.map(t=>celda(rep[t]||0, t, 'q')).join('')+'<td class="rg-tot">'+fmtInt(totRep)+'</td></tr>'
-        +'<tr class="rg-queda"><td class="rg-dest">Queda en el depósito</td><td class="rg-prio"></td>'+tl.map(t=>celda((x.queda||{})[t]||0, t, 'q')).join('')+'<td class="rg-tot">'+fmtInt(x.uQueda||0)+'</td></tr>'
+        +'<tr class="rg-sum"><td class="rg-dest">Repartido</td><td class="rg-prio">'+fmtInt(lineas.filter(l=>l.u>0).length)+' suc.</td>'+tl.map(t=>celdaPie(rep[t]||0, t, 'data-rrep')).join('')+'<td class="rg-tot" data-rrept>'+fmtInt(totRep)+'</td></tr>'
+        +'<tr class="rg-queda"><td class="rg-dest">Queda en el depósito</td><td class="rg-prio"></td>'+tl.map(t=>celdaPie((x.queda||{})[t]||0, t, 'data-rqueda')).join('')+'<td class="rg-tot" data-rquedat>'+fmtInt(x.uQueda||0)+'</td></tr>'
         +'</tfoot></table></div></div>';
     });
     h+='</div>';
@@ -4611,6 +4738,17 @@ function wireReparto(){
   on('repCentReset','onclick',async()=>{ if(!confirm('¿Volver a los talles centrales de fábrica (para todos)?')) return; S.centrales=null; try{ if(FIREBASE_DB_URL) await fbPut(ROOT+'/repartoConfig/centrales', null); }catch(e){} repRecalc(); });
   // resultado
   document.querySelectorAll('[data-rvista]').forEach(b=>b.onclick=()=>{ S.vista=b.dataset.rvista; render(); });
+  // ajuste a mano antes de guardar
+  document.querySelectorAll('[data-redit]').forEach(b=>b.onclick=()=>repEditAbrir(b.dataset.redit));
+  document.querySelectorAll('[data-redok]').forEach(b=>b.onclick=repEditCerrar);
+  document.querySelectorAll('[data-rreset]').forEach(b=>b.onclick=()=>repEditReset(b.dataset.rreset));
+  document.querySelectorAll('.rg-in').forEach(i=>{ i.onchange=()=>repEditCelda(i); i.onfocus=()=>{ try{ i.select(); }catch(e){} };
+    i.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); i.blur(); } }; });
+  document.querySelectorAll('[data-rquitar]').forEach(b=>b.onclick=()=>{ const ov=S.manual[S.edit]; if(!ov) return; delete ov[b.dataset.rquitar]; repRecalc(); });
+  document.querySelectorAll('[data-rsumar]').forEach(s=>s.onchange=()=>{ const ov=S.manual[S.edit]; if(!ov || !s.value) return; ov[s.value]={}; S._focusSuc=s.value; repRecalc(); });
+  const resu=$('repResu'); if(resu) resu.onclick=e=>{ if(!e.target.closest('[data-rresetall]')) return;
+    if(!confirm('¿Descartar TODOS los cambios a mano y volver al reparto automático?')) return; S.manual={}; S.edit=null; repRecalc(); };
+  if(S._focusSuc){ const el=document.querySelector('.rg-in[data-slug="'+S._focusSuc+'"]'); S._focusSuc=null; if(el) el.focus(); }
   on('repXlsx','onclick',repExportXlsx);
   on('repPrint','onclick',()=>{ S.vista='remito'; render(); setTimeout(()=>window.print(),150); });
   on('repGuardar','onclick',repGuardar);

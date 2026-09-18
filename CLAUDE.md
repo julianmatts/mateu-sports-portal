@@ -1810,6 +1810,22 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
   prioridad en una grilla con una columna por talle —centrales resaltados— y al pie las filas «Repartido» y «Queda en el depósito» por talle con su total, rediseño del 14/09/2026), «Por sucursal» y «Sin repartir»
   (con el motivo); ⇩ Excel con **una hoja por remito** (para imprimir en su ubicación) + resumen por
   sucursal; 🖨 Imprimir.
+- **Ajuste a mano antes de guardar (18/09/2026, pedido de Juli)**: en la vista «Por remito», cada artículo
+  tiene **✎ Editar** (solo con el reparto sin guardar; un reparto abierto del historial no se edita): las
+  celdas de la grilla pasan a ser casilleros numéricos por sucursal × talle, ✕ saca una sucursal y
+  «+ Agregar sucursal…» suma cualquiera de `REP_SUC` (queda marcada «a mano», sin prioridad). Lo que hay
+  para repartir del artículo en ese remito (`repPool` = repartido + queda) no cambia: lo que se le saca a
+  una sucursal vuelve a «Queda en el depósito» y lo que se agrega sale de ahí (la celda se ajusta al tope
+  y avisa). Los ajustes viven en `state.rep.manual['<remito>|<idItem>'] = {<slug>:{<talle>:u}}` y
+  `repCalcular` los **vuelve a aplicar arriba de cada recálculo** (`repAplicarManual` + `repRetotalizar`),
+  así cambiar un parámetro no los pisa; «✓ Listo» saca las sucursales en cero y, si quedó igual al
+  automático, descarta el ajuste (`repEditPodar`); «↺ volver al automático» por artículo y «descartar» en
+  la tira de resumen («N editados a mano»). Al tipear no se redibuja la pantalla (`repEditCelda` actualiza
+  totales de fila, pie, remito y resumen) para no perder el foco al tabular. Un artículo que «quedaba todo
+  en el depósito» también se puede repartir a mano (sale de «Sin repartir»). Guardar, ⇩ Excel, Mi Sucursal
+  y Picking toman lo editado sin cambios; el artículo se guarda con `editado:true` y `meta.totales.editados`.
+  Cargar otra estadística de remitos o guardar limpia los ajustes. La Barrida de reserva todavía no tiene
+  edición a mano.
 - **El hueco entre los dos reportes (12/09/2026, planteo de Juli)**: esta pestaña sale de la
   estadística de **remitos** y la Barrida del reporte de **stock** con «Días u.compra», así que un
   artículo puede tener compra de hace pocos días (la Barrida no lo reparte: lo ve nuevo) y no figurar
