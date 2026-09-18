@@ -1890,6 +1890,12 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     siempre; **de marzo a septiembre** `repCentrales` devuelve `tranquila:true` con `per` = x1 en todos los talles, sin
     centrales ni 3.ª unidad, y el reparto corre con `criterio:'abrir'` y `excedente:false` (tampoco aplica «Niño y
     fútbol: repartir todo»): lo que sobra queda en el depósito. Manda la fecha del día en que se arma el reparto.
+    **Térmicas (18/09/2026), misma regla con la temporada al revés**: indumentaria cuyo tipo o disciplina dice TERMICA
+    (REMERAS TERMICAS y CALZAS TERMICAS; los accesorios no entran), temporada alta **abril a agosto** (`TERMICA_MESES`),
+    tranquila de septiembre a marzo. Las reglas viven en el mapa `TEMPORADAS` (`fueraDeTemporada(a, G)`): sumar una línea
+    estacional = una entrada más. Verificado ese día contra el maestro `logistica/arts`: la regla de verano toma toda la
+    disciplina CALZADO VERANO (398 artículos, 32 marcas: Rider, Havaianas, Crocs, Adidas…), no solo Crocs; quedan afuera
+    los Crocs que el sistema tiene como CASUAL (Santa Cruz, Lined Clog/pantufla, Swiftwater), que no son de verano.
     **Orden de talles de niño en escala US** (`ordenTallesNino`, mismo informe): la escala infantil da la vuelta
     (C6·C8·C10·C12 y después J1·J2·J3; 10K…13.5K y después 1Y…); ordenados por número, la curva progresiva daba x2 a
     los chicos. Se detecta por letra (J/Y vs. C/K) o por contenido (curva que llega a 10–13.5 y trae talles ≤ 3.5: el

@@ -3357,9 +3357,22 @@ function repTodoAlSalon(a, G){
 const RX_VERANO = /verano|sandalia|ojota|chinela/;
 const VERANO_MESES = [9,10,11,0,1];            // oct · nov · dic · ene · feb (getMonth)
 function esCalzadoVerano(a){ return RX_VERANO.test(sinAcento([a&&a.disc, a&&a.tipo].filter(Boolean).join(' ')).toLowerCase()); }
-function veranoTranquilo(a, G, hoy){
-  if(!G || G.fam!=='calz' || !esCalzadoVerano(a)) return false;
-  return !VERANO_MESES.includes((hoy||new Date()).getMonth());
+/* Térmicas (Juli 18/09/2026: «aplicar lógica de temporada para remeras térmicas»): la misma regla, con la temporada
+   al revés. Indumentaria cuyo tipo o disciplina dice TERMICA (REMERAS TERMICAS y CALZAS TERMICAS del sistema; los
+   accesorios —botellas, vasos, cuellos— no entran). Temporada alta = ABRIL a AGOSTO; de septiembre a marzo, tranquila. */
+const RX_TERMICA = /termic/;
+const TERMICA_MESES = [3,4,5,6,7];             // abr · may · jun · jul · ago
+function esTermica(a){ return RX_TERMICA.test(sinAcento([a&&a.disc, a&&a.tipo].filter(Boolean).join(' ')).toLowerCase()); }
+// reglas de temporada: devuelve el texto de la regla si el artículo está FUERA de su temporada, o ''
+const TEMPORADAS = [
+  { fam:'calz', es:esCalzadoVerano, meses:VERANO_MESES,  txt:'calzado de verano fuera de temporada (marzo a septiembre)' },
+  { fam:'ind',  es:esTermica,       meses:TERMICA_MESES, txt:'térmicas fuera de temporada (septiembre a marzo)' }
+];
+function fueraDeTemporada(a, G, hoy){
+  if(!G) return '';
+  const mes=(hoy||new Date()).getMonth();
+  const r=TEMPORADAS.find(r=>r.fam===G.fam && r.es(a));
+  return r && !r.meses.includes(mes) ? r.txt : '';
 }
 // locales que no trabajan niño, ni calzado ni indumentaria (Juli 17/09/2026: Calle 49)
 const SIN_NINO = { 'calle-49':true };
@@ -3648,9 +3661,10 @@ function repCentralesTabla(){ return Object.assign({}, CENTRALES_DEF, state.rep.
 function repCentrales(a, labels){
   const G=repGrupo(a);
   if(!G.fam) return { G, set:new Set(), regla:'accesorios: 1 unidad por talle' };
-  if(veranoTranquilo(a, G)){
+  const fueraT=fueraDeTemporada(a, G);
+  if(fueraT){
     const per={}; labels.forEach(t=>{ per[t]=1; });
-    return { G, set:new Set(), per, tranquila:true, regla:'calzado de verano fuera de temporada (marzo a septiembre): curva tranquila, x1 por talle y sin profundidad' };
+    return { G, set:new Set(), per, tranquila:true, regla:fueraT+': curva tranquila, x1 por talle y sin profundidad' };
   }
   const tabla=repCentralesTabla(); const mk=G.key+'|'+normMarca(a.marca);
   // calzado unisex (Juli 14/09/2026): si uno de los dos subrubros no tiene sus centrales completos (menos de 2 de
