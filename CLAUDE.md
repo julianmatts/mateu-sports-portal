@@ -983,7 +983,8 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   y el pendiente lleva «🏬 Va en el salón» + desplegable «🗺 Ver en el plano». En **Tareas → Sectores de
   marcas**, «Dónde» se puede elegir tocando el plano del salón y el 📍 de la tarjeta lo abre. Sucursal
   nueva = correr el generador con su Excel (sin tocar código).
-  **El plano vive debajo de la barra de búsqueda (17/09/2026, pedido de Juli)**: panel `#planoBox`
+  **El plano vive debajo de la búsqueda (17/09/2026, pedido de Juli)** — desde el 18/09 **debajo de los
+  resultados** (`#planoBox` va después de `#searchResults`: primero se ve el artículo, después el plano): panel `#planoBox`
   (`renderPlanoBox`, plegable y recordado en localStorage `ubic_plano_open`) con el salón y el/los
   depósitos uno al lado del otro — en celular una tira deslizable horizontal. **Ocupa todo el ancho de la
   ventana** (17/09 tarde, «quedaron chicos»: el panel es full-bleed con `width:100vw` + `margin-left:
