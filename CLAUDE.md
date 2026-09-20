@@ -3020,7 +3020,7 @@ Chat flotante **abajo a la izquierda** en todos los módulos (la campana y el «
 Personaje: **Matts**, un deportista profesional de todos los deportes. Hace dos cosas: **ayuda de
 uso del portal** (sabe en qué módulo está el usuario y su rol) y **asesor deportivo** para el
 mostrador. Pedido de Juli: modelo de bajo consumo → **Claude Haiku 4.5** (unos US$0,003–0,006 por
-consulta). Etapa 1 = sin datos en vivo; etapa 2 = stock desde el Buscador; etapa 3 = 360 con la API MySQL.
+consulta). Etapa 1 = guía + catálogo; etapa 2 = stock desde el Buscador (hechas el 20/09); etapa 3 = 360 (ventas y stock del sistema) con la API MySQL, pendiente.
 
 - **Widget** `shared/asistente.js` (ES5, XHR, prefijo `mat-`): `header.js` lo carga solo (como
   `bloqueo.js`); el Portal e Indicadores lo incluyen con una línea. No se monta sin sesión, en el rol
@@ -3044,8 +3044,20 @@ consulta). Etapa 1 = sin datos en vivo; etapa 2 = stock desde el Buscador; etapa
   herramientas (máx. 4 vueltas): `guia_modulo` (guía de OTRO módulo) y `buscar_catalogo`
   (disciplina + rubro, marca y texto opcionales; 40 filas). La llamada al modelo está aislada en
   `llamarModelo`: cambiar de proveedor es tocar esa función.
-- **Reglas del prompt que no hay que aflojar**: el catálogo NO es stock (nunca «hay», «queda», ni
-  precios: manda al Buscador de Artículos); solo recomienda artículos que devuelve la herramienta; no
+- **Etapa 2 — stock (20/09/2026)**: herramienta `consultar_stock({codigos[1..4], talle?})` → lee el
+  Buscador de Artículos (`ubicaciones-mateu/sucursales/<slug>/articulos`) con una consulta puntual por
+  clave (`orderBy="$key"&equalTo`, clave = `fbKey` del Buscador) a cada sucursal que carga stock ahí; cuáles
+  son se averigua una vez por hora con el `meta` de cada una (`sucursalesConStock`, en memoria del isolate).
+  Devuelve por artículo `con_stock` (sucursal, unidades, talles con stock si los abre, fecha de carga),
+  `sin_stock_cargado`, y las `sucursales_sin_dato`. Al 20/09 cargan stock 6 de 17 (Diagonal 80, Calle 49,
+  Berisso, Ensenada, Aurelius 12, Aurelius 5) y **solo Calle 49 y Aurelius 12 abren por talle** — el techo de
+  esta etapa es ese: más sucursales cargando su stock con talle en el Buscador = mejores respuestas, sin
+  tocar código. Para llegar del nombre al código, `buscar_catalogo` acepta **solo marca + texto**
+  (partición `catalogo/porMarca/<MARCA>`); el 90 % de los códigos del Buscador está en el catálogo. La ven
+  todos los roles (el stock entre sucursales no es sensible); el `puesto` sigue sin Matts.
+- **Reglas del prompt que no hay que aflojar**: de stock habla SOLO con lo que devuelve `consultar_stock`,
+  siempre con la fecha de carga y aclarando que no es el sistema en vivo; «sin dato» ≠ «no tiene»; nunca
+  precios; solo recomienda artículos que devuelve la herramienta; no
   inventa botones; nada de consejos médicos.
 - **Guía de uso** = `shared/asistente-guia.json`, generada desde el mapa `TUT` de `shared/tutorial.js`:
   `node scripts/gen-asistente.js guia` **cada vez que se toque un tutorial** (módulo nuevo = su entrada
@@ -3061,8 +3073,7 @@ consulta). Etapa 1 = sin datos en vivo; etapa 2 = stock desde el Buscador; etapa
   crédito prepago sin recarga automática) **vence el 20/09/2027**: cuando caduque, Matts y los ✨ de la
   Academia dejan de responder → crear otra y reemplazar el Secret `ANTHROPIC_API_KEY` en el proyecto Pages
   + Retry deployment. Si Matts contesta «No pude contactar al modelo», mirar primero el saldo de créditos.
-- Pendiente: probarlo en vivo (necesita la clave cargada en Cloudflare + redeploy), habilitarlo en el
-  puesto solo como asesor de producto, y las etapas 2 y 3.
+- Pendiente: habilitarlo en el puesto solo como asesor de producto, y la etapa 3.
 
 ## Reglas
 
