@@ -1927,6 +1927,24 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     tramo chico corrido desde el mínimo es juvenil). Pendiente del mismo informe (sin decidir): el manual no le mandó
     Crocs niño a Diagonal 80 ni a Aurelius Calle 10, y priorizó a Ecommerce y Outlet Av. 44, que en el automático
     quedaron últimos.
+  - **Cuatro criterios fijos más (20/09/2026, Juli: «avanzar 1, 3, 5 y 6»; bloque «CRITERIOS FIJOS DEL REPARTO» arriba de
+    `repCandidatos`, sin tildes)**. **(1) Profundidad según el local** (`repPerfil` → `perfil` del candidato): **honda** =
+    Cat 1 y Ecommerce (y Mateu Kids / Outlet Gonnet en niño): curva base + 3.ª unidad en centrales, o la curva profunda en
+    criterio «profundidad»; **base** = Cat 2, Aurelius, tiendas Adidas y outlets de marca «como local de línea»: curva base
+    SIN 3.ª unidad; **chata** = outlets: x1 por talle (entra como `plana`). Antes todas recibían la misma curva. También
+    rige en «Abrir a más sucursales». **(3) Tope por meses de stock** (`REP_MS_TOPE` = 6, `repMsExcedida`): con 6+ meses de
+    la marca (dato de marca o subrubro, no el del rubro) la sucursal sale de los candidatos; no se aplica a Ecommerce, pared
+    incompleta, reingreso (tiene stock o memoria) ni a la que vendió el artículo esa semana; quedan en `a.msFuera` y en el
+    texto de la regla / motivo de «Sin repartir». **(5) Fechas comerciales** (`repPico`, `REP_PICO_DIAS` = 28 días antes;
+    fechas por regla con `tercerDomingo`): Día del Niño (3.er domingo de agosto → niño), Día de la Madre (3.er domingo de
+    octubre → dama), Día del Padre (3.er domingo de junio → hombre), Navidad (25/12 → TODO) y Vuelta al cole (15/01–10/03 →
+    mochilas y calzado niño): el artículo corre con `criterio:'profundidad'`, `reserva:0` y `pico:true` (todos los perfiles
+    suben un escalón, `PERFIL_SUBE`); si está fuera de temporada (curva tranquila) manda la temporada. **(6) Rotación del
+    reingreso** (`repCargarEnvios` baja una vez por sesión los envíos de los últimos `REP_ROT_MESES` = 4 meses de
+    `logistica/meses/<ym>/envios`, solo si hay stock por sucursal; `repRotacion` = 1 − stock ÷ recibido por artículo ×
+    sucursal, cruce por código): ≥ 60 % → curva entera y perfil honda; < 50 % → solo completa talles aunque lo venda; en
+    el medio o sin datos → la regla anterior (`vendeArt`). El tooltip de prioridad muestra perfil y rotación. Probado en
+    node con casos sintéticos; **falta validarlo contra un reparto manual real** (el próximo informe automático vs. manual).
   - **Criterio «abrir a más locales» / «mayor profundidad» (17/09/2026, Juli: no siempre se usa el mismo)**:
     select «Criterio» (`param.criterio`, default `abrir` = lo de siempre: curva base a todas, después la reserva y
     la 3.ª unidad). `profundidad`: se aparta primero la reserva y cada sucursal, en orden de prioridad, recibe la
