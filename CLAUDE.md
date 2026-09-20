@@ -3031,6 +3031,10 @@ consulta). Etapa 1 = sin datos en vivo; etapa 2 = stock desde el Buscador; etapa
 - **Firebase** (`recepciones-mateu/asistente/`): `uso/<YYYY-MM-DD>/<mail>` y `_total` (contadores del
   tope) y `log/<YYYY-MM>/<id>` = `{ts, mail, rol, suc, modulo, q, r, tools, tin, tout, modelo}` — con
   eso se ve qué se pregunta y cuánto gasta antes de decidir cambios de modelo.
+- **La clave** `portal-mateu` (consola de Anthropic, organización «Mateu Sports», cuenta julian@mateu.com.ar,
+  crédito prepago sin recarga automática) **vence el 20/09/2027**: cuando caduque, Matts y los ✨ de la
+  Academia dejan de responder → crear otra y reemplazar el Secret `ANTHROPIC_API_KEY` en el proyecto Pages
+  + Retry deployment. Si Matts contesta «No pude contactar al modelo», mirar primero el saldo de créditos.
 - Pendiente: probarlo en vivo (necesita la clave cargada en Cloudflare + redeploy), habilitarlo en el
   puesto solo como asesor de producto, y las etapas 2 y 3.
 
