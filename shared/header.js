@@ -258,6 +258,14 @@
     document.head.appendChild(sb);
   }
 
+  /* Matts, el asistente del portal (shared/asistente.js): mismo criterio que
+     el bloqueo. El Portal e Indicadores lo incluyen a mano. */
+  if(!document.querySelector('script[src*="shared/asistente"]')){
+    var sm = document.createElement('script');
+    sm.src = ROOT+'shared/asistente.js';
+    document.head.appendChild(sm);
+  }
+
   /* Mantener el service worker del Portal al día desde cualquier módulo.
      El registro original vive en el index raíz, pero sucursal/gerencia son
      redirigidas a Indicadores antes del evento load: sin esto, el sw.js nuevo

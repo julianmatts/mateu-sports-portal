@@ -33,6 +33,7 @@ mateu-sports-portal/
 ├── tareas/             # Tareas de la Sucursal: Cambio de precios, Sectores de marcas, Limpieza (checklist) y Vidrieras (alerta por días sin cambios), con foto antes/después y comparativa. Firebase: reusa recepciones-mateu (nodo tareas/). Ver "Tareas de la Sucursal" abajo.
 ├── logistica/          # Envíos e Ingresos: dashboard de logística (unidades enviadas a cada sucursal + ingresos al depósito por mes/rubro/subrubro/disciplina/marca). Pantalla inicial de logistica@ y deposito@. Firebase: reusa recepciones-mateu (nodo logistica/). Ver "Envíos e Ingresos" abajo.
 ├── reviews/            # Reseñas de Google por sucursal: buenas/malas, captación sobre tickets y evolución mes a mes, con estética de ficha de Google. Solo lectura; los datos salen del Excel de Iván vía scripts/gen-reviews.py. Ver "Reseñas de Google" abajo.
+├── functions/api/      # Pages Functions: publicar-stock, academia-ia y asistente (Matts). Ver "Matts" abajo.
 ├── lib/                # código JS común versionado y testeable (hoy: evaluacion.js = cálculo puro de Evaluaciones + tests con node --test)
 └── shared/             # código común del shell (calendario retail, etc.)
 ```
@@ -2994,6 +2995,44 @@ opinión leída. Para ver los comentarios hace falta conectar la **API de Google
 Profile** (OAuth + el Place ID de cada sucursal), que queda pendiente. Tampoco hay mapa
 geográfico: no están cargadas las direcciones de los locales.
 
+
+## Matts — el asistente del portal (`shared/asistente.js` + `functions/api/asistente.js`, 20/09/2026)
+
+Chat flotante **abajo a la izquierda** en todos los módulos (la campana y el «?» van a la derecha).
+Personaje: **Matts**, un deportista profesional de todos los deportes. Hace dos cosas: **ayuda de
+uso del portal** (sabe en qué módulo está el usuario y su rol) y **asesor deportivo** para el
+mostrador. Pedido de Juli: modelo de bajo consumo → **Claude Haiku 4.5** (unos US$0,003–0,006 por
+consulta). Etapa 1 = sin datos en vivo; etapa 2 = stock desde el Buscador; etapa 3 = 360 con la API MySQL.
+
+- **Widget** `shared/asistente.js` (ES5, XHR, prefijo `mat-`): `header.js` lo carga solo (como
+  `bloqueo.js`); el Portal e Indicadores lo incluyen con una línea. No se monta sin sesión, en el rol
+  `puesto` ni con `?pres=`. Al cargar hace `GET /api/asistente`: si `disponible:false` (falta la clave,
+  o se abrió el HTML suelto) **el botón no aparece**. La charla vive en `sessionStorage` (`matts_chat`)
+  y se mandan las últimas 12. Abierto sube a z-index 1290 (tapa «?» y campana; el tutorial sigue arriba).
+  Sugerencias por módulo en `SUGERENCIAS`. El nombre es la constante `NOMBRE` (widget y Function).
+- **Function** `functions/api/asistente.js`: usa la misma `ANTHROPIC_API_KEY` que `/api/academia-ia`.
+  Opcionales `ASISTENTE_MODELO`, `ASISTENTE_TOPE` (60 consultas por cuenta y día) y
+  `ASISTENTE_TOPE_TOTAL` (1500). El mail tiene que existir en `discontinuos-mateu/usuarios` (el rol y
+  la sucursal salen de ahí, no del navegador; seguridad blanda, sin PIN). Prompt = personaje + índice
+  de módulos (bloque estable) + usuario y guía del módulo actual filtrada por rol. Bucle de
+  herramientas (máx. 4 vueltas): `guia_modulo` (guía de OTRO módulo) y `buscar_catalogo`
+  (disciplina + rubro, marca y texto opcionales; 40 filas). La llamada al modelo está aislada en
+  `llamarModelo`: cambiar de proveedor es tocar esa función.
+- **Reglas del prompt que no hay que aflojar**: el catálogo NO es stock (nunca «hay», «queda», ni
+  precios: manda al Buscador de Artículos); solo recomienda artículos que devuelve la herramienta; no
+  inventa botones; nada de consejos médicos.
+- **Guía de uso** = `shared/asistente-guia.json`, generada desde el mapa `TUT` de `shared/tutorial.js`:
+  `node scripts/gen-asistente.js guia` **cada vez que se toque un tutorial** (módulo nuevo = su entrada
+  en `TUT` y regenerar).
+- **Catálogo** = `recepciones-mateu/asistente/catalogo` = `{generado, indice, partes:{<DISC>__<RUBRO>:
+  [[código, artículo, marca, género, tipo]]}}`, el maestro `logistica/arts` partido para bajar solo el
+  pedacito: `node scripts/gen-asistente.js catalogo --publicar` después de la carga mensual de
+  logística (20/09: 71 particiones, 12.607 artículos).
+- **Firebase** (`recepciones-mateu/asistente/`): `uso/<YYYY-MM-DD>/<mail>` y `_total` (contadores del
+  tope) y `log/<YYYY-MM>/<id>` = `{ts, mail, rol, suc, modulo, q, r, tools, tin, tout, modelo}` — con
+  eso se ve qué se pregunta y cuánto gasta antes de decidir cambios de modelo.
+- Pendiente: probarlo en vivo (necesita la clave cargada en Cloudflare + redeploy), habilitarlo en el
+  puesto solo como asesor de producto, y las etapas 2 y 3.
 
 ## Reglas
 
