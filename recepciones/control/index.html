@@ -401,6 +401,7 @@ function pkInjectCss(){ if($('pkCss')) return; const css=''
   +'.pk-mapa{max-width:340px;margin:-2px auto 12px}'
   +'.pk-mapa .mp-planta{padding:8px}'
   +'.pk-mapa .mp-svg{width:auto;height:min(280px,40vh);max-width:100%;margin:0 auto}'
+  +'.pk-mapa.pk-mapa-big{max-width:none}.pk-mapa.pk-mapa-big .mp-svg{height:min(520px,52vh)}'
   +'.pk-prod{background:#fff;border:2px solid var(--border);border-radius:16px;padding:18px;text-align:center;transition:border-color .15s,background .15s}'
   +'.pk-prod.ok{border-color:var(--ok);background:#f2faf5}'
   +'.pk-prod.bad{border-color:var(--bad);background:#fdecec}'
@@ -505,11 +506,38 @@ function renderPickSummary(){
   };
 }
 
-let pkMapaOpen = true;   // el mini-mapa del recorrido arranca visible; el operario lo puede plegar
+let pkMapaOpen = false;  // en el escaneo el mapa va plegado: la zona ya se mostró en grande antes de empezar
+/* ZONA DE TRABAJO (20/09/2026, pedido de Juli): antes de escanear, la tablet le muestra al operario
+   DÓNDE trabajar — la zona en grande con el plano resaltado y lo que tiene para preparar ahí — y recién
+   al tocar «Estoy en la zona» arranca el escaneo artículo por artículo. Vuelve a salir cada vez que la
+   tarea pasa a otra zona. */
+function renderPickZona(P,line){
+  const zona=line.zona; const pend=pkLines(P).filter(l=>l.zona===zona && !l.faltante && l.picked<l.req);
+  const u=pend.reduce((n,l)=>n+(l.req-l.picked),0), arts=new Set(pend.map(l=>l.codigo)).size;
+  const otras=[...new Set(pkLines(P).filter(l=>!l.faltante && l.picked<l.req).map(l=>l.zona))].filter(z=>z!==zona);
+  const zmap=(window.PlanoMapa && zona && zona!=='Sin zona') ? PlanoMapa.zonaMap(zona) : '';
+  const r=pkResumen(P); const pct=r.req?Math.round(r.pk/r.req*100):0;
+  let h='<div class="pk-op" style="max-width:760px">'
+    +'<div class="pk-top"><div class="pk-top-row"><span class="pk-id">PICK #'+esc(P.nro)+'</span><span class="pk-dest2">'+esc(pkTitulo(P))+'</span><button class="btn btn-outline btn-xs" id="pausar">⏸ Pausar</button></div>'
+    +'<div class="pk-progbar"><span style="width:'+pct+'%"></span></div>'
+    +'<div class="pk-progtxt" style="display:flex;justify-content:space-between"><span>'+fmtInt(r.pk)+' / '+fmtInt(r.req)+' unidades</span><span id="pkClock" class="pk-clock">⏱ —</span></div></div>'
+    +'<div class="pk-zona"><div class="lbl">Tu zona de trabajo</div><div class="z">'+esc(zona)+'</div>'
+    +'<div style="font-family:var(--font-c);font-size:16px;color:#c9d6f0;margin-top:6px"><b style="color:#fff">'+fmtInt(arts)+'</b> artículo'+(arts===1?'':'s')+' · <b style="color:#fff">'+fmtInt(u)+'</b> unidad'+(u===1?'':'es')+' para preparar acá</div></div>'
+    +(zmap?'<div class="pk-mapa pk-mapa-big">'+zmap+'</div>':(zona==='Sin zona'?'<div class="blind" style="margin-bottom:12px">Estos artículos todavía no tienen zona asignada en el depósito: buscalos por marca y rubro.</div>':''))
+    +'<div style="text-align:center;margin-top:14px"><button class="btn btn-primary btn-lg" id="enZona">✓ Estoy en la zona — empezar a escanear</button></div>'
+    +(otras.length?'<div class="sub" style="font-family:var(--font-c);color:var(--muted);text-align:center;margin-top:10px">Después sigue: '+otras.map(esc).join(' · ')+'</div>':'')
+    +'</div>';
+  $('view').innerHTML=h;
+  $('enZona').onclick=()=>{ state.pkZonaOk=P.nro+'|'+zona; pkEvento({event_type:'zone_entered',picking_id:P.nro,operator_id:P.operario,value:{zona:zona}}); render(); };
+  $('pausar').onclick=pkPausar;
+  pkReloj();
+}
 function renderPickOperativo(){
   const P=pkGet(); if(!P){ state.view='lista'; return render(); }
   const line=pkNext(P);
   if(!line){ state.view='fin'; return render(); }
+  // primero la zona de trabajo; recién cuando el operario confirma que está ahí empieza el escaneo
+  if(state.pkZonaOk!==P.nro+'|'+line.zona) return renderPickZona(P,line);
   const r=pkResumen(P); const rest=line.req-line.picked; const pct=r.req?Math.round(r.pk/r.req*100):0;
   const zmap=(window.PlanoMapa && line.zona && line.zona!=='Sin zona') ? PlanoMapa.zonaMap(line.zona) : '';
   let dots=''; for(let i=0;i<line.req;i++) dots+='<span class="dot'+(i<line.picked?' on':'')+'"></span>';

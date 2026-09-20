@@ -2039,6 +2039,19 @@ sucursal**: un remito trae artículos que van a una u otra sucursal.
   del 03/08 no lo trae). ⚠ Al 20/09 en producción solo hay 3 zonas de demo: hay que tocar «🗺 Cargar
   zonas del plano» y asignar las marcas. Si el depósito se divide por otra cosa que no sea el subrubro
   (p.ej. tipo de prenda), sumar ese nivel a `comboKey`/`zonaDe`.
+- **Plano del depósito con la estética de los planos de sucursal (20/09/2026, pedido de Juli)**:
+  `picking/plano-mapa.js` dibuja como `shared/plano-suc.js` (Ensenada): marco claro, góndolas celestes
+  `#cfe2f3`, servicios grises, recepción/boxes ámbar suave, rojo de la marca con destello para «acá
+  está», verde para lo asignado, rótulo girado solo en muebles más altos que anchos, marco ajustado a lo
+  dibujado y `aspecto` opcional. API y clases (`mp-*`, `data-zl`) sin cambios. Las 53 zonas del plano se
+  cargaron en producción ese día y se borraron las 3 de demo (respaldo en
+  `Descargas/respaldo-picking-zonas-2026-09-20.json`); **la asignación marca·rubro(·subrubro) → zona la
+  hace el depósito a mano** en la pestaña Zonas.
+- **Zona de trabajo antes de escanear (20/09/2026, pedido de Juli)**: en la tablet, `renderPickZona`
+  muestra primero la zona en grande con el plano resaltado y cuántos artículos/unidades hay para preparar
+  ahí; recién con «✓ Estoy en la zona — empezar a escanear» (`state.pkZonaOk = nro|zona`, evento
+  `zone_entered`) arranca el escaneo artículo por artículo. Vuelve a salir cada vez que la tarea pasa a
+  otra zona. En el escaneo el mini-mapa queda plegado (`pkMapaOpen=false`).
 - **Pendiente**: probar cámara y lector en la tablet real; validar el packing digital con un archivo de
   la marca; publicar al mapa del Buscador las etiquetas aprendidas que confirme el control final; hoja
   de apertura de cajas; otras marcas en el Ingreso (hoy solo Adidas).
