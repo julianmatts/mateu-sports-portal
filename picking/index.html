@@ -245,8 +245,9 @@ async function cargarCombos(){
   const lk=fbKey(DATA.bar.ultima);
   const rep=await fbGet(BARR+'/barridas/'+lk+'/reposicion');
   const set={};
-  Object.keys(rep||{}).forEach(slug=>{ (rep[slug]||[]).forEach(it=>{ const m=it.marca||'—', r=it.rubro||'—'; set[m+'|||'+r]={marca:m,rubro:r}; }); });
-  DATA.bar.combos = Object.values(set).sort((a,b)=>cmp(a.marca,b.marca)||cmp(a.rubro,b.rubro));
+  Object.keys(rep||{}).forEach(slug=>{ (rep[slug]||[]).forEach(it=>{ if(!it) return; const m=it.marca||'—', r=it.rubro||'—', g=generoNorm(it.genero); set[m+'|||'+r]={marca:m,rubro:r,genero:''};
+    if(g) set[m+'|||'+r+'|||'+g]={marca:m,rubro:r,genero:g}; }); });
+  DATA.bar.combos = Object.values(set).sort((a,b)=>cmp(a.marca,b.marca)||cmp(a.rubro,b.rubro)||cmp(a.genero,b.genero));
   return DATA.bar.combos;
 }
 
@@ -263,9 +264,13 @@ function eanDeVariante(codigo, talle){ // codigo barrida "ADI"+material ; devuel
   const material=c.slice(3), t=String(talle||'');
   return _sku2ean[material+t] || _sku2ean[material+mapTalleCalzado(t)] || ''; }
 
-function comboKey(marca,rubro){ return fbKey(marca)+'__'+fbKey(rubro); }
-function zonaDe(marca,rubro){ const zid=DATA.asignZona[comboKey(marca,rubro)]; return (zid&&DATA.zonas[zid])?{id:zid,...DATA.zonas[zid]}:null; }
-function zonaOrden(marca,rubro){ const z=zonaDe(marca,rubro); return z?num(z.orden):999; }
+/* Zonas (20/09/2026): la asignación puede ser por MARCA·RUBRO (como siempre) o, más fina, por
+   MARCA·RUBRO·SUBRUBRO (hombre / dama / niño…): gana la más específica. Con eso una barrida grande
+   (Adidas · INDUMENTARIA) cae en varias zonas y se reparte entre varios operarios, una tarea por zona. */
+function generoNorm(g){ return String(g||'').replace(/^\d+\s*-\s*/,'').trim().toUpperCase(); }
+function comboKey(marca,rubro,genero){ const g=generoNorm(genero); return fbKey(marca)+'__'+fbKey(rubro)+(g?('__'+fbKey(g)):''); }
+function zonaDe(marca,rubro,genero){ const zid=(generoNorm(genero)&&DATA.asignZona[comboKey(marca,rubro,genero)])||DATA.asignZona[comboKey(marca,rubro)]; return (zid&&DATA.zonas[zid])?{id:zid,...DATA.zonas[zid]}:null; }
+function zonaOrden(marca,rubro,genero){ const z=zonaDe(marca,rubro,genero); return z?num(z.orden):999; }
 
 /* ---- eventos (log de trazabilidad) ---- */
 function logEvento(ev){ fbPost(ROOT+'/eventos', Object.assign({ts:nowISO(), operador_id:_mail||null}, ev)).catch(()=>{}); }
@@ -510,10 +515,10 @@ function ordT(a,b){ const na=parseFloat(String(a).replace(',','.')), nb=parseFlo
 // acumulador artículo → talle → sucursal
 function acumArt(map, it, slug, talle, u){ u=num(u); if(u<=0||!slug) return;
   const key=String(it.codigo||it.cod||it.id||''); if(!key) return;
-  let a=map.get(key); if(!a){ a={ codigo:it.codigo||it.cod||String(it.id||''), id:it.id||'', desc:it.desc||'', marca:it.marca||'—', rubro:it.rubro||'—', t:{} }; map.set(key,a); }
+  let a=map.get(key); if(!a){ a={ codigo:it.codigo||it.cod||String(it.id||''), id:it.id||'', desc:it.desc||'', marca:it.marca||'—', rubro:it.rubro||'—', genero:generoNorm(it.genero), t:{} }; map.set(key,a); }
   const tt=a.t[talle]||(a.t[talle]={}); tt[slug]=(tt[slug]||0)+u; }
 function artsDeMap(map){ return [...map.values()].map(a=>{ const talles=Object.keys(a.t).sort(ordT).map(t=>{ const dest=Object.keys(a.t[t]).sort((x,y)=>cmp(nombreSuc(x),nombreSuc(y))).map(s=>({s:s,u:a.t[t][s]})); return { t:t, req:dest.reduce((n,d)=>n+d.u,0), dest:dest }; });
-  return { codigo:a.codigo, id:a.id, desc:a.desc, marca:a.marca, rubro:a.rubro, talles:talles, requested_qty:talles.reduce((n,t)=>n+t.req,0) }; }); }
+  return { codigo:a.codigo, id:a.id, desc:a.desc, marca:a.marca, rubro:a.rubro, genero:a.genero||'', talles:talles, requested_qty:talles.reduce((n,t)=>n+t.req,0) }; }); }
 // repartos guardados (los últimos 15) con su meta
 async function repartosGuardados(){
   if(DATA.bar.repartos) return DATA.bar.repartos;
@@ -532,14 +537,18 @@ async function barridaSegmentos(){
   DATA.bar.segs=Object.values(segs).map(sg=>{ const arts=artsDeMap(sg.map); return { marca:sg.marca, rubro:sg.rubro, arts:arts, u:arts.reduce((n,a)=>n+a.requested_qty,0) }; })
     .filter(sg=>sg.u>0).sort((a,b)=>cmp(a.marca,b.marca)||cmp(a.rubro,b.rubro));
   return DATA.bar.segs; }
+// grupos de una marca·rubro por zona del depósito (en el orden del recorrido); sin zona → un solo grupo
+function gruposPorZona(sg){ const g={};
+  sg.arts.forEach(a=>{ const z=zonaDe(a.marca,a.rubro,a.genero), k=z?z.id:'_sin'; const o=g[k]||(g[k]={ zid:z?z.id:'', nombre:z?z.nombre:'Sin zona', orden:z?num(z.orden):999, arts:[], u:0 }); o.arts.push(a); o.u+=a.requested_qty; });
+  return Object.values(g).sort((a,b)=>a.orden-b.orden||cmp(a.nombre,b.nombre)); }
 // tarea ya creada para ese origen (no eliminada): evita mandar dos veces lo mismo a la tablet
 function tareaDe(fn){ return vals(DATA.pickings).find(P=>P&&P.origen&&fn(P.origen,P))||null; }
 // arma y guarda UNA tarea; devuelve el nro
 async function crearTarea(base, arts){
   try{ await loadMaestro(); }catch(e){ /* sin maestro → variantes sin EAN */ }
-  arts=arts.slice().sort((a,b)=> zonaOrden(a.marca,a.rubro)-zonaOrden(b.marca,b.rubro) || cmp(a.marca,b.marca) || cmp(a.codigo,b.codigo));
+  arts=arts.slice().sort((a,b)=> zonaOrden(a.marca,a.rubro,a.genero)-zonaOrden(b.marca,b.rubro,b.genero) || cmp(a.marca,b.marca) || cmp(a.genero||'',b.genero||'') || cmp(a.codigo,b.codigo));
   const itemsObj={}, dests={};
-  arts.forEach((it,i)=>{ const z=zonaDe(it.marca,it.rubro); const iid='i'+String(i+1).padStart(4,'0');
+  arts.forEach((it,i)=>{ const z=zonaDe(it.marca,it.rubro,it.genero); const iid='i'+String(i+1).padStart(4,'0');
     const talles=it.talles.map(t=>{ t.dest.forEach(d=>{ dests[d.s]=1; }); return { t:t.t, req:t.req, ean:eanDeVariante(it.codigo,t.t), picked:0, dest:t.dest }; });
     itemsObj[iid]={ codigo:it.codigo, id:it.id||'', desc:it.desc, marca:it.marca, rubro:it.rubro, talles:talles, zonaId:z?z.id:null, zonaNombre:z?z.nombre:'',
       requested_qty:it.requested_qty, picked_qty:0, controlled_qty:0, estado:'pendiente', sequence:i+1 }; });
@@ -567,7 +576,7 @@ async function abrirNuevaTarea(pre){
     + '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="ntCrear" disabled>Crear tarea</button></div>');
   const fila=(val,txt,sub,ya,marcada)=>'<label style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--border);border-radius:9px;margin-top:6px;cursor:pointer;background:#fff'+(ya?';opacity:.6':'')+'">'
     + '<input type="checkbox" class="ntChk" value="'+esc(val)+'"'+((ya||marcada===false)?'':' checked')+' style="margin-top:3px"><span><b>'+esc(txt)+'</b><br><span class="hint">'+sub+(ya?(' · <b style="color:var(--warn)">ya tiene la tarea #'+esc(ya.nro)+' ('+esc(ya.estado)+')</b>'):'')+'</span></span></label>';
-  const refrescarBtn=()=>{ const n=document.querySelectorAll('.ntChk:checked').length; const b=$('ntCrear'); if(b){ b.disabled=!n; b.textContent=n>1?('Crear '+n+' tareas'):'Crear tarea'; } };
+  const refrescarBtn=()=>{ let n=0; document.querySelectorAll('.ntChk:checked').forEach(c=>{ const sg=(tipo==='barrida'&&DATA.bar.segs)?DATA.bar.segs[+c.value]:null; n+=sg?gruposPorZona(sg).length:1; }); const b=$('ntCrear'); if(b){ b.disabled=!n; b.textContent=n>1?('Crear '+n+' tareas'):'Crear tarea'; } };
   const pintarRemitos=()=>{
     const rms=Object.keys((repDoc&&repDoc.remitos)||{}).map(k=>Object.assign({k:k},repDoc.remitos[k])).filter(rm=>num(rm.uRep)>0).sort((a,b)=>cmp(a.nro,b.nro));
     $('ntRem').innerHTML = rms.length ? rms.map(rm=>{ const ya=tareaDe(o=>o.reparto===repKeySel && o.remito===rm.nro);
@@ -591,9 +600,12 @@ async function abrirNuevaTarea(pre){
       } else {
         if(!DATA.bar.ultima){ body.innerHTML='<div class="state">No hay una Barrida de reserva guardada.</div>'; return; }
         const segs=await barridaSegmentos();
-        body.innerHTML='<div class="hint">Barrida de la semana del <b>'+esc(DATA.bar.ultima)+'</b>. Marcá lo que se va a preparar: cada marca·rubro es una tarea (reposición + completar curva de todas las sucursales).</div>'
+        body.innerHTML='<div class="hint">Barrida de la semana del <b>'+esc(DATA.bar.ultima)+'</b>. Marcá lo que se va a preparar (reposición + completar curva de todas las sucursales). Cada marca·rubro es una tarea; si cae en varias zonas del depósito se parte en una tarea por zona, cada una con su operario.</div>'
           + (segs.length?segs.map((sg,i)=>{ const ya=tareaDe(o=>o.tipoBarrida && o.barrida===DATA.bar.ultima && o.marca===sg.marca && o.rubro===sg.rubro);
-              return fila(String(i), sg.marca+' · '+sg.rubro, fmtInt(sg.u)+' u. · '+sg.arts.length+' artículos'+(zonaDe(sg.marca,sg.rubro)?'':' · <span style="color:var(--warn)">sin zona asignada</span>'), ya, false); }).join('')
+              const gz=gruposPorZona(sg); const sinZ=gz.some(z=>!z.zid);
+              // cae en varias zonas → una tarea por zona, cada una con su operario
+              const partes = gz.length>1 ? '<div style="margin:6px 0 2px 26px;display:grid;gap:4px">'+gz.map((z,k)=>'<div class="row-x" style="gap:8px;font-size:13px"><span style="flex:1">↳ <b>'+esc(z.nombre)+'</b> · '+fmtInt(z.u)+' u. · '+z.arts.length+' art.</span><select class="sel ntOpZ" data-seg="'+i+'" data-z="'+k+'" style="padding:4px 8px;font-size:12px"><option value="">el operario de abajo</option>'+ops.map(o=>'<option>'+esc(o.nombre)+'</option>').join('')+'</select></div>').join('')+'</div>' : '';
+              return fila(String(i), sg.marca+' · '+sg.rubro, fmtInt(sg.u)+' u. · '+sg.arts.length+' artículos'+(gz.length>1?' · <b>'+gz.length+' zonas = '+gz.length+' tareas</b>':'')+(sinZ?' · <span style="color:var(--warn)">'+(gz.length>1?'parte ':'')+'sin zona asignada</span>':''), ya, false)+partes; }).join('')
             :'<div class="state">La barrida guardada no tiene nada para bajar.</div>');
         document.querySelectorAll('.ntChk').forEach(c=>c.onchange=refrescarBtn); refrescarBtn();
       }
@@ -610,15 +622,18 @@ async function abrirNuevaTarea(pre){
       for(const v of sel){
         if(tipo==='reparto'){
           const rm=repDoc.remitos[v]; const map=new Map();
-          (rm.arts||[]).forEach(x=>(x.lineas||[]).forEach(l=>(l.t||[]).forEach(pp=>acumArt(map, {codigo:x.cod,id:x.id,desc:x.desc,marca:x.marca||rm.marca,rubro:x.rubro||rm.rubro}, l.slug, pp[0], pp[1]))));
+          (rm.arts||[]).forEach(x=>(x.lineas||[]).forEach(l=>(l.t||[]).forEach(pp=>acumArt(map, {codigo:x.cod,id:x.id,desc:x.desc,marca:x.marca||rm.marca,rubro:x.rubro||rm.rubro,genero:x.genero}, l.slug, pp[0], pp[1]))));
           const arts=artsDeMap(map); if(!arts.length) continue;
           const conNro=/^\d/.test(String(rm.nro));
           hechos.push(await crearTarea(Object.assign({ tipo:'reparto', titulo:(conNro?('Remito '+rm.nro):'Ingreso sin remito')+(rm.marca?(' · '+rm.marca):''),
             origen:{ reparto:repKeySel, remito:rm.nro, marca:rm.marca||'', rubro:rm.rubro||'' } }, comun), arts));
         } else {
           const sg=DATA.bar.segs[+v]; if(!sg) continue;
-          hechos.push(await crearTarea(Object.assign({ tipo:'barrida', titulo:sg.marca+' · '+sg.rubro,
-            origen:{ tipoBarrida:true, barrida:DATA.bar.ultima, marca:sg.marca, rubro:sg.rubro } }, comun), sg.arts));
+          const gz=gruposPorZona(sg);
+          for(let k=0;k<gz.length;k++){ const z=gz[k]; const selZ=document.querySelector('.ntOpZ[data-seg="'+v+'"][data-z="'+k+'"]');
+            hechos.push(await crearTarea(Object.assign({ tipo:'barrida', titulo:sg.marca+' · '+sg.rubro+(gz.length>1?(' — '+z.nombre):''),
+              origen:Object.assign({ tipoBarrida:true, barrida:DATA.bar.ultima, marca:sg.marca, rubro:sg.rubro }, gz.length>1?{zona:z.zid||'_sin', zonaNombre:z.nombre}:{}) },
+              comun, (selZ&&selZ.value)?{operario_asignado:selZ.value}:{}), z.arts)); }
         }
       }
       closeModal(); state.tab='pickings'; state.pkTab='pend'; render();
@@ -755,13 +770,13 @@ async function renderZonas(){
     +'<button class="btn btn-primary btn-sm" id="btnZona">+ Nueva zona</button>');
   html+='<div class="tbl-wrap" style="margin-bottom:20px"><table><thead><tr><th style="width:70px">Orden</th><th>Zona</th><th class="num">Combos</th><th style="width:90px"></th></tr></thead><tbody>';
   html+= zonas.length ? zonas.map(z=>{
-    const usos=combos.filter(c=>DATA.asignZona[comboKey(c.marca,c.rubro)]===z.id).length;
+    const usos=combos.filter(c=>DATA.asignZona[comboKey(c.marca,c.rubro,c.genero)]===z.id).length;
     return '<tr><td class="num">'+esc(String(z.orden))+'</td><td><b>'+esc(z.nombre)+'</b></td><td class="num">'+usos+'</td>'
       + '<td><button class="btn btn-outline btn-sm" data-ez="'+esc(z.id)+'">✎</button> <button class="btn btn-outline btn-sm" data-dz="'+esc(z.id)+'">🗑</button></td></tr>';
   }).join('') : '<tr><td colspan="4" class="hint" style="padding:14px">Todavía no hay zonas. Creá la primera con "+ Nueva zona".</td></tr>';
   html+='</tbody></table></div>';
   // asignación combo -> zona
-  html+='<div class="sec-head" style="margin-bottom:8px"><div><h1 style="font-size:22px">Marca / Rubro → Zona</h1><div class="sub">Asigná cada combinación de la barrida a una zona. Son muchas: usá los filtros.</div></div></div>';
+  html+='<div class="sec-head" style="margin-bottom:8px"><div><h1 style="font-size:22px">Marca / Rubro → Zona</h1><div class="sub">Asigná cada combinación de la barrida a una zona. La fila «todos» vale para toda la marca·rubro; si Hombre, Dama o Niño están en otra zona, asigná esa fila y manda la más específica. Una barrida que cae en varias zonas se parte en una tarea por zona.</div></div></div>';
   if(!combos.length){ html+='<div class="state">No hay barrida cargada para listar las combinaciones.</div>'; }
   else{
     if(state.zAsgSin===undefined) state.zAsgSin=true;   // por defecto, solo las que faltan asignar
@@ -776,7 +791,7 @@ async function renderZonas(){
   // Mapa del depósito: resalta en verde las zonas que ya tienen marca/rubro asignado
   if(window.PLANO_DEPOSITO && window.PLANO_DEPOSITO.plantas){
     const asignadas=new Set();
-    combos.forEach(c=>{ const zid=DATA.asignZona[comboKey(c.marca,c.rubro)]; if(zid&&DATA.zonas[zid]&&DATA.zonas[zid].nombre) asignadas.add(DATA.zonas[zid].nombre); });
+    combos.forEach(c=>{ const zid=DATA.asignZona[comboKey(c.marca,c.rubro,c.genero)]; if(zid&&DATA.zonas[zid]&&DATA.zonas[zid].nombre) asignadas.add(DATA.zonas[zid].nombre); });
     html+='<div class="sec-head" style="margin:24px 0 8px"><div><h1 style="font-size:22px">Mapa del depósito</h1><div class="sub">Planta baja y alta. Las zonas de reserva en verde ya tienen marca/rubro asignado. Tocá una zona para editar su orden de recorrido.</div></div></div>';
     html+=(window.PlanoMapa?PlanoMapa.bloque({resaltar:asignadas}):'');
   }
@@ -793,17 +808,17 @@ async function renderZonas(){
   function pintarAsg(){
     const box=$('zAsgBox'); if(!box) return;
     const q=(state.zAsgQ||'').toLowerCase().trim(), sin=!!state.zAsgSin, fm=state.zAsgMarca||'';
-    const asignadasN=combos.filter(c=>DATA.asignZona[comboKey(c.marca,c.rubro)]).length;
-    const filtrados=combos.filter(c=>{ const k=comboKey(c.marca,c.rubro);
-      if(sin && DATA.asignZona[k]) return false;
+    const base=combos.filter(c=>!c.genero); const asignadasN=base.filter(c=>DATA.asignZona[comboKey(c.marca,c.rubro)]).length;
+    const filtrados=combos.filter(c=>{ const k=comboKey(c.marca,c.rubro,c.genero);
+      if(sin && (DATA.asignZona[k] || (c.genero && !fm && !q))) return false;   // «solo sin asignar» lista las marca·rubro; los subrubros aparecen al filtrar
       if(fm && c.marca!==fm) return false;
-      if(q && (c.marca+' '+c.rubro).toLowerCase().indexOf(q)<0) return false;
+      if(q && (c.marca+' '+c.rubro+' '+c.genero).toLowerCase().indexOf(q)<0) return false;
       return true; });
-    const cnt=$('zAsgCount'); if(cnt) cnt.textContent=asignadasN+' de '+combos.length+' asignadas · '+(combos.length-asignadasN)+' sin asignar';
-    if(!filtrados.length){ box.innerHTML='<div class="state" style="padding:22px">'+((combos.length-asignadasN)===0&&sin?'✓ Todas las combinaciones están asignadas.':'No hay combinaciones que coincidan con el filtro.')+'</div>'; return; }
-    box.innerHTML='<table><thead><tr><th>Marca</th><th>Rubro</th><th style="width:220px">Zona</th></tr></thead><tbody>'
-      + filtrados.map(c=>{ const k=comboKey(c.marca,c.rubro), cur=DATA.asignZona[k]||'';
-          return '<tr><td><b>'+esc(c.marca)+'</b></td><td>'+esc(c.rubro)+'</td><td><select class="sel" data-combo="'+esc(k)+'" style="width:100%"><option value="">— sin asignar —</option>'
+    const cnt=$('zAsgCount'); if(cnt) cnt.textContent=asignadasN+' de '+base.length+' marca·rubro asignadas · '+(base.length-asignadasN)+' sin asignar';
+    if(!filtrados.length){ box.innerHTML='<div class="state" style="padding:22px">'+((base.length-asignadasN)===0&&sin?'✓ Todas las combinaciones están asignadas.':'No hay combinaciones que coincidan con el filtro.')+'</div>'; return; }
+    box.innerHTML='<table><thead><tr><th>Marca</th><th>Rubro</th><th>Subrubro</th><th style="width:220px">Zona</th></tr></thead><tbody>'
+      + filtrados.map(c=>{ const k=comboKey(c.marca,c.rubro,c.genero), cur=DATA.asignZona[k]||''; const her=c.genero?zonaDe(c.marca,c.rubro):null;
+          return '<tr><td><b>'+esc(c.marca)+'</b></td><td>'+esc(c.rubro)+'</td><td>'+(c.genero?esc(c.genero):'<span class="hint">todos</span>')+'</td><td><select class="sel" data-combo="'+esc(k)+'" style="width:100%"><option value="">'+(c.genero?('— como la marca·rubro'+(her?' ('+esc(her.nombre)+')':'')+' —'):'— sin asignar —')+'</option>'
             + zonas.map(z=>'<option value="'+esc(z.id)+'"'+(cur===z.id?' selected':'')+'>'+esc(z.nombre)+'</option>').join('')+'</select></td></tr>';
         }).join('')+'</tbody></table>';
     box.querySelectorAll('[data-combo]').forEach(sel=>sel.onchange=async()=>{ const k=sel.dataset.combo, zid=sel.value;

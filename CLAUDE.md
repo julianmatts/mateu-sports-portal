@@ -2028,6 +2028,17 @@ sucursal**: un remito trae artículos que van a una u otra sucursal.
   `ingreso/ingresados/<nro corto>` = `{remito, remito_sistema, fecha, u, faltan, sobran, por}`; la lista
   de remitos del Reparto inicial marca **«✓ controlado»** / «⚠ controlado con diferencias»
   (`S.ingresados`, cruce por `repNroCorto`) y la conciliación linkea a Reparto de Mercadería.
+- **La barrida se reparte entre varios operarios POR ZONA del depósito (20/09/2026, decisión de Juli)**:
+  la asignación de zonas (pestaña Zonas) admite dos niveles, `asignZona/<marca>__<rubro>` y el más fino
+  `<marca>__<rubro>__<SUBRUBRO>` (HOMBRE / DAMA / NIÑO…, `generoNorm` le saca el «NN-»); **gana el más
+  específico** (`zonaDe(marca, rubro, genero)`). La fila «todos» vale para toda la marca·rubro y las de
+  subrubro aparecen al filtrar por marca o buscar. Al crear la tarea de barrida, `gruposPorZona(sg)`
+  parte la marca·rubro en **una tarea por zona** (título «Adidas · CALZADO — Góndola 7», `origen.zona`
+  / `zonaNombre`) y el modal deja elegir **un operario por zona** (`.ntOpZ`; vacío = el operario
+  general). El subrubro viaja en cada artículo (`genero`; lo guardan las barridas desde septiembre, la
+  del 03/08 no lo trae). ⚠ Al 20/09 en producción solo hay 3 zonas de demo: hay que tocar «🗺 Cargar
+  zonas del plano» y asignar las marcas. Si el depósito se divide por otra cosa que no sea el subrubro
+  (p.ej. tipo de prenda), sumar ese nivel a `comboKey`/`zonaDe`.
 - **Pendiente**: probar cámara y lector en la tablet real; validar el packing digital con un archivo de
   la marca; publicar al mapa del Buscador las etiquetas aprendidas que confirme el control final; hoja
   de apertura de cajas; otras marcas en el Ingreso (hoy solo Adidas).
