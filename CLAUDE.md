@@ -3027,10 +3027,14 @@ consulta). Etapa 1 = sin datos en vivo; etapa 2 = stock desde el Buscador; etapa
   `puesto` ni con `?pres=`. Al cargar hace `GET /api/asistente`: si `disponible:false` (falta la clave,
   o se abrió el HTML suelto) **el botón no aparece**. La charla vive en `sessionStorage` (`matts_chat`)
   y se mandan las últimas 12. Abierto sube a z-index 1290 (tapa «?» y campana; el tutorial sigue arriba).
-  **Avatar animado** (`avatarSvg`, pedido de Juli 20/09): pictograma SVG inline de una persona que rota
-  cada 2,5 s entre running, tenis, fútbol, básquet y hockey (5 grupos `.mat-p` con fundido por CSS, pelota
-  en movimiento y un leve rebote); sin animaciones o con `prefers-reduced-motion` queda fija en running.
-  Sumar un deporte = una `pose()` más y ajustar los `animation-delay` y el % del keyframe `matPose`.
+  **Avatar animado** (`avatarSvg`, pedido de Juli 20/09; la primera versión era un pictograma de palitos y
+  Juli la rechazó: «parece el colgado»): un PERSONAJE SVG inline (cabezón, pelo, vincha roja con las puntas
+  al viento, camiseta roja, short azul, zapatillas) que cada 2,5 s cambia de deporte y se mueve en cada uno:
+  corre, drive de tenis, patea, pica la pelota de básquet, barre con el palo de hockey y uno-dos de box.
+  Cabeza y torso son comunes; por deporte cambian piernas (capa de atrás) y brazos + elementos (capa de
+  adelante), ambas con clase `mat-sN`. Extremidades = grupos que rotan sobre la articulación
+  (`transform-origin` inline). Sumar un deporte = una entrada más en `atras` y `adelante`, un
+  `animation-delay` más y reajustar los % de `matSport`. Sin animaciones queda fijo corriendo.
   Sugerencias por módulo en `SUGERENCIAS`. El nombre es la constante `NOMBRE` (widget y Function).
 - **Function** `functions/api/asistente.js`: usa la misma `ANTHROPIC_API_KEY` que `/api/academia-ia`.
   Opcionales `ASISTENTE_MODELO`, `ASISTENTE_TOPE` (60 consultas por cuenta y día) y

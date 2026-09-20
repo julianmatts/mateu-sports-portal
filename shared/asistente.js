@@ -63,28 +63,38 @@
   +'#mattsWidget{position:fixed;left:22px;bottom:22px;z-index:1270;font-family:Barlow,sans-serif}'
   +'#mattsWidget.abierto{z-index:1290}'   // abierto tapa al «?» y a la campana (en celular se pisaban con Enviar); el tutorial (1300) sigue arriba
   +'#mattsWidget *{box-sizing:border-box}'
-  +'.mat-fab{height:48px;padding:0 16px 0 6px;border-radius:24px;border:none;border-bottom:3px solid var(--marca-red,#CC0000);cursor:pointer;background:var(--marca-navy,#0B1527);color:#fff;display:flex;align-items:center;gap:9px;box-shadow:0 8px 30px rgba(11,21,39,.22);transition:transform .15s}'
+  +'.mat-fab{height:52px;padding:0 17px 0 5px;border-radius:26px;border:none;border-bottom:3px solid var(--marca-red,#CC0000);cursor:pointer;background:var(--marca-navy,#0B1527);color:#fff;display:flex;align-items:center;gap:9px;box-shadow:0 8px 30px rgba(11,21,39,.22);transition:transform .15s}'
   +'.mat-fab:hover{transform:translateY(-2px)}'
-  +'.mat-av{width:38px;height:38px;border-radius:50%;overflow:hidden;background:var(--marca-red,#CC0000);color:#fff;display:flex;align-items:center;justify-content:center;font-family:\'Bebas Neue\',sans-serif;font-size:21px;line-height:1;flex:none}'
-  // avatar: una persona que va cambiando de deporte (5 poses que se turnan; sin animaciones queda la primera)
-  +'.mat-av svg{width:100%;height:100%;display:block;overflow:visible}'
-  +'.mat-av .mat-p{opacity:0;animation:matPose 12.5s infinite}'
-  +'.mat-av .mat-p1{opacity:1}'
-  +'.mat-av .mat-p2{animation-delay:2.5s}.mat-av .mat-p3{animation-delay:5s}.mat-av .mat-p4{animation-delay:7.5s}.mat-av .mat-p5{animation-delay:10s}'
-  +'@keyframes matPose{0%{opacity:0}2.5%{opacity:1}18%{opacity:1}20.5%{opacity:0}100%{opacity:0}}'
-  +'.mat-av .mat-bob{animation:matBob .5s ease-in-out infinite alternate}'
-  +'@keyframes matBob{from{transform:translateY(.7px)}to{transform:translateY(-.9px)}}'
-  +'.mat-av .mat-b-ten{animation:matBTen 1.25s linear infinite}'
-  +'@keyframes matBTen{0%{transform:translate(8px,7px)}50%{transform:translate(0,0)}100%{transform:translate(8px,-6px)}}'
-  +'.mat-av .mat-b-fut{animation:matBFut 1.25s ease-out infinite}'
-  +'@keyframes matBFut{0%,20%{transform:translate(0,0)}100%{transform:translate(9px,-7px)}}'
-  +'.mat-av .mat-b-bas{animation:matBBas 1.25s ease-in-out infinite}'
-  +'@keyframes matBBas{0%,25%{transform:translate(0,0)}100%{transform:translate(7px,-6px)}}'
-  +'.mat-av .mat-b-hoc{animation:matBHoc 1.25s ease-out infinite}'
-  +'@keyframes matBHoc{0%,30%{transform:translate(0,0)}100%{transform:translate(7px,0)}}'
-  +'@media(prefers-reduced-motion:reduce){.mat-av .mat-p,.mat-av .mat-bob,.mat-av [class*=mat-b-]{animation:none}}'
+  +'.mat-av{width:42px;height:42px;border-radius:50%;overflow:hidden;background:#fff;box-shadow:inset 0 0 0 2px var(--marca-red,#CC0000);color:#fff;display:flex;align-items:center;justify-content:center;font-family:\'Bebas Neue\',sans-serif;font-size:21px;line-height:1;flex:none}'
+  // avatar: personaje (cabezón, vincha, camiseta) que va cambiando de deporte; ver avatarSvg()
+  +'.mat-av svg{width:100%;height:100%;display:block}'
+  +'.mat-av .c-red{fill:var(--marca-red,#CC0000)}.mat-av .s-red{stroke:var(--marca-red,#CC0000)}'
+  +'.mat-av .c-nav{fill:var(--marca-navy,#0B1527)}.mat-av .s-nav{stroke:var(--marca-navy,#0B1527)}'
+  +'.mat-av .mat-s{opacity:0;animation:matSport 15s infinite}.mat-av .mat-s1{opacity:1}'
+  +'.mat-av .mat-s2{animation-delay:2.5s}.mat-av .mat-s3{animation-delay:5s}.mat-av .mat-s4{animation-delay:7.5s}.mat-av .mat-s5{animation-delay:10s}.mat-av .mat-s6{animation-delay:12.5s}'
+  +'@keyframes matSport{0%{opacity:0}1.5%{opacity:1}15.4%{opacity:1}16.9%{opacity:0}100%{opacity:0}}'
+  +'.mat-av .mat-bob{animation:matBob .35s ease-in-out infinite alternate}'
+  +'@keyframes matBob{from{transform:translateY(.9px)}to{transform:translateY(-1.1px)}}'
+  +'.mat-av .mat-cola{animation:matCola .3s ease-in-out infinite alternate;transform-origin:20.7px 17.8px}'
+  +'@keyframes matCola{from{transform:rotate(-14deg)}to{transform:rotate(16deg)}}'
+  // extremidades: balanceo entre dos ángulos (el origen va inline, en la articulación)
+  +'@keyframes matR1{from{transform:rotate(38deg)}to{transform:rotate(-38deg)}}'
+  +'@keyframes matR2{from{transform:rotate(-38deg)}to{transform:rotate(38deg)}}'
+  +'@keyframes matRaq{0%,20%{transform:rotate(-150deg)}55%,100%{transform:rotate(-25deg)}}'
+  +'@keyframes matPat{0%,35%{transform:rotate(42deg)}55%,100%{transform:rotate(-62deg)}}'
+  +'@keyframes matDri{from{transform:rotate(-62deg)}to{transform:rotate(-38deg)}}'
+  +'@keyframes matPalo{0%,30%{transform:rotate(16deg)}60%,100%{transform:rotate(-14deg)}}'
+  +'@keyframes matPunA{0%,45%{transform:rotate(-100deg) translateY(-2px)}70%,100%{transform:rotate(-92deg) translateY(6px)}}'
+  +'@keyframes matPunB{0%,45%{transform:rotate(-96deg) translateY(6px)}70%,100%{transform:rotate(-104deg) translateY(-2px)}}'
+  // pelotas
+  +'@keyframes matBTen{0%{transform:translate(16px,-12px)}48%{transform:translate(0,0)}100%{transform:translate(18px,-16px)}}'
+  +'@keyframes matBFut{0%,50%{transform:translate(0,0)}100%{transform:translate(20px,-14px)}}'
+  +'@keyframes matBBas{from{transform:translateY(0)}to{transform:translateY(11px)}}'
+  +'@keyframes matBHoc{0%,55%{transform:translate(0,0)}100%{transform:translate(12px,0)}}'
+  +'@keyframes matVel{from{transform:translateX(5px);opacity:0}40%{opacity:1}to{transform:translateX(-6px);opacity:0}}'
+  +'@media(prefers-reduced-motion:reduce){.mat-av *{animation:none!important}}'
   +'.mat-fab span{font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:15px;letter-spacing:.6px;text-transform:uppercase}'
-  +'.mat-panel{position:absolute;left:0;bottom:60px;width:372px;max-width:calc(100vw - 32px);height:min(70vh,560px);background:#fff;border:1px solid #dce3f0;border-radius:14px;box-shadow:0 12px 40px rgba(11,21,39,.25);overflow:hidden;display:none;flex-direction:column}'
+  +'.mat-panel{position:absolute;left:0;bottom:64px;width:372px;max-width:calc(100vw - 32px);height:min(70vh,560px);background:#fff;border:1px solid #dce3f0;border-radius:14px;box-shadow:0 12px 40px rgba(11,21,39,.25);overflow:hidden;display:none;flex-direction:column}'
   +'.mat-panel.on{display:flex}'
   +'.mat-head{background:var(--marca-navy,#0B1527);color:#fff;padding:11px 12px 11px 14px;display:flex;align-items:center;gap:10px;border-bottom:3px solid var(--marca-red,#CC0000)}'
   +'.mat-head b{font-family:\'Bebas Neue\',sans-serif;font-weight:400;font-size:22px;letter-spacing:1px;line-height:1;display:block}'
@@ -112,29 +122,70 @@
   +'@media(max-width:560px){#mattsWidget{left:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px))}.mat-fab{padding:0 6px}.mat-fab span{display:none}.mat-panel{position:fixed;left:8px;right:8px;bottom:calc(74px + env(safe-area-inset-bottom,0px));width:auto;max-width:none;height:min(72vh,560px)}}'
   +'@media print{#mattsWidget{display:none!important}}';
 
-  /* Avatar de Matts: pictograma que rota entre running, tenis, fútbol, básquet y hockey.
-     SVG inline (sin archivos ni CDN); los trazos son blancos sobre el círculo rojo de .mat-av. */
+  /* Avatar de Matts: un personaje (cabezón, pelo, vincha roja con las puntas al viento, camiseta roja y
+     short azul) que cada 2,5 s cambia de deporte Y SE MUEVE en cada uno: corre, pega un drive, patea,
+     pica la pelota, barre con el palo de hockey y tira golpes de box. SVG inline, sin archivos ni CDN.
+     Cabeza y torso son comunes (dan continuidad); por deporte cambian piernas (grupo de atrás) y brazos +
+     elementos (grupo de adelante), los dos con la misma clase mat-sN. Sin animaciones queda corriendo. */
   function avatarSvg(){
-    var T = ' fill="none" stroke="#fff" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round"';
-    var F = ' fill="#fff" stroke="none"';
-    function pose(n, cuerpo, extra){ return '<g class="mat-p mat-p'+n+'"><g class="mat-bob"'+T+'>'+cuerpo+'</g>'+(extra||'')+'</g>'; }
-    return '<svg viewBox="0 0 48 48" aria-hidden="true">'
-      + '<g transform="translate(24 24) scale(.7) translate(-26 -24.5)">'   // la figura entra entera en el círculo (raqueta, palo y pelotas incluidos)
-      // 1 · running
-      + pose(1, '<circle cx="28" cy="11" r="3.6"'+F+'/><path d="M26 17 L21 29"/><path d="M25.5 19.5 L31 24 L36 21"/><path d="M25 19.5 L18.5 21.5 L15 26.5"/><path d="M21 29 L28 33.5 L26 41.5"/><path d="M21 29 L15.5 34 L9.5 32"/>')
-      // 2 · tenis (raqueta arriba, la pelota viene y se va)
-      + pose(2, '<circle cx="21" cy="12" r="3.6"'+F+'/><path d="M21 17.5 L21 30"/><path d="M21 30 L16 41"/><path d="M21 30 L27.5 40.5"/><path d="M21 20.5 L15 25.5"/><path d="M21 20.5 L28 17 L31 12.5"/><ellipse cx="34.5" cy="8" rx="3.6" ry="4.8" transform="rotate(38 34.5 8)" stroke-width="2"/>',
-             '<circle class="mat-b-ten" cx="37" cy="9" r="1.9"'+F+'/>')
-      // 3 · fútbol (patea y la pelota sale)
-      + pose(3, '<circle cx="19" cy="11" r="3.6"'+F+'/><path d="M19.5 16.5 L21.5 28.5"/><path d="M21.5 28.5 L19 41"/><path d="M21.5 28.5 L28.5 33 L34.5 31"/><path d="M20 19.5 L13.5 24"/><path d="M20 19.5 L27 22.5"/>',
-             '<circle class="mat-b-fut" cx="38.5" cy="34.5" r="3"'+F+'/>')
-      // 4 · básquet (tiro en suspensión)
-      + pose(4, '<circle cx="21" cy="15" r="3.6"'+F+'/><path d="M21 20.5 L21 32"/><path d="M21 32 L17 42"/><path d="M21 32 L25.5 42"/><path d="M21 22.5 L26.5 17 L27 10.5"/><path d="M21 22.5 L18 16.5 L23 10.5"/>',
-             '<circle class="mat-b-bas" cx="25.5" cy="6.5" r="3.3"'+F+'/>')
-      // 5 · hockey (palo al piso, empuja la bocha)
-      + pose(5, '<circle cx="18" cy="13" r="3.6"'+F+'/><path d="M19 18.5 L23.5 29"/><path d="M23.5 29 L18.5 41"/><path d="M23.5 29 L30 40.5"/><path d="M20.5 21.5 L27.5 27.5"/><path d="M26 24 L36 40 L40 39" stroke-width="2.3"/>',
-             '<circle class="mat-b-hoc" cx="41.5" cy="41" r="1.9"'+F+'/>')
-      + '</g></svg>';
+    var PIEL = '#f0b78c', PELO = '#3a2417';
+    function mov(ox, oy, anim){ return ' style="transform-origin:'+ox+'px '+oy+'px;animation:'+anim+'"'; }
+    function fijo(ox, oy, g){ return ' transform="rotate('+g+' '+ox+' '+oy+')"'; }
+    // pierna: cuelga de la cadera (hx,45), con zapatilla
+    function pierna(hx, t){
+      return '<g'+t+'><path d="M'+hx+' 45 L'+hx+' 55.5" stroke="'+PIEL+'" stroke-width="4.6" stroke-linecap="round" fill="none"/>'
+        + '<ellipse class="c-nav" cx="'+(hx+1.7)+'" cy="57.3" rx="3.7" ry="2.2"/></g>';
+    }
+    // brazo: cuelga del hombro (sx,32), con manga; `guante` = mano roja de box y `extra` = lo que lleva en la mano
+    function brazo(sx, t, guante, extra){
+      return '<g'+t+'>'+(extra||'')+'<path d="M'+sx+' 32 L'+sx+' 41.5" stroke="'+PIEL+'" stroke-width="4.2" stroke-linecap="round" fill="none"/>'
+        + '<path class="s-red" d="M'+sx+' 32 L'+sx+' 34.5" stroke-width="4.8" stroke-linecap="round" fill="none"/>'
+        + (guante ? '<circle class="c-red" cx="'+sx+'" cy="43" r="3.5"/>' : '<circle cx="'+sx+'" cy="42.2" r="2.5" fill="'+PIEL+'"/>')+'</g>';
+    }
+    var HL = 27.5, HR = 34.5, SL = 25.5, SR = 36.5;   // caderas y hombros
+    var RAQ = '<path class="s-nav" d="M'+SR+' 43.5 L'+SR+' 48" stroke-width="1.9" stroke-linecap="round"/><ellipse class="s-nav" cx="'+SR+'" cy="52.6" rx="3.9" ry="4.8" stroke-width="1.7" fill="#fff" fill-opacity=".7"/>';
+    var atras = [
+      pierna(HL, mov(HL,45,'matR1 .3s ease-in-out infinite alternate')) + pierna(HR, mov(HR,45,'matR2 .3s ease-in-out infinite alternate')),
+      pierna(HL, fijo(HL,45,20)) + pierna(HR, fijo(HR,45,-20)),
+      pierna(HL, fijo(HL,45,10)) + pierna(HR, mov(HR,45,'matPat 1.25s ease-in-out infinite')),
+      pierna(HL, fijo(HL,45,12)) + pierna(HR, fijo(HR,45,-12)),
+      pierna(HL, fijo(HL,45,22)) + pierna(HR, fijo(HR,45,-24)),
+      pierna(HL, fijo(HL,45,18)) + pierna(HR, fijo(HR,45,-18))
+    ];
+    var adelante = [
+      // running: brazos al revés que las piernas + líneas de velocidad
+      '<g stroke="#b9c3d8" stroke-width="1.8" stroke-linecap="round"><path d="M6 31 H13" style="animation:matVel .5s linear infinite"/><path d="M4 39 H12" style="animation:matVel .5s linear .17s infinite"/><path d="M7 47 H13" style="animation:matVel .5s linear .33s infinite"/></g>'
+        + brazo(SL, mov(SL,32,'matR2 .3s ease-in-out infinite alternate')) + brazo(SR, mov(SR,32,'matR1 .3s ease-in-out infinite alternate')),
+      // tenis: drive con la raqueta, la pelota viene y sale
+      brazo(SL, fijo(SL,32,55)) + brazo(SR, mov(SR,32,'matRaq 1.25s cubic-bezier(.5,0,.2,1) infinite'), false, RAQ)
+        + '<circle cx="47" cy="36" r="2.2" fill="#c8e11c" stroke="#8fa30f" stroke-width=".6" style="animation:matBTen 1.25s linear infinite"/>',
+      // fútbol: patea y la pelota sale
+      brazo(SL, fijo(SL,32,58)) + brazo(SR, fijo(SR,32,-58))
+        + '<g style="animation:matBFut 1.25s ease-out infinite"><circle cx="44.5" cy="54.5" r="3.7" fill="#fff" class="s-nav" stroke-width="1.3"/><path class="c-nav" d="M44.5 52.4l2 1.5-.8 2.3h-2.4l-.8-2.3z"/></g>',
+      // básquet: pica la pelota
+      brazo(SL, fijo(SL,32,32)) + brazo(SR, mov(SR,32,'matDri .28s ease-in-out infinite alternate'))
+        + '<g style="animation:matBBas .28s ease-in infinite alternate"><circle cx="46" cy="44.5" r="3.8" fill="#e8772e" stroke="#9c4512" stroke-width=".9"/><path d="M42.4 44.5h7.2M46 40.8v7.4" stroke="#9c4512" stroke-width=".8"/></g>',
+      // hockey: las dos manos al palo, barre y sale la bocha
+      '<g'+mov(40,38,'matPalo 1.25s ease-in-out infinite')+'><path d="M40 37 L50.5 56.5 L55 55.5" stroke="#8a5a2b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g>'
+        + brazo(SL, fijo(SL,32,-62)) + brazo(SR, fijo(SR,32,-34))
+        + '<circle cx="57" cy="57" r="2.1" fill="#f4b400" stroke="#a87b00" stroke-width=".6" style="animation:matBHoc 1.25s ease-out infinite"/>',
+      // box: uno-dos con guantes
+      brazo(SL, mov(SL,32,'matPunB .5s ease-in-out infinite alternate'), true) + brazo(SR, mov(SR,32,'matPunA .5s ease-in-out infinite alternate'), true)
+    ];
+    function capa(lista){ return lista.map(function(h, i){ return '<g class="mat-s mat-s'+(i+1)+'">'+h+'</g>'; }).join(''); }
+    return '<svg viewBox="0 0 64 64" aria-hidden="true"><g transform="translate(32 33) scale(.9) translate(-32 -32)"><g class="mat-bob">'
+      + capa(atras)
+      // torso: short + camiseta con cuello
+      + '<rect class="c-nav" x="24" y="38" width="14" height="9" rx="3.2"/><rect class="c-red" x="23.5" y="28.5" width="15" height="13" rx="5"/><path d="M28 29.2 L31 32.2 L34 29.2" stroke="#fff" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+      // cabeza: puntas de la vincha, cara, pelo, vincha, ojos y sonrisa (mira hacia la derecha, a la pelota)
+      + '<g class="mat-cola"><path class="s-red" d="M20.7 17.8 L15.5 19.6 M20.7 17.8 L16.4 23.2" stroke-width="2.2" stroke-linecap="round" fill="none"/></g>'
+      + '<circle cx="31" cy="18" r="10.5" fill="'+PIEL+'"/>'
+      + '<path d="M20.6 17.2 A10.5 10.5 0 0 1 41.4 17.2 Q37 11.5 31 12.2 Q25 12 20.6 17.2Z" fill="'+PELO+'"/>'
+      + '<path class="s-red" d="M20.6 17.6 Q31 12.4 41.4 17.6" stroke-width="2.7" fill="none" stroke-linecap="round"/>'
+      + '<circle cx="33.4" cy="21" r="1.35" fill="#1b1b1b"/><circle cx="38.4" cy="20.6" r="1.35" fill="#1b1b1b"/>'
+      + '<path d="M32.6 24.6 Q36 27.6 39.4 24.2" stroke="#1b1b1b" stroke-width="1.25" fill="none" stroke-linecap="round"/>'
+      + capa(adelante)
+      + '</g></g></svg>';
   }
 
   var SUGERENCIAS = {
