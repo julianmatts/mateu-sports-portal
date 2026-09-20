@@ -3049,7 +3049,7 @@ consulta). Etapa 1 = guía + catálogo; etapa 2 = stock desde el Buscador (hecha
   clave (`orderBy="$key"&equalTo`, clave = `fbKey` del Buscador) a cada sucursal que carga stock ahí; cuáles
   son se averigua una vez por hora con el `meta` de cada una (`sucursalesConStock`, en memoria del isolate).
   Devuelve por artículo `con_stock` (sucursal, unidades, talles con stock si los abre, fecha de carga),
-  `sin_stock_cargado`, y las `sucursales_sin_dato`. Al 20/09 cargan stock 6 de 17 (Diagonal 80, Calle 49,
+  `no_lo_tienen` (cargan stock y el artículo no figura), y las `sucursales_sin_dato`. Al 20/09 cargan stock 6 de 17 (Diagonal 80, Calle 49,
   Berisso, Ensenada, Aurelius 12, Aurelius 5) y **solo Calle 49 y Aurelius 12 abren por talle** — el techo de
   esta etapa es ese: más sucursales cargando su stock con talle en el Buscador = mejores respuestas, sin
   tocar código. Para llegar del nombre al código, `buscar_catalogo` acepta **solo marca + texto**
