@@ -65,7 +65,24 @@
   +'#mattsWidget *{box-sizing:border-box}'
   +'.mat-fab{height:48px;padding:0 16px 0 6px;border-radius:24px;border:none;border-bottom:3px solid var(--marca-red,#CC0000);cursor:pointer;background:var(--marca-navy,#0B1527);color:#fff;display:flex;align-items:center;gap:9px;box-shadow:0 8px 30px rgba(11,21,39,.22);transition:transform .15s}'
   +'.mat-fab:hover{transform:translateY(-2px)}'
-  +'.mat-av{width:36px;height:36px;border-radius:50%;background:var(--marca-red,#CC0000);color:#fff;display:flex;align-items:center;justify-content:center;font-family:\'Bebas Neue\',sans-serif;font-size:21px;line-height:1;flex:none}'
+  +'.mat-av{width:38px;height:38px;border-radius:50%;overflow:hidden;background:var(--marca-red,#CC0000);color:#fff;display:flex;align-items:center;justify-content:center;font-family:\'Bebas Neue\',sans-serif;font-size:21px;line-height:1;flex:none}'
+  // avatar: una persona que va cambiando de deporte (5 poses que se turnan; sin animaciones queda la primera)
+  +'.mat-av svg{width:100%;height:100%;display:block;overflow:visible}'
+  +'.mat-av .mat-p{opacity:0;animation:matPose 12.5s infinite}'
+  +'.mat-av .mat-p1{opacity:1}'
+  +'.mat-av .mat-p2{animation-delay:2.5s}.mat-av .mat-p3{animation-delay:5s}.mat-av .mat-p4{animation-delay:7.5s}.mat-av .mat-p5{animation-delay:10s}'
+  +'@keyframes matPose{0%{opacity:0}2.5%{opacity:1}18%{opacity:1}20.5%{opacity:0}100%{opacity:0}}'
+  +'.mat-av .mat-bob{animation:matBob .5s ease-in-out infinite alternate}'
+  +'@keyframes matBob{from{transform:translateY(.7px)}to{transform:translateY(-.9px)}}'
+  +'.mat-av .mat-b-ten{animation:matBTen 1.25s linear infinite}'
+  +'@keyframes matBTen{0%{transform:translate(8px,7px)}50%{transform:translate(0,0)}100%{transform:translate(8px,-6px)}}'
+  +'.mat-av .mat-b-fut{animation:matBFut 1.25s ease-out infinite}'
+  +'@keyframes matBFut{0%,20%{transform:translate(0,0)}100%{transform:translate(9px,-7px)}}'
+  +'.mat-av .mat-b-bas{animation:matBBas 1.25s ease-in-out infinite}'
+  +'@keyframes matBBas{0%,25%{transform:translate(0,0)}100%{transform:translate(7px,-6px)}}'
+  +'.mat-av .mat-b-hoc{animation:matBHoc 1.25s ease-out infinite}'
+  +'@keyframes matBHoc{0%,30%{transform:translate(0,0)}100%{transform:translate(7px,0)}}'
+  +'@media(prefers-reduced-motion:reduce){.mat-av .mat-p,.mat-av .mat-bob,.mat-av [class*=mat-b-]{animation:none}}'
   +'.mat-fab span{font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:15px;letter-spacing:.6px;text-transform:uppercase}'
   +'.mat-panel{position:absolute;left:0;bottom:60px;width:372px;max-width:calc(100vw - 32px);height:min(70vh,560px);background:#fff;border:1px solid #dce3f0;border-radius:14px;box-shadow:0 12px 40px rgba(11,21,39,.25);overflow:hidden;display:none;flex-direction:column}'
   +'.mat-panel.on{display:flex}'
@@ -94,6 +111,31 @@
   +'.mat-pie{font-size:10.5px;color:#7b86a0;text-align:center;padding:0 10px 8px;background:#fff}'
   +'@media(max-width:560px){#mattsWidget{left:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px))}.mat-fab{padding:0 6px}.mat-fab span{display:none}.mat-panel{position:fixed;left:8px;right:8px;bottom:calc(74px + env(safe-area-inset-bottom,0px));width:auto;max-width:none;height:min(72vh,560px)}}'
   +'@media print{#mattsWidget{display:none!important}}';
+
+  /* Avatar de Matts: pictograma que rota entre running, tenis, fútbol, básquet y hockey.
+     SVG inline (sin archivos ni CDN); los trazos son blancos sobre el círculo rojo de .mat-av. */
+  function avatarSvg(){
+    var T = ' fill="none" stroke="#fff" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round"';
+    var F = ' fill="#fff" stroke="none"';
+    function pose(n, cuerpo, extra){ return '<g class="mat-p mat-p'+n+'"><g class="mat-bob"'+T+'>'+cuerpo+'</g>'+(extra||'')+'</g>'; }
+    return '<svg viewBox="0 0 48 48" aria-hidden="true">'
+      + '<g transform="translate(24 24) scale(.7) translate(-26 -24.5)">'   // la figura entra entera en el círculo (raqueta, palo y pelotas incluidos)
+      // 1 · running
+      + pose(1, '<circle cx="28" cy="11" r="3.6"'+F+'/><path d="M26 17 L21 29"/><path d="M25.5 19.5 L31 24 L36 21"/><path d="M25 19.5 L18.5 21.5 L15 26.5"/><path d="M21 29 L28 33.5 L26 41.5"/><path d="M21 29 L15.5 34 L9.5 32"/>')
+      // 2 · tenis (raqueta arriba, la pelota viene y se va)
+      + pose(2, '<circle cx="21" cy="12" r="3.6"'+F+'/><path d="M21 17.5 L21 30"/><path d="M21 30 L16 41"/><path d="M21 30 L27.5 40.5"/><path d="M21 20.5 L15 25.5"/><path d="M21 20.5 L28 17 L31 12.5"/><ellipse cx="34.5" cy="8" rx="3.6" ry="4.8" transform="rotate(38 34.5 8)" stroke-width="2"/>',
+             '<circle class="mat-b-ten" cx="37" cy="9" r="1.9"'+F+'/>')
+      // 3 · fútbol (patea y la pelota sale)
+      + pose(3, '<circle cx="19" cy="11" r="3.6"'+F+'/><path d="M19.5 16.5 L21.5 28.5"/><path d="M21.5 28.5 L19 41"/><path d="M21.5 28.5 L28.5 33 L34.5 31"/><path d="M20 19.5 L13.5 24"/><path d="M20 19.5 L27 22.5"/>',
+             '<circle class="mat-b-fut" cx="38.5" cy="34.5" r="3"'+F+'/>')
+      // 4 · básquet (tiro en suspensión)
+      + pose(4, '<circle cx="21" cy="15" r="3.6"'+F+'/><path d="M21 20.5 L21 32"/><path d="M21 32 L17 42"/><path d="M21 32 L25.5 42"/><path d="M21 22.5 L26.5 17 L27 10.5"/><path d="M21 22.5 L18 16.5 L23 10.5"/>',
+             '<circle class="mat-b-bas" cx="25.5" cy="6.5" r="3.3"'+F+'/>')
+      // 5 · hockey (palo al piso, empuja la bocha)
+      + pose(5, '<circle cx="18" cy="13" r="3.6"'+F+'/><path d="M19 18.5 L23.5 29"/><path d="M23.5 29 L18.5 41"/><path d="M23.5 29 L30 40.5"/><path d="M20.5 21.5 L27.5 27.5"/><path d="M26 24 L36 40 L40 39" stroke-width="2.3"/>',
+             '<circle class="mat-b-hoc" cx="41.5" cy="41" r="1.9"'+F+'/>')
+      + '</g></svg>';
+  }
 
   var SUGERENCIAS = {
     _def: ['¿Cómo se usa este módulo?', 'Un cliente quiere empezar a correr, ¿qué zapatilla le recomiendo?', '¿Qué raquetas de tenis trabajamos?'],
@@ -155,14 +197,14 @@
     var w = document.createElement('div'); w.id = 'mattsWidget';
     w.innerHTML = ''
       +'<div class="mat-panel" role="dialog" aria-label="' + NOMBRE + ', asistente del portal">'
-      +  '<div class="mat-head"><div class="mat-av">M</div><div><b>' + NOMBRE + '</b><small>Asistente del portal · asesor deportivo</small></div><div class="mat-sp"></div>'
+      +  '<div class="mat-head"><div class="mat-av">' + avatarSvg() + '</div><div><b>' + NOMBRE + '</b><small>Asistente del portal · asesor deportivo</small></div><div class="mat-sp"></div>'
       +    '<button type="button" class="mat-hb" data-act="nueva" title="Empezar una charla nueva">Nueva</button>'
       +    '<button type="button" class="mat-hb" data-act="cerrar" aria-label="Cerrar">✕</button></div>'
       +  '<div class="mat-log"></div>'
       +  '<div class="mat-form"><textarea placeholder="Escribile a ' + NOMBRE + '…" maxlength="1500" rows="1"></textarea><button type="button" class="mat-send">Enviar</button></div>'
       +  '<div class="mat-pie">Todavía no ve stock ni ventas. Puede equivocarse: ante la duda, consultá.</div>'
       +'</div>'
-      +'<button type="button" class="mat-fab" aria-label="Abrir a ' + NOMBRE + '"><div class="mat-av">M</div><span>' + NOMBRE + '</span></button>';
+      +'<button type="button" class="mat-fab" aria-label="Abrir a ' + NOMBRE + '"><div class="mat-av">' + avatarSvg() + '</div><span>' + NOMBRE + '</span></button>';
     document.body.appendChild(w);
     $panel = w.querySelector('.mat-panel'); $log = w.querySelector('.mat-log');
     $txt = w.querySelector('textarea'); $send = w.querySelector('.mat-send');

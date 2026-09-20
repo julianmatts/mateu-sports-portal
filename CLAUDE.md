@@ -3027,6 +3027,10 @@ consulta). Etapa 1 = sin datos en vivo; etapa 2 = stock desde el Buscador; etapa
   `puesto` ni con `?pres=`. Al cargar hace `GET /api/asistente`: si `disponible:false` (falta la clave,
   o se abrió el HTML suelto) **el botón no aparece**. La charla vive en `sessionStorage` (`matts_chat`)
   y se mandan las últimas 12. Abierto sube a z-index 1290 (tapa «?» y campana; el tutorial sigue arriba).
+  **Avatar animado** (`avatarSvg`, pedido de Juli 20/09): pictograma SVG inline de una persona que rota
+  cada 2,5 s entre running, tenis, fútbol, básquet y hockey (5 grupos `.mat-p` con fundido por CSS, pelota
+  en movimiento y un leve rebote); sin animaciones o con `prefers-reduced-motion` queda fija en running.
+  Sumar un deporte = una `pose()` más y ajustar los `animation-delay` y el % del keyframe `matPose`.
   Sugerencias por módulo en `SUGERENCIAS`. El nombre es la constante `NOMBRE` (widget y Function).
 - **Function** `functions/api/asistente.js`: usa la misma `ANTHROPIC_API_KEY` que `/api/academia-ia`.
   Opcionales `ASISTENTE_MODELO`, `ASISTENTE_TOPE` (60 consultas por cuenta y día) y
