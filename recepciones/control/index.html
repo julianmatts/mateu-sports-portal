@@ -342,14 +342,12 @@ async function toggleCam(){
 function stopCam(){ try{ if(_zxCtl&&_zxCtl.stop) _zxCtl.stop(); }catch(e){} try{ if(_zx&&_zx.reset) _zx.reset(); }catch(e){} _zxCtl=null; _zx=null; const box=$('cam'); if(box) box.style.display='none'; const b=$('camBtn'); if(b) b.textContent='📷 Cámara'; }
 
 /* ============================================================ PICKING ========= */
-/* El kiosco EJECUTA los picks creados en el módulo picking/. Datos en
-   recepciones-mateu/picking/. Valida el scan contra el EAN horneado en cada
-   variante (sin bajar el maestro); si no hay EAN (calzado/otras marcas) el
-   operario confirma manual. */
-DATA.pick = { pickings:{}, operarios:{} };
+/* El kiosco EJECUTA las tareas creadas en el módulo picking/. Datos en
+   recepciones-mateu/picking/. Cada unidad se valida leyendo su etiqueta (ver «ESCANEO FORZADO»). */
+DATA.pick = { pickings:{}, operarios:{}, eanVar:{} };
 async function cargarPicking(){
-  const [pk,ope]=await Promise.all([ fbGet('picking/pickings'), fbGet('picking/operarios') ]);
-  DATA.pick={ pickings:pk||{}, operarios:ope||{} };
+  const [pk,ope,ev]=await Promise.all([ fbGet('picking/pickings'), fbGet('picking/operarios'), fbGet('picking/eanVar').catch(()=>null) ]);
+  DATA.pick={ pickings:pk||{}, operarios:ope||{}, eanVar:ev||{} };
 }
 /* Tareas por remito (Reparto inicial) o por marca·rubro (Barrida de reserva), 20/09/2026: el pick
    ya no es por sucursal; cada talle trae `dest=[{s:slug,u}]` y la pantalla dice a qué sucursal va
@@ -364,7 +362,7 @@ function pkGet(){ return DATA.pick.pickings[pkK(state.pickNro)]||null; }
 function pkSaveItem(nro,iid,item){ enqueueSave('picking/pickings/'+pkK(nro)+'/items/'+iid, item); }         // por unidad: durable, no bloquea el scan
 async function pkSaveField(nro,field,val){ return saveNow('picking/pickings/'+pkK(nro)+'/'+field, val); }        // transiciones: guarda ya (con fallback a cola)
 function pkEvento(ev){ const k=nowISO().replace(/\D/g,'')+'_'+Math.floor((performance.now()*7)%100000); enqueueSave('picking/eventos/'+k, Object.assign({ts:nowISO()},ev)); }
-function pkResumen(P){ let req=0,pk=0,lines=0,falt=0; Object.keys(P.items||{}).forEach(iid=>{ (P.items[iid].talles||[]).forEach(t=>{ lines++; req+=num(t.req); pk+=num(t.picked); if(t.faltante) falt+=Math.max(0,num(t.req)-num(t.picked)); }); }); return {req,pk,lines,falt}; }
+function pkResumen(P){ let req=0,pk=0,lines=0,falt=0,exc=0; Object.keys(P.items||{}).forEach(iid=>{ (P.items[iid].talles||[]).forEach(t=>{ lines++; req+=num(t.req); pk+=num(t.picked); exc+=num(t.exc); if(t.faltante) falt+=Math.max(0,num(t.req)-num(t.picked)); }); }); return {req,pk,lines,falt,exc}; }
 function pkLines(P){ const out=[]; Object.keys(P.items||{}).map(iid=>({iid,...P.items[iid]})).sort((a,b)=>num(a.sequence)-num(b.sequence))
   .forEach(it=>{ (it.talles||[]).forEach((t,ti)=>{ out.push({iid:it.iid,ti,codigo:it.codigo,desc:it.desc,marca:it.marca,zona:it.zonaNombre||'Sin zona',talle:t.t,ean:t.ean||'',req:num(t.req),picked:num(t.picked),faltante:t.faltante||null,dest:t.dest||null}); }); }); return out; }
 function pkNext(P){ return pkLines(P).find(l=>!l.faltante && l.picked<l.req)||null; }
@@ -516,14 +514,18 @@ function renderPickOperativo(){
     +'<div class="pk-dots" id="pkDots">'+dots+'</div>'
     +'<div class="pk-qty" id="pkQty">Retirar <b>'+fmtInt(rest)+'</b><small>unidad'+(rest===1?'':'es')+'</small></div>'
     +'<div id="pkDest">'+pkDestHtml(line)+'</div>'
-    +'<div class="pk-fb" id="pkFb">'+(line.ean?'Escaneá cada unidad':'Sin código — contá y tocá +1')+'</div></div>'
-    +'<div class="pk-scan"><input class="inp" id="pscan" inputmode="numeric" autocomplete="off" placeholder="Escaneá el producto…"><button class="btn btn-outline" id="pmanual">+1 manual</button></div>'
-    +'<div class="pk-bottom"><button class="btn btn-outline" id="nostock">No encuentro stock</button></div>'
+    +'<div class="pk-fb" id="pkFb">Escaneá la etiqueta de cada unidad</div></div>'
+    +'<div class="pk-scan"><input class="inp" id="pscan" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Escaneá la etiqueta…"><button class="btn btn-outline" id="pcam">📷 Cámara</button></div>'
+    +'<div class="pk-bottom" style="gap:8px;flex-wrap:wrap"><button class="btn btn-outline" id="nostock">No encuentro stock</button><button class="btn btn-outline" id="pexc">No puedo escanearla</button></div>'
     +'</div>';
   $('view').innerHTML=h;
   const inp=$('pscan');
   inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); const v=inp.value; inp.value=''; pkScan(v); setTimeout(()=>{ const i=$('pscan'); if(i) i.focus(); },0); } });
-  $('pmanual').onclick=()=>{ pkFeedback(true,'✓ +1'); pkContar(1,'manual'); };
+  $('pcam').onclick=pkCamToggle; pkCamBtn();
+  $('pexc').onclick=()=>{ const P0=pkGet(), l0=pkNext(P0); if(!l0) return; pkExcepcion(l0, motivo=>{
+    const it=P0.items[l0.iid], t=it.talles[l0.ti]; t.exc=num(t.exc)+1;
+    pkEvento({event_type:'scan_exception',picking_id:P0.nro,operator_id:P0.operario,sku_id:l0.codigo,value:{talle:l0.talle,motivo:motivo}});
+    pkFeedback(true,'✓ +1 sin escanear — '+motivo); pkContar(1,'excepcion'); }); };
   $('pausar').onclick=pkPausar;
   $('nostock').onclick=pkNoStock;
   { const bm=$('btnMapa'); if(bm) bm.onclick=()=>{ pkMapaOpen=!pkMapaOpen; const m=$('pkMapa'); if(m) m.style.display=pkMapaOpen?'':'none'; bm.textContent=(pkMapaOpen?'▾':'🗺')+' Mapa'; }; }
@@ -545,18 +547,128 @@ function pkDestHtml(line){
   return '<div class="pk-destlbl">Va a</div><div class="pk-dests">'+line.dest.map((d,i)=>{ const ini=acc; acc+=num(d.u); const hechas=Math.max(0,Math.min(num(d.u), line.picked-ini));
     return '<span class="pk-dchip'+(i===cur?' cur':(hechas>=num(d.u)?' done':''))+'">'+esc(nombreSuc(d.s))+' <b>'+hechas+'/'+num(d.u)+'</b></span>'; }).join('')+'</div>';
 }
+/* ============ ESCANEO FORZADO (20/09/2026, pedido de Juli) ============
+   Cada unidad se confirma LEYENDO la etiqueta (lector de mano o cámara de la tablet): ya no hay
+   «+1 manual». Una etiqueta vale si es: (1) el EAN horneado en la tarea (maestro Adidas); (2) un EAN
+   ya aprendido para ese artículo·talle (`picking/eanVar/<cod>/<talle>/<gtin>`); (3) un EAN del mapa
+   compartido del Buscador de Artículos (`ubicaciones-mateu/ean/<gtin13>`) que apunte al mismo
+   código — si el mapa no trae el talle, o la etiqueta no está en ningún lado, se pregunta UNA vez
+   «¿es este artículo y talle?» y queda aprendida; (4) la etiqueta del proveedor con el código (con
+   o sin las 3 letras de marca) y el talle pegado. Lo único sin leer es la EXCEPCIÓN con motivo
+   (sin etiqueta / ilegible / lector roto), que queda registrada por unidad. */
+const EAN_MAPA='https://ubicaciones-mateu-default-rtdb.firebaseio.com/ean';
+function gtin13(raw){ let d=String(raw||'').replace(/\D/g,''); if(d.length===12) d='0'+d; else if(d.length===14&&d.charAt(0)==='0') d=d.slice(1); return d; }
+function mismoEan(a,b){ a=gtin13(a); b=gtin13(b); if(!a||!b) return false; return a===b || (a.length>=11&&b.length>=11&&a.slice(-11)===b.slice(-11)); }
+function codNorm(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function talleNorm(t){ t=String(t||'').toUpperCase().trim().replace(',','.'); if(/^\d+-$/.test(t)) t=t.slice(0,-1)+'.5'; return t.replace(/\.0$/,''); }
+function evKey(s){ return String(s||'').trim().replace(/[.#$/\[\]]/g,'~')||'_'; }
+// EAN ya aprendido para ese artículo: devuelve la CLAVE de talle donde está guardado (o null)
+function eanAprendido(codigo,g){ const c=DATA.pick.eanVar[evKey(codigo)]; if(!c) return null;
+  const ks=Object.keys(c); for(let i=0;i<ks.length;i++){ if(Object.keys(c[ks[i]]||{}).some(e=>mismoEan(e,g))) return ks[i]; } return null; }
+const _eanMapa={};
+async function eanMapa(g){ if(_eanMapa[g]!==undefined) return _eanMapa[g];
+  const get=async u=>{ const c=new AbortController(); const tm=setTimeout(()=>c.abort(),7000); try{ const r=await fetch(u,{signal:c.signal}); if(!r.ok) throw new Error('http'); return await r.json(); } finally{ clearTimeout(tm); } };
+  let v=await get(EAN_MAPA+'/'+g+'.json');
+  if(!v && g.length>=11){ const k=await get(EAN_MAPA+'/suf/'+g.slice(-11)+'.json'); if(k && typeof k==='string') v=await get(EAN_MAPA+'/'+encodeURIComponent(k)+'.json'); }
+  _eanMapa[g]=v||null; return _eanMapa[g]; }
+// etiqueta de proveedor (texto): 'ok' artículo+talle · 'art' solo el artículo · 'talle' otro talle · null no es
+function etiquetaTexto(raw,line){ const q=codNorm(raw), c=codNorm(line.codigo), t=codNorm(talleNorm(line.talle)); if(q.length<4) return null;
+  const bases=[c]; if(c.length>7) bases.push(c.slice(3));
+  for(let i=0;i<bases.length;i++){ const b=bases[i]; if(q.indexOf(b)!==0) continue; const resto=q.slice(b.length);
+    if(!resto) return 'art'; if(resto===t || (resto.length<=t.length+5 && resto.slice(-t.length)===t)) return 'ok'; return 'talle'; }
+  return null; }
+// valida una lectura contra la línea que toca → {ok:true|false, msg} | {preguntar:{g, enMapa}} | null
+async function pkValidar(raw, line, P){
+  const txt=String(raw||'').trim(); if(!txt) return null;
+  const soloNum=/^[\d\s\-]+$/.test(txt) && txt.replace(/\D/g,'').length>=8;
+  // primero la etiqueta del proveedor: hay códigos de artículo que son todos números (Atomik) y parecerían un EAN
+  const e=etiquetaTexto(txt,line);
+  if(e==='ok') return {ok:true,msg:'✓ Correcto'}; if(e==='art') return {ok:true,msg:'✓ Artículo correcto'};
+  if(e==='talle') return {ok:false,msg:'✗ Es el artículo pero OTRO talle — va talle '+line.talle};
+  if(!soloNum) return {ok:false,msg:'✗ Esa etiqueta no es de este artículo'};
+  const g=gtin13(txt);
+  if(line.ean && mismoEan(line.ean,g)) return {ok:true,msg:'✓ Correcto'};
+  const otra=pkLines(P).find(l=>l.ean && mismoEan(l.ean,g));
+  if(otra) return {ok:false,msg:'✗ Ese es '+(otra.codigo===line.codigo?'':'otro artículo: '+(otra.desc||otra.codigo)+' · ')+'talle '+otra.talle+' — ahora va talle '+line.talle};
+  const tk=eanAprendido(line.codigo,g);
+  if(tk!=null){ if(tk===evKey(talleNorm(line.talle))) return {ok:true,msg:'✓ Correcto'}; return {ok:false,msg:'✗ Esa etiqueta es del talle '+tk.replace(/~/g,'.')+' — va talle '+line.talle}; }
+  if(line.ean) return {ok:false,msg:'✗ Incorrecto — se espera talle '+line.talle};     // la variante tiene EAN conocido y no es ese
+  let v; try{ v=await eanMapa(g); }catch(e){ return {ok:false,msg:'Sin conexión: no pude validar la etiqueta. Probá de nuevo.'}; }
+  if(v && v.codigo){
+    if(codNorm(v.codigo)!==codNorm(line.codigo)) return {ok:false,msg:'✗ Es otro artículo: '+(v.descripcion||v.codigo)};
+    if(v.t){ return talleNorm(v.t)===talleNorm(line.talle) ? {ok:true,msg:'✓ Correcto'} : {ok:false,msg:'✗ Esa etiqueta es del talle '+v.t+' — va talle '+line.talle}; }
+    return {preguntar:{g:g,enMapa:true}}; }
+  return {preguntar:{g:g,enMapa:false}};
+}
+function pkAprender(line,g,P,quien){ const ck=evKey(line.codigo), tk=evKey(talleNorm(line.talle));
+  const c=DATA.pick.eanVar[ck]||(DATA.pick.eanVar[ck]={}); (c[tk]=c[tk]||{})[g]={por:quien||'',ts:Date.now(),pick:P.nro};
+  enqueueSave('picking/eanVar/'+ck+'/'+tk+'/'+g, c[tk][g]); }
+// modal de una sola vez: etiqueta que el portal todavía no conoce para ese artículo·talle
+function pkPreguntar(line,info){ return new Promise(res=>{
+  const html='<div style="position:fixed;inset:0;background:rgba(11,21,39,.6);display:flex;align-items:center;justify-content:center;padding:20px;z-index:70" id="pqOv"><div style="background:#fff;border-radius:14px;max-width:480px;width:100%;padding:22px;text-align:center">'
+    +'<div style="font-family:var(--font-d);font-size:24px">Etiqueta nueva</div>'
+    +'<div class="sub" style="font-family:var(--font-c);color:var(--muted);margin:4px 0 12px">'+(info.enMapa?'El código es de este artículo, pero no sé de qué talle.':'Todavía no tengo registrado este código de barras.')+' Mirá la etiqueta y confirmá:</div>'
+    +'<div style="font-family:var(--font-c);font-weight:700;font-size:19px">'+esc(line.desc||line.codigo)+'</div><div class="sub" style="color:var(--muted)">'+esc(line.codigo)+'</div>'
+    +'<div style="font-family:var(--font-d);font-size:56px;line-height:1;margin:8px 0">Talle '+esc(line.talle)+'</div>'
+    +'<div class="sub" style="color:var(--muted);font-size:12px">'+esc(info.g)+'</div>'
+    +'<div class="row-actions" style="justify-content:center;margin-top:16px;gap:10px"><button class="btn btn-outline btn-lg" id="pqNo">✗ No es</button><button class="btn btn-primary btn-lg" id="pqSi">✓ Sí, es este</button></div>'
+    +'<div class="sub" style="color:var(--muted);font-size:12px;margin-top:10px">Queda guardada: la próxima vez se valida sola. Se registra quién la confirmó.</div></div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+  const fin=v=>{ const o=$('pqOv'); if(o) o.remove(); res(v); };
+  $('pqSi').onclick=()=>fin(true); $('pqNo').onclick=()=>fin(false); }); }
+// EXCEPCIÓN: la única forma de contar una unidad sin leerla. Una por vez, con motivo.
+const EXC_MOTIVOS=['LA UNIDAD NO TIENE ETIQUETA','ETIQUETA ROTA O ILEGIBLE','EL LECTOR / LA CÁMARA NO LEE','OTRO'];
+function pkExcepcion(line,onOk){
+  const html='<div style="position:fixed;inset:0;background:rgba(11,21,39,.55);display:flex;align-items:center;justify-content:center;padding:20px;z-index:60" id="exOv"><div style="background:#fff;border-radius:14px;max-width:460px;width:100%;padding:20px">'
+    +'<div style="font-family:var(--font-d);font-size:24px">No puedo escanearla</div>'
+    +'<div class="sub" style="font-family:var(--font-c);color:var(--muted);margin-bottom:6px">'+esc(line.desc||line.codigo)+' · Talle '+esc(line.talle)+' — cuenta UNA unidad sin leer la etiqueta y queda registrado a tu nombre.</div>'
+    +EXC_MOTIVOS.map((o,i)=>'<button class="btn btn-outline" data-ex="'+i+'" style="width:100%;justify-content:flex-start;margin-top:8px;text-align:left">'+esc(o)+'</button>').join('')
+    +'<div class="row-actions" style="margin-top:14px"><button class="btn btn-outline" id="exCancel">Cancelar</button></div></div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+  const close=()=>{ const o=$('exOv'); if(o) o.remove(); };
+  $('exCancel').onclick=close;
+  document.querySelectorAll('[data-ex]').forEach(b=>b.onclick=()=>{ const m=EXC_MOTIVOS[+b.getAttribute('data-ex')]; close(); onOk(m); });
+}
+/* cámara de la tablet para el picking / control final: vista flotante que sobrevive a los repintados */
+let _pkCam=null,_pkCamCtl=null,_pkCamUlt={t:'',ms:0};
+async function pkCamToggle(){
+  if(_pkCamCtl){ pkCamStop(); return; }
+  try{ await ensureZXing();
+    if(!$('pkCamBox')) document.body.insertAdjacentHTML('beforeend','<div id="pkCamBox" style="position:fixed;right:12px;bottom:12px;width:min(46vw,300px);background:#000;border:3px solid var(--navy);border-radius:14px;overflow:hidden;z-index:55;box-shadow:0 8px 30px rgba(0,0,0,.35)"><video id="pkVideo" playsinline muted style="width:100%;display:block"></video><button id="pkCamX" style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.6);color:#fff;border:0;border-radius:99px;width:30px;height:30px;font-size:16px">✕</button></div>');
+    $('pkCamX').onclick=pkCamStop;
+    const reader=new ZXing.BrowserMultiFormatReader(); _pkCam=reader;
+    _pkCamCtl=await reader.decodeFromVideoDevice(undefined, $('pkVideo'), (result)=>{ if(!result) return;
+      if(!$('pscan') && !$('cscan')){ pkCamStop(); return; }                         // salió de la pantalla de escaneo
+      if($('pqOv') || $('exOv') || $('nsOv')) return;                                 // hay un cartel abierto
+      const t=result.getText(), ahora=Date.now(); if(t===_pkCamUlt.t && ahora-_pkCamUlt.ms<1600) return;   // el mismo código sigue en cuadro
+      _pkCamUlt={t:t,ms:ahora}; if($('pscan')) pkScan(t); else cfScan(t); });
+    pkCamBtn();
+  }catch(e){ toast((e&&e.message)||'No pude abrir la cámara','bad'); pkCamStop(); }
+}
+function pkCamStop(){ try{ if(_pkCamCtl&&_pkCamCtl.stop) _pkCamCtl.stop(); }catch(e){} try{ if(_pkCam&&_pkCam.reset) _pkCam.reset(); }catch(e){} _pkCamCtl=null; _pkCam=null; const b=$('pkCamBox'); if(b) b.remove(); pkCamBtn(); }
+function pkCamBtn(){ const b=$('pcam'); if(b) b.textContent=_pkCamCtl?'📷 Cerrar cámara':'📷 Cámara'; }
+
 function pkFeedback(ok,msg){
   const prod=$('pkProd'); if(prod){ prod.classList.remove('ok','bad'); void prod.offsetWidth; prod.classList.add(ok?'ok':'bad'); setTimeout(()=>{ const p=$('pkProd'); if(p) p.classList.remove('ok','bad'); },500); }
   const fb=$('pkFb'); if(fb){ fb.className='pk-fb '+(ok?'ok':'bad'); fb.textContent=msg; }
   beep(ok);
 }
-function pkScan(raw){
-  const P=pkGet(); const line=pkNext(P); if(!line) return;
-  const ean=String(raw||'').replace(/\D/g,''); if(!ean) return;
-  if(line.ean){
-    if(ean===line.ean){ pkFeedback(true,'✓ Correcto'); pkContar(1,'scan'); }
-    else { pkFeedback(false,'✗ Incorrecto — se espera talle '+line.talle); pkEvento({event_type:'sku_error',picking_id:P.nro,operator_id:P.operario,ean:ean,value:{esperado:line.ean}}); }
-  } else { pkFeedback(true,'✓ +1 (sin validación de código)'); pkContar(1,'scan'); }
+let _pkBusy=false;
+async function pkScan(raw){
+  if(_pkBusy) return; const P=pkGet(); const line=pkNext(P); if(!line) return;
+  _pkBusy=true;
+  try{
+    const r=await pkValidar(raw,line,P); if(!r) return;
+    const sigue=pkNext(pkGet()); if(!sigue || sigue.iid!==line.iid || sigue.ti!==line.ti) return;      // cambió la línea mientras se validaba
+    if(r.preguntar){ beep(false);
+      const si=await pkPreguntar(line,r.preguntar);
+      if(si){ pkAprender(line,r.preguntar.g,P,P.operario); pkEvento({event_type:'ean_linked',picking_id:P.nro,operator_id:P.operario,sku_id:line.codigo,ean:r.preguntar.g,value:{talle:line.talle,enMapa:r.preguntar.enMapa}});
+        pkFeedback(true,'✓ Etiqueta guardada · +1'); pkContar(1,'scan'); }
+      else { pkFeedback(false,'✗ No era — buscá talle '+line.talle); pkEvento({event_type:'sku_error',picking_id:P.nro,operator_id:P.operario,ean:r.preguntar.g,value:{esperado:line.codigo+' '+line.talle,rechazada:true}}); }
+      return; }
+    if(r.ok){ pkFeedback(true,r.msg); pkContar(1,'scan'); }
+    else { pkFeedback(false,r.msg); pkEvento({event_type:'sku_error',picking_id:P.nro,operator_id:P.operario,ean:String(raw).trim().slice(0,40),value:{esperado:line.ean||(line.codigo+' '+line.talle),msg:r.msg}}); }
+  } finally { _pkBusy=false; const i=$('pscan'); if(i) i.focus(); }
 }
 function pkContar(n,via){
   const P=pkGet(); const line=pkNext(P); if(!line) return;
@@ -612,14 +724,15 @@ function renderPickFin(){
     +'<div class="sumrow"><div class="s"><div class="v">'+fmtInt(sol)+'</div><div class="k">Solicitadas</div></div>'
     +'<div class="s"><div class="v">'+fmtInt(enc)+'</div><div class="k">Encontradas</div></div>'
     +'<div class="s"><div class="v" style="color:'+(falt>0?'var(--bad)':'var(--ok)')+'">'+fmtInt(falt)+'</div><div class="k">Faltantes</div></div>'
-    +'<div class="s"><div class="v">'+dur+'</div><div class="k">Tiempo</div></div></div>'
+    +'<div class="s"><div class="v">'+dur+'</div><div class="k">Tiempo</div></div>'
+    +(r.exc?'<div class="s"><div class="v" style="color:var(--warn)">'+fmtInt(r.exc)+'</div><div class="k">Sin escanear</div></div>':'')+'</div>'
     +(falt>0?'<div class="blind" style="margin-top:14px">Quedan '+falt+' unidades sin encontrar — se registran como diferencia para el control.</div>':'')
     +'<div class="row-actions" style="justify-content:center;margin-top:16px"><button class="btn btn-primary btn-lg" id="enviar">Enviar a control</button></div></div>';
   $('enviar').onclick=async()=>{
     const b=$('enviar'); b.disabled=true;
     P.estado='LISTO PARA CONTROL'; P.completed_at=nowISO(); P.con_diferencias=falt>0;
-    await Promise.all([ pkSaveField(P.nro,'estado','LISTO PARA CONTROL'), pkSaveField(P.nro,'completed_at',P.completed_at), pkSaveField(P.nro,'con_diferencias',falt>0) ]);
-    pkEvento({event_type:'picking_completed',picking_id:P.nro,operator_id:P.operario,value:{solicitadas:sol,encontradas:enc,faltantes:falt}});
+    await Promise.all([ pkSaveField(P.nro,'estado','LISTO PARA CONTROL'), pkSaveField(P.nro,'completed_at',P.completed_at), pkSaveField(P.nro,'con_diferencias',falt>0), pkSaveField(P.nro,'excepciones',r.exc||0) ]);
+    pkEvento({event_type:'picking_completed',picking_id:P.nro,operator_id:P.operario,value:{solicitadas:sol,encontradas:enc,faltantes:falt,sin_escanear:r.exc||0}});
     postAviso('📋 PICK #'+P.nro+' ('+pkTitulo(P)+') listo para control — preparó '+(P.operario||'—')+(falt>0?(', con '+falt+' faltante'+(falt===1?'':'s')):'')+'.');
     toast('Enviado a control','ok'); state.view='lista'; try{ await cargarPicking(); }catch(e){} render();
   };
@@ -699,25 +812,35 @@ function renderCfOperativo(){
     +'<div class="talle"><small>Talle</small>'+esc(line.talle)+'</div>'
     +'<div class="pk-dots" id="pkDots">'+dots+'</div>'
     +'<div class="pk-qty" id="pkQty">Controlar <b>'+fmtInt(rest)+'</b><small>de '+fmtInt(line.picked)+' preparada'+(line.picked===1?'':'s')+'</small></div>'
-    +'<div class="pk-fb" id="pkFb">'+(line.ean?'Escaneá cada unidad':'Sin código — contá y tocá +1')+'</div></div>'
-    +'<div class="pk-scan"><input class="inp" id="cscan" inputmode="numeric" autocomplete="off" placeholder="Escaneá el producto…"><button class="btn btn-outline" id="cmanual">+1 manual</button></div>'
-    +'<div class="pk-bottom"><button class="btn btn-outline" id="cfin">Terminar y ver resultado</button></div>'
+    +'<div class="pk-fb" id="pkFb">Escaneá la etiqueta de cada unidad</div></div>'
+    +'<div class="pk-scan"><input class="inp" id="cscan" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Escaneá la etiqueta…"><button class="btn btn-outline" id="pcam">📷 Cámara</button></div>'
+    +'<div class="pk-bottom" style="gap:8px;flex-wrap:wrap"><button class="btn btn-outline" id="cexc">No puedo escanearla</button><button class="btn btn-outline" id="cfin">Terminar y ver resultado</button></div>'
     +'</div>';
   $('view').innerHTML=h;
   const inp=$('cscan');
   inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); const v=inp.value; inp.value=''; cfScan(v); setTimeout(()=>{ const i=$('cscan'); if(i) i.focus(); },0); } });
-  $('cmanual').onclick=()=>{ pkFeedback(true,'✓ +1'); cfContar(1,'manual'); };
+  $('pcam').onclick=pkCamToggle; pkCamBtn();
+  $('cexc').onclick=()=>{ const P0=pkGet(), l0=cfNext(P0); if(!l0) return; pkExcepcion(l0, motivo=>{
+    pkEvento({event_type:'scan_exception',picking_id:P0.nro,operator_id:P0.controlado_por,sku_id:l0.codigo,value:{talle:l0.talle,motivo:motivo,control:true}});
+    pkFeedback(true,'✓ +1 sin escanear — '+motivo); cfContar(1,'excepcion'); }); };
   $('salirC').onclick=()=>{ state.view='lista'; render(); };
   $('cfin').onclick=()=>{ state.view='fin'; render(); };
   inp.focus();
 }
-function cfScan(raw){
-  const P=pkGet(); const line=cfNext(P); if(!line) return;
-  const ean=String(raw||'').replace(/\D/g,''); if(!ean) return;
-  if(line.ean){
-    if(ean===line.ean){ pkFeedback(true,'✓ Correcto'); cfContar(1,'scan'); }
-    else { pkFeedback(false,'✗ Incorrecto — se espera talle '+line.talle); pkEvento({event_type:'control_error',picking_id:P.nro,operator_id:P.controlado_por,ean:ean,value:{esperado:line.ean}}); }
-  } else { pkFeedback(true,'✓ +1 (sin validación de código)'); cfContar(1,'scan'); }
+async function cfScan(raw){
+  if(_pkBusy) return; const P=pkGet(); const line=cfNext(P); if(!line) return;
+  _pkBusy=true;
+  try{
+    const r=await pkValidar(raw,line,P); if(!r) return;
+    const sigue=cfNext(pkGet()); if(!sigue || sigue.iid!==line.iid || sigue.ti!==line.ti) return;
+    if(r.preguntar){ beep(false);
+      const si=await pkPreguntar(line,r.preguntar);
+      if(si){ pkAprender(line,r.preguntar.g,P,P.controlado_por); pkFeedback(true,'✓ Etiqueta guardada · +1'); cfContar(1,'scan'); }
+      else pkFeedback(false,'✗ No era — se espera talle '+line.talle);
+      return; }
+    if(r.ok){ pkFeedback(true,r.msg); cfContar(1,'scan'); }
+    else { pkFeedback(false,r.msg); pkEvento({event_type:'control_error',picking_id:P.nro,operator_id:P.controlado_por,ean:String(raw).trim().slice(0,40),value:{esperado:line.ean||(line.codigo+' '+line.talle),msg:r.msg}}); }
+  } finally { _pkBusy=false; const i=$('cscan'); if(i) i.focus(); }
 }
 function cfContar(n,via){
   const P=pkGet(); const line=cfNext(P); if(!line) return;
@@ -777,7 +900,7 @@ function kioTutorial(){
   if($('ktutFab')) return;
   var PASOS=[
     {ic:'👋',t:'Tu estación',d:'Esta tablet es tu estación de depósito. No hace falta usuario ni contraseña: tocás una tarea y arrancás. Con «← Tareas» volvés al menú cuando quieras.'},
-    {ic:'🔫',t:'El escáner',d:'Con la lectora: apuntás y disparás. El cursor queda solo en el campo, no toques nada. Verde + beep = correcto; rojo = incorrecto. Si un artículo no tiene código cargado, usás «+1 manual»; y también está el botón «Cámara».'},
+    {ic:'🔫',t:'El escáner',d:'Con la lectora: apuntás y disparás. El cursor queda solo en el campo, no toques nada. Verde + beep = correcto; rojo = incorrecto. Sin lectora, tocá «📷 Cámara» y apuntá la tablet a la etiqueta. Cada unidad se confirma leyendo su etiqueta: si es una etiqueta nueva te pregunta una sola vez si es ese artículo y talle. Si de verdad no se puede leer, «No puedo escanearla» pide el motivo y queda registrado.'},
     {ic:'📦',t:'Control de Ingreso',d:'Cuando llega un remito: lo elegís de la lista y escaneás cada unidad a ciegas (no ves las cantidades esperadas, para no redondear). Al terminar tocás «Terminé» y el encargado hace la conciliación.'},
     {ic:'📋',t:'Picking',d:'Elegís un pedido y tu nombre, y tocás «Iniciar». La pantalla te va guiando: la ZONA a la que ir, el producto, el talle y cuántas retirar. Escaneás cada unidad. Si no encontrás stock, tocás «No encuentro stock». Al final, «Enviar a control».'},
     {ic:'✅',t:'Control',d:'Controlás un pedido que ya se preparó (mejor si lo armó otra persona): re-escaneás todo y el sistema verifica contra lo que se pickeó. Si hay diferencias, ponés el motivo para poder cerrar.'}

@@ -1966,7 +1966,7 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
 
 ## Picking del depósito — tarea por remito / por marca·rubro (`picking/` + kiosco, 20/09/2026)
 
-Modelo de trabajo que definió Juli: Nehuen y Ran arman el Reparto inicial / la Barrida en `barrida/`
+Modelo de trabajo que definió Juli: Nehuen y Hernán arman el Reparto inicial / la Barrida en `barrida/`
 → **tarea asignada a un operario** en la tablet (kiosco `recepciones/control/`, rol `deposito-tablet`)
 → el operario confirma, corre el tiempo y prepara artículo×talle **escaneando** → finaliza → control
 final → estadísticas por operario en el Panel de `picking/` (lo ven `logistica@` = Hernán y Marcelo,
@@ -1987,12 +1987,30 @@ sucursal**: un remito trae artículos que van a una u otra sucursal.
   otro pide confirmación y deja `picking_reassigned`); **reloj visible** (`pkReloj`) y bloque **«Va a»**
   (`pkDestHtml`/`pkDestActual`: resalta la sucursal de la unidad que se está por preparar, los destinos
   se llenan en orden). Los picks viejos con `destino` siguen andando (`tituloPick` / `pkTitulo`).
-- **Pendiente — etapa 2 (escaneo forzado)**: hoy sigue el botón «+1 manual» y el EAN solo se hornea
-  para Adidas (`eanDeVariante`, maestro). Falta: resolver EAN contra el mapa del Buscador
-  (`ubicaciones-mateu/ean`) + etiquetas de proveedor (`codigoConTallePegado`), cámara ZXing en el
-  picking (ya está en Control de Ingreso, `toggleCam`), sacar el +1 y dejar una excepción con motivo.
-  **Etapa 3**: dashboard por tipo de tarea y excepciones sin escaneo. **Etapa 4**: Ingreso de
-  Mercadería (packing list digital, operario del padrón con tiempos, enganche con el Reparto inicial).
+- **Operarios = padrón de RRHH (20/09/2026)**: `sincronizarOperarios()` corre al abrir `picking/` y
+  arma la lista desde `rrhh/equipo/deposito` (id `leg-<legajoId>`): suma los activos, actualiza
+  nombre/puesto, desactiva al que salió del depósito (`bajaPadron`) y a los «(demo)»; no reactiva al
+  que se desactivó a mano. El botón «Traer dotación» queda de respaldo.
+- **Etapa 2 (HECHA 20/09/2026) — escaneo forzado**, bloque «ESCANEO FORZADO» del kiosco: se sacó el
+  «+1 manual» del picking y del control final. `pkValidar(raw, line, P)` acepta una lectura si es, en
+  este orden: la **etiqueta del proveedor** (código con o sin las 3 letras de marca + talle pegado,
+  `etiquetaTexto`; va primero porque hay códigos todos numéricos, p.ej. Atomik, que parecerían un EAN),
+  el **EAN horneado** (maestro Adidas), un **EAN aprendido** (`picking/eanVar/<cod>/<talle>/<gtin13>` =
+  `{por, ts, pick}`) o un EAN del **mapa del Buscador** (`ubicaciones-mateu/ean/<gtin13>`, con el índice
+  `suf/`; consulta puntual con tope de 7 s). Si el mapa trae el artículo sin talle (al 20/09 solo 521 de
+  13.103 EAN tienen talle) o la etiqueta no está en ningún lado, `pkPreguntar` muestra UNA vez «¿es este
+  artículo y talle?» y la aprende (evento `ean_linked`); esa misma etiqueta en otro talle después da
+  error. ⚠ Lo aprendido NO se publica al mapa compartido del Buscador (un vínculo mal hecho ensuciaría
+  todas las sucursales): pendiente publicarlo cuando el control final lo confirme. Mensajes de error
+  dicen qué se leyó («es talle 37», «es otro artículo: …»). Sin conexión no valida (no cuenta).
+  **Cámara** (`pkCamToggle`, ZXing): vista flotante que sobrevive a los repintados, ignora el mismo
+  código por 1,6 s y se apaga al salir de la pantalla de escaneo; sin probar todavía en la tablet real.
+  **Excepción** (`pkExcepcion`, botón «No puedo escanearla»): una unidad por vez con motivo
+  (`EXC_MOTIVOS`), suma `talles[].exc`, evento `scan_exception`, `excepciones` en el pick al cerrar y
+  columna **«Sin escanear»** por operario en el Panel.
+- **Pendiente**: **Etapa 3** dashboard por tipo de tarea, etiquetas aprendidas por operario y detalle de
+  excepciones. **Etapa 4**: Ingreso de Mercadería (packing list digital, operario del padrón con
+  tiempos, enganche con el Reparto inicial).
 
 ## Panel General de Logística (`logistica/`, 08/09/2026)
 

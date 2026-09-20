@@ -171,6 +171,7 @@ async function cargar(){
   ]);
   DATA.operarios=ope||{}; DATA.zonas=zon||{}; DATA.asignZona=asig||{}; DATA.pickings=pick||{};
   DATA.eventos=evs||{}; DATA.seq=num(seq)||1841; DATA.bar.ultima=ultima||null;
+  await sincronizarOperarios();
   if(ultima){
     const lk=fbKey(ultima);
     const [meta,slugsObj]=await Promise.all([ fbGet(BARR+'/barridas/'+lk+'/meta'), fbGet(BARR+'/barridas/'+lk+'/reposicion','shallow=true') ]);
@@ -307,7 +308,7 @@ function renderPanel(){
   const comp=all.filter(P=>P.completed_at && enPer(P.completed_at));
   let uPick=0,uReq=0,uFalt=0,totMs=0,picksT=0,linesT=0; const prod={},faltBySku={},faltByZona={};
   comp.forEach(P=>{ const r=pickResumen(P); uPick+=r.pick; uReq+=r.req; const d=pickDur(P);
-    if(P.operario&&d){ const o=prod[P.operario]||(prod[P.operario]={picks:0,units:0,lines:0,ms:0}); o.picks++; o.units+=r.pick; o.lines+=r.skus; o.ms+=d; totMs+=d; picksT++; linesT+=r.skus; }
+    if(P.operario&&d){ const o=prod[P.operario]||(prod[P.operario]={picks:0,units:0,lines:0,ms:0,exc:0}); o.exc+=num(P.excepciones); o.picks++; o.units+=r.pick; o.lines+=r.skus; o.ms+=d; totMs+=d; picksT++; linesT+=r.skus; }
     vals(P.items||{}).forEach(it=>{ const f=num(it.requested_qty)-num(it.picked_qty); if(f>0){ faltBySku[it.codigo]=(faltBySku[it.codigo]||0)+f; faltByZona[it.zonaNombre||'Sin zona']=(faltByZona[it.zonaNombre||'Sin zona']||0)+f; uFalt+=f; } }); });
   const errScan=vals(DATA.eventos).filter(e=>e&&(e.event_type==='sku_error'||e.event_type==='control_error')&&enPer(e.ts)).length;
   let totU=0; Object.keys(prod).forEach(k=>totU+=prod[k].units);
@@ -341,11 +342,11 @@ function renderPanel(){
   }).join('') : '<tr><td colspan="6" class="hint" style="padding:14px">Todavía no hay pickings.</td></tr>';
   h+='</tbody></table></div>';
 
-  const prodRows=Object.keys(prod).map(o=>({o:o,picks:prod[o].picks,units:prod[o].units,lines:prod[o].lines,ms:prod[o].ms,uh:prod[o].ms>0?Math.round(prod[o].units/(prod[o].ms/3600000)):0})).sort((a,b)=>b.uh-a.uh);
+  const prodRows=Object.keys(prod).map(o=>({o:o,picks:prod[o].picks,units:prod[o].units,lines:prod[o].lines,ms:prod[o].ms,exc:prod[o].exc,uh:prod[o].ms>0?Math.round(prod[o].units/(prod[o].ms/3600000)):0})).sort((a,b)=>b.uh-a.uh);
   h+='<div class="sec-head" style="margin:18px 0 8px"><div><h1 style="font-size:20px">Productividad por operario</h1><div class="sub">Pickings completados · '+esc(perLbl)+'.</div></div></div>';
-  h+='<div class="tbl-wrap"><table><thead><tr><th>Operario</th><th class="num">Pickings</th><th class="num">Unidades</th><th class="num">Líneas</th><th class="num">Tiempo</th><th class="num">Unid./hora</th></tr></thead><tbody>';
-  h+= prodRows.length?prodRows.map(x=>'<tr><td><b>'+esc(x.o)+'</b></td><td class="num">'+x.picks+'</td><td class="num">'+fmtInt(x.units)+'</td><td class="num">'+fmtInt(x.lines)+'</td><td class="num">'+fmtDurMs(x.ms)+'</td><td class="num"><b>'+fmtInt(x.uh)+'</b></td></tr>').join('')
-    :'<tr><td colspan="6" class="hint" style="padding:14px">Sin pickings completados en el período.</td></tr>';
+  h+='<div class="tbl-wrap"><table><thead><tr><th>Operario</th><th class="num">Pickings</th><th class="num">Unidades</th><th class="num">Líneas</th><th class="num">Tiempo</th><th class="num" title="Unidades contadas con «No puedo escanearla», sin leer la etiqueta">Sin escanear</th><th class="num">Unid./hora</th></tr></thead><tbody>';
+  h+= prodRows.length?prodRows.map(x=>'<tr><td><b>'+esc(x.o)+'</b></td><td class="num">'+x.picks+'</td><td class="num">'+fmtInt(x.units)+'</td><td class="num">'+fmtInt(x.lines)+'</td><td class="num">'+fmtDurMs(x.ms)+'</td><td class="num"'+(x.exc?' style="color:var(--warn);font-weight:700"':'')+'>'+fmtInt(x.exc)+'</td><td class="num"><b>'+fmtInt(x.uh)+'</b></td></tr>').join('')
+    :'<tr><td colspan="7" class="hint" style="padding:14px">Sin pickings completados en el período.</td></tr>';
   h+='</tbody></table></div>';
 
   const faltRows=Object.keys(faltBySku).map(k=>({k:k,n:faltBySku[k]})).sort((a,b)=>b.n-a.n).slice(0,15);
@@ -812,7 +813,7 @@ async function cargarZonasDelPlano(){
 /* ---- OPERARIOS ---- */
 function renderOperarios(){
   const ops=Object.keys(DATA.operarios).map(id=>({id,...DATA.operarios[id]})).sort((a,b)=>cmp(a.nombre,b.nombre));
-  let html=seccionHead('Operarios','Los que preparan pedidos. El kiosco usa esta lista al iniciar/terminar una tarea.',
+  let html=seccionHead('Operarios','La dotación del depósito, tal como está en los legajos de RRHH (se actualiza sola al abrir el módulo). La tablet usa esta lista.',
     '<button class="btn btn-outline btn-sm" id="btnDot">⇩ Traer dotación del depósito</button> <button class="btn btn-primary btn-sm" id="btnOp">+ Nuevo operario</button>');
   html+='<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Puesto</th><th>Estado</th><th style="width:120px"></th></tr></thead><tbody>';
   html+= ops.length ? ops.map(o=>'<tr><td><b>'+esc(o.nombre)+'</b>'+(o.legajoId?' <span class="pill pend" title="Importado de los legajos de RRHH">legajo</span>':'')+'</td><td>'+esc(o.puesto||'—')+'</td><td>'+(o.activo!==false?'<span class="pill fin">Activo</span>':'<span class="pill pend">Inactivo</span>')+'</td>'
@@ -835,6 +836,30 @@ function renderOperarios(){
 // Trae la dotación del Depósito Central desde los legajos de RRHH y la vuelca como
 // operarios (merge por legajo; no borra los cargados a mano ni pisa quién está
 // desactivado). Identidad = 'leg-<legajoId>'.
+/* Operarios = padrón de RRHH (20/09/2026, pedido de Juli): la lista sale sola del padrón único del
+   depósito (`rrhh/equipo/deposito`, ver shared/equipo.js), sin botón ni datos de prueba. Se corre al
+   cargar el módulo: suma los activos nuevos, actualiza nombre/puesto, desactiva al que ya no está en
+   el depósito (baja o traslado) y a los operarios «(demo)». No reactiva al que se desactivó a mano
+   ni toca los cargados a mano. */
+const EQUIPO_DEP_URL = 'https://discontinuos-mateu-default-rtdb.firebaseio.com/rrhh/equipo/'+SUC_DEPOSITO+'.json';
+async function sincronizarOperarios(){
+  let eq=null; try{ const r=await fetch(EQUIPO_DEP_URL); if(r.ok) eq=await r.json(); }catch(e){}
+  if(!eq || !Object.keys(eq).length) return;     // sin padrón no se toca nada
+  const patch={};
+  Object.keys(eq).forEach(lid=>{ const l=eq[lid]; if(!l||!l.nombre) return; const id='leg-'+lid, prev=DATA.operarios[id];
+    const activoPadron=(l.estado||'activo')==='activo';
+    if(!prev){ if(activoPadron) patch[id]={ nombre:l.nombre, puesto:l.puesto||'', legajoId:lid, activo:true, creado:nowISO() }; return; }
+    const upd=Object.assign({}, prev, { nombre:l.nombre, puesto:l.puesto||'', legajoId:lid });
+    if(!activoPadron && prev.activo!==false){ upd.activo=false; upd.bajaPadron=true; }
+    if(activoPadron && prev.bajaPadron){ upd.activo=true; upd.bajaPadron=null; }
+    if(JSON.stringify(upd)!==JSON.stringify(prev)) patch[id]=upd; });
+  Object.keys(DATA.operarios).forEach(id=>{ const o=DATA.operarios[id]; if(!o||o.activo===false) return;
+    const fuera = o.legajoId && !eq[o.legajoId];            // ya no figura en el depósito
+    const demo = /\(demo\)/i.test(o.nombre||'');
+    if(fuera||demo) patch[id]=Object.assign({}, o, { activo:false }, fuera?{bajaPadron:true}:{}); });
+  if(!Object.keys(patch).length) return;
+  try{ await fbPatch(ROOT+'/operarios', patch); Object.assign(DATA.operarios, patch); }catch(e){}
+}
 async function importarDotacionDeposito(){
   const b=$('btnDot'); if(b){ b.disabled=true; b.textContent='Cargando…'; }
   try{
