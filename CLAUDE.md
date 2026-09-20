@@ -1944,7 +1944,7 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     `logistica/meses/<ym>/envios`, solo si hay stock por sucursal; `repRotacion` = 1 − stock ÷ recibido por artículo ×
     sucursal, cruce por código): ≥ 60 % → curva entera y perfil honda; < 50 % → solo completa talles aunque lo venda; en
     el medio o sin datos → la regla anterior (`vendeArt`). El tooltip de prioridad muestra perfil y rotación. Probado en
-    node con casos sintéticos; **falta validarlo contra un reparto manual real** (el próximo informe automático vs. manual).
+    node con casos sintéticos; **falta validarlo contra un reparto manual real** (el próximo informe automático vs. manual). **Descartados por Juli (20/09/2026, «no me convence»): el 2 (prioridad y profundidad propias de Ecommerce: sigue como un Cat 1 más) y el 4 (que «abrir» / «profundidad» se decida solo: sigue siendo el select «Criterio»). No volver a proponerlos.**
   - **Criterio «abrir a más locales» / «mayor profundidad» (17/09/2026, Juli: no siempre se usa el mismo)**:
     select «Criterio» (`param.criterio`, default `abrir` = lo de siempre: curva base a todas, después la reserva y
     la 3.ª unidad). `profundidad`: se aparta primero la reserva y cada sucursal, en orden de prioridad, recibe la
