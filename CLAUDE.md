@@ -2346,7 +2346,9 @@ entran acá: ven su objetivo en Indicadores.
   del equipo»** (texto para WhatsApp, `eqRitmoLinea`). Tests en `lib/reparto.test.js`.
   **Diferencia meta vs. venta (20/09/2026, pedido de Juli: «no sacar cuentas con la calculadora»)**:
   columna entre Venta y «% de su meta» en cada tarjeta y en «Total equipo» (`eqDifStat`): «Sobre la
-  meta +$X» en verde o «Falta −$X» en rojo; sin meta o sin venta, «—». En las dos vistas del equipo.
+  meta +$X» en verde o «Falta −$X» en rojo; sin meta o sin venta, «—». En las dos vistas del equipo. También en el
+  Panel General: columna ordenable «Diferencia» () en el «Detalle por sucursal» del objetivo de la
+  semana y del mes, y «· Falta / Sobre la meta» () al lado de la meta del total.
   ⚠ Mismo día: `eqDiasSet` ahora cuenta un día como cargado **solo si el local vendió algo**
   (`veVentaDia` > 0). La plantilla PMS trae los días que no pasaron con venta 0 (Vie/Sáb en 0
   un jueves) y contarlos daba la semana por completa: el ritmo del local no salía y tickets/hora

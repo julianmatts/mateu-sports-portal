@@ -2752,7 +2752,7 @@ async function objMesCadenaHtml(sem, weeks){
   if(T.real){
     h+='<div style="font-family:var(--font-d,inherit);font-size:32px;line-height:.9;letter-spacing:.5px;color:'+col+'">'+objMoney(T.real)+'</div>'
       +objPctBig(pct,col,32)
-      +'<div style="font-size:13.5px;color:var(--mid);padding-bottom:4px">Meta del mes: <b style="color:var(--navy,#0B1527)">'+objMoney(T.meta)+'</b></div>';
+      +'<div style="font-size:13.5px;color:var(--mid);padding-bottom:4px">Meta del mes: <b style="color:var(--navy,#0B1527)">'+objMoney(T.meta)+'</b>'+difTxt(T.real,T.meta)+'</div>';
   }else{
     h+='<div style="font-family:var(--font-d,inherit);font-size:32px;line-height:.9;letter-spacing:.5px">'+objMoney(T.meta)+'</div>'
       +'<div style="font-size:13px;color:var(--muted-light,#b0bcd4);padding-bottom:5px">Venta del mes: aún sin cargar</div>';
@@ -2771,14 +2771,15 @@ async function objMesCadenaHtml(sem, weeks){
     const trsM=ord.map(r=>{
       const p=r.meta?r.real/r.meta:0;
       const c = !r.real ? 'var(--mid)' : r.real>=r.meta ? 'var(--ok,#16a34a)' : r.real>=r.minimo ? '#d97706' : '#dc2626';
-      return '<tr data-nombre="'+esc(r.nombre)+'" data-meta="'+r.meta+'"'+(r.real?' data-real="'+r.real+'" data-pct="'+p+'"':'')+'><td class="L">'+esc(r.nombre)+'</td>'
+      return '<tr data-nombre="'+esc(r.nombre)+'" data-meta="'+r.meta+'"'+(r.real?' data-real="'+r.real+'" data-pct="'+p+'" data-dif="'+(r.real-r.meta)+'"':'')+'><td class="L">'+esc(r.nombre)+'</td>'
         +'<td><span class="num">'+objMoney(r.meta)+'</span></td>'
         +'<td><span class="num">'+(r.real?objMoney(r.real):'—')+'</span>'+(r.prov?'<span class="pprov" style="margin-left:4px" title="Avance parcial del mes: suma del real oficial y la venta provisoria de las semanas ya cargadas ('+r.nSem+' sem)">'+r.nSem+' sem</span>':'')+'</td>'
+        +difTd(r.real, r.meta)
         +'<td><b style="color:'+c+'">'+(r.real?Math.round(p*100)+'%':'—')+'</b></td></tr>';
     }).join('');
     h+='<details class="bgrupo" id="objMesCadDet" style="margin:12px 0 0"'+(_objMesCadOpen?' open':'')+'>'
       +'<summary>Detalle por sucursal · '+filas.length+'</summary>'
-      +'<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L" data-col="nombre">Sucursal</th><th data-col="meta">Meta</th><th data-col="real">Real</th><th data-col="pct">%</th></tr></thead><tbody>'+trsM+'</tbody></table></div>'
+      +'<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L" data-col="nombre">Sucursal</th><th data-col="meta">Meta</th><th data-col="real">Real</th><th data-col="dif" title="Real − Meta: en verde lo que pasó la meta, en rojo lo que le falta">Diferencia</th><th data-col="pct">%</th></tr></thead><tbody>'+trsM+'</tbody></table></div>'
       +'</details>';
   }
   h+='</div>';
@@ -3166,7 +3167,7 @@ async function renderObjCadena(){
     if(T.real){
       html+='<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px;color:'+col+'">'+objMoney(T.real)+'</div>'
         +objPctBig(pct,col,40)
-        +'<div style="font-size:14px;color:var(--mid);padding-bottom:5px">Meta '+esc(lblLinea)+': <b style="color:var(--navy,#0B1527)">'+objMoney(T.meta)+'</b></div>';
+        +'<div style="font-size:14px;color:var(--mid);padding-bottom:5px">Meta '+esc(lblLinea)+': <b style="color:var(--navy,#0B1527)">'+objMoney(T.meta)+'</b>'+difTxt(T.real,T.meta)+'</div>';
     }else{
       html+='<div style="font-family:var(--font-d,inherit);font-size:40px;line-height:.9;letter-spacing:.5px">'+objMoney(T.meta)+'</div>'
         +'<div style="font-size:13px;color:var(--muted-light,#b0bcd4);padding-bottom:6px">Venta de la semana: aún sin cargar</div>';
@@ -3216,13 +3217,14 @@ async function renderObjCadena(){
         : '<td><span class="num">'+fmtF(val)+'</span>'+((isFinite(ref)&&ref)?'<div class="pte-sub">'+(deltaHtml(val,ref)||'')+'</div>':'')+'</td>';
       // valores para ordenar por columna (tablaOrdenable); sin dato = sin atributo → al final
       const dat=' data-nombre="'+esc(r.nombre)+'" data-meta="'+r.meta+'"'
-        +(r.real?' data-real="'+r.real+'" data-pct="'+p+'"':'')
+        +(r.real?' data-real="'+r.real+'" data-pct="'+p+'" data-dif="'+(r.real-r.meta)+'"':'')
         +(r.ritmo&&!r.ritmo.completa?' data-ritmo="'+r.ritmo.idx+'"':'')
         +(isFinite(r.upt)?' data-upt="'+r.upt+'"':'')+(isFinite(r.tp)?' data-tp="'+r.tp+'"':'')
         +(r.tph?' data-tph="'+r.tph+'"':'');
       return '<tr'+dat+'><td class="L">'+esc(r.nombre)+'</td>'
         +'<td><span class="num">'+objMoney(r.meta)+'</span></td>'
         +'<td><span class="num">'+(r.real?objMoney(r.real):'—')+(r.prov?'<span class="pprov" style="margin-left:4px" title="Venta provisoria de la semana (ventaEquipo), no el real oficial">prov</span>':'')+'</span></td>'
+        +difTd(r.real, r.meta)
         +'<td><b style="color:'+c+'">'+(r.real?Math.round(p*100)+'%':'—')+'</b></td>'
         +(!_objCadDetalle ? espera : '')
         +(_objCadDetalle && hayR ? (r.ritmo&&r.ritmo.completa ? '<td><span class="muted" style="font-size:12px" title="Esta sucursal ya tiene cargada toda su semana: el % de la meta es el definitivo (provisorio hasta el real oficial)">✓ completa</span></td>' : r.ritmo ? '<td title="Vendido '+objMoney(Math.round(r.ritmo.venta))+' vs. esperado '+objMoney(Math.round(r.ritmo.esperado))+' al cierre del '+(DOW_NOMBRE[r.ritmo.ult]||'')+' ('+Math.round(r.ritmo.share*100)+'% de la semana)"><b style="color:'+(r.ritmo.idx>=1?'var(--ok,#16a34a)':r.ritmo.idx>=0.9?'#d97706':'#dc2626')+'">'+Math.round(r.ritmo.idx*100)+'%</b></td>' : '<td><span class="muted">—</span></td>') : '')
@@ -3235,7 +3237,7 @@ async function renderObjCadena(){
     // detalle por sucursal: desplegable (recuerda cómo lo dejó el usuario en la visita)
     html+='<details class="bgrupo" id="objCadDet" style="margin:2px 0 0"'+(_objCadOpen?' open':'')+'>'
       +'<summary>Detalle por sucursal · '+rows.length+'</summary>'
-      +'<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L" data-col="nombre">Sucursal</th><th data-col="meta">Meta</th><th data-col="real">Real</th><th data-col="pct">%</th>'
+      +'<div class="tbl-wrap"><table style="min-width:0"><thead><tr><th class="L" data-col="nombre">Sucursal</th><th data-col="meta">Meta</th><th data-col="real">Real</th><th data-col="dif" title="Real − Meta: en verde lo que pasó la meta, en rojo lo que le falta">Diferencia</th><th data-col="pct">%</th>'
       +(hayR?'<th data-col="ritmo" title="Venta vs. lo esperado a esta altura de la semana según la curva de venta por día de cada sucursal">Ritmo<span class="pprov">prov</span></th>':'')
       +'<th data-col="upt" title="Unidades por ticket de la semana (venta cargada) · % vs. el mes cerrado">UPT sem.<span class="pprov">prov</span></th>'
       +'<th data-col="tp" title="Ticket promedio de la semana (venta cargada) · % vs. el mes cerrado">Ticket prom. sem.<span class="pprov">prov</span></th>'
@@ -4770,6 +4772,17 @@ function eqDifStat(venta, meta){
   if(!(meta>0) || !(venta>0)) return {l:'Diferencia', v:'—', cls:'dim'};
   const d=Math.round(venta-meta);
   return {l:d>=0?'Sobre la meta':'Falta', v:(d>=0?'+':'−')+objMoney(Math.abs(d)), color:d>=0?'var(--ok,#16a34a)':'#dc2626'};
+}
+// Lo mismo para las tablas por sucursal del Panel General (celda) y para el total (texto).
+function difTd(real, meta){
+  if(!(meta>0) || !(real>0)) return '<td><span class="muted">—</span></td>';
+  const d=Math.round(real-meta);
+  return '<td title="'+(d>=0?'Pasó la meta por ':'Le falta para la meta ')+objMoney(Math.abs(d))+'"><b class="num" style="color:'+(d>=0?'var(--ok,#16a34a)':'#dc2626')+'">'+(d>=0?'+':'−')+objMoney(Math.abs(d))+'</b></td>';
+}
+function difTxt(real, meta){
+  if(!(meta>0) || !(real>0)) return '';
+  const d=Math.round(real-meta);
+  return ' · '+(d>=0?'Sobre la meta':'Falta')+': <b style="color:'+(d>=0?'var(--ok,#16a34a)':'#dc2626')+'">'+(d>=0?'+':'−')+objMoney(Math.abs(d))+'</b>';
 }
 function eqTotalCardHtml(stats){
   return '<div class="eqv-tot"><div class="eqv-nom">Total equipo</div><div class="eqv-stats">'
