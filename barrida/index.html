@@ -1954,6 +1954,8 @@ function cargaHtml(){
       +'<button class="btn btn-outline btn-sm" id="btnProcesar"'+(listo?'':' disabled')+'>↻ Reprocesar</button>'
       +'<div style="margin-left:auto;display:flex;gap:10px;align-items:center">'
         +(state.resultadoSemana===state.semana?'<span class="ok" style="font-size:12px">✓ guardada</span>':'<span class="warn" style="font-size:12px">sin guardar</span>')
+        // guardada → se puede mandar a la tablet del operario como tarea de picking (una por marca·rubro)
+        +(state.resultadoSemana===state.semana?'<a class="btn btn-outline btn-sm" href="../picking/?nuevo=barrida" style="text-decoration:none" title="Crear la tarea de picking de esta barrida y asignarla a un operario">📲 Mandar a la tablet</a>':'')
         +'<button class="btn btn-primary btn-sm" id="btnGuardar">💾 Guardar semana</button></div>'
       +'</div><input type="file" id="fileInput" accept=".xlsx,.xls,.csv" multiple style="display:none"></div>';
   }
@@ -4689,7 +4691,9 @@ function repParamHtml(){
         'El reporte de stock del depósito dice hace cuántos días se compró cada talle. Lo que tiene menos días que este número y no figura en ningún remito de la lista se suma solo, en una tarjeta aparte: si no, no lo reparte nadie (la Barrida lo deja porque lo ve nuevo).')
       +'<span class="chk" title="Es el mismo corte que usa la Barrida de reserva: lo que tiene menos días lo reparte esta pestaña, lo que tiene más lo reparte la Barrida">menos de <input type="number" class="inp dias" id="rpDias" min="1" max="365" step="1" value="'+Math.max(1,state.filtros.diasNuevo|0)+'" aria-label="Días desde la última compra"> días <small style="color:var(--muted)">(el mismo de la Barrida)</small></span>'
     +'</div><div style="margin-left:auto;display:flex;gap:10px;align-items:center">'
-      +(S.res?'<button class="btn btn-outline btn-sm" id="repXlsx">⇩ Excel</button><button class="btn btn-outline btn-sm" id="repPrint">🖨 Imprimir</button><button class="btn btn-primary btn-sm" id="repGuardar"'+(S.res.guardadoKey?' disabled':'')+'>'+(S.res.guardadoKey?'✓ Guardado':'💾 Guardar reparto')+'</button>':'')
+      +(S.res?'<button class="btn btn-outline btn-sm" id="repXlsx">⇩ Excel</button><button class="btn btn-outline btn-sm" id="repPrint">🖨 Imprimir</button><button class="btn btn-primary btn-sm" id="repGuardar"'+(S.res.guardadoKey?' disabled':'')+'>'+(S.res.guardadoKey?'✓ Guardado':'💾 Guardar reparto')+'</button>'
+        // guardado → tarea de picking por remito, asignada a un operario
+        +(S.res.guardadoKey?'<a class="btn btn-primary btn-sm" href="../picking/?nuevo=reparto&key='+encodeURIComponent(S.res.guardadoKey)+'" style="text-decoration:none" title="Crear las tareas de picking de este reparto (una por remito) y asignarlas a un operario">📲 Mandar a la tablet</a>':''):'')
     +'</div></div>'
     +'<details class="ayuda" style="margin:10px 0 0" id="repCentBox"'+(S._centOpen?' open':'')+'><summary>Talles centrales por tipo de artículo</summary><div class="card-hs" style="margin:6px 0 0">Los talles que van con '+P.uCentral+' unidades (hasta '+Math.max(P.uCentral,P.maxCentral)+'). En la misma lista van el talle AR y sus equivalentes US/UK, separados por coma. Calzado unisex usa los de hombre y dama juntos; calzado niño e infante no usan esta tabla: van con la curva progresiva o chata que se elige arriba («Calzado niño»); accesorios van 1 por talle. Los cambios se ven al instante; «Guardar para todos» los deja para las demás compus.</div>'
       +'<div class="rcent">'+CENTRALES_LBL.map(([k,l])=>'<label for="rc_'+esc(k)+'">'+esc(l)+'</label><input class="inp" id="rc_'+esc(k)+'" data-cent="'+esc(k)+'" value="'+esc((tabla[k]||[]).join(', '))+'">').join('')+'</div>'

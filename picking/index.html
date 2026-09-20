@@ -148,7 +148,16 @@ if($('whoName')) $('whoName').textContent=(SESSION&&(SESSION.nombre||SESSION.ema
 if($('whoRole')) $('whoRole').textContent=(SESSION&&SESSION.rol)||'—';
 
 /* ---- estado + datos ---- */
-const state = { tab:'panel', pkTab:'pend', pkFiltro:{ suc:'', q:'' } };
+const state = { tab:'panel', pkTab:'pend', pkFiltro:{ tipo:'', q:'' } };
+/* Tipos de tarea (20/09/2026, pedido de Juli): el depósito NO pica por sucursal. Una tarea es un
+   REMITO de un Reparto inicial o una MARCA·RUBRO de la Barrida de reserva; cada artículo×talle
+   lleva adentro a qué sucursales va (`talles[].dest = [{s:slug,u}]`). Los picks viejos por
+   sucursal (sin `tipo`, con `destino`) se siguen mostrando. */
+const TIPO_LBL = { reparto:'Reparto inicial', barrida:'Barrida de reserva', sucursal:'Por sucursal' };
+function tipoDe(P){ return P.tipo || 'sucursal'; }
+function tituloPick(P){ return P.titulo || nombreSuc(P.destino); }
+function tipoPill(P){ const t=tipoDe(P); return '<span class="pill '+(t==='reparto'?'ctrl':(t==='barrida'?'prep':'pend'))+'">'+esc(TIPO_LBL[t])+'</span>'; }
+function operariosActivos(){ return vals(DATA.operarios).filter(o=>o&&o.activo!==false).sort((a,b)=>cmp(a.nombre,b.nombre)); }
 const DEMORA_MIN = 45;   // un pick en preparación más de esto = demorado
 function pkDemorado(P){ return (P.estado==='EN PREPARACIÓN'||P.estado==='PAUSADO') && P.started_ms && (Date.now()-P.started_ms > DEMORA_MIN*60000); }
 const DATA = { operarios:{}, zonas:{}, asignZona:{}, pickings:{}, eventos:{}, seq:1841,
@@ -311,7 +320,8 @@ function renderPanel(){
     '<button class="btn btn-outline btn-sm" id="reloadPanel">↻ Actualizar</button>');
   // backlog
   h+='<div class="sub" style="font-family:var(--font-c);font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:2px 0 8px">En curso ahora</div>';
-  h+='<div class="kgrid">'+ktile(c('PENDIENTE'),'Pendientes')+ktile(prep,'En preparación')
+  const sinEmpezar=all.filter(p=>p.estado==='PENDIENTE' && p.operario_asignado).length;
+  h+='<div class="kgrid">'+ktile(c('PENDIENTE'),'Pendientes')+ktile(sinEmpezar,'Asignadas sin empezar',sinEmpezar?'warn':'')+ktile(prep,'En preparación')
     +ktile(c('LISTO PARA CONTROL'),'Para control')+ktile(conDifCola,'Con diferencias','dif')+ktile(all.filter(pkDemorado).length,'Demorados','warn')+ktile(fmtInt(uPend),'Unidades pendientes')+'</div>';
   // período selector
   h+='<div class="sub" style="font-family:var(--font-c);font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 8px">Producción · '+esc(perLbl)+'</div>';
@@ -321,10 +331,10 @@ function renderPanel(){
 
   const recientes=all.slice().sort((a,b)=>cmp(b.created_at||'',a.created_at||'')).slice(0,25);
   h+='<div class="sec-head" style="margin:18px 0 8px"><div><h1 style="font-size:20px">Pickings</h1><div class="sub">Los 25 más recientes.</div></div></div>';
-  h+='<div class="tbl-wrap"><table><thead><tr><th>#</th><th>Destino</th><th>Operario</th><th>Progreso</th><th>Estado</th><th class="num">Tiempo</th></tr></thead><tbody>';
+  h+='<div class="tbl-wrap"><table><thead><tr><th>#</th><th>Tarea</th><th>Operario</th><th>Progreso</th><th>Estado</th><th class="num">Tiempo</th></tr></thead><tbody>';
   h+= recientes.length?recientes.map(P=>{ const r=pickResumen(P); const d=pickDur(P); const est=EST_LABEL[P.estado]||'pend'; const enCurso=(P.estado==='EN PREPARACIÓN'||P.estado==='PAUSADO'); const dem=pkDemorado(P);
     return '<tr'+(dem?' style="background:#fff4e2"':'')+'><td><b>#'+esc(P.nro)+'</b>'+(P.prioridad&&P.prioridad!=='NORMAL'?' <span class="pill p-'+esc(P.prioridad)+'">'+esc(P.prioridad)+'</span>':'')+'</td>'
-      +'<td>'+esc(nombreSuc(P.destino))+'</td><td>'+esc(P.operario||'—')+'</td>'
+      +'<td>'+tipoPill(P)+' '+esc(tituloPick(P))+'</td><td>'+(P.operario?esc(P.operario):(P.operario_asignado?('<span class="hint">asignada a '+esc(P.operario_asignado)+'</span>'):'—'))+'</td>'
       +'<td><div class="row-x"><div class="mini-prog"><span style="width:'+r.pct+'%"></span></div><span class="hint">'+r.pct+'%</span></div></td>'
       +'<td><span class="pill '+est+'">'+esc(P.estado)+'</span></td>'
       +'<td class="num">'+(d!=null?(fmtDurMs(d)+(enCurso?(dem?' ⏱':' …'):'')):'—')+'</td></tr>';
@@ -365,8 +375,8 @@ function renderPickings(){
   const groups={ pend:['PENDIENTE'], prep:['EN PREPARACIÓN','PAUSADO'], ctrl:['LISTO PARA CONTROL'], fin:['FINALIZADO','CON DIFERENCIAS'] };
   const all=vals(DATA.pickings);
   const cnt=k=>all.filter(p=>groups[k].includes(p.estado)).length;
-  let html = seccionHead('Pickings','Preparación de pedidos del depósito, por recorrido de zonas.',
-    '<button class="btn btn-primary btn-sm" id="btnNuevo">+ Crear picking</button>');
+  let html = seccionHead('Tareas de picking','Un remito del Reparto inicial o una marca·rubro de la Barrida de reserva, asignada a un operario y ordenada por recorrido de zonas.',
+    '<button class="btn btn-primary btn-sm" id="btnNuevo">+ Crear tarea</button>');
   if(!Object.keys(DATA.zonas).length || !Object.keys(DATA.asignZona).length){
     html += '<div class="demo-banner" style="display:block;cursor:pointer" id="bnZonas">⚠️ Todavía no cargaste zonas o no asignaste marcas/rubros — los pickings van a salir <b>sin recorrido</b> (todo al final). Tocá acá para ir a <b>Zonas</b>.</div>';
   }
@@ -374,27 +384,31 @@ function renderPickings(){
     + subtab('pend','Pendientes',cnt('pend')) + subtab('prep','En preparación',cnt('prep'))
     + subtab('ctrl','Listos para control',cnt('ctrl')) + subtab('fin','Finalizados',cnt('fin')) + '</div>';
   // filtro por sucursal + búsqueda
-  const sucs=[...new Set(all.map(p=>p.destino))].sort((a,b)=>cmp(nombreSuc(a),nombreSuc(b)));
+  const tipos=[...new Set(all.map(tipoDe))];
   const f=state.pkFiltro;
   html += '<div class="row-x" style="gap:8px;margin-bottom:14px;flex-wrap:wrap">'
-    + '<select class="sel" id="fSuc"><option value="">Todas las sucursales</option>'+sucs.map(s=>'<option value="'+esc(s)+'"'+(f.suc===s?' selected':'')+'>'+esc(nombreSuc(s))+'</option>').join('')+'</select>'
-    + '<input class="inp" id="fQ" placeholder="Buscar por nº o destino…" value="'+esc(f.q)+'" style="flex:1;min-width:150px">'
-    + ((f.suc||f.q)?'<button class="btn btn-outline btn-sm" id="fClear">Limpiar</button>':'') + '</div>';
+    + '<select class="sel" id="fTipo"><option value="">Todos los tipos</option>'+tipos.map(t=>'<option value="'+esc(t)+'"'+(f.tipo===t?' selected':'')+'>'+esc(TIPO_LBL[t]||t)+'</option>').join('')+'</select>'
+    + '<input class="inp" id="fQ" placeholder="Buscar por nº, remito, marca u operario…" value="'+esc(f.q)+'" style="flex:1;min-width:150px">'
+    + ((f.tipo||f.q)?'<button class="btn btn-outline btn-sm" id="fClear">Limpiar</button>':'') + '</div>';
   let list=all.filter(p=>groups[state.pkTab].includes(p.estado));
-  if(f.suc) list=list.filter(p=>p.destino===f.suc);
-  if(f.q){ const q=f.q.toLowerCase(); list=list.filter(p=>String(p.nro).includes(q)||nombreSuc(p.destino).toLowerCase().includes(q)); }
+  if(f.tipo) list=list.filter(p=>tipoDe(p)===f.tipo);
+  if(f.q){ const q=f.q.toLowerCase(); list=list.filter(p=>String(p.nro).includes(q)||tituloPick(p).toLowerCase().includes(q)||String(p.operario||p.operario_asignado||'').toLowerCase().includes(q)); }
   list.sort((a,b)=>{ const pr={URGENTE:0,ALTA:1,NORMAL:2}; return (pr[a.prioridad]??2)-(pr[b.prioridad]??2) || cmp(b.created_at||'',a.created_at||''); });
-  if(!list.length){ $('view').innerHTML = html + '<div class="state">No hay pickings'+((f.suc||f.q)?' para el filtro':' en esta pestaña')+'.</div>'; bindPickings(); return; }
+  if(!list.length){ $('view').innerHTML = html + '<div class="state">No hay tareas'+((f.tipo||f.q)?' para el filtro':' en esta pestaña')+'.</div>'; bindPickings(); return; }
+  const ops=operariosActivos();
   const cards=list.map(P=>{
     const r=pickResumen(P); const est=EST_LABEL[P.estado]||'pend'; const dem=pkDemorado(P);
     const liberable=(P.estado==='EN PREPARACIÓN'||P.estado==='PAUSADO');
     return '<div class="card prio-'+esc(P.prioridad||'NORMAL')+'">'
       + '<div class="row-x" style="justify-content:space-between"><span class="pk-nro">PICK #'+esc(P.nro)+'</span>'
       + '<span class="row-x" style="gap:6px">'+(dem?'<span class="pill dif">⏱ demorado</span>':'')+(P.prioridad&&P.prioridad!=='NORMAL'?'<span class="pill p-'+esc(P.prioridad)+'">'+esc(P.prioridad)+'</span>':'')+'</span></div>'
-      + '<div class="pk-dest">'+esc(nombreSuc(P.destino))+'</div>'
-      + '<div class="pk-meta">'+fmtInt(r.req)+' unidades · '+fmtInt(r.skus)+' SKUs'
-      + (P.filtros&&(P.filtros.marca||P.filtros.rubro)?(' · '+esc([P.filtros.marca,P.filtros.rubro].filter(Boolean).join(' / '))):'')+'</div>'
-      + (P.operario?('<div class="pk-meta">Operario: '+esc(P.operario)+'</div>'):'')
+      + '<div class="pk-dest">'+esc(tituloPick(P))+'</div>'
+      + '<div class="pk-meta">'+tipoPill(P)+' '+fmtInt(r.req)+' unidades · '+fmtInt(r.skus)+' SKUs'+(P.nDest?(' · '+P.nDest+' sucursales'):'')
+      + (!P.tipo&&P.filtros&&(P.filtros.marca||P.filtros.rubro)?(' · '+esc([P.filtros.marca,P.filtros.rubro].filter(Boolean).join(' / '))):'')+'</div>'
+      + (P.operario?('<div class="pk-meta">Operario: '+esc(P.operario)+'</div>')
+         : (P.estado==='PENDIENTE'?('<div class="pk-meta row-x" style="gap:6px">Asignada a <select class="sel" data-asig="'+esc(P.nro)+'" style="padding:4px 8px;font-size:12px"><option value="">Sin asignar</option>'
+            + ops.map(o=>'<option'+(P.operario_asignado===o.nombre?' selected':'')+'>'+esc(o.nombre)+'</option>').join('')
+            + (P.operario_asignado && !ops.some(o=>o.nombre===P.operario_asignado)?'<option selected>'+esc(P.operario_asignado)+'</option>':'')+'</select></div>'):''))
       + '<div class="prog"><span style="width:'+r.pct+'%"></span></div>'
       + '<div class="pk-foot"><span class="pill '+est+'">'+esc(P.estado)+'</span>'
       + '<span class="hint">'+fmtInt(r.pick)+' / '+fmtInt(r.req)+' u</span></div>'
@@ -409,12 +423,15 @@ function renderPickings(){
   bindPickings();
 }
 function bindPickings(){
-  const n=$('btnNuevo'); if(n) n.onclick=abrirNuevoPicking;
+  const n=$('btnNuevo'); if(n) n.onclick=()=>abrirNuevaTarea();
   const bz=$('bnZonas'); if(bz) bz.onclick=()=>{ state.tab='zonas'; render(); };
   document.querySelectorAll('.subtab[data-st]').forEach(b=>b.onclick=()=>{ state.pkTab=b.dataset.st; render(); });
-  const fs=$('fSuc'); if(fs) fs.onchange=()=>{ state.pkFiltro.suc=fs.value; render(); };
+  const fs=$('fTipo'); if(fs) fs.onchange=()=>{ state.pkFiltro.tipo=fs.value; render(); };
   const fq=$('fQ'); if(fq){ fq.oninput=()=>{ state.pkFiltro.q=fq.value; }; fq.onkeydown=e=>{ if(e.key==='Enter') render(); }; }
-  const fc=$('fClear'); if(fc) fc.onclick=()=>{ state.pkFiltro={suc:'',q:''}; render(); };
+  const fc=$('fClear'); if(fc) fc.onclick=()=>{ state.pkFiltro={tipo:'',q:''}; render(); };
+  document.querySelectorAll('[data-asig]').forEach(s=>s.onchange=async()=>{ const nro=s.dataset.asig, P=DATA.pickings[fbKey(nro)]; if(!P) return;
+    try{ await fbPatch(ROOT+'/pickings/'+fbKey(nro), {operario_asignado:s.value, asignado_en:nowISO(), asignado_por:_mail}); P.operario_asignado=s.value;
+      logEvento({event_type:'picking_assigned',picking_id:P.nro,value:s.value}); toast(s.value?('Asignada a '+s.value):'Sin asignar','ok'); }catch(e){ toast('No se pudo asignar','bad'); } });
   document.querySelectorAll('[data-prio]').forEach(s=>s.onchange=async()=>{ const nro=s.dataset.prio, P=DATA.pickings[fbKey(nro)]; if(!P) return; P.prioridad=s.value; try{ await fbPut(ROOT+'/pickings/'+fbKey(nro)+'/prioridad', s.value); logEvento({event_type:'priority_changed',picking_id:P.nro,value:s.value}); toast('Prioridad: '+s.value,'ok'); render(); }catch(e){ toast('No se pudo','bad'); } });
   document.querySelectorAll('[data-lib]').forEach(b=>b.onclick=async()=>{ const nro=b.dataset.lib, P=DATA.pickings[fbKey(nro)]; if(!P) return; if(!confirm('¿Liberar el PICK #'+nro+'? Vuelve a Pendiente y libera al operario; el avance se conserva y otro lo puede retomar.')) return; b.disabled=true;
     try{ const r=await fetch(fbUrl(ROOT+'/pickings/'+fbKey(nro)),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:'PENDIENTE',operario:''})}); if(!r.ok) throw new Error(); Object.assign(P,{estado:'PENDIENTE',operario:''}); logEvento({event_type:'picking_released',picking_id:P.nro}); render(); toast('Pick liberado','ok'); }catch(e){ b.disabled=false; toast('No se pudo','bad'); } });
@@ -426,9 +443,10 @@ function imprimirPick(nro){
   const P=DATA.pickings[fbKey(nro)]; if(!P){ toast('No encontré el pick','bad'); return; }
   const items=Object.keys(P.items||{}).map(iid=>Object.assign({iid:iid},P.items[iid])).sort((a,b)=>num(a.sequence)-num(b.sequence));
   const byZona={}; const zonaOrd=[]; let tot=0, lines=0;
-  items.forEach(it=>{ const z=it.zonaNombre||'Sin zona'; if(!byZona[z]){ byZona[z]=[]; zonaOrd.push(z); } (it.talles||[]).forEach(t=>{ if(num(t.req)>0){ byZona[z].push({cod:it.codigo,desc:it.desc||'',talle:t.t,req:num(t.req)}); tot+=num(t.req); lines++; } }); });
-  const secciones=zonaOrd.map(z=>'<h2>'+esc(z)+'</h2><table><tr><th class="chk">✓</th><th>Código</th><th>Descripción</th><th>Talle</th><th class="q">Cant.</th></tr>'
-    + byZona[z].map(r=>'<tr><td class="chk"></td><td>'+esc(r.cod)+'</td><td>'+esc(r.desc)+'</td><td class="t">'+esc(r.talle)+'</td><td class="q">'+r.req+'</td></tr>').join('')+'</table>').join('');
+  items.forEach(it=>{ const z=it.zonaNombre||'Sin zona'; if(!byZona[z]){ byZona[z]=[]; zonaOrd.push(z); } (it.talles||[]).forEach(t=>{ if(num(t.req)>0){ byZona[z].push({cod:it.codigo,desc:it.desc||'',talle:t.t,req:num(t.req),dest:(t.dest||[]).map(d=>nombreSuc(d.s)+' ×'+d.u).join(' · ')}); tot+=num(t.req); lines++; } }); });
+  const conDest=!!P.tipo;
+  const secciones=zonaOrd.map(z=>'<h2>'+esc(z)+'</h2><table><tr><th class="chk">✓</th><th>Código</th><th>Descripción</th><th>Talle</th><th class="q">Cant.</th>'+(conDest?'<th>Va a</th>':'')+'</tr>'
+    + byZona[z].map(r=>'<tr><td class="chk"></td><td>'+esc(r.cod)+'</td><td>'+esc(r.desc)+'</td><td class="t">'+esc(r.talle)+'</td><td class="q">'+r.req+'</td>'+(conDest?'<td>'+esc(r.dest)+'</td>':'')+'</tr>').join('')+'</table>').join('');
   const win=window.open('','_blank'); if(!win){ toast('Habilitá las ventanas emergentes para imprimir','bad'); return; }
   const css='body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:22px}h1{font-size:22px;margin:0}.sub{color:#555;font-size:13px;margin:2px 0 14px}'
     +'h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;background:#0B1527;color:#fff;padding:6px 10px;border-radius:5px;margin:16px 0 4px}'
@@ -436,12 +454,140 @@ function imprimirPick(nro){
     +'td{border-bottom:1px solid #ddd;padding:6px 7px}.chk{width:26px;text-align:center}td.chk{border:1px solid #999;width:22px;height:22px}.q{text-align:right;font-weight:700;width:54px}.t{font-weight:700}'
     +'@media print{body{margin:8mm}}';
   win.document.write('<html><head><title>PICK #'+esc(String(nro))+'</title><meta charset="utf-8"><style>'+css+'</style></head><body>'
-    +'<h1>PICK #'+esc(String(nro))+' — '+esc(nombreSuc(P.destino))+(P.prioridad&&P.prioridad!=='NORMAL'?' · '+esc(P.prioridad):'')+'</h1>'
+    +'<h1>PICK #'+esc(String(nro))+' — '+esc(tituloPick(P))+(P.tipo?' ('+esc(TIPO_LBL[P.tipo])+')':'')+(P.prioridad&&P.prioridad!=='NORMAL'?' · '+esc(P.prioridad):'')+'</h1>'
     +'<div class="sub">'+tot+' unidades · '+lines+' líneas · '+zonaOrd.length+' zonas · '+esc((P.created_at||'').slice(0,10))+'</div>'
     +secciones+'</body></html>');
   win.document.close(); win.focus(); setTimeout(function(){ try{ win.print(); }catch(e){} }, 350);
 }
 function subtab(id,label,n){ return '<button class="subtab'+(state.pkTab===id?' on':'')+'" data-st="'+id+'">'+esc(label)+(n?(' ('+n+')'):'')+'</button>'; }
+
+/* ============ CREAR TAREA: por remito (Reparto inicial) o por marca·rubro (Barrida) ============ */
+// orden de talles: números de menor a mayor, después los de letra en orden de ropa
+const ORD_LETRA=['XXS','XS','S','M','L','XL','XXL','XXXL'];
+function ordT(a,b){ const na=parseFloat(String(a).replace(',','.')), nb=parseFloat(String(b).replace(',','.'));
+  const ea=isFinite(na), eb=isFinite(nb); if(ea&&eb) return na-nb || cmp(a,b); if(ea!==eb) return ea?-1:1;
+  const ia=ORD_LETRA.indexOf(String(a).toUpperCase()), ib=ORD_LETRA.indexOf(String(b).toUpperCase());
+  if(ia>=0&&ib>=0) return ia-ib; if((ia>=0)!==(ib>=0)) return ia>=0?-1:1; return cmp(a,b); }
+// acumulador artículo → talle → sucursal
+function acumArt(map, it, slug, talle, u){ u=num(u); if(u<=0||!slug) return;
+  const key=String(it.codigo||it.cod||it.id||''); if(!key) return;
+  let a=map.get(key); if(!a){ a={ codigo:it.codigo||it.cod||String(it.id||''), id:it.id||'', desc:it.desc||'', marca:it.marca||'—', rubro:it.rubro||'—', t:{} }; map.set(key,a); }
+  const tt=a.t[talle]||(a.t[talle]={}); tt[slug]=(tt[slug]||0)+u; }
+function artsDeMap(map){ return [...map.values()].map(a=>{ const talles=Object.keys(a.t).sort(ordT).map(t=>{ const dest=Object.keys(a.t[t]).sort((x,y)=>cmp(nombreSuc(x),nombreSuc(y))).map(s=>({s:s,u:a.t[t][s]})); return { t:t, req:dest.reduce((n,d)=>n+d.u,0), dest:dest }; });
+  return { codigo:a.codigo, id:a.id, desc:a.desc, marca:a.marca, rubro:a.rubro, talles:talles, requested_qty:talles.reduce((n,t)=>n+t.req,0) }; }); }
+// repartos guardados (los últimos 15) con su meta
+async function repartosGuardados(){
+  if(DATA.bar.repartos) return DATA.bar.repartos;
+  const ks=Object.keys((await fbGet(BARR+'/repartos','shallow=true'))||{}).sort().reverse().slice(0,15);
+  const metas=await Promise.all(ks.map(k=>fbGet(BARR+'/repartos/'+k+'/meta').catch(()=>null)));
+  DATA.bar.repartos=ks.map((k,i)=>({key:k, meta:metas[i]||{}})); return DATA.bar.repartos; }
+// la barrida de la semana completa (reposición + curva de todas las sucursales), agrupada por marca·rubro
+async function barridaSegmentos(){
+  if(DATA.bar.segs) return DATA.bar.segs;
+  const lk=fbKey(DATA.bar.ultima);
+  const [rep,cur]=await Promise.all([ fbGet(BARR+'/barridas/'+lk+'/reposicion'), fbGet(BARR+'/barridas/'+lk+'/curva').catch(()=>null) ]);
+  const segs={};
+  [rep,cur].forEach(nodo=>Object.keys(nodo||{}).forEach(slug=>{ const rows=nodo[slug]; (Array.isArray(rows)?rows:vals(rows)).forEach(it=>{ if(!it) return;
+    const sk=(it.marca||'—')+'|||'+(it.rubro||'—'); const sg=segs[sk]||(segs[sk]={ marca:it.marca||'—', rubro:it.rubro||'—', map:new Map() });
+    (it.talles||[]).forEach(t=>acumArt(sg.map, it, slug, t.t, t.s)); }); }));
+  DATA.bar.segs=Object.values(segs).map(sg=>{ const arts=artsDeMap(sg.map); return { marca:sg.marca, rubro:sg.rubro, arts:arts, u:arts.reduce((n,a)=>n+a.requested_qty,0) }; })
+    .filter(sg=>sg.u>0).sort((a,b)=>cmp(a.marca,b.marca)||cmp(a.rubro,b.rubro));
+  return DATA.bar.segs; }
+// tarea ya creada para ese origen (no eliminada): evita mandar dos veces lo mismo a la tablet
+function tareaDe(fn){ return vals(DATA.pickings).find(P=>P&&P.origen&&fn(P.origen,P))||null; }
+// arma y guarda UNA tarea; devuelve el nro
+async function crearTarea(base, arts){
+  try{ await loadMaestro(); }catch(e){ /* sin maestro → variantes sin EAN */ }
+  arts=arts.slice().sort((a,b)=> zonaOrden(a.marca,a.rubro)-zonaOrden(b.marca,b.rubro) || cmp(a.marca,b.marca) || cmp(a.codigo,b.codigo));
+  const itemsObj={}, dests={};
+  arts.forEach((it,i)=>{ const z=zonaDe(it.marca,it.rubro); const iid='i'+String(i+1).padStart(4,'0');
+    const talles=it.talles.map(t=>{ t.dest.forEach(d=>{ dests[d.s]=1; }); return { t:t.t, req:t.req, ean:eanDeVariante(it.codigo,t.t), picked:0, dest:t.dest }; });
+    itemsObj[iid]={ codigo:it.codigo, id:it.id||'', desc:it.desc, marca:it.marca, rubro:it.rubro, talles:talles, zonaId:z?z.id:null, zonaNombre:z?z.nombre:'',
+      requested_qty:it.requested_qty, picked_qty:0, controlled_qty:0, estado:'pendiente', sequence:i+1 }; });
+  let seqLive=DATA.seq; try{ const s2=await fbGet(ROOT+'/seq'); if(s2!=null) seqLive=Math.max(seqLive,num(s2)); }catch(e){}
+  let nro=seqLive+1; while(DATA.pickings[fbKey(nro)]) nro++;
+  const P=Object.assign({ nro, estado:'PENDIENTE', operario:'', created_at:nowISO(), creado_por:_mail, nDest:Object.keys(dests).length, items:itemsObj }, base);
+  if(P.operario_asignado){ P.asignado_en=nowISO(); P.asignado_por=_mail; }
+  await fbPut(ROOT+'/pickings/'+fbKey(nro), P); await fbPut(ROOT+'/seq', nro);
+  DATA.seq=nro; DATA.pickings[fbKey(nro)]=P;
+  logEvento({event_type:'picking_created', picking_id:nro, value:{tipo:P.tipo, titulo:P.titulo, skus:arts.length, operario:P.operario_asignado||''}});
+  return nro; }
+
+async function abrirNuevaTarea(pre){
+  pre=pre||{};
+  let tipo = pre.tipo || (DATA.bar.ultima&&!pre.key?'barrida':'reparto');
+  let repKeySel = pre.key||'', repDoc=null;
+  const ops=operariosActivos();
+  openModal('<h2>Crear tarea de picking</h2><div class="msub">La tarea va a la tablet del operario: la confirma, arranca el tiempo y prepara artículo por artículo; la pantalla le dice a qué sucursal va cada unidad.</div>'
+    + '<div class="subtabs" style="margin-bottom:10px"><button class="subtab" data-tt="reparto">Reparto inicial · por remito</button><button class="subtab" data-tt="barrida">Barrida de reserva · por marca y rubro</button></div>'
+    + '<div id="ntBody" style="max-height:44vh;overflow:auto;padding-right:4px"><div class="hint">Cargando…</div></div>'
+    + '<div class="grid2" style="margin-top:10px"><div class="fld"><label>Operario</label><select class="sel" id="ntOp"><option value="">Sin asignar (la toma cualquiera)</option>'+ops.map(o=>'<option>'+esc(o.nombre)+'</option>').join('')+'</select></div>'
+    + '<div class="fld"><label>Prioridad</label><select class="sel" id="ntPrio"><option>NORMAL</option><option>ALTA</option><option>URGENTE</option></select></div></div>'
+    + (ops.length?'':'<div class="hint" style="color:var(--warn)">No hay operarios cargados: sumalos en la pestaña Operarios para poder asignar.</div>')
+    + '<div class="hint" style="margin-top:6px"><a href="#" id="ntViejo">Modo anterior: armar un pick por sucursal destino</a></div>'
+    + '<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="ntCrear" disabled>Crear tarea</button></div>');
+  const fila=(val,txt,sub,ya,marcada)=>'<label style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--border);border-radius:9px;margin-top:6px;cursor:pointer;background:#fff'+(ya?';opacity:.6':'')+'">'
+    + '<input type="checkbox" class="ntChk" value="'+esc(val)+'"'+((ya||marcada===false)?'':' checked')+' style="margin-top:3px"><span><b>'+esc(txt)+'</b><br><span class="hint">'+sub+(ya?(' · <b style="color:var(--warn)">ya tiene la tarea #'+esc(ya.nro)+' ('+esc(ya.estado)+')</b>'):'')+'</span></span></label>';
+  const refrescarBtn=()=>{ const n=document.querySelectorAll('.ntChk:checked').length; const b=$('ntCrear'); if(b){ b.disabled=!n; b.textContent=n>1?('Crear '+n+' tareas'):'Crear tarea'; } };
+  const pintarRemitos=()=>{
+    const rms=Object.keys((repDoc&&repDoc.remitos)||{}).map(k=>Object.assign({k:k},repDoc.remitos[k])).filter(rm=>num(rm.uRep)>0).sort((a,b)=>cmp(a.nro,b.nro));
+    $('ntRem').innerHTML = rms.length ? rms.map(rm=>{ const ya=tareaDe(o=>o.reparto===repKeySel && o.remito===rm.nro);
+      const nom = /^\d/.test(String(rm.nro)) ? ('Remito '+rm.nro) : 'Ingresó hace poco · sin remito';
+      return fila(rm.k, nom, esc([rm.marca,rm.rubro].filter(Boolean).join(' · '))+' · '+fmtInt(rm.uRep)+' u. · '+(rm.arts||[]).length+' artículos', ya); }).join('')
+      : '<div class="hint">Ese reparto no tiene unidades repartidas.</div>';
+    document.querySelectorAll('.ntChk').forEach(c=>c.onchange=refrescarBtn); refrescarBtn(); };
+  const pintar=async()=>{
+    document.querySelectorAll('[data-tt]').forEach(b=>b.classList.toggle('on', b.dataset.tt===tipo));
+    const body=$('ntBody'); body.innerHTML='<div class="hint">Cargando…</div>'; $('ntCrear').disabled=true;
+    try{
+      if(tipo==='reparto'){
+        const reps=await repartosGuardados();
+        if(!reps.length){ body.innerHTML='<div class="state">No hay Repartos iniciales guardados en Reparto de Mercadería.</div>'; return; }
+        if(!repKeySel || !reps.some(r=>r.key===repKeySel)) repKeySel=reps[0].key;
+        body.innerHTML='<div class="fld"><label>Reparto guardado</label><select class="sel" id="ntRep">'+reps.map(r=>{ const m=r.meta||{}, T=m.totales||{};
+          return '<option value="'+esc(r.key)+'"'+(r.key===repKeySel?' selected':'')+'>'+esc((m.fecha||r.key).slice(0,16))+' · '+fmtInt(T.uRep||0)+' u. · '+((m.remitos||[]).length)+' remitos'+(m.por?' · '+esc(String(m.por).split('@')[0]):'')+'</option>'; }).join('')+'</select></div><div id="ntRem"><div class="hint">Cargando remitos…</div></div>';
+        const cargarDoc=async()=>{ repDoc=await fbGet(BARR+'/repartos/'+repKeySel); pintarRemitos(); };
+        $('ntRep').onchange=async()=>{ repKeySel=$('ntRep').value; $('ntRem').innerHTML='<div class="hint">Cargando remitos…</div>'; await cargarDoc(); };
+        await cargarDoc();
+      } else {
+        if(!DATA.bar.ultima){ body.innerHTML='<div class="state">No hay una Barrida de reserva guardada.</div>'; return; }
+        const segs=await barridaSegmentos();
+        body.innerHTML='<div class="hint">Barrida de la semana del <b>'+esc(DATA.bar.ultima)+'</b>. Marcá lo que se va a preparar: cada marca·rubro es una tarea (reposición + completar curva de todas las sucursales).</div>'
+          + (segs.length?segs.map((sg,i)=>{ const ya=tareaDe(o=>o.tipoBarrida && o.barrida===DATA.bar.ultima && o.marca===sg.marca && o.rubro===sg.rubro);
+              return fila(String(i), sg.marca+' · '+sg.rubro, fmtInt(sg.u)+' u. · '+sg.arts.length+' artículos'+(zonaDe(sg.marca,sg.rubro)?'':' · <span style="color:var(--warn)">sin zona asignada</span>'), ya, false); }).join('')
+            :'<div class="state">La barrida guardada no tiene nada para bajar.</div>');
+        document.querySelectorAll('.ntChk').forEach(c=>c.onchange=refrescarBtn); refrescarBtn();
+      }
+    }catch(e){ body.innerHTML='<div class="state">No pude cargar: '+esc(e.message||e)+'</div>'; }
+  };
+  document.querySelectorAll('[data-tt]').forEach(b=>b.onclick=()=>{ tipo=b.dataset.tt; pintar(); });
+  $('ntViejo').onclick=e=>{ e.preventDefault(); abrirNuevoPicking(); };
+  $('ntCrear').onclick=async()=>{
+    const sel=[...document.querySelectorAll('.ntChk:checked')].map(c=>c.value); if(!sel.length) return;
+    const b=$('ntCrear'); b.disabled=true; b.textContent='Creando…';
+    const comun={ prioridad:$('ntPrio').value, operario_asignado:$('ntOp').value };
+    const hechos=[];
+    try{
+      for(const v of sel){
+        if(tipo==='reparto'){
+          const rm=repDoc.remitos[v]; const map=new Map();
+          (rm.arts||[]).forEach(x=>(x.lineas||[]).forEach(l=>(l.t||[]).forEach(pp=>acumArt(map, {codigo:x.cod,id:x.id,desc:x.desc,marca:x.marca||rm.marca,rubro:x.rubro||rm.rubro}, l.slug, pp[0], pp[1]))));
+          const arts=artsDeMap(map); if(!arts.length) continue;
+          const conNro=/^\d/.test(String(rm.nro));
+          hechos.push(await crearTarea(Object.assign({ tipo:'reparto', titulo:(conNro?('Remito '+rm.nro):'Ingreso sin remito')+(rm.marca?(' · '+rm.marca):''),
+            origen:{ reparto:repKeySel, remito:rm.nro, marca:rm.marca||'', rubro:rm.rubro||'' } }, comun), arts));
+        } else {
+          const sg=DATA.bar.segs[+v]; if(!sg) continue;
+          hechos.push(await crearTarea(Object.assign({ tipo:'barrida', titulo:sg.marca+' · '+sg.rubro,
+            origen:{ tipoBarrida:true, barrida:DATA.bar.ultima, marca:sg.marca, rubro:sg.rubro } }, comun), sg.arts));
+        }
+      }
+      closeModal(); state.tab='pickings'; state.pkTab='pend'; render();
+      toast(hechos.length?('Tarea'+(hechos.length>1?'s':'')+' #'+hechos.join(', #')+' creada'+(hechos.length>1?'s':'')+(comun.operario_asignado?(' · asignada a '+comun.operario_asignado):'')):'No había nada para crear', hechos.length?'ok':'bad');
+    }catch(e){ b.disabled=false; refrescarBtn(); toast('No se pudo crear: '+(e.message||e),'bad'); }
+  };
+  pintar();
+}
 
 async function abrirNuevoPicking(){
   if(!DATA.bar.ultima && !(DATA.bar.repSlugs||[]).length){ toast('No hay una barrida ni un reparto cargados para crear pickings','bad'); return; }
@@ -714,7 +860,12 @@ function seccionHead(title,sub,actions){ return '<div class="sec-head"><div><h1>
 /* ---- tabs + init ---- */
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.tab; render(); });
 (async function init(){
-  try{ await cargar(); render(); }
+  try{ await cargar();
+    // link desde Reparto de Mercadería («📲 Mandar a la tablet»): ?nuevo=reparto&key=<reparto> | ?nuevo=barrida
+    let qs=null; try{ qs=new URLSearchParams(location.search); }catch(e){}
+    const nuevo=qs&&qs.get('nuevo');
+    if(nuevo==='reparto'||nuevo==='barrida'){ state.tab='pickings'; render(); abrirNuevaTarea({tipo:nuevo, key:qs.get('key')||''}); try{ history.replaceState(null,'',location.pathname); }catch(e){} }
+    else render(); }
   catch(e){ $('view').innerHTML='<div class="state">No pude cargar los datos. Revisá la conexión.<br><br><button class="btn btn-outline" onclick="location.reload()">↻ Reintentar</button></div>'; }
 })();
 </script>

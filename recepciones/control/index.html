@@ -351,6 +351,14 @@ async function cargarPicking(){
   const [pk,ope]=await Promise.all([ fbGet('picking/pickings'), fbGet('picking/operarios') ]);
   DATA.pick={ pickings:pk||{}, operarios:ope||{} };
 }
+/* Tareas por remito (Reparto inicial) o por marca·rubro (Barrida de reserva), 20/09/2026: el pick
+   ya no es por sucursal; cada talle trae `dest=[{s:slug,u}]` y la pantalla dice a qué sucursal va
+   la unidad que se está preparando. Los picks viejos (con `destino`) siguen andando. */
+const PK_TIPO={ reparto:'Reparto inicial', barrida:'Barrida de reserva' };
+function pkTitulo(P){ return P.titulo || nombreSuc(P.destino); }
+function pkTipoTxt(P){ return PK_TIPO[P.tipo]||'Pedido de sucursal'; }
+// a qué sucursal va la PRÓXIMA unidad de la línea (se llenan los destinos en orden)
+function pkDestActual(line){ let acc=0; const ds=line.dest||[]; for(let i=0;i<ds.length;i++){ acc+=num(ds[i].u); if(line.picked<acc) return i; } return -1; }
 function pkK(nro){ return String(nro).replace(/[.#$/\[\]]/g,'~'); }
 function pkGet(){ return DATA.pick.pickings[pkK(state.pickNro)]||null; }
 function pkSaveItem(nro,iid,item){ enqueueSave('picking/pickings/'+pkK(nro)+'/items/'+iid, item); }         // por unidad: durable, no bloquea el scan
@@ -358,7 +366,7 @@ async function pkSaveField(nro,field,val){ return saveNow('picking/pickings/'+pk
 function pkEvento(ev){ const k=nowISO().replace(/\D/g,'')+'_'+Math.floor((performance.now()*7)%100000); enqueueSave('picking/eventos/'+k, Object.assign({ts:nowISO()},ev)); }
 function pkResumen(P){ let req=0,pk=0,lines=0,falt=0; Object.keys(P.items||{}).forEach(iid=>{ (P.items[iid].talles||[]).forEach(t=>{ lines++; req+=num(t.req); pk+=num(t.picked); if(t.faltante) falt+=Math.max(0,num(t.req)-num(t.picked)); }); }); return {req,pk,lines,falt}; }
 function pkLines(P){ const out=[]; Object.keys(P.items||{}).map(iid=>({iid,...P.items[iid]})).sort((a,b)=>num(a.sequence)-num(b.sequence))
-  .forEach(it=>{ (it.talles||[]).forEach((t,ti)=>{ out.push({iid:it.iid,ti,codigo:it.codigo,desc:it.desc,marca:it.marca,zona:it.zonaNombre||'Sin zona',talle:t.t,ean:t.ean||'',req:num(t.req),picked:num(t.picked),faltante:t.faltante||null}); }); }); return out; }
+  .forEach(it=>{ (it.talles||[]).forEach((t,ti)=>{ out.push({iid:it.iid,ti,codigo:it.codigo,desc:it.desc,marca:it.marca,zona:it.zonaNombre||'Sin zona',talle:t.t,ean:t.ean||'',req:num(t.req),picked:num(t.picked),faltante:t.faltante||null,dest:t.dest||null}); }); }); return out; }
 function pkNext(P){ return pkLines(P).find(l=>!l.faltante && l.picked<l.req)||null; }
 function pkZonas(P){ return new Set(pkLines(P).map(l=>l.zona)).size; }
 
@@ -399,7 +407,13 @@ function pkInjectCss(){ if($('pkCss')) return; const css=''
   +'.pk-fb.ok{color:var(--ok)}.pk-fb.bad{color:var(--bad)}'
   +'.pk-scan{display:flex;gap:8px;margin-top:14px}'
   +'.pk-scan .inp{flex:1;font-size:16px}'
-  +'.pk-bottom{display:flex;justify-content:center;margin-top:14px}';
+  +'.pk-bottom{display:flex;justify-content:center;margin-top:14px}'
+  +'.pk-clock{font-family:var(--font-d);font-size:17px;letter-spacing:1px;color:var(--navy)}'
+  +'.pk-destlbl{font-family:var(--font-c);font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-top:12px}'
+  +'.pk-dests{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin-top:6px}'
+  +'.pk-dchip{font-family:var(--font-c);font-weight:700;font-size:15px;padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:#f3f6fb;color:var(--muted)}'
+  +'.pk-dchip.cur{background:var(--navy);border-color:var(--navy);color:#fff;font-size:19px;padding:8px 16px}'
+  +'.pk-dchip.done{background:#e8f6ee;border-color:#bfe3cd;color:var(--ok)}';
   document.head.insertAdjacentHTML('beforeend','<style id="pkCss">'+css+'</style>'); }
 
 function renderPickView(){ pkInjectCss();
@@ -412,19 +426,29 @@ function renderPickLista(){
   const exec={PENDIENTE:1,'EN PREPARACIÓN':1,'PAUSADO':1};
   const list=Object.keys(DATA.pick.pickings).map(k=>DATA.pick.pickings[k]).filter(P=>exec[P.estado])
     .sort((a,b)=>{ const pr={URGENTE:0,ALTA:1,NORMAL:2}; return (pr[a.prioridad]??2)-(pr[b.prioridad]??2) || cmp(a.created_at||'',b.created_at||''); });
-  let h='<div class="sec-head"><div><h2>Pedidos para preparar</h2><div class="sub">Elegí un picking. Los urgentes van primero.</div></div>'
-    +'<div style="display:flex;gap:8px"><button class="btn btn-outline" id="reloadP">↻ Actualizar</button><button class="btn btn-outline" id="home">← Tareas</button></div></div>';
-  if(!list.length){ $('view').innerHTML=h+'<div class="state">No hay pickings pendientes. El encargado los crea desde el módulo Picking.</div>'; bindPHead(); return; }
-  const cards=list.map(P=>{ const r=pkResumen(P); const est=P.estado;
+  const activos=Object.keys(DATA.pick.operarios).map(id=>DATA.pick.operarios[id]).filter(o=>o.activo!==false).sort((a,b)=>cmp(a.nombre,b.nombre));
+  const yo=state.pickYo||'';
+  let h='<div class="sec-head"><div><h2>Tareas de picking</h2><div class="sub">Elegí quién sos y vas a ver tus tareas primero. Las urgentes van arriba.</div></div>'
+    +'<div style="display:flex;gap:8px"><button class="btn btn-outline" id="reloadP">↻ Actualizar</button><button class="btn btn-outline" id="home">← Tareas</button></div></div>'
+    +'<div class="opname" style="margin-bottom:14px"><label for="yoP">¿Quién sos?</label><select class="inp" id="yoP" style="max-width:280px"><option value="">Elegí tu nombre…</option>'
+    + activos.map(o=>'<option'+(o.nombre===yo?' selected':'')+'>'+esc(o.nombre)+'</option>').join('')+'</select></div>';
+  const bindYo=()=>{ const s=$('yoP'); if(s) s.onchange=()=>{ state.pickYo=s.value; render(); }; };
+  if(!list.length){ $('view').innerHTML=h+'<div class="state">No hay tareas pendientes. Las crea la administración del depósito desde el módulo Picking.</div>'; bindYo(); bindPHead(); return; }
+  const card=P=>{ const r=pkResumen(P); const est=P.estado;
     const pill=est==='PENDIENTE'?'<span class="pill mut">Pendiente</span>':(est==='PAUSADO'?'<span class="pill info">Pausado</span>':'<span class="pill info">En preparación</span>');
     const prio=(P.prioridad&&P.prioridad!=='NORMAL')?' · <b style="color:var(--red)">'+esc(P.prioridad)+'</b>':'';
+    const quien=P.operario||P.operario_asignado||'';
     return '<div class="card" data-nro="'+esc(P.nro)+'"><div class="nro">PICK #'+esc(P.nro)+'</div>'
-      +'<div class="sub">'+esc(nombreSuc(P.destino))+prio+'</div>'
-      +'<div class="foot">'+pill+'<div class="n">'+fmtInt(r.req)+'<small>unidades</small></div></div></div>';
-  }).join('');
-  $('view').innerHTML=h+'<div class="grid">'+cards+'</div>';
+      +'<div class="sub">'+esc(pkTipoTxt(P))+prio+'</div><div class="sub" style="color:var(--navy);font-weight:700">'+esc(pkTitulo(P))+'</div>'
+      +(quien?'<div class="sub">'+(P.operario?'La tiene ':'Asignada a ')+esc(quien)+'</div>':'')
+      +'<div class="foot">'+pill+'<div class="n">'+fmtInt(r.req)+'<small>unidades</small></div></div></div>'; };
+  const de=P=>P.operario||P.operario_asignado||'';
+  const mias=yo?list.filter(P=>de(P)===yo):[], libres=list.filter(P=>!de(P)), otras=list.filter(P=>de(P)&&de(P)!==yo);
+  const bloque=(tit,arr,vacio)=>'<div class="sub" style="font-family:var(--font-c);font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 8px">'+esc(tit)+' ('+arr.length+')</div>'
+    +(arr.length?'<div class="grid">'+arr.map(card).join('')+'</div>':'<div class="sub" style="color:var(--muted)">'+esc(vacio)+'</div>');
+  $('view').innerHTML=h+(yo?bloque('Mis tareas',mias,'No tenés tareas asignadas.'):'')+bloque('Sin asignar',libres,'No hay tareas libres.')+(otras.length?bloque('De otros operarios',otras,''):'');
   document.querySelectorAll('.card[data-nro]').forEach(c=>c.onclick=()=>{ state.pickNro=c.getAttribute('data-nro'); state.view='sum'; render(); });
-  bindPHead();
+  bindYo(); bindPHead();
 }
 function bindPHead(){ const r=$('reloadP'); if(r) r.onclick=async()=>{ r.disabled=true; try{ await cargarPicking(); render(); toast('Actualizado','ok'); }catch(e){ r.disabled=false; toast('No pude actualizar','bad'); } }; const hm=$('home'); if(hm) hm.onclick=backHome; }
 
@@ -432,22 +456,31 @@ function renderPickSummary(){
   const P=pkGet(); if(!P){ state.view='lista'; return render(); }
   const r=pkResumen(P); const iniciado=!!P.started_ms;
   const activos=Object.keys(DATA.pick.operarios).map(id=>DATA.pick.operarios[id]).filter(o=>o.activo!==false).sort((a,b)=>cmp(a.nombre,b.nombre));
-  let h='<div class="sec-head"><div><h2>PICK #'+esc(P.nro)+'</h2><div class="sub">'+esc(nombreSuc(P.destino))+'</div></div><button class="btn btn-outline" id="backP">← Volver</button></div>';
-  h+='<div class="startbox"><div class="big">'+esc(nombreSuc(P.destino))+'</div>'
+  let h='<div class="sec-head"><div><h2>PICK #'+esc(P.nro)+'</h2><div class="sub">'+esc(pkTitulo(P))+'</div></div><button class="btn btn-outline" id="backP">← Volver</button></div>';
+  h+='<div class="startbox"><div class="big">'+esc(pkTitulo(P))+'</div>'
     +'<div class="sumrow" style="margin:14px 0"><div class="s"><div class="v">'+fmtInt(r.req)+'</div><div class="k">Unidades</div></div>'
     +'<div class="s"><div class="v">'+fmtInt(r.lines)+'</div><div class="k">SKUs</div></div>'
-    +'<div class="s"><div class="v">'+fmtInt(pkZonas(P))+'</div><div class="k">Zonas</div></div></div>';
+    +'<div class="s"><div class="v">'+fmtInt(pkZonas(P))+'</div><div class="k">Zonas</div></div>'
+    +(P.nDest?'<div class="s"><div class="v">'+fmtInt(P.nDest)+'</div><div class="k">Sucursales</div></div>':'')+'</div>'
+    +'<div class="sub" style="font-family:var(--font-c);color:var(--muted);margin-bottom:8px">'+esc(pkTipoTxt(P))+(P.operario_asignado?(' · asignada a <b>'+esc(P.operario_asignado)+'</b>'):'')+'</div>';
+  const pre=P.operario_asignado||state.pickYo||'';
   if(iniciado && P.estado!=='PENDIENTE'){ h+='<div class="sub" style="font-family:var(--font-c);color:var(--muted)">'+(P.operario?('En preparación por '+esc(P.operario)):'En preparación')+'</div>'
     +'<div style="margin-top:16px"><button class="btn btn-primary btn-lg" id="cont">▶ Continuar picking</button></div>'; }
   else { h+='<div class="opname" style="justify-content:center"><label for="opP">Operario</label><select class="inp" id="opP" style="max-width:260px"><option value="">Elegí tu nombre…</option>'
-    + activos.map(o=>'<option>'+esc(o.nombre)+'</option>').join('')+'</select></div>'
-    +'<div style="margin-top:16px"><button class="btn btn-primary btn-lg" id="iniciar">▶ Iniciar picking</button></div>'; }
+    + activos.map(o=>'<option'+(o.nombre===pre?' selected':'')+'>'+esc(o.nombre)+'</option>').join('')+'</select></div>'
+    +'<div style="margin-top:16px"><button class="btn btn-primary btn-lg" id="iniciar">✓ Confirmar e iniciar</button></div>'
+    +'<div class="sub" style="font-family:var(--font-c);color:var(--muted);margin-top:8px">Al confirmar arranca el tiempo de la tarea.</div>'; }
   h+='</div>';
   $('view').innerHTML=h;
   $('backP').onclick=()=>{ state.view='lista'; render(); };
   if($('cont')) $('cont').onclick=async()=>{ if(P.estado==='PAUSADO'){ P.estado='EN PREPARACIÓN'; await pkSaveField(P.nro,'estado','EN PREPARACIÓN'); pkEvento({event_type:'picking_resumed',picking_id:P.nro,operator_id:P.operario}); } state.view='op'; render(); };
   if($('iniciar')) $('iniciar').onclick=async()=>{
     const op=$('opP').value; if(!op){ toast('Elegí tu nombre','bad'); return; }
+    if(P.operario_asignado && P.operario_asignado!==op){
+      if(!confirm('Esta tarea está asignada a '+P.operario_asignado+'. ¿La tomás vos igual?')) return;
+      pkEvento({event_type:'picking_reassigned',picking_id:P.nro,operator_id:op,value:{de:P.operario_asignado,asignada:true}});
+    }
+    state.pickYo=op;
     // lock suave: re-chequeo el estado en vivo por si otro operario ya lo tomó
     let curEst=null; try{ curEst=await fbGet('picking/pickings/'+pkK(P.nro)+'/estado'); }catch(e){}
     if(curEst==='EN PREPARACIÓN' || curEst==='PAUSADO'){ let quien=''; try{ quien=await fbGet('picking/pickings/'+pkK(P.nro)+'/operario'); }catch(e){}
@@ -471,9 +504,9 @@ function renderPickOperativo(){
   let dots=''; for(let i=0;i<line.req;i++) dots+='<span class="dot'+(i<line.picked?' on':'')+'"></span>';
   let h='<div class="pk-op">'
     +'<div class="pk-top"><div class="pk-top-row"><span class="pk-id">PICK #'+esc(P.nro)+'</span>'
-    +'<span class="pk-dest2">'+esc(nombreSuc(P.destino))+'</span><button class="btn btn-outline btn-xs" id="pausar">⏸ Pausar</button></div>'
+    +'<span class="pk-dest2">'+esc(pkTitulo(P))+'</span><button class="btn btn-outline btn-xs" id="pausar">⏸ Pausar</button></div>'
     +'<div class="pk-progbar"><span id="pkPb" style="width:'+pct+'%"></span></div>'
-    +'<div class="pk-progtxt" id="pkPt">'+fmtInt(r.pk)+' / '+fmtInt(r.req)+' unidades</div></div>'
+    +'<div class="pk-progtxt" style="display:flex;justify-content:space-between"><span id="pkPt">'+fmtInt(r.pk)+' / '+fmtInt(r.req)+' unidades</span><span id="pkClock" class="pk-clock">⏱ —</span></div></div>'
     +'<div class="pk-zona"><div class="lbl">Ir a</div><div class="z">'+esc(line.zona)+'</div>'
     +(zmap?'<button type="button" class="btnmap" id="btnMapa">'+(pkMapaOpen?'▾':'🗺')+' Mapa</button>':'')+'</div>'
     +(zmap?'<div class="pk-mapa" id="pkMapa"'+(pkMapaOpen?'':' style="display:none"')+'>'+zmap+'</div>':'')
@@ -482,6 +515,7 @@ function renderPickOperativo(){
     +'<div class="talle"><small>Talle</small>'+esc(line.talle)+'</div>'
     +'<div class="pk-dots" id="pkDots">'+dots+'</div>'
     +'<div class="pk-qty" id="pkQty">Retirar <b>'+fmtInt(rest)+'</b><small>unidad'+(rest===1?'':'es')+'</small></div>'
+    +'<div id="pkDest">'+pkDestHtml(line)+'</div>'
     +'<div class="pk-fb" id="pkFb">'+(line.ean?'Escaneá cada unidad':'Sin código — contá y tocá +1')+'</div></div>'
     +'<div class="pk-scan"><input class="inp" id="pscan" inputmode="numeric" autocomplete="off" placeholder="Escaneá el producto…"><button class="btn btn-outline" id="pmanual">+1 manual</button></div>'
     +'<div class="pk-bottom"><button class="btn btn-outline" id="nostock">No encuentro stock</button></div>'
@@ -494,6 +528,22 @@ function renderPickOperativo(){
   $('nostock').onclick=pkNoStock;
   { const bm=$('btnMapa'); if(bm) bm.onclick=()=>{ pkMapaOpen=!pkMapaOpen; const m=$('pkMapa'); if(m) m.style.display=pkMapaOpen?'':'none'; bm.textContent=(pkMapaOpen?'▾':'🗺')+' Mapa'; }; }
   inp.focus();
+  pkReloj();
+}
+// reloj visible de la tarea (desde que el operario la confirmó)
+let _pkTick=null;
+function pkReloj(){
+  const pinta=()=>{ const el=$('pkClock'), P=pkGet(); if(!el||!P||!P.started_ms){ clearInterval(_pkTick); _pkTick=null; return; }
+    const s=Math.max(0,Math.floor((Date.now()-P.started_ms)/1000)), hh=Math.floor(s/3600), mm=Math.floor(s%3600/60), ss=s%60;
+    el.textContent='⏱ '+(hh?hh+':':'')+String(mm).padStart(hh?2:1,'0')+':'+String(ss).padStart(2,'0'); };
+  clearInterval(_pkTick); pinta(); _pkTick=setInterval(pinta,1000);
+}
+// a qué sucursales va este artículo·talle; se resalta la de la unidad que se está por preparar
+function pkDestHtml(line){
+  if(!line.dest||!line.dest.length) return '';
+  const cur=pkDestActual(line); let acc=0;
+  return '<div class="pk-destlbl">Va a</div><div class="pk-dests">'+line.dest.map((d,i)=>{ const ini=acc; acc+=num(d.u); const hechas=Math.max(0,Math.min(num(d.u), line.picked-ini));
+    return '<span class="pk-dchip'+(i===cur?' cur':(hechas>=num(d.u)?' done':''))+'">'+esc(nombreSuc(d.s))+' <b>'+hechas+'/'+num(d.u)+'</b></span>'; }).join('')+'</div>';
 }
 function pkFeedback(ok,msg){
   const prod=$('pkProd'); if(prod){ prod.classList.remove('ok','bad'); void prod.offsetWidth; prod.classList.add(ok?'ok':'bad'); setTimeout(()=>{ const p=$('pkProd'); if(p) p.classList.remove('ok','bad'); },500); }
@@ -525,6 +575,7 @@ function pkUpdateOpDom(){
   const q=$('pkQty'); if(q) q.innerHTML='Retirar <b>'+fmtInt(rest)+'</b><small>unidad'+(rest===1?'':'es')+'</small>';
   const pb=$('pkPb'); if(pb) pb.style.width=pct+'%';
   const pt=$('pkPt'); if(pt) pt.textContent=fmtInt(r.pk)+' / '+fmtInt(r.req)+' unidades';
+  const pd=$('pkDest'); if(pd) pd.innerHTML=pkDestHtml(line);
   const i=$('pscan'); if(i) i.focus();
 }
 function pkPausar(){ const P=pkGet(); P.estado='PAUSADO'; P.paused_at=nowISO(); pkSaveField(P.nro,'estado','PAUSADO'); pkSaveField(P.nro,'paused_at',P.paused_at); pkEvento({event_type:'picking_paused',picking_id:P.nro,operator_id:P.operario}); toast('Picking pausado — podés retomarlo después','ok'); state.view='lista'; render(); }
@@ -555,7 +606,7 @@ function renderPickFin(){
   const P=pkGet(); if(!P){ state.view='lista'; return render(); }
   const r=pkResumen(P); const enc=r.pk, sol=r.req, falt=sol-enc;
   const dur=P.started_ms?fmtDur(Date.now()-P.started_ms):'—';
-  $('view').innerHTML='<div class="sec-head"><div><h2>PICK #'+esc(P.nro)+'</h2><div class="sub">'+esc(nombreSuc(P.destino))+'</div></div></div>'
+  $('view').innerHTML='<div class="sec-head"><div><h2>PICK #'+esc(P.nro)+'</h2><div class="sub">'+esc(pkTitulo(P))+'</div></div></div>'
     +'<div class="summary"><div class="chk-ic">✓</div><div style="font-family:var(--font-d);font-size:26px;margin-top:6px">Picking completado</div>'
     +'<div class="sub" style="font-family:var(--font-c);color:var(--muted)">'+(P.operario?('Operario: '+esc(P.operario)):'')+'</div>'
     +'<div class="sumrow"><div class="s"><div class="v">'+fmtInt(sol)+'</div><div class="k">Solicitadas</div></div>'
@@ -569,7 +620,7 @@ function renderPickFin(){
     P.estado='LISTO PARA CONTROL'; P.completed_at=nowISO(); P.con_diferencias=falt>0;
     await Promise.all([ pkSaveField(P.nro,'estado','LISTO PARA CONTROL'), pkSaveField(P.nro,'completed_at',P.completed_at), pkSaveField(P.nro,'con_diferencias',falt>0) ]);
     pkEvento({event_type:'picking_completed',picking_id:P.nro,operator_id:P.operario,value:{solicitadas:sol,encontradas:enc,faltantes:falt}});
-    postAviso('📋 PICK #'+P.nro+' ('+nombreSuc(P.destino)+') listo para control — preparó '+(P.operario||'—')+(falt>0?(', con '+falt+' faltante'+(falt===1?'':'s')):'')+'.');
+    postAviso('📋 PICK #'+P.nro+' ('+pkTitulo(P)+') listo para control — preparó '+(P.operario||'—')+(falt>0?(', con '+falt+' faltante'+(falt===1?'':'s')):'')+'.');
     toast('Enviado a control','ok'); state.view='lista'; try{ await cargarPicking(); }catch(e){} render();
   };
 }
@@ -597,7 +648,7 @@ function renderCfLista(){
   if(!list.length){ $('view').innerHTML=h+'<div class="state">No hay pickings esperando control.</div>'; bindCfHead(); return; }
   const cards=list.map(P=>{ const r=cfResumen(P);
     return '<div class="card" data-nro="'+esc(P.nro)+'"><div class="nro">PICK #'+esc(P.nro)+'</div>'
-      +'<div class="sub">'+esc(nombreSuc(P.destino))+(P.operario?(' · pickeó '+esc(P.operario)):'')+(P.con_diferencias?' · <b style="color:var(--warn)">con faltantes</b>':'')+'</div>'
+      +'<div class="sub">'+esc(pkTitulo(P))+(P.operario?(' · pickeó '+esc(P.operario)):'')+(P.con_diferencias?' · <b style="color:var(--warn)">con faltantes</b>':'')+'</div>'
       +'<div class="foot"><span class="pill info">Para control</span><div class="n">'+fmtInt(r.picked)+'<small>preparadas</small></div></div></div>'; }).join('');
   $('view').innerHTML=h+'<div class="grid">'+cards+'</div>';
   document.querySelectorAll('.card[data-nro]').forEach(c=>c.onclick=()=>{ state.pickNro=c.getAttribute('data-nro'); state.view='sum'; render(); });
@@ -609,8 +660,8 @@ function renderCfSummary(){
   const P=pkGet(); if(!P){ state.view='lista'; return render(); }
   const r=cfResumen(P);
   const activos=Object.keys(DATA.pick.operarios).map(id=>DATA.pick.operarios[id]).filter(o=>o.activo!==false).sort((a,b)=>cmp(a.nombre,b.nombre));
-  let h='<div class="sec-head"><div><h2>Control PICK #'+esc(P.nro)+'</h2><div class="sub">'+esc(nombreSuc(P.destino))+'</div></div><button class="btn btn-outline" id="backC">← Volver</button></div>';
-  h+='<div class="startbox"><div class="big">'+esc(nombreSuc(P.destino))+'</div>'
+  let h='<div class="sec-head"><div><h2>Control PICK #'+esc(P.nro)+'</h2><div class="sub">'+esc(pkTitulo(P))+'</div></div><button class="btn btn-outline" id="backC">← Volver</button></div>';
+  h+='<div class="startbox"><div class="big">'+esc(pkTitulo(P))+'</div>'
     +'<div class="sub" style="font-family:var(--font-c);color:var(--muted)">Volvé a escanear lo preparado para verificarlo contra el picking.</div>'
     +'<div class="sumrow" style="margin:14px 0"><div class="s"><div class="v">'+fmtInt(r.picked)+'</div><div class="k">Preparadas</div></div>'
     +'<div class="s"><div class="v">'+fmtInt(r.lines)+'</div><div class="k">SKUs</div></div></div>'
@@ -639,7 +690,7 @@ function renderCfOperativo(){
   let dots=''; for(let i=0;i<line.picked;i++) dots+='<span class="dot'+(i<line.controlled?' on':'')+'"></span>';
   let h='<div class="pk-op">'
     +'<div class="pk-top"><div class="pk-top-row"><span class="pk-id">CONTROL #'+esc(P.nro)+'</span>'
-    +'<span class="pk-dest2">'+esc(nombreSuc(P.destino))+'</span><button class="btn btn-outline btn-xs" id="salirC">← Salir</button></div>'
+    +'<span class="pk-dest2">'+esc(pkTitulo(P))+'</span><button class="btn btn-outline btn-xs" id="salirC">← Salir</button></div>'
     +'<div class="pk-progbar"><span id="pkPb" style="width:'+pct+'%"></span></div>'
     +'<div class="pk-progtxt" id="pkPt">'+fmtInt(r.ctrl)+' / '+fmtInt(r.picked)+' controladas</div></div>'
     +'<div class="pk-zona"><div class="lbl">Verificar</div><div class="z">'+esc(line.zona)+'</div></div>'
@@ -691,7 +742,7 @@ function renderCfFin(){
   const rows=cfLines(P).map(l=>Object.assign(l,{dif:l.picked-l.controlled}));
   const conDif=rows.filter(r=>r.dif!==0);
   const dur=P.control_started_ms?fmtDur(Date.now()-P.control_started_ms):'—';
-  let h='<div class="sec-head"><div><h2>Control PICK #'+esc(P.nro)+'</h2><div class="sub">'+esc(nombreSuc(P.destino))+'</div></div><button class="btn btn-outline" id="volverC">← Seguir</button></div>';
+  let h='<div class="sec-head"><div><h2>Control PICK #'+esc(P.nro)+'</h2><div class="sub">'+esc(pkTitulo(P))+'</div></div><button class="btn btn-outline" id="volverC">← Seguir</button></div>';
   if(!conDif.length){
     h+='<div class="summary"><div class="chk-ic">✓</div><div style="font-family:var(--font-d);font-size:26px;margin-top:6px">Control correcto</div>'
       +'<div class="sub" style="font-family:var(--font-c);color:var(--muted)">Lo controlado coincide con lo preparado'+(P.controlado_por?(' · '+esc(P.controlado_por)):'')+' · '+dur+'</div>'
@@ -715,7 +766,7 @@ async function cfCerrar(P,conDif,motivo){
   if(conDif){ P.con_diferencias=true; P.control_excepcion=motivo; saves.push(pkSaveField(P.nro,'con_diferencias',true), pkSaveField(P.nro,'control_excepcion',motivo)); }
   await Promise.all(saves);
   pkEvento({event_type:'control_completed',picking_id:P.nro,operator_id:P.controlado_por,value:{con_diferencias:conDif,motivo:motivo||''}});
-  if(conDif) postAviso('⚠️ Control del PICK #'+P.nro+' ('+nombreSuc(P.destino)+') cerrado CON DIFERENCIAS — '+motivo+(P.controlado_por?(' (controló '+P.controlado_por+')'):'')+'.');
+  if(conDif) postAviso('⚠️ Control del PICK #'+P.nro+' ('+pkTitulo(P)+') cerrado CON DIFERENCIAS — '+motivo+(P.controlado_por?(' (controló '+P.controlado_por+')'):'')+'.');
   toast(conDif?'Cerrado con diferencias':'Control correcto — cerrado','ok'); state.view='lista'; try{ await cargarPicking(); }catch(e){} render();
 }
 

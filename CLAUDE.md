@@ -1964,6 +1964,36 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     exclusivos de Aurelius: Aurelius de línea y Ecommerce prioridad 1, Aurelius 10 (columna outlet, «como local
     de línea») prioridad 2.
 
+## Picking del depósito — tarea por remito / por marca·rubro (`picking/` + kiosco, 20/09/2026)
+
+Modelo de trabajo que definió Juli: Nehuen y Ran arman el Reparto inicial / la Barrida en `barrida/`
+→ **tarea asignada a un operario** en la tablet (kiosco `recepciones/control/`, rol `deposito-tablet`)
+→ el operario confirma, corre el tiempo y prepara artículo×talle **escaneando** → finaliza → control
+final → estadísticas por operario en el Panel de `picking/` (lo ven `logistica@` = Hernán y Marcelo,
+y `deposito@` = Ariel, Luis y Nehuen; las dos cuentas tienen el tile). ⚠ **El depósito NO pica por
+sucursal**: un remito trae artículos que van a una u otra sucursal.
+
+- **Etapa 1 (HECHA 20/09/2026)**: `abrirNuevaTarea` reemplaza al «Crear picking» por sucursal (que
+  queda como link «modo anterior», `abrirNuevoPicking`). Dos tipos: **`reparto`** = una tarea por
+  REMITO de un reparto guardado (`barrida/repartos/<key>/remitos`), **`barrida`** = una tarea por
+  MARCA·RUBRO de la última barrida guardada (reposición + curva de todas las sucursales,
+  `barridaSegmentos`; vienen sin marcar). Pick nuevo: `tipo`, `titulo`, `nDest`,
+  `operario_asignado` (+ `asignado_en/por`), `origen` = `{reparto, remito, marca, rubro}` o
+  `{tipoBarrida:true, barrida:<lunes>, marca, rubro}` y cada talle lleva **`dest:[{s:slug,u}]`**. Un
+  origen que ya tiene tarea se avisa y viene destildado (`tareaDe`). En la tarjeta se reasigna el
+  operario mientras está PENDIENTE. Desde Barrida: botón **«📲 Mandar a la tablet»** (semana guardada →
+  `../picking/?nuevo=barrida`; reparto guardado → `?nuevo=reparto&key=<key>`).
+  Kiosco: «¿Quién sos?» → Mis tareas / Sin asignar / De otros; «✓ Confirmar e iniciar» (tomar la de
+  otro pide confirmación y deja `picking_reassigned`); **reloj visible** (`pkReloj`) y bloque **«Va a»**
+  (`pkDestHtml`/`pkDestActual`: resalta la sucursal de la unidad que se está por preparar, los destinos
+  se llenan en orden). Los picks viejos con `destino` siguen andando (`tituloPick` / `pkTitulo`).
+- **Pendiente — etapa 2 (escaneo forzado)**: hoy sigue el botón «+1 manual» y el EAN solo se hornea
+  para Adidas (`eanDeVariante`, maestro). Falta: resolver EAN contra el mapa del Buscador
+  (`ubicaciones-mateu/ean`) + etiquetas de proveedor (`codigoConTallePegado`), cámara ZXing en el
+  picking (ya está en Control de Ingreso, `toggleCam`), sacar el +1 y dejar una excepción con motivo.
+  **Etapa 3**: dashboard por tipo de tarea y excepciones sin escaneo. **Etapa 4**: Ingreso de
+  Mercadería (packing list digital, operario del padrón con tiempos, enganche con el Reparto inicial).
+
 ## Panel General de Logística (`logistica/`, 08/09/2026)
 
 Dashboard de logística (envíos e ingresos), **pantalla inicial de `logistica@` y `deposito@`**.
