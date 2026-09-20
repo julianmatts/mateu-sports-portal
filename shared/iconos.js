@@ -197,6 +197,7 @@
     '🏠': '<path ' + S + ' d="M4 11l8-6 8 6M6 10v9h12v-9"/><path ' + S + ' d="M10 19v-5h4v5"/>',
     '🏢': '<rect x="5" y="3" width="14" height="18" ' + S + '/><path ' + S + ' d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2M10 21v-3h4v3"/>',
     '🏬': '<path ' + S + ' d="M4 9l1-4h14l1 4M5 9h14v11H5z"/><path ' + S + ' d="M4 9a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0"/><rect x="10" y="14" width="4" height="6" ' + S + '/>',
+    '🤖': '<rect x="5" y="8" width="14" height="11" rx="2.5" ' + S + '/><path ' + S + ' d="M12 8V4.5M9 19v2M15 19v2M2.5 12.5v3M21.5 12.5v3"/><circle cx="12" cy="3.6" r="1.2" ' + S + '/><circle cx="9.3" cy="12.6" r="1.1" fill="currentColor"/><circle cx="14.7" cy="12.6" r="1.1" fill="currentColor"/><path ' + S + ' d="M9.5 16h5"/>',   // Matts, el asistente
     '🏪': '<path ' + S + ' d="M4 9l1.5-4h13L20 9M5 11v9h14v-9"/><path ' + S + ' d="M4 9a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0"/><rect x="9" y="14" width="6" height="6" ' + S + '/>',
     '🏦': '<path ' + S + ' d="M3 9l9-5 9 5H3z"/><path ' + S + ' d="M5 9v9M9 9v9M15 9v9M19 9v9M3 20h18"/>',
     '🚚': '<path ' + S + ' d="M3 6h11v9H3z"/><path ' + S + ' d="M14 9h4l3 3v3h-7z"/><circle cx="7.5" cy="17" r="1.6" ' + S + '/><circle cx="17.5" cy="17" r="1.6" ' + S + '/>',

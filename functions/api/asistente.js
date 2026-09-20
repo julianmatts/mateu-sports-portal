@@ -14,7 +14,8 @@
 
    GET  /api/asistente → { disponible, nombre }
    POST /api/asistente   body { email, modulo, mensajes:[{role,content}] }
-                       → { respuesta, restantes }
+                       → { respuesta, restantes, id }
+                         body { accion:'voto', email, id, voto: 1 | -1 } → { ok }
 
    Qué sabe (etapa 1):
    - USO DEL PORTAL: shared/asistente-guia.json (sale de los tutoriales,
@@ -35,7 +36,15 @@
    - PUESTO DEL SALÓN (rol `puesto`, 20/09/2026): habilitado solo como asesor de
      producto + stock; sin guía del portal ni guia_modulo, con un prompt que
      asume que el cliente está leyendo la pantalla. Tope diario doble.
-   Todavía NO ve ventas ni el stock del sistema: etapa 3 (API MySQL).
+   - GESTIÓN DEL LOCAL (20/09/2026): la herramienta resumen_gestion lee lo que ya
+     está en Firebase —objetivo de la semana y del mes, venta provisoria cargada
+     (ventaEquipo), equipo, y los pendientes: F8 sin confirmar, reposición
+     disponible, mercadería que le baja, tareas vencidas y vidrieras en alerta—.
+     PERMISOS EN LA FUNCTION, no en el prompt: sucursal/outlet ven SOLO su slug;
+     depósito solo sus pendientes; gerencia y supervisor cualquiera o «todas»;
+     el puesto y el resto de los roles no tienen la herramienta.
+   - VOTOS: POST {accion:'voto', id, voto} marca la respuesta en el log.
+   Todavía NO ve el stock ni las ventas del sistema en vivo: etapa 3 (API MySQL).
 
    Seguridad blanda, como el resto del portal: el mail tiene que existir
    en discontinuos-mateu/usuarios (de ahí salen el rol y la sucursal, no
@@ -52,6 +61,8 @@ const MAX_MENSAJES = 12, MAX_CHARS = 1500, MAX_VUELTAS = 5, MAX_FILAS = 40;
 const FB_USUARIOS = 'https://discontinuos-mateu-default-rtdb.firebaseio.com/usuarios.json';
 const FB_ASIS = 'https://recepciones-mateu-default-rtdb.firebaseio.com/asistente';
 const FB_UBIC = 'https://ubicaciones-mateu-default-rtdb.firebaseio.com/sucursales';
+const FB_REC = 'https://recepciones-mateu-default-rtdb.firebaseio.com';
+const FB_TUR = 'https://turnero-mateu-default-rtdb.firebaseio.com';
 
 // Sucursales del Buscador de Artículos (mismo mapa que ubicaciones/index.html)
 // Sucursales con más de un depósito: rango de estanterías → piso (copia de DEPOSITOS_SUC del Buscador)
@@ -72,15 +83,16 @@ const PERSONA = `Sos ${NOMBRE}, el asistente del portal interno de Mateu Sports,
 
 Personalidad: sos un deportista profesional que jugó y entrenó de todo —tenis, pádel, hockey, fútbol, running, básquet, rugby, natación, vóley, boxeo— y hoy asesora al equipo. Cercano, positivo, directo, con alguna expresión de vestuario cada tanto, sin exagerar. Español rioplatense (vos, tenés, mirá).
 
-Hacés dos cosas:
+Hacés tres cosas:
 1. AYUDA CON EL PORTAL: explicás cómo se usa cada módulo con la guía que tenés abajo. Si preguntan por un módulo que no es el actual, usá la herramienta guia_modulo antes de contestar. Si la guía no lo cubre, decí que no lo tenés claro y que lo consulten con Juli (gerencia); no inventes botones ni pantallas.
 2. ASESOR DEPORTIVO: ayudás a recomendar producto como lo haría un especialista en el mostrador. El vendedor tiene al cliente adelante y necesita algo para decirle YA, así que tu respuesta SIEMPRE trae una recomendación, en este orden: (a) el criterio técnico en una o dos oraciones con lo que ya sabés (peso, balance y perfil de la raqueta; pisada y drop de la zapatilla; dureza del palo de hockey; etc.); (b) llamá a buscar_catalogo y nombrá 2 o 3 artículos concretos de lo que devuelva, con su código y por qué le sirven; (c) cerrá con UNA o DOS preguntas que afinarían la elección. Está prohibido contestar solo con preguntas o pedir datos antes de recomendar. Recomendá SOLO artículos que devuelva la herramienta: nunca inventes modelos ni códigos.
+3. GESTIÓN DEL LOCAL (solo si tenés la herramienta resumen_gestion): cuando pregunten «¿cómo venimos?», por el objetivo, la venta de la semana o del mes, cómo viene el equipo o un vendedor, o «¿qué tengo pendiente?», llamá a resumen_gestion y contestá con esos números, cortos y al grano: primero el titular (% de la meta y cuánto falta), después lo que ayude a actuar. La venta es PROVISORIA (la que se cargó en el portal): decí hasta qué día está cargada. El objetivo personal de cada vendedor y el ritmo exacto NO los tenés: están en Mi Sucursal → «Cómo viene el equipo»; no los calcules ni los estimes. Si la herramienta devuelve un error de permisos, decilo tal cual y no insistas.
 
 Reglas firmes:
 - UBICACIÓN EN EL DEPÓSITO: cuando pregunten dónde está guardado un artículo (estantería, módulo, piso) en una sucursal, eso sale de consultar_stock (campo ubicacion_en_el_deposito): buscá el código y consultá, y contestá con la ubicación de la sucursal que pidieron. Nunca mandes a preguntar a Logística, al Turnero ni a nadie por una ubicación sin haber consultado antes.
 - SUCURSALES: «Diagonal 80», «la 80» o «casa matriz» es una SUCURSAL (la más grande), igual que Calle 49, City Bell, Berisso, etc. No la confundas con el módulo del portal «Apertura Diagonal 80», que fue una herramienta para planificar el surtido de la apertura.
 - MARCAS PROPIAS: «EDLP», «Estudiantes», «el Pincha» o «la camiseta del club» = marca **Ruge** (códigos RUG…, p.ej. la camiseta titular es «M/C EDLP HOME»). «Home» = titular, «away» = suplente. Buscalas con marca Ruge y texto «edlp home»; la camiseta oficial de la temporada es la que lleva el año en el nombre («M/C EDLP HOME 26»): las «AMATEUR», «JR», «KIDS» o con sufijos (S, RE, SS) son otras líneas o variantes, no las elijas salvo que las pidan.
-- STOCK: solo podés hablar de stock con lo que devuelve consultar_stock, nunca de memoria ni por el catálogo (el catálogo es lo que la empresa trabajó este año, no lo que hay). La herramienta busca por CÓDIGO: si te dan un nombre («la Kantana negra»), primero encontrá el código con buscar_catalogo (con la marca alcanza) y después consultá; si hay varios colores o modelos posibles, consultá los más probables (hasta 4 códigos en una sola llamada) o preguntá cuál. Al contestar: decí sucursal por sucursal cuántas unidades y, si la herramienta trae talles, los talles con stock; aclará SIEMPRE que es el último stock que cargó cada local en el Buscador, con su fecha, y que puede haber cambiado por ventas. Las de «no_lo_tienen» cargan su stock completo y ese artículo NO figura: decí «no lo tienen», no mandes a consultarles. Las sucursales que figuran «sin dato» no cargan su stock en el Buscador: no digas que no tienen, decí que hay que consultarles. Si una sucursal no abre por talle, decí el total y que el talle hay que confirmarlo con el local. Nunca des precios. Todavía no tenés acceso a ventas ni al stock del sistema de gestión.
+- STOCK: solo podés hablar de stock con lo que devuelve consultar_stock, nunca de memoria ni por el catálogo (el catálogo es lo que la empresa trabajó este año, no lo que hay). La herramienta busca por CÓDIGO: si te dan un nombre («la Kantana negra»), primero encontrá el código con buscar_catalogo (con la marca alcanza) y después consultá; si hay varios colores o modelos posibles, consultá los más probables (hasta 4 códigos en una sola llamada) o preguntá cuál. Al contestar: decí sucursal por sucursal cuántas unidades y, si la herramienta trae talles, los talles con stock; aclará SIEMPRE que es el último stock que cargó cada local en el Buscador, con su fecha, y que puede haber cambiado por ventas. Las de «no_lo_tienen» cargan su stock completo y ese artículo NO figura: decí «no lo tienen», no mandes a consultarles. Las sucursales que figuran «sin dato» no cargan su stock en el Buscador: no digas que no tienen, decí que hay que consultarles. Si una sucursal no abre por talle, decí el total y que el talle hay que confirmarlo con el local. Nunca des precios. No tenés el stock del sistema de gestión en vivo.
 - No des consejos médicos: ante dolor o lesión, recomendá consultar a un profesional y limitá la charla al equipamiento.
 - Si te piden algo que no es del portal ni de deportes/producto, contestá en una línea que no es lo tuyo.
 - Respuestas cortas: 2 a 6 oraciones o una lista breve. Texto plano: podés usar **negrita** y viñetas con "• ", nada de títulos con # ni tablas.
@@ -220,6 +232,118 @@ async function consultarStock(inp, user) {
   };
 }
 
+/* Gestión del local: objetivo, venta provisoria, equipo y pendientes. Los permisos se resuelven ACÁ. */
+const gj = u => fetch(u).then(r => r.json()).catch(() => null);
+const plata = n => '$' + Math.round(n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+const pct = (a, b) => b > 0 ? Math.round(a / b * 1000) / 10 : null;
+function mesDeSemana(lunes) { const d = new Date(lunes + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 6); return d.toISOString().slice(0, 7); }   // desde sep-2026 la semana es del mes de su domingo
+function diasDesde(ts) { return Math.max(0, Math.floor((Date.now() - ts) / 86400000)); }
+
+async function resumenGestion(inp, user) {
+  const rol = user.rol, mio = user.sucursal || user.outlet_id || '';
+  const gerencia = rol === 'admin' || rol === 'supervisor';
+  if (!gerencia && ['sucursal', 'outlet', 'deposito'].indexOf(rol) < 0) return { error: 'Esta cuenta no tiene acceso a los datos de gestión.' };
+  if (!gerencia && !mio) return { error: 'Esta cuenta no tiene una sucursal asignada.' };
+
+  const lunes = await gj(FB_REC + '/objetivos/ultima.json');
+  if (!lunes) return { error: 'Todavía no hay una semana de objetivos publicada.' };
+  const [porSlug, metaSem] = await Promise.all([gj(FB_REC + '/objetivos/semanas/' + lunes + '/porSlug.json'), gj(FB_REC + '/objetivos/semanas/' + lunes + '/meta.json')]);
+  const nombres = {}; Object.keys(porSlug || {}).forEach(k => { nombres[k] = (porSlug[k] && porSlug[k].nombre) || k; });
+
+  // qué sucursal: la propia, o la que pida gerencia (por slug o por nombre); «todas» = comparación
+  let slug = mio;
+  const pedido = plano(inp.sucursal).trim();
+  if (gerencia) {
+    if (!pedido || /^todas?/.test(pedido)) slug = '';
+    else slug = Object.keys(nombres).filter(k => k === pedido || plano(nombres[k]) === pedido)[0]
+             || Object.keys(nombres).filter(k => plano(nombres[k]).indexOf(pedido) >= 0 || pedido.indexOf(plano(nombres[k])) >= 0 || k.indexOf(pedido.replace(/\s+/g, '-')) >= 0)[0] || null;
+    if (slug === null) return { error: 'No encontré esa sucursal.', sucursales: Object.values(nombres) };
+  } else if (pedido && !/^(mi|la mia|nuestra)/.test(pedido)) {
+    const otra = Object.keys(nombres).filter(k => k !== mio && (k === pedido || plano(nombres[k]) === pedido))[0];
+    if (otra) return { error: 'Desde esta cuenta solo se ven los datos de tu sucursal (' + (nombres[mio] || mio) + ').' };
+  }
+
+  const etiqueta = (metaSem && metaSem.etiqueta) || '';
+  // ---- todas las sucursales (gerencia) ----
+  if (!slug) {
+    const slugs = Object.keys(porSlug || {});
+    const tot = await Promise.all(slugs.map(k => gj(FB_REC + '/ventaEquipo/' + k + '/' + lunes + '/total.json')));
+    let M = 0, V = 0;
+    const filas = slugs.map((k, i) => { const m = porSlug[k].meta || 0, v = (tot[i] && tot[i].venta) || 0; M += m; V += v; return { sucursal: nombres[k], meta: plata(m), venta_cargada: v ? plata(v) : 'sin cargar', pct_de_la_meta: v ? pct(v, m) : null }; })
+      .sort((a, b) => (b.pct_de_la_meta === null ? -1 : b.pct_de_la_meta) - (a.pct_de_la_meta === null ? -1 : a.pct_de_la_meta));
+    // el % del total se calcula SOLO sobre las que ya cargaron venta: si no, con pocas cargadas da un número engañoso
+    const conV = slugs.filter((k, i) => tot[i] && tot[i].venta);
+    const Mc = conV.reduce((a, k) => a + (porSlug[k].meta || 0), 0);
+    return { semana: lunes, etiqueta, sucursales_con_venta_cargada: conV.length + ' de ' + slugs.length,
+      total_de_las_que_cargaron: { meta: plata(Mc), venta_cargada: plata(V), pct_de_la_meta: pct(V, Mc) }, meta_total_de_todas: plata(M), por_sucursal: filas, aviso: 'Venta provisoria cargada en el portal. El detalle de cada una y los pendientes: pedí una sucursal puntual, o mirá el Panel General.' };
+  }
+
+  const que = ['ventas', 'pendientes'].indexOf(inp.que) >= 0 ? inp.que : 'todo';
+  const out = { sucursal: nombres[slug] || slug, semana: lunes, etiqueta };
+  const hoy = hoyAR();
+
+  // ---- ventas (el depósito de la sucursal no las ve) ----
+  if (que !== 'pendientes' && rol !== 'deposito') {
+    const obj = (porSlug || {})[slug] || null;
+    const mes = mesDeSemana(lunes);
+    const [ve, objMes, semanasVe] = await Promise.all([gj(FB_REC + '/ventaEquipo/' + slug + '/' + lunes + '.json'), gj(FB_REC + '/objetivos/meses/' + mes + '/porSlug/' + slug + '.json'), gj(FB_REC + '/ventaEquipo/' + slug + '.json?shallow=true')]);
+    const t = (ve && ve.total) || null;
+    if (obj) {
+      const v = t ? t.venta : 0;
+      const dias = {}; ((ve && ve.vendedores) || []).forEach(x => (x.dias || []).forEach(d => { if (d.v > 0) dias[d.d] = 1; }));
+      const orden = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do'].filter(d => dias[d]);
+      out.objetivo_de_la_semana = { meta: plata(obj.meta), minimo: plata(obj.minimo), objetivo_120: plata(obj.s120),
+        venta_cargada: t ? plata(v) : 'todavía sin cargar', pct_de_la_meta: t ? pct(v, obj.meta) : null,
+        falta_para_la_meta: t ? plata(Math.max(0, obj.meta - v)) : null, falta_para_el_120: t ? plata(Math.max(0, obj.s120 - v)) : null,
+        dias_con_venta_cargada: orden.length ? orden.join(' ') : null, ultima_carga: ve && ve.actualizado ? String(ve.actualizado).slice(0, 10) : null };
+      if (t && t.tickets) out.indicadores_de_la_semana = { tickets: t.tickets, unidades: t.unidades, upt: Math.round(t.unidades / t.tickets * 100) / 100, ticket_promedio: plata(t.venta / t.tickets) };
+    } else out.objetivo_de_la_semana = 'Esta sucursal no tiene objetivo publicado para la semana.';
+    if (ve && Array.isArray(ve.vendedores) && t && t.venta) {
+      out.equipo = ve.vendedores.filter(x => x && x.venta).sort((a, b) => b.venta - a.venta).slice(0, 18).map(x => ({ vendedor: x.nombre, venta: plata(x.venta), participacion_pct: pct(x.venta, t.venta), tickets: x.tickets || null, upt: x.tickets ? Math.round((x.unidades || 0) / x.tickets * 100) / 100 : null, ticket_promedio: x.tickets ? plata(x.venta / x.tickets) : null }));
+      out.nota_equipo = 'El objetivo personal y el ritmo de cada vendedor están en Mi Sucursal → «Cómo viene el equipo».';
+    }
+    if (objMes && objMes.meta) {
+      const sems = Object.keys(semanasVe || {}).filter(k => mesDeSemana(k) === mes).sort();
+      const tots = await Promise.all(sems.map(k => k === lunes ? Promise.resolve(t) : gj(FB_REC + '/ventaEquipo/' + slug + '/' + k + '/total.json')));
+      const vm = tots.reduce((a, x) => a + ((x && x.venta) || 0), 0);
+      out.objetivo_del_mes = { mes, meta: plata(objMes.meta), objetivo_120: plata(objMes.s120), venta_acumulada_cargada: plata(vm), pct_de_la_meta: pct(vm, objMes.meta), falta_para_la_meta: plata(Math.max(0, objMes.meta - vm)), semanas_con_venta_cargada: sems.length };
+    }
+  }
+
+  // ---- pendientes ----
+  if (que !== 'ventas') {
+    const [f8, ultBar, repSuc, precios, sectores, vidrieras, cfg] = await Promise.all([
+      gj(FB_TUR + '/equipo/f8suc/' + slug + '.json'), gj(FB_REC + '/barrida/ultima.json'), gj(FB_REC + '/barrida/repartoSuc/' + slug + '.json'),
+      gj(FB_REC + '/tareas/precios/' + slug + '.json'), gj(FB_REC + '/tareas/sectores/' + slug + '.json'), gj(FB_REC + '/tareas/vidrieras/' + slug + '.json'), gj(FB_REC + '/tareas/config/global.json')]);
+    const pend = {};
+    const f8p = Object.values(f8 || {}).filter(d => d && !d.conf && d.ts && diasDesde(d.ts) <= 60).sort((a, b) => b.ts - a.ts);
+    pend.f8_sin_confirmar = f8p.length ? f8p.slice(0, 8).map(d => ({ f8: d.archivo || d.fecha, operador: d.operador, articulos: (d.lineas || []).length, hace_dias: diasDesde(d.ts), estado: d.descargado ? 'descargado, falta confirmar' : d.visto ? 'visto, falta armar y confirmar' : 'SIN ABRIR' })) : 'ninguno';
+    if (ultBar) {
+      const rp = await gj(FB_REC + '/barrida/barridas/' + ultBar + '/reposicion/' + slug + '.json');
+      const u = (rp || []).reduce((a, x) => a + ((x && x.sugerido) || 0), 0);
+      const dd = diasDesde(new Date(ultBar + 'T12:00:00Z').getTime());
+      pend.reposicion_disponible_del_deposito = u ? { unidades: u, lineas: rp.length, analisis_de_la_semana: ultBar, aviso: dd > 13 ? 'El análisis tiene ' + dd + ' días: puede estar viejo.' : undefined } : 'nada';
+    }
+    const reps = Object.values(repSuc || {}).filter(r => r && r.fecha && diasDesde(new Date(r.fecha).getTime() || 0) <= 30);
+    pend.mercaderia_nueva_que_le_baja = reps.length ? { repartos: reps.length, unidades: reps.reduce((a, r) => a + (r.u || 0), 0) } : 'nada en los últimos 30 días';
+    if (rol !== 'deposito') {
+      const abiertas = o => Object.values(o || {}).filter(x => x && x.estado !== 'hecha');
+      const venc = x => { const f = x.vigencia || x.limite; return !!f && f < hoy; };
+      const tp = abiertas(precios), ts = abiertas(sectores);
+      const lim = (cfg && Number(cfg.diasVidriera)) || 15;
+      const vids = Object.values(vidrieras || {}).map(v => { const cs = Object.values(v.cambios || {}).sort((a, b) => (b.ts || 0) - (a.ts || 0)); const tsv = cs.length ? cs[0].ts : (v.creado && v.creado.ts); return tsv ? { vidriera: v.nombre || v.titulo || 'Vidriera', dias_sin_cambios: diasDesde(tsv), tope: Number(v.diasAlerta) || lim } : null; }).filter(Boolean);
+      pend.tareas = (precios || sectores || vidrieras) ? {
+        cambios_de_precio_pendientes: tp.length, sectores_de_marca_pendientes: ts.length,
+        vencidas: tp.concat(ts).filter(venc).slice(0, 8).map(x => (x.titulo || 'Tarea') + ' (vencía ' + (x.vigencia || x.limite) + ')'),
+        vidrieras_en_alerta: vids.filter(v => v.dias_sin_cambios >= v.tope)
+      } : 'la sucursal todavía no usa el módulo Tareas';
+    }
+    out.pendientes = pend;
+  }
+  out.aviso = 'La venta es provisoria: la que se cargó en el portal, no el cierre oficial.';
+  return out;
+}
+
 function herramientas(guia) {
   return [
     {
@@ -252,6 +376,18 @@ function herramientas(guia) {
         },
         required: ['codigos'], additionalProperties: false
       }
+    },
+    {
+      name: 'resumen_gestion',
+      description: 'Datos de gestión del local desde el portal: objetivo de la semana y del mes con la venta provisoria cargada (% de la meta, cuánto falta, días cargados), indicadores de la semana (UPT, ticket promedio), venta por vendedor, y los PENDIENTES de la sucursal (F8 sin confirmar, reposición disponible del depósito, mercadería nueva que le baja, tareas vencidas, vidrieras en alerta). Una cuenta de sucursal solo ve la suya (no hace falta pasar sucursal). Gerencia y supervisor pueden pedir una sucursal por nombre, o «todas» para comparar el avance de todas contra su meta.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          sucursal: { type: 'string', description: 'Opcional. Nombre de la sucursal (solo gerencia/supervisor), o «todas».' },
+          que: { type: 'string', enum: ['todo', 'ventas', 'pendientes'], description: 'Opcional. Qué parte traer; por defecto todo.' }
+        },
+        additionalProperties: false
+      }
     }
   ];
 }
@@ -277,6 +413,14 @@ export async function onRequestPost(ctx) {
   try { body = await ctx.request.json(); } catch (e) { return json({ error: 'JSON inválido' }, 400); }
   const email = String(body.email || '').trim().toLowerCase();
   if (!email) return json({ error: 'Falta la sesión del Portal.' }, 401);
+
+  // 👍 / 👎 de una respuesta: se anota en su entrada del log (no gasta modelo ni cuenta para el tope)
+  if (body.accion === 'voto') {
+    const id = String(body.id || ''), voto = body.voto === -1 ? -1 : 1;
+    if (!/^\d{4}-\d{2}_[a-z0-9]{6,20}$/.test(id)) return json({ error: 'id inválido' }, 400);
+    try { await fetch(FB_ASIS + '/log/' + id.slice(0, 7) + '/' + id + '.json', { method: 'PATCH', body: JSON.stringify({ voto, votoPor: email, votoNota: String(body.nota || '').slice(0, 300) || null }) }); } catch (e) {}
+    return json({ ok: true });
+  }
 
   // Conversación: solo user/assistant, texto, recortada; tiene que abrir y cerrar con el usuario
   let mensajes = (Array.isArray(body.mensajes) ? body.mensajes : [])
@@ -321,7 +465,8 @@ export async function onRequestPost(ctx) {
   ];
 
   const modelo = env.ASISTENTE_MODELO || MODELO_DEF;
-  const tools = herramientas(guia).filter(t => !esPuesto || t.name !== 'guia_modulo');
+  const conGestion = !esPuesto && ['admin', 'supervisor', 'sucursal', 'outlet', 'deposito'].indexOf(user.rol) >= 0;
+  const tools = herramientas(guia).filter(t => (t.name !== 'guia_modulo' || !esPuesto) && (t.name !== 'resumen_gestion' || conGestion));
   const conv = mensajes.slice();
   const usadas = [];
   let tin = 0, tout = 0, data = null;
@@ -340,6 +485,7 @@ export async function onRequestPost(ctx) {
             res = guia.modulos[k] ? { modulo: k, nombre: guia.modulos[k].nombre, guia: guiaTexto(guia, k, user.rol) } : { error: 'módulo desconocido' };
           } else if (p.name === 'buscar_catalogo') res = await buscarCatalogo(p.input || {});
           else if (p.name === 'consultar_stock') res = await consultarStock(p.input || {}, user);
+          else if (p.name === 'resumen_gestion') res = conGestion ? await resumenGestion(p.input || {}, user) : { error: 'Esta cuenta no tiene acceso a los datos de gestión.' };
           else res = { error: 'herramienta desconocida' };
         } catch (e) { res = { error: String(e.message || e) }; }
         return { type: 'tool_result', tool_use_id: p.id, content: JSON.stringify(res), is_error: !!res.error };
@@ -356,10 +502,11 @@ export async function onRequestPost(ctx) {
   // Contadores + log (no frenan la respuesta)
   const inc = { '.sv': { increment: 1 } };
   const pregunta = mensajes[mensajes.length - 1].content;
+  const lid = dia.slice(0, 7) + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   ctx.waitUntil(Promise.all([
     fetch(FB_ASIS + '/uso/' + dia + '.json', { method: 'PATCH', body: JSON.stringify({ [mk]: inc, _total: inc }) }),
-    fetch(FB_ASIS + '/log/' + dia.slice(0, 7) + '.json', { method: 'POST', body: JSON.stringify({ ts: { '.sv': 'timestamp' }, mail: email, rol: user.rol || '', suc, modulo, q: pregunta.slice(0, 500), r: respuesta.slice(0, 800), tools: usadas, tin, tout, modelo }) })
+    fetch(FB_ASIS + '/log/' + dia.slice(0, 7) + '/' + lid + '.json', { method: 'PUT', body: JSON.stringify({ ts: { '.sv': 'timestamp' }, mail: email, rol: user.rol || '', suc, modulo, q: pregunta.slice(0, 500), r: respuesta.slice(0, 800), tools: usadas, tin, tout, modelo }) })
   ]).catch(() => {}));
 
-  return json({ respuesta, restantes: Math.max(0, tope - usados - 1) });
+  return json({ respuesta, restantes: Math.max(0, tope - usados - 1), id: lid });
 }

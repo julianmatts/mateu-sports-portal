@@ -3119,7 +3119,7 @@ consulta). Etapa 1 = guía + catálogo; etapa 2 = stock desde el Buscador (hecha
   `ASISTENTE_TOPE_TOTAL` (1500). El mail tiene que existir en `discontinuos-mateu/usuarios` (el rol y
   la sucursal salen de ahí, no del navegador; seguridad blanda, sin PIN). Prompt = personaje + índice
   de módulos (bloque estable) + usuario y guía del módulo actual filtrada por rol. Bucle de
-  herramientas (máx. 4 vueltas): `guia_modulo` (guía de OTRO módulo) y `buscar_catalogo`
+  herramientas (máx. 5 vueltas): `guia_modulo` (guía de OTRO módulo), `consultar_stock`, `resumen_gestion` y `buscar_catalogo`
   (disciplina + rubro, marca y texto opcionales; 40 filas). La llamada al modelo está aislada en
   `llamarModelo`: cambiar de proveedor es tocar esa función.
 - **Etapa 2 — stock (20/09/2026)**: herramienta `consultar_stock({codigos[1..4], talle?})` → lee el
@@ -3164,7 +3164,29 @@ consulta). Etapa 1 = guía + catálogo; etapa 2 = stock desde el Buscador (hecha
   del quiosco), saludo y sugerencias de producto, **la charla se borra y el chat se cierra a los 90 s sin
   uso** (pantalla compartida) y una pasada de la lectora con el chat enfocado (texto sin espacios que entró
   en un instante, `pareceEscaneo`) NO se manda como pregunta: se deriva a `procesarEscaneo` del Buscador.
-- Pendiente: la etapa 3.
+- **Gestión del local (20/09/2026, «hacer todo» de Juli)**: herramienta `resumen_gestion({sucursal?, que?})` — sin
+  esperar la API, lee lo que ya está en Firebase: objetivo de la semana y del mes (`objetivos/semanas|meses`)
+  contra la venta provisoria (`ventaEquipo/<slug>/<lunes>`: % de la meta, falta para la meta y el ★ 120%, días
+  cargados, UPT, ticket promedio), venta por vendedor, y los **pendientes**: F8 sin confirmar
+  (`turnero-mateu/equipo/f8suc`), reposición disponible (`barrida/ultima`), mercadería que le baja
+  (`barrida/repartoSuc`), tareas vencidas y vidrieras en alerta. **Los permisos se aplican en la Function, no
+  en el prompt**: `sucursal`/`outlet` ven SOLO su slug (pedir otra devuelve error), `deposito` solo sus
+  pendientes, `admin`/`supervisor` cualquier sucursal por nombre o «todas» (avance de cada una vs. su meta; el
+  % total se calcula solo sobre las que cargaron venta); `puesto` y el resto no tienen la herramienta. ⚠ El
+  **objetivo personal y el ritmo por vendedor NO se calculan acá** (dependen de pesos por turno, curva de venta
+  y alias del padrón: darían un número distinto al de Mi Sucursal): Matts manda a «Cómo viene el equipo».
+  El mes de una semana = el de su domingo (`mesDeSemana`, igual que `objMesDeSemana`).
+- **«¿Te sirvió? Sí / No»** debajo de cada respuesta: la Function devuelve el `id` de la entrada del log
+  (`<YYYY-MM>_<id>`, ahora se escribe con PUT) y `POST {accion:'voto', id, voto}` le anota `voto` / `votoPor`.
+- **Panel de uso `asistente/index.html`** (solo `ADMINS` = julian@; link «🤖 Matts · qué preguntan y cuánto
+  gasta» en el ⚙ del Portal): consultas, cuentas, % que sirvió, gasto estimado del mes (tarifa de Haiku sobre
+  `tin`/`tout`; es un techo, no descuenta caché ni incluye los ✨ de la Academia), saldo estimado contra
+  `asistente/config/credito` (lo que se cargó en la consola; editable ahí), consultas por día, quién / desde
+  qué módulo / qué herramienta, y la lista de preguntas con filtros (no sirvió · gestión · stock · producto ·
+  uso del portal), buscador y «⧉ Copiar las que no sirvieron». Es con lo que se decide qué mejorar.
+- **Presentación**: paso «🤖 Conocé a Matts» en el tutorial del Portal y «Preguntale a Matts» en el de Mi
+  Sucursal (de ahí también lo aprende el propio Matts, vía la guía). Ícono 🤖 sumado a `shared/iconos.js`.
+- Pendiente: la etapa 3 y que Matts use los cursos de la Academia como fuente de producto.
 
 ## Reglas
 

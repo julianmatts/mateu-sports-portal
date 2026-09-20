@@ -16,6 +16,9 @@
    pantalla es compartida) y una pasada de la lectora con el chat enfocado
    no se manda como pregunta: se deriva al buscador.
 
+   Cada respuesta lleva «¿Te sirvió? Sí / No»: el voto va al log de la
+   Function y se ve en el panel de uso (asistente/).
+
    La charla vive en sessionStorage (se borra al cerrar la pestaña) y se
    manda recortada a las últimas vueltas. Clases con prefijo mat-.
    ============================================================ */
@@ -88,6 +91,9 @@
   +'.mat-m.bot{align-self:flex-start;background:#fff;border:1px solid #dce3f0;border-bottom-left-radius:4px}'
   +'.mat-m.yo{align-self:flex-end;background:var(--marca-navy,#0B1527);color:#fff;border-bottom-right-radius:4px}'
   +'.mat-m.err{align-self:flex-start;background:#fff4f4;border:1px solid #f1c4c4;color:#8a1c1c;font-size:13px}'
+  +'.mat-voto{align-self:flex-start;display:flex;gap:6px;margin:-4px 0 2px 4px;font-size:11.5px;color:#7b86a0;align-items:center}'
+  +'.mat-voto button{background:none;border:1px solid #d5dcea;border-radius:12px;padding:3px 9px;font-family:Barlow,sans-serif;font-size:11.5px;color:#56627c;cursor:pointer}'
+  +'.mat-voto button:hover{border-color:var(--marca-navy,#0B1527);color:var(--marca-navy,#0B1527)}'
   +'.mat-sug{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}'
   +'.mat-sug button{background:#fff;border:1px solid #cfd8ea;border-radius:16px;padding:6px 11px;font-family:Barlow,sans-serif;font-size:12.5px;color:var(--marca-navy,#0B1527);cursor:pointer;text-align:left}'
   +'.mat-sug button:hover{border-color:var(--marca-red,#CC0000)}'
@@ -250,7 +256,8 @@
     _puesto: ['Zapatilla para empezar a correr', 'Paleta de pádel para principiante', '¿En qué sucursal hay stock de un artículo?'],
     _def: ['¿Cómo se usa este módulo?', '¿En qué sucursal hay stock de un artículo?', 'Un cliente quiere empezar a correr, ¿qué zapatilla le recomiendo?', '¿Qué raquetas de tenis trabajamos?'],
     ubicaciones: ['¿Cómo cargo el stock del día?', '¿Cómo vinculo una etiqueta que no encuentra?', 'Un cliente busca paleta de pádel para principiante'],
-    indicadores: ['¿Cómo armo el equipo de la semana?', '¿Qué es el ritmo del objetivo?', '¿Cómo pido un compensatorio?'],
+    indicadores: ['¿Cómo venimos esta semana?', '¿Qué tengo pendiente hoy?', '¿Cómo viene el equipo?'],
+    portal: ['¿Cómo venimos esta semana?', '¿En qué sucursal hay stock de un artículo?', '¿Cómo se usa este módulo?'],
     'gestion-stock': ['¿Cómo comento un discontinuo?', '¿Cómo se lee meses de stock?'],
     barrida: ['¿Qué archivos necesito para la barrida?', '¿Qué hace «Abrir a más sucursales»?'],
     tareas: ['¿Cómo registro un cambio de vidriera?', '¿Cómo cargo el checklist de limpieza?']
@@ -273,6 +280,8 @@
     }
     CHAT.forEach(function(m){
       h += '<div class="mat-m ' + (m.err ? 'err' : m.role === 'user' ? 'yo' : 'bot') + '">' + (m.role === 'user' ? esc(m.content).replace(/\n/g,'<br>') : formato(m.content)) + '</div>';
+      if(m.id && !m.err) h += m.voto ? '<div class="mat-voto">' + (m.voto > 0 ? '✓ Gracias, anotado.' : '✓ Anotado: lo vamos a mejorar.') + '</div>'
+        : '<div class="mat-voto">¿Te sirvió? <button type="button" data-voto="1" data-vid="' + esc(m.id) + '">Sí</button><button type="button" data-voto="-1" data-vid="' + esc(m.id) + '">No</button></div>';
     });
     if(ESPERANDO) h += '<div class="mat-m bot mat-dots"><i></i><i></i><i></i></div>';
     $log.innerHTML = h;
@@ -308,11 +317,17 @@
     var mensajes = CHAT.slice(-12).map(function(m){ return { role:m.role, content:m.content }; });
     pedir('POST', { email:SESSION.email, modulo:modulo(), mensajes:mensajes }, function(st, d){
       ESPERANDO = false; $send.disabled = false;
-      if(st === 200 && d && d.respuesta) CHAT.push({ role:'assistant', content:d.respuesta });
+      if(st === 200 && d && d.respuesta) CHAT.push({ role:'assistant', content:d.respuesta, id:d.id || '' });
       else CHAT.push({ role:'assistant', err:true, content:(d && d.error) || 'No me pude conectar. Revisá internet y probá de nuevo.' });
       guardar(); pintar();
       try{ $txt.focus(); }catch(e){}
     });
+  }
+
+  function votar(id, voto){
+    for(var i=0;i<CHAT.length;i++) if(CHAT[i].id === id) CHAT[i].voto = voto;
+    guardar(); pintar();
+    pedir('POST', { accion:'voto', email:SESSION.email, id:id, voto:voto }, function(){});
   }
 
   function abrir(si){
@@ -356,6 +371,8 @@
         if(t.getAttribute){
           var sug = t.getAttribute('data-sug'), act = t.getAttribute('data-act');
           if(sug){ enviar(sug); return; }
+          var vid = t.getAttribute('data-vid');
+          if(vid){ votar(vid, t.getAttribute('data-voto') === '-1' ? -1 : 1); return; }
           if(act === 'cerrar'){ abrir(false); return; }
           if(act === 'nueva'){ if(!ESPERANDO){ CHAT = []; guardar(); pintar(); } return; }
         }

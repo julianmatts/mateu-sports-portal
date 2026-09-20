@@ -36,6 +36,7 @@
       { ic:'📬', t:'Bandeja de mensajes', d:'El tablero de avisos internos y los mensajes directos entre usuarios. Los no leídos aparecen marcados al entrar al Portal.' },
       { ic:'📅', t:'Calendario retail', d:'Arriba a la derecha está siempre la semana retail vigente y las fechas clave del calendario comercial.' },
       { ic:'⚙️', t:'Gestión de usuarios', d:'Desde el engranaje se dan de alta usuarios, se asignan herramientas y se resetean PINs.', roles:['admin'] },
+      { ic:'🤖', t:'Conocé a Matts', d:'Abajo a la izquierda de todas las pantallas está Matts, el asistente del portal. Escribile como a un compañero: te explica cómo se usa cada herramienta, te ayuda a recomendarle producto a un cliente («zapatilla para empezar a correr», «paleta de pádel para principiante») y te dice en qué sucursal hay stock de un artículo y en qué estantería está. Si tu cuenta es de sucursal, también te cuenta cómo venís con el objetivo y qué tenés pendiente. Debajo de cada respuesta podés marcar si te sirvió: con eso lo vamos mejorando.' },
       { ic:'❓', t:'Este tutorial', d:'Cada herramienta tiene su propio recorrido: aparece la primera vez que entrás y queda siempre disponible en el botón «?» de abajo a la derecha.' }
     ]},
 
@@ -46,6 +47,7 @@
       { ic:'📦', t:'Reposición disponible', d:'Cuando el depósito publica su análisis semanal, acá aparece lo que tu sucursal puede pedir, por artículo y talle.' },
       { ic:'📆', t:'Novedades del mes', d:'El calendario que antes mandabas en Excel, pero SEMANA POR SEMANA: solo la semana en curso se puede escribir. Anotá día por día lo que pasó (ausencias, horas extra, vacaciones, compensatorios, francos, reincorporaciones) y al cerrar la semana tocá «Confirmar la semana». Si no hubo nada, confirmalo igual con «Sin novedades». Los viernes, RRHH y el supervisor reciben la lista de las sucursales que no confirmaron.' },
       { ic:'🕘', t:'Compensatorios y horas', d:'Lo que la empresa le debe a cada persona: días de compensatorio y horas extra, por separado. Desde ahí pedís que se lo tome como tiempo libre o que lo cobre en plata; la solicitud le queda pendiente a RRHH y al supervisor. Si la aprueban se descuenta solo del saldo; si la rechazan, puede venir con un día sugerido.' },
+      { ic:'🤖', t:'Preguntale a Matts', d:'El botón «Matts» de abajo a la izquierda responde en el momento: «¿cómo venimos esta semana?», «¿qué tengo pendiente hoy?», «¿cómo viene el equipo?». También asesora sobre producto y te dice en qué sucursal hay stock de un artículo y dónde está guardado.', roles:['sucursal','outlet'] },
       { ic:'🗓️', t:'Meses de stock y Plantilla', d:'Más abajo: la foto de stock, ventas y ratio por rubro, y la dotación de la sucursal por rol y régimen (full/part time).' },
       { ic:'🏢', t:'Todas las sucursales', d:'Con el selector de sucursal podés mirar cualquiera, y «Todas las sucursales (comparar)» las pone una al lado de la otra.', roles:['admin','supervisor'] }
     ]},
