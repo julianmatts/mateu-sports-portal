@@ -24,8 +24,15 @@
    - ASESOR DEPORTIVO: conocimiento general + la herramienta
      buscar_catalogo, que lee recepciones-mateu/asistente/catalogo (el
      maestro de logística partido por disciplina y rubro). Es lo que se
-     trabajó en el año, NO stock: el prompt se lo prohíbe afirmar.
-   Todavía NO tiene datos en vivo (stock, ventas): etapas 2 y 3.
+     trabajó en el año, NO stock.
+   - STOCK (etapa 2, 20/09/2026): la herramienta consultar_stock lee el
+     Buscador de Artículos (ubicaciones-mateu/sucursales/<slug>/articulos)
+     por CÓDIGO, con una consulta puntual por clave a cada sucursal que
+     carga su stock ahí (hoy 6 de 17; solo algunas abren por talle). Es el
+     último stock que cargó cada local, no el sistema en vivo: la respuesta
+     lleva la fecha de carga y el prompt obliga a decirla. Una sucursal
+     que no carga stock en el Buscador es «sin dato», nunca «no tiene».
+   Todavía NO ve ventas ni el stock del sistema: etapa 3 (API MySQL).
 
    Seguridad blanda, como el resto del portal: el mail tiene que existir
    en discontinuos-mateu/usuarios (de ahí salen el rol y la sucursal, no
@@ -37,10 +44,19 @@
 const NOMBRE = 'Matts';
 const MODELO_DEF = 'claude-haiku-4-5';
 const TOPE_DEF = 60, TOPE_TOTAL_DEF = 1500;
-const MAX_MENSAJES = 12, MAX_CHARS = 1500, MAX_VUELTAS = 4, MAX_FILAS = 40;
+const MAX_MENSAJES = 12, MAX_CHARS = 1500, MAX_VUELTAS = 5, MAX_FILAS = 40;
 
 const FB_USUARIOS = 'https://discontinuos-mateu-default-rtdb.firebaseio.com/usuarios.json';
 const FB_ASIS = 'https://recepciones-mateu-default-rtdb.firebaseio.com/asistente';
+const FB_UBIC = 'https://ubicaciones-mateu-default-rtdb.firebaseio.com/sucursales';
+
+// Sucursales del Buscador de Artículos (mismo mapa que ubicaciones/index.html)
+const SUC_UBIC = {
+  'calle-12': 'Calle 12', 'city-bell': 'City Bell', 'diagonal': 'Diagonal 80', 'calle-47': 'Calle 47', 'calle-49': 'Calle 49',
+  'los-hornos': 'Los Hornos', 'plaza': 'Plaza', 'berisso': 'Berisso', 'ensenada': 'Ensenada', 'kids': 'Mateu Kids',
+  'aurelius-12': 'Aurelius 12', 'aurelius-5': 'Aurelius 5', 'aurelius-cb': 'Aurelius City Bell', 'adidas-12': 'Adidas 12',
+  'adidas': 'Adidas', 'originals': 'Originals', 'ecommerce': 'Ecommerce'
+};
 
 const ROL_TXT = {
   admin: 'gerencia', sucursal: 'encargado/a de sucursal', outlet: 'encargado/a de outlet', supervisor: 'supervisor de sucursales',
@@ -56,7 +72,7 @@ Hacés dos cosas:
 2. ASESOR DEPORTIVO: ayudás a recomendar producto como lo haría un especialista en el mostrador. El vendedor tiene al cliente adelante y necesita algo para decirle YA, así que tu respuesta SIEMPRE trae una recomendación, en este orden: (a) el criterio técnico en una o dos oraciones con lo que ya sabés (peso, balance y perfil de la raqueta; pisada y drop de la zapatilla; dureza del palo de hockey; etc.); (b) llamá a buscar_catalogo y nombrá 2 o 3 artículos concretos de lo que devuelva, con su código y por qué le sirven; (c) cerrá con UNA o DOS preguntas que afinarían la elección. Está prohibido contestar solo con preguntas o pedir datos antes de recomendar. Recomendá SOLO artículos que devuelva la herramienta: nunca inventes modelos ni códigos.
 
 Reglas firmes:
-- El catálogo es lo que la empresa trabajó este año. NO es stock: nunca digas que un artículo «hay», «queda» o «está en tal sucursal», ni des precios. Para saber si hay stock, mandalos al Buscador de Artículos, que muestra el stock y la ubicación en el depósito de SU PROPIA sucursal (no el de otras: para otra sucursal hay que consultarle a ese local o al sistema de gestión). Todavía no tenés acceso a stock ni a ventas; si te lo piden, decilo así.
+- STOCK: solo podés hablar de stock con lo que devuelve consultar_stock, nunca de memoria ni por el catálogo (el catálogo es lo que la empresa trabajó este año, no lo que hay). La herramienta busca por CÓDIGO: si te dan un nombre («la Kantana negra»), primero encontrá el código con buscar_catalogo (con la marca alcanza) y después consultá; si hay varios colores o modelos posibles, consultá los más probables (hasta 4 códigos en una sola llamada) o preguntá cuál. Al contestar: decí sucursal por sucursal cuántas unidades y, si la herramienta trae talles, los talles con stock; aclará SIEMPRE que es el último stock que cargó cada local en el Buscador, con su fecha, y que puede haber cambiado por ventas. Las sucursales que figuran «sin dato» no cargan su stock en el Buscador: no digas que no tienen, decí que hay que consultarles. Si una sucursal no abre por talle, decí el total y que el talle hay que confirmarlo con el local. Nunca des precios. Todavía no tenés acceso a ventas ni al stock del sistema de gestión.
 - No des consejos médicos: ante dolor o lesión, recomendá consultar a un profesional y limitá la charla al equipamiento.
 - Si te piden algo que no es del portal ni de deportes/producto, contestá en una línea que no es lo tuyo.
 - Respuestas cortas: 2 a 6 oraciones o una lista breve. Texto plano: podés usar **negrita** y viñetas con "• ", nada de títulos con # ni tablas.
@@ -95,16 +111,26 @@ async function buscarCatalogo(inp) {
   let disc = clave(inp.disciplina);
   disc = DISC_ALIAS[disc] || disc;
   const rubro = clave(inp.rubro);
-  if (['CALZADO', 'INDUMENTARIA', 'ACCESORIOS'].indexOf(rubro) < 0) return { error: 'rubro tiene que ser CALZADO, INDUMENTARIA o ACCESORIOS' };
-  let filas = null;
-  try { filas = await (await fetch(FB_ASIS + '/catalogo/partes/' + disc + '__' + rubro + '.json')).json(); } catch (e) { return { error: 'No pude leer el catálogo en este momento.' }; }
-  if (!Array.isArray(filas) || !filas.length) {
+  const marca = plano(inp.marca), palabras = plano(inp.texto).split(/\s+/).filter(Boolean);
+  if (rubro && ['CALZADO', 'INDUMENTARIA', 'ACCESORIOS'].indexOf(rubro) < 0) return { error: 'rubro tiene que ser CALZADO, INDUMENTARIA o ACCESORIOS' };
+  let filas = null;   // normalizadas a [código, artículo, marca, género, tipo, disciplina, rubro]
+  try {
+    if (disc && rubro) {
+      const f = await (await fetch(FB_ASIS + '/catalogo/partes/' + disc + '__' + rubro + '.json')).json();
+      if (Array.isArray(f)) filas = f.map(x => [x[0], x[1], x[2], x[3], x[4], disc, rubro]);
+    } else if (marca) {
+      // sin disciplina: partición por marca (para encontrar un modelo por nombre)
+      const mk = clave(inp.marca);
+      const f = await (await fetch(FB_ASIS + '/catalogo/porMarca/' + mk + '.json')).json();
+      if (Array.isArray(f)) filas = f.filter(x => !rubro || x[3] === rubro).map(x => [x[0], x[1], inp.marca, x[4], x[5], x[2], x[3]]);
+    } else return { error: 'Pasá disciplina + rubro, o al menos la marca.' };
+  } catch (e) { return { error: 'No pude leer el catálogo en este momento.' }; }
+  if (!filas || !filas.length) {
     let indice = null;
     try { indice = await (await fetch(FB_ASIS + '/catalogo/indice.json')).json(); } catch (e) {}
     const hay = indice ? Object.keys(indice).map(k => k + ' (' + Object.keys(indice[k].rubros || {}).join('/').toLowerCase() + ')').join(', ') : '';
-    return { resultados: [], nota: 'No hay artículos para esa disciplina y rubro. Disciplinas disponibles: ' + hay };
+    return { resultados: [], nota: 'No encontré artículos con esos datos. Disciplinas disponibles: ' + hay };
   }
-  const marca = plano(inp.marca), palabras = plano(inp.texto).split(/\s+/).filter(Boolean);
   const ok = filas.filter(f => {
     if (marca && plano(f[2]).indexOf(marca) < 0) return false;
     const donde = plano(f[1] + ' ' + f[4] + ' ' + f[3] + ' ' + f[0]);
@@ -115,8 +141,55 @@ async function buscarCatalogo(inp) {
   return {
     total: ok.length,
     marcas,
-    resultados: ok.slice(0, MAX_FILAS).map(f => ({ codigo: f[0], articulo: f[1], marca: f[2], genero: f[3], tipo: f[4] })),
+    resultados: ok.slice(0, MAX_FILAS).map(f => ({ codigo: f[0], articulo: f[1], marca: f[2], genero: f[3], tipo: f[4], disciplina: f[5], rubro: f[6] })),
     nota: ok.length > MAX_FILAS ? 'Se muestran ' + MAX_FILAS + ' de ' + ok.length + ': afiná con marca o texto.' : undefined
+  };
+}
+
+/* Stock del Buscador de Artículos, por código. Qué sucursales cargan stock ahí se averigua una vez por
+   hora (meta de cada una) y queda en memoria del isolate, así la consulta solo pega en las que tienen datos. */
+let SUC_CON_STOCK = null, SUC_CON_STOCK_TS = 0;
+async function sucursalesConStock() {
+  if (SUC_CON_STOCK && Date.now() - SUC_CON_STOCK_TS < 3600e3) return SUC_CON_STOCK;
+  const slugs = Object.keys(SUC_UBIC);
+  const metas = await Promise.all(slugs.map(sl => fetch(FB_UBIC + '/' + sl + '/meta.json').then(r => r.json()).catch(() => null)));
+  const con = {};
+  slugs.forEach((sl, i) => { const m = metas[i]; if (m && m.totalArticulos > 0) con[sl] = { cargado: m.ultimaCargaStock || 0 }; });
+  SUC_CON_STOCK = con; SUC_CON_STOCK_TS = Date.now();
+  return con;
+}
+function fechaAR(ts) { if (!ts) return 'sin fecha'; const d = new Date(ts - 3 * 3600e3); return ('0' + d.getUTCDate()).slice(-2) + '/' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '/' + d.getUTCFullYear(); }
+function fbKey(c) { return String(c).trim().replace(/[.#$\/\[\]]/g, '-'); }   // igual que ubicaciones/index.html
+
+async function consultarStock(inp, user) {
+  const codigos = (Array.isArray(inp.codigos) ? inp.codigos : [inp.codigos]).map(c => String(c || '').trim().toUpperCase()).filter(Boolean).slice(0, 4);
+  if (!codigos.length) return { error: 'Falta el código del artículo.' };
+  const talle = String(inp.talle || '').trim().toUpperCase().replace(',', '.');
+  const con = await sucursalesConStock();
+  const slugs = Object.keys(con);
+  const q = 'orderBy=' + encodeURIComponent('"$key"');
+  const pedidos = [];
+  codigos.forEach(c => slugs.forEach(sl => pedidos.push(
+    fetch(FB_UBIC + '/' + sl + '/articulos.json?' + q + '&equalTo=' + encodeURIComponent(JSON.stringify(fbKey(c)))).then(r => r.json()).then(o => ({ c, sl, a: o && Object.values(o)[0] })).catch(() => ({ c, sl, a: null, fallo: true }))
+  )));
+  const res = await Promise.all(pedidos);
+  const miSuc = user.sucursal || user.outlet_id || '';
+  const articulos = codigos.map(c => {
+    const filas = res.filter(x => x.c === c && x.a && x.a.stock > 0).map(x => {
+      const t = (x.a.talles || []).filter(z => z && z.t && /[0-9A-Z]/i.test(String(z.t)) && z.c > 0).map(z => ({ talle: String(z.t), u: z.c }));
+      const f = { sucursal: SUC_UBIC[x.sl] + (x.sl === miSuc ? ' (la sucursal del usuario)' : ''), unidades: x.a.stock, cargado: fechaAR(x.a.ultimaCarga || con[x.sl].cargado) };
+      if (t.length) { f.talles = t.map(z => z.talle + ' (' + z.u + ' u.)').join(', '); if (talle) f.tiene_el_talle_pedido = t.some(z => z.talle.toUpperCase().replace(',', '.') === talle); }
+      else f.talles = 'esta sucursal no abre el stock por talle: confirmar con el local';
+      return f;
+    });
+    const desc = (res.find(x => x.c === c && x.a) || {}).a;
+    return { codigo: c, descripcion: desc ? desc.descripcion : undefined, con_stock: filas, nota: filas.length ? undefined : 'Ninguna de las sucursales con dato tiene stock cargado de este código (o el código no existe en el Buscador).' };
+  });
+  return {
+    articulos,
+    sucursales_con_dato: slugs.map(sl => SUC_UBIC[sl] + ' (stock del ' + fechaAR(con[sl].cargado) + ')'),
+    sucursales_sin_dato: Object.keys(SUC_UBIC).filter(sl => !con[sl]).map(sl => SUC_UBIC[sl]),
+    aviso: 'Es el último stock que cargó cada sucursal en el Buscador de Artículos, no el sistema en vivo.'
   };
 }
 
@@ -129,7 +202,7 @@ function herramientas(guia) {
     },
     {
       name: 'buscar_catalogo',
-      description: 'Busca artículos que Mateu Sports trabajó este año, por disciplina y rubro. Devuelve código, artículo, marca, género y tipo. NO informa stock ni precio. Disciplinas habituales: TENIS, PADDLE, HOCKEY, RUNNING, TRAINING, FUTBOL (indumentaria y accesorios), FUTBOL 11 y FUTBOL 5 (botines), BASQUET, RUGBY, VOLEY, NATACION, BOX, ADVENTURE, CASUAL, ORIGINALS, CALZADO VERANO, ARQUERO, HANDBALL, YOGA, TENIS DE MESA. Las raquetas, paletas, palos, pelotas y protecciones están en el rubro ACCESORIOS.',
+      description: 'Busca artículos que Mateu Sports trabajó este año. Dos formas: por disciplina + rubro (para recomendar), o solo por marca + texto (para encontrar el código de un modelo por su nombre, p.ej. marca Adidas, texto kantana). Devuelve código, artículo, marca, género y tipo. NO informa stock ni precio (para stock: consultar_stock con el código). Disciplinas habituales: TENIS, PADDLE, HOCKEY, RUNNING, TRAINING, FUTBOL (indumentaria y accesorios), FUTBOL 11 y FUTBOL 5 (botines), BASQUET, RUGBY, VOLEY, NATACION, BOX, ADVENTURE, CASUAL, ORIGINALS, CALZADO VERANO, ARQUERO, HANDBALL, YOGA, TENIS DE MESA. Las raquetas, paletas, palos, pelotas y protecciones están en el rubro ACCESORIOS.',
       input_schema: {
         type: 'object',
         properties: {
@@ -138,7 +211,19 @@ function herramientas(guia) {
           marca: { type: 'string', description: 'Opcional. Ej.: Head, Wilson, Adidas' },
           texto: { type: 'string', description: 'Opcional. Palabras que tienen que estar en el nombre o el tipo del artículo. Ej.: raqueta, paleta, palo, botin' }
         },
-        required: ['disciplina', 'rubro'], additionalProperties: false
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'consultar_stock',
+      description: 'Stock por sucursal de uno o más artículos, por CÓDIGO (el que devuelve buscar_catalogo), según el último stock que cada sucursal cargó en el Buscador de Artículos. Devuelve unidades por sucursal, talles con stock cuando la sucursal los abre, y la fecha de carga. Algunas sucursales no cargan stock ahí: vienen en sucursales_sin_dato.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          codigos: { type: 'array', items: { type: 'string' }, description: 'De 1 a 4 códigos de artículo. Ej.: ["ADIID5563"]' },
+          talle: { type: 'string', description: 'Opcional. Talle que busca el cliente, tal como lo rotula el artículo (42, 9.5, M).' }
+        },
+        required: ['codigos'], additionalProperties: false
       }
     }
   ];
@@ -223,6 +308,7 @@ export async function onRequestPost(ctx) {
             const k = p.input && p.input.modulo;
             res = guia.modulos[k] ? { modulo: k, nombre: guia.modulos[k].nombre, guia: guiaTexto(guia, k, user.rol) } : { error: 'módulo desconocido' };
           } else if (p.name === 'buscar_catalogo') res = await buscarCatalogo(p.input || {});
+          else if (p.name === 'consultar_stock') res = await consultarStock(p.input || {}, user);
           else res = { error: 'herramienta desconocida' };
         } catch (e) { res = { error: String(e.message || e) }; }
         return { type: 'tool_result', tool_use_id: p.id, content: JSON.stringify(res), is_error: !!res.error };

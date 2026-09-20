@@ -189,7 +189,7 @@
   }
 
   var SUGERENCIAS = {
-    _def: ['¿Cómo se usa este módulo?', 'Un cliente quiere empezar a correr, ¿qué zapatilla le recomiendo?', '¿Qué raquetas de tenis trabajamos?'],
+    _def: ['¿Cómo se usa este módulo?', '¿En qué sucursal hay stock de un artículo?', 'Un cliente quiere empezar a correr, ¿qué zapatilla le recomiendo?', '¿Qué raquetas de tenis trabajamos?'],
     ubicaciones: ['¿Cómo cargo el stock del día?', '¿Cómo vinculo una etiqueta que no encuentra?', 'Un cliente busca paleta de pádel para principiante'],
     indicadores: ['¿Cómo armo el equipo de la semana?', '¿Qué es el ritmo del objetivo?', '¿Cómo pido un compensatorio?'],
     'gestion-stock': ['¿Cómo comento un discontinuo?', '¿Cómo se lee meses de stock?'],
@@ -253,7 +253,7 @@
       +    '<button type="button" class="mat-hb" data-act="cerrar" aria-label="Cerrar">✕</button></div>'
       +  '<div class="mat-log"></div>'
       +  '<div class="mat-form"><textarea placeholder="Escribile a ' + NOMBRE + '…" maxlength="1500" rows="1"></textarea><button type="button" class="mat-send">Enviar</button></div>'
-      +  '<div class="mat-pie">Todavía no ve stock ni ventas. Puede equivocarse: ante la duda, consultá.</div>'
+      +  '<div class="mat-pie">El stock es el último que cargó cada sucursal en el Buscador. Puede equivocarse: ante la duda, consultá.</div>'
       +'</div>'
       +'<button type="button" class="mat-fab" aria-label="Abrir a ' + NOMBRE + '"><div class="mat-av">' + avatarSvg() + '</div><span>' + NOMBRE + '</span></button>';
     document.body.appendChild(w);

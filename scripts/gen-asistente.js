@@ -11,7 +11,8 @@
 
    2) CATÁLOGO     → Firebase recepciones-mateu, nodo asistente/catalogo/
       Parte el maestro de logística (logistica/arts) por disciplina y
-      rubro, para que la Function baje solo el pedacito que necesita.
+      rubro (partes/) y por marca (porMarca/), para que la Function baje
+      solo el pedacito que necesita.
       NO es stock: es lo que se movió en el año. Correr después de la
       carga mensual de logística:
           node scripts/gen-asistente.js catalogo          (muestra, no escribe)
@@ -79,12 +80,15 @@ async function generarCatalogo(publicar) {
   console.log('Bajando logistica/arts…');
   const arts = await pedir(DB + '/logistica/arts.json');
   const RUBROS = { CALZADO: 1, INDUMENTARIA: 1, ACCESORIOS: 1 };
-  const partes = {}, indice = {};
+  const partes = {}, indice = {}, porMarca = {}, marcas = {};
   Object.keys(arts || {}).forEach(k => {
     const v = arts[k]; // [rubro, sub, disc, marca, idItem, artículo, tipo, código]
     if (!v || !RUBROS[v[0]] || !v[2] || /desconocid/i.test(v[2])) return;
     const disc = clave(v[2]), nodo = disc + '__' + v[0];
     (partes[nodo] = partes[nodo] || []).push([v[7] || k, v[5] || '', v[3] || '', sinNN(v[1]), v[6] || '']);
+    // segunda partición, por marca: para buscar un modelo por nombre sin saber la disciplina («Adidas Kantana»)
+    const mk = clave(v[3]);
+    if (mk) { (porMarca[mk] = porMarca[mk] || []).push([v[7] || k, v[5] || '', v[2], v[0], sinNN(v[1]), v[6] || '']); marcas[mk] = v[3]; }
     indice[disc] = indice[disc] || { nombre: v[2], rubros: {} };
     indice[disc].rubros[v[0]] = (indice[disc].rubros[v[0]] || 0) + 1;
   });
@@ -92,7 +96,8 @@ async function generarCatalogo(publicar) {
   nodos.forEach(n => console.log('  ' + n + ': ' + partes[n].length));
   console.log(nodos.length + ' particiones · ' + nodos.reduce((s, n) => s + partes[n].length, 0) + ' artículos · ' + Object.keys(indice).length + ' disciplinas');
   if (!publicar) { console.log('\n(sin --publicar: no se escribió nada)'); return; }
-  await pedir(DB + '/asistente/catalogo.json', 'PUT', { generado: new Date().toISOString(), indice, partes });
+  console.log(Object.keys(porMarca).length + ' marcas');
+  if (publicar) await pedir(DB + '/asistente/catalogo.json', 'PUT', { generado: new Date().toISOString(), indice, marcas, partes, porMarca });
   console.log('Publicado en asistente/catalogo');
 }
 
