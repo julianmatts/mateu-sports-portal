@@ -3744,6 +3744,7 @@ function veDetailHtml(ve, metaVal, prevVe){
     const stats=[];
     if(hayMeta){ stats.push({l:'Horas venta', v:x.horas?fmt2(x.horas)+' h':'—', cls:x.horas?'':'dim'}); stats.push({l:'Su meta', v:x.meta?objMoney(x.meta):'—', cls:x.meta?'':'dim'}); }
     stats.push({l:'Venta', v:objMoney(x.venta), cls:'big'});
+    if(hayMeta) stats.push(eqDifStat(x.venta, x.meta||0));
     if(hayMeta) stats.push({l:'% de su meta', v:x.meta?Math.round(pctInd*100)+'%':'—', cls:x.meta?'':'dim', color:x.meta?pctCol(pctInd):null});
     stats.push({l:'Participación', v:w+'%'});
     if(hayTk) stats.push({l:'Tickets', v:fmtN(x.tickets||0)});
@@ -3758,6 +3759,7 @@ function veDetailHtml(ve, metaVal, prevVe){
     const pctTot = metaRef?totV/metaRef:0;
     tst.push({l:'Horas venta', v:fmt2(hTot)+' h'}); tst.push({l:'Meta', v:metaRef?objMoney(metaRef):'—'});
     tst.push({l:'Venta', v:objMoney(totV), cls:'big'});
+    tst.push(eqDifStat(totV, metaRef));
     tst.push({l:'% de la meta', v:metaRef?Math.round(pctTot*100)+'%':'—', color:metaRef?pctCol(pctTot):null});
   } else tst.push({l:'Venta', v:objMoney(totV), cls:'big'});
   tst.push({l:'Participación', v:'100%'});
@@ -4707,6 +4709,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
     } else {
       stats.push({l:'Venta', v:row.venta?objMoney(row.venta):'—', cls:row.venta?'big':'dim'});
     }
+    if(metaVal && !editReal) stats.push(eqDifStat(row.venta, row.share?row.meta:0));
     if(metaVal) stats.push({l:'% de su meta', v:(row.venta&&row.meta)?Math.round(pct*100)+'%':'—', cls:(row.venta&&row.meta)?'':'dim', color:(row.venta&&row.meta)?pctCol(pct):null});
     stats.push({l:'Participación', v:(totReal?wp+'%':'—'), cls:totReal?'':'dim'});
     const notaMin = (!row.fuera && metaVal && row.share)
@@ -4726,6 +4729,7 @@ function eqDistribHtml(slug, sem, v, ve, eqData, pesos, prevVe){
   const tst=[{l:'Horas venta', v:fmt2(totHs)+' h'}];
   if(metaVal) tst.push({l:'Meta', v:objMoney(metaVal*totSh)});
   tst.push({l:'Venta', v:totReal?objMoney(totReal):'—', cls:'big'});
+  if(metaVal && !editReal) tst.push(eqDifStat(totReal, metaVal*totSh));
   if(metaVal) tst.push({l:'% de la meta', v:(totReal&&totSh)?Math.round(totReal/(metaVal*totSh)*100)+'%':'—', color:(totReal&&totSh)?pctCol(totReal/(metaVal*totSh)):null});
   tst.push({l:'Participación', v:totReal?'100%':'—'});
   h+=eqTotalCardHtml(tst);
@@ -4759,6 +4763,13 @@ function eqCardHtml(o){
   if(o.part!=null) h+='<div class="eqv-bar" title="Participación en la venta del equipo: '+Math.round(o.part*100)+'%"><i style="width:'+Math.max(0,Math.min(100,Math.round(o.part*100)))+'%"></i></div>';
   if(o.detalle) h+='<div class="eqv-det">'+o.detalle+'</div>';
   return h+'</div>';
+}
+// Diferencia entre la venta y la meta, ya calculada (para no sacar la cuenta a mano):
+// «+$X» en verde si la pasó, «−$X» en rojo si le falta. Sin meta o sin venta → «—».
+function eqDifStat(venta, meta){
+  if(!(meta>0) || !(venta>0)) return {l:'Diferencia', v:'—', cls:'dim'};
+  const d=Math.round(venta-meta);
+  return {l:d>=0?'Sobre la meta':'Falta', v:(d>=0?'+':'−')+objMoney(Math.abs(d)), color:d>=0?'var(--ok,#16a34a)':'#dc2626'};
 }
 function eqTotalCardHtml(stats){
   return '<div class="eqv-tot"><div class="eqv-nom">Total equipo</div><div class="eqv-stats">'
