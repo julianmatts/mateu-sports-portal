@@ -106,8 +106,8 @@
   /* Avatar de Matts: SILUETA ATLÉTICA ARTICULADA (estética de gráfica deportiva: blanca sobre navy, acentos
      rojos, líneas de velocidad, leve inclinación). Tiene esqueleto de verdad —torso, hombro+codo, cadera+
      rodilla— y un motor chico (animarAvatares) interpola entre poses clave 30 veces por segundo, así
-     corre con ciclo de carrera real, pega el drive, patea, salta y tira al aro, barre con el palo de hockey y
-     tira jab-cross, y PASA de un deporte al otro transformando la pose (sin fundidos). Con
+     corre con ciclo de carrera real, pega el drive, patea, pica la pelota y emboca en el aro, y tira
+     jab-cross, y PASA de un deporte al otro transformando la pose (sin fundidos). Con
      «reducir movimiento» queda fija en la zancada. Historia: 1.º pictograma de palitos («el colgado») y 2.º
      muñeco cabezón («dibujito de bebé»), los dos rechazados por Juli el 20/09/2026: no volver a eso. */
   function seg(largo, ancho, color){ return '<path d="M0 0 L0 '+largo+'" stroke="'+color+'" stroke-width="'+ancho+'" stroke-linecap="round" fill="none"/>'; }
@@ -137,6 +137,7 @@
       +   '<g transform="translate(1.5 0)">'+pierna('R', F)+'</g>'
       +   '<g data-j="torsoF">' + '<g transform="translate(1 -23)">'+brazo('R', F, RAQ + PALO)+'</g></g>'
       + '</g>'
+      + '<g data-p="aro" opacity="0" transform="translate(-10 3)"><path d="M93 8 V27" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M79.5 23 L81.5 32 M85 23.6 L85 33 M90.5 23 L88.5 32 M80.6 27.5 H89.4" stroke="#fff" stroke-width=".9" opacity=".75" fill="none"/><ellipse class="s-red" cx="85" cy="22.5" rx="6.6" ry="1.9" stroke-width="2" fill="none"/><path class="s-red" d="M91.6 22.5 H93" stroke-width="2"/></g>'
       + '<g data-j="pelota" opacity="0"><circle data-p="b" r="3" fill="#fff"/></g>'
       + '</g></svg>';
   }
@@ -161,16 +162,18 @@
       [[-10, 0, -32,32,  52,22,    5, 8,  54, 5,   81,83,1], 140],
       [[-15,-2, -52,32,  72,22,    3, 5,  84,10,  120,46,1], 290],
       [[  0, 0,  22,32, -22,32,    8,12, -15,30,  120,46,0], 360] ]},
-    { n:'basquet', pel:[4.6,'#ff7a2f'], loops:2, k:[
-      [[10, 6,   78,112, 82,116,  38,68,  32,62,   67,40,1], 400],
-      [[ 2,-5,  150,28, 162,16,    5, 8,  -8,22,   62, 2,1], 250],
-      [[ 4,-4,  140,32, 128,72,    8,10,  -5,16,  112,-8,1], 290],
-      [[10, 4,   62,82,  62,82,   26,46,  22,40,  112,-8,0], 360] ]},
-    { n:'hockey', prop:'palo', pel:[2.6,'#ffd21f'], loops:2, k:[
-      [[38, 3,   52,18,  30,14,   30,42, -25,36,   86,89,1], 420],
-      [[41, 3,   86,10,  92, 8,   32,40, -25,30,   88,89,1], 150],
-      [[36, 2,  104,16, 118,14,   28,35, -22,30,  122,89,1], 280],
-      [[38, 3,   66,20,  58,15,   30,42, -25,36,  122,89,0], 350] ]},
+    { n:'basquet', prop:'aro', pel:[4.6,'#ff7a2f'], loops:1, k:[
+      [[15, 3,   35,45,  42,62,   26,38, -16,32,   71,60,1], 300],   // pica: la mano empuja…
+      [[15, 4,   35,45,  55,28,   26,38, -16,32,   73,88,1], 170],   // …la pelota va al piso
+      [[15, 3,   35,45,  42,62,   26,38, -16,32,   71,60,1], 190],
+      [[15, 4,   35,45,  55,28,   26,38, -16,32,   73,88,1], 170],
+      [[15, 3,   35,45,  42,62,   26,38, -16,32,   71,60,1], 190],
+      [[10, 6,   78,112, 82,116,  38,68,  32,62,   66,41,1], 300],   // se agrupa con la pelota al pecho
+      [[ 2,-5,  150,28, 162,16,    5, 8,  -8,22,   62, 4,1], 230],   // salta y suelta
+      [[ 3,-5,  142,30, 140,55,    6, 9,  -6,18,   67, 0,1], 150],   // la pelota sube
+      [[ 4,-3,  140,32, 128,72,    8,10,  -5,16,   75,24,1], 230],   // entra al aro
+      [[10, 4,   62,82,  62,82,   26,46,  22,40,   75,39,1], 230],   // cae por la red mientras aterriza
+      [[12, 3,   40,50,  40,55,   26,38, -16,32,   75,39,0], 260] ]},
     { n:'box', prop:'guante', loops:2, k:[
       [[10, 0,   58,128, 68,132,  18,18, -22,28,  0,0,0], 260],
       [[15,-1,   58,128,104, 4,   20,20, -24,24,  0,0,0], 110],
@@ -201,7 +204,7 @@
         J.pelota.setAttribute('transform', 'translate('+P[10].toFixed(1)+' '+P[11].toFixed(1)+')');
         J.pelota.setAttribute('opacity', P[12].toFixed(2));
         if(dep){
-          ['raq','palo','guante'].forEach(function(k){ (Pp[k]||[]).forEach(function(n){ n.setAttribute('opacity', dep.prop === k ? 1 : 0); }); });
+          ['raq','palo','guante','aro'].forEach(function(k){ (Pp[k]||[]).forEach(function(n){ n.setAttribute('opacity', dep.prop === k ? 1 : 0); }); });
           if(dep.pel) (Pp.b||[]).forEach(function(n){ n.setAttribute('r', dep.pel[0]); n.setAttribute('fill', dep.pel[1]); });
         }
       }

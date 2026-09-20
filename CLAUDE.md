@@ -3032,9 +3032,10 @@ consulta). Etapa 1 = guía + catálogo; etapa 2 = stock desde el Buscador (hecha
   estética de gráfica deportiva (blanca sobre navy, zapatillas y franja rojas, piso con filo rojo, líneas de
   velocidad, leve `skewX`). Tiene esqueleto real (torso, hombro+codo, cadera+rodilla; el lado de atrás va
   más apagado para dar profundidad) y un motor propio que interpola entre **poses clave** del mapa
-  `DEPORTES` (running con ciclo de carrera, tenis, fútbol, básquet, hockey, box) con `setInterval` de 33 ms
+  `DEPORTES` (running con ciclo de carrera, tenis, fútbol, básquet —pica, salta y emboca en un aro que aparece
+  solo en ese deporte— y box; **hockey se sacó el 20/09: Juli lo leía como esquí**) con `setInterval` de 33 ms
   —no `requestAnimationFrame`: en vistas embebidas no dispara— y PASA de un deporte al otro transformando
-  la pose. Raqueta, palo, guantes y pelota son `data-p` que se prenden por deporte. Sumar un deporte = una
+  la pose. Raqueta, aro, guantes y pelota son `data-p` que se prenden por deporte. Sumar un deporte = una
   entrada en `DEPORTES` (ángulos en grados, positivo = adelante; ver el comentario de campos). Con «reducir
   movimiento» queda fija en la zancada. ⚠ Juli rechazó las dos versiones anteriores el mismo día: el
   pictograma de palitos («parece el colgado») y el muñeco cabezón con vincha («dibujito de bebé»). La vara
@@ -3052,13 +3053,20 @@ consulta). Etapa 1 = guía + catálogo; etapa 2 = stock desde el Buscador (hecha
   Buscador de Artículos (`ubicaciones-mateu/sucursales/<slug>/articulos`) con una consulta puntual por
   clave (`orderBy="$key"&equalTo`, clave = `fbKey` del Buscador) a cada sucursal que carga stock ahí; cuáles
   son se averigua una vez por hora con el `meta` de cada una (`sucursalesConStock`, en memoria del isolate).
-  Devuelve por artículo `con_stock` (sucursal, unidades, talles con stock si los abre, fecha de carga),
+  Devuelve por artículo `con_stock` (sucursal, unidades, **ubicación en el depósito** —estantería · módulo ·
+  piso, con los nombres de `estanterias/<id>` y los pisos de `PISOS`, copia de `DEPOSITOS_SUC` del Buscador;
+  pedido de Juli el mismo día: preguntó dónde estaba la camiseta de EDLP en Diagonal 80 y Matts lo mandó a
+  Logística—, talles con stock si los abre, fecha de carga),
   `no_lo_tienen` (cargan stock y el artículo no figura), y las `sucursales_sin_dato`. Al 20/09 cargan stock 6 de 17 (Diagonal 80, Calle 49,
   Berisso, Ensenada, Aurelius 12, Aurelius 5) y **solo Calle 49 y Aurelius 12 abren por talle** — el techo de
   esta etapa es ese: más sucursales cargando su stock con talle en el Buscador = mejores respuestas, sin
   tocar código. Para llegar del nombre al código, `buscar_catalogo` acepta **solo marca + texto**
   (partición `catalogo/porMarca/<MARCA>`); el 90 % de los códigos del Buscador está en el catálogo. La ven
   todos los roles (el stock entre sucursales no es sensible); el `puesto` sigue sin Matts.
+- **Vocabulario de la casa en el prompt**: «Diagonal 80 / la 80 / casa matriz» es una SUCURSAL (Matts la
+  confundía con el módulo «Apertura Diagonal 80»); «EDLP / Estudiantes / Pincha» = marca Ruge, y la camiseta
+  oficial es la que lleva el año («M/C EDLP HOME 26»), no las AMATEUR/JR. Sumar ahí la jerga que aparezca
+  en `asistente/log`.
 - **Reglas del prompt que no hay que aflojar**: de stock habla SOLO con lo que devuelve `consultar_stock`,
   siempre con la fecha de carga y aclarando que no es el sistema en vivo; «sin dato» ≠ «no tiene»; nunca
   precios; solo recomienda artículos que devuelve la herramienta; no

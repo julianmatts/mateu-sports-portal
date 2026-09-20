@@ -54,6 +54,8 @@ const FB_ASIS = 'https://recepciones-mateu-default-rtdb.firebaseio.com/asistente
 const FB_UBIC = 'https://ubicaciones-mateu-default-rtdb.firebaseio.com/sucursales';
 
 // Sucursales del Buscador de Artículos (mismo mapa que ubicaciones/index.html)
+// Sucursales con más de un depósito: rango de estanterías → piso (copia de DEPOSITOS_SUC del Buscador)
+const PISOS = { diagonal: [['Subsuelo', 1, 26], ['2° piso', 27, 9999]] };
 const SUC_UBIC = {
   'calle-12': 'Calle 12', 'city-bell': 'City Bell', 'diagonal': 'Diagonal 80', 'calle-47': 'Calle 47', 'calle-49': 'Calle 49',
   'los-hornos': 'Los Hornos', 'plaza': 'Plaza', 'berisso': 'Berisso', 'ensenada': 'Ensenada', 'kids': 'Mateu Kids',
@@ -75,6 +77,9 @@ Hacés dos cosas:
 2. ASESOR DEPORTIVO: ayudás a recomendar producto como lo haría un especialista en el mostrador. El vendedor tiene al cliente adelante y necesita algo para decirle YA, así que tu respuesta SIEMPRE trae una recomendación, en este orden: (a) el criterio técnico en una o dos oraciones con lo que ya sabés (peso, balance y perfil de la raqueta; pisada y drop de la zapatilla; dureza del palo de hockey; etc.); (b) llamá a buscar_catalogo y nombrá 2 o 3 artículos concretos de lo que devuelva, con su código y por qué le sirven; (c) cerrá con UNA o DOS preguntas que afinarían la elección. Está prohibido contestar solo con preguntas o pedir datos antes de recomendar. Recomendá SOLO artículos que devuelva la herramienta: nunca inventes modelos ni códigos.
 
 Reglas firmes:
+- UBICACIÓN EN EL DEPÓSITO: cuando pregunten dónde está guardado un artículo (estantería, módulo, piso) en una sucursal, eso sale de consultar_stock (campo ubicacion_en_el_deposito): buscá el código y consultá, y contestá con la ubicación de la sucursal que pidieron. Nunca mandes a preguntar a Logística, al Turnero ni a nadie por una ubicación sin haber consultado antes.
+- SUCURSALES: «Diagonal 80», «la 80» o «casa matriz» es una SUCURSAL (la más grande), igual que Calle 49, City Bell, Berisso, etc. No la confundas con el módulo del portal «Apertura Diagonal 80», que fue una herramienta para planificar el surtido de la apertura.
+- MARCAS PROPIAS: «EDLP», «Estudiantes», «el Pincha» o «la camiseta del club» = marca **Ruge** (códigos RUG…, p.ej. la camiseta titular es «M/C EDLP HOME»). «Home» = titular, «away» = suplente. Buscalas con marca Ruge y texto «edlp home»; la camiseta oficial de la temporada es la que lleva el año en el nombre («M/C EDLP HOME 26»): las «AMATEUR», «JR», «KIDS» o con sufijos (S, RE, SS) son otras líneas o variantes, no las elijas salvo que las pidan.
 - STOCK: solo podés hablar de stock con lo que devuelve consultar_stock, nunca de memoria ni por el catálogo (el catálogo es lo que la empresa trabajó este año, no lo que hay). La herramienta busca por CÓDIGO: si te dan un nombre («la Kantana negra»), primero encontrá el código con buscar_catalogo (con la marca alcanza) y después consultá; si hay varios colores o modelos posibles, consultá los más probables (hasta 4 códigos en una sola llamada) o preguntá cuál. Al contestar: decí sucursal por sucursal cuántas unidades y, si la herramienta trae talles, los talles con stock; aclará SIEMPRE que es el último stock que cargó cada local en el Buscador, con su fecha, y que puede haber cambiado por ventas. Las de «no_lo_tienen» cargan su stock completo y ese artículo NO figura: decí «no lo tienen», no mandes a consultarles. Las sucursales que figuran «sin dato» no cargan su stock en el Buscador: no digas que no tienen, decí que hay que consultarles. Si una sucursal no abre por talle, decí el total y que el talle hay que confirmarlo con el local. Nunca des precios. Todavía no tenés acceso a ventas ni al stock del sistema de gestión.
 - No des consejos médicos: ante dolor o lesión, recomendá consultar a un profesional y limitá la charla al equipamiento.
 - Si te piden algo que no es del portal ni de deportes/producto, contestá en una línea que no es lo tuyo.
@@ -176,6 +181,22 @@ async function consultarStock(inp, user) {
     fetch(FB_UBIC + '/' + sl + '/articulos.json?' + q + '&equalTo=' + encodeURIComponent(JSON.stringify(fbKey(c)))).then(r => r.json()).then(o => ({ c, sl, a: o && Object.values(o)[0] })).catch(() => ({ c, sl, a: null, fallo: true }))
   )));
   const res = await Promise.all(pedidos);
+  // Ubicación en el depósito: los artículos guardan ids (est29 / mod1); los nombres salen de estanterias/<id>.
+  // Se baja solo la estantería que hace falta, una vez.
+  const estPed = {};
+  res.forEach(x => { if (x.a && x.a.ubicaciones) Object.values(x.a.ubicaciones).forEach(u => { if (u && u.estanteriaId) estPed[x.sl + '|' + u.estanteriaId] = 1; }); });
+  const estDoc = {};
+  await Promise.all(Object.keys(estPed).slice(0, 24).map(k => { const [sl, id] = k.split('|'); return fetch(FB_UBIC + '/' + sl + '/estanterias/' + id + '.json').then(r => r.json()).then(d => { estDoc[k] = d; }).catch(() => {}); }));
+  function ubicTxt(sl, a) {
+    return Object.values(a.ubicaciones || {}).filter(u => u && u.estanteriaId).map(u => {
+      const d = estDoc[sl + '|' + u.estanteriaId] || {};
+      const nEst = parseInt(String(u.estanteriaId).replace(/\D/g, ''), 10);
+      const est = d.nombre || ('Estantería ' + (nEst || u.estanteriaId));
+      const mod = (d.modulos && d.modulos[u.moduloId] && d.modulos[u.moduloId].nombre) || (u.moduloId ? 'Módulo ' + String(u.moduloId).replace(/\D/g, '') : '');
+      const piso = (PISOS[sl] || []).filter(r => nEst >= r[1] && nEst <= r[2]).map(r => r[0])[0];
+      return est + (mod ? ' · ' + mod : '') + (piso ? ' (' + piso + ')' : '');
+    });
+  }
   const miSuc = user.sucursal || user.outlet_id || '';
   const articulos = codigos.map(c => {
     const filas = res.filter(x => x.c === c && x.a && x.a.stock > 0).map(x => {
@@ -183,6 +204,8 @@ async function consultarStock(inp, user) {
       const f = { sucursal: SUC_UBIC[x.sl] + (x.sl === miSuc ? ' (la sucursal del usuario)' : ''), unidades: x.a.stock, cargado: fechaAR(x.a.ultimaCarga || con[x.sl].cargado) };
       if (t.length) { f.talles = t.map(z => z.talle + ' (' + z.u + ' u.)').join(', '); if (talle) f.tiene_el_talle_pedido = t.some(z => z.talle.toUpperCase().replace(',', '.') === talle); }
       else f.talles = 'esta sucursal no abre el stock por talle: confirmar con el local';
+      const ub = ubicTxt(x.sl, x.a);
+      f.ubicacion_en_el_deposito = ub.length ? ub.join(' y ') : 'sin ubicar todavía en el depósito de esa sucursal';
       return f;
     });
     const desc = (res.find(x => x.c === c && x.a) || {}).a;
@@ -220,7 +243,7 @@ function herramientas(guia) {
     },
     {
       name: 'consultar_stock',
-      description: 'Stock por sucursal de uno o más artículos, por CÓDIGO (el que devuelve buscar_catalogo), según el último stock que cada sucursal cargó en el Buscador de Artículos. Devuelve unidades por sucursal, talles con stock cuando la sucursal los abre, y la fecha de carga. Algunas sucursales no cargan stock ahí: vienen en sucursales_sin_dato.',
+      description: 'Stock por sucursal de uno o más artículos, por CÓDIGO (el que devuelve buscar_catalogo), según el último stock que cada sucursal cargó en el Buscador de Artículos. Devuelve unidades por sucursal, la UBICACIÓN EN EL DEPÓSITO de cada sucursal (estantería, módulo y piso), talles con stock cuando la sucursal los abre, y la fecha de carga. Es la herramienta para «¿dónde está guardado X?», «¿en qué estantería está?» y «¿hay stock de X?». Algunas sucursales no cargan stock ahí: vienen en sucursales_sin_dato.',
       input_schema: {
         type: 'object',
         properties: {
