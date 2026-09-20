@@ -171,6 +171,7 @@ async function cargar(){
   ]);
   DATA.operarios=ope||{}; DATA.zonas=zon||{}; DATA.asignZona=asig||{}; DATA.pickings=pick||{};
   DATA.eventos=evs||{}; DATA.seq=num(seq)||1841; DATA.bar.ultima=ultima||null;
+  try{ DATA.ingControl=(await fbGet('ingreso/control'))||{}; }catch(e){ DATA.ingControl={}; }
   await sincronizarOperarios();
   if(ultima){
     const lk=fbKey(ultima);
@@ -305,12 +306,22 @@ function renderPanel(){
   const conDifCola=all.filter(p=>p.con_diferencias && p.estado!=='FINALIZADO').length;
   let uPend=0; all.forEach(P=>{ if(P.estado!=='FINALIZADO'){ const r=pickResumen(P); uPend+=Math.max(0,r.req-r.pick); } });
   // ---- producción del período: picks completados (picking) en el rango ----
-  const comp=all.filter(P=>P.completed_at && enPer(P.completed_at));
+  const fTipo=state.panelTipo||'';
+  const comp=all.filter(P=>P.completed_at && enPer(P.completed_at) && (!fTipo||tipoDe(P)===fTipo));
+  // eventos del período (y del tipo elegido): errores de scan, excepciones y etiquetas confirmadas
+  const tipoDeNro=nro=>{ const P=DATA.pickings[fbKey(nro)]; return P?tipoDe(P):''; };
+  const evs=vals(DATA.eventos).filter(e=>e && enPer(e.ts) && (!fTipo||tipoDeNro(e.picking_id)===fTipo));
+  const porOp={}; const opDe=e=>e.operator_id||'—';
+  const cuenta=(e,k)=>{ const o=porOp[opDe(e)]||(porOp[opDe(e)]={err:0,exc:0,link:0}); o[k]++; };
+  const excs=[], excMot={};
+  evs.forEach(e=>{ if(e.event_type==='sku_error'||e.event_type==='control_error') cuenta(e,'err');
+    else if(e.event_type==='scan_exception'){ cuenta(e,'exc'); excs.push(e); const m=(e.value&&e.value.motivo)||'—'; excMot[m]=(excMot[m]||0)+1; }
+    else if(e.event_type==='ean_linked') cuenta(e,'link'); });
   let uPick=0,uReq=0,uFalt=0,totMs=0,picksT=0,linesT=0; const prod={},faltBySku={},faltByZona={};
   comp.forEach(P=>{ const r=pickResumen(P); uPick+=r.pick; uReq+=r.req; const d=pickDur(P);
     if(P.operario&&d){ const o=prod[P.operario]||(prod[P.operario]={picks:0,units:0,lines:0,ms:0,exc:0}); o.exc+=num(P.excepciones); o.picks++; o.units+=r.pick; o.lines+=r.skus; o.ms+=d; totMs+=d; picksT++; linesT+=r.skus; }
     vals(P.items||{}).forEach(it=>{ const f=num(it.requested_qty)-num(it.picked_qty); if(f>0){ faltBySku[it.codigo]=(faltBySku[it.codigo]||0)+f; faltByZona[it.zonaNombre||'Sin zona']=(faltByZona[it.zonaNombre||'Sin zona']||0)+f; uFalt+=f; } }); });
-  const errScan=vals(DATA.eventos).filter(e=>e&&(e.event_type==='sku_error'||e.event_type==='control_error')&&enPer(e.ts)).length;
+  const errScan=evs.filter(e=>e.event_type==='sku_error'||e.event_type==='control_error').length;
   let totU=0; Object.keys(prod).forEach(k=>totU+=prod[k].units);
   const uHora=totMs>0?Math.round(totU/(totMs/3600000)):0;
   const linHora=totMs>0?Math.round(linesT/(totMs/3600000)):0;
@@ -327,8 +338,10 @@ function renderPanel(){
   // período selector
   h+='<div class="sub" style="font-family:var(--font-c);font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 8px">Producción · '+esc(perLbl)+'</div>';
   h+='<div class="subtabs" style="margin-bottom:12px">'+['hoy','ayer','semana','todo'].map(p=>'<button class="subtab'+(per===p?' on':'')+'" data-per="'+p+'">'+({hoy:'Hoy',ayer:'Ayer',semana:'7 días',todo:'Todo'}[p])+'</button>').join('')+'</div>';
+  const tiposHay=[...new Set(all.map(tipoDe))];
+  if(tiposHay.length>1 || fTipo) h+='<div class="subtabs" style="margin-bottom:12px"><button class="subtab'+(!fTipo?' on':'')+'" data-ptipo="">Todas las tareas</button>'+tiposHay.map(t=>'<button class="subtab'+(fTipo===t?' on':'')+'" data-ptipo="'+esc(t)+'">'+esc(TIPO_LBL[t]||t)+'</button>').join('')+'</div>';
   h+='<div class="kgrid">'+ktile(fmtInt(comp.length),'Pickings','ok')+ktile(fmtInt(uPick),'Unidades')+ktile(prec+'%','Precisión',(prec>=99?'ok':(prec>=95?'warn':'dif')))
-    +ktile(fmtInt(uHora),'Unid./hora')+ktile(fmtInt(linHora),'Líneas/hora')+ktile(minPick?minPick+' min':'—','Min./pick')+ktile(fmtInt(uFalt),'Faltantes','warn')+ktile(fmtInt(errScan),'Errores scan','dif')+'</div>';
+    +ktile(fmtInt(uHora),'Unid./hora')+ktile(fmtInt(linHora),'Líneas/hora')+ktile(minPick?minPick+' min':'—','Min./pick')+ktile(fmtInt(uFalt),'Faltantes','warn')+ktile(fmtInt(errScan),'Errores scan','dif')+ktile(fmtInt(excs.length),'Sin escanear',excs.length?'warn':'')+'</div>';
 
   const recientes=all.slice().sort((a,b)=>cmp(b.created_at||'',a.created_at||'')).slice(0,25);
   h+='<div class="sec-head" style="margin:18px 0 8px"><div><h1 style="font-size:20px">Pickings</h1><div class="sub">Los 25 más recientes.</div></div></div>';
@@ -342,12 +355,36 @@ function renderPanel(){
   }).join('') : '<tr><td colspan="6" class="hint" style="padding:14px">Todavía no hay pickings.</td></tr>';
   h+='</tbody></table></div>';
 
-  const prodRows=Object.keys(prod).map(o=>({o:o,picks:prod[o].picks,units:prod[o].units,lines:prod[o].lines,ms:prod[o].ms,exc:prod[o].exc,uh:prod[o].ms>0?Math.round(prod[o].units/(prod[o].ms/3600000)):0})).sort((a,b)=>b.uh-a.uh);
+  const prodRows=Object.keys(prod).map(o=>({o:o,picks:prod[o].picks,units:prod[o].units,lines:prod[o].lines,ms:prod[o].ms,exc:Math.max(prod[o].exc,(porOp[o]||{}).exc||0),err:(porOp[o]||{}).err||0,link:(porOp[o]||{}).link||0,uh:prod[o].ms>0?Math.round(prod[o].units/(prod[o].ms/3600000)):0})).sort((a,b)=>b.uh-a.uh);
   h+='<div class="sec-head" style="margin:18px 0 8px"><div><h1 style="font-size:20px">Productividad por operario</h1><div class="sub">Pickings completados · '+esc(perLbl)+'.</div></div></div>';
-  h+='<div class="tbl-wrap"><table><thead><tr><th>Operario</th><th class="num">Pickings</th><th class="num">Unidades</th><th class="num">Líneas</th><th class="num">Tiempo</th><th class="num" title="Unidades contadas con «No puedo escanearla», sin leer la etiqueta">Sin escanear</th><th class="num">Unid./hora</th></tr></thead><tbody>';
-  h+= prodRows.length?prodRows.map(x=>'<tr><td><b>'+esc(x.o)+'</b></td><td class="num">'+x.picks+'</td><td class="num">'+fmtInt(x.units)+'</td><td class="num">'+fmtInt(x.lines)+'</td><td class="num">'+fmtDurMs(x.ms)+'</td><td class="num"'+(x.exc?' style="color:var(--warn);font-weight:700"':'')+'>'+fmtInt(x.exc)+'</td><td class="num"><b>'+fmtInt(x.uh)+'</b></td></tr>').join('')
-    :'<tr><td colspan="7" class="hint" style="padding:14px">Sin pickings completados en el período.</td></tr>';
+  h+='<div class="tbl-wrap"><table><thead><tr><th>Operario</th><th class="num">Pickings</th><th class="num">Unidades</th><th class="num">Líneas</th><th class="num">Tiempo</th><th class="num" title="Lecturas equivocadas: otro artículo u otro talle">Errores scan</th><th class="num" title="Unidades contadas con «No puedo escanearla», sin leer la etiqueta">Sin escanear</th><th class="num" title="Etiquetas que el portal no conocía y el operario confirmó a mano">Etiq. nuevas</th><th class="num">Unid./hora</th></tr></thead><tbody>';
+  h+= prodRows.length?prodRows.map(x=>'<tr><td><b>'+esc(x.o)+'</b></td><td class="num">'+x.picks+'</td><td class="num">'+fmtInt(x.units)+'</td><td class="num">'+fmtInt(x.lines)+'</td><td class="num">'+fmtDurMs(x.ms)+'</td><td class="num"'+(x.err?' style="color:var(--bad);font-weight:700"':'')+'>'+fmtInt(x.err)+'</td><td class="num"'+(x.exc?' style="color:var(--warn);font-weight:700"':'')+'>'+fmtInt(x.exc)+'</td><td class="num">'+fmtInt(x.link)+'</td><td class="num"><b>'+fmtInt(x.uh)+'</b></td></tr>').join('')
+    :'<tr><td colspan="9" class="hint" style="padding:14px">Sin pickings completados en el período.</td></tr>';
   h+='</tbody></table></div>';
+
+  // ---- unidades sin escanear: el detalle, para conversar con el operario ----
+  if(excs.length){
+    excs.sort((a,b)=>cmp(b.ts||'',a.ts||''));
+    h+='<div class="sec-head" style="margin:18px 0 8px"><div><h1 style="font-size:20px">Unidades sin escanear</h1><div class="sub">'+esc(perLbl)+' · '+Object.keys(excMot).sort((a,b)=>excMot[b]-excMot[a]).map(m=>esc(m.toLowerCase())+' <b>'+excMot[m]+'</b>').join(' · ')+'</div></div></div>';
+    h+='<div class="tbl-wrap"><table><thead><tr><th>Cuándo</th><th>Operario</th><th>Tarea</th><th>Artículo</th><th>Talle</th><th>Motivo</th></tr></thead><tbody>'
+      + excs.slice(0,40).map(e=>{ const P=DATA.pickings[fbKey(e.picking_id)]; const v=e.value||{};
+          return '<tr><td>'+esc(String(e.ts||'').slice(5,16))+'</td><td><b>'+esc(opDe(e))+'</b></td><td>#'+esc(e.picking_id)+(P?' · '+esc(tituloPick(P)):'')+(v.control?' <span class="pill pend">control</span>':'')+'</td><td>'+esc(e.sku_id||'')+'</td><td>'+esc(v.talle||'')+'</td><td>'+esc(v.motivo||'')+'</td></tr>'; }).join('')
+      + '</tbody></table></div>'+(excs.length>40?'<div class="hint" style="margin-top:4px">Se muestran las 40 más recientes de '+excs.length+'.</div>':'');
+  }
+
+  // ---- control de ingreso (camiones): por operario ----
+  const ingOps={}; let ingN=0;
+  Object.keys(DATA.ingControl||{}).forEach(k=>{ const C=DATA.ingControl[k]; if(!C||!C.terminado||!enPer(C.terminado_en)) return;
+    let u=0; Object.keys(C.scans||{}).forEach(x=>u+=num(C.scans[x])); Object.keys(C.unknown||{}).forEach(x=>u+=num(C.unknown[x]));
+    const ms=(C.terminado_ms&&C.iniciado_ms)?(C.terminado_ms-C.iniciado_ms):0; const nom=C.operario||'—';
+    const o=ingOps[nom]||(ingOps[nom]={rem:0,u:0,ms:0,uMs:0,desc:0}); o.rem++; o.u+=u; if(ms>0){ o.ms+=ms; o.uMs+=u; } Object.keys(C.unknown||{}).forEach(x=>o.desc+=num(C.unknown[x])); ingN++; });
+  if(ingN){
+    const rows=Object.keys(ingOps).map(n=>Object.assign({n:n,uh:ingOps[n].ms>0?Math.round(ingOps[n].uMs/(ingOps[n].ms/3600000)):0},ingOps[n])).sort((a,b)=>b.u-a.u);
+    h+='<div class="sec-head" style="margin:18px 0 8px"><div><h1 style="font-size:20px">Control de ingreso por operario</h1><div class="sub">Remitos controlados a ciegas en Ingreso de Mercadería · '+esc(perLbl)+'.</div></div></div>';
+    h+='<div class="tbl-wrap"><table><thead><tr><th>Operario</th><th class="num">Remitos</th><th class="num">Unidades</th><th class="num" title="EAN que no estaban en el remito">Fuera de remito</th><th class="num">Tiempo</th><th class="num">Unid./hora</th></tr></thead><tbody>'
+      + rows.map(x=>'<tr><td><b>'+esc(x.n)+'</b></td><td class="num">'+x.rem+'</td><td class="num">'+fmtInt(x.u)+'</td><td class="num">'+fmtInt(x.desc)+'</td><td class="num">'+(x.ms?fmtDurMs(x.ms):'—')+'</td><td class="num"><b>'+(x.uh?fmtInt(x.uh):'—')+'</b></td></tr>').join('')
+      + '</tbody></table></div>';
+  }
 
   const faltRows=Object.keys(faltBySku).map(k=>({k:k,n:faltBySku[k]})).sort((a,b)=>b.n-a.n).slice(0,15);
   const faltZonaRows=Object.keys(faltByZona).map(k=>({k:k,n:faltByZona[k]})).sort((a,b)=>b.n-a.n);
@@ -363,6 +400,7 @@ function renderPanel(){
   }
   $('view').innerHTML=h;
   document.querySelectorAll('[data-per]').forEach(b=>b.onclick=()=>{ state.panelPer=b.dataset.per; render(); });
+  document.querySelectorAll('[data-ptipo]').forEach(b=>b.onclick=()=>{ state.panelTipo=b.dataset.ptipo; render(); });
   const rl=$('reloadPanel'); if(rl) rl.onclick=async()=>{ rl.disabled=true; try{ await cargar(); render(); toast('Actualizado','ok'); }catch(e){ rl.disabled=false; toast('No pude actualizar','bad'); } };
 }
 

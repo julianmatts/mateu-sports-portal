@@ -252,7 +252,7 @@ const ordTalle=t=>{ const i=ING_ORD_TALLE.indexOf(String(t||'')); return i<0?99:
 function ctrlOf(key){ return DATA.control[key]||null; }
 function ctrlInit(key){ let C=DATA.control[key]; if(!C){ C={scans:{},unknown:{},operario:'',terminado:false,inicio:nowISO()}; DATA.control[key]=C; } if(!C.scans)C.scans={}; if(!C.unknown)C.unknown={}; return C; }
 function scanTot(C){ let t=0; if(!C) return 0; for(const k in (C.scans||{})) t+=num(C.scans[k]); for(const k in (C.unknown||{})) t+=num(C.unknown[k]); return t; }
-async function cargarIngreso(){ const [rem,con]=await Promise.all([ fbGet(ROOT_ING+'/remitos'), fbGet(ROOT_ING+'/control') ]); DATA.remitos=rem||{}; DATA.control=con||{}; }
+async function cargarIngreso(){ const [rem,con,ope]=await Promise.all([ fbGet(ROOT_ING+'/remitos'), fbGet(ROOT_ING+'/control'), fbGet('picking/operarios').catch(()=>null) ]); DATA.remitos=rem||{}; DATA.control=con||{}; DATA.ingOperarios=ope||{}; }
 
 function renderIngLista(){
   const pend = vals(DATA.remitos).filter(R=>{ const key=fbKey(R.nro); const C=ctrlOf(key); return !(C&&C.terminado) && !R.ingresado; })
@@ -286,7 +286,10 @@ function renderControl(){
     + '<div class="cam" id="cam"><video id="video" playsinline muted></video></div>'
     + '<div class="flash" id="flash"><span class="ic">📷</span><div><div class="big">Listo para escanear</div><div class="sub">El cursor queda en el campo (lector de mano) o tocá “Registrar”.</div></div></div>'
     + '<div class="hero"><span class="n" id="tot">0</span><span class="lbl">unidades controladas</span></div>'
-    + '<div class="opname"><label for="op">Operario</label><input class="inp" id="op" placeholder="Tu nombre (opcional)" value="'+esc(C.operario||'')+'"></div>'
+    + '<div class="opname"><label for="op">Operario</label><select class="inp" id="op"><option value="">Elegí tu nombre…</option>'
+    +   Object.keys(DATA.ingOperarios||{}).map(id=>DATA.ingOperarios[id]).filter(o=>o&&o.activo!==false).sort((a,b)=>cmp(a.nombre,b.nombre)).map(o=>'<option'+(o.nombre===(C.operario||state.pickYo||'')?' selected':'')+'>'+esc(o.nombre)+'</option>').join('')
+    +   (C.operario && !Object.keys(DATA.ingOperarios||{}).some(id=>DATA.ingOperarios[id].nombre===C.operario)?'<option selected>'+esc(C.operario)+'</option>':'')+'</select>'
+    +   '<span id="ingClock" class="pk-clock" style="margin-left:auto"></span></div>'
     + '</div><div class="oplist"><table><thead><tr><th>Talle</th><th class="num">Controladas</th></tr></thead><tbody id="opBody"></tbody></table></div></div>';
   h += '<div class="row-actions"><button class="btn btn-primary" id="done">✓ Terminé el control</button></div>';
   $('view').innerHTML = h;
@@ -294,14 +297,23 @@ function renderControl(){
   const inp=$('scan'); const doScan=()=>{ registrar(inp.value); inp.value=''; inp.focus(); };
   inp.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); doScan(); } });
   $('scanBtn').onclick=doScan; $('camBtn').onclick=toggleCam;
-  $('op').onchange=()=>{ const C=ctrlOf(_key); if(C){ C.operario=$('op').value.trim(); saveControl(_key); } };
+  $('op').onchange=()=>{ const C=ctrlOf(_key); if(C){ C.operario=$('op').value.trim(); state.pickYo=C.operario||state.pickYo; saveControl(_key); } };
+  pkInjectCss(); ingReloj();
   $('done').onclick=terminar;
   updateDom(); inp.focus();
 }
+// reloj del control de ingreso: corre desde la primera unidad escaneada
+let _ingTick=null;
+function ingReloj(){ const pinta=()=>{ const el=$('ingClock'), C=ctrlOf(_key); if(!el){ clearInterval(_ingTick); _ingTick=null; return; } if(!C||!C.iniciado_ms){ el.textContent=''; return; }
+    const s=Math.max(0,Math.floor((Date.now()-C.iniciado_ms)/1000)), hh=Math.floor(s/3600), mm=Math.floor(s%3600/60), ss=s%60; el.textContent='⏱ '+(hh?hh+':':'')+String(mm).padStart(hh?2:1,'0')+':'+String(ss).padStart(2,'0'); };
+  clearInterval(_ingTick); pinta(); _ingTick=setInterval(pinta,1000); }
 function registrar(raw){
   const R=DATA.remitos[_key]; if(!R) return;
   const ean=String(raw||'').replace(/\D/g,''); if(!ean) return;
-  const C=ctrlInit(_key); const sku=(R.minimap||{})[ean];
+  // el operario sale del padrón y es obligatorio: el control entra al dashboard con su nombre y su tiempo
+  const opSel=$('op')?$('op').value.trim():''; if(!opSel){ flash('bad','⚠','Elegí tu nombre','Antes de escanear, elegí quién está controlando.'); toast('Elegí tu nombre','bad'); return; }
+  const C=ctrlInit(_key); C.operario=opSel; if(!C.iniciado_ms){ C.iniciado_ms=Date.now(); C.iniciado_en=nowISO(); }
+  const sku=(R.minimap||{})[ean];
   if(sku){ C.scans[sku]=(C.scans[sku]||0)+1; const d=(R.declarado||{})[sku]||{}; flash('ok','✓','Talle '+(d.talle||sku)+' · +1', (d.desc||'')+' · '+ean); }
   else { C.unknown[ean]=(C.unknown[ean]||0)+1; flash('bad','⚠','EAN desconocido', ean+' — no está en este remito'); }
   updateDom(); saveControl(_key);
@@ -322,9 +334,10 @@ function saveControl(key, now){ const C=DATA.control[key]; if(!C) return; const 
 async function terminar(){
   const C=ctrlOf(_key); if(!C||scanTot(C)===0){ toast('No escaneaste nada','bad'); return; }
   if(!confirm('¿Terminaste el control de este remito? Se envía para que Ariel y Luis hagan la conciliación.')) return;
-  C.terminado=true; C.terminado_en=nowISO(); if($('op')) C.operario=$('op').value.trim();
+  C.terminado=true; C.terminado_en=nowISO(); C.terminado_ms=Date.now(); if($('op')&&$('op').value.trim()) C.operario=$('op').value.trim();
   const b=$('done'); if(b) b.disabled=true;
-  try{ await fbPut(ROOT_ING+'/control/'+_key,C); stopCam(); toast('Control enviado ✓','ok'); state.view='lista'; await cargarIngreso(); render(); }
+  try{ await fbPut(ROOT_ING+'/control/'+_key,C); stopCam(); toast('Control enviado ✓','ok');
+    { const Rr=DATA.remitos[_key]||{}; postAviso('📦 Control de ingreso terminado — remito '+(Rr.nro||_key)+' ('+(Rr.proveedor||'ADIDAS')+'): '+fmtInt(scanTot(C))+' u. controladas por '+(C.operario||'—')+'. Falta la conciliación en Ingreso de Mercadería.'); } state.view='lista'; await cargarIngreso(); render(); }
   catch(e){ if(b) b.disabled=false; toast('No se pudo enviar: '+e.message,'bad'); }
 }
 

@@ -2008,9 +2008,29 @@ sucursal**: un remito trae artículos que van a una u otra sucursal.
   **Excepción** (`pkExcepcion`, botón «No puedo escanearla»): una unidad por vez con motivo
   (`EXC_MOTIVOS`), suma `talles[].exc`, evento `scan_exception`, `excepciones` en el pick al cerrar y
   columna **«Sin escanear»** por operario en el Panel.
-- **Pendiente**: **Etapa 3** dashboard por tipo de tarea, etiquetas aprendidas por operario y detalle de
-  excepciones. **Etapa 4**: Ingreso de Mercadería (packing list digital, operario del padrón con
-  tiempos, enganche con el Reparto inicial).
+- **Etapa 3 (HECHA 20/09/2026) — dashboard**, Panel de `picking/`: filtro por **tipo de tarea**
+  (`state.panelTipo`, afecta producción, operarios y excepciones), tabla por operario con **Errores
+  scan · Sin escanear · Etiq. nuevas** (eventos `sku_error`/`control_error`, `scan_exception`,
+  `ean_linked` por `operator_id`), tabla **«Unidades sin escanear»** (las 40 más recientes: cuándo,
+  operario, tarea, artículo, talle, motivo + totales por motivo) y **«Control de ingreso por operario»**
+  (desde `ingreso/control`: remitos, unidades, fuera de remito, tiempo, unid./hora).
+- **Etapa 4 (HECHA 20/09/2026) — Ingreso de Mercadería**: (a) **packing list digital** en «+ Nuevo
+  remito» (`ingPackingDigital`/`ingLeerPacking`, Excel o CSV): cada fila se lee por CONTENIDO contra el
+  maestro — celda SKU, EAN, o artículo + talle en columnas separadas (la columna de talle se elige por
+  columna, no fila por fila: un nro. de caja «7» se leía como talle) —; cantidad = encabezado
+  Cantidad/Qty/Unidades/Pares o, sin encabezado, la columna de enteros chicos más llena (a igualdad la
+  de más a la derecha); suma repetidos, toma el nro. de remito si está a la vista y dispara «Resolver
+  detalle». ⚠ Sin validar con un packing real de la marca. (b) **Kiosco**: el operario del control
+  ciego es un select del padrón (`picking/operarios`) **obligatorio**; se guardan `iniciado_ms/en`
+  (primera unidad) y `terminado_ms`, reloj visible, y al terminar sale el **aviso** a la campana
+  (`postAviso`). (c) **Enganche con el Reparto inicial**: en la conciliación se carga el **Nº de remito
+  del sistema** (`remito_sistema`) al «Ingresar a stock» → índice liviano
+  `ingreso/ingresados/<nro corto>` = `{remito, remito_sistema, fecha, u, faltan, sobran, por}`; la lista
+  de remitos del Reparto inicial marca **«✓ controlado»** / «⚠ controlado con diferencias»
+  (`S.ingresados`, cruce por `repNroCorto`) y la conciliación linkea a Reparto de Mercadería.
+- **Pendiente**: probar cámara y lector en la tablet real; validar el packing digital con un archivo de
+  la marca; publicar al mapa del Buscador las etiquetas aprendidas que confirme el control final; hoja
+  de apertura de cajas; otras marcas en el Ingreso (hoy solo Adidas).
 
 ## Panel General de Logística (`logistica/`, 08/09/2026)
 

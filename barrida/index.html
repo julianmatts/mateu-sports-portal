@@ -4447,6 +4447,9 @@ async function repCargarMemoria(){
     intentar(conTimeout(fbGet(ROOT+'/repartoConfig'),8000)), intentar(conTimeout(fbGet(ROOT+'/repartos','shallow=true'),8000)) ]);
   S.hist = h.ok ? (h.v||{}) : null;          // null = no se pudo leer (no se guarda sin releerla)
   if(rr.ok) S.repartidos=rr.v||{};
+  // remitos que el depósito ya controló e ingresó a stock en Ingreso de Mercadería (índice liviano,
+  // clave = nro corto del remito del sistema): se marcan en la lista para repartirlos primero
+  try{ S.ingresados=(await conTimeout(fbGet('ingreso/ingresados'),8000))||{}; }catch(e){ S.ingresados=S.ingresados||{}; }
   if(cfg.ok && cfg.v && cfg.v.centrales) S.centrales=cfg.v.centrales;
   const ks=Object.keys((keys.ok&&keys.v)||{}).sort().reverse().slice(0,12);
   const metas=await Promise.all(ks.map(k=>intentar(conTimeout(fbGet(ROOT+'/repartos/'+k+'/meta'),8000))));
@@ -4646,7 +4649,10 @@ function repSeleccionHtml(){
       h+='<tr data-rsel="'+esc(r.nro)+'" class="'+(on?'on':'')+'"><td><input type="checkbox" tabindex="-1" '+(on?'checked':'')+'></td>'
         +'<td class="mono"><b>'+esc(repNroCorto(r.nro))+'</b> <small>'+esc(r.nro)+'</small></td><td>'+esc(r.marca)+'</td><td>'+esc(r.rubro)+'</td>'
         +'<td class="num mono">'+fmtInt(r.arts)+'</td><td class="num mono">'+fmtInt(r.u)+'</td>'
-        +'<td>'+(r.rep?'<span class="pill curva" title="Guardado como repartido el '+esc(r.rep.fecha||'')+(r.rep.por?' por '+esc(r.rep.por):'')+'">✓ repartido</span>':'<span style="color:var(--muted);font-size:12.5px">pendiente</span>')+'</td></tr>'; });
+        +'<td>'+(function(){ const g=(S.ingresados||{})[repNroCorto(r.nro)]; if(!g) return '';
+            const dif=(g.faltan||0)+(g.sobran||0);
+            return '<span class="pill" style="background:'+(dif?'#fff4e2;color:#9a5b00':'#e8f6ee;color:#1d7a44')+'" title="Controlado en Ingreso de Mercadería el '+esc(g.fecha||'')+' · remito del proveedor '+esc(g.remito||'')+' · '+fmtInt(g.u||0)+' u. controladas'+(dif?' · faltan '+(g.faltan||0)+', sobran '+(g.sobran||0):'')+'">'+(dif?'⚠ controlado con diferencias':'✓ controlado')+'</span> '; })()
+          +(r.rep?'<span class="pill curva" title="Guardado como repartido el '+esc(r.rep.fecha||'')+(r.rep.por?' por '+esc(r.rep.por):'')+'">✓ repartido</span>':'<span style="color:var(--muted);font-size:12.5px">pendiente</span>')+'</td></tr>'; });
     h+='</tbody></table></div>'+(vis.length>400?'<div style="font-size:12px;color:var(--muted);margin-top:6px">Se muestran 400 de '+fmtInt(vis.length)+': filtrá por marca o buscá.</div>':'');
   }
   return h+'</details>';

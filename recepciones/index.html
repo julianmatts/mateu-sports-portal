@@ -1628,6 +1628,9 @@ function ingOpenNuevo(){
     +   '<div class="field"><label>Fecha</label><input class="inp" id="inFec" type="date"></div>'
     +   '<div class="field"><label>Bultos</label><input class="inp num" id="inBul" type="number" min="1" step="1" placeholder="1"></div>'
     + '</div>'
+    + '<div class="field" style="margin-top:10px"><label>⇧ Importar packing list digital (Excel o CSV)</label>'
+    +   '<input type="file" id="inXls" accept=".xlsx,.xls,.csv,.txt" class="inp" style="padding:7px;width:100%">'
+    +   '<div id="inXlsMsg" class="msub" style="margin-top:6px">El archivo que manda la marca. No importa el orden de las columnas: se reconoce el SKU (o artículo + talle, o el EAN) contra el catálogo y la cantidad.</div></div>'
     + '<div class="field" style="margin-top:10px"><label>📷 Importar packing list (foto / scan)</label>'
     +   '<input type="file" id="inImg" accept="image/*" class="inp" style="padding:7px;width:100%">'
     +   '<div id="inOcr" class="msub" style="margin-top:6px">Sacá la foto lo más derecha y nítida posible. El OCR completa el detalle de abajo, corrigiendo los códigos contra el catálogo — <b>revisalo siempre</b> antes de guardar.</div></div>'
@@ -1640,6 +1643,7 @@ function ingOpenNuevo(){
   );
   try{ $('inFec').value = new Date().toISOString().slice(0,10); }catch(e){}
   const _img=$('inImg'); if(_img) _img.onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(f) ingOcrFile(f); };
+  const _xls=$('inXls'); if(_xls) _xls.onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(f) ingPackingDigital(f); };
   ING_OCR_DESC={};
   let resolved=null;
   $('inResolver').onclick=async()=>{
@@ -1674,6 +1678,71 @@ function ingOpenNuevo(){
     try{ await ingSaveRemito(rec); closeModal(); render(); toast('Remito '+nro+' pre-ingresado','ok'); }
     catch(e){ b.disabled=false; toast('No se pudo guardar: '+e.message,'bad'); }
   };
+}
+/* ---- packing list DIGITAL (Excel/CSV de la marca) → detalle (20/09/2026) ----
+   No se conoce un layout fijo, así que cada fila se lee por CONTENIDO contra el maestro: una celda
+   que es un SKU (material+talle), o material + talle en celdas separadas, o un EAN. La cantidad
+   es la columna con encabezado de cantidad o, si no hay, la columna de enteros chicos más llena.
+   Llena el textarea «SKU cantidad» y dispara «Resolver detalle» (mismo circuito que el tipeo). */
+async function ingPackingDigital(file){
+  const msg=$('inXlsMsg'); const say=(t,bad)=>{ if(msg) msg.innerHTML=(bad?'<b class="bad">':'')+t+(bad?'</b>':''); };
+  say('Leyendo '+esc(file.name)+'…');
+  try{
+    await loadMaestro();
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array'});
+    let mejor=null;
+    wb.SheetNames.forEach(sn=>{
+      const m=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:''}); if(!m.length) return;
+      const r=ingLeerPacking(m); if(!mejor || r.u>mejor.u) mejor=Object.assign(r,{hoja:sn}); });
+    if(!mejor || !mejor.lineas.length){ say('No encontré artículos del catálogo de Adidas en ese archivo. Revisá que sea el packing list (o pegá el detalle a mano).',true); return; }
+    $('inDet').value=mejor.lineas.map(l=>l.sku+' '+l.cant).join('\n');
+    if(mejor.remito && !$('inNro').value.trim()) $('inNro').value=mejor.remito;
+    say('Hoja «'+esc(mejor.hoja)+'»: <b>'+mejor.lineas.length+'</b> SKU · <b>'+fmtInt(mejor.u)+'</b> unidades (leído por '+esc(mejor.modo)+'; cantidad: '+esc(mejor.colCant)+')'
+      +(mejor.sinLeer?' · <b class="bad">'+mejor.sinLeer+' fila(s) con cantidad que no reconocí: revisalas</b>':'')+'. Revisá el detalle antes de guardar.');
+    $('inResolver').click();
+  }catch(e){ say('No pude leer el archivo: '+esc(e.message||String(e)),true); }
+}
+function ingLeerPacking(m){
+  const txt=v=>String(v==null?'':v).trim();
+  const ncol=m.reduce((a,r)=>Math.max(a,r.length),0);
+  // fila de encabezados = la primera con alguna palabra de cantidad
+  const RX_CANT=/^(cant|cantidad|qty|quantity|unid|unidades|pares|pcs|piezas|confirmad)/i;
+  let colCant=-1, hdr=-1;
+  for(let i=0;i<Math.min(m.length,40)&&colCant<0;i++){ for(let c=0;c<ncol;c++){ if(RX_CANT.test(txt(m[i][c]))){ colCant=c; hdr=i; break; } } }
+  // artículo y talle en columnas separadas: primero se ubica la columna del material (la que más
+  // pega contra el catálogo) y después la del talle — manda el encabezado Talle/Size y, si no hay,
+  // la columna que más SKU arma con ese material (sin la de cantidad; a igualdad, la más cercana).
+  // Elegirla por columna y no fila por fila evita que un nro. de caja «7» se lea como talle 7.
+  const talleSku=(mat,t)=>{ if(!mat||!t||t.length>5) return ''; if(skuInfo(mat+t)) return mat+t; if(/^\d+[.,]5$/.test(t)){ const g=mat+t.replace(/[.,]5$/,'-'); if(skuInfo(g)) return g; } return ''; };
+  const cuerpo=m.slice(hdr+1);
+  let colMat=-1, nMat=0; for(let c=0;c<ncol;c++){ let n=0; cuerpo.forEach(r=>{ const v=txt(r[c]).toUpperCase().replace(/\s+/g,''); if(v && MAESTRO.desc && MAESTRO.desc[v]) n++; }); if(n>nMat){ nMat=n; colMat=c; } }
+  let colTalle=-1;
+  if(colMat>=0){
+    if(hdr>=0) for(let c=0;c<ncol;c++){ if(c!==colMat && /^(talle|talla|size|medida)/i.test(txt(m[hdr][c]))){ colTalle=c; break; } }
+    if(colTalle<0){ let best=0; for(let c=0;c<ncol;c++){ if(c===colMat||c===colCant) continue; let n=0; cuerpo.forEach(r=>{ if(talleSku(txt(r[colMat]).toUpperCase().replace(/\s+/g,''), txt(r[c]).toUpperCase().replace(/\s+/g,''))) n++; });
+      if(n>best || (n===best && n>0 && Math.abs(c-colMat)<Math.abs(colTalle-colMat))){ best=n; colTalle=c; } } } }
+  // identificación de cada fila
+  const filas=[]; const modos={};
+  for(let i=hdr+1;i<m.length;i++){ const row=m[i]; let sku='', modo='';
+    const celdas=row.map(txt);
+    for(let c=0;c<celdas.length&&!sku;c++){ const v=celdas[c].toUpperCase().replace(/\s+/g,''); if(v.length<5) continue;
+      if(skuInfo(v)){ sku=v; modo='SKU'; break; }
+      const d=v.replace(/\D/g,''); if(d.length>=12 && d.length<=14 && /^[\d.,E+]+$/i.test(celdas[c])){ const inf=eanInfo(d)||eanInfo(d.replace(/^0/,'')); if(inf){ sku=inf.sku; modo='EAN'; break; } } }
+    if(!sku && colMat>=0 && colTalle>=0){ // material y talle en columnas separadas
+      const mat=celdas[colMat]?celdas[colMat].toUpperCase().replace(/\s+/g,''):'', t=celdas[colTalle]?celdas[colTalle].toUpperCase().replace(/\s+/g,''):'';
+      const cand=talleSku(mat,t); if(cand){ sku=cand; modo='artículo + talle'; } }
+    if(sku){ filas.push({i:i,sku:sku,row:row}); modos[modo]=(modos[modo]||0)+1; } }
+  if(colCant<0 && filas.length){ // sin encabezado: la columna de enteros chicos más llena entre las filas con artículo
+    let best=-1,bestN=0; for(let c=0;c<ncol;c++){ if(c===colMat||c===colTalle) continue; let n=0; filas.forEach(f=>{ const v=f.row[c]; const x=typeof v==='number'?v:parseFloat(txt(v).replace(',','.')); if(isFinite(x)&&x>0&&x<=5000&&Math.floor(x)===x&&txt(v).length<=4) n++; }); if(n>0 && n>=bestN){ bestN=n; best=c; } }   // a igualdad, la de más a la derecha (la cantidad va después de los identificadores)
+    colCant=best; }
+  const acum={}; let sinLeer=0;
+  filas.forEach(f=>{ const v=f.row[colCant]; const x=typeof v==='number'?v:parseFloat(txt(v).replace(',','.')); if(!(isFinite(x)&&x>0)){ sinLeer++; return; } acum[f.sku]=(acum[f.sku]||0)+Math.round(x); });
+  const lineas=Object.keys(acum).map(k=>({sku:k,cant:acum[k]}));
+  // nro de remito del proveedor, si el archivo lo trae a la vista
+  let remito=''; for(let i=0;i<Math.min(m.length,25)&&!remito;i++){ for(let c=0;c<(m[i]||[]).length;c++){ const mm=txt(m[i][c]).match(/\bR?\d{4}-\d{6,}\b/); if(mm){ remito=mm[0]; break; } } }
+  return { lineas:lineas, u:lineas.reduce((a,l)=>a+l.cant,0), sinLeer:sinLeer, remito:remito,
+    modo:Object.keys(modos).sort((a,b)=>modos[b]-modos[a])[0]||'—', colCant: hdr>=0?('columna «'+txt(m[hdr][colCant])+'»'):('columna '+(colCant+1)+', sin encabezado') };
 }
 function ingPrevTable(out){
   const rows=out.map(l=> l.error
@@ -1807,12 +1876,22 @@ async function ingViewConcil(){
   else if(!diff){ html+='<div class="ing-verdict ok">✓ Todo OK — '+fmtInt(decTot)+' u. Listo para ingresar a stock y compartir el remito para reparto.</div>'; }
   else { html+='<div class="ing-verdict bad">Diferencias: faltan '+falN+' u y sobran '+sobN+' u. Reportar a la marca antes de ingresar a stock.</div>'; }
   html+='<div class="ing-actions" style="margin-top:14px">';
-  if(!R.ingresado) html+='<button class="btn btn-primary" id="ingStock"'+(C.terminado?'':' disabled')+'>✓ Ingresar a stock</button>';
-  else html+='<span class="ing-pill ok">Ingresado a stock '+esc((R.ingresado_en||'').slice(0,10))+'</span>';
+  if(!R.ingresado) html+='<div class="field" style="margin:0;min-width:240px"><label>Nº de remito del sistema (para el Reparto inicial)</label><input class="inp" id="ingRemSis" placeholder="0005-00047640" value="'+esc(R.remito_sistema||'')+'"></div>'
+    +'<button class="btn btn-primary" id="ingStock"'+(C.terminado?'':' disabled')+'>✓ Ingresar a stock</button>';
+  else html+='<span class="ing-pill ok">Ingresado a stock '+esc((R.ingresado_en||'').slice(0,10))+'</span>'
+    +(R.remito_sistema?' <span class="ing-pill info">Remito del sistema '+esc(R.remito_sistema)+'</span>':'')
+    +' <a class="btn btn-primary btn-sm" style="text-decoration:none" href="../barrida/">Repartir en Reparto de Mercadería →</a>';
   html+='</div>';
+  if(C.terminado && (C.operario||C.iniciado_ms)){ const ms=(C.terminado_ms&&C.iniciado_ms)?(C.terminado_ms-C.iniciado_ms):0; const mins=Math.round(ms/60000);
+    html+='<div class="msub" style="margin-top:10px">Controló <b>'+esc(C.operario||'—')+'</b>'+(ms>0?(' en <b>'+(mins<1?'menos de 1 min':mins+' min')+'</b> · '+fmtInt(Math.round(conTotAll/(ms/3600000)))+' u./hora'):'')+'.</div>'; }
   $('view').innerHTML=html;
   $('ingBack2').onclick=()=>{ state.ing={view:'lista'}; render(); };
-  const st=$('ingStock'); if(st) st.onclick=async()=>{ st.disabled=true; R.ingresado=true; R.ingresado_en=nowISO(); try{ await ingSaveRemito(R); toast('Ingresado a stock — remito listo para reparto','ok'); render(); }catch(e){ st.disabled=false; toast('No se pudo: '+e.message,'bad'); } };
+  const st=$('ingStock'); if(st) st.onclick=async()=>{ st.disabled=true; R.ingresado=true; R.ingresado_en=nowISO();
+    R.remito_sistema=($('ingRemSis')&&$('ingRemSis').value.trim())||'';
+    // índice liviano para el Reparto inicial: clave = nro corto del remito del sistema (sin serie ni ceros)
+    const corto=R.remito_sistema.split('-').pop().replace(/\D/g,'').replace(/^0+/,'');
+    if(corto && !DEMO) fbPut(ROOT_ING+'/ingresados/'+corto, { remito:R.nro, remito_sistema:R.remito_sistema, fecha:R.ingresado_en, u:conTotAll, faltan:falN, sobran:sobN, por:_mail() }).catch(()=>{});
+    try{ await ingSaveRemito(R); toast('Ingresado a stock — remito listo para reparto','ok'); render(); }catch(e){ st.disabled=false; toast('No se pudo: '+e.message,'bad'); } };
 }
 
 /* ---- OCR del packing list (foto/scan) → detalle, con auto-corrección de códigos ----
