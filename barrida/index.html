@@ -367,6 +367,13 @@ td.talles .tw{display:flex;flex-wrap:wrap;align-items:flex-start;max-width:560px
 .rart-acc{margin-left:auto;display:flex;gap:10px;align-items:center}
 .rart.editando .rgrid-wrap{border-color:#2f6fd0;box-shadow:0 0 0 2px rgba(47,111,208,.15)}
 .pill.edit{background:#e7f0ff;color:#1d4f9e;border:1px solid #bcd3f5}
+/* criterio abrir / profundidad por remito y por artículo */
+.pill.cri{cursor:help;border:1px solid var(--border);background:#f1f4f9;color:var(--navy)}
+.pill.cri.prof{background:#0B1527;color:#fff;border-color:#0B1527}
+.pill.cri.mano{box-shadow:0 0 0 2px #bcd3f5}
+.rcri{display:inline-flex;align-items:center;gap:6px;font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.rcri select{font:600 12.5px Barlow,sans-serif;text-transform:none;letter-spacing:0;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--navy)}
+.rhead .rcri{margin-left:12px}.rhead .rcri span{color:inherit;opacity:.8}
 .resu .c-edit b{color:#1d4f9e}
 .rg-in{width:46px;padding:4px 2px;text-align:center;font:inherit;font-weight:700;color:var(--navy);border:1px solid var(--border);border-radius:6px;background:#fff;-moz-appearance:textfield}
 .rg-in::-webkit-outer-spin-button,.rg-in::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
@@ -3431,17 +3438,18 @@ state.rep = {
   mes:'', sel:{},         // mes de ingreso elegido ('' = todo) y remitos marcados
   f:{ marca:'', rubro:'', q:'', verRepartidos:false },
   destinos:null,          // slugs destino (null = todas menos los outlets)
-  param:{ uCentral:2, maxCentral:3, uResto:1, reserva:1, minTalles:3, excedente:false, ninoCurva:'prog', criterio:'abrir', reingresoProf:true, todoNinoFutbol:true,   /* el excedente queda de reserva (Juli 14/09/2026) */ respetarDisc:true, memoria:true, excluirVarios:true, huerfanos:true },
+  param:{ uCentral:2, maxCentral:3, uResto:1, reserva:1, minTalles:3, excedente:false, ninoCurva:'prog', criterio:'auto', reingresoProf:true, todoNinoFutbol:true,   /* el excedente queda de reserva (Juli 14/09/2026) */ respetarDisc:true, memoria:true, excluirVarios:true, huerfanos:true },
   centrales:null,         // talles centrales editados (se comparten en repartoConfig/centrales)
   res:null, vista:'remito', selOpen:true,
   hist:null, repartidos:{}, guardados:[], cargado:false, abierto:null,
+  criRem:{}, criArt:{},   // criterio elegido a mano por remito / por artículo: 'abrir' | 'profundidad' (sin entrada = lo que decida el nivel de arriba)
   manual:{},              // ajustes a mano antes de guardar: {'<remito>|<idItem>': {<slug>: {<talle>: unidades}}}
   edit:null,              // clave del artículo que se está editando a mano
 };
-function repGuardarPrefs(){ try{ localStorage.setItem(REP_PREFS, JSON.stringify({ v:2, param:state.rep.param, destinos:state.rep.destinos })); }catch(e){} }
+function repGuardarPrefs(){ try{ localStorage.setItem(REP_PREFS, JSON.stringify({ v:3, param:state.rep.param, destinos:state.rep.destinos })); }catch(e){} }
 (function repCargarPrefs(){ try{ const p=JSON.parse(localStorage.getItem(REP_PREFS)||'null'); if(!p) return;
   // v2 (14/09/2026): «Repartir el excedente» pasó a venir destildado; el tilde de las preferencias viejas no se toma
-  if(p.param) Object.keys(state.rep.param).forEach(k=>{ if(p.param[k]!=null && !(k==='excedente' && p.v!==2)) state.rep.param[k]=p.param[k]; });
+  if(p.param) Object.keys(state.rep.param).forEach(k=>{ if(p.param[k]!=null && !(k==='excedente' && (p.v||0)<2) && !(k==='criterio' && (p.v||0)<3)) state.rep.param[k]=p.param[k]; });   // v3 (20/09/2026): el criterio pasó a «automático» por defecto
   if(Array.isArray(p.destinos)) state.rep.destinos=p.destinos; }catch(e){} })();
 
 /* ---------- lectura de la estadística de remitos ----------
@@ -3553,7 +3561,7 @@ async function repCargarArchivo(file){
     let D=null, err=null;
     for(const sh of hojas){ try{ D=repParseRemitos(sh.matrix, file.name); if(D.filas.length) break; }catch(e){ err=e; D=null; } }
     if(!D || !D.filas.length) throw err || new Error('No encontré remitos con unidades en «'+file.name+'».');
-    const S=state.rep; S.data=D; S.sel={}; S.res=null; S.abierto=null; S.selOpen=true; S.manual={}; S.edit=null;
+    const S=state.rep; S.data=D; S.sel={}; S.res=null; S.abierto=null; S.selOpen=true; S.manual={}; S.criRem={}; S.criArt={}; S.edit=null;
     S.mes = D.meses.length ? String(D.meses[D.meses.length-1]) : '';
     render();
     toast(fmtInt(D.nRemitos)+' remitos leídos'+(D.conTalles?' (con talles)':''),'ok');
@@ -3933,6 +3941,25 @@ function repRotacion(a, slug, stock){
   return { rec, stock:st, r:Math.max(0, Math.min(1, 1-st/rec)) };
 }
 
+/* CRITERIO «abrir a más locales» / «mayor profundidad» POR REMITO Y POR ARTÍCULO (Juli 20/09/2026). El portal propone uno
+   de forma preliminar y se corrige a mano: manda lo elegido en el ARTÍCULO, si no lo del REMITO, si no el select general
+   y, si ese está en «automático», la propuesta. Propuesta: unidades que entraron ÷ curva base = para cuántas sucursales
+   alcanza; si alcanza para menos de la mitad de las candidatas → profundidad (pocas unidades: se concentran en las
+   primeras por prioridad); si no → abrir. Un artículo que vino en varios remitos toma el criterio del remito que más trae. */
+function repCriterioDe(a, perRem, labels, C, P, nCands){
+  const S=state.rep, tot=perRem.reduce((x,r)=>x+sumT(r.t),0);
+  const curva=labels.reduce((x,t)=>x+(C.per ? (C.per[t]||1) : C.set.has(t) ? P.uCentral : P.uResto),0) || 1;
+  const alcanza=Math.floor(tot/curva);
+  const auto = (nCands>0 && alcanza < nCands/2) ? 'profundidad' : 'abrir';
+  const ok=v=>v==='abrir'||v==='profundidad';
+  const remTop=perRem.slice().sort((x,y)=>sumT(y.t)-sumT(x.t)).map(r=>r.nro).find(n=>ok((S.criRem||{})[n]));
+  let c, origen;
+  if(ok((S.criArt||{})[a.id])){ c=S.criArt[a.id]; origen='art'; }
+  else if(remTop){ c=S.criRem[remTop]; origen='remito'; }
+  else if(ok(P.criterio)){ c=P.criterio; origen='general'; }
+  else { c=auto; origen='auto'; }
+  return { c, origen, auto, alcanza, nCands, tot, curva };
+}
 function repCandidatos(a, G, destinos){
   const P=state.rep.param, out=[];
   const VA=repVentaArt();
@@ -4262,10 +4289,15 @@ function repCalcular(){
     // excedente se sigue repartiendo, como hace el depósito a mano
     const todoP = !C.tranquila && P.todoNinoFutbol!==false && repTodoAlSalon(a, C.G);
     // verano fuera de temporada: sin curva profunda ni excedente, aunque sea de niño
-    let Pa = C.tranquila ? Object.assign({}, P, { criterio:'abrir', excedente:false }) : todoP ? Object.assign({}, P, { excedente:true, reserva:0 }) : P;
+    const cri=repCriterioDe(a, tl.perRem, labels, C, P, cands.length);
+    const aMano = cri.origen==='art' || cri.origen==='remito';
+    const Pc=Object.assign({}, P, { criterio:cri.c });
+    let Pa = C.tranquila ? Object.assign({}, P, { criterio:'abrir', excedente:false }) : todoP ? Object.assign({}, Pc, { excedente:true, reserva:0 }) : Pc;
     // criterio 5: en las semanas previas a una fecha comercial, profundidad y sin curva en el depósito
     const pico = C.tranquila ? '' : repPico(a, C.G);
-    if(pico) Pa = Object.assign({}, Pa, { criterio:'profundidad', reserva:0, pico:true });
+    // (lo elegido a mano en el remito o en el artículo le gana a la fecha comercial)
+    if(pico) Pa = Object.assign({}, Pa, { criterio: aMano ? cri.c : 'profundidad', reserva:0, pico:true });
+    a.cri = Object.assign(cri, { efectivo:Pa.criterio, fijo: C.tranquila ? 'fuera de temporada: curva tranquila' : '' });
     const out=repRepartirArt(tl.perRem, cands, C.set, Pa, C.per);
     if(C.tranquila) a.tranquila = true;
     if(todoP) a.todoAlSalon = true;
@@ -4474,7 +4506,7 @@ async function repGuardar(){
     await fbPatch(ROOT, upd);
     Object.entries(upd).forEach(([path,v])=>{ const [n,a,b2]=path.split('/');
       if(n==='repartoHist'){ S.hist=S.hist||{}; (S.hist[a]=S.hist[a]||{})[b2]=v; } else if(n==='remitosRepartidos') S.repartidos[a]=v; });
-    R.guardadoKey=key; S.manual={}; S.guardados.unshift({ key, meta }); S.guardados=S.guardados.slice(0,12);
+    R.guardadoKey=key; S.manual={}; S.criRem={}; S.criArt={}; S.guardados.unshift({ key, meta }); S.guardados=S.guardados.slice(0,12);
     toast('Reparto guardado ✓','ok'); render();
   }catch(e){ console.error(e); toast('No se pudo guardar: '+(e.message||e),'err'); render(); }
 }
@@ -4638,7 +4670,7 @@ function repParamHtml(){
     +fsel('Talles centrales','rpUC',op([[1,'1 unidad'],[2,'2 unidades'],[3,'3 unidades']],P.uCentral))
     +fsel('Centrales, si alcanza','rpMC',op([[1,'hasta 1'],[2,'hasta 2'],[3,'hasta 3'],[4,'hasta 4']],P.maxCentral))
     +fsel('Resto de los talles','rpUR',op([[1,'1 unidad'],[2,'2 unidades']],P.uResto))
-    +fsel('Criterio','rpCrit',op([['abrir','abrir a más locales'],['profundidad','mayor profundidad']],P.criterio||'abrir'))
+    +fsel('Criterio','rpCrit',op([['auto','automático (lo propone el portal)'],['abrir','abrir a más locales'],['profundidad','mayor profundidad']],P.criterio||'auto'))
     +fsel('Calzado niño','rpNino',op([['prog','progresiva (mitad chica x1, grande x2)'],['plana','chata (x1)']],P.ninoCurva||'prog'))
     +fsel('Curva mínima por sucursal','rpMin',op([[1,'1 talle'],[2,'2 talles'],[3,'3 talles'],[4,'4 talles'],[5,'5 talles']],P.minTalles))
     +fsel('Queda en el depósito','rpRes',op([[0,'nada'],[1,'1 curva'],[2,'2 curvas']],P.reserva))
@@ -4699,6 +4731,22 @@ function repResuInner(){
     +(T.editados?'<span class="c-edit" title="Artículos con el reparto cambiado a mano: no siguen los parámetros hasta que los vuelvas al automático"><b>'+fmtInt(T.editados)+'</b> editados a mano'+(repEditable()?' <button class="lnk noprint" data-rresetall>descartar</button>':'')+'</span>':'')
     +'<span style="margin-left:auto">'+(R.guardadoKey?'<span class="ok" style="color:var(--ok);font-weight:700">✓ guardado</span>':'<span style="color:var(--warn);font-weight:700">sin guardar</span>')+'</span>';
 }
+const CRI_LBL = { abrir:'abrir a más locales', profundidad:'mayor profundidad' };
+function repCriSel(tipo, id, val, titulo, vacio){
+  return '<label class="rcri noprint" title="'+esc(titulo)+'"><span>'+esc(titulo)+'</span><select data-rcri="'+tipo+'" data-rcriid="'+esc(id)+'">'
+    +[['',vacio],['abrir',CRI_LBL.abrir],['profundidad',CRI_LBL.profundidad]].map(o=>'<option value="'+o[0]+'"'+(o[0]===val?' selected':'')+'>'+esc(o[1])+'</option>').join('')+'</select></label>';
+}
+// chip con el criterio que se aplicó al artículo y de dónde salió + el select para corregirlo
+function repCriArtHtml(a){
+  const k=a.cri; if(!k) return '';
+  if(k.fijo) return '<small title="En los artículos fuera de temporada no se elige criterio">'+esc(k.fijo)+'</small>';
+  const de={ art:'elegido a mano en este artículo', remito:'elegido a mano en el remito', general:'el del panel «Cómo repartir»', auto:'propuesto por el portal' }[k.origen]||'';
+  const porque='Entraron '+fmtInt(k.tot)+' u.; la curva base lleva '+fmtInt(k.curva)+': alcanza para '+fmtInt(k.alcanza)+' de '+fmtInt(k.nCands)+' sucursales → el portal propone «'+CRI_LBL[k.auto]+'»';
+  const forz = k.efectivo!==k.c ? ' · por la fecha comercial va con profundidad' : '';
+  let h='<span class="pill cri '+(k.efectivo==='profundidad'?'prof':'abr')+(k.origen==='art'||k.origen==='remito'?' mano':'')+'" title="'+esc(de+forz+'. '+porque)+'">'+(k.efectivo==='profundidad'?'▼ profundidad':'⇔ abrir')+(k.origen==='auto'?' · auto':k.origen==='general'?'':' · a mano')+'</span>';
+  if(repEditable()) h+=repCriSel('art', a.id, (state.rep.criArt||{})[a.id]||'', 'Criterio', 'el del remito / automático');
+  return h;
+}
 function repVistaRemitos(){
   const R=state.rep.res, N=(R.totales||{}).dias||0; let h='';
   R.remitos.forEach(rm=>{
@@ -4707,6 +4755,7 @@ function repVistaRemitos(){
       +(sr ? '<span class="rnro">Ingresó hace poco</span><small>sin remito · compra de hace menos de '+N+' días · el depósito los tiene sueltos, no en una caja de remito</small>'
            : '<span class="rnro">Remito '+esc(repNroCorto(rm.nro))+'</span><small class="mono">'+esc(rm.nro)+'</small>')
       +'<span class="rmeta">'+esc(rm.marca||'')+(rm.rubro?' · '+esc(rm.rubro):'')+'</span>'
+      +(repEditable() && !sr ? repCriSel('rem', rm.nro, (state.rep.criRem||{})[rm.nro]||'', 'Criterio del remito', 'según cada artículo') : '')
       +'<span class="rtot">'+repRemTotHtml(rm)+'</span></div>';
     if(!rm.arts.length) h+='<div class="rvacio">Nada para repartir de este remito'+(rm.uSin?': mirá la pestaña «Sin repartir».'
       :': la reserva de hoy tiene menos unidades de sus artículos que las que entraron, y las que quedan se toman de otro remito del mismo artículo.')+'</div>';
@@ -4718,6 +4767,7 @@ function repVistaRemitos(){
         +(a.sinRemito?'<span class="pill nuevo" title="Tiene compra de hace '+(a.diasDepo||0)+' días en el reporte de stock pero no aparece en ningún remito de la lista: la Barrida no lo reparte por nuevo, así que se suma acá">ingresó hace '+(a.diasDepo||0)+' d</span>'
           :(a.diasDepo!=null && N && a.diasDepo>=N ? '<small title="Lo que hay hoy en el depósito de este artículo entró hace '+a.diasDepo+' días: ya lo toma la Barrida de reserva">hace '+a.diasDepo+' días en el depósito</small>' : ''))
         +(a.regla?'<small title="'+esc(a.regla)+'">'+esc(a.regla)+'</small>':'')
+        +repCriArtHtml(a)
         +(x.editado && !ed?'<span class="pill edit" title="El reparto de este artículo se cambió a mano: no sigue los parámetros">✎ editado a mano</span>':'')
         +(repEditable()?'<span class="rart-acc noprint">'
           +(ed?'<button class="btn btn-primary btn-sm" data-redok>✓ Listo</button>':'<button class="btn btn-outline btn-sm" data-redit="'+esc(mk)+'" title="Cambiar a mano las cantidades por talle, sumar o sacar sucursales">✎ Editar</button>')
@@ -4845,6 +4895,10 @@ function wireReparto(){
   document.querySelectorAll('[data-rvista]').forEach(b=>b.onclick=()=>{ S.vista=b.dataset.rvista; render(); });
   // ajuste a mano antes de guardar
   document.querySelectorAll('[data-redit]').forEach(b=>b.onclick=()=>repEditAbrir(b.dataset.redit));
+  document.querySelectorAll('select[data-rcri]').forEach(sel=>sel.onchange=()=>{ const S=state.rep, m = sel.dataset.rcri==='rem' ? (S.criRem=S.criRem||{}) : (S.criArt=S.criArt||{});
+    if(sel.value) m[sel.dataset.rcriid]=sel.value; else delete m[sel.dataset.rcriid];
+    // al cambiar el remito, lo elegido a mano en sus artículos sigue mandando (se ve en el chip «a mano»)
+    repRecalc(); });
   document.querySelectorAll('[data-redok]').forEach(b=>b.onclick=repEditCerrar);
   document.querySelectorAll('[data-rreset]').forEach(b=>b.onclick=()=>repEditReset(b.dataset.rreset));
   document.querySelectorAll('.rg-in').forEach(i=>{ i.onchange=()=>repEditCelda(i); i.onfocus=()=>{ try{ i.select(); }catch(e){} };
