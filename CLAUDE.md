@@ -3028,14 +3028,17 @@ consulta). Etapa 1 = guía + catálogo; etapa 2 = stock desde el Buscador (hecha
   `puesto` ni con `?pres=`. Al cargar hace `GET /api/asistente`: si `disponible:false` (falta la clave,
   o se abrió el HTML suelto) **el botón no aparece**. La charla vive en `sessionStorage` (`matts_chat`)
   y se mandan las últimas 12. Abierto sube a z-index 1290 (tapa «?» y campana; el tutorial sigue arriba).
-  **Avatar animado** (`avatarSvg`, pedido de Juli 20/09; la primera versión era un pictograma de palitos y
-  Juli la rechazó: «parece el colgado»): un PERSONAJE SVG inline (cabezón, pelo, vincha roja con las puntas
-  al viento, camiseta roja, short azul, zapatillas) que cada 2,5 s cambia de deporte y se mueve en cada uno:
-  corre, drive de tenis, patea, pica la pelota de básquet, barre con el palo de hockey y uno-dos de box.
-  Cabeza y torso son comunes; por deporte cambian piernas (capa de atrás) y brazos + elementos (capa de
-  adelante), ambas con clase `mat-sN`. Extremidades = grupos que rotan sobre la articulación
-  (`transform-origin` inline). Sumar un deporte = una entrada más en `atras` y `adelante`, un
-  `animation-delay` más y reajustar los % de `matSport`. Sin animaciones queda fijo corriendo.
+  **Avatar animado** (`avatarSvg` + `animarAvatares`, 20/09/2026): **silueta atlética articulada** con
+  estética de gráfica deportiva (blanca sobre navy, zapatillas y franja rojas, piso con filo rojo, líneas de
+  velocidad, leve `skewX`). Tiene esqueleto real (torso, hombro+codo, cadera+rodilla; el lado de atrás va
+  más apagado para dar profundidad) y un motor propio que interpola entre **poses clave** del mapa
+  `DEPORTES` (running con ciclo de carrera, tenis, fútbol, básquet, hockey, box) con `setInterval` de 33 ms
+  —no `requestAnimationFrame`: en vistas embebidas no dispara— y PASA de un deporte al otro transformando
+  la pose. Raqueta, palo, guantes y pelota son `data-p` que se prenden por deporte. Sumar un deporte = una
+  entrada en `DEPORTES` (ángulos en grados, positivo = adelante; ver el comentario de campos). Con «reducir
+  movimiento» queda fija en la zancada. ⚠ Juli rechazó las dos versiones anteriores el mismo día: el
+  pictograma de palitos («parece el colgado») y el muñeco cabezón con vincha («dibujito de bebé»). La vara
+  es **pro, competitivo, elite deportiva, dinámico**: no volver a lo infantil.
   Sugerencias por módulo en `SUGERENCIAS`. El nombre es la constante `NOMBRE` (widget y Function).
 - **Function** `functions/api/asistente.js`: usa la misma `ANTHROPIC_API_KEY` que `/api/academia-ia`.
   Opcionales `ASISTENTE_MODELO`, `ASISTENTE_TOPE` (60 consultas por cuenta y día) y
@@ -3074,7 +3077,13 @@ consulta). Etapa 1 = guía + catálogo; etapa 2 = stock desde el Buscador (hecha
   crédito prepago sin recarga automática) **vence el 20/09/2027**: cuando caduque, Matts y los ✨ de la
   Academia dejan de responder → crear otra y reemplazar el Secret `ANTHROPIC_API_KEY` en el proyecto Pages
   + Retry deployment. Si Matts contesta «No pude contactar al modelo», mirar primero el saldo de créditos.
-- Pendiente: habilitarlo en el puesto solo como asesor de producto, y la etapa 3.
+- **Puesto del salón (20/09/2026)**: el rol `puesto` tiene a Matts SOLO como asesor de producto + stock
+  (`esPuesto` en la Function: sin índice de módulos ni `guia_modulo`, prompt que asume al cliente leyendo la
+  pantalla, nada interno; tope diario doble). En el widget (`PUESTO`): sube a `bottom:86px` (arriba del pie
+  del quiosco), saludo y sugerencias de producto, **la charla se borra y el chat se cierra a los 90 s sin
+  uso** (pantalla compartida) y una pasada de la lectora con el chat enfocado (texto sin espacios que entró
+  en un instante, `pareceEscaneo`) NO se manda como pregunta: se deriva a `procesarEscaneo` del Buscador.
+- Pendiente: la etapa 3.
 
 ## Reglas
 

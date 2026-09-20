@@ -10,8 +10,11 @@
    Habla con /api/asistente (Pages Function; ahí están el prompt, las
    herramientas y los topes). Si la Function no está disponible (falta
    la clave en Cloudflare, o se abrió el HTML suelto) el botón no aparece.
-   No se monta sin sesión, en el puesto del salón ni en los informes
-   públicos (?pres=).
+   No se monta sin sesión ni en los informes públicos (?pres=).
+   En el PUESTO del salón (rol puesto) va como asesor de producto: sube
+   arriba del pie del quiosco, la charla se borra a los 90 s sin uso (la
+   pantalla es compartida) y una pasada de la lectora con el chat enfocado
+   no se manda como pregunta: se deriva al buscador.
 
    La charla vive en sessionStorage (se borra al cerrar la pestaña) y se
    manda recortada a las últimas vueltas. Clases con prefijo mat-.
@@ -23,7 +26,8 @@
   var NOMBRE = 'Matts';
   var SESSION = null;
   try{ var s = localStorage.getItem('mateu_portal_session'); SESSION = s ? JSON.parse(s) : null; }catch(e){}
-  if(!SESSION || !SESSION.email || SESSION.rol === 'puesto') return;
+  if(!SESSION || !SESSION.email) return;
+  var PUESTO = SESSION.rol === 'puesto';   // quiosco del salón: solo asesor de producto, y la charla se borra sola
   if(/[?&]pres=/.test(location.search)) return;
 
   var THIS = document.currentScript || (function(){ var l = document.querySelectorAll('script[src*="shared/asistente"]'); return l[l.length-1]; })();
@@ -62,39 +66,16 @@
   var CSS = ''
   +'#mattsWidget{position:fixed;left:22px;bottom:22px;z-index:1270;font-family:Barlow,sans-serif}'
   +'#mattsWidget.abierto{z-index:1290}'   // abierto tapa al «?» y a la campana (en celular se pisaban con Enviar); el tutorial (1300) sigue arriba
+  +'#mattsWidget.mat-puesto{bottom:86px}'   // arriba del pie fijo del quiosco
   +'#mattsWidget *{box-sizing:border-box}'
-  +'.mat-fab{height:52px;padding:0 17px 0 5px;border-radius:26px;border:none;border-bottom:3px solid var(--marca-red,#CC0000);cursor:pointer;background:var(--marca-navy,#0B1527);color:#fff;display:flex;align-items:center;gap:9px;box-shadow:0 8px 30px rgba(11,21,39,.22);transition:transform .15s}'
+  +'.mat-fab{height:54px;padding:0 18px 0 5px;border-radius:27px;border:none;border-bottom:3px solid var(--marca-red,#CC0000);cursor:pointer;background:var(--marca-navy,#0B1527);color:#fff;display:flex;align-items:center;gap:9px;box-shadow:0 8px 30px rgba(11,21,39,.22);transition:transform .15s}'
   +'.mat-fab:hover{transform:translateY(-2px)}'
-  +'.mat-av{width:42px;height:42px;border-radius:50%;overflow:hidden;background:#fff;box-shadow:inset 0 0 0 2px var(--marca-red,#CC0000);color:#fff;display:flex;align-items:center;justify-content:center;font-family:\'Bebas Neue\',sans-serif;font-size:21px;line-height:1;flex:none}'
-  // avatar: personaje (cabezón, vincha, camiseta) que va cambiando de deporte; ver avatarSvg()
+  +'.mat-av{width:44px;height:44px;border-radius:50%;overflow:hidden;background:var(--marca-navy,#0B1527);box-shadow:0 0 0 2px var(--marca-red,#CC0000);color:#fff;display:flex;align-items:center;justify-content:center;font-family:\'Bebas Neue\',sans-serif;font-size:21px;line-height:1;flex:none}'
+  // avatar: silueta atlética articulada, animada por JS (ver avatarSvg / animarAvatares)
   +'.mat-av svg{width:100%;height:100%;display:block}'
   +'.mat-av .c-red{fill:var(--marca-red,#CC0000)}.mat-av .s-red{stroke:var(--marca-red,#CC0000)}'
-  +'.mat-av .c-nav{fill:var(--marca-navy,#0B1527)}.mat-av .s-nav{stroke:var(--marca-navy,#0B1527)}'
-  +'.mat-av .mat-s{opacity:0;animation:matSport 15s infinite}.mat-av .mat-s1{opacity:1}'
-  +'.mat-av .mat-s2{animation-delay:2.5s}.mat-av .mat-s3{animation-delay:5s}.mat-av .mat-s4{animation-delay:7.5s}.mat-av .mat-s5{animation-delay:10s}.mat-av .mat-s6{animation-delay:12.5s}'
-  +'@keyframes matSport{0%{opacity:0}1.5%{opacity:1}15.4%{opacity:1}16.9%{opacity:0}100%{opacity:0}}'
-  +'.mat-av .mat-bob{animation:matBob .35s ease-in-out infinite alternate}'
-  +'@keyframes matBob{from{transform:translateY(.9px)}to{transform:translateY(-1.1px)}}'
-  +'.mat-av .mat-cola{animation:matCola .3s ease-in-out infinite alternate;transform-origin:20.7px 17.8px}'
-  +'@keyframes matCola{from{transform:rotate(-14deg)}to{transform:rotate(16deg)}}'
-  // extremidades: balanceo entre dos ángulos (el origen va inline, en la articulación)
-  +'@keyframes matR1{from{transform:rotate(38deg)}to{transform:rotate(-38deg)}}'
-  +'@keyframes matR2{from{transform:rotate(-38deg)}to{transform:rotate(38deg)}}'
-  +'@keyframes matRaq{0%,20%{transform:rotate(-150deg)}55%,100%{transform:rotate(-25deg)}}'
-  +'@keyframes matPat{0%,35%{transform:rotate(42deg)}55%,100%{transform:rotate(-62deg)}}'
-  +'@keyframes matDri{from{transform:rotate(-62deg)}to{transform:rotate(-38deg)}}'
-  +'@keyframes matPalo{0%,30%{transform:rotate(16deg)}60%,100%{transform:rotate(-14deg)}}'
-  +'@keyframes matPunA{0%,45%{transform:rotate(-100deg) translateY(-2px)}70%,100%{transform:rotate(-92deg) translateY(6px)}}'
-  +'@keyframes matPunB{0%,45%{transform:rotate(-96deg) translateY(6px)}70%,100%{transform:rotate(-104deg) translateY(-2px)}}'
-  // pelotas
-  +'@keyframes matBTen{0%{transform:translate(16px,-12px)}48%{transform:translate(0,0)}100%{transform:translate(18px,-16px)}}'
-  +'@keyframes matBFut{0%,50%{transform:translate(0,0)}100%{transform:translate(20px,-14px)}}'
-  +'@keyframes matBBas{from{transform:translateY(0)}to{transform:translateY(11px)}}'
-  +'@keyframes matBHoc{0%,55%{transform:translate(0,0)}100%{transform:translate(12px,0)}}'
-  +'@keyframes matVel{from{transform:translateX(5px);opacity:0}40%{opacity:1}to{transform:translateX(-6px);opacity:0}}'
-  +'@media(prefers-reduced-motion:reduce){.mat-av *{animation:none!important}}'
   +'.mat-fab span{font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:15px;letter-spacing:.6px;text-transform:uppercase}'
-  +'.mat-panel{position:absolute;left:0;bottom:64px;width:372px;max-width:calc(100vw - 32px);height:min(70vh,560px);background:#fff;border:1px solid #dce3f0;border-radius:14px;box-shadow:0 12px 40px rgba(11,21,39,.25);overflow:hidden;display:none;flex-direction:column}'
+  +'.mat-panel{position:absolute;left:0;bottom:66px;width:372px;max-width:calc(100vw - 32px);height:min(70vh,560px);background:#fff;border:1px solid #dce3f0;border-radius:14px;box-shadow:0 12px 40px rgba(11,21,39,.25);overflow:hidden;display:none;flex-direction:column}'
   +'.mat-panel.on{display:flex}'
   +'.mat-head{background:var(--marca-navy,#0B1527);color:#fff;padding:11px 12px 11px 14px;display:flex;align-items:center;gap:10px;border-bottom:3px solid var(--marca-red,#CC0000)}'
   +'.mat-head b{font-family:\'Bebas Neue\',sans-serif;font-weight:400;font-size:22px;letter-spacing:1px;line-height:1;display:block}'
@@ -122,73 +103,148 @@
   +'@media(max-width:560px){#mattsWidget{left:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px))}.mat-fab{padding:0 6px}.mat-fab span{display:none}.mat-panel{position:fixed;left:8px;right:8px;bottom:calc(74px + env(safe-area-inset-bottom,0px));width:auto;max-width:none;height:min(72vh,560px)}}'
   +'@media print{#mattsWidget{display:none!important}}';
 
-  /* Avatar de Matts: un personaje (cabezón, pelo, vincha roja con las puntas al viento, camiseta roja y
-     short azul) que cada 2,5 s cambia de deporte Y SE MUEVE en cada uno: corre, pega un drive, patea,
-     pica la pelota, barre con el palo de hockey y tira golpes de box. SVG inline, sin archivos ni CDN.
-     Cabeza y torso son comunes (dan continuidad); por deporte cambian piernas (grupo de atrás) y brazos +
-     elementos (grupo de adelante), los dos con la misma clase mat-sN. Sin animaciones queda corriendo. */
+  /* Avatar de Matts: SILUETA ATLÉTICA ARTICULADA (estética de gráfica deportiva: blanca sobre navy, acentos
+     rojos, líneas de velocidad, leve inclinación). Tiene esqueleto de verdad —torso, hombro+codo, cadera+
+     rodilla— y un motor chico (animarAvatares) interpola entre poses clave 30 veces por segundo, así
+     corre con ciclo de carrera real, pega el drive, patea, salta y tira al aro, barre con el palo de hockey y
+     tira jab-cross, y PASA de un deporte al otro transformando la pose (sin fundidos). Con
+     «reducir movimiento» queda fija en la zancada. Historia: 1.º pictograma de palitos («el colgado») y 2.º
+     muñeco cabezón («dibujito de bebé»), los dos rechazados por Juli el 20/09/2026: no volver a eso. */
+  function seg(largo, ancho, color){ return '<path d="M0 0 L0 '+largo+'" stroke="'+color+'" stroke-width="'+ancho+'" stroke-linecap="round" fill="none"/>'; }
   function avatarSvg(){
-    var PIEL = '#f0b78c', PELO = '#3a2417';
-    function mov(ox, oy, anim){ return ' style="transform-origin:'+ox+'px '+oy+'px;animation:'+anim+'"'; }
-    function fijo(ox, oy, g){ return ' transform="rotate('+g+' '+ox+' '+oy+')"'; }
-    // pierna: cuelga de la cadera (hx,45), con zapatilla
-    function pierna(hx, t){
-      return '<g'+t+'><path d="M'+hx+' 45 L'+hx+' 55.5" stroke="'+PIEL+'" stroke-width="4.6" stroke-linecap="round" fill="none"/>'
-        + '<ellipse class="c-nav" cx="'+(hx+1.7)+'" cy="57.3" rx="3.7" ry="2.2"/></g>';
+    var F = '#ffffff', B = '#aab6cf';   // lado de adelante / lado de atrás (más apagado: da profundidad)
+    function pierna(lado, c){
+      return '<g data-j="h'+lado+'">'+seg(17, 7.6, c)+'<g transform="translate(0 17)"><g data-j="k'+lado+'">'+seg(16.5, 5.4, c)
+        + '<path class="s-red" d="M0 16.5 L6.2 18.2" stroke-width="3.6" stroke-linecap="round" fill="none"/></g></g></g>';
     }
-    // brazo: cuelga del hombro (sx,32), con manga; `guante` = mano roja de box y `extra` = lo que lleva en la mano
-    function brazo(sx, t, guante, extra){
-      return '<g'+t+'>'+(extra||'')+'<path d="M'+sx+' 32 L'+sx+' 41.5" stroke="'+PIEL+'" stroke-width="4.2" stroke-linecap="round" fill="none"/>'
-        + '<path class="s-red" d="M'+sx+' 32 L'+sx+' 34.5" stroke-width="4.8" stroke-linecap="round" fill="none"/>'
-        + (guante ? '<circle class="c-red" cx="'+sx+'" cy="43" r="3.5"/>' : '<circle cx="'+sx+'" cy="42.2" r="2.5" fill="'+PIEL+'"/>')+'</g>';
+    function brazo(lado, c, extra){
+      return '<g data-j="s'+lado+'">'+seg(12.5, 5.2, c)+'<g transform="translate(0 12.5)"><g data-j="e'+lado+'">'+seg(11.5, 4, c)
+        + '<g transform="translate(0 11.5)"><circle r="2.5" fill="'+c+'"/><circle data-p="guante" class="c-red" r="4.3" cy="1" opacity="0"/>'+(extra||'')+'</g></g></g></g>';
     }
-    var HL = 27.5, HR = 34.5, SL = 25.5, SR = 36.5;   // caderas y hombros
-    var RAQ = '<path class="s-nav" d="M'+SR+' 43.5 L'+SR+' 48" stroke-width="1.9" stroke-linecap="round"/><ellipse class="s-nav" cx="'+SR+'" cy="52.6" rx="3.9" ry="4.8" stroke-width="1.7" fill="#fff" fill-opacity=".7"/>';
-    var atras = [
-      pierna(HL, mov(HL,45,'matR1 .3s ease-in-out infinite alternate')) + pierna(HR, mov(HR,45,'matR2 .3s ease-in-out infinite alternate')),
-      pierna(HL, fijo(HL,45,20)) + pierna(HR, fijo(HR,45,-20)),
-      pierna(HL, fijo(HL,45,10)) + pierna(HR, mov(HR,45,'matPat 1.25s ease-in-out infinite')),
-      pierna(HL, fijo(HL,45,12)) + pierna(HR, fijo(HR,45,-12)),
-      pierna(HL, fijo(HL,45,22)) + pierna(HR, fijo(HR,45,-24)),
-      pierna(HL, fijo(HL,45,18)) + pierna(HR, fijo(HR,45,-18))
-    ];
-    var adelante = [
-      // running: brazos al revés que las piernas + líneas de velocidad
-      '<g stroke="#b9c3d8" stroke-width="1.8" stroke-linecap="round"><path d="M6 31 H13" style="animation:matVel .5s linear infinite"/><path d="M4 39 H12" style="animation:matVel .5s linear .17s infinite"/><path d="M7 47 H13" style="animation:matVel .5s linear .33s infinite"/></g>'
-        + brazo(SL, mov(SL,32,'matR2 .3s ease-in-out infinite alternate')) + brazo(SR, mov(SR,32,'matR1 .3s ease-in-out infinite alternate')),
-      // tenis: drive con la raqueta, la pelota viene y sale
-      brazo(SL, fijo(SL,32,55)) + brazo(SR, mov(SR,32,'matRaq 1.25s cubic-bezier(.5,0,.2,1) infinite'), false, RAQ)
-        + '<circle cx="47" cy="36" r="2.2" fill="#c8e11c" stroke="#8fa30f" stroke-width=".6" style="animation:matBTen 1.25s linear infinite"/>',
-      // fútbol: patea y la pelota sale
-      brazo(SL, fijo(SL,32,58)) + brazo(SR, fijo(SR,32,-58))
-        + '<g style="animation:matBFut 1.25s ease-out infinite"><circle cx="44.5" cy="54.5" r="3.7" fill="#fff" class="s-nav" stroke-width="1.3"/><path class="c-nav" d="M44.5 52.4l2 1.5-.8 2.3h-2.4l-.8-2.3z"/></g>',
-      // básquet: pica la pelota
-      brazo(SL, fijo(SL,32,32)) + brazo(SR, mov(SR,32,'matDri .28s ease-in-out infinite alternate'))
-        + '<g style="animation:matBBas .28s ease-in infinite alternate"><circle cx="46" cy="44.5" r="3.8" fill="#e8772e" stroke="#9c4512" stroke-width=".9"/><path d="M42.4 44.5h7.2M46 40.8v7.4" stroke="#9c4512" stroke-width=".8"/></g>',
-      // hockey: las dos manos al palo, barre y sale la bocha
-      '<g'+mov(40,38,'matPalo 1.25s ease-in-out infinite')+'><path d="M40 37 L50.5 56.5 L55 55.5" stroke="#8a5a2b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g>'
-        + brazo(SL, fijo(SL,32,-62)) + brazo(SR, fijo(SR,32,-34))
-        + '<circle cx="57" cy="57" r="2.1" fill="#f4b400" stroke="#a87b00" stroke-width=".6" style="animation:matBHoc 1.25s ease-out infinite"/>',
-      // box: uno-dos con guantes
-      brazo(SL, mov(SL,32,'matPunB .5s ease-in-out infinite alternate'), true) + brazo(SR, mov(SR,32,'matPunA .5s ease-in-out infinite alternate'), true)
-    ];
-    function capa(lista){ return lista.map(function(h, i){ return '<g class="mat-s mat-s'+(i+1)+'">'+h+'</g>'; }).join(''); }
-    return '<svg viewBox="0 0 64 64" aria-hidden="true"><g transform="translate(32 33) scale(.9) translate(-32 -32)"><g class="mat-bob">'
-      + capa(atras)
-      // torso: short + camiseta con cuello
-      + '<rect class="c-nav" x="24" y="38" width="14" height="9" rx="3.2"/><rect class="c-red" x="23.5" y="28.5" width="15" height="13" rx="5"/><path d="M28 29.2 L31 32.2 L34 29.2" stroke="#fff" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
-      // cabeza: puntas de la vincha, cara, pelo, vincha, ojos y sonrisa (mira hacia la derecha, a la pelota)
-      + '<g class="mat-cola"><path class="s-red" d="M20.7 17.8 L15.5 19.6 M20.7 17.8 L16.4 23.2" stroke-width="2.2" stroke-linecap="round" fill="none"/></g>'
-      + '<circle cx="31" cy="18" r="10.5" fill="'+PIEL+'"/>'
-      + '<path d="M20.6 17.2 A10.5 10.5 0 0 1 41.4 17.2 Q37 11.5 31 12.2 Q25 12 20.6 17.2Z" fill="'+PELO+'"/>'
-      + '<path class="s-red" d="M20.6 17.6 Q31 12.4 41.4 17.6" stroke-width="2.7" fill="none" stroke-linecap="round"/>'
-      + '<circle cx="33.4" cy="21" r="1.35" fill="#1b1b1b"/><circle cx="38.4" cy="20.6" r="1.35" fill="#1b1b1b"/>'
-      + '<path d="M32.6 24.6 Q36 27.6 39.4 24.2" stroke="#1b1b1b" stroke-width="1.25" fill="none" stroke-linecap="round"/>'
-      + capa(adelante)
-      + '</g></g></svg>';
+    var RAQ = '<g data-p="raq" opacity="0"><path d="M0 1 L0 8" stroke="#fff" stroke-width="2" stroke-linecap="round"/><ellipse cx="0" cy="15" rx="5.2" ry="7" fill="rgba(255,255,255,.16)" stroke="#fff" stroke-width="1.7"/></g>';
+    var PALO = '<g data-p="palo" opacity="0" transform="rotate(34)"><path class="s-red" d="M0 -5 L0 33 L6 35.5" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g>';
+    return '<svg viewBox="0 0 100 100" aria-hidden="true">'
+      // fondo: piso con filo rojo + líneas de velocidad (el piso NO va relleno de rojo: tapaba las zapatillas y el palo)
+      + '<path d="M-5 84 Q45 74 105 88 L105 105 L-5 105Z" fill="#fff" opacity=".07"/><path class="s-red" d="M-5 84 Q45 74 105 88" stroke-width="2.4" fill="none"/>'
+      + '<g stroke="#fff" stroke-linecap="round" opacity=".22"><path d="M4 34 H24" stroke-width="2.2"/><path d="M0 46 H17" stroke-width="2.2"/><path d="M7 58 H21" stroke-width="2.2"/></g>'
+      + '<g transform="translate(50 50) scale(1.02) skewX(-7) translate(-47 -50)">'
+      + '<g data-j="raiz" transform="translate(46 54)">'
+      +   '<g data-j="torsoB">' + '<g transform="translate(-1 -23)">'+brazo('L', B)+'</g></g>'     // brazo de atrás (cuelga del torso)
+      +   '<g transform="translate(-1.5 0)">'+pierna('L', B)+'</g>'
+      +   '<g data-j="torso"><path d="M-4.6 1 L4.6 1 L7.4 -22 Q7.6 -25.6 3 -25.6 L-3.6 -25.6 Q-7.4 -25.4 -6.4 -21Z" fill="'+F+'" stroke="'+F+'" stroke-width="2" stroke-linejoin="round"/>'
+      +     '<path class="s-red" d="M-5.6 -13 L6.6 -15.2" stroke-width="2.4"/>'                        // franja de la camiseta
+      +     '<path d="M1 -25 L2.2 -30" stroke="'+F+'" stroke-width="4.2" stroke-linecap="round"/><ellipse cx="3.2" cy="-34.6" rx="4.7" ry="5.5" fill="'+F+'"/></g>'
+      +   '<g transform="translate(1.5 0)">'+pierna('R', F)+'</g>'
+      +   '<g data-j="torsoF">' + '<g transform="translate(1 -23)">'+brazo('R', F, RAQ + PALO)+'</g></g>'
+      + '</g>'
+      + '<g data-j="pelota" opacity="0"><circle data-p="b" r="3" fill="#fff"/></g>'
+      + '</g></svg>';
+  }
+
+  /* Poses clave. Ángulos en grados, positivo = hacia ADELANTE (el atleta mira a la derecha); rodilla y codo
+     son flexión. Campos: [inclinación del torso, altura, homL, codoL, homR, codoR, cadL, rodL, cadR, rodR,
+     pelotaX, pelotaY, pelotaVisible]. L = lado de atrás, R = lado de adelante (el que lleva raqueta y palo).
+     Los hombros cuelgan del torso: su ángulo es relativo a la inclinación. */
+  var DEPORTES = [
+    { n:'running', loops:4, k:[
+      [[16, 0,   62,95, -40,75,  -30,14,  58,82,  0,0,0], 135],
+      [[16,-3,   18,95,   2,88,    2,98,  24,22,  0,0,0], 135],
+      [[16, 0,  -40,75,  62,95,   58,82, -30,14,  0,0,0], 135],
+      [[16,-3,    2,88,  18,95,   24,22,   2,98,  0,0,0], 135] ]},
+    { n:'tenis', prop:'raq', pel:[2.7,'#d9f20a'], loops:2, k:[
+      [[ 8, 1,   50,55, -78,28,   30,30, -24,24,  100,30,1], 430],
+      [[12, 0,   22,65,  66, 6,   32,26, -26,18,   86,47,1], 150],
+      [[ 5,-1,  -12,75, 140,58,   26,20, -20,26,  118,14,1], 250],
+      [[ 8, 1,   45,55, -25,45,   30,30, -24,24,  118,14,0], 330] ]},
+    { n:'futbol', pel:[4.2,'#ffffff'], loops:2, k:[
+      [[ -2, 0,  58,28, -62,32,    8,12, -52,88,   80,84,1], 400],
+      [[-10, 0, -32,32,  52,22,    5, 8,  54, 5,   81,83,1], 140],
+      [[-15,-2, -52,32,  72,22,    3, 5,  84,10,  120,46,1], 290],
+      [[  0, 0,  22,32, -22,32,    8,12, -15,30,  120,46,0], 360] ]},
+    { n:'basquet', pel:[4.6,'#ff7a2f'], loops:2, k:[
+      [[10, 6,   78,112, 82,116,  38,68,  32,62,   67,40,1], 400],
+      [[ 2,-5,  150,28, 162,16,    5, 8,  -8,22,   62, 2,1], 250],
+      [[ 4,-4,  140,32, 128,72,    8,10,  -5,16,  112,-8,1], 290],
+      [[10, 4,   62,82,  62,82,   26,46,  22,40,  112,-8,0], 360] ]},
+    { n:'hockey', prop:'palo', pel:[2.6,'#ffd21f'], loops:2, k:[
+      [[38, 3,   52,18,  30,14,   30,42, -25,36,   86,89,1], 420],
+      [[41, 3,   86,10,  92, 8,   32,40, -25,30,   88,89,1], 150],
+      [[36, 2,  104,16, 118,14,   28,35, -22,30,  122,89,1], 280],
+      [[38, 3,   66,20,  58,15,   30,42, -25,36,  122,89,0], 350] ]},
+    { n:'box', prop:'guante', loops:2, k:[
+      [[10, 0,   58,128, 68,132,  18,18, -22,28,  0,0,0], 260],
+      [[15,-1,   58,128,104, 4,   20,20, -24,24,  0,0,0], 110],
+      [[10, 1,   58,128, 68,132,  18,18, -22,28,  0,0,0], 170],
+      [[19, 0,  110, 4,  62,132,  22,22, -26,22,  0,0,0], 120],
+      [[10, 1,   58,128, 68,132,  18,18, -22,28,  0,0,0], 220] ]}
+  ];
+  var CAMBIO_MS = 360;   // cuánto tarda en transformarse de un deporte al siguiente
+
+  function animarAvatares(raiz){
+    var svgs = raiz.querySelectorAll('.mat-av svg'), inst = [];
+    for(var i=0;i<svgs.length;i++){
+      var o = { j:{}, p:{} }, ns = svgs[i].querySelectorAll('[data-j]'), ps = svgs[i].querySelectorAll('[data-p]');
+      for(var a=0;a<ns.length;a++) o.j[ns[a].getAttribute('data-j')] = ns[a];
+      for(var b=0;b<ps.length;b++){ var k = ps[b].getAttribute('data-p'); (o.p[k] = o.p[k] || []).push(ps[b]); }
+      inst.push(o);
+    }
+    function aplicar(P, dep){
+      for(var i=0;i<inst.length;i++){
+        var J = inst[i].j, Pp = inst[i].p;
+        J.raiz.setAttribute('transform', 'translate(46 '+(54 + P[1]).toFixed(2)+')');
+        var t = 'rotate('+P[0].toFixed(1)+')';
+        J.torso.setAttribute('transform', t); J.torsoB.setAttribute('transform', t); J.torsoF.setAttribute('transform', t);
+        J.sL.setAttribute('transform', 'rotate('+(-P[2]).toFixed(1)+')'); J.eL.setAttribute('transform', 'rotate('+(-P[3]).toFixed(1)+')');
+        J.sR.setAttribute('transform', 'rotate('+(-P[4]).toFixed(1)+')'); J.eR.setAttribute('transform', 'rotate('+(-P[5]).toFixed(1)+')');
+        J.hL.setAttribute('transform', 'rotate('+(-P[6]).toFixed(1)+')'); J.kL.setAttribute('transform', 'rotate('+P[7].toFixed(1)+')');
+        J.hR.setAttribute('transform', 'rotate('+(-P[8]).toFixed(1)+')'); J.kR.setAttribute('transform', 'rotate('+P[9].toFixed(1)+')');
+        J.pelota.setAttribute('transform', 'translate('+P[10].toFixed(1)+' '+P[11].toFixed(1)+')');
+        J.pelota.setAttribute('opacity', P[12].toFixed(2));
+        if(dep){
+          ['raq','palo','guante'].forEach(function(k){ (Pp[k]||[]).forEach(function(n){ n.setAttribute('opacity', dep.prop === k ? 1 : 0); }); });
+          if(dep.pel) (Pp.b||[]).forEach(function(n){ n.setAttribute('r', dep.pel[0]); n.setAttribute('fill', dep.pel[1]); });
+        }
+      }
+    }
+    var quieto = false;
+    try{ quieto = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
+    aplicar(DEPORTES[0].k[0][0], DEPORTES[0]);
+    if(quieto || !inst.length) return;
+
+    var d = 0, ki = 0, vueltas = 0, desde = DEPORTES[0].k[0][0].slice(), hasta = DEPORTES[0].k[1][0], dur = DEPORTES[0].k[1][1], t0 = 0;
+    ki = 1;
+    function suave(x){ return x < .5 ? 2*x*x : 1 - Math.pow(-2*x + 2, 2) / 2; }
+    function ahora(){ return (window.performance && performance.now) ? performance.now() : new Date().getTime(); }
+    function cuadro(){
+      if(document.hidden) return;
+      var ts = ahora();
+      if(!t0) t0 = ts;
+      var x = Math.min(1, (ts - t0) / dur), e = suave(x), P = [];
+      for(var n=0;n<13;n++) P[n] = desde[n] + (hasta[n] - desde[n]) * e;
+      // la pelota no «vuelve volando»: si aparece, nace en destino; si se va, se apaga donde estaba
+      if(desde[12] === 0){ P[10] = hasta[10]; P[11] = hasta[11]; }
+      else if(hasta[12] === 0){ P[10] = desde[10]; P[11] = desde[11]; }
+      else { P[10] = desde[10] + (hasta[10]-desde[10]) * x; P[11] = desde[11] + (hasta[11]-desde[11]) * x; }   // vuelo parejo
+      aplicar(P, null);
+      if(x >= 1){
+        desde = hasta.slice(); t0 = ts;
+        var K = DEPORTES[d].k;
+        ki++;
+        if(ki >= K.length){ ki = 0; vueltas++; }
+        if(vueltas >= DEPORTES[d].loops && ki === 0){
+          d = (d + 1) % DEPORTES.length; vueltas = 0;
+          hasta = DEPORTES[d].k[0][0]; dur = CAMBIO_MS;
+          aplicar(desde, DEPORTES[d]);   // cambia raqueta / palo / guantes / pelota en el momento del pase
+        } else { hasta = K[ki][0]; dur = K[ki][1]; }
+      }
+    }
+    // reloj propio (30 cuadros/s) en vez de requestAnimationFrame: anda igual en navegadores viejos y en
+    // vistas embebidas donde rAF no dispara; con la pestaña oculta no hace nada
+    setInterval(cuadro, 33);
   }
 
   var SUGERENCIAS = {
+    _puesto: ['Zapatilla para empezar a correr', 'Paleta de pádel para principiante', '¿En qué sucursal hay stock de un artículo?'],
     _def: ['¿Cómo se usa este módulo?', '¿En qué sucursal hay stock de un artículo?', 'Un cliente quiere empezar a correr, ¿qué zapatilla le recomiendo?', '¿Qué raquetas de tenis trabajamos?'],
     ubicaciones: ['¿Cómo cargo el stock del día?', '¿Cómo vinculo una etiqueta que no encuentra?', 'Un cliente busca paleta de pádel para principiante'],
     indicadores: ['¿Cómo armo el equipo de la semana?', '¿Qué es el ritmo del objetivo?', '¿Cómo pido un compensatorio?'],
@@ -197,7 +253,7 @@
     tareas: ['¿Cómo registro un cambio de vidriera?', '¿Cómo cargo el checklist de limpieza?']
   };
 
-  var $log, $txt, $send, $panel;
+  var $log, $txt, $send, $panel, W_BASE = '';
 
   function guardar(){ ssSet(K_CHAT, JSON.stringify(CHAT.slice(-30))); }
   function bajar(){ if($log) $log.scrollTop = $log.scrollHeight; }
@@ -206,8 +262,10 @@
     var h = '';
     if(!CHAT.length){
       var nom = (SESSION.nombre || '').split(' ')[0];
-      h += '<div class="mat-m bot">¡Buenas' + (nom ? ', ' + esc(nom) : '') + '! Soy <b>' + NOMBRE + '</b>. Preguntame cómo se usa el portal o pedime una mano para asesorar a un cliente en cualquier deporte.</div>';
-      var sug = (SUGERENCIAS[modulo()] || []).concat(SUGERENCIAS._def).slice(0, 3);
+      h += PUESTO
+        ? '<div class="mat-m bot">¡Buenas! Soy <b>' + NOMBRE + '</b>. Contame qué busca el cliente y te ayudo a recomendarle, o pasame un artículo y te digo en qué sucursal hay.</div>'
+        : '<div class="mat-m bot">¡Buenas' + (nom ? ', ' + esc(nom) : '') + '! Soy <b>' + NOMBRE + '</b>. Preguntame cómo se usa el portal o pedime una mano para asesorar a un cliente en cualquier deporte.</div>';
+      var sug = PUESTO ? SUGERENCIAS._puesto : (SUGERENCIAS[modulo()] || []).concat(SUGERENCIAS._def).slice(0, 3);
       h += '<div class="mat-sug">' + sug.map(function(t){ return '<button type="button" data-sug="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>';
     }
     CHAT.forEach(function(m){
@@ -218,9 +276,28 @@
     bajar();
   }
 
+  // Puesto: una pasada de la lectora con el chat enfocado (todo el texto entró en un instante, sin
+  // espacios) no es una pregunta: se limpia, se cierra el chat y se le pasa al buscador de la página.
+  var T_PRIMERA = 0;
+  function pareceEscaneo(texto){
+    return PUESTO && T_PRIMERA && texto.length >= 6 && !/\s/.test(texto) && (Date.now() - T_PRIMERA) < 60 * texto.length && (Date.now() - T_PRIMERA) < 900;
+  }
+  var T_OCIO = null;
+  function tocarOcio(){
+    if(!PUESTO) return;
+    clearTimeout(T_OCIO);
+    T_OCIO = setTimeout(function(){ if(ESPERANDO) return tocarOcio(); CHAT = []; guardar(); if(ABIERTO) abrir(false); }, 90000);
+  }
+
   function enviar(texto){
     texto = (texto || '').replace(/^\s+|\s+$/g, '');
     if(!texto || ESPERANDO) return;
+    if(pareceEscaneo(texto)){
+      $txt.value = ''; T_PRIMERA = 0; abrir(false);
+      try{ if(typeof window.procesarEscaneo === 'function') window.procesarEscaneo(texto); }catch(e){}
+      return;
+    }
+    T_PRIMERA = 0; tocarOcio();
     CHAT = CHAT.filter(function(m){ return !m.err; });
     CHAT.push({ role:'user', content:texto });
     ESPERANDO = true; $send.disabled = true; $txt.value = ''; $txt.style.height = '40px';
@@ -238,17 +315,19 @@
   function abrir(si){
     ABIERTO = si;
     $panel.className = 'mat-panel' + (si ? ' on' : '');
-    $panel.parentNode.className = si ? 'abierto' : '';
+    $panel.parentNode.className = (W_BASE + (si ? ' abierto' : '')).replace(/^\s+/, '');
+    if(si) tocarOcio();
     if(si){ pintar(); setTimeout(function(){ try{ $txt.focus(); }catch(e){} }, 60); }
   }
 
   function montar(){
     if(document.getElementById('mattsWidget')) return;
     var st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
-    var w = document.createElement('div'); w.id = 'mattsWidget';
+    var w = document.createElement('div'); w.id = 'mattsWidget'; W_BASE = PUESTO ? 'mat-puesto' : '';
+    w.className = W_BASE;
     w.innerHTML = ''
       +'<div class="mat-panel" role="dialog" aria-label="' + NOMBRE + ', asistente del portal">'
-      +  '<div class="mat-head"><div class="mat-av">' + avatarSvg() + '</div><div><b>' + NOMBRE + '</b><small>Asistente del portal · asesor deportivo</small></div><div class="mat-sp"></div>'
+      +  '<div class="mat-head"><div class="mat-av">' + avatarSvg() + '</div><div><b>' + NOMBRE + '</b><small>' + (PUESTO ? 'Asesor deportivo' : 'Asistente del portal · asesor deportivo') + '</small></div><div class="mat-sp"></div>'
       +    '<button type="button" class="mat-hb" data-act="nueva" title="Empezar una charla nueva">Nueva</button>'
       +    '<button type="button" class="mat-hb" data-act="cerrar" aria-label="Cerrar">✕</button></div>'
       +  '<div class="mat-log"></div>'
@@ -257,6 +336,7 @@
       +'</div>'
       +'<button type="button" class="mat-fab" aria-label="Abrir a ' + NOMBRE + '"><div class="mat-av">' + avatarSvg() + '</div><span>' + NOMBRE + '</span></button>';
     document.body.appendChild(w);
+    try{ animarAvatares(w); }catch(e){}
     $panel = w.querySelector('.mat-panel'); $log = w.querySelector('.mat-log');
     $txt = w.querySelector('textarea'); $send = w.querySelector('.mat-send');
 
@@ -266,7 +346,7 @@
       e = e || window.event;
       if((e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey){ if(e.preventDefault) e.preventDefault(); enviar($txt.value); return false; }
     };
-    $txt.oninput = function(){ $txt.style.height = '40px'; $txt.style.height = Math.min(110, $txt.scrollHeight) + 'px'; };
+    $txt.oninput = function(){ if(!$txt.value) T_PRIMERA = 0; else if(!T_PRIMERA) T_PRIMERA = Date.now(); tocarOcio(); $txt.style.height = '40px'; $txt.style.height = Math.min(110, $txt.scrollHeight) + 'px'; };
     w.onclick = function(e){
       var t = (e || window.event).target;
       while(t && t !== w){

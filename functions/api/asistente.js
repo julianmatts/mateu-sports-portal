@@ -32,6 +32,9 @@
      último stock que cargó cada local, no el sistema en vivo: la respuesta
      lleva la fecha de carga y el prompt obliga a decirla. Una sucursal
      que no carga stock en el Buscador es «sin dato», nunca «no tiene».
+   - PUESTO DEL SALÓN (rol `puesto`, 20/09/2026): habilitado solo como asesor de
+     producto + stock; sin guía del portal ni guia_modulo, con un prompt que
+     asume que el cliente está leyendo la pantalla. Tope diario doble.
    Todavía NO ve ventas ni el stock del sistema: etapa 3 (API MySQL).
 
    Seguridad blanda, como el resto del portal: el mail tiene que existir
@@ -267,11 +270,12 @@ export async function onRequestPost(ctx) {
   let user = null;
   for (const k in usuarios) { const u = usuarios[k]; if (u && u.email && String(u.email).toLowerCase() === email) { user = u; break; } }
   if (!user) return json({ error: 'Tu usuario no está en el Portal.' }, 403);
-  if (user.rol === 'puesto') return json({ error: NOMBRE + ' no está habilitado en el puesto del salón.' }, 403);
+  const esPuesto = user.rol === 'puesto';   // quiosco del salón, a la vista de clientes: solo asesor de producto + stock
 
   // Topes del día (por cuenta y total)
   const dia = hoyAR(), mk = mailKey(email);
-  const tope = parseInt(env.ASISTENTE_TOPE, 10) || TOPE_DEF, topeTotal = parseInt(env.ASISTENTE_TOPE_TOTAL, 10) || TOPE_TOTAL_DEF;
+  const tope = (parseInt(env.ASISTENTE_TOPE, 10) || TOPE_DEF) * (esPuesto ? 2 : 1),   // el puesto lo usa todo el salón
+         topeTotal = parseInt(env.ASISTENTE_TOPE_TOTAL, 10) || TOPE_TOTAL_DEF;
   let usados = 0, usadosTotal = 0;
   try {
     const [a, b] = await Promise.all([fetch(FB_ASIS + '/uso/' + dia + '/' + mk + '.json').then(r => r.json()), fetch(FB_ASIS + '/uso/' + dia + '/_total.json').then(r => r.json())]);
@@ -285,13 +289,16 @@ export async function onRequestPost(ctx) {
   const modulo = guia.modulos[body.modulo] ? body.modulo : 'portal';
   const indice = Object.keys(guia.modulos).map(k => '- ' + k + ': ' + guia.modulos[k].nombre).join('\n');
   const suc = user.sucursal || user.outlet_id || '';
-  const system = [
+  const system = esPuesto ? [
+    { type: 'text', text: PERSONA, cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: 'MODO PUESTO DEL SALÓN. Estás en la pantalla de consulta del salón de ventas de la sucursal ' + suc + ', que usan los vendedores CON EL CLIENTE AL LADO mirando. Acá sos únicamente asesor deportivo y de stock: recomendás producto y decís dónde hay. No expliques el portal interno ni nombres sus módulos, y no hables de ventas, objetivos, personal ni nada interno de la empresa: si te lo piden, decí que eso se consulta desde la cuenta de la sucursal. Lo único del sistema que podés explicar es el buscador de esta misma pantalla: se escribe o se escanea el código o el nombre en la barra de arriba y muestra la ubicación en el depósito y el stock. Escribí pensando en que el cliente lo puede leer: tono amable y profesional, sin jerga interna, y nunca hables mal de una marca ni de un producto.' }
+  ] : [
     { type: 'text', text: PERSONA + '\n\nMÓDULOS DEL PORTAL (clave: nombre):\n' + indice, cache_control: { type: 'ephemeral' } },
     { type: 'text', text: 'USUARIO: ' + (user.nombre || email) + ' · ' + (ROL_TXT[user.rol] || user.rol || '') + (suc ? ' · sucursal ' + suc : '') + '. No ve necesariamente todos los módulos: depende de su cuenta.\n\nMÓDULO DONDE ESTÁ AHORA: ' + modulo + ' («' + guia.modulos[modulo].nombre + '»). Guía de este módulo:\n' + guiaTexto(guia, modulo, user.rol) }
   ];
 
   const modelo = env.ASISTENTE_MODELO || MODELO_DEF;
-  const tools = herramientas(guia);
+  const tools = herramientas(guia).filter(t => !esPuesto || t.name !== 'guia_modulo');
   const conv = mensajes.slice();
   const usadas = [];
   let tin = 0, tout = 0, data = null;
