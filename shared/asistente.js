@@ -315,7 +315,7 @@
     ESPERANDO = true; $send.disabled = true; $txt.value = ''; $txt.style.height = '40px';
     guardar(); pintar();
     var mensajes = CHAT.slice(-12).map(function(m){ return { role:m.role, content:m.content }; });
-    pedir('POST', { email:SESSION.email, modulo:modulo(), mensajes:mensajes }, function(st, d){
+    pedir('POST', { email:SESSION.email, tok:SESSION.tok||'', modulo:modulo(), mensajes:mensajes }, function(st, d){
       ESPERANDO = false; $send.disabled = false;
       if(st === 200 && d && d.respuesta) CHAT.push({ role:'assistant', content:d.respuesta, id:d.id || '' });
       else CHAT.push({ role:'assistant', err:true, content:(d && d.error) || 'No me pude conectar. Revisá internet y probá de nuevo.' });
