@@ -33,6 +33,13 @@
      último stock que cargó cada local, no el sistema en vivo: la respuesta
      lleva la fecha de carga y el prompt obliga a decirla. Una sucursal
      que no carga stock en el Buscador es «sin dato», nunca «no tiene».
+   - BÚSQUEDA Y STOCK DEL LOCAL (21/09/2026, tras leer asistente/log: recomendaba lo que el
+     local no tenía, no entendía el Id.item y preguntaba antes de buscar): buscar_catalogo
+     acepta SOLO texto sobre un índice de palabras (catalogo/vocab + palabras/<PALABRA>, con
+     corrección de tipeo por distancia de edición), Id.item (porId/) y el código sin las 3
+     letras de marca (porCod/); stock_del_local cruza el catálogo con las claves de la
+     sucursal (articulos.json?shallow=true) y baja el stock real de hasta MAX_LOCAL artículos.
+     Ojo con el tope de subrequests de Cloudflare (50 en el plan gratis): por eso MAX_LOCAL.
    - PUESTO DEL SALÓN (rol `puesto`, 20/09/2026): habilitado solo como asesor de
      producto + stock; sin guía del portal ni guia_modulo, con un prompt que
      asume que el cliente está leyendo la pantalla. Tope diario doble.
@@ -89,7 +96,9 @@ TRATO — regla absoluta: NUNCA le digas al usuario «boludo», «boluda», «bo
 
 Hacés tres cosas:
 1. AYUDA CON EL PORTAL: explicás cómo se usa cada módulo con la guía que tenés abajo. Si preguntan por un módulo que no es el actual, usá la herramienta guia_modulo antes de contestar. Si la guía no lo cubre, decí que no lo tenés claro y que lo consulten con Juli (gerencia); no inventes botones ni pantallas.
-2. ASESOR DEPORTIVO: ayudás a recomendar producto como lo haría un especialista en el mostrador. El vendedor tiene al cliente adelante y necesita algo para decirle YA, así que tu respuesta SIEMPRE trae una recomendación, en este orden: (a) el criterio técnico en una o dos oraciones con lo que ya sabés (peso, balance y perfil de la raqueta; pisada y drop de la zapatilla; dureza del palo de hockey; etc.); (b) llamá a buscar_catalogo y nombrá 2 o 3 artículos concretos de lo que devuelva, con su código y por qué le sirven; (c) cerrá con UNA o DOS preguntas que afinarían la elección. Está prohibido contestar solo con preguntas o pedir datos antes de recomendar. Recomendá SOLO artículos que devuelva la herramienta: nunca inventes modelos ni códigos.
+2. ASESOR DEPORTIVO: ayudás a recomendar producto como lo haría un especialista en el mostrador. El vendedor tiene al cliente adelante y necesita algo para decirle YA, así que tu respuesta SIEMPRE trae una recomendación, en este orden: (a) el criterio técnico en una o dos oraciones con lo que ya sabés (peso, balance y perfil de la raqueta; pisada y drop de la zapatilla; dureza del palo de hockey; etc.); (b) 2 o 3 artículos concretos con su código y por qué le sirven; (c) cerrá con UNA pregunta que afinaría la elección. PRIMERO LO QUE HAY EN EL LOCAL: si el usuario tiene sucursal (o nombra una), los artículos salen de stock_del_local, con unidades, talles si vienen y ubicación; recomendá de ahí. Usá buscar_catalogo solo si esa sucursal no carga stock, si no hay nada en el local (decilo y ofrecé ver otras sucursales con consultar_stock) o si el usuario no tiene sucursal. Nunca recomiendes por catálogo un artículo como si estuviera en el local. Recomendá SOLO artículos que devuelvan las herramientas: nunca inventes modelos ni códigos.
+   BUSCÁ ANTES DE PREGUNTAR: con lo que te dieron, llamá a la herramienta en ESTE turno; las preguntas van después, con resultados en la mano. Si falta la disciplina, asumí la más probable (calzado sin más datos = RUNNING o CASUAL; probá las dos si hace falta). «Qué hay de dama en 37» = stock_del_local con género y talle, ya. Un número suelto («233999») es un Id.item y un código corto («IH9527») es un código sin las letras de la marca: pasalos tal cual a consultar_stock, que los entiende. Un nombre de modelo suelto o mal escrito («dropster control 4», «tokio», «duramo»): buscar_catalogo con SOLO texto, sin marca ni disciplina; si devuelve palabras_corregidas, contá en una línea cómo lo interpretaste. Prohibido decir «dejame que consulto» o «voy a buscar» sin llamar a la herramienta en ese mismo turno, y prohibido contestar solo con preguntas.
+   LO QUE NO TENÉS: ranking de más vendidos por artículo o marca, venta por rubro o artículo, stock total de una marca, a qué sucursal va un reparto, precios. Decilo en UNA línea y mandá al módulo que lo tiene (envíos y más enviados: Panel General de Logística; reparto: Reparto de Mercadería; cobertura por marca: Gestión de Stock → Meses de Stock), y ofrecé lo que sí podés.
 3. GESTIÓN DEL LOCAL (solo si tenés la herramienta resumen_gestion): cuando pregunten «¿cómo venimos?», por el objetivo, la venta de la semana o del mes, cómo viene el equipo o un vendedor, o «¿qué tengo pendiente?», llamá a resumen_gestion y contestá con esos números, cortos y al grano: primero el titular (% de la meta y cuánto falta), después lo que ayude a actuar. La venta es PROVISORIA (la que se cargó en el portal): decí hasta qué día está cargada. El objetivo personal de cada vendedor y el ritmo exacto NO los tenés: están en Mi Sucursal → «Cómo viene el equipo»; no los calcules ni los estimes. Copiá los estados y las cantidades TAL CUAL vienen (no mezcles «visto» con «descargado»). Lo que venga como «nada», «ninguno» o «la sucursal todavía no usa el módulo» no lo menciones ni opines sobre eso. Si la herramienta devuelve un error de permisos, explicalo en una línea, sin nombrar modos ni herramientas internas, y ofrecé lo que sí podés hacer.
 
 Reglas firmes:
@@ -137,44 +146,154 @@ function guiaTexto(guia, modulo, rol) {
 }
 
 /* ---------- herramientas ---------- */
+const gj = u => fetch(u).then(r => r.json()).catch(() => null);
 const DISC_ALIAS = { PADEL: 'PADDLE', FUTBOL_11: 'FUTBOL_11', FUTBOL_5: 'FUTBOL_5', PAPI: 'FUTBOL_5', FUTSAL: 'FUTSAL', BOXEO: 'BOX', NATACION: 'NATACION', TREKKING: 'ADVENTURE', OUTDOOR: 'ADVENTURE', GIMNASIO: 'TRAINING', GYM: 'TRAINING', FITNESS: 'TRAINING', URBANO: 'CASUAL', BASKET: 'BASQUET', BASQUETBOL: 'BASQUET', VOLLEY: 'VOLEY', VOLEIBOL: 'VOLEY', PING_PONG: 'TENIS_DE_MESA' };
 
-async function buscarCatalogo(inp) {
+/* Índice de texto del catálogo (lo arma scripts/gen-asistente.js): vocab = palabra → en cuántos artículos está,
+   palabras/<PALABRA> = sus artículos, porId/<Id.item> y porCod/<código, entero o sin las 3 letras de marca>.
+   Fila = [código, artículo, marca, disciplina, rubro, género, tipo]. */
+const PALABRA_COMUN = 400;   // igual que en el generador
+let VOCAB = null, VOCAB_TS = 0;
+async function cargarVocab() {
+  if (VOCAB && Date.now() - VOCAB_TS < 6 * 3600e3) return VOCAB;
+  const v = await gj(FB_ASIS + '/catalogo/vocab.json');
+  if (v) { VOCAB = v; VOCAB_TS = Date.now(); }
+  return VOCAB || {};
+}
+// palabras que no aportan al buscar un modelo por nombre, y sinónimos de la calle → como figura en el sistema
+const RELLENO = {}; 'ZAPATILLA ZAPATILLAS ZAPA ZAPAS CALZADO PARA CON SIN DE DEL LA EL LOS LAS UN UNA EN QUE HAY TIENEN TENES TENEMOS DONDE ESTA ESTAN BUSCO BUSCA QUIERO QUIERE MODELO MARCA TALLE NUMERO STOCK HOMBRE DAMA MUJER'.split(' ').forEach(w => { RELLENO[w] = 1; });
+const SINONIMOS = { PATINETA: 'SKATE', ROLLERS: 'ROLLER', PADEL: 'PADDLE', BOTINES: 'BOTIN', OJOTAS: 'OJOTA', CHANCLETAS: 'OJOTA', MEDIAS: 'MEDIA', GORRO: 'GORRO', CANILLERAS: 'CANILLERA', GUANTES: 'GUANTE', PELOTAS: 'PELOTA', PALETAS: 'PALETA', RAQUETAS: 'RAQUETA', MOCHILAS: 'MOCHILA', CAMPERAS: 'CAMPERA', REMERAS: 'REMERA', BUZOS: 'BUZO', CALZAS: 'CALZA', SHORTS: 'SHORT' };
+function tokens(s) { return String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^A-Z0-9]+/).filter(t => t.length >= 2 || /^\d$/.test(t)); }
+function distancia(a, b, max) {   // Levenshtein con corte
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = []; for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]; let min = i;
+    for (let j = 1; j <= b.length; j++) { cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); if (cur[j] < min) min = cur[j]; }
+    if (min > max) return max + 1;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+// palabra del usuario → palabra del catálogo: exacta, comienzo («ultraboo») o parecida («dropster» → DROPSET)
+function corregirPalabra(t, V) {
+  if (V[t]) return t;
+  if (t.length < 4 || /^\d+$/.test(t)) return null;
+  let mejor = null, md = 99, mc = -1;
+  const max = t.length <= 5 ? 1 : 2;
+  for (const w in V) {
+    if (w[0] !== t[0]) continue;
+    const d = w.indexOf(t) === 0 ? 0.5 : distancia(t, w, max);
+    if (d > max) continue;
+    if (d < md || (d === md && V[w] > mc)) { mejor = w; md = d; mc = V[w]; }
+  }
+  return mejor;
+}
+async function resolverCodigo(txt) {
+  const c = clave(txt);
+  if (!c || c.indexOf('_') >= 0) return null;
+  if (/^\d{4,8}$/.test(c)) return await gj(FB_ASIS + '/catalogo/porId/' + c + '.json');
+  if (/\d/.test(c) && c.length >= 5) return await gj(FB_ASIS + '/catalogo/porCod/' + c + '.json');
+  return null;
+}
+async function filasPorTexto(texto) {
+  const toks = tokens(texto);
+  if (!toks.length) return { filas: [] };
+  if (toks.length === 1) { const f = await resolverCodigo(toks[0]); if (f) return { filas: [f], nota: 'Encontrado por código / Id.item.' }; }
+  const V = await cargarVocab();
+  const usadas = [], corregidas = [], ignoradas = [];
+  toks.forEach(t0 => {
+    if (RELLENO[t0]) return;
+    const t = SINONIMOS[t0] || t0;
+    const w = corregirPalabra(t, V);
+    if (!w) ignoradas.push(t0); else { if (usadas.indexOf(w) < 0) usadas.push(w); if (w !== t0) corregidas.push(t0 + ' → ' + w); }
+  });
+  if (!usadas.length) return { filas: [], ignoradas, inexistente: ignoradas.length > 0, generico: !ignoradas.length };
+  // entradas = las palabras menos comunes; se prueban hasta 3 y se ordena por cuántas palabras (y cuán raras) tiene cada artículo
+  const entradas = usadas.filter(w => V[w] <= PALABRA_COMUN).sort((a, b) => V[a] - V[b]).slice(0, 3);
+  if (!entradas.length) return { filas: [], generico: true, ignoradas };
+  const listas = await Promise.all(entradas.map(w => gj(FB_ASIS + '/catalogo/palabras/' + w + '.json')));
+  const vistos = {}, todas = [];
+  listas.forEach(l => (l || []).forEach(f => { if (!vistos[f[0]]) { vistos[f[0]] = 1; todas.push(f); } }));
+  const peso = w => 1 / Math.sqrt(V[w] || 1);
+  const total = usadas.reduce((a, w) => a + peso(w), 0);
+  const punt = todas.map(f => { const tt = tokens(f[1] + ' ' + f[2]); let p = 0, n = 0; usadas.forEach(w => { if (tt.indexOf(w) >= 0) { p += peso(w); n++; } }); return [f, p, n]; }).sort((a, b) => b[1] - a[1]);
+  const completas = punt.filter(x => x[2] === usadas.length);
+  if (completas.length) return { filas: completas.map(x => x[0]), corregidas, ignoradas };
+  const mejor = punt.length ? punt[0][1] : 0;
+  return { filas: punt.filter(x => x[1] >= mejor * 0.7 && x[1] >= total * 0.4).map(x => x[0]), corregidas, ignoradas, parcial: true };
+}
+const pasaGenero = (g, pedido) => !pedido || plano(g) === pedido || (plano(g) === 'unisex' && (pedido === 'hombre' || pedido === 'dama')) || (pedido === 'nino' && plano(g) === 'infante');
+
+// Devuelve TODAS las filas que cumplen (sin tope): la usan buscar_catalogo y stock_del_local
+async function filasCatalogo(inp) {
   let disc = clave(inp.disciplina);
   disc = DISC_ALIAS[disc] || disc;
   const rubro = clave(inp.rubro);
   const marca = plano(inp.marca), palabras = plano(inp.texto).split(/\s+/).filter(Boolean);
+  let genero = plano(inp.genero); if (/^(mujer|femenin)/.test(genero)) genero = 'dama'; if (/^(masculin|varon)/.test(genero)) genero = 'hombre'; if (/^(nin|kid|chic|junior)/.test(genero)) genero = 'nino';
   if (rubro && ['CALZADO', 'INDUMENTARIA', 'ACCESORIOS'].indexOf(rubro) < 0) return { error: 'rubro tiene que ser CALZADO, INDUMENTARIA o ACCESORIOS' };
-  let filas = null;   // normalizadas a [código, artículo, marca, género, tipo, disciplina, rubro]
+  let filas = null, extra = {};   // normalizadas a [código, artículo, marca, género, tipo, disciplina, rubro]
+  const deTexto = async () => {
+    const r = await filasPorTexto(inp.texto);
+    extra = { corregidas: r.corregidas && r.corregidas.length ? r.corregidas : undefined, ignoradas: r.ignoradas && r.ignoradas.length ? r.ignoradas : undefined, parcial: r.parcial || undefined, nota: r.nota, generico: r.generico, inexistente: r.inexistente };
+    return (r.filas || []).map(x => [x[0], x[1], x[2], x[5], x[6], x[3], x[4]]);
+  };
   try {
     if (disc && rubro) {
       const f = await (await fetch(FB_ASIS + '/catalogo/partes/' + disc + '__' + rubro + '.json')).json();
       if (Array.isArray(f)) filas = f.map(x => [x[0], x[1], x[2], x[3], x[4], disc, rubro]);
     } else if (marca) {
-      // sin disciplina: partición por marca (para encontrar un modelo por nombre)
       const mk = clave(inp.marca);
       const f = await (await fetch(FB_ASIS + '/catalogo/porMarca/' + mk + '.json')).json();
       if (Array.isArray(f)) filas = f.filter(x => !rubro || x[3] === rubro).map(x => [x[0], x[1], inp.marca, x[4], x[5], x[2], x[3]]);
-    } else return { error: 'Pasá disciplina + rubro, o al menos la marca.' };
+    } else if (palabras.length) {
+      // solo texto: nombre del modelo, código o Id.item, en todo el catálogo
+      filas = (await deTexto()).filter(f => (!rubro || clave(f[6]) === rubro) && (!disc || clave(f[5]) === disc));
+      if (extra.inexistente) return { filas: [], extra: { ignoradas: extra.ignoradas, nota: 'Ninguna de esas palabras figura en el nombre de un artículo del catálogo: puede ser un modelo que no se trabaja o llamarse distinto en el sistema. Pedí la marca o cómo dice la etiqueta.' } };
+      if (extra.generico) return { error: 'Con esas palabras solas («' + inp.texto + '») entra medio catálogo: pasá además disciplina + rubro, o la marca.' };
+      return { filas: filas.filter(f => pasaGenero(f[3], genero)), extra };
+    } else return { error: 'Pasá disciplina + rubro, la marca, o un texto (nombre del modelo, código o Id.item).' };
   } catch (e) { return { error: 'No pude leer el catálogo en este momento.' }; }
   if (!filas || !filas.length) {
+    // la marca o la disciplina no existen tal cual: último intento por texto en todo el catálogo
+    if (palabras.length || marca) {
+      const guardado = inp.texto; inp = Object.assign({}, inp, { texto: [inp.marca, guardado].filter(Boolean).join(' ') });
+      const t = (await deTexto()).filter(f => pasaGenero(f[3], genero));
+      if (t.length && !extra.generico) { extra.nota = 'Resultados de todo el catálogo por el texto.'; return { filas: t, extra }; }
+    }
     let indice = null;
     try { indice = await (await fetch(FB_ASIS + '/catalogo/indice.json')).json(); } catch (e) {}
     const hay = indice ? Object.keys(indice).map(k => k + ' (' + Object.keys(indice[k].rubros || {}).join('/').toLowerCase() + ')').join(', ') : '';
-    return { resultados: [], nota: 'No encontré artículos con esos datos. Disciplinas disponibles: ' + hay };
+    return { filas: [], extra: { nota: 'No encontré artículos con esos datos. Disciplinas disponibles: ' + hay } };
   }
-  const ok = filas.filter(f => {
+  let ok = filas.filter(f => {
     if (marca && plano(f[2]).indexOf(marca) < 0) return false;
+    if (!pasaGenero(f[3], genero)) return false;
     const donde = plano(f[1] + ' ' + f[4] + ' ' + f[3] + ' ' + f[0]);
     return palabras.every(p => donde.indexOf(p) >= 0);
   });
+  // nada con ese texto dentro de la disciplina/marca pedida: se busca en TODO el catálogo, con tolerancia a errores de tipeo
+  if (!ok.length && palabras.length) {
+    const t = (await deTexto()).filter(f => pasaGenero(f[3], genero));
+    if (t.length) { ok = t; extra.nota = 'No estaba en la disciplina/marca pedida: son resultados de todo el catálogo por el texto.'; }
+  }
+  return { filas: ok, extra };
+}
+
+async function buscarCatalogo(inp) {
+  const r = await filasCatalogo(inp);
+  if (r.error) return r;
+  const ok = r.filas, ex = r.extra || {};
   const marcas = {};
   ok.forEach(f => { marcas[f[2]] = (marcas[f[2]] || 0) + 1; });
   return {
     total: ok.length,
     marcas,
+    palabras_corregidas: ex.corregidas, palabras_que_no_existen_en_el_catalogo: ex.ignoradas,
+    coincidencia_parcial: ex.parcial ? 'Ningún artículo tiene TODAS las palabras: van los más parecidos, avisale al usuario.' : undefined,
     resultados: ok.slice(0, MAX_FILAS).map(f => ({ codigo: f[0], articulo: f[1], marca: f[2], genero: f[3], tipo: f[4], disciplina: f[5], rubro: f[6] })),
-    nota: ok.length > MAX_FILAS ? 'Se muestran ' + MAX_FILAS + ' de ' + ok.length + ': afiná con marca o texto.' : undefined
+    nota: [ex.nota, ok.length > MAX_FILAS ? 'Se muestran ' + MAX_FILAS + ' de ' + ok.length + ': afiná con marca, género o texto.' : ''].filter(Boolean).join(' ') || undefined
   };
 }
 
@@ -196,6 +315,9 @@ function fbKey(c) { return String(c).trim().replace(/[.#$\/\[\]]/g, '-'); }   //
 async function consultarStock(inp, user) {
   const codigos = (Array.isArray(inp.codigos) ? inp.codigos : [inp.codigos]).map(c => String(c || '').trim().toUpperCase()).filter(Boolean).slice(0, 4);
   if (!codigos.length) return { error: 'Falta el código del artículo.' };
+  // lo que tipea el salón: Id.item («233999») o el código sin las letras de la marca («IH9527») → código del sistema
+  const traducidos = {};
+  await Promise.all(codigos.map(async (c, i) => { const f = await resolverCodigo(c); if (f && f[0] && String(f[0]).toUpperCase() !== c) { traducidos[String(f[0]).toUpperCase()] = c; codigos[i] = String(f[0]).toUpperCase(); } }));
   const talle = String(inp.talle || '').trim().toUpperCase().replace(',', '.');
   const con = await sucursalesConStock();
   const slugs = Object.keys(con);
@@ -234,7 +356,7 @@ async function consultarStock(inp, user) {
     });
     const desc = (res.find(x => x.c === c && x.a) || {}).a;
     const sin = slugs.filter(sl => !res.some(x => x.c === c && x.sl === sl && x.a && x.a.stock > 0)).map(sl => SUC_UBIC[sl]);
-    return { codigo: c, descripcion: desc ? desc.descripcion : undefined, con_stock: filas, no_lo_tienen: sin, nota: filas.length ? undefined : 'Ninguna de las sucursales con dato tiene stock cargado de este código (o el código no existe en el Buscador).' };
+    return { codigo: c, pedido_como: traducidos[c], descripcion: desc ? desc.descripcion : undefined, con_stock: filas, no_lo_tienen: sin, nota: filas.length ? undefined : 'Ninguna de las sucursales con dato tiene stock cargado de este código (o el código no existe en el Buscador).' };
   });
   return {
     articulos,
@@ -244,8 +366,65 @@ async function consultarStock(inp, user) {
   };
 }
 
+/* Qué hay EN UNA SUCURSAL de lo que sirve para el pedido: catálogo (disciplina/rubro/marca/género/texto) ∩ artículos
+   cargados en el Buscador de esa sucursal (claves con shallow, liviano) y después el stock real de hasta MAX_LOCAL. */
+const MAX_LOCAL = 24;
+const CLAVES_SUC = {};
+async function clavesSucursal(slug) {
+  const c = CLAVES_SUC[slug];
+  if (c && Date.now() - c.ts < 600e3) return c.k;
+  const k = await gj(FB_UBIC + '/' + slug + '/articulos.json?shallow=true');
+  if (k) CLAVES_SUC[slug] = { k, ts: Date.now() };
+  return k || {};
+}
+function slugDeSucursal(txt) {
+  const p = plano(txt).replace(/^(sucursal|local)\s+(de\s+)?/, '').trim();
+  if (!p) return '';
+  const ks = Object.keys(SUC_UBIC);
+  return ks.filter(k => k === p || plano(SUC_UBIC[k]) === p)[0] || ks.filter(k => plano(SUC_UBIC[k]).indexOf(p) >= 0 || p.indexOf(plano(SUC_UBIC[k])) >= 0 || k === p.replace(/\s+/g, '-'))[0] || (/(^|\s)80$|matriz/.test(p) ? 'diagonal' : '');
+}
+async function stockDelLocal(inp, user) {
+  const mio = user.sucursal || user.outlet_id || '';
+  const slug = inp.sucursal ? slugDeSucursal(inp.sucursal) : mio;
+  if (!slug || !SUC_UBIC[slug]) return { error: inp.sucursal ? 'No reconozco esa sucursal.' : 'Esta cuenta no tiene sucursal: preguntá de qué sucursal.', sucursales: Object.values(SUC_UBIC) };
+  const con = await sucursalesConStock();
+  if (!con[slug]) return { error: SUC_UBIC[slug] + ' no carga su stock en el Buscador de Artículos: desde acá no se sabe qué tiene. Recomendá desde el catálogo y aclaralo.', sucursales_con_dato: Object.keys(con).map(k => SUC_UBIC[k]) };
+  const r = await filasCatalogo(inp);
+  if (r.error) return r;
+  const claves = await clavesSucursal(slug);
+  const enLocal = r.filas.filter(f => claves[fbKey(f[0])]);
+  if (!enLocal.length) return { sucursal: SUC_UBIC[slug], stock_del: fechaAR(con[slug].cargado), articulos_del_catalogo_que_cumplen: r.filas.length, en_el_local: 0, nota: 'Ninguno de esos artículos figura en el stock cargado de ' + SUC_UBIC[slug] + '. Decilo así y, si sirve, ofrecé ver otras sucursales con consultar_stock.' };
+  // hasta MAX_LOCAL, alternando marcas para que no salga todo de una sola
+  const porMarca = {}; enLocal.forEach(f => (porMarca[f[2]] = porMarca[f[2]] || []).push(f));
+  const elegidos = []; let quedan = true;
+  while (elegidos.length < MAX_LOCAL && quedan) { quedan = false; Object.keys(porMarca).forEach(m => { const f = porMarca[m].shift(); if (f && elegidos.length < MAX_LOCAL) { elegidos.push(f); quedan = true; } }); }
+  const docs = await Promise.all(elegidos.map(f => gj(FB_UBIC + '/' + slug + '/articulos/' + encodeURIComponent(fbKey(f[0])) + '.json')));
+  const talle = String(inp.talle || '').trim().toUpperCase().replace(',', '.');
+  let abrePorTalle = false;
+  const filas = [];
+  elegidos.forEach((f, i) => {
+    const a = docs[i]; if (!a || !(a.stock > 0)) return;
+    const t = (a.talles || []).filter(z => z && z.t && /[0-9A-Z]/i.test(String(z.t)) && z.c > 0);
+    if (t.length) abrePorTalle = true;
+    if (talle && t.length && !t.some(z => String(z.t).toUpperCase().replace(',', '.') === talle)) return;
+    const ub = Object.values(a.ubicaciones || {}).filter(u => u && u.estanteriaId).map(u => { const n = parseInt(String(u.estanteriaId).replace(/\D/g, ''), 10); const piso = (PISOS[slug] || []).filter(x => n >= x[1] && n <= x[2]).map(x => x[0])[0]; return 'Estantería ' + (n || u.estanteriaId) + (u.moduloId ? ' · Módulo ' + String(u.moduloId).replace(/\D/g, '') : '') + (piso ? ' (' + piso + ')' : ''); });
+    filas.push({ codigo: f[0], articulo: f[1], marca: f[2], genero: f[3], unidades: a.stock, talles: t.length ? t.map(z => z.t + ' (' + z.c + ')').join(', ') : undefined, ubicacion: ub.length ? ub.join(' y ') : 'sin ubicar' });
+  });
+  filas.sort((a, b) => b.unidades - a.unidades);
+  const vistos = {}; elegidos.forEach(f => { vistos[f[0]] = 1; });
+  const resto = enLocal.filter(f => !vistos[f[0]]);
+  return {
+    sucursal: SUC_UBIC[slug], stock_del: fechaAR(con[slug].cargado),
+    articulos_del_catalogo_que_cumplen: r.filas.length, en_el_local: enLocal.length, revisados: elegidos.length,
+    con_stock: filas,
+    talle_pedido: talle ? (abrePorTalle ? 'filtrado por talle ' + talle : 'esta sucursal no abre el stock por talle: el talle ' + talle + ' hay que confirmarlo en el depósito') : undefined,
+    otros_en_el_local_sin_revisar: resto.length ? resto.slice(0, 20).map(f => f[0] + ' ' + f[1] + ' (' + f[2] + ', ' + f[3] + ')') : undefined,
+    palabras_corregidas: r.extra && r.extra.corregidas,
+    aviso: 'Es el último stock que cargó la sucursal en el Buscador, no el sistema en vivo: puede haber cambiado por ventas.'
+  };
+}
+
 /* Gestión del local: objetivo, venta provisoria, equipo y pendientes. Los permisos se resuelven ACÁ. */
-const gj = u => fetch(u).then(r => r.json()).catch(() => null);
 const plata = n => '$' + Math.round(n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const pct = (a, b) => b > 0 ? Math.round(a / b * 1000) / 10 : null;
 function mesDeSemana(lunes) { const d = new Date(lunes + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 6); return d.toISOString().slice(0, 7); }   // desde sep-2026 la semana es del mes de su domingo
@@ -365,14 +544,15 @@ function herramientas(guia) {
     },
     {
       name: 'buscar_catalogo',
-      description: 'Busca artículos que Mateu Sports trabajó este año. Dos formas: por disciplina + rubro (para recomendar), o solo por marca + texto (para encontrar el código de un modelo por su nombre, p.ej. marca Adidas, texto kantana). Devuelve código, artículo, marca, género y tipo. NO informa stock ni precio (para stock: consultar_stock con el código). Disciplinas habituales: TENIS, PADDLE, HOCKEY, RUNNING, TRAINING, FUTBOL (indumentaria y accesorios), FUTBOL 11 y FUTBOL 5 (botines), BASQUET, RUGBY, VOLEY, NATACION, BOX, ADVENTURE, CASUAL, ORIGINALS, CALZADO VERANO, ARQUERO, HANDBALL, YOGA, TENIS DE MESA. Las raquetas, paletas, palos, pelotas y protecciones están en el rubro ACCESORIOS.',
+      description: 'Busca artículos que Mateu Sports trabajó este año. Tres formas: por disciplina + rubro (para recomendar), por marca + texto, o SOLO texto (nombre de un modelo aunque venga mal escrito, un código, o un Id.item numérico como 233999: lo que te tiren, probalo acá antes de preguntar). Devuelve código, artículo, marca, género y tipo. NO informa stock ni precio (para stock: consultar_stock con el código). Disciplinas habituales: TENIS, PADDLE, HOCKEY, RUNNING, TRAINING, FUTBOL (indumentaria y accesorios), FUTBOL 11 y FUTBOL 5 (botines), BASQUET, RUGBY, VOLEY, NATACION, BOX, ADVENTURE, CASUAL, ORIGINALS, CALZADO VERANO, ARQUERO, HANDBALL, YOGA, TENIS DE MESA. Las raquetas, paletas, palos, pelotas y protecciones están en el rubro ACCESORIOS.',
       input_schema: {
         type: 'object',
         properties: {
           disciplina: { type: 'string', description: 'Ej.: TENIS, PADDLE, RUNNING' },
           rubro: { type: 'string', enum: ['CALZADO', 'INDUMENTARIA', 'ACCESORIOS'] },
           marca: { type: 'string', description: 'Opcional. Ej.: Head, Wilson, Adidas' },
-          texto: { type: 'string', description: 'Opcional. Palabras que tienen que estar en el nombre o el tipo del artículo. Ej.: raqueta, paleta, palo, botin' }
+          texto: { type: 'string', description: 'Opcional. Palabras del nombre o el tipo del artículo (raqueta, paleta, botin), el nombre de un modelo aunque esté mal escrito (dropset control), un código o un Id.item. Puede ir SOLO, sin marca ni disciplina: busca en todo el catálogo.' },
+          genero: { type: 'string', enum: ['HOMBRE', 'DAMA', 'NIÑO'], description: 'Opcional. Unisex entra en hombre y dama.' }
         },
         additionalProperties: false
       }
@@ -387,6 +567,23 @@ function herramientas(guia) {
           talle: { type: 'string', description: 'Opcional. Talle que busca el cliente, tal como lo rotula el artículo (42, 9.5, M).' }
         },
         required: ['codigos'], additionalProperties: false
+      }
+    },
+    {
+      name: 'stock_del_local',
+      description: 'Qué hay EN STOCK EN UNA SUCURSAL (por defecto la del usuario) de lo que sirve para un pedido: cruza el catálogo con el stock que esa sucursal cargó en el Buscador y devuelve los artículos con unidades, talles (si los abre) y ubicación en el depósito. Es la PRIMERA herramienta para recomendar producto a un cliente que está en el local («zapatilla para correr», «qué hay de dama en 37», «qué paletas tenemos») y para «qué tenemos de X». Mismos filtros que buscar_catalogo + talle + sucursal.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          sucursal: { type: 'string', description: 'Opcional. Nombre de otra sucursal; sin esto, la del usuario.' },
+          disciplina: { type: 'string', description: 'Ej.: RUNNING, PADDLE, TENIS' },
+          rubro: { type: 'string', enum: ['CALZADO', 'INDUMENTARIA', 'ACCESORIOS'] },
+          marca: { type: 'string' },
+          texto: { type: 'string', description: 'Opcional. Modelo o tipo de artículo.' },
+          genero: { type: 'string', enum: ['HOMBRE', 'DAMA', 'NIÑO'] },
+          talle: { type: 'string', description: 'Opcional. Tal como lo rotula el artículo (42, 9.5, M).' }
+        },
+        additionalProperties: false
       }
     },
     {
@@ -505,6 +702,7 @@ export async function onRequestPost(ctx) {
             res = guia.modulos[k] ? { modulo: k, nombre: guia.modulos[k].nombre, guia: guiaTexto(guia, k, user.rol) } : { error: 'módulo desconocido' };
           } else if (p.name === 'buscar_catalogo') res = await buscarCatalogo(p.input || {});
           else if (p.name === 'consultar_stock') res = await consultarStock(p.input || {}, user);
+          else if (p.name === 'stock_del_local') res = await stockDelLocal(p.input || {}, user);
           else if (p.name === 'resumen_gestion') res = conGestion ? await resumenGestion(p.input || {}, user) : { error: 'Esta cuenta no tiene acceso a los datos de gestión.' };
           else res = { error: 'herramienta desconocida' };
         } catch (e) { res = { error: String(e.message || e) }; }

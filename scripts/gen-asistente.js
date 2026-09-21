@@ -76,11 +76,18 @@ function generarGuia() {
 function clave(s) { return String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, ''); }
 function sinNN(s) { return String(s || '').replace(/^\d+\s*-\s*/, '').trim(); }
 
+const PALABRA_COMUN = 400;   // una palabra que está en más artículos que esto no sirve de entrada (mantener igual en functions/api/asistente.js)
+function tokens(s) { return String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^A-Z0-9]+/).filter(t => t.length >= 2 || /^\d$/.test(t)); }
+
 async function generarCatalogo(publicar) {
   console.log('Bajando logistica/arts…');
   const arts = await pedir(DB + '/logistica/arts.json');
   const RUBROS = { CALZADO: 1, INDUMENTARIA: 1, ACCESORIOS: 1 };
   const partes = {}, indice = {}, porMarca = {}, marcas = {};
+  // Búsqueda por NOMBRE sin marca ni disciplina («dropset control 4», «tokio») y por Id.item (lo que tipea el salón):
+  //   vocab/<PALABRA> = en cuántos artículos aparece · palabras/<PALABRA> = sus artículos (solo las que no son
+  //   comunes: «ZAPATILLA» o «ADIDAS» se usan como filtro, no como entrada) · porId/<idItem> = la fila del artículo
+  const vocab = {}, palabras = {}, porId = {}, porCod = {}, filasTxt = [];
   Object.keys(arts || {}).forEach(k => {
     const v = arts[k]; // [rubro, sub, disc, marca, idItem, artículo, tipo, código]
     if (!v || !RUBROS[v[0]] || !v[2] || /desconocid/i.test(v[2])) return;
@@ -89,16 +96,32 @@ async function generarCatalogo(publicar) {
     // segunda partición, por marca: para buscar un modelo por nombre sin saber la disciplina («Adidas Kantana»)
     const mk = clave(v[3]);
     if (mk) { (porMarca[mk] = porMarca[mk] || []).push([v[7] || k, v[5] || '', v[2], v[0], sinNN(v[1]), v[6] || '']); marcas[mk] = v[3]; }
+    const fila = [v[7] || k, v[5] || '', v[3] || '', v[2], v[0], sinNN(v[1]), v[6] || ''];   // código, artículo, marca, disciplina, rubro, género, tipo
+    if (v[4] && /^\d{4,8}$/.test(String(v[4]))) porId[String(v[4])] = fila;
+    // por código, entero y sin las 3 letras de marca (en el salón tipean «IH9527» por ADIIH9527); si el recorte choca entre marcas, no se guarda
+    const ck = clave(fila[0]); if (ck) porCod[ck] = fila;
+    if (/^[A-Z]{3}[A-Z0-9]*\d/.test(ck) && ck.length >= 7) { const c2 = ck.slice(3); porCod[c2] = porCod[c2] === undefined ? fila : (porCod[c2] && porCod[c2][0] === fila[0] ? fila : null); }
+    const toks = {}; tokens(fila[1] + ' ' + fila[2]).forEach(t => { toks[t] = 1; });
+    Object.keys(toks).forEach(t => { vocab[t] = (vocab[t] || 0) + 1; });
+    filasTxt.push([fila, Object.keys(toks)]);
     indice[disc] = indice[disc] || { nombre: v[2], rubros: {} };
     indice[disc].rubros[v[0]] = (indice[disc].rubros[v[0]] || 0) + 1;
   });
+  filasTxt.forEach(ft => ft[1].forEach(t => { if (vocab[t] <= PALABRA_COMUN) (palabras[t] = palabras[t] || []).push(ft[0]); }));
   const nodos = Object.keys(partes).sort();
   nodos.forEach(n => console.log('  ' + n + ': ' + partes[n].length));
   console.log(nodos.length + ' particiones · ' + nodos.reduce((s, n) => s + partes[n].length, 0) + ' artículos · ' + Object.keys(indice).length + ' disciplinas');
+  console.log(Object.keys(vocab).length + ' palabras · ' + Object.keys(palabras).length + ' con entrada · ' + Math.round(JSON.stringify(palabras).length / 1024) + ' KB · vocab ' + Math.round(JSON.stringify(vocab).length / 1024) + ' KB · ' + Object.keys(porId).length + ' Id.item');
   if (!publicar) { console.log('\n(sin --publicar: no se escribió nada)'); return; }
   console.log(Object.keys(porMarca).length + ' marcas');
   if (publicar) await pedir(DB + '/asistente/catalogo.json', 'PUT', { generado: new Date().toISOString(), indice, marcas, partes, porMarca });
   console.log('Publicado en asistente/catalogo');
+  await pedir(DB + '/asistente/catalogo/vocab.json', 'PUT', vocab);
+  await pedir(DB + '/asistente/catalogo/porId.json', 'PUT', porId);
+  Object.keys(porCod).forEach(k => { if (!porCod[k]) delete porCod[k]; });
+  await pedir(DB + '/asistente/catalogo/porCod.json', 'PUT', porCod);
+  await pedir(DB + '/asistente/catalogo/palabras.json', 'PUT', palabras);
+  console.log('Publicado el índice de texto: ' + Object.keys(vocab).length + ' palabras (' + Object.keys(palabras).length + ' con entrada) · ' + Object.keys(porId).length + ' Id.item');
 }
 
 const modo = process.argv[2];
