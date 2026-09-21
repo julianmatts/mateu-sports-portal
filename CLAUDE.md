@@ -2130,6 +2130,18 @@ sucursal**: un remito trae artículos que van a una u otra sucursal.
   numeradas de arriba hacia abajo: `gondolasEnvio` → «Envío ind. 1–3», «Envío calzado 1–10») + módulo en texto libre →
   `picking/envio/<slug>/<calz|ind>` = `{gid, nombre, modulo}`. La tablet lo muestra debajo de cada sucursal en «Va a»
   (`pkEnvio`) y la planilla de transferencias en el título de cada sucursal (`envioDe`).
+- **Ajustes tras la primera prueba real (21/09/2026)**, todo en el kiosco `recepciones/control/`: (1) **«Separá por
+  sucursal»** (`renderPickSeparar`, `pkSepPend`): el operario junta el total del artículo y antes la tablet no le volvía
+  a mostrar los destinos; ahora, al terminar cada ARTÍCULO (todos sus talles juntados o con faltante), sale la grilla
+  sucursal × talle con lo realmente preparado (`pkRepartoItem`: los destinos se llenan en orden, el faltante le pega al
+  último) + la góndola de envío, y no sigue hasta tildar cada sucursal (`items/<iid>/sep` y `sep_ok`, evento
+  `article_sorted`). Al finalizar, **«Repaso por sucursal»** (`pkRepasoHtml`): por sucursal, cada artículo con su curva
+  («8.5×3 · 9×2»). (2) **El control final ya no re-escanea** (era tiempo perdido: el que despacha ya revisa): en tareas
+  con destinos es un repaso POR SUCURSAL (`renderCfSucursales`): ✓ Coincide / ✗ Hay diferencia + motivo →
+  `control_suc/<slug>` = `{ok, motivo, por, ts}`, `control_modo:'sucursal'`, y al cerrar `controlled = picked`; el
+  re-escaneo queda como link «Prefiero controlar escaneando» (`state.cfModo='scan'`) y para los picks viejos sin `dest`.
+  (3) El cartel «Etiqueta nueva» muestra el código como está impreso: un UPC de 12 dígitos se GUARDA como EAN-13 con un 0
+  adelante (`gtin13`, igual que el Buscador), pero ya no se muestra con ese 0.
 - **Pendiente**: probar cámara y lector en la tablet real; validar el packing digital con un archivo de
   la marca; publicar al mapa del Buscador las etiquetas aprendidas que confirme el control final; hoja
   de apertura de cajas; otras marcas en el Ingreso (hoy solo Adidas).
