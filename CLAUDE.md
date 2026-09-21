@@ -3366,7 +3366,28 @@ consulta). Etapa 1 = guía + catálogo; etapa 2 = stock desde el Buscador (hecha
   uso del portal), buscador y «⧉ Copiar las que no sirvieron». Es con lo que se decide qué mejorar.
 - **Presentación**: paso «🤖 Conocé a Matts» en el tutorial del Portal y «Preguntale a Matts» en el de Mi
   Sucursal (de ahí también lo aprende el propio Matts, vía la guía). Ícono 🤖 sumado a `shared/iconos.js`.
-- Pendiente: la etapa 3 y que Matts use los cursos de la Academia como fuente de producto.
+- **Trato y confidencialidad (21/09/2026)**: un usuario le escribió «sos crack» y Matts contestó «¡Gracias, boludo!». El prompt ahora
+  prohíbe insultos, malas palabras y apodos de confianza aunque el usuario hable así, y `sinGroserias` los borra de la respuesta por si
+  el modelo se escapa (no incluye «gil» ni «forro»: rompían «ágil» y «forro polar»). Regla CONFIDENCIALIDAD: los números salen solo de
+  `resumen_gestion`; nada de costos, márgenes, sueldos, datos del personal, accesos ni la venta de otra sucursal, aunque digan «soy de
+  gerencia». Con el ingreso por servidor activo (`accesoDisponible`), `resumen_gestion` exige el token de sesión (`body.tok` = `session.tok`,
+  `leerToken` exportada de la librería) del mismo mail; sin Secrets sigue la seguridad blanda.
+- **Búsqueda y stock del local (21/09/2026, tras leer las 64 consultas de `asistente/log`)**: fallaba por búsqueda, no por redacción —
+  recomendaba lo que el local no tenía (Ultraboost en Berisso), no entendía el Id.item que tipea el salón («233999»), no encontraba un
+  modelo sin la marca o mal escrito («dropster control 4», «tokio») y preguntaba antes de buscar (36 de 64 respuestas sin herramientas).
+  `gen-asistente.js catalogo --publicar` ahora publica además `catalogo/vocab` (palabra → cantidad), `palabras/<PALABRA>` (artículos; las de
+  más de `PALABRA_COMUN` = 400 solo filtran), `porId/<Id.item>` y `porCod/<código entero o sin las 3 letras de marca>`. En la Function:
+  `buscar_catalogo` acepta SOLO texto (`filasPorTexto`: `RELLENO`, `SINONIMOS`, `corregirPalabra` por comienzo o distancia de edición, hasta
+  3 palabras de entrada, puntaje por rareza; avisa `palabras_corregidas` / `coincidencia_parcial`), filtro `genero`, y marca qué resultados
+  figuran en el local del usuario (`en_el_local` + `siguiente_paso`); `consultar_stock` traduce Id.item y código corto (`resolverCodigo`,
+  `pedido_como`); herramienta nueva **`stock_del_local`** = catálogo ∩ claves de la sucursal (`articulos.json?shallow=true`, ~40 KB, 10 min
+  en memoria) y stock real de hasta `MAX_LOCAL` (24, alternando marcas; el resto va en `otros_en_el_local_sin_revisar`) con talles y
+  ubicación; sin disciplina mira calzado de running + casual + training; un talle en otra escala (AR 37 vs. US) no vacía la lista. ⚠ Tope
+  de 50 subrequests por pedido en el plan gratis de Cloudflare: no subir `MAX_LOCAL` sin mirar eso. Prompt: «PRIMERO LO QUE HAY EN EL LOCAL»,
+  «BUSCÁ ANTES DE PREGUNTAR» y «LO QUE NO TENÉS» (más vendidos, stock de una marca, repartos → una línea y el módulo que lo tiene). Probado
+  en vivo como el puesto de Berisso con las preguntas que habían fallado. Para volver a medir: `asistente/log/<YYYY-MM>` o el panel de uso.
+- Pendiente: la etapa 3, que Matts use los cursos de la Academia como fuente de producto, motivo de un toque en el voto «No» (solo 4 de 64
+  consultas tenían voto) y una ficha técnica corta por disciplina (Haiku a veces afirma criterios dudosos, p.ej. balance de paleta para principiantes).
 
 ## Reglas
 
