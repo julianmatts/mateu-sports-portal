@@ -1551,7 +1551,7 @@ async function ingSaveRemito(rec){
   if(!DEMO) fbPut(ROOT_ING+'/ultima', key).catch(()=>{});
 }
 async function ingDeleteRemito(key){
-  if(!DEMO){ await fbDelete(ROOT_ING+'/remitos/'+key).catch(()=>{}); await fbDelete(ROOT_ING+'/control/'+key).catch(()=>{}); }
+  if(!DEMO){ await fbDelete(ROOT_ING+'/remitos/'+key).catch(()=>{}); await fbDelete(ROOT_ING+'/control/'+key).catch(()=>{}); await fbDelete(ROOT_ING+'/paraReparto/'+key).catch(()=>{}); }
   delete DATA.ingreso.remitos[key]; delete DATA.ingreso.control[key];
 }
 let _ctrlT=null;
@@ -1876,7 +1876,7 @@ async function ingViewConcil(){
   else if(!diff){ html+='<div class="ing-verdict ok">✓ Todo OK — '+fmtInt(decTot)+' u. Listo para ingresar a stock y compartir el remito para reparto.</div>'; }
   else { html+='<div class="ing-verdict bad">Diferencias: faltan '+falN+' u y sobran '+sobN+' u. Reportar a la marca antes de ingresar a stock.</div>'; }
   html+='<div class="ing-actions" style="margin-top:14px">';
-  if(!R.ingresado) html+='<div class="field" style="margin:0;min-width:240px"><label>Nº de remito del sistema (para el Reparto inicial)</label><input class="inp" id="ingRemSis" placeholder="0005-00047640" value="'+esc(R.remito_sistema||'')+'"></div>'
+  if(!R.ingresado) html+='<div class="field" style="margin:0;min-width:240px"><label>Nº de remito del sistema (opcional)</label><input class="inp" id="ingRemSis" placeholder="0005-00047640" value="'+esc(R.remito_sistema||'')+'"></div>'
     +'<button class="btn btn-primary" id="ingStock"'+(C.terminado?'':' disabled')+'>✓ Ingresar a stock</button>';
   else html+='<span class="ing-pill ok">Ingresado a stock '+esc((R.ingresado_en||'').slice(0,10))+'</span>'
     +(R.remito_sistema?' <span class="ing-pill info">Remito del sistema '+esc(R.remito_sistema)+'</span>':'')
@@ -1890,8 +1890,21 @@ async function ingViewConcil(){
     R.remito_sistema=($('ingRemSis')&&$('ingRemSis').value.trim())||'';
     // índice liviano para el Reparto inicial: clave = nro corto del remito del sistema (sin serie ni ceros)
     const corto=R.remito_sistema.split('-').pop().replace(/\D/g,'').replace(/^0+/,'');
+    // ALTA PARA EL REPARTO INICIAL (20/09/2026, pedido de Juli): el remito controlado aparece solo en
+    // Reparto de Mercadería, con lo que REALMENTE se contó (talle por talle), sin esperar la estadística
+    // de remitos del sistema. Código del sistema = «ADI» + material; «5-» de la grilla Adidas = 5.5.
+    if(!DEMO){ try{
+      const porMat={}; const tl=t=>{ t=String(t||''); return /^\d+-$/.test(t)?t.slice(0,-1)+'.5':t; };
+      const suma=(material,desc,talle,u)=>{ if(!(u>0)||!material) return; const o=porMat[material]||(porMat[material]={cod:'ADI'+material, desc:desc||'', t:{}}); const k=tl(talle); o.t[k]=(o.t[k]||0)+u; if(!o.desc&&desc) o.desc=desc; };
+      const huboControl=Object.keys(C.scans||{}).some(k=>num(C.scans[k])>0);
+      Object.keys(R.declarado||{}).forEach(sku=>{ const d=R.declarado[sku]||{}; suma(d.material||(skuInfo(sku)||{}).material, d.desc, d.talle, huboControl?num((C.scans||{})[sku]):num(d.cant)); });
+      Object.keys(C.unknown||{}).forEach(e=>{ const inf=eanInfo(e); if(inf) suma(inf.material, inf.desc, inf.talle, num(C.unknown[e])); });   // sobrantes que sí son del catálogo
+      const arts=Object.keys(porMat).map(m=>({cod:porMat[m].cod, desc:porMat[m].desc, t:Object.keys(porMat[m].t).map(k=>[k,porMat[m].t[k]])}));
+      if(arts.length) fbPut(ROOT_ING+'/paraReparto/'+fbKey(R.nro), { remito:R.nro, remito_sistema:R.remito_sistema||'', proveedor:R.proveedor||'ADIDAS', marca:'Adidas', fecha:R.ingresado_en, por:_mail(),
+        u:arts.reduce((a,x)=>a+x.t.reduce((b,p)=>b+p[1],0),0), contado:huboControl, arts:arts }).catch(()=>{});
+    }catch(e){} }
     if(corto && !DEMO) fbPut(ROOT_ING+'/ingresados/'+corto, { remito:R.nro, remito_sistema:R.remito_sistema, fecha:R.ingresado_en, u:conTotAll, faltan:falN, sobran:sobN, por:_mail() }).catch(()=>{});
-    try{ await ingSaveRemito(R); toast('Ingresado a stock — remito listo para reparto','ok'); render(); }catch(e){ st.disabled=false; toast('No se pudo: '+e.message,'bad'); } };
+    try{ await ingSaveRemito(R); toast('Ingresado a stock — el remito ya aparece en el Reparto inicial','ok'); render(); }catch(e){ st.disabled=false; toast('No se pudo: '+e.message,'bad'); } };
 }
 
 /* ---- OCR del packing list (foto/scan) → detalle, con auto-corrección de códigos ----

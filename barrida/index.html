@@ -3563,11 +3563,103 @@ async function repCargarArchivo(file){
     let D=null, err=null;
     for(const sh of hojas){ try{ D=repParseRemitos(sh.matrix, file.name); if(D.filas.length) break; }catch(e){ err=e; D=null; } }
     if(!D || !D.filas.length) throw err || new Error('No encontré remitos con unidades en «'+file.name+'».');
-    const S=state.rep; S.data=D; S.sel={}; S.res=null; S.abierto=null; S.selOpen=true; S.manual={}; S.criRem={}; S.criArt={}; S.edit=null;
+    const S=state.rep; S.dataFile=D; S.sel={}; S.res=null; S.abierto=null; S.selOpen=true; S.manual={}; S.criRem={}; S.criArt={}; S.edit=null;
     S.mes = D.meses.length ? String(D.meses[D.meses.length-1]) : '';
+    repFusionarData();          // + los remitos dados de alta en el portal (Ingreso de Mercadería / a mano)
     render();
     toast(fmtInt(D.nRemitos)+' remitos leídos'+(D.conTalles?' (con talles)':''),'ok');
   }catch(e){ toast(e.message||'No pude leer el archivo','err'); }
+}
+
+
+/* ---------- REMITOS DADOS DE ALTA EN EL PORTAL (20/09/2026, pedido de Juli) ----------
+   Un remito entra al Reparto inicial por tres caminos: (1) la estadística de remitos del sistema
+   (el archivo, como siempre); (2) AUTOMÁTICO: Ariel/Luis lo controlan y tocan «Ingresar a stock» en
+   Ingreso de Mercadería → `ingreso/paraReparto/<remito>` con lo que se contó, talle por talle (exacto,
+   sin estimar con la reserva); (3) A MANO: «+ Remito a mano» en esta pantalla →
+   `barrida/remitosManual/<remito>`. Los dos últimos no necesitan el archivo: la lista se arma igual.
+   Marca, rubro, subrubro, disciplina, tipo e ID ITEM salen del maestro de logística (`logistica/arts`,
+   consulta puntual por código); un artículo que todavía no está en el maestro entra con su código.
+   Si el archivo trae el mismo remito, manda el del alta (tiene los talles reales). */
+const REP_ALTA_ING='ingreso/paraReparto', REP_ALTA_MAN='remitosManual';
+const REP_ARTS={};                                   // clave del maestro → fila | null
+const repArtClave = cod => String(cod||'').trim().toUpperCase().replace(/[.#$\[\]\/]/g,'_');
+async function repArtsMaestro(cods){
+  const faltan=[...new Set(cods.map(repArtClave))].filter(k=>k && REP_ARTS[k]===undefined);
+  await Promise.all(faltan.map(async k=>{ try{ REP_ARTS[k]=(await conTimeout(fbGet(LOGI+'/arts/'+k),8000))||null; }catch(e){ /* sin red: se reintenta la próxima */ } }));
+}
+async function repCargarAltas(){
+  const S=state.rep; if(!FIREBASE_DB_URL) return;
+  const [ing, man]=await Promise.all([ conTimeout(fbGet(REP_ALTA_ING),10000).catch(()=>null), conTimeout(fbGet(ROOT+'/'+REP_ALTA_MAN),10000).catch(()=>null) ]);
+  S.altas={ ingreso:ing||{}, manual:man||{} };
+  const cods=[]; [S.altas.ingreso, S.altas.manual].forEach(o=>Object.values(o).forEach(A=>(A&&A.arts||[]).forEach(x=>cods.push(x.cod))));
+  await repArtsMaestro(cods);
+  repFusionarData();
+}
+function repFilasDeAlta(A, origen, key){
+  const nro=A.remito_sistema || A.remito; if(!nro) return [];
+  const mes=String(+String(A.fecha||'').slice(5,7)||'');
+  return (A.arts||[]).map(x=>{
+    const M=REP_ARTS[repArtClave(x.cod)]||null; const talles={}; let tot=0;
+    (x.t||[]).forEach(p=>{ const u=+p[1]||0; if(u<=0) return; tot+=u; if(p[0]) talles[p[0]]=(talles[p[0]]||0)+u; });
+    const conT=Object.keys(talles).length>0 && sumT(talles)===tot;
+    const f={ remito:nro, id:String((M&&M[4])||x.cod), cod:x.cod, desc:(M&&M[5])||x.desc||'', marca:(M&&M[3])||A.marca||'', rubro:(M&&M[0])||x.rubro||'',
+      genero:(M&&M[1])||'', disc:(M&&M[2])||'', tipo:(M&&M[6])||'', porMes:mes?{[mes]:tot}:{}, talles:conT?talles:null, total:tot, alta:origen, altaKey:key, sinMaestro:!M };
+    if(conT && mes) f.tallesMes={[mes]:talles};
+    return f; }).filter(f=>f.total>0);
+}
+// S.data = lo del archivo (si hay) + los remitos dados de alta; sin ninguno de los dos, null
+function repFusionarData(){
+  const S=state.rep, F=S.dataFile||null, AL=S.altas||{ingreso:{},manual:{}};
+  let altas=[]; Object.entries(AL.ingreso||{}).forEach(([k,A])=>{ if(A) altas=altas.concat(repFilasDeAlta(A,'ingreso',k)); });
+  Object.entries(AL.manual||{}).forEach(([k,A])=>{ if(A) altas=altas.concat(repFilasDeAlta(A,'manual',k)); });
+  if(!F && !altas.length){ S.data=null; return; }
+  const enAlta=new Set(altas.map(f=>repNroCorto(f.remito)));
+  const filas=(F?F.filas.filter(f=>!enAlta.has(repNroCorto(f.remito))):[]).concat(altas);
+  const meses = F ? [...new Set(F.meses.concat(F.meses.length?altas.map(f=>+Object.keys(f.porMes)[0]).filter(Boolean):[]))].sort((a,b)=>a-b) : [];
+  S.data={ archivo:F?F.archivo:'Remitos dados de alta en el portal', anio:F?F.anio:String(new Date().getFullYear()), meses, conTalles:F?F.conTalles:true,
+    filas, nRemitos:new Set(filas.map(f=>f.remito)).size, soloAltas:!F, nAltas:enAlta.size };
+  if(S.mes && meses.length && !meses.map(String).includes(String(S.mes))) S.mes=String(meses[meses.length-1]);
+  if(!meses.length) S.mes='';
+}
+// alta a mano: una línea por artículo (y talle): «código talle cantidad» o «código cantidad»
+function repParseManual(txtDet){
+  const porCod={}; const malas=[];
+  String(txtDet||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean).forEach(l=>{
+    const p=l.split(/[\s;,\t]+/).filter(Boolean); const u=parseInt(p[p.length-1],10);
+    if(p.length<2 || !(u>0) || !/[A-Za-z]/.test(p[0])){ malas.push(l); return; }
+    const cod=p[0].toUpperCase(), t=p.length>=3 ? p.slice(1,-1).join(' ').toUpperCase().replace(',','.') : '';
+    const o=porCod[cod]||(porCod[cod]={cod, t:{}}); o.t[t]=(o.t[t]||0)+u; });
+  return { arts:Object.values(porCod).map(o=>({cod:o.cod, t:Object.keys(o.t).map(k=>[k,o.t[k]])})), malas };
+}
+async function repGuardarManual(){
+  const S=state.rep; const nro=($('rmNro')||{}).value||'', marca=($('rmMarca')||{}).value||'', det=($('rmDet')||{}).value||'';
+  if(!nro.trim()){ toast('Falta el número de remito','err'); return; }
+  const P=repParseManual(det);
+  if(!P.arts.length){ toast('Cargá al menos una línea: código, talle y cantidad','err'); return; }
+  if(P.malas.length && !confirm(P.malas.length+' línea(s) no las pude leer y quedan afuera:\n'+P.malas.slice(0,5).join('\n')+'\n\n¿Guardar igual?')) return;
+  const key=repKey(nro.trim());
+  if((S.altas&&S.altas.manual&&S.altas.manual[key]) && !confirm('Ya hay un remito a mano con ese número: se reemplaza. ¿Seguir?')) return;
+  const rec={ remito:nro.trim(), marca:marca.trim(), fecha:nowISO(), por:SESSION.email||'', manual:true, u:P.arts.reduce((a,x)=>a+x.t.reduce((b,p)=>b+p[1],0),0), arts:P.arts };
+  try{ await fbPut(ROOT+'/'+REP_ALTA_MAN+'/'+key, rec); S.manOpen=false; await repCargarAltas(); S.sel[rec.remito]=true; S.res=null; render(); toast('Remito '+rec.remito+' dado de alta ✓','ok'); }
+  catch(e){ toast('No se pudo guardar: '+(e.message||e),'err'); }
+}
+async function repBorrarManual(key){
+  const S=state.rep, A=S.altas&&S.altas.manual&&S.altas.manual[key]; if(!A) return;
+  if(!confirm('¿Quitar el remito '+A.remito+' cargado a mano? (No borra un reparto ya guardado.)')) return;
+  try{ await fbPatch(ROOT, { [REP_ALTA_MAN+'/'+key]:null }); delete S.sel[A.remito]; await repCargarAltas(); S.res=null; render(); toast('Remito quitado','ok'); }
+  catch(e){ toast('No se pudo quitar','err'); }
+}
+function repManualHtml(){
+  const S=state.rep;
+  return '<details class="card" id="repManual" style="margin-top:10px;padding:12px 14px"'+(S.manOpen?' open':'')+'><summary style="cursor:pointer;font-weight:700">+ Dar de alta un remito a mano</summary>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:10px">'
+    +'<div class="fgrp"><label for="rmNro">Nº de remito</label><input class="inp" id="rmNro" placeholder="0005-00047650"></div>'
+    +'<div class="fgrp"><label for="rmMarca">Marca (si el artículo es nuevo)</label><input class="inp" id="rmMarca" placeholder="Puma"></div></div>'
+    +'<div class="fgrp" style="margin-top:10px"><label for="rmDet">Detalle — una línea por artículo y talle: <code>código talle cantidad</code> (sin talle: <code>código cantidad</code>, y se abre con la curva de la reserva)</label>'
+    +'<textarea class="inp" id="rmDet" rows="6" style="width:100%;font-family:monospace" placeholder="PUM39328201 8 2&#10;PUM39328201 8.5 3&#10;PUM39328201 9 3&#10;ADIIB8651 M 4"></textarea></div>'
+    +'<div style="display:flex;gap:10px;align-items:center;margin-top:10px"><button class="btn btn-primary btn-sm" id="rmGuardar">Dar de alta</button>'
+    +'<span style="font-size:12.5px;color:var(--muted)">Marca, rubro y subrubro se completan solos desde el maestro de artículos. Lo ven todos los que entran al módulo.</span></div></details>';
 }
 
 /* ---------- de dónde salen los talles ----------
@@ -4450,6 +4542,7 @@ async function repCargarMemoria(){
   // remitos que el depósito ya controló e ingresó a stock en Ingreso de Mercadería (índice liviano,
   // clave = nro corto del remito del sistema): se marcan en la lista para repartirlos primero
   try{ S.ingresados=(await conTimeout(fbGet('ingreso/ingresados'),8000))||{}; }catch(e){ S.ingresados=S.ingresados||{}; }
+  try{ await repCargarAltas(); }catch(e){ /* sin las altas se sigue con el archivo */ }
   if(cfg.ok && cfg.v && cfg.v.centrales) S.centrales=cfg.v.centrales;
   const ks=Object.keys((keys.ok&&keys.v)||{}).sort().reverse().slice(0,12);
   const metas=await Promise.all(ks.map(k=>intentar(conTimeout(fbGet(ROOT+'/repartos/'+k+'/meta'),8000))));
@@ -4566,7 +4659,8 @@ function repRemitosLista(){
   const S=state.rep, D=S.data, m=S.mes, map=new Map();
   D.filas.forEach(x=>{ const u=repUDe(D,x,m); if(u<=0) return;
     let r=map.get(x.remito); if(!r){ r={ nro:x.remito, marcas:new Set(), rubros:new Set(), arts:0, u:0, texto:'' }; map.set(x.remito,r); }
-    r.marcas.add(x.marca); r.rubros.add(stripNN(x.rubro)); r.arts++; r.u+=u; r.texto+=' '+x.desc+' '+x.cod+' '+x.id; });
+    r.marcas.add(x.marca); r.rubros.add(stripNN(x.rubro)); r.arts++; r.u+=u; r.texto+=' '+x.desc+' '+x.cod+' '+x.id;
+    if(x.alta){ r.alta=x.alta; r.altaKey=x.altaKey; if(x.sinMaestro) r.sinMaestro=(r.sinMaestro||0)+1; } });
   return [...map.values()].map(r=>Object.assign(r, { marca:[...r.marcas].filter(Boolean).join(' / '), rubro:[...r.rubros].filter(Boolean).join(' / '), rep:(S.repartidos||{})[repKey(r.nro)]||null }));
 }
 function viewReparto(){
@@ -4579,7 +4673,8 @@ function viewReparto(){
     return html+repResultadoHtml()+repGuardadosHtml();
   }
   html+=repCargaHtml();
-  if(!D) return html+'<div class="state"><div class="big-ic">📦</div>Subí la <b>estadística de remitos</b> del sistema (el CSV «Estad remitos &lt;año&gt;» o el Excel «Remitos de ingreso») para elegir qué remitos repartir.</div>'+repGuardadosHtml();
+  if(!D) return html+repManualHtml()+'<div class="state"><div class="big-ic">📦</div>Subí la <b>estadística de remitos</b> del sistema (el CSV «Estad remitos &lt;año&gt;» o el Excel «Remitos de ingreso») para elegir qué remitos repartir.<br><br>Los remitos que Ariel y Luis <b>ingresan a stock</b> en Ingreso de Mercadería aparecen acá solos, y también se puede <b>dar de alta uno a mano</b>.</div>'+repGuardadosHtml();
+  html+=repManualHtml();
   html+=repSeleccionHtml()+repParamHtml();
   if(S.res) html+=repResultadoHtml();
   return html+repGuardadosHtml();
@@ -4588,13 +4683,14 @@ function repCargaHtml(){
   const D=state.rep.data, fR=repFuenteReserva();
   let nota;
   if(!D) nota='Se reparte solo lo que entró por los remitos que elijas. A quién y en qué orden sale de <b>Asignación de Marcas</b>, la <b>categoría</b> de la sucursal, la <b>venta</b> de la marca y los <b>meses de stock</b>.';
-  else if(D.conTalles) nota='✓ El export trae los talles de cada remito: se reparten esos.';
+  else if(D.soloAltas) nota='✓ <b>'+D.nAltas+'</b> remito'+(D.nAltas===1?'':'s')+' dado'+(D.nAltas===1?'':'s')+' de alta en el portal (Ingreso de Mercadería o a mano), sin la estadística del sistema. Los del Ingreso traen los talles que se contaron.';
+  else if(D.conTalles) nota='✓ El export trae los talles de cada remito: se reparten esos.'+(D.nAltas?' + <b>'+D.nAltas+'</b> dados de alta en el portal.':'');
   else nota='El export de remitos <b>no trae talles</b>: cada artículo se abre con la curva que tiene hoy en la <b>reserva del depósito</b> (el reporte de stock de la Barrida) y se reparte entre sus remitos según las unidades de cada uno. '
     +(fR?'<span class="ok">✓ '+esc(fR.archivo)+'</span>':'<span class="warn">Falta subir el reporte de stock del depósito.</span>')
     +' <span class="muted">Si el sistema saca la estadística de remitos abierta por talle, subila así y se usan los talles exactos.</span>';
   return '<div class="card carga" id="repCarga"><div class="carga-row" style="align-items:center">'
-    +'<div class="cbtn"><button type="button" class="btn '+(D?'btn-outline':'btn-primary')+' btn-sm" id="repBtnRem">'+(D?'✓ ':'⇧ ')+'Estadística de remitos</button>'
-      +(D?'<div class="cfile" title="'+esc(D.archivo)+'">'+esc(D.archivo)+' · '+fmtInt(D.nRemitos)+' remitos</div>':'<div class="cfile muted">CSV o Excel del sistema</div>')+'</div>'
+    +'<div class="cbtn"><button type="button" class="btn '+(D?'btn-outline':'btn-primary')+' btn-sm" id="repBtnRem">'+((D&&!D.soloAltas)?'✓ ':'⇧ ')+'Estadística de remitos</button>'
+      +((D&&!D.soloAltas)?'<div class="cfile" title="'+esc(D.archivo)+'">'+esc(D.archivo)+' · '+fmtInt(D.nRemitos)+' remitos</div>':'<div class="cfile muted">CSV o Excel del sistema'+(D?' (opcional)':'')+'</div>')+'</div>'
     +((D && !D.conTalles) ? '<div class="cbtn"><button type="button" class="btn '+(fR?'btn-outline':'btn-primary')+' btn-sm" id="repBtnRes" title="El reporte de stock del depósito central abierto por talle (el mismo que se sube en la Barrida)">'+(fR?'✓ ':'⇧ ')+'Stock del depósito (talles)</button>'
       +(fR?'<div class="cfile" title="'+esc(fR.archivo)+'">'+esc(fR.archivo)+'</div>':'<div class="cfile muted">para abrir por talle</div>')+'</div>' : '')
     +(function(){
@@ -4649,7 +4745,10 @@ function repSeleccionHtml(){
       h+='<tr data-rsel="'+esc(r.nro)+'" class="'+(on?'on':'')+'"><td><input type="checkbox" tabindex="-1" '+(on?'checked':'')+'></td>'
         +'<td class="mono"><b>'+esc(repNroCorto(r.nro))+'</b> <small>'+esc(r.nro)+'</small></td><td>'+esc(r.marca)+'</td><td>'+esc(r.rubro)+'</td>'
         +'<td class="num mono">'+fmtInt(r.arts)+'</td><td class="num mono">'+fmtInt(r.u)+'</td>'
-        +'<td>'+(function(){ const g=(S.ingresados||{})[repNroCorto(r.nro)]; if(!g) return '';
+        +'<td>'+(r.alta==='ingreso'?'<span class="pill" style="background:#e8f6ee;color:#1d7a44" title="Dado de alta solo al «Ingresar a stock» en Ingreso de Mercadería: trae lo que se contó, talle por talle">📦 del Ingreso</span> '
+            :(r.alta==='manual'?'<span class="pill" style="background:#eef1f7;color:#44506b" title="Cargado a mano en esta pantalla">✍ a mano</span> <button type="button" class="lnk" data-rdel="'+esc(r.altaKey)+'" title="Quitar este remito cargado a mano">✕</button> ':''))
+          +(r.sinMaestro?'<span class="pill" style="background:#fff4e2;color:#9a5b00" title="Artículos que todavía no están en el maestro de logística: entran con su código, sin rubro ni subrubro">'+r.sinMaestro+' art. nuevos</span> ':'')
+          +(function(){ if(r.alta==='ingreso') return ''; const g=(S.ingresados||{})[repNroCorto(r.nro)]; if(!g) return '';
             const dif=(g.faltan||0)+(g.sobran||0);
             return '<span class="pill" style="background:'+(dif?'#fff4e2;color:#9a5b00':'#e8f6ee;color:#1d7a44')+'" title="Controlado en Ingreso de Mercadería el '+esc(g.fecha||'')+' · remito del proveedor '+esc(g.remito||'')+' · '+fmtInt(g.u||0)+' u. controladas'+(dif?' · faltan '+(g.faltan||0)+', sobran '+(g.sobran||0):'')+'">'+(dif?'⚠ controlado con diferencias':'✓ controlado')+'</span> '; })()
           +(r.rep?'<span class="pill curva" title="Guardado como repartido el '+esc(r.rep.fecha||'')+(r.rep.por?' por '+esc(r.rep.por):'')+'">✓ repartido</span>':'<span style="color:var(--muted);font-size:12.5px">pendiente</span>')+'</td></tr>'; });
@@ -4861,6 +4960,8 @@ function wireReparto(){
       const otros=fs.filter(f=>f!==rem && /\.xlsx?$/i.test(f.name)); if(otros.length){ await cargarFilesComo('reserva', otros); if(S.res && S.data) repRecalc(); } }; }
   // selección de remitos
   const sel=$('repSel'); if(sel) sel.ontoggle=()=>{ S.selOpen=sel.open; };
+  { const dm=$('repManual'); if(dm) dm.ontoggle=()=>{ S.manOpen=dm.open; }; const bg=$('rmGuardar'); if(bg) bg.onclick=repGuardarManual;
+    document.querySelectorAll('[data-rdel]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); repBorrarManual(b.dataset.rdel); }); }
   const on=(id,ev,fn)=>{ const el=$(id); if(el) el[ev]=fn; };
   on('repMes','onchange',e=>{ S.mes=e.target.value; S.res=null; render(); });
   on('repMarca','onchange',e=>{ S.f.marca=e.target.value; render(); });

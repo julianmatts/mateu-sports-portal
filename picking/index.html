@@ -460,6 +460,7 @@ function renderPickings(){
       +   '<select class="sel" data-prio="'+esc(P.nro)+'" title="Prioridad" style="padding:5px 8px;font-size:12px"><option'+((P.prioridad==='NORMAL'||!P.prioridad)?' selected':'')+'>NORMAL</option><option'+(P.prioridad==='ALTA'?' selected':'')+'>ALTA</option><option'+(P.prioridad==='URGENTE'?' selected':'')+'>URGENTE</option></select>'
       +   (liberable?'<button class="btn btn-outline btn-sm" data-lib="'+esc(P.nro)+'" title="Volver a pendiente para que lo tome otro">↺ Liberar</button>':'')
       +   '<button class="btn btn-outline btn-sm" data-print="'+esc(P.nro)+'" title="Imprimir hoja de picking">🖨</button>'
+      +   ((P.tipo && r.pick>0)?'<button class="btn btn-outline btn-sm" data-transf="'+esc(P.nro)+'" title="Lo que se preparó, sucursal por sucursal, para cargar la transferencia en el sistema">🚚 Transferencias</button>':'')
       +   '<button class="btn btn-outline btn-sm" data-del="'+esc(P.nro)+'" title="Eliminar">🗑</button>'
       + '</div></div>';
   }).join('');
@@ -480,7 +481,46 @@ function bindPickings(){
   document.querySelectorAll('[data-lib]').forEach(b=>b.onclick=async()=>{ const nro=b.dataset.lib, P=DATA.pickings[fbKey(nro)]; if(!P) return; if(!confirm('¿Liberar el PICK #'+nro+'? Vuelve a Pendiente y libera al operario; el avance se conserva y otro lo puede retomar.')) return; b.disabled=true;
     try{ const r=await fetch(fbUrl(ROOT+'/pickings/'+fbKey(nro)),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:'PENDIENTE',operario:''})}); if(!r.ok) throw new Error(); Object.assign(P,{estado:'PENDIENTE',operario:''}); logEvento({event_type:'picking_released',picking_id:P.nro}); render(); toast('Pick liberado','ok'); }catch(e){ b.disabled=false; toast('No se pudo','bad'); } });
   document.querySelectorAll('[data-print]').forEach(b=>b.onclick=()=>imprimirPick(b.dataset.print));
+  document.querySelectorAll('[data-transf]').forEach(b=>b.onclick=()=>planillaTransferencias(b.dataset.transf));
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{ const nro=b.dataset.del; if(!confirm('¿Eliminar el PICK #'+nro+'?')) return; b.disabled=true; try{ await fbDelete(ROOT+'/pickings/'+fbKey(nro)); delete DATA.pickings[fbKey(nro)]; render(); toast('Picking eliminado','ok'); }catch(e){ b.disabled=false; toast('No se pudo','bad'); } });
+}
+/* PLANILLA DE TRANSFERENCIAS (20/09/2026): el portal no mueve el stock del sistema; la transferencia a
+   cada sucursal se sigue cargando ahí. Esta planilla es lo que REALMENTE se preparó (lo escaneado; si ya
+   pasó el control final, lo controlado), separado por sucursal, para tipearlo de corrido o importarlo:
+   una hoja imprimible por sucursal + CSV (sucursal;código;id item;descripción;talle;cantidad). Las
+   unidades se reparten entre los destinos en el mismo orden en que la tablet los fue llenando. */
+function transferenciasDe(P){
+  const porSuc={};
+  Object.keys(P.items||{}).map(i=>P.items[i]).sort((a,b)=>num(a.sequence)-num(b.sequence)).forEach(it=>{ (it.talles||[]).forEach(t=>{
+    let hechas = num(t.controlled)>0 ? num(t.controlled) : num(t.picked);
+    (t.dest||[]).forEach(d=>{ const u=Math.min(num(d.u), hechas); hechas-=u; if(u<=0) return;
+      (porSuc[d.s]=porSuc[d.s]||[]).push({cod:it.codigo, id:it.id||'', desc:it.desc||'', marca:it.marca||'', talle:t.t, u:u}); }); }); });
+  return porSuc; }
+function planillaTransferencias(nro){
+  const P=DATA.pickings[fbKey(nro)]; if(!P){ toast('No encontré la tarea','bad'); return; }
+  const porSuc=transferenciasDe(P); const sucs=Object.keys(porSuc).sort((a,b)=>cmp(nombreSuc(a),nombreSuc(b)));
+  if(!sucs.length){ toast('Todavía no hay nada preparado en esta tarea','bad'); return; }
+  const r=pickResumen(P); const parcial=P.estado!=='FINALIZADO' && P.estado!=='LISTO PARA CONTROL';
+  let tot=0; const secciones=sucs.map(sl=>{ const rows=porSuc[sl]; const u=rows.reduce((a,x)=>a+x.u,0); tot+=u;
+    return '<section><h2>'+esc(nombreSuc(sl))+' <small>'+u+' unidades · '+rows.length+' líneas</small></h2><table><tr><th class="chk">✓</th><th>Código</th><th>ID item</th><th>Descripción</th><th>Talle</th><th class="q">Cant.</th></tr>'
+      + rows.map(x=>'<tr><td class="chk"></td><td><b>'+esc(x.cod)+'</b></td><td>'+esc(x.id)+'</td><td>'+esc(x.desc)+'</td><td class="t">'+esc(x.talle)+'</td><td class="q">'+x.u+'</td></tr>').join('')+'</table></section>'; }).join('');
+  const csv='﻿Sucursal;Codigo;Id item;Descripcion;Talle;Cantidad\r\n'+sucs.map(sl=>porSuc[sl].map(x=>[nombreSuc(sl),x.cod,x.id,String(x.desc).replace(/;/g,','),x.talle,x.u].join(';')).join('\r\n')).join('\r\n');
+  const win=window.open('','_blank'); if(!win){ toast('Habilitá las ventanas emergentes','bad'); return; }
+  const css='body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:22px}h1{font-size:21px;margin:0}.sub{color:#555;font-size:13px;margin:3px 0 12px}.bar{margin:0 0 14px}.bar a,.bar button{font:inherit;font-size:13px;padding:7px 12px;border:1px solid #0B1527;border-radius:7px;background:#fff;color:#0B1527;text-decoration:none;cursor:pointer;margin-right:8px}'
+    +'h2{font-size:15px;text-transform:uppercase;letter-spacing:.5px;background:#0B1527;color:#fff;padding:7px 10px;border-radius:5px;margin:18px 0 4px}h2 small{font-weight:400;opacity:.8;text-transform:none;letter-spacing:0;margin-left:8px}'
+    +'table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;border-bottom:2px solid #0B1527;padding:5px 7px;font-size:11px;text-transform:uppercase;color:#333}td{border-bottom:1px solid #ddd;padding:6px 7px}'
+    +'.chk{width:26px}td.chk{border:1px solid #999;width:22px;height:20px}.q{text-align:right;font-weight:700;width:54px}.t{font-weight:700}.warn{background:#fff4e2;border:1px solid #f0c987;padding:8px 10px;border-radius:7px;font-size:13px;margin-bottom:12px}'
+    +'@media print{body{margin:8mm}.bar{display:none}section{page-break-after:always}section:last-child{page-break-after:auto}}';
+  win.document.write('<html><head><title>Transferencias PICK #'+esc(String(nro))+'</title><meta charset="utf-8"><style>'+css+'</style></head><body>'
+    +'<h1>Transferencias a cargar — PICK #'+esc(String(nro))+' · '+esc(tituloPick(P))+'</h1>'
+    +'<div class="sub">'+esc(TIPO_LBL[tipoDe(P)]||'')+' · '+tot+' unidades preparadas de '+r.req+' pedidas · '+sucs.length+' sucursales'+(P.operario?' · preparó '+esc(P.operario):'')+(P.controlado_por?' · controló '+esc(P.controlado_por):'')+'</div>'
+    +(parcial?'<div class="warn">⚠ La tarea todavía no está terminada: esto es lo preparado hasta ahora.</div>':'')
+    +(r.pick<r.req?'<div class="warn">Faltaron '+(r.req-r.pick)+' unidades respecto de lo pedido: acá figura solo lo que se preparó.</div>':'')
+    +'<div class="bar"><button onclick="window.print()">🖨 Imprimir (una hoja por sucursal)</button><a id="csv" download="transferencias-pick-'+esc(String(nro))+'.csv">⇩ CSV</a></div>'
+    +secciones+'</body></html>');
+  win.document.close();
+  try{ win.document.getElementById('csv').href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); }catch(e){}
+  win.focus();
 }
 /* hoja imprimible del pick: recorrido por zona con casillas (respaldo en papel / etiqueta de caja) */
 function imprimirPick(nro){

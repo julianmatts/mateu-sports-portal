@@ -2052,6 +2052,27 @@ sucursal**: un remito trae artículos que van a una u otra sucursal.
   ahí; recién con «✓ Estoy en la zona — empezar a escanear» (`state.pkZonaOk = nro|zona`, evento
   `zone_entered`) arranca el escaneo artículo por artículo. Vuelve a salir cada vez que la tarea pasa a
   otra zona. En el escaneo el mini-mapa queda plegado (`pkMapaOpen=false`).
+- **Alta de remitos en el Reparto inicial sin la estadística del sistema (20/09/2026, pedido de Juli)**: un
+  remito entra por tres caminos. (1) El archivo, como siempre (`S.dataFile`). (2) **Automático**: al
+  «Ingresar a stock» en Ingreso de Mercadería se escribe `ingreso/paraReparto/<remito>` = `{remito,
+  remito_sistema, marca, fecha, por, u, contado, arts:[{cod:'ADI'+material, desc, t:[[talle,u]]}]}` con lo
+  que se CONTÓ en el control ciego (si no hubo control, lo declarado; «5-» de la grilla Adidas → 5.5; suma
+  los sobrantes que son del catálogo). (3) **A mano**: desplegable «+ Dar de alta un remito a mano» (líneas
+  `código talle cantidad`, o `código cantidad` y se abre con la curva de la reserva) →
+  `barrida/remitosManual/<remito>` (✕ en la lista lo quita). `repCargarAltas` los baja con la memoria,
+  completa marca/rubro/subrubro/disciplina/tipo/ID ITEM con una consulta puntual a `logistica/arts/<código>`
+  (`REP_ARTS`; el que no está en el maestro entra con su código y el aviso «N art. nuevos») y
+  `repFusionarData` arma `S.data` = archivo + altas (si el archivo trae el mismo remito, manda el alta, que
+  tiene los talles reales). Sin archivo la lista se arma igual (`soloAltas`). Pills «📦 del Ingreso» /
+  «✍ a mano». El Nº de remito del sistema pasó a ser opcional en la conciliación. Probado 20/09 con un
+  alta simulada (ADIJC5724 → ID 230107, dama, remeras): 38 u. repartidas a 4 sucursales sin subir archivo.
+- **Planilla de transferencias (20/09/2026)**: el portal NO mueve el stock del sistema. Proceso real del
+  depósito (Juli): Nehuen/Marcelo/Hernán le dan al operario un papel tipo F8 armado a mano mirando el
+  sistema; el operario junta y deja cada artículo en la góndola de SU sucursal en planta baja; ahí otro
+  operario tipea uno por uno en el sistema y lo deja para la camioneta. El botón **«🚚 Transferencias»**
+  de la tarjeta de la tarea (`planillaTransferencias`/`transferenciasDe`) arma lo que REALMENTE se preparó
+  (lo controlado si ya pasó el control final), una hoja por sucursal + CSV `sucursal;código;id item;
+  descripción;talle;cantidad`, para tipear de corrido o importar si el sistema lo permite.
 - **Pendiente**: probar cámara y lector en la tablet real; validar el packing digital con un archivo de
   la marca; publicar al mapa del Buscador las etiquetas aprendidas que confirme el control final; hoja
   de apertura de cajas; otras marcas en el Ingreso (hoy solo Adidas).
