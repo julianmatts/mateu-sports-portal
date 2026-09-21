@@ -223,9 +223,35 @@ Function + reglas de Firebase cerradas) queda como etapa futura.
   aprobado|pendiente|revocado, cod, etq, ua, alta, ultimo, origen: login|previo, por, en}`,
   `cierre/<mailKey>` y `log/<YYYY-MM>/<id>` = `{ts, mail, rol, dev, cod, etq, r: ok|pendiente|
   revocado|pin}`.
-- Pendiente / no cubierto: el kiosco `recepciones/control` (rol `deposito-tablet`) no carga
-  `acceso.js`; el login sigue bajando `usuarios/` entero con los PIN al navegador (eso solo se
-  arregla con el login del lado del servidor).
+- **Ingreso por servidor — etapas 1 y 2 (21/09/2026, código listo; se activa cuando Juli cargue los
+  Secrets, pasos en `docs/ACCESO-SERVIDOR-SETUP.md`)**. `functions/api/acceso.js` →
+  `lib/acceso-servidor.mjs` (toda la lógica; `node --test lib/acceso-servidor.test.mjs`, base simulada).
+  Secrets en Cloudflare Pages: `FIREBASE_SA` (JSON de la cuenta de servicio de discontinuos-mateu; la
+  Function firma un JWT RS256 con WebCrypto y pide el access_token a Google; plan B `FIREBASE_SECRET`)
+  y `SESSION_SECRET` (⚠ **no cambiarlo nunca**: firma los PIN; opcional `PIN_PEPPER`). Sin ellos `GET
+  /api/acceso` → `disponible:false` y **todo sigue por el camino del navegador** (`Acceso.servidor()`
+  lo averigua y lo recuerda 10 min; cada función tiene las dos ramas).
+  **Etapa 1**: los PIN pasan a `usuariosPriv/<mailKey>` = `{h, cambio, ts}` (HMAC con el secreto, no el
+  PIN) y salen de `usuarios/`, que sigue público para que los módulos resuelvan mails y roles. La
+  migración es sola al primer ingreso de cada cuenta + botón ámbar **«Pasarlos al servidor»** en el ⚙
+  (`avisoMigracionPin` → acción `migrar`, que además pone `accesos/config/migrado:true`: desde ahí un
+  `pin` escrito en `usuarios/` ya no vale). Tope de intentos: 5 por cuenta+IP cada 15 min y 40 por
+  cuenta por hora (`accesos/intentos/<mk>`). Acciones: `login` (PIN → dispositivo → `{usuario sin pin,
+  debeCambiarPin, token}`; el token no se entrega hasta cambiar el PIN), `pin-cambiar`,
+  `pin-verificar` (lo usa `Acceso.verificarPin`: cortina de `bloqueo.js`, «Salir» del puesto y del
+  kiosco) y `pin-reset` (solo julian@: 1111, o 1905 en el puesto; también da el PIN inicial en el alta).
+  `publicar-stock.js` valida con la misma librería. **Etapa 2**: `accesos/` solo se toca desde la
+  Function: `estado` (la revalidación de la sesión abierta y la gracia de las previas), `disp-lista`,
+  `disp-set` y `cierre` exigen el **token de sesión** (HMAC, 30 días, va en `session.tok`) de un mail
+  de `APRUEBAN`; una sesión vieja sin token tiene que salir y volver a entrar para administrar.
+  Reglas finales de la base (último paso del setup): `usuariosPriv` y `accesos` cerrados y `"$otro"`
+  abierto (una regla abierta en la raíz no se puede cerrar más abajo). Las constantes de roles/fechas
+  están duplicadas en `shared/acceso.js` y en la librería: mantener en sintonía.
+- Las pantallas compartidas no cambian PIN: `PIN_SIN_CAMBIO` = puesto y deposito-tablet.
+  `recepciones/control` incluye `acceso.js` (para validar el PIN de «Salir» por servidor).
+- No cubierto (etapa 3, sin empezar): los DATOS. `usuarios/` sigue escribible y cada módulo lee y
+  escribe Firebase directo con reglas abiertas; la sesión vive en localStorage. Cerrarlo = Firebase
+  Auth con token emitido por el login + reglas por base, empezando por RRHH.
 
 ## Branding / design tokens
 

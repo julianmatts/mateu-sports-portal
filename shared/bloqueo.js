@@ -155,8 +155,8 @@
         err.textContent = 'PIN incorrecto.'; err.classList.add('on');
         pin.value=''; pin.focus();
         setTimeout(function(){ btn.disabled=false; btn.textContent='Desbloquear'; }, 1200);
-      }, function(){
-        err.textContent = 'No se pudo verificar el PIN. Revisá la conexión e intentá de nuevo.'; err.classList.add('on');
+      }, function(e){
+        err.textContent = (e && e.mostrar) || 'No se pudo verificar el PIN. Revisá la conexión e intentá de nuevo.'; err.classList.add('on');
         btn.disabled=false; btn.textContent='Desbloquear';
       });
     });
@@ -169,6 +169,15 @@
 
   // Mismo criterio que el login del Portal: el registro vive en usuarios/<mail con , por .>
   function validarPin(v){
+    // shared/acceso.js lo valida por el servidor cuando está configurado (el PIN ya no está
+    // en usuarios/) y cuenta para el tope de intentos; sin él, el camino directo de siempre.
+    if(window.Acceso && Acceso.verificarPin){
+      return Acceso.verificarPin(S.email, v).then(function(r){
+        if(r.ok) return true;
+        if(r.error === 'PIN incorrecto.') return false;
+        var e = new Error(r.error); e.mostrar = r.error; throw e;
+      });
+    }
     var url = FB+'/usuarios/'+encodeURIComponent(keyMail(S.email))+'.json';
     return fetch(url,{cache:'no-store'}).then(function(r){
       if(!r.ok) throw new Error('HTTP '+r.status);

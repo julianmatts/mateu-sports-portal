@@ -724,26 +724,50 @@ async function login(){
   if(!email || !pin) return;
   const btn = $('loginBtn'); btn.disabled = true; btn.textContent = 'Entrando…';
   try{
-    const usuarios = await (await fetch(FB_USUARIOS)).json();
-    let found = null, foundKey = null;
-    for(const k in (usuarios||{})){
-      const u = usuarios[k];
-      if(u && u.email && u.email.toLowerCase() === email){ found = u; foundKey = k; break; }
-    }
-    if(!found || String(found.pin) !== pin){
-      if(found && window.Acceso) Acceso.registrar(found.email, found.rol, 'pin');   // PIN equivocado: queda en el registro de ingresos
-      showLoginErr(); btn.disabled=false; btn.textContent='Entrar'; return;
-    }
-    // 1) Dispositivo autorizado (cuentas de los locales). Va ANTES del PIN nuevo: alguien de
-    //    afuera con el usuario y el PIN no tiene que llegar a cambiarle el PIN a la cuenta.
-    if(window.Acceso){
-      const estado = await Acceso.verificarLogin(found);
-      if(estado !== 'ok'){ mostrarAcceso(estado, found.email); btn.disabled=false; btn.textContent='Entrar'; return; }
-    }
-    // 2) PIN nuevo obligatorio (todas las cuentas menos los puestos de consulta).
-    if(window.Acceso && Acceso.debeCambiarPin(found)){
-      const nuevo = await pedirPinNuevo(found, foundKey, pin);
-      found.pin = nuevo;
+    let found = null, token = null;
+    if(window.Acceso && await Acceso.servidor()){
+      // Ingreso por servidor (functions/api/acceso.js): el PIN se valida allá, con tope de
+      // intentos, y el dispositivo también. Al navegador no baja ningún PIN.
+      const r = await Acceso.api('login', {email, pin, dev: Acceso.devInfo()});
+      if(r.estado !== 'ok'){
+        if(r.estado) mostrarAcceso(r.estado, email);
+        else { $('loginErr').textContent = r.error || 'No se pudo ingresar. Probá de nuevo.'; $('loginErr').classList.add('show'); }
+        btn.disabled=false; btn.textContent='Entrar'; return;
+      }
+      found = r.usuario; token = r.token;
+      if(r.debeCambiarPin){
+        await pedirPinNuevo(pin, async nuevo=>{
+          const c = await Acceso.api('pin-cambiar', {email, pin, nuevo, dev: Acceso.devInfo()});
+          if(!c.ok) throw new Error(c.error || 'No se pudo guardar. Probá de nuevo.');
+          token = c.token;
+        });
+      }
+    } else {
+      // Camino sin servidor (la Function todavía no está configurada): todo en el navegador.
+      const usuarios = await (await fetch(FB_USUARIOS)).json();
+      let foundKey = null;
+      for(const k in (usuarios||{})){
+        const u = usuarios[k];
+        if(u && u.email && u.email.toLowerCase() === email){ found = u; foundKey = k; break; }
+      }
+      if(!found || String(found.pin) !== pin){
+        if(found && window.Acceso) Acceso.registrar(found.email, found.rol, 'pin');   // PIN equivocado: queda en el registro de ingresos
+        showLoginErr(); btn.disabled=false; btn.textContent='Entrar'; return;
+      }
+      // 1) Dispositivo autorizado (cuentas de los locales). Va ANTES del PIN nuevo: alguien de
+      //    afuera con el usuario y el PIN no tiene que llegar a cambiarle el PIN a la cuenta.
+      if(window.Acceso){
+        const estado = await Acceso.verificarLogin(found);
+        if(estado !== 'ok'){ mostrarAcceso(estado, found.email); btn.disabled=false; btn.textContent='Entrar'; return; }
+      }
+      // 2) PIN nuevo obligatorio (todas las cuentas menos los puestos de consulta).
+      if(window.Acceso && Acceso.debeCambiarPin(found)){
+        const clave = foundKey;
+        await pedirPinNuevo(pin, async nuevo=>{
+          const resp = await patchJSON(FB+'/usuarios/'+clave+'.json', {pin:nuevo, pinCambio:Date.now()});
+          if(!resp.ok) throw new Error('No se pudo guardar. Revisá la conexión y probá de nuevo.');
+        });
+      }
     }
     // Este dispositivo ya sabe que la cuenta tiene el PIN renovado (acceso.js no lo vuelve a consultar).
     try{ if(window.Acceso) localStorage.setItem('mateu_pin_ok', Acceso.mailKey(found.email)); }catch(e){}
@@ -751,6 +775,7 @@ async function login(){
     // Evaluaciones. Alcance "blando" en el cliente, como el resto del portal.
     found = aplicarPerfilFijo(found);
     const session = { email:found.email, rol:found.rol, herramientas:ordenarInicio(herramientasEfectivas(found.rol, found.herramientas, found.soloHerramientas), found.inicio), sucursal:found.sucursal||null, outlet_id:found.outlet_id||null, sucursales:found.sucursales||null, inicio:found.inicio||null, soloHerramientas:!!found.soloHerramientas };
+    if(token) session.tok = token;   // token firmado por el servidor: lo piden el panel de dispositivos y el reseteo de PIN
     try{ localStorage.removeItem('mateu_bloqueo_lock'); localStorage.removeItem('mateu_bloqueo_act'); }catch(e){}   // bloqueo por inactividad (shared/bloqueo.js)
     if(window.Acceso) Acceso.sellar(session);   // marca el dispositivo y el momento del ingreso (shared/acceso.js)
     mostrarLoginPanel('login');
@@ -783,14 +808,15 @@ function mostrarAcceso(estado, email){
   mostrarLoginPanel('acceso');
 }
 const PIN_FACILES = ['0000','1111','2222','3333','4444','5555','6666','7777','8888','9999','1234','4321','0123','1905','2580'];
-// Muestra la pantalla «Creá tu PIN nuevo» y resuelve con el PIN ya guardado en Firebase.
-function pedirPinNuevo(usuario, key, pinActual){
+// Muestra la pantalla «Creá tu PIN nuevo». `guardar(nuevo)` lo persiste (por servidor o directo)
+// y tira un Error con el mensaje si no se pudo. Resuelve con el PIN ya guardado.
+function pedirPinNuevo(pinActual, guardar){
   return new Promise(resolve=>{
     $('pn1').value = ''; $('pn2').value = ''; $('pinErr').classList.remove('show');
     mostrarLoginPanel('pin');
     setTimeout(()=>{ try{ $('pn1').focus(); }catch(e){} }, 50);
     const err = m => { $('pinErr').textContent = m; $('pinErr').classList.add('show'); };
-    const guardar = async ()=>{
+    const enviar = async ()=>{
       const a = ($('pn1').value||'').trim(), b = ($('pn2').value||'').trim();
       if(!/^\d{4}$/.test(a)) return err('El PIN tiene que tener 4 números.');
       if(a !== b) return err('Los dos PIN no coinciden.');
@@ -798,18 +824,18 @@ function pedirPinNuevo(usuario, key, pinActual){
       if(PIN_FACILES.indexOf(a) !== -1) return err('Ese PIN es muy fácil de adivinar. Elegí otro.');
       const b1 = $('pinSave'); b1.disabled = true; b1.textContent = 'Guardando…';
       try{
-        await patchJSON(FB+'/usuarios/'+key+'.json', {pin:a, pinCambio:Date.now()});
+        await guardar(a);
         b1.disabled = false; b1.textContent = 'Guardar y entrar';
         $('pinSave').onclick = null; $('pn2').onkeydown = null;
         resolve(a);
       }catch(e){
         b1.disabled = false; b1.textContent = 'Guardar y entrar';
-        err('No se pudo guardar. Revisá la conexión y probá de nuevo.');
+        err((e && e.message) || 'No se pudo guardar. Revisá la conexión y probá de nuevo.');
       }
     };
-    $('pinSave').onclick = guardar;
+    $('pinSave').onclick = enviar;
     $('pn1').onkeydown = e => { if(e.key==='Enter') $('pn2').focus(); };
-    $('pn2').onkeydown = e => { if(e.key==='Enter') guardar(); };
+    $('pn2').onkeydown = e => { if(e.key==='Enter') enviar(); };
   });
 }
 
@@ -920,9 +946,31 @@ function render(session){
    Aprobar / bloquear dispositivos de las cuentas de los locales, cerrar
    las sesiones de una cuenta y ver el registro de ingresos del mes.
    ============================================================ */
+// Dispositivos, cierres y registro del mes: por la Function si el ingreso por servidor está
+// configurado (ahí `accesos/` está cerrado al navegador); si no, directo a Firebase.
+async function dispDatos(){
+  if(await Acceso.servidor()){
+    const r = await Acceso.api('disp-lista', {token: Acceso.tokenSesion()});
+    if(r.status !== 200) throw new Error(r.error || 'No se pudo cargar.');
+    return {todos: r.dispositivos||{}, cierres: r.cierres||{}, log: r.log||{}};
+  }
+  const d = new Date(), ym = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  const [todos, log, cierres] = await Promise.all([
+    fetchJSON(Acceso.NODO+'/dispositivos.json'),
+    fetchJSON(Acceso.NODO+'/log/'+ym+'.json?orderBy="$key"&limitToLast=150'), fetchJSON(Acceso.NODO+'/cierre.json') ]);
+  return {todos: todos||{}, cierres: cierres||{}, log: log||{}};
+}
+async function dispAccion(accion, datos, directo){
+  if(await Acceso.servidor()){
+    const r = await Acceso.api(accion, Object.assign({token: Acceso.tokenSesion()}, datos));
+    if(!r.ok) throw new Error(r.error || 'No se pudo guardar.');
+    return;
+  }
+  const resp = await directo(); if(resp && resp.ok === false) throw new Error('No se pudo guardar.');
+}
 async function refrescarDispBadge(){
   try{
-    const todos = await fetchJSON(Acceso.NODO+'/dispositivos.json') || {};
+    const todos = (await dispDatos()).todos;
     let n = 0;
     Object.keys(todos).forEach(mk=>Object.keys(todos[mk]||{}).forEach(id=>{ if((todos[mk][id]||{}).estado==='pendiente') n++; }));
     $('dispBadge').textContent = n; $('dispBadge').style.display = n ? '' : 'none';
@@ -938,14 +986,10 @@ async function renderDispositivos(){
   const box = $('dispBody');
   box.innerHTML = '<div class="empty">Cargando…</div>';
   let todos = {}, usuarios = {}, log = {}, cierres = {};
-  const d = new Date(), ym = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
   try{
-    [todos, usuarios, log, cierres] = await Promise.all([
-      fetchJSON(Acceso.NODO+'/dispositivos.json'), fetchJSON(FB_USUARIOS),
-      fetchJSON(Acceso.NODO+'/log/'+ym+'.json?orderBy="$key"&limitToLast=150'), fetchJSON(Acceso.NODO+'/cierre.json')
-    ]);
-  }catch(e){ box.innerHTML = '<div class="empty">No se pudo cargar. Revisá la conexión.</div>'; return; }
-  todos = todos||{}; usuarios = usuarios||{}; log = log||{}; cierres = cierres||{};
+    const [dat, us] = await Promise.all([dispDatos(), fetchJSON(FB_USUARIOS)]);
+    todos = dat.todos; log = dat.log; cierres = dat.cierres; usuarios = us || {};
+  }catch(e){ box.innerHTML = '<div class="empty">'+esc((e && e.message) || 'No se pudo cargar. Revisá la conexión.')+'</div>'; return; }
   const mailDe = {}, rolDe = {};
   Object.keys(usuarios).forEach(k=>{ const u=usuarios[k]; if(u&&u.email){ const mk=Acceso.mailKey(u.email); mailDe[mk]=u.email.toLowerCase(); rolDe[mk]=u.rol; } });
 
@@ -1000,14 +1044,13 @@ async function renderDispositivos(){
     if(que==='revocado' && !confirm('¿Bloquear este dispositivo? Si tiene la sesión abierta, se le cierra.')) return;
     b.disabled = true;
     try{
-      if(que==='borrar') await putJSON(url, null);
-      else await patchJSON(url, {estado:que, por:CURRENT_SESSION.email, en:Date.now()});
-    }catch(e){ alert('No se pudo guardar.'); }
+      await dispAccion('disp-set', {mk, id, que}, ()=> que==='borrar' ? putJSON(url, null) : patchJSON(url, {estado:que, por:CURRENT_SESSION.email, en:Date.now()}));
+    }catch(e){ alert((e && e.message) || 'No se pudo guardar.'); }
     renderDispositivos(); refrescarDispBadge();
   }));
   box.querySelectorAll('[data-cierre]').forEach(b=>b.addEventListener('click', async ()=>{
     if(!confirm('¿Cerrar todas las sesiones abiertas de esta cuenta? Van a tener que volver a poner el PIN (los dispositivos aprobados siguen aprobados).')) return;
-    try{ await putJSON(Acceso.NODO+'/cierre/'+b.dataset.cierre+'.json', Date.now()); }catch(e){ alert('No se pudo guardar.'); }
+    try{ await dispAccion('cierre', {mk: b.dataset.cierre}, ()=>putJSON(Acceso.NODO+'/cierre/'+b.dataset.cierre+'.json', Date.now())); }catch(e){ alert((e && e.message) || 'No se pudo guardar.'); }
     renderDispositivos();
   }));
 }
@@ -1091,11 +1134,32 @@ function openSettings(){
 }
 function closeSettings(){ showView('dashboard'); }
 
+// Con el ingreso por servidor configurado: cuántos PIN siguen a la vista en usuarios/ y el
+// botón que los pasa al nodo cerrado (después de eso, un `pin` escrito en usuarios/ ya no vale).
+async function avisoMigracionPin(usuarios){
+  const box = $('migraPinBox'); if(!box) return;
+  const si = !!window.Acceso && await Acceso.servidor();
+  const conPin = Object.keys(usuarios||{}).filter(k=>usuarios[k] && usuarios[k].pin != null).length;
+  if(!si){ box.innerHTML = '<div class="sub" style="margin-bottom:14px">🔒 Ingreso por servidor: <b>sin configurar</b> (faltan los Secrets en Cloudflare). Los PIN siguen en la base pública.</div>'; return; }
+  if(!conPin){ box.innerHTML = '<div class="sub" style="margin-bottom:14px">🔒 Ingreso por servidor <b>activo</b>: ningún PIN a la vista en la base pública.</div>'; return; }
+  box.innerHTML = '<div style="background:#fff4d6;border:1px solid #f0d48a;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:14px">'+
+    '🔒 El ingreso por servidor ya funciona, pero <b>'+conPin+' PIN</b> todavía están en la base pública. '+
+    '<button class="btn btn-primary btn-sm" id="btnMigrarPin">Pasarlos al servidor</button></div>';
+  $('btnMigrarPin').addEventListener('click', async ()=>{
+    if(!confirm('Se mueven los '+conPin+' PIN al nodo cerrado y se borran de la base pública. Después de esto, el ingreso SOLO funciona por el servidor. ¿Seguir?')) return;
+    const r = await Acceso.api('migrar', {token: Acceso.tokenSesion()});
+    if(!r.ok){ alert(r.error || 'No se pudo migrar.'); return; }
+    alert('Listo: '+r.migrados+' PIN pasaron al servidor. Falta cerrar el nodo con las reglas de Firebase.');
+    renderUsuariosView($('settingsBody'));
+  });
+}
+
 async function renderUsuariosView(container){
   container.innerHTML = '<div class="pg-title" style="font-family:var(--font-d);font-size:26px;color:var(--navy)">Gestión de Usuarios</div>'+
     '<div class="sub" style="margin-bottom:18px">Alta, baja, rol, herramientas y reseteo de PIN</div>'+
-    '<div id="usrBody"><div class="hint">Cargando…</div></div>';
+    '<div id="migraPinBox"></div><div id="usrBody"><div class="hint">Cargando…</div></div>';
   const usuarios = await fetchJSON(FB_USUARIOS) || {};
+  avisoMigracionPin(usuarios);
   const body = $('usrBody');
   const HERRAMIENTAS_LIST = Object.keys(TOOLS).map(k => ({id:k, nombre:TOOLS[k].name}));
 
@@ -1204,6 +1268,12 @@ async function renderUsuariosView(container){
     }));
     body.querySelectorAll('button[data-reset]').forEach(b=> b.addEventListener('click', async ()=>{
       const k = b.dataset.reset;
+      if(window.Acceso && await Acceso.servidor()){
+        // Con el ingreso por servidor el PIN vive en el nodo cerrado: lo resetea la Function.
+        const r = await Acceso.api('pin-reset', {token: Acceso.tokenSesion(), email: usuarios[k].email});
+        alert(r.ok ? 'PIN reseteado a '+r.pin+'.'+(r.pin==='1111' ? ' Al entrar va a tener que crear uno propio.' : '') : (r.error || 'No se pudo resetear.'));
+        return;
+      }
       await patchJSON(FB+'/usuarios/'+k+'.json', {pin:'1111', pinCambio:null});   // sin pinCambio → al entrar tiene que crear su PIN
       alert('PIN reseteado a 1111.');
     }));
@@ -1218,7 +1288,8 @@ async function renderUsuariosView(container){
       const rol = $('nuRol').value;
       if(!email){ alert('Falta el email.'); return; }
       const herramientas = Array.from($('nuHerramientas').selectedOptions).map(o=>o.value);
-      const rec = {email, pin:'1111', rol, herramientas};
+      const porServidor = !!window.Acceso && await Acceso.servidor();
+      const rec = porServidor ? {email, rol, herramientas} : {email, pin:'1111', rol, herramientas};
       if($('nuInicio').value) rec.inicio = $('nuInicio').value;
       if(rol==='admin' && $('nuSolo').checked) rec.soloHerramientas = true;
       if(rol==='sucursal' || rol==='deposito' || rol==='puesto') rec.sucursal = $('nuSucursal').value;
@@ -1226,6 +1297,10 @@ async function renderUsuariosView(container){
       if(rol==='supervisor') rec.sucursales = Array.from($('nuSupSuc').selectedOptions).map(o=>o.value);
       const key = firebaseKeyFromEmail(email);
       await putJSON(FB+'/usuarios/'+key+'.json', rec);
+      if(porServidor){   // el PIN inicial lo pone la Function en el nodo cerrado
+        const r = await Acceso.api('pin-reset', {token: Acceso.tokenSesion(), email});
+        if(!r.ok) alert('El usuario se creó, pero no pude ponerle el PIN inicial: '+(r.error||'')+' Usá «Resetear PIN».');
+      }
       usuarios[key] = rec; draw();
     });
   }

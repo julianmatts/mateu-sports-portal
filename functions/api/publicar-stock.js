@@ -34,6 +34,8 @@
    la Function. Así la Function solo lo revisa y lo reenvía.
    ============================================================ */
 
+import { disponible as accesoDisponible, validarPin } from '../../lib/acceso-servidor.mjs';
+
 const REPO = { owner: 'julianmatts', repo: 'mateu-sports-portal', branch: 'main', path: 'gestion-stock/datos-meses-stock.js' };
 const FB_USUARIOS = 'https://discontinuos-mateu-default-rtdb.firebaseio.com/usuarios.json';
 const PUEDEN_DEFECTO = 'julian@mateu.com.ar,producto@mateu.com.ar';
@@ -67,17 +69,25 @@ export async function onRequestPost(ctx) {
   if (!email || !pin) return json({ error: 'Falta el mail o el PIN.' }, 400);
   if (quienes(env).indexOf(email) < 0) return json({ error: 'Tu usuario no está habilitado para publicar Meses de Stock. Pedile a Juli que te sume.' }, 403);
 
-  // PIN contra Firebase, igual que el login del Portal (los usuarios están
-  // indexados con clave arbitraria: se busca por el campo email).
-  let usuarios = null;
-  try { usuarios = await (await fetch(FB_USUARIOS)).json(); } catch (e) { usuarios = null; }
-  if (!usuarios) return json({ error: 'No pude verificar el PIN (no responde la base de usuarios). Probá de nuevo en un minuto.' }, 502);
+  // PIN: si el ingreso por servidor está configurado, lo valida lib/acceso-servidor.mjs
+  // (PIN en el nodo cerrado + tope de intentos). Si no, el camino viejo contra usuarios/.
   let user = null;
-  for (const k in usuarios) {
-    const u = usuarios[k];
-    if (u && u.email && String(u.email).toLowerCase() === email) { user = u; break; }
+  if (accesoDisponible(env)) {
+    let v = null;
+    try { v = await validarPin(env, email, pin, h.get('CF-Connecting-IP') || 'sin-ip'); } catch (e) { v = null; }
+    if (!v) return json({ error: 'No pude verificar el PIN. Probá de nuevo en un minuto.' }, 502);
+    if (!v.ok) return json({ error: v.status === 429 ? v.error : 'PIN incorrecto.' }, v.status);
+    user = v.usuario;
+  } else {
+    let usuarios = null;
+    try { usuarios = await (await fetch(FB_USUARIOS)).json(); } catch (e) { usuarios = null; }
+    if (!usuarios) return json({ error: 'No pude verificar el PIN (no responde la base de usuarios). Probá de nuevo en un minuto.' }, 502);
+    for (const k in usuarios) {
+      const u = usuarios[k];
+      if (u && u.email && String(u.email).toLowerCase() === email) { user = u; break; }
+    }
+    if (!user || String(user.pin) !== pin) return json({ error: 'PIN incorrecto.' }, 401);
   }
-  if (!user || String(user.pin) !== pin) return json({ error: 'PIN incorrecto.' }, 401);
   if (user.rol !== 'admin' && (user.herramientas || []).indexOf('gestion-stock') < 0)
     return json({ error: 'Tu usuario no tiene Gestión de Stock.' }, 403);
 

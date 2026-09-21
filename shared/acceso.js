@@ -52,7 +52,7 @@
   // a esta fecha (o no exista) tiene que crear un PIN propio al entrar. Los puestos de consulta
   // quedan con el PIN fijo que les pone gerencia. Para volver a obligar a todos: subir la fecha.
   var PIN_DESDE = new Date('2026-09-21T00:00:00-03:00').getTime();
-  var PIN_SIN_CAMBIO = ['puesto'];
+  var PIN_SIN_CAMBIO = ['puesto', 'deposito-tablet'];   // pantallas compartidas: PIN fijo que pone gerencia
   function debeCambiarPin(usuario){
     if(!usuario || PIN_SIN_CAMBIO.indexOf(usuario.rol) !== -1) return false;
     return !(usuario.pinCambio && usuario.pinCambio >= PIN_DESDE);
@@ -102,6 +102,50 @@
     return fetch(url, opt).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); });
   }
   function urlDev(email, id){ return NODO+'/dispositivos/'+mailKey(email)+'/'+(id||devId())+'.json'; }
+
+  /* ---- Ingreso por servidor (functions/api/acceso.js + lib/acceso-servidor.mjs) ----
+     Si la Function está configurada, el PIN y `accesos/` ya no se tocan desde el
+     navegador. `servidor()` lo averigua una vez (se recuerda 10 min si está, 2 si no). */
+  var API = ROOT + 'api/acceso';
+  var _srv = null;
+  function servidor(forzar){
+    if(forzar){ _srv = null; ssSet('mateu_acceso_srv', ''); }
+    if(_srv) return _srv;
+    var c = (ssGet('mateu_acceso_srv') || '').split('|'), hace = Date.now() - (parseInt(c[1], 10) || 0);
+    if(c[0] === 'si' && hace < 10*60*1000) return (_srv = Promise.resolve(true));
+    if(c[0] === 'no' && hace < 2*60*1000) return (_srv = Promise.resolve(false));
+    if(!window.fetch) return (_srv = Promise.resolve(false));
+    _srv = fetch(API).then(function(r){ return r.ok ? r.json() : {}; }).then(function(j){
+      var si = !!(j && j.disponible);
+      ssSet('mateu_acceso_srv', (si ? 'si' : 'no') + '|' + Date.now());
+      return si;
+    }).catch(function(){ return false; });
+    return _srv;
+  }
+  // POST a la Function. Siempre resuelve: {status, …respuesta}; status 0 = no hubo respuesta.
+  function api(accion, datos){
+    var cuerpo = {accion: accion}, k;
+    for(k in (datos || {})) cuerpo[k] = datos[k];
+    return fetch(API, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cuerpo)})
+      .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j = j || {}; j.status = r.status; return j; }); })
+      .catch(function(){ return {status: 0, error: 'No hay conexión con el servidor. Probá de nuevo.'}; });
+  }
+  function devInfo(){ return {id: devId(), cod: codigo(), etq: etiqueta(), ua: (navigator.userAgent||'').slice(0,200)}; }
+  function tokenSesion(){ var s = leerSesion(); return (s && s.tok) || ''; }
+
+  /* ¿Es el PIN de esa cuenta? Lo usan la cortina de inactividad, «Salir» del puesto y el
+     kiosco del depósito. Resuelve {ok, error}. Con servidor cuenta para el tope de intentos. */
+  function verificarPin(email, pin){
+    return servidor().then(function(si){
+      if(si) return api('pin-verificar', {email: email, pin: String(pin||'').trim()}).then(function(r){
+        return {ok: !!r.ok, error: r.ok ? '' : (r.status === 429 ? r.error : (r.status === 401 ? 'PIN incorrecto.' : (r.error || 'No se pudo verificar el PIN.')))};
+      });
+      return req('GET', FB+'/usuarios/'+mailKey(email)+'.json').then(function(u){
+        if(!u || u.pin == null) return {ok:false, error:'No se pudo verificar el PIN.'};
+        return String(u.pin) === String(pin||'').trim() ? {ok:true, error:''} : {ok:false, error:'PIN incorrecto.'};
+      }).catch(function(){ return {ok:false, error:'No se pudo verificar el PIN. Revisá la conexión.'}; });
+    });
+  }
 
   function registrar(email, rol, resultado){
     var d = new Date(), ym = d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2);
@@ -183,10 +227,33 @@
       }).catch(function(){});
     }
     if(!controla(s.rol)){ chequearPin(); return; }
+    if(s.acc && s.acc !== devId()){ expulsar('reingresar'); return; }   // sesión copiada de otro dispositivo
+    if(!s.acc && ahora > GRACIA_HASTA){ expulsar('reingresar'); return; }
 
+    servidor().then(function(si){
+      // Con el ingreso por servidor, `accesos/` está cerrado: se pregunta por la Function.
+      if(si){
+        var marcaS = 'mateu_acceso_rev';
+        if(s.acc && ahora - (parseInt(ssGet(marcaS), 10) || 0) < REVALIDAR_MS){ chequearPin(); return; }
+        ssSet(marcaS, String(ahora));
+        api('estado', {email: s.email, dev: devInfo(), loginTs: s.loginTs || 0, previo: !s.acc}).then(function(r){
+          if(r.status >= 500 || r.status === 0) return;          // la Function no contesta: no se toca nada
+          if(r.ok === false && r.motivo){ expulsar(r.motivo); return; }
+          if(r.sellar){
+            var s2 = leerSesion(); if(s2 && s2.email === s.email){ sellar(s2); lsSet(SESSION_KEY, JSON.stringify(s2)); }
+          }
+          chequearPin();
+        });
+        return;
+      }
+      revalidarDirecto(s, ahora, chequearPin);
+    });
+  }
+
+  // Camino sin servidor (la Function todavía no está configurada): lee `accesos/` directo.
+  function revalidarDirecto(s, ahora, chequearPin){
     if(!s.acc){
       // Sesión anterior a este control: se da por buena una sola vez, hasta GRACIA_HASTA.
-      if(ahora > GRACIA_HASTA){ expulsar('reingresar'); return; }
       req('GET', urlDev(s.email)).then(function(d){
         if(d && d.estado === 'revocado'){ expulsar('revocado'); return; }
         var p = (d && d.estado === 'aprobado') ? Promise.resolve() : req('PUT', urlDev(s.email), {
@@ -202,8 +269,6 @@
       }).catch(function(){});
       return;
     }
-
-    if(s.acc !== devId()){ expulsar('reingresar'); return; }   // sesión copiada de otro dispositivo
     chequearPin();
     var marca = 'mateu_acceso_rev';
     if(ahora - (parseInt(ssGet(marca), 10) || 0) < REVALIDAR_MS) return;
@@ -229,6 +294,7 @@
     controla: controla, puedeAprobar: puedeAprobar, mailKey: mailKey,
     devId: devId, codigo: codigo, etiqueta: etiqueta,
     debeCambiarPin: debeCambiarPin, PIN_DESDE: PIN_DESDE,
+    servidor: servidor, api: api, devInfo: devInfo, tokenSesion: tokenSesion, verificarPin: verificarPin,
     verificarLogin: verificarLogin, registrar: registrar, sellar: sellar, revalidar: revalidar
   };
 

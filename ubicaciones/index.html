@@ -1561,6 +1561,11 @@ async function salirPuesto(){
   const pin = prompt('Para cerrar la sesión del puesto, ingresá el PIN de la cuenta:');
   if(pin===null || !String(pin).trim()) return;
   try{
+    if(window.Acceso && Acceso.verificarPin){   // por el servidor si está configurado (shared/acceso.js)
+      const r = await Acceso.verificarPin(SESSION.email, pin);
+      if(!r.ok){ toast(r.error || 'PIN incorrecto.'); return; }
+      delLS(SESSION_KEY); location.href='../'; return;
+    }
     const us = await fetchJSON(PORTAL_USUARIOS_URL);
     const mail = (SESSION.email||'').toLowerCase();
     const yo = Object.values(us||{}).find(u=>u && u.email && u.email.toLowerCase()===mail);
