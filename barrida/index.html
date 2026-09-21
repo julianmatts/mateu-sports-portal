@@ -4916,6 +4916,10 @@ function repCriArtHtml(a){
 }
 function repVistaRemitos(){
   const R=state.rep.res, N=(R.totales||{}).dias||0; let h='';
+  // un artículo que entró en varios remitos se reparte junto (una curva por sucursal) y las unidades de una sucursal
+  // pueden salir casi todas de OTRO remito: se anota en su fila, si no parece que recibe menos (21/09/2026)
+  const enOtros={};   // idArt|slug -> [{nro,u}]
+  R.remitos.forEach(rm=>rm.arts.forEach(x=>(x.lineas||[]).forEach(l=>{ if(l.u>0) (enOtros[x.art.id+'|'+l.slug]=enOtros[x.art.id+'|'+l.slug]||[]).push({nro:rm.nro, u:l.u}); })));
   R.remitos.forEach(rm=>{
     const sr = rm.nro===REP_NUEVO;    // los ingresos recientes que no están en ningún remito
     h+='<div class="rcard'+(sr?' rsr':'')+'"><div class="rhead">'
@@ -4955,7 +4959,9 @@ function repVistaRemitos(){
       const celdaPie=(q,t,attr)=>'<td class="rg-t q'+(C.has(t)?' c':'')+(q>0?'':' vacio')+'" '+attr+'="'+esc(t)+'">'+(q>0?fmtInt(q):'·')+'</td>';
       lineas.forEach(l=>{
         h+='<tr><td class="rg-dest">'+(ed?'<button class="rg-x noprint" data-rquitar="'+esc(l.slug)+'" title="Sacar esta sucursal: lo suyo vuelve al depósito">✕</button> ':'')
-          +'<span class="pill suc">'+esc(stripNN(l.sucNombre))+'</span>'+(l.hist||l.stock?' <span class="pill curva" title="'+(l.stock?'Ya tiene el artículo en la sucursal (reingreso): se le completa la curva':'Ya había recibido este artículo: se le completa la curva')+'">completa</span>':'')+'</td>'
+          +'<span class="pill suc">'+esc(stripNN(l.sucNombre))+'</span>'+(l.hist||l.stock?' <span class="pill curva" title="'+(l.stock?'Ya tiene el artículo en la sucursal (reingreso): se le completa la curva':'Ya había recibido este artículo: se le completa la curva')+'">completa</span>':'')
+          +(function(){ const o=(enOtros[a.id+'|'+l.slug]||[]).filter(z=>z.nro!==rm.nro); if(!o.length) return ''; const tot=o.reduce((q,z)=>q+z.u,0);
+            return ' <span class="pill rep2" title="'+esc('El artículo entró en varios remitos y se reparte junto: además de lo de este remito, esta sucursal recibe '+o.map(z=>fmtInt(z.u)+' u. del '+(z.nro===REP_NUEVO?'ingreso sin remito':'remito '+repNroCorto(z.nro))).join(' y ')+'. En total '+fmtInt(tot+(l.u||0))+' u. del artículo.')+'">+'+fmtInt(tot)+' en '+(o.length===1&&o[0].nro!==REP_NUEVO?'remito '+esc(repNroCorto(o[0].nro)):'otros remitos')+'</span>'; })()+'</td>'
           +'<td class="rg-prio">'+(l.manual?'<span class="pill edit" title="Sucursal agregada a mano">a mano</span>':'<span class="pill '+(l.prio===1?'rec':'suc')+'" title="'+esc(repPrioTxt(l))+'">'+(l.prio||'—')+' de '+(l.prioDe||'—')+'</span>')+'</td>'
           +tl.map(t=>ed ? '<td class="rg-t'+(C.has(t)?' c':'')+'"><input type="number" class="rg-in" min="0" step="1" inputmode="numeric" data-slug="'+esc(l.slug)+'" data-t="'+esc(t)+'" value="'+(((l.t||{})[t]||0)||'')+'" aria-label="'+esc(stripNN(l.sucNombre))+' talle '+esc(t)+'"></td>'
                          : celda((l.t||{})[t]||0, t, 'q')).join('')
