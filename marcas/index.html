@@ -2094,7 +2094,7 @@ function fiMarcasLista(){
 function fiElegir(m){
   const f = (FICHAS[rubroActivo] || {})[fichaKey(m)];
   FI.marca = m; FI.baseTs = (f && f.ts) || 0; FI.dirty = false;
-  FI.draft = { tipos:{}, exc:{}, prioMS:!!(f && f.prioMS), pared:{ running:Number(f && f.pared && f.pared.running) || 0, casual:Number(f && f.pared && f.pared.casual) || 0 } };
+  FI.draft = { tipos:{}, exc:{}, prioMS:!!(f && f.prioMS), pared:{ running:Number(f && f.pared && f.pared.running) || 0, casual:Number(f && f.pared && f.pared.casual) || 0, adventure:Number(f && f.pared && f.pared.adventure) || 0 } };
   TIPOS_LOCAL.forEach(t => { FI.draft.tipos[t.k] = normBloque(f && f.tipos && f.tipos[t.k]); });
   if (f && f.exc) Object.keys(f.exc).forEach(id => { FI.draft.exc[id] = normBloque(f.exc[id]); });
   fiRender();
@@ -2169,7 +2169,7 @@ function fiRender(){
     + '<span class="fi-meta">' + (rubroActivo === 'calzado' ? 'Calzado' : 'Indumentaria') + ' · la trabajan <b>' + conMarca.length + '</b> sucursal' + (conMarca.length === 1 ? '' : 'es')
     + (f && f.ts ? ' · guardada el ' + new Date(f.ts).toLocaleDateString('es-AR') + (f.por ? ' por ' + escapeHtml(f.por) : '') : ' · todavía sin ficha') + (FI.dirty ? ' · <b style="color:var(--red)">sin guardar</b>' : '') + '</span>'
     + '<label class="fi-chk" title="Marca estratégica: en el reparto va primero la sucursal con menos meses de stock de la marca (antes que la venta y la categoría)"><input type="checkbox" id="fiPrioMS"' + (FI.draft.prioMS ? ' checked' : '') + (puede ? '' : ' disabled') + '> Repartir por meses de stock (marca estratégica)</label>'
-    + (rubroActivo === 'calzado' ? '<span class="fi-chk" style="margin-left:0;cursor:default" title="Mínimo de columnas de la marca en la pared de Mateu Cat 1 y Cat 2 (1 columna = 3 modelos: 9 apoyacalzados con cada modelo ×3). Vacío: running usa la regla general (Adidas 6, Nike y Puma 4, el resto 2) y casual no se controla.">Pared (columnas): running <input type="number" min="0" max="20" id="fiParedRun" class="form-input" style="width:58px;padding:3px 6px" placeholder="gral." value="' + (FI.draft.pared.running || '') + '"' + (puede ? '' : ' disabled') + '> casual <input type="number" min="0" max="20" id="fiParedCas" class="form-input" style="width:58px;padding:3px 6px" placeholder="—" value="' + (FI.draft.pared.casual || '') + '"' + (puede ? '' : ' disabled') + '></span>' : '')
+    + (rubroActivo === 'calzado' ? '<span class="fi-chk" style="margin-left:0;cursor:default" title="Mínimo de columnas de la marca en la pared de Mateu Cat 1 y Cat 2 (1 columna = 3 modelos: 9 apoyacalzados con cada modelo ×3). Vacío: running usa la regla general (Adidas 6, Nike y Puma 4, el resto 2) casual y adventure sin dato no se controlan.">Pared (columnas): running <input type="number" min="0" max="20" id="fiParedRun" class="form-input" style="width:58px;padding:3px 6px" placeholder="gral." value="' + (FI.draft.pared.running || '') + '"' + (puede ? '' : ' disabled') + '> casual <input type="number" min="0" max="20" id="fiParedCas" class="form-input" style="width:58px;padding:3px 6px" placeholder="—" value="' + (FI.draft.pared.casual || '') + '"' + (puede ? '' : ' disabled') + '> adventure <input type="number" min="0" max="20" id="fiParedAdv" class="form-input" style="width:58px;padding:3px 6px" placeholder="—" value="' + (FI.draft.pared.adventure || '') + '"' + (puede ? '' : ' disabled') + '></span>' : '')
     + '<label class="fi-chk" style="margin-left:0"><input type="checkbox" id="fiVerTodos"' + (FI.verTodos ? ' checked' : '') + '> Ver todos los tipos de local</label>'
     + (puede && m ? '<button type="button" class="btn-hdr ghost" data-act="importar" title="Toma lo que se cargó a mano en «Disciplinas ▸» / «Modelos ▸» de cada sucursal">⤓ Traer lo cargado por sucursal</button>' : '')
     + '</div>';
@@ -2221,7 +2221,7 @@ async function fiGuardar(){
     const limpio = b => { const x = normBloque(b); return bloqueVacio(x) ? null : x; };
     const tipos = {}; TIPOS_LOCAL.forEach(t => { const x = limpio(FI.draft.tipos[t.k]); if (x) tipos[t.k] = x; });
     const exc = {}; Object.keys(FI.draft.exc).forEach(id => { const x = limpio(FI.draft.exc[id]); if (x) exc[id] = x; });
-    const paredOk = FI.draft.pared && (FI.draft.pared.running > 0 || FI.draft.pared.casual > 0);
+    const paredOk = FI.draft.pared && (FI.draft.pared.running > 0 || FI.draft.pared.casual > 0 || FI.draft.pared.adventure > 0);
     const vacia = !Object.keys(tipos).length && !Object.keys(exc).length && !FI.draft.prioMS && !paredOk;
     const ts = Date.now();
     const doc = vacia ? null : Object.assign({ marca: FI.marca, tipos, exc, por: SESSION.email || '', ts }, FI.draft.prioMS ? { prioMS: true } : {}, paredOk ? { pared: Object.fromEntries(Object.entries(FI.draft.pared).filter(([, n]) => n > 0)) } : {});
@@ -2261,7 +2261,7 @@ async function fiGuardar(){
   });
   body.addEventListener('input', e => {
     const el = e.target;
-    if ((el.id === 'fiParedRun' || el.id === 'fiParedCas') && isAdminSession()) { FI.draft.pared[el.id === 'fiParedRun' ? 'running' : 'casual'] = Math.max(0, Math.round(Number(el.value) || 0)); fiMarcar(); return; }
+    if ((el.id === 'fiParedRun' || el.id === 'fiParedCas' || el.id === 'fiParedAdv') && isAdminSession()) { FI.draft.pared[el.id === 'fiParedRun' ? 'running' : el.id === 'fiParedCas' ? 'casual' : 'adventure'] = Math.max(0, Math.round(Number(el.value) || 0)); fiMarcar(); return; }
     if (el.dataset.act !== 'set' || !isAdminSession()) return;
     const b = fiBloque(el.dataset.sc, el.dataset.id);
     if (el.dataset.campo === 'precioMax') b.precioMax = Math.max(0, Number(el.value) || 0);

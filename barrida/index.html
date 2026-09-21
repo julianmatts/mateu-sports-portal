@@ -4293,7 +4293,8 @@ function repRepartirArt(perRem, cands, central, P, per){
    subrubro (repAsig). Se muestra como alerta y, en el Reparto inicial y en «Abrir a más sucursales»,
    la sucursal con la pared incompleta pasa adelante con esa marca. */
 const PARED_MOD_COL = 3;                               // 9 apoyacalzados ÷ cada modelo ×3 en vertical
-const PARED_DISC = ['running','casual'];               // sectores de pared controlados (los más grandes)
+const PARED_DISC = ['running','casual','adventure'];   // sectores de pared controlados; adventure desde el 21/09/2026 (Montagne y Salomon, 2 columnas)
+const PARED_DISC_LBL = { running:'Running', casual:'Casual', adventure:'Adventure' };
 const PARED_COLS = { adidas:6, nike:4, puma:4 };       // running por defecto; las demás marcas PARED_COLS_DEF
 const PARED_COLS_DEF = 2, PARED_MIN_TALLES = 3;        // 3 talles distintos con al menos 1 central (Juli 13/09/2026)
 let PAREDES = null;                                    // { semana, lista:[…], inc:{'slug|marca|disc|GEN':…}, marcas }
@@ -4340,7 +4341,7 @@ function paredValido(meta, g, tl){
 function paredDisc(m){
   if(!m || !/CALZ/i.test(sinAcento(stripNN(m.rubro||'')))) return '';
   const d=sinAcento(m.disc||'').toLowerCase();
-  return /running/.test(d) ? 'running' : /casual|lifestyle|urbano/.test(d) ? 'casual' : '';
+  return /running/.test(d) ? 'running' : /casual|lifestyle|urbano/.test(d) ? 'casual' : /adventure|outdoor|trekking|montan/.test(d) ? 'adventure' : '';
 }
 const paredRunning = m => paredDisc(m)==='running';
 // locales con pared física: Mateu Cat 1 y Cat 2, sin Kids ni Ecommerce (la web no exhibe en pared)
@@ -4393,7 +4394,7 @@ function paredesHtml(P){
     +'Cuenta cada artículo con stock en '+PARED_MIN_TALLES+' talles distintos o más y al menos uno central; un unisex suma en dama o en hombre según sus talles (hasta el 39 dama, desde el 40 hombre). Sale del stock por sucursal cargado. '
     +'En el Reparto inicial y en «Abrir a más sucursales» estas sucursales pasan adelante con esa marca.'
     +'<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;min-width:600px"><thead><tr><th '+th+'>Sucursal</th><th '+th+'>Marca</th><th '+th+'>Disciplina</th><th '+th+'>Subrubro</th><th '+th+'>Tiene</th><th '+th+'>Mínimo</th><th '+th+'>Faltan</th></tr></thead><tbody>'
-    +L.map(o=>'<tr><td '+td+'>'+esc(o.sucNombre)+'</td><td '+td+'><b>'+esc(o.marca)+'</b></td><td '+td+'>'+(o.disc==='casual'?'Casual':'Running')+'</td><td '+td+'>'+(o.gen==='DAMA'?'Dama':'Hombre')+'</td>'
+    +L.map(o=>'<tr><td '+td+'>'+esc(o.sucNombre)+'</td><td '+td+'><b>'+esc(o.marca)+'</b></td><td '+td+'>'+(PARED_DISC_LBL[o.disc]||'Running')+'</td><td '+td+'>'+(o.gen==='DAMA'?'Dama':'Hombre')+'</td>'
       +'<td '+td+'>'+o.tiene+' modelos <small style="opacity:.7">('+o.col+' col.)</small></td><td '+td+'>'+o.min+' <small style="opacity:.7">('+o.colMin+' col.)</small></td>'
       +'<td '+td+'><b style="color:var(--bad,#c0392b)">'+o.falta+'</b></td></tr>').join('')
     +'</tbody></table></div></div></details>';

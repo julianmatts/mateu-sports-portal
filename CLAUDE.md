@@ -1796,7 +1796,10 @@ admin, «ficha de la marca ▸».
   suman modelos nuevos). Mínimos de casual cargados: Adidas 4, Puma 2, Nike 2, 47 Street 2, Head 2, Atomik 2,
   Le Coq Sportif 2. Running
   sin dato en la ficha usa la regla general; **casual sin dato no se controla**. Juli dicta los mínimos de
-  casual marca por marca por chat y se cargan directo en las fichas.
+  casual marca por marca por chat y se cargan directo en las fichas. **Adventure (21/09/2026)**: tercera disciplina controlada
+  (`PARED_DISC` suma `adventure`; `paredDisc`: adventure/outdoor/trekking/montaña), sin dato no se controla, y el editor de
+  fichas suma el campo «adventure». Cargado: Montagne 2 y Salomon 2. Ese día ninguna sucursal llegaba a 6 modelos de Montagne
+  running; en adventure hombre llegaban Los Hornos, Plaza Italia, Calle 49 y Berisso (Ensenada 5) y en dama solo las dos primeras.
 - **«Modelos automáticos» (13/09/2026, Puma en Aurelius; Juli eligió la regla automática antes que una lista
   fija)**: campo `autoPct` del bloque de la ficha: al tipo de local le van los modelos que en los últimos
   `AUTO_MESES` (6) meses tuvieron ese % o más de sus envíos del depósito a ese tipo (sin contar outlets).
