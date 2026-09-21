@@ -1935,7 +1935,9 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     rige en «Abrir a más sucursales». **(3) Tope por meses de stock** (`REP_MS_TOPE` = 6, `repMsExcedida`): con 6+ meses de
     la marca (dato de marca o subrubro, no el del rubro) la sucursal sale de los candidatos; no se aplica a Ecommerce, pared
     incompleta, reingreso (tiene stock o memoria) ni a la que vendió el artículo esa semana; quedan en `a.msFuera` y en el
-    texto de la regla / motivo de «Sin repartir». **(5) Fechas comerciales** (`repPico`, `REP_PICO_DIAS` = 28 días antes;
+    texto de la regla / motivo de «Sin repartir». **Si TODAS las candidatas están pasadas el tope no se aplica** (21/09/2026, New Balance:
+    solo D80 y City Bell, las dos con 6+ meses → quedaban 120 pares sin repartir): se reparte igual, los meses de stock solo
+    ordenan y la regla lo aclara (`msIgnorado`). **(5) Fechas comerciales** (`repPico`, `REP_PICO_DIAS` = 28 días antes;
     fechas por regla con `tercerDomingo`): Día del Niño (3.er domingo de agosto → niño), Día de la Madre (3.er domingo de
     octubre → dama), Día del Padre (3.er domingo de junio → hombre), Navidad (25/12 → TODO) y Vuelta al cole (15/01–10/03 →
     mochilas y calzado niño): el artículo corre con `criterio:'profundidad'`, `reserva:0` y `pico:true` (todos los perfiles

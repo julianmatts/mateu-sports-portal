@@ -4125,7 +4125,11 @@ function repCandidatos(a, G, destinos){
       stock:stockC });
   });
   // criterio 3: con 6+ meses de stock de la marca no recibe modelos nuevos (queda anotada para el motivo)
-  const msFuera=out.filter(repMsExcedida);
+  // …salvo que TODAS las que trabajan el artículo estén pasadas: la mercadería nueva no puede quedar entera en el
+  // depósito (21/09/2026, New Balance: solo va a Diagonal 80 y City Bell, las dos con 6+ meses → 120 pares sin
+  // repartir). Ahí el tope no se aplica y los meses de stock solo ordenan (menos = antes).
+  let msFuera=out.filter(repMsExcedida);
+  if(msFuera.length && msFuera.length===out.length){ out.msIgnorado=msFuera.map(c=>({ nombre:c.sucNombre, ms:c.pr.ms })); msFuera=[]; }
   if(msFuera.length){ msFuera.forEach(c=>out.splice(out.indexOf(c),1)); }
   out.msFuera=msFuera.map(c=>({ slug:c.slug, nombre:c.sucNombre, ms:c.pr.ms }));
   // la venta pesa en tres niveles (alta / media / baja respecto de la que más vende): así los
@@ -4448,10 +4452,11 @@ function repCalcular(){
     const out=repRepartirArt(tl.perRem, cands, C.set, Pa, C.per);
     if(C.tranquila) a.tranquila = true;
     if(todoP) a.todoAlSalon = true;
-    a.pico = pico || null; a.msFuera = cands.msFuera || [];
+    a.pico = pico || null; a.msFuera = cands.msFuera || []; a.msIgnorado = cands.msIgnorado || [];
     Object.assign(a, { estimado:tl.estimado, faltan:tl.faltan, centrales:[...C.set], grupo:C.G.key,
       regla:C.regla + (pico ? ' · '+pico+' cerca: con profundidad y sin dejar curva en el depósito' : '')
-        + (a.msFuera.length ? ' · no recibe'+(a.msFuera.length>1?'n':'')+' por tener '+REP_MS_TOPE+'+ meses de stock de la marca: '+a.msFuera.map(m=>m.nombre+' ('+m.ms.toLocaleString('es-AR')+')').join(', ') : '') });
+        + (a.msFuera.length ? ' · no recibe'+(a.msFuera.length>1?'n':'')+' por tener '+REP_MS_TOPE+'+ meses de stock de la marca: '+a.msFuera.map(m=>m.nombre+' ('+m.ms.toLocaleString('es-AR')+')').join(', ') : '')
+        + (a.msIgnorado.length ? ' · todas las que lo trabajan tienen '+REP_MS_TOPE+'+ meses de stock de la marca ('+a.msIgnorado.map(m=>m.nombre+' '+m.ms.toLocaleString('es-AR')).join(', ')+'): se reparte igual' : '') });
     if(a.diasDepo==null && reserva){    // hace cuántos días entró lo que hay hoy en el depósito
       const Rr=reserva[a.id] || (a.cod && reserva['cod:'+String(a.cod).toUpperCase()]);
       if(Rr && Rr.conDias){ const ds=Object.values(Rr.dias||{}).filter(d=>d!=null); if(ds.length) a.diasDepo=Math.min.apply(null, ds); }
