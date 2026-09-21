@@ -1218,14 +1218,16 @@ function aplicarUnidadesCurva(){
     // (lo que tiene + lo que ya le va por venta). Por rondas en orden de prioridad: primero
     // todas llegan a 2 y, si la reserva alcanza, a 3 (hasta H y sin pasar el tope de calzado).
     if(H>=2){
-      const tc=new Set(); rows.forEach(r=>(r.engrosa||[]).forEach(d=>tc.add(d.t)));
+      // …y también el talle central que la sucursal NO tenía y se le acaba de completar con 1
+      // (Juli 21/09/2026: a Adidas Calle 12 le completaba el 8.5 con una sola, habiendo 13 en reserva)
+      const tc=new Set(); rows.forEach(r=>{ (r.engrosa||[]).forEach(d=>tc.add(d.t)); r.faltan.forEach(d=>{ if(d.central && d.s>0) tc.add(d.t); }); });
       tc.forEach(t=>{
-        const cand=orden.map(r=>({r, d:(r.engrosa||[]).find(x=>x.t===t)}))
+        const cand=orden.map(r=>({r, d:(r.engrosa||[]).find(x=>x.t===t) || r.faltan.find(x=>x.t===t && x.central && x.s>0)}))
           .filter(x=>x.d && !(f.soloRotan && nivelTalle(x.r,t)==='flojo'));
         if(!cand.length || libre(t)<=0) return;
         for(let nivel=2; nivel<=H; nivel++){
           cand.forEach(({r,d})=>{
-            const tiene=d.q+(repSuc[id+'|'+r.slug+'|'+t]||0)+d.s;
+            const tiene=(d.q||0)+(repSuc[id+'|'+r.slug+'|'+t]||0)+d.s;
             if(disp[t]>0 && tiene<nivel && tiene<capDe(r)){ d.s++; disp[t]--; }
           });
         }
@@ -1826,7 +1828,7 @@ function computar(histPrev, histSnaps){
           const q=S.talles[t]||0;
           if(q<=0){
             const ya = !!(rep && rep.talles[t] && rep.talles[t].s>0);
-            faltan.push({t, r:rq, ya, s:0});
+            faltan.push({t, r:rq, ya, s:0, central:cent.has(t)});   // central: además de completarse, se agranda
           } else if(cent.has(t) && q<3){
             engrosa.push({t, r:rq, q, s:0});   // talle central con poco stock: se puede agrandar la curva
           }
@@ -2452,7 +2454,7 @@ function dejChips(dej, min){
 // chips de la curva de una fila: talles faltantes que se mandan (verde) y los que no (gris)
 function curvaChips(faltan, row){
   return (faltan||[]).filter(d=>d.s>0 || !d.ya).map(d=>{   // `ya` = ya está en los talles de reposición de esta fila
-    if(d.s>0) return {t:d.t, h:'<span class="tgx hueco n-'+(nivelTalle(row,d.t)||'x')+'" title="'+esc('Completar curva: la sucursal no tiene el talle '+d.t+' · en reserva '+d.r+' · se mandan '+d.s+curvaTip(row,d.t))+'">'
+    if(d.s>0) return {t:d.t, h:'<span class="tgx hueco n-'+(nivelTalle(row,d.t)||'x')+'" title="'+esc('Completar curva: la sucursal no tiene el talle '+d.t+' · en reserva '+d.r+' · se mandan '+d.s+(d.central&&d.s>1?' (talle central: se agranda)':'')+curvaTip(row,d.t))+'">'
       +'<span class="txl">'+esc(d.t)+'</span><span class="txn">+'+d.s+'</span><span class="txr">de '+d.r+' · no tiene</span></span>'};
     const why = d.agotado ? 'la reserva del talle se fue a las sucursales con más prioridad' : 'extremo de la curva (filtro «solo huecos internos»)';
     return {t:d.t, h:'<span class="tgx off" title="Completar curva: falta el talle '+esc(d.t)+' · '+why+'">'
