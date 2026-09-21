@@ -4208,7 +4208,7 @@ function repRepartirArt(perRem, cands, central, P, per){
   // curva entera; si todavía tiene la mitad o más, solo completa talles aunque lo venda.
   const tieneDe=c=>{ const o=Object.assign({}, c.hist||{});
     const entera = c.rot ? (c.rot.r>=REP_ROT_ALTA ? true : c.rot.r<REP_ROT_BAJA ? false : (P.reingresoProf!==false && c.vendeArt)) : (P.reingresoProf!==false && c.vendeArt);
-    if(entera) return o;
+    if(entera || P.sinStock) return o;   // sinStock: segunda pasada de repCalcular (todas ya lo tienen y no salía nada)
     Object.entries(c.stock||{}).forEach(([t,q])=>{ o[t]=Math.max(o[t]||0, q); }); return o; };
   // Criterio 1 (perfil del local) y 5 (pico comercial: todos suben un escalón). La curva x1 de la ficha manda.
   // Ratio alto (6+ meses de la marca): solo ORDENA (va al final), la curva es la normal (Juli 21/09/2026). Criterio «profundidad»: todos suben un escalón — si no, en los
@@ -4457,7 +4457,16 @@ function repCalcular(){
     // (lo elegido a mano en el remito o en el artículo le gana a la fecha comercial)
     if(pico) Pa = Object.assign({}, Pa, { criterio: aMano ? cri.c : 'profundidad', reserva:0, pico:true });
     a.cri = Object.assign(cri, { efectivo:Pa.criterio, fijo: C.tranquila ? 'fuera de temporada: curva tranquila' : '' });
-    const out=repRepartirArt(tl.perRem, cands, C.set, Pa, C.per);
+    let out=repRepartirArt(tl.perRem, cands, C.set, Pa, C.per);
+    // Reingreso que TODAS ya tienen con la curva completa (21/09/2026, Montagne ZEEPRO: 5 sucursales con su curva y poca
+    // rotación → «solo completar talles» no daba nada y los 10 pares quedaban en el depósito). Lo que ingresa se reparte:
+    // si por el stock de las sucursales no salió nada, se reparte igual por prioridad sin mirar ese stock (la memoria de
+    // lo enviado hace poco sí sigue contando).
+    a.stockIgnorado=false;
+    if(!out.lineas.length && cands.some(c=>c.stock)){
+      const out2=repRepartirArt(tl.perRem, cands, C.set, Object.assign({}, Pa, { sinStock:true }), C.per);
+      if(out2.lineas.length){ out=out2; a.stockIgnorado=true; }
+    }
     if(C.tranquila) a.tranquila = true;
     if(todoP) a.todoAlSalon = true;
     a.pico = pico || null; a.msFuera = cands.msFuera || []; a.msIgnorado = cands.msIgnorado || []; a.msAlto = cands.msAlto || [];
@@ -4465,6 +4474,7 @@ function repCalcular(){
       regla:C.regla + (pico ? ' · '+pico+' cerca: con profundidad y sin dejar curva en el depósito' : '')
         + (a.msFuera.length ? ' · no recibe'+(a.msFuera.length>1?'n':'')+' por tener '+REP_MS_TOPE+'+ meses de stock de la marca: '+a.msFuera.map(m=>m.nombre+' ('+m.ms.toLocaleString('es-AR')+')').join(', ') : '')
         + (a.msAlto.length ? ' · con '+REP_MS_TOPE+'+ meses de stock de la marca reciben al final: '+a.msAlto.map(m=>m.nombre+' ('+m.ms.toLocaleString('es-AR')+')').join(', ') : '')
+        + (a.stockIgnorado ? ' · reingreso: todas las sucursales que lo trabajan ya tienen la curva completa, se reparte igual por prioridad' : '')
         + (a.msIgnorado.length ? ' · todas las que lo trabajan tienen '+REP_MS_TOPE+'+ meses de stock de la marca ('+a.msIgnorado.map(m=>m.nombre+' '+m.ms.toLocaleString('es-AR')).join(', ')+'): se reparte igual' : '') });
     if(a.diasDepo==null && reserva){    // hace cuántos días entró lo que hay hoy en el depósito
       const Rr=reserva[a.id] || (a.cod && reserva['cod:'+String(a.cod).toUpperCase()]);

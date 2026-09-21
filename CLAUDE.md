@@ -2043,6 +2043,11 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     se reparte de a una por talle en orden de prioridad y en el depósito queda solo la curva de reserva (1 por talle). Del
     excedente participan todas las que recibieron curva, también las que bajaron a x1 por ratio alto; quedan afuera la
     «curva x1» de la ficha y los outlets (`sinExc` en `repRepartirArt`).
+  - **Reingreso que todas ya tienen (21/09/2026, Montagne ZEEPRO NARANJA: 10 pares y 0 sucursales)**: las 5 candidatas ya tenían
+    la curva completa en el stock por sucursal y poca rotación → «solo completa talles» no daba nada y quedaba todo en el
+    depósito. Ahora, si por el stock de las sucursales no sale NADA, `repCalcular` hace una segunda pasada de `repRepartirArt`
+    con `sinStock:true` (no mira el stock; la memoria de lo enviado hace poco sí) y reparte por prioridad; `a.stockIgnorado` lo
+    aclara en la regla del artículo.
   - **Excedente del Reparto inicial**: «Repartir el excedente» viene **destildado** (prefs `v:2`): lo que sobra
     después de las curvas queda de reserva (si queda menos de `reservaMin`, se reparte igual). New Balance
     exclusivos de Aurelius: Aurelius de línea y Ecommerce prioridad 1, Aurelius 10 (columna outlet, «como local
