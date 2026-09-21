@@ -2007,7 +2007,11 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     incompleta, reingreso (tiene stock o memoria) ni a la que vendió el artículo esa semana; quedan en `a.msFuera` y en el
     texto de la regla / motivo de «Sin repartir». **Si TODAS las candidatas están pasadas el tope no se aplica** (21/09/2026, New Balance:
     solo D80 y City Bell, las dos con 6+ meses → quedaban 120 pares sin repartir): se reparte igual, los meses de stock solo
-    ordenan y la regla lo aclara (`msIgnorado`). **(5) Fechas comerciales** (`repPico`, `REP_PICO_DIAS` = 28 días antes;
+    ordenan y la regla lo aclara (`msIgnorado`). **Desde el 21/09/2026 (tarde) el tope YA NO EXCLUYE** (Juli, Montagne: 3 de 5
+    sucursales afuera y 64 de 80 pares en el depósito): la sucursal con 6+ meses queda `msAlto` → recibe AL FINAL (`cmpReparto`,
+    después de la ficha y deportes) y con un escalón menos de profundidad (`PERFIL_BAJA`: honda→base, base→x1 por talle); si
+    todas están pasadas no se baja a nadie. **Y el criterio «profundidad» sube un escalón a TODOS los perfiles** (`perfilDe`):
+    antes solo cambiaba a las «honda», así que en locales de curva base (Cat 2, Aurelius) elegirlo a mano no cambiaba nada. **(5) Fechas comerciales** (`repPico`, `REP_PICO_DIAS` = 28 días antes;
     fechas por regla con `tercerDomingo`): Día del Niño (3.er domingo de agosto → niño), Día de la Madre (3.er domingo de
     octubre → dama), Día del Padre (3.er domingo de junio → hombre), Navidad (25/12 → TODO) y Vuelta al cole (15/01–10/03 →
     mochilas y calzado niño): el artículo corre con `criterio:'profundidad'`, `reserva:0` y `pico:true` (todos los perfiles
