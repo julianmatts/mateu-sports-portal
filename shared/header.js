@@ -258,6 +258,15 @@
     document.head.appendChild(sb);
   }
 
+  /* Dispositivos autorizados (shared/acceso.js): revisa que la sesión de una
+     cuenta de local siga en un dispositivo aprobado. Mismo criterio que el
+     bloqueo; el Portal e Indicadores lo incluyen a mano. */
+  if(!document.querySelector('script[src*="shared/acceso"]')){
+    var sa = document.createElement('script');
+    sa.src = ROOT+'shared/acceso.js';
+    document.head.appendChild(sa);
+  }
+
   /* Matts, el asistente del portal (shared/asistente.js): mismo criterio que
      el bloqueo. El Portal e Indicadores lo incluyen a mano. */
   if(!document.querySelector('script[src*="shared/asistente"]')){

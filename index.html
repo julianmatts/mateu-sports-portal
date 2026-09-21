@@ -25,6 +25,8 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=8">
 <!-- Estética por marca (sucursales Aurelius): sin defer, para que el login ya salga con su look -->
 <script src="shared/marca.js"></script>
+<!-- Dispositivos autorizados + registro de ingresos (cuentas de los locales) -->
+<script src="shared/acceso.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="shared/components/calendario-retail/calendario.css">
 <style>
@@ -87,6 +89,22 @@ body{background:var(--off);color:var(--navy);font-family:var(--font-b);min-heigh
 .gear-btn{background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:6px;color:rgba(255,255,255,.7);
   font-size:15px;line-height:1;padding:7px 10px;cursor:pointer;transition:all .15s}
 .gear-btn:hover{color:#fff;border-color:#fff}
+.gear-btn{position:relative}
+.gear-badge{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;border-radius:9px;font:700 10px var(--font-c);padding:2px 5px}
+/* Ingreso: dispositivo sin autorizar / PIN nuevo (shared/acceso.js) */
+.acc-t{font-family:var(--font-d);font-size:24px;letter-spacing:1px;color:var(--navy);line-height:1.1;margin-bottom:8px}
+.acc-p{font-size:14px;line-height:1.45;color:var(--muted,#5b6578);margin-bottom:14px}
+.acc-cod{font-family:var(--font-d);font-size:40px;letter-spacing:8px;text-align:center;color:var(--navy);background:var(--off,#f5f7fc);border:1px dashed var(--border,#d7dce8);border-radius:10px;padding:10px;margin-bottom:14px}
+.login-btn-sec{background:transparent!important;color:var(--navy)!important;border:1px solid var(--border,#d7dce8)!important}
+/* Panel 🔒 Dispositivos */
+.dv-tbl{width:100%;border-collapse:collapse;font-size:13px;background:#fff;border:1px solid var(--border,#d7dce8);border-radius:10px;overflow:hidden;margin-bottom:22px}
+.dv-tbl th{background:var(--navy);color:#fff;font:600 11px var(--font-c);letter-spacing:1px;text-transform:uppercase;text-align:left;padding:8px 10px}
+.dv-tbl td{padding:8px 10px;border-top:1px solid var(--border,#e4e8f1);vertical-align:middle}
+.dv-h{font-family:var(--font-d);font-size:20px;letter-spacing:1px;color:var(--navy);margin:0 0 8px}
+.dv-pill{display:inline-block;border-radius:10px;padding:2px 8px;font:600 11px var(--font-c);letter-spacing:.5px;text-transform:uppercase}
+.dv-ok{background:#e7f6ec;color:#17693a}.dv-pend{background:#fff4d6;color:#8a5a00}.dv-rev{background:#fde8e8;color:#991b1b}
+.dv-cod{font-family:var(--font-d);font-size:18px;letter-spacing:3px;color:var(--navy)}
+.dv-wrap{overflow-x:auto}
 
 main{max-width:1080px;margin:0 auto;padding:40px 30px 60px}
 .greet{font-family:var(--font-d);font-size:34px;letter-spacing:1px;color:var(--navy);line-height:1}
@@ -379,6 +397,29 @@ html .top{padding-top:calc(12px + env(safe-area-inset-top,0px))}
       <button class="login-btn" id="loginBtn">Entrar</button>
       <div class="login-err" id="loginErr">Email o PIN incorrectos.</div>
     </div>
+    <!-- Dispositivo sin autorizar (shared/acceso.js) -->
+    <div class="login-body" id="accPanel" style="display:none">
+      <div class="acc-t" id="accTitulo">Dispositivo sin autorizar</div>
+      <div class="acc-p" id="accTexto"></div>
+      <div class="acc-cod" id="accCod"></div>
+      <button class="login-btn" id="accRetry">Ya me autorizaron · Reintentar</button>
+      <button class="login-btn login-btn-sec" id="accVolver">← Volver</button>
+    </div>
+    <!-- PIN nuevo obligatorio -->
+    <div class="login-body" id="pinPanel" style="display:none">
+      <div class="acc-t">Creá tu PIN nuevo</div>
+      <div class="acc-p">Por seguridad, cada cuenta tiene que elegir un PIN propio. No lo compartas: los ingresos quedan registrados.</div>
+      <div class="fld">
+        <label for="pn1">PIN nuevo (4 dígitos)</label>
+        <input id="pn1" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="••••">
+      </div>
+      <div class="fld">
+        <label for="pn2">Repetilo</label>
+        <input id="pn2" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="••••">
+      </div>
+      <button class="login-btn" id="pinSave">Guardar y entrar</button>
+      <div class="login-err" id="pinErr"></div>
+    </div>
   </div>
 </div>
 
@@ -393,6 +434,7 @@ html .top{padding-top:calc(12px + env(safe-area-inset-top,0px))}
     </div>
     <div class="top-right">
       <button class="msg-btn" id="msgBtn" title="Bandeja de entrada" style="display:none">✉️<span class="msg-badge" id="msgBadge" style="display:none">0</span></button>
+      <button class="gear-btn" id="dispBtn" title="Dispositivos autorizados e ingresos" style="display:none">🔒<span class="gear-badge" id="dispBadge" style="display:none">0</span></button>
       <button class="gear-btn" id="gearBtn" title="Ajustes" style="display:none">⚙️</button>
       <div class="who"><div class="n" id="whoName">—</div><div class="r" id="whoRole">—</div></div>
       <button class="logout" id="logoutBtn">Salir</button>
@@ -407,6 +449,12 @@ html .top{padding-top:calc(12px + env(safe-area-inset-top,0px))}
     <div id="settingsView" style="display:none">
       <div class="bc" style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><span class="lnk" id="backToDashboard">← Volver</span><a class="lnk" href="asistente/" style="text-decoration:none">🤖 Matts · qué preguntan y cuánto gasta →</a></div>
       <div id="settingsBody"></div>
+    </div>
+    <div id="dispositivosView" style="display:none">
+      <div class="bc"><span class="lnk" id="backFromDisp">← Volver</span></div>
+      <div class="greet">Dispositivos <span>autorizados</span></div>
+      <div class="sub">Las cuentas de los locales solo entran desde un dispositivo aprobado. Acá se aprueban los nuevos, se bloquean los que no corresponden y se ve quién entró.</div>
+      <div id="dispBody"></div>
     </div>
     <div id="mensajesView" style="display:none">
       <div class="bc"><span class="lnk" id="backFromMsg">← Volver</span></div>
@@ -655,9 +703,18 @@ function herramientasEfectivas(rol, herramientas, soloHerramientas){
   return h;
 }
 
-function showLogin(){ $('login').style.display='flex'; $('app').style.display='none'; $('p').value=''; }
+function showLogin(){
+  $('login').style.display='flex'; $('app').style.display='none'; $('p').value='';
+  mostrarLoginPanel('login');
+  // Si shared/acceso.js cerró la sesión (dispositivo bloqueado, sesiones cerradas, PIN a renovar), decir por qué.
+  let motivo = null;
+  try{ motivo = sessionStorage.getItem('mateu_acceso_msg'); sessionStorage.removeItem('mateu_acceso_msg'); }catch(e){}
+  if(motivo && window.Acceso && Acceso.MENSAJES[motivo]){
+    $('loginErr').textContent = Acceso.MENSAJES[motivo]; $('loginErr').classList.add('show');
+  }
+}
 function showApp(){ $('login').style.display='none'; $('app').style.display='block'; }
-function showLoginErr(){ $('loginErr').classList.add('show'); }
+function showLoginErr(){ $('loginErr').textContent = 'Email o PIN incorrectos.'; $('loginErr').classList.add('show'); }
 function hideLoginErr(){ $('loginErr').classList.remove('show'); }
 
 async function login(){
@@ -668,17 +725,35 @@ async function login(){
   const btn = $('loginBtn'); btn.disabled = true; btn.textContent = 'Entrando…';
   try{
     const usuarios = await (await fetch(FB_USUARIOS)).json();
-    let found = null;
+    let found = null, foundKey = null;
     for(const k in (usuarios||{})){
       const u = usuarios[k];
-      if(u && u.email && u.email.toLowerCase() === email){ found = u; break; }
+      if(u && u.email && u.email.toLowerCase() === email){ found = u; foundKey = k; break; }
     }
-    if(!found || String(found.pin) !== pin){ showLoginErr(); btn.disabled=false; btn.textContent='Entrar'; return; }
+    if(!found || String(found.pin) !== pin){
+      if(found && window.Acceso) Acceso.registrar(found.email, found.rol, 'pin');   // PIN equivocado: queda en el registro de ingresos
+      showLoginErr(); btn.disabled=false; btn.textContent='Entrar'; return;
+    }
+    // 1) Dispositivo autorizado (cuentas de los locales). Va ANTES del PIN nuevo: alguien de
+    //    afuera con el usuario y el PIN no tiene que llegar a cambiarle el PIN a la cuenta.
+    if(window.Acceso){
+      const estado = await Acceso.verificarLogin(found);
+      if(estado !== 'ok'){ mostrarAcceso(estado, found.email); btn.disabled=false; btn.textContent='Entrar'; return; }
+    }
+    // 2) PIN nuevo obligatorio (todas las cuentas menos los puestos de consulta).
+    if(window.Acceso && Acceso.debeCambiarPin(found)){
+      const nuevo = await pedirPinNuevo(found, foundKey, pin);
+      found.pin = nuevo;
+    }
+    // Este dispositivo ya sabe que la cuenta tiene el PIN renovado (acceso.js no lo vuelve a consultar).
+    try{ if(window.Acceso) localStorage.setItem('mateu_pin_ok', Acceso.mailKey(found.email)); }catch(e){}
     // `sucursales` (para rol supervisor) define qué sucursales ve/edita en
     // Evaluaciones. Alcance "blando" en el cliente, como el resto del portal.
     found = aplicarPerfilFijo(found);
     const session = { email:found.email, rol:found.rol, herramientas:ordenarInicio(herramientasEfectivas(found.rol, found.herramientas, found.soloHerramientas), found.inicio), sucursal:found.sucursal||null, outlet_id:found.outlet_id||null, sucursales:found.sucursales||null, inicio:found.inicio||null, soloHerramientas:!!found.soloHerramientas };
     try{ localStorage.removeItem('mateu_bloqueo_lock'); localStorage.removeItem('mateu_bloqueo_act'); }catch(e){}   // bloqueo por inactividad (shared/bloqueo.js)
+    if(window.Acceso) Acceso.sellar(session);   // marca el dispositivo y el momento del ingreso (shared/acceso.js)
+    mostrarLoginPanel('login');
     saveSession(session);
     if(window.Marca) Marca.alIniciarSesion(session);   // estética por marca (Aurelius): la recuerda para el próximo ingreso
     render(session);
@@ -686,6 +761,56 @@ async function login(){
     showLoginErr();
   }
   btn.disabled = false; btn.textContent = 'Entrar';
+}
+
+/* ---- Ingreso: dispositivo sin autorizar y PIN nuevo (shared/acceso.js) ---- */
+function mostrarLoginPanel(cual){
+  const cuerpo = document.querySelector('#login .login-body');
+  if(cuerpo) cuerpo.style.display = cual==='login' ? '' : 'none';
+  $('accPanel').style.display = cual==='acceso' ? '' : 'none';
+  $('pinPanel').style.display = cual==='pin' ? '' : 'none';
+}
+function mostrarAcceso(estado, email){
+  const t = {
+    pendiente: ['Dispositivo sin autorizar', 'Es la primera vez que <b>'+esc(email)+'</b> entra desde este dispositivo. Ya le avisamos a gerencia: cuando lo aprueben, tocá «Reintentar». Si te lo piden, este es el código del dispositivo:'],
+    revocado:  ['Dispositivo bloqueado', 'Este dispositivo fue bloqueado para <b>'+esc(email)+'</b>. Si es un error, hablá con gerencia y pasales este código:'],
+    error:     ['No se pudo verificar', 'No pudimos consultar si este dispositivo está autorizado. Revisá la conexión y reintentá.']
+  }[estado] || ['No se pudo ingresar', ''];
+  $('accTitulo').textContent = t[0];
+  $('accTexto').innerHTML = t[1];
+  $('accCod').textContent = window.Acceso ? Acceso.codigo() : '';
+  $('accCod').style.display = estado==='error' ? 'none' : '';
+  mostrarLoginPanel('acceso');
+}
+const PIN_FACILES = ['0000','1111','2222','3333','4444','5555','6666','7777','8888','9999','1234','4321','0123','1905','2580'];
+// Muestra la pantalla «Creá tu PIN nuevo» y resuelve con el PIN ya guardado en Firebase.
+function pedirPinNuevo(usuario, key, pinActual){
+  return new Promise(resolve=>{
+    $('pn1').value = ''; $('pn2').value = ''; $('pinErr').classList.remove('show');
+    mostrarLoginPanel('pin');
+    setTimeout(()=>{ try{ $('pn1').focus(); }catch(e){} }, 50);
+    const err = m => { $('pinErr').textContent = m; $('pinErr').classList.add('show'); };
+    const guardar = async ()=>{
+      const a = ($('pn1').value||'').trim(), b = ($('pn2').value||'').trim();
+      if(!/^\d{4}$/.test(a)) return err('El PIN tiene que tener 4 números.');
+      if(a !== b) return err('Los dos PIN no coinciden.');
+      if(a === String(pinActual)) return err('Tiene que ser distinto del PIN que venías usando.');
+      if(PIN_FACILES.indexOf(a) !== -1) return err('Ese PIN es muy fácil de adivinar. Elegí otro.');
+      const b1 = $('pinSave'); b1.disabled = true; b1.textContent = 'Guardando…';
+      try{
+        await patchJSON(FB+'/usuarios/'+key+'.json', {pin:a, pinCambio:Date.now()});
+        b1.disabled = false; b1.textContent = 'Guardar y entrar';
+        $('pinSave').onclick = null; $('pn2').onkeydown = null;
+        resolve(a);
+      }catch(e){
+        b1.disabled = false; b1.textContent = 'Guardar y entrar';
+        err('No se pudo guardar. Revisá la conexión y probá de nuevo.');
+      }
+    };
+    $('pinSave').onclick = guardar;
+    $('pn1').onkeydown = e => { if(e.key==='Enter') $('pn2').focus(); };
+    $('pn2').onkeydown = e => { if(e.key==='Enter') guardar(); };
+  });
 }
 
 function logout(){
@@ -743,6 +868,9 @@ function render(session){
   $('whoRole').textContent = ROLE_LABEL[session.rol] || session.rol;
   $('greet').innerHTML = 'Hola, <span>'+session.email+'</span>';
   $('gearBtn').style.display = esSettingsAdmin(session) ? 'inline-block' : 'none';
+  const apruebaDisp = !!window.Acceso && Acceso.puedeAprobar(session);
+  $('dispBtn').style.display = apruebaDisp ? 'inline-block' : 'none';
+  if(apruebaDisp) refrescarDispBadge();
   $('msgBtn').style.display = 'inline-block';
   iniciarBandeja();
   $('notifWidget').style.display = MENSAJES_OK ? 'block' : 'none';
@@ -783,6 +911,105 @@ function render(session){
     if(con){ MSG_TAB='directos'; MSG_OTRO=con; } else { MSG_TAB='tablero'; }
     openMensajes();
   }
+  // Link directo al panel de dispositivos: ./?ver=portal&disp=1
+  if(apruebaDisp && new URLSearchParams(location.search).get('disp')) openDispositivos();
+}
+
+/* ============================================================
+   🔒 DISPOSITIVOS AUTORIZADOS (shared/acceso.js) — solo Acceso.APRUEBAN.
+   Aprobar / bloquear dispositivos de las cuentas de los locales, cerrar
+   las sesiones de una cuenta y ver el registro de ingresos del mes.
+   ============================================================ */
+async function refrescarDispBadge(){
+  try{
+    const todos = await fetchJSON(Acceso.NODO+'/dispositivos.json') || {};
+    let n = 0;
+    Object.keys(todos).forEach(mk=>Object.keys(todos[mk]||{}).forEach(id=>{ if((todos[mk][id]||{}).estado==='pendiente') n++; }));
+    $('dispBadge').textContent = n; $('dispBadge').style.display = n ? '' : 'none';
+  }catch(e){}
+}
+function openDispositivos(){
+  if(!window.Acceso || !Acceso.puedeAprobar(CURRENT_SESSION)) return;
+  showView('dispositivos');
+  renderDispositivos();
+}
+function dispFecha(ts){ return ts ? fechaBonita(ts) : '—'; }
+async function renderDispositivos(){
+  const box = $('dispBody');
+  box.innerHTML = '<div class="empty">Cargando…</div>';
+  let todos = {}, usuarios = {}, log = {}, cierres = {};
+  const d = new Date(), ym = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  try{
+    [todos, usuarios, log, cierres] = await Promise.all([
+      fetchJSON(Acceso.NODO+'/dispositivos.json'), fetchJSON(FB_USUARIOS),
+      fetchJSON(Acceso.NODO+'/log/'+ym+'.json?orderBy="$key"&limitToLast=150'), fetchJSON(Acceso.NODO+'/cierre.json')
+    ]);
+  }catch(e){ box.innerHTML = '<div class="empty">No se pudo cargar. Revisá la conexión.</div>'; return; }
+  todos = todos||{}; usuarios = usuarios||{}; log = log||{}; cierres = cierres||{};
+  const mailDe = {}, rolDe = {};
+  Object.keys(usuarios).forEach(k=>{ const u=usuarios[k]; if(u&&u.email){ const mk=Acceso.mailKey(u.email); mailDe[mk]=u.email.toLowerCase(); rolDe[mk]=u.rol; } });
+
+  const filas = [];
+  Object.keys(todos).forEach(mk=>Object.keys(todos[mk]||{}).forEach(id=>{
+    filas.push(Object.assign({mk, id, mail: mailDe[mk] || mk.replace(/,/g,'.')}, todos[mk][id]));
+  }));
+  const pend = filas.filter(f=>f.estado==='pendiente').sort((a,b)=>(b.alta||0)-(a.alta||0));
+  const resto = filas.filter(f=>f.estado!=='pendiente').sort((a,b)=> a.mail.localeCompare(b.mail) || (b.ultimo||0)-(a.ultimo||0));
+  const pill = e => e==='aprobado' ? '<span class="dv-pill dv-ok">Aprobado</span>' : e==='pendiente' ? '<span class="dv-pill dv-pend">Pendiente</span>' : '<span class="dv-pill dv-rev">Bloqueado</span>';
+  const acc = f => 'data-mk="'+esc(f.mk)+'" data-id="'+esc(f.id)+'"';
+
+  let h = '<div class="dv-h">Esperando aprobación ('+pend.length+')</div>';
+  if(!pend.length) h += '<div class="empty" style="margin-bottom:22px">No hay dispositivos esperando.</div>';
+  else{
+    h += '<div class="dv-wrap"><table class="dv-tbl"><tr><th>Cuenta</th><th>Código</th><th>Dispositivo</th><th>Pidió entrar</th><th></th></tr>';
+    pend.forEach(f=>{ h += '<tr><td><b>'+esc(f.mail)+'</b></td><td class="dv-cod">'+esc(f.cod||'')+'</td><td>'+esc(f.etq||'')+'</td><td>'+dispFecha(f.alta)+'</td>'+
+      '<td><button class="btn btn-primary btn-sm" data-disp="aprobado" '+acc(f)+'>✓ Aprobar</button> <button class="btn btn-outline btn-sm" data-disp="revocado" '+acc(f)+'>✕ Rechazar</button></td></tr>'; });
+    h += '</table></div>';
+  }
+
+  h += '<div class="dv-h">Dispositivos por cuenta</div>';
+  if(!resto.length) h += '<div class="empty" style="margin-bottom:22px">Todavía no hay dispositivos registrados.</div>';
+  else{
+    h += '<div class="dv-wrap"><table class="dv-tbl"><tr><th>Cuenta</th><th>Código</th><th>Dispositivo</th><th>Estado</th><th>Alta</th><th>Último uso</th><th></th></tr>';
+    let ant = null;
+    resto.forEach(f=>{
+      const primera = f.mail !== ant; ant = f.mail;
+      h += '<tr><td>'+(primera ? '<b>'+esc(f.mail)+'</b><br><button class="btn btn-outline btn-sm" style="margin-top:4px" data-cierre="'+esc(f.mk)+'" title="Todas las sesiones abiertas de esta cuenta tienen que volver a poner el PIN">⏻ Cerrar sesiones</button>'+(cierres[f.mk] ? '<div style="font-size:11px;color:#5b6578;margin-top:3px">cerradas '+dispFecha(cierres[f.mk])+'</div>' : '') : '')+'</td>'+
+        '<td class="dv-cod">'+esc(f.cod||'')+'</td><td>'+esc(f.etq||'')+(f.origen==='previo' ? '<div style="font-size:11px;color:#5b6578">ya estaba adentro al activar el control</div>' : '')+'</td>'+
+        '<td>'+pill(f.estado)+'</td><td>'+dispFecha(f.alta)+'</td><td>'+dispFecha(f.ultimo)+'</td>'+
+        '<td>'+(f.estado==='aprobado' ? '<button class="btn btn-outline btn-sm" data-disp="revocado" '+acc(f)+'>✕ Bloquear</button>' : '<button class="btn btn-outline btn-sm" data-disp="aprobado" '+acc(f)+'>✓ Aprobar</button>')+
+        ' <button class="btn btn-outline btn-sm" data-disp="borrar" '+acc(f)+' title="Lo olvida: si vuelve a entrar, pide aprobación de nuevo">🗑</button></td></tr>';
+    });
+    h += '</table></div>';
+  }
+
+  const R = {ok:'<span class="dv-pill dv-ok">Entró</span>', pendiente:'<span class="dv-pill dv-pend">Sin autorizar</span>', revocado:'<span class="dv-pill dv-rev">Bloqueado</span>', pin:'<span class="dv-pill dv-rev">PIN equivocado</span>'};
+  const ing = Object.keys(log).map(k=>log[k]).filter(x=>x&&x.ts).sort((a,b)=>b.ts-a.ts).slice(0,100);
+  h += '<div class="dv-h">Últimos ingresos del mes</div>';
+  if(!ing.length) h += '<div class="empty">Sin ingresos registrados este mes.</div>';
+  else{
+    h += '<div class="dv-wrap"><table class="dv-tbl"><tr><th>Cuándo</th><th>Cuenta</th><th>Resultado</th><th>Dispositivo</th><th>Código</th></tr>';
+    ing.forEach(x=>{ h += '<tr><td>'+dispFecha(x.ts)+'</td><td>'+esc(x.mail||'')+'</td><td>'+(R[x.r]||esc(x.r||''))+'</td><td>'+esc(x.etq||'')+'</td><td class="dv-cod" style="font-size:14px">'+esc(x.cod||'')+'</td></tr>'; });
+    h += '</table></div>';
+  }
+  box.innerHTML = h;
+
+  box.querySelectorAll('[data-disp]').forEach(b=>b.addEventListener('click', async ()=>{
+    const mk=b.dataset.mk, id=b.dataset.id, que=b.dataset.disp, url=Acceso.NODO+'/dispositivos/'+mk+'/'+id+'.json';
+    if(que==='borrar' && !confirm('¿Olvidar este dispositivo? Si vuelve a entrar va a pedir aprobación de nuevo.')) return;
+    if(que==='revocado' && !confirm('¿Bloquear este dispositivo? Si tiene la sesión abierta, se le cierra.')) return;
+    b.disabled = true;
+    try{
+      if(que==='borrar') await putJSON(url, null);
+      else await patchJSON(url, {estado:que, por:CURRENT_SESSION.email, en:Date.now()});
+    }catch(e){ alert('No se pudo guardar.'); }
+    renderDispositivos(); refrescarDispBadge();
+  }));
+  box.querySelectorAll('[data-cierre]').forEach(b=>b.addEventListener('click', async ()=>{
+    if(!confirm('¿Cerrar todas las sesiones abiertas de esta cuenta? Van a tener que volver a poner el PIN (los dispositivos aprobados siguen aprobados).')) return;
+    try{ await putJSON(Acceso.NODO+'/cierre/'+b.dataset.cierre+'.json', Date.now()); }catch(e){ alert('No se pudo guardar.'); }
+    renderDispositivos();
+  }));
 }
 
 /* ============================================================
@@ -855,6 +1082,7 @@ function showView(which){
   $('dashboardView').style.display = which==='dashboard' ? 'block' : 'none';
   $('settingsView').style.display  = which==='settings'  ? 'block' : 'none';
   $('mensajesView').style.display  = which==='mensajes'  ? 'block' : 'none';
+  $('dispositivosView').style.display = which==='dispositivos' ? 'block' : 'none';
 }
 function openSettings(){
   if(!esSettingsAdmin(CURRENT_SESSION)) return;
@@ -976,7 +1204,7 @@ async function renderUsuariosView(container){
     }));
     body.querySelectorAll('button[data-reset]').forEach(b=> b.addEventListener('click', async ()=>{
       const k = b.dataset.reset;
-      await patchJSON(FB+'/usuarios/'+k+'.json', {pin:'1111'});
+      await patchJSON(FB+'/usuarios/'+k+'.json', {pin:'1111', pinCambio:null});   // sin pinCambio → al entrar tiene que crear su PIN
       alert('PIN reseteado a 1111.');
     }));
     body.querySelectorAll('button[data-del]').forEach(b=> b.addEventListener('click', async ()=>{
@@ -1590,6 +1818,10 @@ $('p').addEventListener('keydown', e => { if(e.key==='Enter') login(); });
 $('u').addEventListener('keydown', e => { if(e.key==='Enter') $('p').focus(); });
 $('logoutBtn').addEventListener('click', logout);
 $('gearBtn').addEventListener('click', openSettings);
+$('dispBtn').addEventListener('click', openDispositivos);
+$('backFromDisp').addEventListener('click', ()=>{ showView('dashboard'); refrescarDispBadge(); });
+$('accRetry').addEventListener('click', ()=>{ mostrarLoginPanel('login'); login(); });
+$('accVolver').addEventListener('click', ()=>{ mostrarLoginPanel('login'); $('p').value=''; });
 $('backToDashboard').addEventListener('click', closeSettings);
 $('msgBtn').addEventListener('click', openMensajes);
 $('backFromMsg').addEventListener('click', closeMensajes);

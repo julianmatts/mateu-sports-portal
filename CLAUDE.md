@@ -183,6 +183,50 @@ y las listas de sucursales/outlets.
   constantes del script o con `window.MATEU_BLOQUEO = {minutos, roles}` antes de cargarlo.
   `puesto`, `deposito` y gerencia no se bloquean.
 
+## Dispositivos autorizados y PIN nuevo obligatorio (`shared/acceso.js`, 21/09/2026)
+
+Pedido de Juli: que un encargado no pueda pasarle usuario y PIN a alguien de afuera (caso: un ex
+supervisor). Sigue siendo seguridad **blanda** (todo en el cliente, bases con reglas abiertas): frena
+a quien recibió un usuario y un PIN, no a un programador. La barrera dura (login en una Pages
+Function + reglas de Firebase cerradas) queda como etapa futura.
+
+- **Dispositivo autorizado**: las cuentas de los locales (`ROLES` = sucursal · outlet · deposito ·
+  puesto) solo entran desde un dispositivo aprobado. El dispositivo es un id al azar en localStorage
+  (`mateu_dev_id`; código corto de 4 letras = `Acceso.codigo()`, para confirmarlo por teléfono).
+  Primer ingreso desde uno nuevo → queda `pendiente`, la pantalla de ingreso muestra «Dispositivo sin
+  autorizar» con el código y botón Reintentar, y sale un directo por la Bandeja a `APRUEBAN`
+  (julian@ y cristian.campion@). El resto de los roles no se bloquea: solo se registra el ingreso.
+- **Panel 🔒 Dispositivos** (botón en el header del Portal, solo `APRUEBAN`, con badge de pendientes;
+  link directo `./?ver=portal&disp=1`; `openDispositivos`/`renderDispositivos`): aprobar / rechazar
+  pendientes, bloquear u olvidar dispositivos por cuenta, **«⏻ Cerrar sesiones»** de una cuenta
+  (`accesos/cierre/<mailKey>` = ts: toda sesión con `loginTs` anterior vuelve al ingreso; los
+  dispositivos siguen aprobados) y los últimos 100 ingresos del mes (entró · sin autorizar ·
+  bloqueado · PIN equivocado).
+- **Sesiones abiertas**: `header.js` carga `acceso.js` solo (Portal e Indicadores lo incluyen a mano,
+  SIN defer). En cada carga de página `Acceso.revalidar()` confirma (a lo sumo una vez por minuto) que
+  el dispositivo siga aprobado y que no haya un cierre posterior al ingreso; si no, borra la sesión y
+  manda al Portal con el motivo (`mateu_acceso_msg` → `Acceso.MENSAJES`). Sin conexión no toca nada.
+  La sesión lleva `acc` (= devId) y `loginTs` (`Acceso.sellar`); una sesión con `acc` de otro
+  dispositivo (localStorage copiado) se cierra. **Las sesiones que ya estaban abiertas al activar el
+  control se dieron por buenas** (decisión de Juli): registran su dispositivo solas como aprobado con
+  `origen:'previo'` hasta `GRACIA_HASTA` (29/09/2026); después, sesión sin sello = volver a entrar
+  (y pedir aprobación). Revisar esos «ya estaba adentro» en el panel y bloquear lo que no corresponda.
+- **PIN nuevo obligatorio**: toda cuenta sin `usuarios/<mail>/pinCambio` ≥ `PIN_DESDE` (21/09/2026)
+  tiene que crear su PIN al entrar (`pedirPinNuevo` en el Portal: 4 dígitos, distinto del actual, no
+  de la lista `PIN_FACILES`). Va DESPUÉS del chequeo de dispositivo, así alguien de afuera no llega a
+  cambiarle el PIN a una cuenta. Las sesiones abiertas también: `revalidar` consulta `pinCambio` y
+  manda al ingreso (flag local `mateu_pin_ok` para no consultar más). «Resetear PIN» del ⚙ borra
+  `pinCambio` (vuelve a 1111 y obliga a crear uno). Para obligar a todos de nuevo: subir `PIN_DESDE`.
+  **Los puestos de consulta no cambian PIN** (`PIN_SIN_CAMBIO`): quedaron todos en **1905** (16
+  cuentas, 21/09/2026; respaldo de `usuarios/` en `Descargas/respaldo-usuarios-2026-09-21.json`).
+- **Firebase** (`discontinuos-mateu`, nodo `accesos/`): `dispositivos/<mailKey>/<devId>` = `{estado:
+  aprobado|pendiente|revocado, cod, etq, ua, alta, ultimo, origen: login|previo, por, en}`,
+  `cierre/<mailKey>` y `log/<YYYY-MM>/<id>` = `{ts, mail, rol, dev, cod, etq, r: ok|pendiente|
+  revocado|pin}`.
+- Pendiente / no cubierto: el kiosco `recepciones/control` (rol `deposito-tablet`) no carga
+  `acceso.js`; el login sigue bajando `usuarios/` entero con los PIN al navegador (eso solo se
+  arregla con el login del lado del servidor).
+
 ## Branding / design tokens
 
 Paleta Mateu Sports: **navy `#0B1527`**, **rojo `#CC0000`**, blanco, fondo
