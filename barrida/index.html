@@ -4132,7 +4132,7 @@ function repCandidatos(a, G, destinos){
   let msFuera=out.filter(repMsExcedida);
   if(msFuera.length && msFuera.length===out.length){ out.msIgnorado=msFuera.map(c=>({ nombre:c.sucNombre, ms:c.pr.ms })); msFuera=[]; }
   // 21/09/2026 (Juli, reparto de Montagne: 3 de 5 sucursales afuera y 64 de 80 pares en el depósito): con el ratio alto
-  // la sucursal YA NO queda afuera; recibe al final y un escalón menos de profundidad (honda→base, base→x1 por talle).
+  // la sucursal YA NO queda afuera: recibe al final, con su curva normal (el ratio solo ordena).
   msFuera.forEach(c=>{ c.msAlto=true; });
   out.msFuera=[]; out.msAlto=msFuera.map(c=>({ slug:c.slug, nombre:c.sucNombre, ms:c.pr.ms }));
   // la venta pesa en tres niveles (alta / media / baja respecto de la que más vende): así los
@@ -4167,7 +4167,7 @@ function repPrioTxt(l){
   if(l.hist) partes.push('ya recibió este artículo (se le completa la curva)');
   if(l.stock) partes.push('ya tiene '+fmtInt(Object.values(l.stock).reduce((x,q)=>x+q,0))+' u. en la sucursal ('+((state.rep.param.reingresoProf!==false && l.vendeArt)?'reingreso que se vende: recibe la curva entera igual':'reingreso: se le completa la curva')+')');
   if(l.rot) partes.push('rotación '+Math.round(l.rot.r*100)+' %: recibió '+fmtInt(l.rot.rec)+' u. en '+REP_ROT_MESES+' meses y le quedan '+fmtInt(l.rot.stock));
-  if(l.msAlto) partes.push(REP_MS_TOPE+'+ meses de stock de la marca: va al final y con un escalón menos de profundidad');
+  if(l.msAlto) partes.push(REP_MS_TOPE+'+ meses de stock de la marca: va al final');
   { const pf=l.perfilEf||l.perfil; if(pf && PERFIL_LBL[pf]) partes.push(PERFIL_LBL[pf]); }
   if(l.asig) partes.push((ASIG_LBL[l.asig.tipo]||l.asig.tipo)+(l.asig.nota?' ('+l.asig.nota+')':''));
   if(p.cat) partes.push(CAT_LABEL[p.cat]||p.cat);
@@ -4211,9 +4211,9 @@ function repRepartirArt(perRem, cands, central, P, per){
     if(entera) return o;
     Object.entries(c.stock||{}).forEach(([t,q])=>{ o[t]=Math.max(o[t]||0, q); }); return o; };
   // Criterio 1 (perfil del local) y 5 (pico comercial: todos suben un escalón). La curva x1 de la ficha manda.
-  // Ratio alto (6+ meses de la marca): un escalón menos. Criterio «profundidad»: todos suben un escalón — si no, en los
+  // Ratio alto (6+ meses de la marca): solo ORDENA (va al final), la curva es la normal (Juli 21/09/2026). Criterio «profundidad»: todos suben un escalón — si no, en los
   // locales de curva base (Cat 2, Aurelius…) cambiar el criterio no cambiaba nada (Juli 21/09/2026).
-  const perfilDe=c=>{ let p=c.perfil||'honda'; if(c.msAlto) p=PERFIL_BAJA[p]; if(P.pico) p=PERFIL_SUBE[p]; if(P.criterio==='profundidad') p=PERFIL_SUBE[p]; return p; };
+  const perfilDe=c=>{ let p=c.perfil||'honda'; if(P.pico) p=PERFIL_SUBE[p]; if(P.criterio==='profundidad') p=PERFIL_SUBE[p]; return p; };
   const dist=cands.map(c=>{ const pf=perfilDe(c); return Object.assign({}, c, { g:{}, tiene:tieneDe(c), ok:false, perfilEf:pf, plana:!!c.plana || pf==='chata', sinExc:!!c.plana || (c.perfil||'honda')==='chata' }); });
   // A · curva base de UNA sucursal hasta `obj(t)` por talle; no le arma una curva rota
   const darCurva=(s, obj)=>{
@@ -4463,7 +4463,7 @@ function repCalcular(){
     Object.assign(a, { estimado:tl.estimado, faltan:tl.faltan, centrales:[...C.set], grupo:C.G.key,
       regla:C.regla + (pico ? ' · '+pico+' cerca: con profundidad y sin dejar curva en el depósito' : '')
         + (a.msFuera.length ? ' · no recibe'+(a.msFuera.length>1?'n':'')+' por tener '+REP_MS_TOPE+'+ meses de stock de la marca: '+a.msFuera.map(m=>m.nombre+' ('+m.ms.toLocaleString('es-AR')+')').join(', ') : '')
-        + (a.msAlto.length ? ' · con '+REP_MS_TOPE+'+ meses de stock de la marca reciben al final y con menos profundidad: '+a.msAlto.map(m=>m.nombre+' ('+m.ms.toLocaleString('es-AR')+')').join(', ') : '')
+        + (a.msAlto.length ? ' · con '+REP_MS_TOPE+'+ meses de stock de la marca reciben al final: '+a.msAlto.map(m=>m.nombre+' ('+m.ms.toLocaleString('es-AR')+')').join(', ') : '')
         + (a.msIgnorado.length ? ' · todas las que lo trabajan tienen '+REP_MS_TOPE+'+ meses de stock de la marca ('+a.msIgnorado.map(m=>m.nombre+' '+m.ms.toLocaleString('es-AR')).join(', ')+'): se reparte igual' : '') });
     if(a.diasDepo==null && reserva){    // hace cuántos días entró lo que hay hoy en el depósito
       const Rr=reserva[a.id] || (a.cod && reserva['cod:'+String(a.cod).toUpperCase()]);
