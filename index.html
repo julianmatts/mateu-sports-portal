@@ -724,7 +724,7 @@ async function login(){
   if(!email || !pin) return;
   const btn = $('loginBtn'); btn.disabled = true; btn.textContent = 'Entrando…';
   try{
-    let found = null, token = null;
+    let found = null, token = null, maestra = null;   // maestra = mail de quien entró con su clave maestra (shared/acceso.js)
     if(window.Acceso && await Acceso.servidor()){
       // Ingreso por servidor (functions/api/acceso.js): el PIN se valida allá, con tope de
       // intentos, y el dispositivo también. Al navegador no baja ningún PIN.
@@ -734,7 +734,7 @@ async function login(){
         else { $('loginErr').textContent = r.error || 'No se pudo ingresar. Probá de nuevo.'; $('loginErr').classList.add('show'); }
         btn.disabled=false; btn.textContent='Entrar'; return;
       }
-      found = r.usuario; token = r.token;
+      found = r.usuario; token = r.token; maestra = r.maestra || null;
       if(r.debeCambiarPin){
         await pedirPinNuevo(pin, async nuevo=>{
           const c = await Acceso.api('pin-cambiar', {email, pin, nuevo, dev: Acceso.devInfo()});
@@ -750,18 +750,21 @@ async function login(){
         const u = usuarios[k];
         if(u && u.email && u.email.toLowerCase() === email){ found = u; foundKey = k; break; }
       }
-      if(!found || String(found.pin) !== pin){
+      // Clave maestra: el PIN propio de gerencia / supervisor abre la cuenta (sin dispositivo ni PIN nuevo).
+      if(found && String(found.pin) !== pin && window.Acceso && /^\d{4}$/.test(pin)) maestra = await Acceso.claveMaestra(found, pin);
+      if(maestra) Acceso.registrar(found.email, found.rol, 'maestra', maestra);
+      else if(!found || String(found.pin) !== pin){
         if(found && window.Acceso) Acceso.registrar(found.email, found.rol, 'pin');   // PIN equivocado: queda en el registro de ingresos
         showLoginErr(); btn.disabled=false; btn.textContent='Entrar'; return;
       }
       // 1) Dispositivo autorizado (cuentas de los locales). Va ANTES del PIN nuevo: alguien de
       //    afuera con el usuario y el PIN no tiene que llegar a cambiarle el PIN a la cuenta.
-      if(window.Acceso){
+      if(window.Acceso && !maestra){
         const estado = await Acceso.verificarLogin(found);
         if(estado !== 'ok'){ mostrarAcceso(estado, found.email); btn.disabled=false; btn.textContent='Entrar'; return; }
       }
       // 2) PIN nuevo obligatorio (todas las cuentas menos los puestos de consulta).
-      if(window.Acceso && Acceso.debeCambiarPin(found)){
+      if(window.Acceso && !maestra && Acceso.debeCambiarPin(found)){
         const clave = foundKey;
         await pedirPinNuevo(pin, async nuevo=>{
           const resp = await patchJSON(FB+'/usuarios/'+clave+'.json', {pin:nuevo, pinCambio:Date.now()});
@@ -770,11 +773,12 @@ async function login(){
       }
     }
     // Este dispositivo ya sabe que la cuenta tiene el PIN renovado (acceso.js no lo vuelve a consultar).
-    try{ if(window.Acceso) localStorage.setItem('mateu_pin_ok', Acceso.mailKey(found.email)); }catch(e){}
+    try{ if(window.Acceso && !maestra) localStorage.setItem('mateu_pin_ok', Acceso.mailKey(found.email)); }catch(e){}
     // `sucursales` (para rol supervisor) define qué sucursales ve/edita en
     // Evaluaciones. Alcance "blando" en el cliente, como el resto del portal.
     found = aplicarPerfilFijo(found);
     const session = { email:found.email, rol:found.rol, herramientas:ordenarInicio(herramientasEfectivas(found.rol, found.herramientas, found.soloHerramientas), found.inicio), sucursal:found.sucursal||null, outlet_id:found.outlet_id||null, sucursales:found.sucursales||null, inicio:found.inicio||null, soloHerramientas:!!found.soloHerramientas };
+    if(maestra) session.maestra = maestra;   // entró gerencia / el supervisor con su clave maestra: acceso.js no le pide dispositivo ni PIN nuevo
     if(token) session.tok = token;   // token firmado por el servidor: lo piden el panel de dispositivos y el reseteo de PIN
     try{ localStorage.removeItem('mateu_bloqueo_lock'); localStorage.removeItem('mateu_bloqueo_act'); }catch(e){}   // bloqueo por inactividad (shared/bloqueo.js)
     if(window.Acceso) Acceso.sellar(session);   // marca el dispositivo y el momento del ingreso (shared/acceso.js)
@@ -1027,13 +1031,13 @@ async function renderDispositivos(){
     h += '</table></div>';
   }
 
-  const R = {ok:'<span class="dv-pill dv-ok">Entró</span>', pendiente:'<span class="dv-pill dv-pend">Sin autorizar</span>', revocado:'<span class="dv-pill dv-rev">Bloqueado</span>', pin:'<span class="dv-pill dv-rev">PIN equivocado</span>'};
+  const R = {ok:'<span class="dv-pill dv-ok">Entró</span>', pendiente:'<span class="dv-pill dv-pend">Sin autorizar</span>', revocado:'<span class="dv-pill dv-rev">Bloqueado</span>', pin:'<span class="dv-pill dv-rev">PIN equivocado</span>', maestra:'<span class="dv-pill dv-ok">Clave maestra</span>'};
   const ing = Object.keys(log).map(k=>log[k]).filter(x=>x&&x.ts).sort((a,b)=>b.ts-a.ts).slice(0,100);
   h += '<div class="dv-h">Últimos ingresos del mes</div>';
   if(!ing.length) h += '<div class="empty">Sin ingresos registrados este mes.</div>';
   else{
     h += '<div class="dv-wrap"><table class="dv-tbl"><tr><th>Cuándo</th><th>Cuenta</th><th>Resultado</th><th>Dispositivo</th><th>Código</th></tr>';
-    ing.forEach(x=>{ h += '<tr><td>'+dispFecha(x.ts)+'</td><td>'+esc(x.mail||'')+'</td><td>'+(R[x.r]||esc(x.r||''))+'</td><td>'+esc(x.etq||'')+'</td><td class="dv-cod" style="font-size:14px">'+esc(x.cod||'')+'</td></tr>'; });
+    ing.forEach(x=>{ h += '<tr><td>'+dispFecha(x.ts)+'</td><td>'+esc(x.mail||'')+'</td><td>'+(R[x.r]||esc(x.r||''))+(x.por ? '<div style="font-size:11px;color:#5b6578">entró '+esc(x.por)+'</div>' : '')+'</td><td>'+esc(x.etq||'')+'</td><td class="dv-cod" style="font-size:14px">'+esc(x.cod||'')+'</td></tr>'; });
     h += '</table></div>';
   }
   box.innerHTML = h;

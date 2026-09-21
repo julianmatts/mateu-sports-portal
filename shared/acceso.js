@@ -46,6 +46,13 @@
   var ROLES = ['sucursal', 'outlet', 'deposito', 'puesto'];
   // Quiénes aprueban dispositivos (y reciben el aviso por la Bandeja).
   var APRUEBAN = ['julian@mateu.com.ar', 'cristian.campion@mateu.com.ar'];
+  // CLAVE MAESTRA (21/09/2026, pedido de Juli): con el mail de una cuenta + el PIN PROPIO de uno de
+  // estos mails se entra a esa cuenta sin pedirle dispositivo ni PIN nuevo. 'todas' = cualquier cuenta;
+  // 'locales' = solo las de los locales. Nunca abre la cuenta de otro de la lista. Vale solo con el PIN
+  // propio ya renovado y desde un dispositivo donde ese mail ya entró con su cuenta (o ya aprobado para
+  // la cuenta a la que se entra). Copia de lib/acceso-servidor.mjs: mantener en sintonía.
+  var MAESTRAS = {'julian@mateu.com.ar':'todas', 'cristian.campion@mateu.com.ar':'locales'};
+  var ROLES_LOCALES = ROLES.concat(['deposito-tablet']);
   // Hasta cuándo una sesión que ya estaba abierta registra su dispositivo sola.
   var GRACIA_HASTA = new Date('2026-09-29T00:00:00-03:00').getTime();
   // PIN nuevo obligatorio (21/09/2026): toda cuenta cuyo `usuarios/<mail>/pinCambio` sea anterior
@@ -137,22 +144,23 @@
      kiosco del depósito. Resuelve {ok, error}. Con servidor cuenta para el tope de intentos. */
   function verificarPin(email, pin){
     return servidor().then(function(si){
-      if(si) return api('pin-verificar', {email: email, pin: String(pin||'').trim()}).then(function(r){
+      if(si) return api('pin-verificar', {email: email, pin: String(pin||'').trim(), dev: devInfo()}).then(function(r){
         return {ok: !!r.ok, error: r.ok ? '' : (r.status === 429 ? r.error : (r.status === 401 ? 'PIN incorrecto.' : (r.error || 'No se pudo verificar el PIN.')))};
       });
       return req('GET', FB+'/usuarios/'+mailKey(email)+'.json').then(function(u){
         if(!u || u.pin == null) return {ok:false, error:'No se pudo verificar el PIN.'};
-        return String(u.pin) === String(pin||'').trim() ? {ok:true, error:''} : {ok:false, error:'PIN incorrecto.'};
+        if(String(u.pin) === String(pin||'').trim()) return {ok:true, error:''};
+        return claveMaestra(u, pin).then(function(m){ return m ? {ok:true, error:''} : {ok:false, error:'PIN incorrecto.'}; });
       }).catch(function(){ return {ok:false, error:'No se pudo verificar el PIN. Revisá la conexión.'}; });
     });
   }
 
-  function registrar(email, rol, resultado){
+  function registrar(email, rol, resultado, por){
     var d = new Date(), ym = d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2);
-    return req('POST', NODO+'/log/'+ym+'.json', {
-      ts: {'.sv':'timestamp'}, mail:(email||'').toLowerCase(), rol: rol||'', dev: devId(),
-      cod: codigo(), etq: etiqueta(), r: resultado
-    }).catch(function(){});
+    var fila = {ts: {'.sv':'timestamp'}, mail:(email||'').toLowerCase(), rol: rol||'', dev: devId(),
+      cod: codigo(), etq: etiqueta(), r: resultado};
+    if(por) fila.por = por;            // ingreso con clave maestra: quién entró
+    return req('POST', NODO+'/log/'+ym+'.json', fila).catch(function(){});
   }
 
   function avisarAprobadores(email){
@@ -166,11 +174,50 @@
     });
   }
 
+  /* Clave maestra por el camino del navegador (sin servidor). Resuelve el mail de quien entra
+     o null. El dispositivo se mira antes que el PIN, igual que en el servidor. */
+  function claveMaestra(usuario, pin){
+    var destino = ((usuario && usuario.email) || '').toLowerCase();
+    if(!destino || MAESTRAS[destino]) return Promise.resolve(null);
+    var mails = Object.keys(MAESTRAS).filter(function(m){ return MAESTRAS[m] === 'todas' || ROLES_LOCALES.indexOf(usuario.rol) !== -1; });
+    pin = String(pin||'').trim();
+    var aprobadoDestino = null;
+    function probar(i){
+      if(i >= mails.length) return Promise.resolve(null);
+      var mail = mails[i];
+      return req('GET', urlDev(mail)).then(function(propio){
+        if(propio && propio.estado === 'revocado') return false;
+        if(propio && propio.estado === 'aprobado') return true;
+        if(aprobadoDestino !== null) return aprobadoDestino;
+        return req('GET', urlDev(destino)).then(function(d){ return (aprobadoDestino = !!(d && d.estado === 'aprobado')); });
+      }).then(function(conocido){
+        if(!conocido) return null;
+        return req('GET', FB+'/usuarios/'+mailKey(mail)+'.json').then(function(m){
+          return (m && m.pin != null && !debeCambiarPin(m) && String(m.pin) === pin) ? mail : null;
+        });
+      }).catch(function(){ return null; }).then(function(ok){ return ok || probar(i+1); });
+    }
+    return probar(0);
+  }
+  // El que tiene clave maestra deja anotado el dispositivo al entrar con SU cuenta.
+  function anotarDispositivoPropio(email){
+    var ahora = Date.now();
+    req('GET', urlDev(email)).then(function(d){
+      if(d && d.estado === 'revocado') return;
+      if(d) return req('PATCH', urlDev(email), {ultimo: ahora, etq: etiqueta()});
+      return req('PUT', urlDev(email), {estado:'aprobado', cod: codigo(), etq: etiqueta(),
+        ua:(navigator.userAgent||'').slice(0,200), alta: ahora, ultimo: ahora, origen:'propio'});
+    }).catch(function(){});
+  }
+
   /* Login: después de validar el PIN. Devuelve una promesa con
      'ok' | 'pendiente' | 'revocado' | 'error' (no se pudo consultar → no entra). */
   function verificarLogin(usuario){
     var email = (usuario && usuario.email) || '', rol = usuario && usuario.rol;
-    if(!controla(rol)){ registrar(email, rol, 'ok'); return Promise.resolve('ok'); }
+    if(!controla(rol)){
+      if(MAESTRAS[email.toLowerCase()]) anotarDispositivoPropio(email);
+      registrar(email, rol, 'ok'); return Promise.resolve('ok');
+    }
     return req('GET', urlDev(email)).then(function(d){
       var ahora = Date.now();
       if(d && d.estado === 'aprobado'){
@@ -226,6 +273,9 @@
         expulsar('pin');
       }).catch(function(){});
     }
+    // Sesión abierta con la clave maestra: no se le pide el PIN nuevo de la cuenta (no es su dueño).
+    var maestra = !!(s.maestra && MAESTRAS[String(s.maestra).toLowerCase()]);
+    if(maestra) chequearPin = function(){};
     if(!controla(s.rol)){ chequearPin(); return; }
     if(s.acc && s.acc !== devId()){ expulsar('reingresar'); return; }   // sesión copiada de otro dispositivo
     if(!s.acc && ahora > GRACIA_HASTA){ expulsar('reingresar'); return; }
@@ -236,7 +286,7 @@
         var marcaS = 'mateu_acceso_rev';
         if(s.acc && ahora - (parseInt(ssGet(marcaS), 10) || 0) < REVALIDAR_MS){ chequearPin(); return; }
         ssSet(marcaS, String(ahora));
-        api('estado', {email: s.email, dev: devInfo(), loginTs: s.loginTs || 0, previo: !s.acc}).then(function(r){
+        api('estado', {email: s.email, dev: devInfo(), loginTs: s.loginTs || 0, previo: !s.acc, token: s.tok || ''}).then(function(r){
           if(r.status >= 500 || r.status === 0) return;          // la Function no contesta: no se toca nada
           if(r.ok === false && r.motivo){ expulsar(r.motivo); return; }
           if(r.sellar){
@@ -244,6 +294,13 @@
           }
           chequearPin();
         });
+        return;
+      }
+      if(maestra){
+        // Sin servidor: vale mientras no se cierren las sesiones de la cuenta ni las de quien entró.
+        Promise.all([req('GET', NODO+'/cierre/'+mailKey(s.email)+'.json'), req('GET', NODO+'/cierre/'+mailKey(s.maestra)+'.json')]).then(function(c){
+          if(Math.max(c[0] || 0, c[1] || 0) > (s.loginTs || 0)) expulsar('cerrada');
+        }).catch(function(){});
         return;
       }
       revalidarDirecto(s, ahora, chequearPin);
@@ -290,7 +347,7 @@
   };
 
   window.Acceso = {
-    ROLES: ROLES, APRUEBAN: APRUEBAN, NODO: NODO, MENSAJES: MENSAJES,
+    ROLES: ROLES, APRUEBAN: APRUEBAN, MAESTRAS: MAESTRAS, claveMaestra: claveMaestra, NODO: NODO, MENSAJES: MENSAJES,
     controla: controla, puedeAprobar: puedeAprobar, mailKey: mailKey,
     devId: devId, codigo: codigo, etiqueta: etiqueta,
     debeCambiarPin: debeCambiarPin, PIN_DESDE: PIN_DESDE,
