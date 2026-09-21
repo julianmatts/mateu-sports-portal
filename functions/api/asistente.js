@@ -61,6 +61,7 @@
    ============================================================ */
 
 import { disponible as accesoDisponible, leerToken } from '../../lib/acceso-servidor.mjs';
+import { fichasPara } from '../../lib/asistente-fichas.mjs';
 
 const NOMBRE = 'Matts';
 const MODELO_DEF = 'claude-haiku-4-5';
@@ -703,6 +704,10 @@ export async function onRequestPost(ctx) {
   }
   const conGestion = identidadOk && !esPuesto && ['admin', 'supervisor', 'sucursal', 'outlet', 'deposito'].indexOf(user.rol) >= 0;
   if (!identidadOk && !esPuesto) system.push({ type: 'text', text: 'Esta sesión es anterior al control de ingreso y no está verificada: no tenés los datos de gestión. Si piden ventas, objetivos o pendientes, decí que salgan del Portal y vuelvan a ingresar, y que después te lo pregunten de nuevo.' });
+  // Ficha técnica de lo que se está preguntando (lib/asistente-fichas.mjs): el criterio de la casa, para que no lo improvise el modelo
+  const fichas = fichasPara(mensajes.filter(m => m.role === 'user').map(m => m.content));
+  const NL = String.fromCharCode(10);
+  if (fichas.length) system.push({ type: 'text', text: 'FICHA TÉCNICA DE LA CASA (es el criterio con que se asesora en Mateu Sports: el punto (a) de tu recomendación sale de acá. Usá SOLO lo que aplica a este cliente, en una o dos oraciones; no la recites ni la contradigas. Si algo no está en la ficha, decilo en general y sin inventar números):' + NL + NL + fichas.map(f => f.texto).join(NL + NL) });
   const tools = herramientas(guia).filter(t => (t.name !== 'guia_modulo' || !esPuesto) && (t.name !== 'resumen_gestion' || conGestion));
   const conv = mensajes.slice();
   const usadas = [];
@@ -744,7 +749,7 @@ export async function onRequestPost(ctx) {
   const lid = dia.slice(0, 7) + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   ctx.waitUntil(Promise.all([
     fetch(FB_ASIS + '/uso/' + dia + '.json', { method: 'PATCH', body: JSON.stringify({ [mk]: inc, _total: inc }) }),
-    fetch(FB_ASIS + '/log/' + dia.slice(0, 7) + '/' + lid + '.json', { method: 'PUT', body: JSON.stringify({ ts: { '.sv': 'timestamp' }, mail: email, rol: user.rol || '', suc, modulo, q: pregunta.slice(0, 500), r: respuesta.slice(0, 800), tools: usadas, tin, tout, modelo }) })
+    fetch(FB_ASIS + '/log/' + dia.slice(0, 7) + '/' + lid + '.json', { method: 'PUT', body: JSON.stringify({ ts: { '.sv': 'timestamp' }, mail: email, rol: user.rol || '', suc, modulo, q: pregunta.slice(0, 500), r: respuesta.slice(0, 800), tools: usadas, fichas: fichas.length ? fichas.map(f => f.id) : null, tin, tout, modelo }) })
   ]).catch(() => {}));
 
   return json({ respuesta, restantes: Math.max(0, tope - usados - 1), id: lid });
