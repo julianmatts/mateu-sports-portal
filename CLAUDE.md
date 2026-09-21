@@ -2338,6 +2338,14 @@ entran acá: ven su objetivo en Indicadores.
   02, … → slug del Portal vía `PREFIJO_SLUG`), toma el objetivo y la venta real de la
   fila, y las filas "FINAL AJUSTADO" (más abajo en la hoja) **pisan** a las de "FINAL".
   El lunes de la semana se deduce del nombre de la hoja.
+- **Real de las semanas cerradas (21/09/2026)**: al guardar, `backfillRealPublicadas` completa el
+  `real` de las semanas ya publicadas desde la hoja **HISTÓRICO** del Excel. Esa hoja puede quedar
+  atrasada (el 21/09 terminaba en «31 AGO» y la semana del 14/09 quedó sin real, solo con el «prov»):
+  respaldo `completarHistDesdeHojas` = la columna REAL de la hoja de cada semana (últimas 12 hojas con
+  layout de objetivo, semanas cerradas de los últimos 70 días; HISTÓRICO manda; el backfill exige que
+  la mayoría de las metas de la hoja coincida con las publicadas, `state.histHoja`). Las hojas ahora
+  se llaman por número de semana («SEM38»): `lunesDesdeSemana` = lunes de esa semana ISO del año en
+  curso (`lunesDeHoja` prueba primero día+mes).
 - **Dashboard (gerencia)**: por semana, tabla con Meta/Mínimo/120/Real, % de
   cumplimiento con color (verde ≥meta, ámbar ≥mínimo, rojo <mínimo), total cadena,
   ranking ordenable y barra de avance. Selector de semana + histórico.

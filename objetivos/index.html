@@ -437,6 +437,47 @@ function lunesDesdeHoja(name){
   if((cand-hoy)/(1000*60*60*24) < -180) anio++;
   return lunesDe(new Date(anio, mes, dia));
 }
+// Hojas nombradas por número de semana ("SEM38", "SEMANA 39"): lunes de esa semana ISO
+// del año en curso (sem. 36 de 2026 = 31/08). Solo si el nombre NO trae mes.
+function lunesDesdeSemana(name){
+  const m = String(name||'').trim().match(/^sem(?:ana)?\.?\s*(\d{1,2})$/i);
+  if(!m) return null;
+  const n=parseInt(m[1],10); if(!(n>=1 && n<=53)) return null;
+  const anio=new Date().getFullYear();
+  const d=new Date(anio,0,4);                 // el 4 de enero siempre cae en la semana 1
+  d.setDate(d.getDate()-((d.getDay()+6)%7)+(n-1)*7);
+  return lunesDe(d);
+}
+function lunesDeHoja(name){ return lunesDesdeHoja(name) || lunesDesdeSemana(name); }
+// La hoja HISTÓRICO del Excel a veces queda atrasada (21/09/2026: terminaba en «31 AGO» y la
+// semana del 14/09 quedó sin real). Respaldo: la columna REAL de la hoja de cada semana.
+// Solo las últimas hojas del libro (las viejas de otros años repiten nombres) y solo semanas
+// ya cerradas de los últimos 70 días. Lo que trae HISTÓRICO manda. Guarda las metas de la
+// hoja en state.histHoja para que el backfill confirme que es la misma semana publicada.
+function completarHistDesdeHojas(hojas){
+  state.histHoja = {};
+  const lunesHoy = lunesDe(new Date());
+  const desde = lunesDe(new Date(Date.now()-70*864e5));
+  let vistas=0; const vistos={};
+  for(let i=hojas.length-1;i>=0 && vistas<12;i--){
+    const h=hojas[i];
+    const iso=lunesDeHoja(h.name); if(!iso) continue;
+    const parsed=parseObjetivoHoja(h.matrix); if(!parsed) continue;
+    vistas++;
+    if(iso>=lunesHoy || iso<desde || vistos[iso]) continue;
+    vistos[iso]=1;
+    const metas={}; let conReal=0;
+    Object.entries(parsed).forEach(([slug,v])=>{ metas[slug]=v.meta; if(v.real>0) conReal++; });
+    if(conReal<5) continue;
+    let aporto=false;
+    Object.entries(parsed).forEach(([slug,v])=>{
+      if(!(v.real>0)) return;
+      const o=state.hist[slug]||(state.hist[slug]={});
+      if(o[iso]==null){ o[iso]=v.real; aporto=true; }
+    });
+    if(aporto) state.histHoja[iso]={hoja:h.name, metas};
+  }
+}
 
 async function ingerirArchivo(file){
   const buf = await file.arrayBuffer();
@@ -446,6 +487,7 @@ async function ingerirArchivo(file){
   // HISTÓRICO: venta REAL semanal por sucursal (para autocompletar el real y el %).
   const hHist = hojas.find(h=>/hist[oó]rico/i.test(h.name));
   state.hist = hHist ? (parseHistorico(hHist.matrix) || {}) : {};
+  completarHistDesdeHojas(hojas);
   // Hoja de objetivo por defecto: preferir una VISIBLE con layout de objetivo
   // (columna META). Las hojas de semanas están ocultas y muchas son viejas.
   const conObj = h => parseObjetivoHoja(h.matrix);
@@ -463,7 +505,7 @@ function aplicarHoja(name){
   const parsed = parseObjetivoHoja(h.matrix) || parseHoja(h.matrix) || {};
   state.filas = filasVacias();
   Object.entries(parsed).forEach(([slug,v])=>{ if(state.filas[slug]) state.filas[slug]={meta:v.meta, real:v.real, nota:v.nota||''}; });
-  const ldh = lunesDesdeHoja(name); if(ldh) state.semana = ldh;
+  const ldh = lunesDeHoja(name); if(ldh) state.semana = ldh;
   rellenarRealDesdeHist();   // completar la venta real de esa semana desde HISTÓRICO
 }
 // Completa el REAL de la semana elegida desde HISTÓRICO (si esa semana ya cerró).
@@ -579,7 +621,7 @@ function viewCargar(){
   // 3 · Grilla editable
   html+='<div class="card">'
     +'<div class="card-h">3 · Objetivos por sucursal</div>'
-    +'<div class="card-hs">Editá la <b>Meta</b> (el objetivo) de cada sucursal; Mínimo (÷1,2) y 120 (×1,2) se calculan solos. La <b>Venta real</b> la completo solo desde la hoja <b>HISTÓRICO</b> del Excel cuando la semana cierra (al guardar, también actualizo el real de las semanas anteriores). <b>'+nCargadas()+'</b> de '+STORES.length+' con meta cargada.</div>'
+    +'<div class="card-hs">Editá la <b>Meta</b> (el objetivo) de cada sucursal; Mínimo (÷1,2) y 120 (×1,2) se calculan solos. La <b>Venta real</b> la completo solo desde la hoja <b>HISTÓRICO</b> del Excel cuando la semana cierra; si HISTÓRICO quedó atrasada, uso la columna REAL de la hoja de esa semana (al guardar, también actualizo el real de las semanas anteriores). <b>'+nCargadas()+'</b> de '+STORES.length+' con meta cargada.</div>'
     +'<div class="tbl-wrap"><table><thead><tr>'
     +'<th>Sucursal</th><th class="num">Meta</th><th class="num">Mínimo ÷1,2</th><th class="num">120 ×1,2</th><th class="num">Venta real</th><th>Nota</th>'
     +'</tr></thead><tbody id="gridBody">'+gridRows()+'</tbody>'
@@ -1552,6 +1594,14 @@ async function backfillRealPublicadas(){
   let tocadas=0;
   for(const iso of Object.keys(semanas)){
     const wk=semanas[iso]; if(!wk || !wk.porSlug) continue;
+    // real tomado de la hoja de la semana (no de HISTÓRICO): tiene que ser la misma semana
+    // publicada → la mayoría de las metas de la hoja coincide con las guardadas
+    const hh=state.histHoja && state.histHoja[iso];
+    if(hh){
+      let comp=0, ok=0;
+      Object.keys(hh.metas).forEach(sl=>{ const ps=wk.porSlug[sl]; if(ps && ps.meta>0){ comp++; if(Math.abs(ps.meta-hh.metas[sl])<1) ok++; } });
+      if(!comp || ok<comp/2) continue;
+    }
     let changed=false;
     STORES.forEach(s=>{
       const r = state.hist[s.slug] && state.hist[s.slug][iso];
