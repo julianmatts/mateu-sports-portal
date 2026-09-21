@@ -3386,8 +3386,16 @@ consulta). Etapa 1 = guía + catálogo; etapa 2 = stock desde el Buscador (hecha
   de 50 subrequests por pedido en el plan gratis de Cloudflare: no subir `MAX_LOCAL` sin mirar eso. Prompt: «PRIMERO LO QUE HAY EN EL LOCAL»,
   «BUSCÁ ANTES DE PREGUNTAR» y «LO QUE NO TENÉS» (más vendidos, stock de una marca, repartos → una línea y el módulo que lo tiene). Probado
   en vivo como el puesto de Berisso con las preguntas que habían fallado. Para volver a medir: `asistente/log/<YYYY-MM>` o el panel de uso.
+- **Fichas técnicas por disciplina (21/09/2026)** — `lib/asistente-fichas.mjs` (`FICHAS` + `fichasPara`; tests `node --test
+  lib/asistente-fichas.test.mjs`): el criterio de la casa para asesorar (pádel, tenis, running, fútbol, hockey, básquet, training, vóley,
+  rugby, natación, box, adventure y talles), porque Haiku solo afirmaba cosas al revés (balance alto para un principiante de pádel). La
+  Function detecta la disciplina por palabras clave en los últimos 3 mensajes del usuario e inyecta al prompt SOLO esa ficha (hasta 2;
+  «talles» entra de segunda o sola; tenis de mesa no trae ninguna) con un «CÓMO USARLA»: la respuesta abre con el criterio que aplica y
+  **no le atribuye características a un modelo puntual** (del stock solo conoce nombres): cierra con «confirmá en la etiqueta que sea …».
+  El log guarda `fichas`. **Para corregir o sumar criterio se edita el `texto` de la ficha y se pushea**; conviene que las revise Iván o el
+  referente de cada deporte (las escribió Claude, sin validar con la gente de la casa). Sin precios ni consejos médicos (hay un test).
 - Pendiente: la etapa 3, que Matts use los cursos de la Academia como fuente de producto, motivo de un toque en el voto «No» (solo 4 de 64
-  consultas tenían voto) y una ficha técnica corta por disciplina (Haiku a veces afirma criterios dudosos, p.ej. balance de paleta para principiantes).
+  consultas tenían voto) y atributos reales por artículo (forma, balance, drop…): hoy el catálogo solo trae el nombre.
 
 ## Reglas
 
