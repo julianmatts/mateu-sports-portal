@@ -3590,8 +3590,9 @@ async function repArtsMaestro(cods){
 }
 async function repCargarAltas(){
   const S=state.rep; if(!FIREBASE_DB_URL) return;
-  const [ing, man]=await Promise.all([ conTimeout(fbGet(REP_ALTA_ING),10000).catch(()=>null), conTimeout(fbGet(ROOT+'/'+REP_ALTA_MAN),10000).catch(()=>null) ]);
+  const [ing, man, ext]=await Promise.all([ conTimeout(fbGet(REP_ALTA_ING),10000).catch(()=>null), conTimeout(fbGet(ROOT+'/'+REP_ALTA_MAN),10000).catch(()=>null), conTimeout(fbGet(ROOT+'/artsNuevos'),10000).catch(()=>null) ]);
   S.altas={ ingreso:ing||{}, manual:man||{} };
+  Object.keys(REP_EXTRA).forEach(k=>delete REP_EXTRA[k]); Object.assign(REP_EXTRA, ext||{});
   const cods=[]; [S.altas.ingreso, S.altas.manual].forEach(o=>Object.values(o).forEach(A=>(A&&A.arts||[]).forEach(x=>cods.push(x.cod))));
   await repArtsMaestro(cods);
   repFusionarData();
@@ -3600,11 +3601,12 @@ function repFilasDeAlta(A, origen, key){
   const nro=A.remito_sistema || A.remito; if(!nro) return [];
   const mes=String(+String(A.fecha||'').slice(5,7)||'');
   return (A.arts||[]).map(x=>{
-    const M=REP_ARTS[repArtClave(x.cod)]||null; const talles={}; let tot=0;
+    const enMaestro=REP_ARTS[repArtClave(x.cod)]||null, M=enMaestro||REP_EXTRA[repArtClave(x.cod)]||null; const talles={}; let tot=0;
     (x.t||[]).forEach(p=>{ const u=+p[1]||0; if(u<=0) return; tot+=u; if(p[0]) talles[p[0]]=(talles[p[0]]||0)+u; });
     const conT=Object.keys(talles).length>0 && sumT(talles)===tot;
     const f={ remito:nro, id:String((M&&M[4])||x.cod), cod:x.cod, desc:(M&&M[5])||x.desc||'', marca:(M&&M[3])||A.marca||'', rubro:(M&&M[0])||x.rubro||'',
-      genero:(M&&M[1])||'', disc:(M&&M[2])||'', tipo:(M&&M[6])||'', porMes:mes?{[mes]:tot}:{}, talles:conT?talles:null, total:tot, alta:origen, altaKey:key, sinMaestro:!M };
+      genero:(M&&M[1])||'', disc:(M&&M[2])||'', tipo:(M&&M[6])||'', porMes:mes?{[mes]:tot}:{}, talles:conT?talles:null, total:tot, alta:origen, altaKey:key, sinMaestro:!enMaestro };
+    if(!f.rubro){ f.rubro=repRubroPorTalles(Object.keys(talles)); f.rubroDeducido=!!f.rubro; }        // artículo nuevo: el rubro sale de los talles
     if(conT && mes) f.tallesMes={[mes]:talles};
     return f; }).filter(f=>f.total>0);
 }
@@ -3660,6 +3662,46 @@ function repManualHtml(){
     +'<textarea class="inp" id="rmDet" rows="6" style="width:100%;font-family:monospace" placeholder="PUM39328201 8 2&#10;PUM39328201 8.5 3&#10;PUM39328201 9 3&#10;ADIIB8651 M 4"></textarea></div>'
     +'<div style="display:flex;gap:10px;align-items:center;margin-top:10px"><button class="btn btn-primary btn-sm" id="rmGuardar">Dar de alta</button>'
     +'<span style="font-size:12.5px;color:var(--muted)">Marca, rubro y subrubro se completan solos desde el maestro de artículos. Lo ven todos los que entran al módulo.</span></div></details>';
+}
+
+
+/* ---------- ARTÍCULOS NUEVOS QUE TODAVÍA NO ESTÁN EN EL MAESTRO (20/09/2026) ----------
+   El maestro (`logistica/arts`) se actualiza con la carga mensual de logística, así que un artículo que
+   entra por primera vez no figura. Sin rubro ni subrubro el reparto no sabe qué talles son centrales, qué
+   sucursales lo trabajan ni qué ficha aplicar. Dos respaldos: (1) el RUBRO se deduce de los talles
+   (números de calzado → CALZADO; XS/S/M/L… → INDUMENTARIA) y (2) el depósito completa a mano rubro,
+   subrubro y disciplina en el panel «Artículos nuevos», que queda guardado en `barrida/artsNuevos/<código>`
+   (misma forma que el maestro) hasta que la carga de logística lo traiga. */
+const REP_EXTRA={};
+const REP_RUBROS=['CALZADO','INDUMENTARIA','ACCESORIOS'], REP_SUBS=['HOMBRE','DAMA','UNISEX','NIÑO','INFANTE'];
+function repRubroPorTalles(ts){ ts=(ts||[]).map(t=>String(t).toUpperCase()).filter(Boolean); if(!ts.length) return '';
+  const letra=ts.filter(t=>/^(\d?X{0,3}[SL]|M|XXS|UNI|U|\d{1,2}A|Y[SML])$/.test(t)).length, numc=ts.filter(t=>/^\d{1,2}([.,]5)?$/.test(t) && parseFloat(t.replace(',','.'))<=50).length;
+  return letra>numc ? 'INDUMENTARIA' : (numc>0 ? 'CALZADO' : ''); }
+function repNuevosLista(){ const D=state.rep.data; if(!D) return []; const m=new Map();
+  D.filas.forEach(f=>{ if(!f.sinMaestro) return; const k=repArtClave(f.cod); if(!m.has(k)) m.set(k,{ k, cod:f.cod, desc:f.desc, marca:f.marca, rubro:f.rubro, genero:f.genero, disc:f.disc, remitos:new Set(), deducido:!!f.rubroDeducido });
+    m.get(k).remitos.add(repNroCorto(f.remito)); });
+  return [...m.values()]; }
+function repNuevosHtml(){
+  const L=repNuevosLista(); if(!L.length) return '';
+  const falta=L.filter(a=>!stripNN(a.genero)||!stripNN(a.rubro)).length;
+  const op=(arr,cur)=>'<option value="">—</option>'+arr.map(v=>'<option'+(sinAcento(stripNN(cur)).toUpperCase()===sinAcento(v).toUpperCase()?' selected':'')+'>'+v+'</option>').join('');
+  return '<details class="card" id="repNuevos" style="margin-top:10px;padding:12px 14px"'+((state.rep.nuevosOpen||falta)?' open':'')+'><summary style="cursor:pointer;font-weight:700">⚡ '+L.length+' artículo'+(L.length===1?'':'s')+' nuevo'+(L.length===1?'':'s')+' que todavía no '+(L.length===1?'está':'están')+' en el maestro'+(falta?' · <span class="warn">'+falta+' sin completar</span>':' · <span class="ok">completos</span>')+'</summary>'
+    +'<div style="font-size:12.5px;color:var(--muted);margin:8px 0">Sin <b>rubro</b> y <b>subrubro</b> el reparto no sabe qué talles son centrales ni qué sucursales lo trabajan. El rubro se dedujo de los talles; completá el resto y queda guardado para todos.</div>'
+    +'<div class="tbl-wrap"><table><thead><tr><th>Código</th><th>Descripción</th><th>Remito</th><th>Marca</th><th>Rubro</th><th>Subrubro</th><th>Disciplina</th></tr></thead><tbody>'
+    + L.map(a=>'<tr><td class="mono"><b>'+esc(a.cod)+'</b></td><td>'+esc(a.desc||'—')+'</td><td class="mono">'+esc([...a.remitos].join(' · '))+'</td>'
+        +'<td><input class="inp" data-nv="'+esc(a.k)+'|marca" value="'+esc(a.marca||'')+'" style="width:110px"></td>'
+        +'<td><select class="inp" data-nv="'+esc(a.k)+'|rubro">'+op(REP_RUBROS,a.rubro)+'</select>'+(a.deducido?' <small style="color:var(--muted)">por talles</small>':'')+'</td>'
+        +'<td><select class="inp" data-nv="'+esc(a.k)+'|genero">'+op(REP_SUBS,a.genero)+'</select></td>'
+        +'<td><input class="inp" data-nv="'+esc(a.k)+'|disc" value="'+esc(a.disc||'')+'" placeholder="RUNNING, CASUAL…" style="width:140px"></td></tr>').join('')
+    +'</tbody></table></div></details>';
+}
+async function repGuardarNuevo(k, campo, valor){
+  const S=state.rep; const a=repNuevosLista().find(x=>x.k===k); if(!a) return;
+  const cur=REP_EXTRA[k] || [stripNN(a.rubro)||'', a.genero||'', a.disc||'', a.marca||'', '', a.desc||'', '', a.cod];
+  const idx={rubro:0, genero:1, disc:2, marca:3}[campo]; if(idx==null) return;
+  const rec=cur.slice(); rec[idx]=String(valor||'').trim().toUpperCase(); if(campo==='marca') rec[idx]=String(valor||'').trim();
+  try{ await fbPut(ROOT+'/artsNuevos/'+k, rec); REP_EXTRA[k]=rec; S.nuevosOpen=true; repFusionarData(); S.res=null; render(); toast('Guardado ✓','ok'); }
+  catch(e){ toast('No se pudo guardar','err'); }
 }
 
 /* ---------- de dónde salen los talles ----------
@@ -4673,8 +4715,8 @@ function viewReparto(){
     return html+repResultadoHtml()+repGuardadosHtml();
   }
   html+=repCargaHtml();
-  if(!D) return html+repManualHtml()+'<div class="state"><div class="big-ic">📦</div>Subí la <b>estadística de remitos</b> del sistema (el CSV «Estad remitos &lt;año&gt;» o el Excel «Remitos de ingreso») para elegir qué remitos repartir.<br><br>Los remitos que Ariel y Luis <b>ingresan a stock</b> en Ingreso de Mercadería aparecen acá solos, y también se puede <b>dar de alta uno a mano</b>.</div>'+repGuardadosHtml();
-  html+=repManualHtml();
+  if(!D) return html+repManualHtml()+repNuevosHtml()+'<div class="state"><div class="big-ic">📦</div>Subí la <b>estadística de remitos</b> del sistema (el CSV «Estad remitos &lt;año&gt;» o el Excel «Remitos de ingreso») para elegir qué remitos repartir.<br><br>Los remitos que Ariel y Luis <b>ingresan a stock</b> en Ingreso de Mercadería aparecen acá solos, y también se puede <b>dar de alta uno a mano</b>.</div>'+repGuardadosHtml();
+  html+=repManualHtml()+repNuevosHtml();
   html+=repSeleccionHtml()+repParamHtml();
   if(S.res) html+=repResultadoHtml();
   return html+repGuardadosHtml();
@@ -4960,6 +5002,8 @@ function wireReparto(){
       const otros=fs.filter(f=>f!==rem && /\.xlsx?$/i.test(f.name)); if(otros.length){ await cargarFilesComo('reserva', otros); if(S.res && S.data) repRecalc(); } }; }
   // selección de remitos
   const sel=$('repSel'); if(sel) sel.ontoggle=()=>{ S.selOpen=sel.open; };
+  { const dn=$('repNuevos'); if(dn) dn.ontoggle=()=>{ S.nuevosOpen=dn.open; };
+    document.querySelectorAll('[data-nv]').forEach(el=>el.onchange=()=>{ const p=el.dataset.nv.split('|'); repGuardarNuevo(p[0], p[1], el.value); }); }
   { const dm=$('repManual'); if(dm) dm.ontoggle=()=>{ S.manOpen=dm.open; }; const bg=$('rmGuardar'); if(bg) bg.onclick=repGuardarManual;
     document.querySelectorAll('[data-rdel]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); repBorrarManual(b.dataset.rdel); }); }
   const on=(id,ev,fn)=>{ const el=$(id); if(el) el[ev]=fn; };

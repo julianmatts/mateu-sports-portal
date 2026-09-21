@@ -2073,6 +2073,17 @@ sucursal**: un remito trae artículos que van a una u otra sucursal.
   de la tarjeta de la tarea (`planillaTransferencias`/`transferenciasDe`) arma lo que REALMENTE se preparó
   (lo controlado si ya pasó el control final), una hoja por sucursal + CSV `sucursal;código;id item;
   descripción;talle;cantidad`, para tipear de corrido o importar si el sistema lo permite.
+- **Artículo nuevo que no está en el maestro (20/09/2026)**: `logistica/arts` se actualiza con la carga mensual,
+  así que un artículo que entra por primera vez no figura y llegaría sin rubro ni subrubro (sin eso no hay talles
+  centrales, ni asignación de marcas por rubro, ni ficha). Respaldos en `barrida/`: el **rubro se deduce de los
+  talles** (`repRubroPorTalles`: números de calzado / XS-S-M-L) y el panel **«⚡ Artículos nuevos»** (debajo del alta a
+  mano, se abre solo si falta algo) deja completar marca, rubro, subrubro y disciplina; se guarda en
+  `barrida/artsNuevos/<código>` con la forma del maestro (`REP_EXTRA`) y vale hasta que la carga de logística lo traiga.
+- **Góndolas de envío → sucursal (20/09/2026, a mano)**: Picking → Zonas, sección «Góndolas de envío → Sucursal»: por
+  sucursal se elige la góndola de planta baja de **calzado** y la de **indumentaria y accesorios** (las 13 del plano,
+  numeradas de arriba hacia abajo: `gondolasEnvio` → «Envío ind. 1–3», «Envío calzado 1–10») + módulo en texto libre →
+  `picking/envio/<slug>/<calz|ind>` = `{gid, nombre, modulo}`. La tablet lo muestra debajo de cada sucursal en «Va a»
+  (`pkEnvio`) y la planilla de transferencias en el título de cada sucursal (`envioDe`).
 - **Pendiente**: probar cámara y lector en la tablet real; validar el packing digital con un archivo de
   la marca; publicar al mapa del Buscador las etiquetas aprendidas que confirme el control final; hoja
   de apertura de cajas; otras marcas en el Ingreso (hoy solo Adidas).

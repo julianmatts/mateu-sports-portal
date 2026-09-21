@@ -172,6 +172,7 @@ async function cargar(){
   DATA.operarios=ope||{}; DATA.zonas=zon||{}; DATA.asignZona=asig||{}; DATA.pickings=pick||{};
   DATA.eventos=evs||{}; DATA.seq=num(seq)||1841; DATA.bar.ultima=ultima||null;
   try{ DATA.ingControl=(await fbGet('ingreso/control'))||{}; }catch(e){ DATA.ingControl={}; }
+  try{ DATA.envio=(await fbGet(ROOT+'/envio'))||{}; }catch(e){ DATA.envio={}; }
   await sincronizarOperarios();
   if(ultima){
     const lk=fbKey(ultima);
@@ -494,7 +495,7 @@ function transferenciasDe(P){
   Object.keys(P.items||{}).map(i=>P.items[i]).sort((a,b)=>num(a.sequence)-num(b.sequence)).forEach(it=>{ (it.talles||[]).forEach(t=>{
     let hechas = num(t.controlled)>0 ? num(t.controlled) : num(t.picked);
     (t.dest||[]).forEach(d=>{ const u=Math.min(num(d.u), hechas); hechas-=u; if(u<=0) return;
-      (porSuc[d.s]=porSuc[d.s]||[]).push({cod:it.codigo, id:it.id||'', desc:it.desc||'', marca:it.marca||'', talle:t.t, u:u}); }); }); });
+      (porSuc[d.s]=porSuc[d.s]||[]).push({cod:it.codigo, id:it.id||'', desc:it.desc||'', marca:it.marca||'', rubro:it.rubro||'', talle:t.t, u:u}); }); }); });
   return porSuc; }
 function planillaTransferencias(nro){
   const P=DATA.pickings[fbKey(nro)]; if(!P){ toast('No encontré la tarea','bad'); return; }
@@ -502,7 +503,8 @@ function planillaTransferencias(nro){
   if(!sucs.length){ toast('Todavía no hay nada preparado en esta tarea','bad'); return; }
   const r=pickResumen(P); const parcial=P.estado!=='FINALIZADO' && P.estado!=='LISTO PARA CONTROL';
   let tot=0; const secciones=sucs.map(sl=>{ const rows=porSuc[sl]; const u=rows.reduce((a,x)=>a+x.u,0); tot+=u;
-    return '<section><h2>'+esc(nombreSuc(sl))+' <small>'+u+' unidades · '+rows.length+' líneas</small></h2><table><tr><th class="chk">✓</th><th>Código</th><th>ID item</th><th>Descripción</th><th>Talle</th><th class="q">Cant.</th></tr>'
+    const gond=[...new Set(rows.map(x=>envioDe(sl,x.rubro)).filter(Boolean))].join(' / ');
+    return '<section><h2>'+esc(nombreSuc(sl))+' <small>'+(gond?esc(gond)+' · ':'')+u+' unidades · '+rows.length+' líneas</small></h2><table><tr><th class="chk">✓</th><th>Código</th><th>ID item</th><th>Descripción</th><th>Talle</th><th class="q">Cant.</th></tr>'
       + rows.map(x=>'<tr><td class="chk"></td><td><b>'+esc(x.cod)+'</b></td><td>'+esc(x.id)+'</td><td>'+esc(x.desc)+'</td><td class="t">'+esc(x.talle)+'</td><td class="q">'+x.u+'</td></tr>').join('')+'</table></section>'; }).join('');
   const csv='﻿Sucursal;Codigo;Id item;Descripcion;Talle;Cantidad\r\n'+sucs.map(sl=>porSuc[sl].map(x=>[nombreSuc(sl),x.cod,x.id,String(x.desc).replace(/;/g,','),x.talle,x.u].join(';')).join('\r\n')).join('\r\n');
   const win=window.open('','_blank'); if(!win){ toast('Habilitá las ventanas emergentes','bad'); return; }
@@ -799,6 +801,18 @@ async function abrirNuevoPicking(){
   };
 }
 
+/* góndolas de envío del plano (planta baja), numeradas de arriba hacia abajo dentro de cada tipo */
+function gondolasEnvio(){
+  const P=window.PLANO_DEPOSITO; if(!P||!P.plantas) return [];
+  const out=[]; P.plantas.forEach(pl=>{ const n={calz:0,ind:0};
+    (pl.celdas||[]).filter(c=>/ENV[IÍ]O/i.test(c.label)).sort((a,b)=>a.r0-b.r0||a.c0-b.c0).forEach(c=>{ const fam=/CALZ/i.test(c.label)?'calz':'ind'; n[fam]++;
+      out.push({ id:'r'+c.r0+'c'+c.c0, fam:fam, nombre:(fam==='calz'?'Envío calzado ':'Envío ind. ')+n[fam] }); }); });
+  return out; }
+function sucursalesConocidas(){ const set=new Set(DATA.bar.slugs||[]); Object.keys(DATA.envio||{}).forEach(s=>set.add(s));
+  vals(DATA.pickings).forEach(P=>{ if(P&&P.destino) set.add(P.destino); Object.keys((P&&P.items)||{}).forEach(i=>(P.items[i].talles||[]).forEach(t=>(t.dest||[]).forEach(d=>set.add(d.s)))); });
+  return [...set].filter(Boolean).sort((a,b)=>cmp(nombreSuc(a),nombreSuc(b))); }
+function envioDe(slug, rubro){ const e=(DATA.envio||{})[slug]; if(!e) return null; const fam=/CALZ/i.test(rubro||'')?'calz':'ind'; const r=e[fam]||null; return r?(r.nombre+(r.modulo?' · '+r.modulo:'')):null; }
+
 /* ---- ZONAS ---- */
 async function renderZonas(){
   $('view').innerHTML='<div class="state"><div class="spin"></div>Cargando zonas…</div>';
@@ -828,6 +842,22 @@ async function renderZonas(){
       +'<span id="zAsgCount" class="hint" style="white-space:nowrap"></span></div>'
       +'<div class="tbl-wrap" id="zAsgBox"></div>';
   }
+  // ---- Góndolas de envío → sucursal (20/09/2026, pedido de Juli; lo carga el depósito A MANO) ----
+  // En planta baja cada góndola de envío tiene una sucursal: ahí deja el operario lo que preparó y ahí se
+  // tipea la transferencia. Por sucursal se elige la góndola de calzado y la de indumentaria/accesorios
+  // (+ módulo, texto libre). La tablet lo muestra en «Va a» y la planilla de transferencias en el título.
+  { const gs=gondolasEnvio(); const sucs=sucursalesConocidas();
+    html+='<div class="sec-head" style="margin:24px 0 8px"><div><h1 style="font-size:22px">Góndolas de envío → Sucursal</h1><div class="sub">En qué góndola de planta baja se deja lo de cada sucursal. La tablet se lo dice al operario en cada unidad («→ City Bell · Envío calzado 4 · M2»).</div></div></div>';
+    if(!gs.length) html+='<div class="state">El plano no tiene góndolas de envío dibujadas.</div>';
+    else if(!sucs.length) html+='<div class="state">Todavía no hay sucursales para listar (salen de la barrida y de los repartos guardados).</div>';
+    else{
+      const selG=(slug,fam)=>{ const cur=((DATA.envio[slug]||{})[fam]||{}); const lista=gs.filter(g=>g.fam===fam);
+        return '<div class="row-x" style="gap:6px"><select class="sel" data-envg="'+esc(slug)+'|'+fam+'" style="flex:1;min-width:150px"><option value="">— sin asignar —</option>'
+          + lista.map(g=>'<option value="'+esc(g.id)+'"'+(cur.gid===g.id?' selected':'')+'>'+esc(g.nombre)+'</option>').join('')+'</select>'
+          + '<input class="inp" data-envm="'+esc(slug)+'|'+fam+'" value="'+esc(cur.modulo||'')+'" placeholder="Módulo" style="width:90px"></div>'; };
+      html+='<div class="tbl-wrap"><table><thead><tr><th>Sucursal</th><th>Calzado</th><th>Indumentaria y accesorios</th></tr></thead><tbody>'
+        + sucs.map(sl=>'<tr><td><b>'+esc(nombreSuc(sl))+'</b></td><td>'+selG(sl,'calz')+'</td><td>'+selG(sl,'ind')+'</td></tr>').join('')+'</tbody></table></div>';
+    } }
   // Mapa del depósito: resalta en verde las zonas que ya tienen marca/rubro asignado
   if(window.PLANO_DEPOSITO && window.PLANO_DEPOSITO.plantas){
     const asignadas=new Set();
@@ -843,6 +873,13 @@ async function renderZonas(){
     if(zid) editarZona(zid); else toast('Cargá las zonas del plano para editar «'+nom+'»','warn');
   });
   document.querySelectorAll('[data-ez]').forEach(b=>b.onclick=()=>editarZona(b.dataset.ez));
+  { const guardarEnvio=async(slug,fam)=>{ const sg=document.querySelector('[data-envg="'+slug+'|'+fam+'"]'), sm=document.querySelector('[data-envm="'+slug+'|'+fam+'"]'); if(!sg) return;
+      const g=gondolasEnvio().find(x=>x.id===sg.value); const rec=g?{ gid:g.id, nombre:g.nombre, modulo:(sm&&sm.value.trim())||'' }:null;
+      try{ if(rec) await fbPut(ROOT+'/envio/'+slug+'/'+fam, rec); else await fbDelete(ROOT+'/envio/'+slug+'/'+fam);
+        (DATA.envio[slug]=DATA.envio[slug]||{})[fam]=rec; if(!rec) delete DATA.envio[slug][fam]; toast(rec?(nombreSuc(slug)+' → '+rec.nombre+(rec.modulo?' · '+rec.modulo:'')):'Sin asignar','ok'); }
+      catch(e){ toast('No se pudo guardar','bad'); } };
+    document.querySelectorAll('[data-envg]').forEach(s=>s.onchange=()=>{ const p=s.dataset.envg.split('|'); guardarEnvio(p[0],p[1]); });
+    document.querySelectorAll('[data-envm]').forEach(i=>i.onchange=()=>{ const p=i.dataset.envm.split('|'); guardarEnvio(p[0],p[1]); }); }
   document.querySelectorAll('[data-dz]').forEach(b=>b.onclick=async()=>{ const id=b.dataset.dz; if(!confirm('¿Eliminar la zona "'+(DATA.zonas[id]?DATA.zonas[id].nombre:'')+'"?')) return; try{ await fbDelete(ROOT+'/zonas/'+id); delete DATA.zonas[id]; render(); toast('Zona eliminada','ok'); }catch(e){ toast('No se pudo','bad'); } });
   // Asignación marca/rubro → zona con filtros (son cientos de combinaciones)
   function pintarAsg(){

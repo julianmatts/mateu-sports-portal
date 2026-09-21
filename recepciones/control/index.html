@@ -357,10 +357,10 @@ function stopCam(){ try{ if(_zxCtl&&_zxCtl.stop) _zxCtl.stop(); }catch(e){} try{
 /* ============================================================ PICKING ========= */
 /* El kiosco EJECUTA las tareas creadas en el módulo picking/. Datos en
    recepciones-mateu/picking/. Cada unidad se valida leyendo su etiqueta (ver «ESCANEO FORZADO»). */
-DATA.pick = { pickings:{}, operarios:{}, eanVar:{} };
+DATA.pick = { pickings:{}, operarios:{}, eanVar:{}, envio:{} };
 async function cargarPicking(){
-  const [pk,ope,ev]=await Promise.all([ fbGet('picking/pickings'), fbGet('picking/operarios'), fbGet('picking/eanVar').catch(()=>null) ]);
-  DATA.pick={ pickings:pk||{}, operarios:ope||{}, eanVar:ev||{} };
+  const [pk,ope,ev,env]=await Promise.all([ fbGet('picking/pickings'), fbGet('picking/operarios'), fbGet('picking/eanVar').catch(()=>null), fbGet('picking/envio').catch(()=>null) ]);
+  DATA.pick={ pickings:pk||{}, operarios:ope||{}, eanVar:ev||{}, envio:env||{} };
 }
 /* Tareas por remito (Reparto inicial) o por marca·rubro (Barrida de reserva), 20/09/2026: el pick
    ya no es por sucursal; cada talle trae `dest=[{s:slug,u}]` y la pantalla dice a qué sucursal va
@@ -377,7 +377,9 @@ async function pkSaveField(nro,field,val){ return saveNow('picking/pickings/'+pk
 function pkEvento(ev){ const k=nowISO().replace(/\D/g,'')+'_'+Math.floor((performance.now()*7)%100000); enqueueSave('picking/eventos/'+k, Object.assign({ts:nowISO()},ev)); }
 function pkResumen(P){ let req=0,pk=0,lines=0,falt=0,exc=0; Object.keys(P.items||{}).forEach(iid=>{ (P.items[iid].talles||[]).forEach(t=>{ lines++; req+=num(t.req); pk+=num(t.picked); exc+=num(t.exc); if(t.faltante) falt+=Math.max(0,num(t.req)-num(t.picked)); }); }); return {req,pk,lines,falt,exc}; }
 function pkLines(P){ const out=[]; Object.keys(P.items||{}).map(iid=>({iid,...P.items[iid]})).sort((a,b)=>num(a.sequence)-num(b.sequence))
-  .forEach(it=>{ (it.talles||[]).forEach((t,ti)=>{ out.push({iid:it.iid,ti,codigo:it.codigo,desc:it.desc,marca:it.marca,zona:it.zonaNombre||'Sin zona',talle:t.t,ean:t.ean||'',req:num(t.req),picked:num(t.picked),faltante:t.faltante||null,dest:t.dest||null}); }); }); return out; }
+  .forEach(it=>{ (it.talles||[]).forEach((t,ti)=>{ out.push({iid:it.iid,ti,codigo:it.codigo,desc:it.desc,marca:it.marca,rubro:it.rubro||'',zona:it.zonaNombre||'Sin zona',talle:t.t,ean:t.ean||'',req:num(t.req),picked:num(t.picked),faltante:t.faltante||null,dest:t.dest||null}); }); }); return out; }
+// góndola de envío de esa sucursal (la carga el depósito a mano en Picking → Zonas): calzado / indumentaria
+function pkEnvio(slug,rubro){ const e=(DATA.pick.envio||{})[slug]; if(!e) return ''; const r=e[/CALZ/i.test(rubro||'')?'calz':'ind']; return r?(r.nombre+(r.modulo?' · '+r.modulo:'')):''; }
 function pkNext(P){ return pkLines(P).find(l=>!l.faltante && l.picked<l.req)||null; }
 function pkZonas(P){ return new Set(pkLines(P).map(l=>l.zona)).size; }
 
@@ -586,7 +588,8 @@ function pkDestHtml(line){
   if(!line.dest||!line.dest.length) return '';
   const cur=pkDestActual(line); let acc=0;
   return '<div class="pk-destlbl">Va a</div><div class="pk-dests">'+line.dest.map((d,i)=>{ const ini=acc; acc+=num(d.u); const hechas=Math.max(0,Math.min(num(d.u), line.picked-ini));
-    return '<span class="pk-dchip'+(i===cur?' cur':(hechas>=num(d.u)?' done':''))+'">'+esc(nombreSuc(d.s))+' <b>'+hechas+'/'+num(d.u)+'</b></span>'; }).join('')+'</div>';
+    const g=pkEnvio(d.s,line.rubro);
+    return '<span class="pk-dchip'+(i===cur?' cur':(hechas>=num(d.u)?' done':''))+'">'+esc(nombreSuc(d.s))+' <b>'+hechas+'/'+num(d.u)+'</b>'+(g?'<small style="display:block;font-weight:600;font-size:.72em;opacity:.85">'+esc(g)+'</small>':'')+'</span>'; }).join('')+'</div>';
 }
 /* ============ ESCANEO FORZADO (20/09/2026, pedido de Juli) ============
    Cada unidad se confirma LEYENDO la etiqueta (lector de mano o cámara de la tablet): ya no hay
