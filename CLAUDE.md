@@ -2035,6 +2035,11 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     (`param.todoNinoFutbol`, default sí): en esos artículos (`repTodoAlSalon`: género niño/infante o
     disciplina fútbol/futsal) el reparto corre con `reserva:0` y `excedente:true`, así no queda curva en
     el depósito, como lo hace el depósito a mano. Destildado, valen las reglas generales.
+  - **«Si ingresa nuevo, se reparte» (Juli 21/09/2026, Montagne: quedaban 64 de 80 pares en el depósito)**: «Repartir el
+    excedente» vuelve a venir **tildado** (prefs `v:4`; pisa lo del 14/09 que sigue abajo): después de las curvas, lo que sobra
+    se reparte de a una por talle en orden de prioridad y en el depósito queda solo la curva de reserva (1 por talle). Del
+    excedente participan todas las que recibieron curva, también las que bajaron a x1 por ratio alto; quedan afuera la
+    «curva x1» de la ficha y los outlets (`sinExc` en `repRepartirArt`).
   - **Excedente del Reparto inicial**: «Repartir el excedente» viene **destildado** (prefs `v:2`): lo que sobra
     después de las curvas queda de reserva (si queda menos de `reservaMin`, se reparte igual). New Balance
     exclusivos de Aurelius: Aurelius de línea y Ecommerce prioridad 1, Aurelius 10 (columna outlet, «como local

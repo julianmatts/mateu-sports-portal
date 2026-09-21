@@ -3451,7 +3451,7 @@ state.rep = {
   mes:'', sel:{},         // mes de ingreso elegido ('' = todo) y remitos marcados
   f:{ marca:'', rubro:'', q:'', verRepartidos:false },
   destinos:null,          // slugs destino (null = todas menos los outlets)
-  param:{ uCentral:2, maxCentral:3, uResto:1, reserva:1, minTalles:3, excedente:false, ninoCurva:'prog', criterio:'auto', reingresoProf:true, todoNinoFutbol:true,   /* el excedente queda de reserva (Juli 14/09/2026) */ respetarDisc:true, memoria:true, excluirVarios:true, huerfanos:true },
+  param:{ uCentral:2, maxCentral:3, uResto:1, reserva:1, minTalles:3, excedente:true, ninoCurva:'prog', criterio:'auto', reingresoProf:true, todoNinoFutbol:true,   /* 21/09/2026: lo que ingresa nuevo se reparte; en el depósito queda solo la curva de reserva */ respetarDisc:true, memoria:true, excluirVarios:true, huerfanos:true },
   centrales:null,         // talles centrales editados (se comparten en repartoConfig/centrales)
   res:null, vista:'remito', selOpen:true,
   hist:null, repartidos:{}, guardados:[], cargado:false, abierto:null,
@@ -3459,10 +3459,10 @@ state.rep = {
   manual:{},              // ajustes a mano antes de guardar: {'<remito>|<idItem>': {<slug>: {<talle>: unidades}}}
   edit:null,              // clave del artículo que se está editando a mano
 };
-function repGuardarPrefs(){ try{ localStorage.setItem(REP_PREFS, JSON.stringify({ v:3, param:state.rep.param, destinos:state.rep.destinos })); }catch(e){} }
+function repGuardarPrefs(){ try{ localStorage.setItem(REP_PREFS, JSON.stringify({ v:4, param:state.rep.param, destinos:state.rep.destinos })); }catch(e){} }
 (function repCargarPrefs(){ try{ const p=JSON.parse(localStorage.getItem(REP_PREFS)||'null'); if(!p) return;
   // v2 (14/09/2026): «Repartir el excedente» pasó a venir destildado; el tilde de las preferencias viejas no se toma
-  if(p.param) Object.keys(state.rep.param).forEach(k=>{ if(p.param[k]!=null && !(k==='excedente' && (p.v||0)<2) && !(k==='criterio' && (p.v||0)<3)) state.rep.param[k]=p.param[k]; });   // v3 (20/09/2026): el criterio pasó a «automático» por defecto
+  if(p.param) Object.keys(state.rep.param).forEach(k=>{ if(p.param[k]!=null && !(k==='excedente' && (p.v||0)<4) && !(k==='criterio' && (p.v||0)<3)) state.rep.param[k]=p.param[k]; });   // v3 (20/09/2026): el criterio pasó a «automático» por defecto
   if(Array.isArray(p.destinos)) state.rep.destinos=p.destinos; }catch(e){} })();
 
 /* ---------- lectura de la estadística de remitos ----------
@@ -4214,7 +4214,7 @@ function repRepartirArt(perRem, cands, central, P, per){
   // Ratio alto (6+ meses de la marca): un escalón menos. Criterio «profundidad»: todos suben un escalón — si no, en los
   // locales de curva base (Cat 2, Aurelius…) cambiar el criterio no cambiaba nada (Juli 21/09/2026).
   const perfilDe=c=>{ let p=c.perfil||'honda'; if(c.msAlto) p=PERFIL_BAJA[p]; if(P.pico) p=PERFIL_SUBE[p]; if(P.criterio==='profundidad') p=PERFIL_SUBE[p]; return p; };
-  const dist=cands.map(c=>{ const pf=perfilDe(c); return Object.assign({}, c, { g:{}, tiene:tieneDe(c), ok:false, perfilEf:pf, plana:!!c.plana || pf==='chata' }); });
+  const dist=cands.map(c=>{ const pf=perfilDe(c); return Object.assign({}, c, { g:{}, tiene:tieneDe(c), ok:false, perfilEf:pf, plana:!!c.plana || pf==='chata', sinExc:!!c.plana || (c.perfil||'honda')==='chata' }); });
   // A · curva base de UNA sucursal hasta `obj(t)` por talle; no le arma una curva rota
   const darCurva=(s, obj)=>{
     const g={}; let cubre=0, cubreC=false;
@@ -4250,13 +4250,13 @@ function repRepartirArt(perRem, cands, central, P, per){
     if(!central.has(t) || d[t]<=0) continue; if((s.tiene[t]||0)+(s.g[t]||0) < tope(t)){ s.g[t]=(s.g[t]||0)+1; d[t]--; hubo=true; } } } }
   // C · excedente
   if(P.excedente){ hubo=true;
-    while(hubo){ hubo=false; for(const s of dist){ if(!s.ok || s.plana) continue; for(const t of talles){ if(d[t]>0){ s.g[t]=(s.g[t]||0)+1; d[t]--; hubo=true; } } } } }
+    while(hubo){ hubo=false; for(const s of dist){ if(!s.ok || s.sinExc) continue; for(const t of talles){ if(d[t]>0){ s.g[t]=(s.g[t]||0)+1; d[t]--; hubo=true; } } } } }
   // D · reserva mínima (Juli 14/09/2026): si lo que queda en el depósito no llega a RMIN unidades, se vacía
   const queda=()=>talles.reduce((x,t)=>x+resv[t]+d[t],0);
-  if(RMIN>0 && queda()>0 && queda()<RMIN && dist.some(s=>s.ok && !s.plana)){
+  if(RMIN>0 && queda()>0 && queda()<RMIN && dist.some(s=>s.ok && !s.sinExc)){
     talles.forEach(t=>{ d[t]+=resv[t]; resv[t]=0; });
     hubo=true;
-    while(hubo){ hubo=false; for(const s of dist){ if(!s.ok || s.plana) continue; for(const t of talles){ if(d[t]>0){ s.g[t]=(s.g[t]||0)+1; d[t]--; hubo=true; } } } }
+    while(hubo){ hubo=false; for(const s of dist){ if(!s.ok || s.sinExc) continue; for(const t of talles){ if(d[t]>0){ s.g[t]=(s.g[t]||0)+1; d[t]--; hubo=true; } } } }
   }
   // ---- a qué remito va cada unidad ----
   const left=perRem.map(r=>Object.assign({}, r.t)), quedaRem=perRem.map(()=>({}));
