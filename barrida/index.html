@@ -1609,7 +1609,14 @@ function computar(histPrev, histSnaps){
   const fV = state.files.ventas, fR = state.files.reserva, fS = state.files.stock;
   // ---- reserva ----
   const reserva={};
+  // Una fila IDÉNTICA repetida (mismo artículo, mismos talles y cantidades) es el reporte que
+  // trae el renglón dos veces, no más stock: se cuenta una sola vez y se avisa (21/09/2026,
+  // la reserva salía al doble de lo que hay en el depósito).
+  const resVistas={}; let resDup=0;
   filasDeHoja(fR).forEach(r=>{
+    const firma=r.id+'|'+JSON.stringify(Object.entries(r.talles).sort());
+    if(resVistas[firma]){ resDup++; return; }
+    resVistas[firma]=1;
     if(!reserva[r.id]) reserva[r.id]={ meta:r.meta, talles:{}, total:0, dias:{} };
     const R=reserva[r.id];
     Object.entries(r.talles).forEach(([t,q])=>{ R.talles[t]=(R.talles[t]||0)+q; });
@@ -1874,7 +1881,7 @@ function computar(histPrev, histSnaps){
   const notable = c => c.vendido>=3 && noVarios(c);
   return {
     reposicion, parada, compras, curva, vaciado, ampBase, ampliar:[], vacDejados:{}, vacArts:{}, curvaTalles, conStock:!!sRows, stockOrigen: fS ? 'archivo' : (sRows ? 'base' : ''), snapshot, segmentos, paredes, fueraFicha,
-    conDias, diasNuevo:N, nuevos:{ unidades:nuevosU, articulos:nuevosArts },
+    conDias, resDup, diasNuevo:N, nuevos:{ unidades:nuevosU, articulos:nuevosArts },
     tope:{ tope:TOPE, unidades:topeU, talles:topeTalles },
     totales:{
       curva_lineas: 0, curva_unidades: 0,      // los completa aplicarUnidadesCurva()
@@ -2173,6 +2180,7 @@ function viewReposicion(){
     +(nFalta?'<button type="button" class="c-falta lnkr" id="verFaltaBtn" title="'+(verRojos?'Ocultar los talles que no se pueden reponer':'Ver en rojo los talles que la sucursal vendió y el depósito no puede reponer')+'"><b>'+fmtInt(nFalta)+'</b> con faltante de talle: la reserva no alcanza '+(verRojos?'▴':'▾')+'</button>':'')
     +(artVacios?'<span class="c-cero"><b>'+fmtInt(artVacios)+'</b> artículos salen enteros del depósito</span>':'')
     +((R.diasNuevo && R.nuevos && R.nuevos.unidades)?'<span class="c-nuevo" title="Talles con una compra de hace menos de '+R.diasNuevo+' días: no se reparten en la barrida (van por el Reparto inicial). Con «Ver los talles que no hay» se ven en ámbar en cada fila."><b>'+fmtInt(R.nuevos.unidades)+'</b> u. nuevas sin repartir <small>('+fmtInt(R.nuevos.articulos)+' artículos · menos de '+R.diasNuevo+' días)</small></span>':'')
+    +(R.resDup?'<span class="c-falta" title="El reporte de stock del depósito trae renglones repetidos (mismo artículo con los mismos talles y cantidades). Se contaron una sola vez para no duplicar la reserva."><b>'+fmtInt(R.resDup)+'</b> renglones repetidos en el reporte de stock: contados una vez</span>':'')
     +((R.tope&&R.tope.unidades)?'<span title="Calzado: talles que la sucursal vendió pero ya tiene cerca del tope ('+R.tope.tope+' por talle), así que se le manda menos o nada. Con «Ver los talles que no hay» se ven también los que quedaron en cero."><b>'+fmtInt(R.tope.unidades)+'</b> u. menos por el tope de calzado <small>('+R.tope.tope+' por talle)</small></span>':'')
     +(R.previa?(function(){ const n=rows.filter(r=>repiteDe(r)>0).length; return n?'<span class="c-rep"><b>'+fmtInt(n)+'</b> ya estaban en la barrida del '+lunesLabel(R.previa.semana)+'</span>':''; })():'')
     +(state.transf?(function(){ let env=0, ped=0, falta=0;
@@ -2430,7 +2438,7 @@ function talleChip(t, d, row){
 // casilleros del vaciado: talles que bajan enteros porque la reserva del artículo es chica
 function vacChips(talles, row){
   return (talles||[]).filter(d=>d.s>0).map(d=>({t:d.t, h:'<span class="tgx vac n-'+(nivelTalle(row,d.t)||'x')+'" title="'+esc('Vaciar reserva: quedan '+d.r+' de este talle en el depósito · se le mandan '+d.s+' a esta sucursal'+curvaTip(row,d.t))+'">'
-    +'<span class="txl">'+esc(d.t)+'</span><span class="txn">+'+d.s+'</span><span class="txr">vaciar</span></span>'}));
+    +'<span class="txl">'+esc(d.t)+'</span><span class="txn">+'+d.s+'</span><span class="txr">de '+d.r+' · vaciar</span></span>'}));
 }
 // casilleros de los talles que NO se bajan: todas las sucursales ya están cubiertas
 function dejChips(dej, min){
@@ -2445,7 +2453,7 @@ function dejChips(dej, min){
 function curvaChips(faltan, row){
   return (faltan||[]).filter(d=>d.s>0 || !d.ya).map(d=>{   // `ya` = ya está en los talles de reposición de esta fila
     if(d.s>0) return {t:d.t, h:'<span class="tgx hueco n-'+(nivelTalle(row,d.t)||'x')+'" title="'+esc('Completar curva: la sucursal no tiene el talle '+d.t+' · en reserva '+d.r+' · se mandan '+d.s+curvaTip(row,d.t))+'">'
-      +'<span class="txl">'+esc(d.t)+'</span><span class="txn">+'+d.s+'</span><span class="txr">no tiene</span></span>'};
+      +'<span class="txl">'+esc(d.t)+'</span><span class="txn">+'+d.s+'</span><span class="txr">de '+d.r+' · no tiene</span></span>'};
     const why = d.agotado ? 'la reserva del talle se fue a las sucursales con más prioridad' : 'extremo de la curva (filtro «solo huecos internos»)';
     return {t:d.t, h:'<span class="tgx off" title="Completar curva: falta el talle '+esc(d.t)+' · '+why+'">'
       +'<span class="txl">'+esc(d.t)+'</span><span class="txn">—</span><span class="txr">'+(d.agotado?'agot.':'no va')+'</span></span>'};
@@ -2454,12 +2462,12 @@ function curvaChips(faltan, row){
 // agrandar la curva: talle central donde la sucursal tiene poco (verde, «tiene N»)
 function engChips(eng, row){
   return (eng||[]).filter(d=>d.s>0).map(d=>({t:d.t, h:'<span class="tgx hueco n-'+(nivelTalle(row,d.t)||'x')+'" title="'+esc('Agrandar la curva: talle central, la sucursal tiene '+d.q+' · en reserva '+d.r+' · se le mandan '+d.s+curvaTip(row,d.t))+'">'
-    +'<span class="txl">'+esc(d.t)+'</span><span class="txn">+'+d.s+'</span><span class="txr">tiene '+d.q+'</span></span>'}));
+    +'<span class="txl">'+esc(d.t)+'</span><span class="txn">+'+d.s+'</span><span class="txr">de '+d.r+' · tiene '+d.q+'</span></span>'}));
 }
 // abrir a más sucursales: curva de arranque a una sucursal que no tiene el artículo (turquesa)
 function ampChips(talles, row){
   return (talles||[]).filter(d=>d.s>0).map(d=>({t:d.t, h:'<span class="tgx amp n-'+(nivelTalle(row,d.t)||'x')+'" title="'+esc('Abrir a más sucursales: el artículo lleva '+row.ampDias+' días en el depósito y sobra reserva · en reserva '+d.r+(d.q?' · la sucursal tiene '+d.q:' · la sucursal no lo tiene')+' · se le mandan '+d.s+(d.central?' (talle central)':'')+curvaTip(row,d.t))+'">'
-    +'<span class="txl">'+esc(d.t)+'</span><span class="txn">+'+d.s+'</span><span class="txr">'+(d.q?'tiene '+d.q:'abrir')+'</span></span>'}));
+    +'<span class="txl">'+esc(d.t)+'</span><span class="txn">+'+d.s+'</span><span class="txr">de '+d.r+' · '+(d.q?'tiene '+d.q:'abrir')+'</span></span>'}));
 }
 
 /* ---------- Historial (botón arriba a la derecha) ----------
