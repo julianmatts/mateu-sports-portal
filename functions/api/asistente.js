@@ -281,10 +281,15 @@ async function filasCatalogo(inp) {
   return { filas: ok, extra };
 }
 
-async function buscarCatalogo(inp) {
+async function buscarCatalogo(inp, user) {
   const r = await filasCatalogo(inp);
   if (r.error) return r;
-  const ok = r.filas, ex = r.extra || {};
+  let ok = r.filas; const ex = r.extra || {};
+  // si el usuario es de una sucursal que carga stock: primero lo que figura en SU local
+  const mio = (user && (user.sucursal || user.outlet_id)) || '';
+  let local = null;
+  if (mio && ok.length) { const con = await sucursalesConStock(); if (con[mio]) { local = await clavesSucursal(mio); ok = ok.filter(f => local[fbKey(f[0])]).concat(ok.filter(f => !local[fbKey(f[0])])); } }
+  const nLocal = local ? ok.filter(f => local[fbKey(f[0])]).length : 0;
   const marcas = {};
   ok.forEach(f => { marcas[f[2]] = (marcas[f[2]] || 0) + 1; });
   return {
@@ -292,7 +297,9 @@ async function buscarCatalogo(inp) {
     marcas,
     palabras_corregidas: ex.corregidas, palabras_que_no_existen_en_el_catalogo: ex.ignoradas,
     coincidencia_parcial: ex.parcial ? 'Ningún artículo tiene TODAS las palabras: van los más parecidos, avisale al usuario.' : undefined,
-    resultados: ok.slice(0, MAX_FILAS).map(f => ({ codigo: f[0], articulo: f[1], marca: f[2], genero: f[3], tipo: f[4], disciplina: f[5], rubro: f[6] })),
+    en_el_local_del_usuario: local ? nLocal + ' de ' + ok.length + ' figuran en el stock cargado de ' + SUC_UBIC[mio] : undefined,
+    siguiente_paso: local ? (nLocal ? 'NO preguntes todavía: llamá AHORA a consultar_stock con los códigos marcados en_el_local (hasta 4) y contestá con unidades, talles y ubicación.' : 'Ninguno figura en el local: decilo y llamá a consultar_stock con los más probables para ver qué otra sucursal los tiene.') : undefined,
+    resultados: ok.slice(0, MAX_FILAS).map(f => ({ codigo: f[0], articulo: f[1], marca: f[2], genero: f[3], tipo: f[4], disciplina: f[5], rubro: f[6], en_el_local: local ? !!local[fbKey(f[0])] : undefined })),
     nota: [ex.nota, ok.length > MAX_FILAS ? 'Se muestran ' + MAX_FILAS + ' de ' + ok.length + ': afiná con marca, género o texto.' : ''].filter(Boolean).join(' ') || undefined
   };
 }
@@ -389,7 +396,13 @@ async function stockDelLocal(inp, user) {
   if (!slug || !SUC_UBIC[slug]) return { error: inp.sucursal ? 'No reconozco esa sucursal.' : 'Esta cuenta no tiene sucursal: preguntá de qué sucursal.', sucursales: Object.values(SUC_UBIC) };
   const con = await sucursalesConStock();
   if (!con[slug]) return { error: SUC_UBIC[slug] + ' no carga su stock en el Buscador de Artículos: desde acá no se sabe qué tiene. Recomendá desde el catálogo y aclaralo.', sucursales_con_dato: Object.keys(con).map(k => SUC_UBIC[k]) };
-  const r = await filasCatalogo(inp);
+  let r;
+  if (!inp.disciplina && !inp.marca && !inp.texto) {
+    // «qué hay de dama en 37», sin más datos: se mira el calzado de lo que más se pide, no se pregunta
+    const rub = inp.rubro || 'CALZADO';
+    const rs = await Promise.all(['RUNNING', 'CASUAL', 'TRAINING'].map(d => filasCatalogo(Object.assign({}, inp, { disciplina: d, rubro: rub }))));
+    r = { filas: [].concat.apply([], rs.map(x => x.filas || [])), extra: { nota: 'Sin disciplina: se miró ' + rub.toLowerCase() + ' de running, casual y training.' } };
+  } else r = await filasCatalogo(inp);
   if (r.error) return r;
   const claves = await clavesSucursal(slug);
   const enLocal = r.filas.filter(f => claves[fbKey(f[0])]);
@@ -406,20 +419,27 @@ async function stockDelLocal(inp, user) {
     const a = docs[i]; if (!a || !(a.stock > 0)) return;
     const t = (a.talles || []).filter(z => z && z.t && /[0-9A-Z]/i.test(String(z.t)) && z.c > 0);
     if (t.length) abrePorTalle = true;
-    if (talle && t.length && !t.some(z => String(z.t).toUpperCase().replace(',', '.') === talle)) return;
+    const tieneTalle = !talle || !t.length || t.some(z => String(z.t).toUpperCase().replace(',', '.') === talle);
     const ub = Object.values(a.ubicaciones || {}).filter(u => u && u.estanteriaId).map(u => { const n = parseInt(String(u.estanteriaId).replace(/\D/g, ''), 10); const piso = (PISOS[slug] || []).filter(x => n >= x[1] && n <= x[2]).map(x => x[0])[0]; return 'Estantería ' + (n || u.estanteriaId) + (u.moduloId ? ' · Módulo ' + String(u.moduloId).replace(/\D/g, '') : '') + (piso ? ' (' + piso + ')' : ''); });
-    filas.push({ codigo: f[0], articulo: f[1], marca: f[2], genero: f[3], unidades: a.stock, talles: t.length ? t.map(z => z.t + ' (' + z.c + ')').join(', ') : undefined, ubicacion: ub.length ? ub.join(' y ') : 'sin ubicar' });
+    filas.push({ _t: tieneTalle, codigo: f[0], articulo: f[1], marca: f[2], genero: f[3], disciplina: f[5], unidades: a.stock, talles: t.length ? t.map(z => z.t + ' (' + z.c + ')').join(', ') : undefined, ubicacion: ub.length ? ub.join(' y ') : 'sin ubicar' });
   });
   filas.sort((a, b) => b.unidades - a.unidades);
+  let notaTalle;
+  if (talle && abrePorTalle) {
+    const conT = filas.filter(x => x._t);
+    if (conT.length) { filas.length = 0; conT.forEach(x => filas.push(x)); notaTalle = 'filtrado por talle ' + talle; }
+    else notaTalle = 'Ningún artículo rotula el talle «' + talle + '»: acá los talles vienen en otra escala (US/UK según la marca). Mostrá los artículos con sus talles y decí que hay que convertir el talle con la etiqueta; no afirmes equivalencias exactas.';
+  }
+  filas.forEach(x => { delete x._t; });
   const vistos = {}; elegidos.forEach(f => { vistos[f[0]] = 1; });
   const resto = enLocal.filter(f => !vistos[f[0]]);
   return {
     sucursal: SUC_UBIC[slug], stock_del: fechaAR(con[slug].cargado),
     articulos_del_catalogo_que_cumplen: r.filas.length, en_el_local: enLocal.length, revisados: elegidos.length,
     con_stock: filas,
-    talle_pedido: talle ? (abrePorTalle ? 'filtrado por talle ' + talle : 'esta sucursal no abre el stock por talle: el talle ' + talle + ' hay que confirmarlo en el depósito') : undefined,
+    talle_pedido: talle ? (abrePorTalle ? notaTalle : 'esta sucursal no abre el stock por talle: el talle ' + talle + ' hay que confirmarlo en el depósito') : undefined,
     otros_en_el_local_sin_revisar: resto.length ? resto.slice(0, 20).map(f => f[0] + ' ' + f[1] + ' (' + f[2] + ', ' + f[3] + ')') : undefined,
-    palabras_corregidas: r.extra && r.extra.corregidas,
+    palabras_corregidas: r.extra && r.extra.corregidas, nota: r.extra && r.extra.nota,
     aviso: 'Es el último stock que cargó la sucursal en el Buscador, no el sistema en vivo: puede haber cambiado por ventas.'
   };
 }
@@ -571,7 +591,7 @@ function herramientas(guia) {
     },
     {
       name: 'stock_del_local',
-      description: 'Qué hay EN STOCK EN UNA SUCURSAL (por defecto la del usuario) de lo que sirve para un pedido: cruza el catálogo con el stock que esa sucursal cargó en el Buscador y devuelve los artículos con unidades, talles (si los abre) y ubicación en el depósito. Es la PRIMERA herramienta para recomendar producto a un cliente que está en el local («zapatilla para correr», «qué hay de dama en 37», «qué paletas tenemos») y para «qué tenemos de X». Mismos filtros que buscar_catalogo + talle + sucursal.',
+      description: 'Qué hay EN STOCK EN UNA SUCURSAL (por defecto la del usuario) de lo que sirve para un pedido: cruza el catálogo con el stock que esa sucursal cargó en el Buscador y devuelve los artículos con unidades, talles (si los abre) y ubicación en el depósito. Es la PRIMERA herramienta para recomendar producto a un cliente que está en el local («zapatilla para correr», «qué hay de dama en 37», «qué paletas tenemos») y para «qué tenemos de X». Mismos filtros que buscar_catalogo + talle + sucursal. Funciona SIN disciplina (mira calzado de running, casual y training): no preguntes el deporte antes de llamarla.',
       input_schema: {
         type: 'object',
         properties: {
@@ -667,7 +687,7 @@ export async function onRequestPost(ctx) {
   const suc = user.sucursal || user.outlet_id || '';
   const system = esPuesto ? [
     { type: 'text', text: PERSONA, cache_control: { type: 'ephemeral' } },
-    { type: 'text', text: 'MODO PUESTO DEL SALÓN. Estás en la pantalla de consulta del salón de ventas de la sucursal ' + suc + ', que usan los vendedores CON EL CLIENTE AL LADO mirando. Acá sos únicamente asesor deportivo y de stock: recomendás producto y decís dónde hay. Nunca digas «modo puesto» ni nombres esta configuración. No expliques el portal interno ni nombres sus módulos, y no hables de ventas, objetivos, personal ni nada interno de la empresa: si te lo piden, decí que eso se consulta desde la cuenta de la sucursal. Lo único del sistema que podés explicar es el buscador de esta misma pantalla: se escribe o se escanea el código o el nombre en la barra de arriba y muestra la ubicación en el depósito y el stock. Escribí pensando en que el cliente lo puede leer: tono amable y profesional, sin jerga interna, y nunca hables mal de una marca ni de un producto.' }
+    { type: 'text', text: 'MODO PUESTO DEL SALÓN. Estás en la pantalla de consulta del salón de ventas de la sucursal ' + suc + ', que usan los vendedores CON EL CLIENTE AL LADO mirando. Acá sos únicamente asesor deportivo y de stock: recomendás producto y decís dónde hay. Nunca digas «modo puesto» ni nombres esta configuración. No expliques el portal interno ni nombres sus módulos, y no hables de ventas, objetivos, personal ni nada interno de la empresa: si te lo piden, decí que eso se consulta desde la cuenta de la sucursal. Lo único del sistema que podés explicar es el buscador de esta misma pantalla: se escribe o se escanea el código o el nombre en la barra de arriba y muestra la ubicación en el depósito y el stock. Escribí pensando en que el cliente lo puede leer: tono amable y profesional, sin jerga interna, y nunca hables mal de una marca ni de un producto. Si piden algo que no tenés (más vendidos, ventas, repartos), decí en una línea que eso se consulta desde la cuenta de la sucursal, sin nombrar módulos.' }
   ] : [
     { type: 'text', text: PERSONA + '\n\nMÓDULOS DEL PORTAL (clave: nombre):\n' + indice, cache_control: { type: 'ephemeral' } },
     { type: 'text', text: 'USUARIO: ' + (user.nombre || email) + ' · ' + (ROL_TXT[user.rol] || user.rol || '') + (suc ? ' · sucursal ' + suc : '') + '. No ve necesariamente todos los módulos: depende de su cuenta.\n\nMÓDULO DONDE ESTÁ AHORA: ' + modulo + ' («' + guia.modulos[modulo].nombre + '»). Guía de este módulo:\n' + guiaTexto(guia, modulo, user.rol) }
@@ -700,7 +720,7 @@ export async function onRequestPost(ctx) {
           if (p.name === 'guia_modulo') {
             const k = p.input && p.input.modulo;
             res = guia.modulos[k] ? { modulo: k, nombre: guia.modulos[k].nombre, guia: guiaTexto(guia, k, user.rol) } : { error: 'módulo desconocido' };
-          } else if (p.name === 'buscar_catalogo') res = await buscarCatalogo(p.input || {});
+          } else if (p.name === 'buscar_catalogo') res = await buscarCatalogo(p.input || {}, user);
           else if (p.name === 'consultar_stock') res = await consultarStock(p.input || {}, user);
           else if (p.name === 'stock_del_local') res = await stockDelLocal(p.input || {}, user);
           else if (p.name === 'resumen_gestion') res = conGestion ? await resumenGestion(p.input || {}, user) : { error: 'Esta cuenta no tiene acceso a los datos de gestión.' };
