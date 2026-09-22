@@ -3837,6 +3837,13 @@ function ordenTallesNino(labels){
 function repCentralesTabla(){ return Object.assign({}, CENTRALES_DEF, state.rep.centrales||{}); }
 function repCentrales(a, labels){
   const G=repGrupo(a);
+  // medias Mateu Sports (reporte de Nehuen, 22/09/2026): el mismo piso por talle que la Barrida
+  // (S:12 · M:24 · L:36 · XL:12; talle fuera de la tabla = 1). Es el stock objetivo de la sucursal:
+  // se descuenta lo que ya tiene y lo que sobra queda en el depósito para la Barrida.
+  if(esMediaMateu(a)){
+    const per={}; labels.forEach(t=>{ per[t]=mediasMin(t)||1; });
+    return { G, set:new Set(), per, medias:true, regla:'medias Mateu Sports: piso por talle S:12 · M:24 · L:36 · XL:12 (menos lo que ya tiene la sucursal), como en la Barrida' };
+  }
   if(!G.fam) return { G, set:new Set(), regla:'accesorios: 1 unidad por talle' };
   const fueraT=fueraDeTemporada(a, G);
   if(fueraT){
@@ -3954,6 +3961,8 @@ function fichaPasa(fe, a, G){
 /* ---------- a quién (Asignación de Marcas) y en qué orden ---------- */
 function repAsig(slug, a, G){
   if(reglaSucursal(slug, a, G, fichaDe(slug, a.marca, G))) return null;
+  // medias Mateu Sports: marca propia, no figura en la Asignación de Marcas y va a todas las sucursales destino
+  if(esMediaMateu(a)) return { tipo:'prio', rank:1, plana:false, orden:0, nota:'medias Mateu Sports: van a todas las sucursales' };
   const A=PRIO.asig, id=SLUG2MARCAS[slug];
   if(!A || !id) return { tipo:'sin', rank:4, nota:'sin datos de Asignación de Marcas' };
   const listas = G.fam==='calz' ? [A.calz[id]] : G.fam==='ind' ? [A.ind[id]] : [A.calz[id], A.ind[id]];
@@ -4208,13 +4217,13 @@ function repRepartirArt(perRem, cands, central, P, per){
   // curva entera; si todavía tiene la mitad o más, solo completa talles aunque lo venda.
   const tieneDe=c=>{ const o=Object.assign({}, c.hist||{});
     const entera = c.rot ? (c.rot.r>=REP_ROT_ALTA ? true : c.rot.r<REP_ROT_BAJA ? false : (P.reingresoProf!==false && c.vendeArt)) : (P.reingresoProf!==false && c.vendeArt);
-    if(entera || P.sinStock) return o;   // sinStock: segunda pasada de repCalcular (todas ya lo tienen y no salía nada)
+    if(!P.pisoFijo && (entera || P.sinStock)) return o;   // medias: el piso es stock objetivo, siempre descuenta lo que tiene   // sinStock: segunda pasada de repCalcular (todas ya lo tienen y no salía nada)
     Object.entries(c.stock||{}).forEach(([t,q])=>{ o[t]=Math.max(o[t]||0, q); }); return o; };
   // Criterio 1 (perfil del local) y 5 (pico comercial: todos suben un escalón). La curva x1 de la ficha manda.
   // Ratio alto (6+ meses de la marca): solo ORDENA (va al final), la curva es la normal (Juli 21/09/2026). Criterio «profundidad»: todos suben un escalón — si no, en los
   // locales de curva base (Cat 2, Aurelius…) cambiar el criterio no cambiaba nada (Juli 21/09/2026).
-  const perfilDe=c=>{ let p=c.perfil||'honda'; if(P.pico) p=PERFIL_SUBE[p]; if(P.criterio==='profundidad') p=PERFIL_SUBE[p]; return p; };
-  const dist=cands.map(c=>{ const pf=perfilDe(c); return Object.assign({}, c, { g:{}, tiene:tieneDe(c), ok:false, perfilEf:pf, plana:!!c.plana || pf==='chata', sinExc:!!c.plana || (c.perfil||'honda')==='chata' }); });
+  const perfilDe=c=>{ if(P.pisoFijo) return 'base'; let p=c.perfil||'honda'; if(P.pico) p=PERFIL_SUBE[p]; if(P.criterio==='profundidad') p=PERFIL_SUBE[p]; return p; };
+  const dist=cands.map(c=>{ const pf=perfilDe(c); return Object.assign({}, c, { g:{}, tiene:tieneDe(c), ok:false, perfilEf:pf, plana:!P.pisoFijo && (!!c.plana || pf==='chata'), sinExc:!!P.pisoFijo || !!c.plana || (c.perfil||'honda')==='chata' }); });
   // A · curva base de UNA sucursal hasta `obj(t)` por talle; no le arma una curva rota
   const darCurva=(s, obj)=>{
     const g={}; let cubre=0, cubreC=false;
@@ -4446,24 +4455,26 @@ function repCalcular(){
     const cands=repCandidatos(a, C.G, destA);
     // Niño y fútbol se reparten enteros (Juli 17/09/2026): no se deja curva en el depósito y el
     // excedente se sigue repartiendo, como hace el depósito a mano
-    const todoP = !C.tranquila && P.todoNinoFutbol!==false && repTodoAlSalon(a, C.G);
+    const todoP = !C.tranquila && !C.medias && P.todoNinoFutbol!==false && repTodoAlSalon(a, C.G);
     // verano fuera de temporada: sin curva profunda ni excedente, aunque sea de niño
     const cri=repCriterioDe(a, tl.perRem, labels, C, P, cands.length);
     const aMano = cri.origen==='art' || cri.origen==='remito';
     const Pc=Object.assign({}, P, { criterio:cri.c });
     let Pa = C.tranquila ? Object.assign({}, P, { criterio:'abrir', excedente:false }) : todoP ? Object.assign({}, Pc, { excedente:true, reserva:0 }) : Pc;
     // criterio 5: en las semanas previas a una fecha comercial, profundidad y sin curva en el depósito
-    const pico = C.tranquila ? '' : repPico(a, C.G);
+    const pico = (C.tranquila || C.medias) ? '' : repPico(a, C.G);
     // (lo elegido a mano en el remito o en el artículo le gana a la fecha comercial)
     if(pico) Pa = Object.assign({}, Pa, { criterio: aMano ? cri.c : 'profundidad', reserva:0, pico:true });
-    a.cri = Object.assign(cri, { efectivo:Pa.criterio, fijo: C.tranquila ? 'fuera de temporada: curva tranquila' : '' });
+    // medias Mateu: el piso por talle a cada sucursal, sin profundidad, sin excedente ni curva de reserva
+    if(C.medias) Pa = Object.assign({}, P, { criterio:'abrir', excedente:false, reserva:0, reservaMin:0, minTalles:1, pisoFijo:true });
+    a.cri = Object.assign(cri, { efectivo:Pa.criterio, fijo: C.tranquila ? 'fuera de temporada: curva tranquila' : C.medias ? 'medias Mateu: piso por talle' : '' });
     let out=repRepartirArt(tl.perRem, cands, C.set, Pa, C.per);
     // Reingreso que TODAS ya tienen con la curva completa (21/09/2026, Montagne ZEEPRO: 5 sucursales con su curva y poca
     // rotación → «solo completar talles» no daba nada y los 10 pares quedaban en el depósito). Lo que ingresa se reparte:
     // si por el stock de las sucursales no salió nada, se reparte igual por prioridad sin mirar ese stock (la memoria de
     // lo enviado hace poco sí sigue contando).
     a.stockIgnorado=false;
-    if(!out.lineas.length && cands.some(c=>c.stock)){
+    if(!out.lineas.length && !C.medias && cands.some(c=>c.stock)){
       const out2=repRepartirArt(tl.perRem, cands, C.set, Object.assign({}, Pa, { sinStock:true }), C.per);
       if(out2.lineas.length){ out=out2; a.stockIgnorado=true; }
     }
