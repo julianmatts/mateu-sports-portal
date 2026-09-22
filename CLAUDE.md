@@ -2069,6 +2069,11 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     Marcas y antes quedaban «sin sucursal»); corren con `pisoFijo` (sin profundidad, fecha comercial, excedente ni curva de
     reserva; perfil base también en outlets; mínimo 1 talle) y el piso es stock objetivo: siempre se descuenta lo que la
     sucursal ya tiene. Lo que no alcanza el piso de nadie queda en el depósito para la Barrida.
+  - **Marca propia por tipo de local (22/09/2026, Juli)**: en indumentaria y accesorios la marca **Mateu** es solo para los
+    locales Mateu Sports (`esMarcaMateu` / `esLocalMateu`: ni Aurelius ni tiendas Adidas; Ecommerce, Kids y outlets Mateu sí) y
+    la marca **Aurelius** solo para los Aurelius (`esMarcaAurelius`). Va en `reglaSucursal`, así rige en Reparto inicial,
+    «Abrir» y la Barrida; ninguna de las dos está en la Asignación de Marcas, así que `repAsig` las deja pasar a esos locales.
+    Las **medias Aurelius** llevan el mismo piso por talle que las Mateu (`esMediaMateu` acepta las dos marcas).
   - **Excedente del Reparto inicial**: «Repartir el excedente» viene **destildado** (prefs `v:2`): lo que sobra
     después de las curvas queda de reserva (si queda menos de `reservaMin`, se reparte igual). New Balance
     exclusivos de Aurelius: Aurelius de línea y Ecommerce prioridad 1, Aurelius 10 (columna outlet, «como local
