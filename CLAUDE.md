@@ -2065,7 +2065,7 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     aclara en la regla del artículo.
   - **Medias Mateu Sports con piso por talle (22/09/2026, reporte de Nehuen)**: el Reparto inicial aplica la misma regla
     que la Barrida (`esMediaMateu`, `MEDIAS_MIN` S:12 · M:24 · L:36 · XL:12). `repCentrales` devuelve `medias:true` con
-    `per` = el piso; `repAsig` las deja pasar a todas las sucursales destino (la marca propia no está en la Asignación de
+    `per` = el piso; `repAsig` las deja pasar a todas las sucursales destino **menos los Aurelius** (no trabajan medias Mateu; la marca propia no está en la Asignación de
     Marcas y antes quedaban «sin sucursal»); corren con `pisoFijo` (sin profundidad, fecha comercial, excedente ni curva de
     reserva; perfil base también en outlets; mínimo 1 talle) y el piso es stock objetivo: siempre se descuenta lo que la
     sucursal ya tiene. Lo que no alcanza el piso de nadie queda en el depósito para la Barrida.
