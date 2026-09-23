@@ -507,7 +507,7 @@ Object.entries(OUTLET_SUC).forEach(([slug,n])=>NAME2SLUG[normName(n)]={slug,nomb
 const MEDIAS_MIN = { S:12, M:24, L:36, XL:12 };   // 1/2/3/1 docenas
 // medias Aurelius (Juli 22/09/2026): dos talles, S (chico) y M (grande), 2 docenas cada uno
 const MEDIAS_MIN_AUR = { S:24, M:24, CHICO:24, GRANDE:24 };
-const mediasTxt = marca => /aurelius/.test(normName(marca)) ? 'S (chico) 24 · M (grande) 24' : 'S:12 · M:24 · L:36 · XL:12';
+const mediasTxt = marca => /aurelius/.test(normName(marca)) ? 'S (chico) 24 · M (grande) 24' : 'Cat 1 y Gonnet S:60 M:96 L:180 XL:60 · Cat 2, Calle 55 y Av. 44 S:36 M:72 L:120 XL:36';
 function esMediaMateu(meta){
   if(!meta) return false;
   const t = normName(meta.tipo), r = normName(meta.rubro), m = normName(meta.marca);
@@ -539,7 +539,18 @@ function accPiso(meta){
   const v=Number(accTabla()[accTipoKey(meta.tipo)]); return v>0 ? v : 0;
 }
 // mínimo del talle (0 si el talle no está en la tabla → cae al cálculo normal)
-function mediasMin(label, marca){ const T=/aurelius/.test(normName(marca)) ? MEDIAS_MIN_AUR : MEDIAS_MIN;
+// medias Mateu por tipo de local (Juli 23/09/2026): Cat 1 (y Ecommerce, que se trabaja como Cat 1) + Outlet
+// Gonnet = S:60 M:96 L:180 XL:60; Cat 2 + outlets Calle 55 y Av. 44 = S:36 M:72 L:120 XL:36. El resto
+// (Mateu Kids) sigue con MEDIAS_MIN.
+const MEDIAS_MIN_CAT1 = { S:60, M:96, L:180, XL:60 };
+const MEDIAS_MIN_CAT2 = { S:36, M:72, L:120, XL:36 };
+function mediasTablaSuc(slug){
+  if(!slug || slug==='kids') return MEDIAS_MIN;
+  if(slug==='gonnet') return MEDIAS_MIN_CAT1;
+  if(slug==='calle-55' || slug==='av-44') return MEDIAS_MIN_CAT2;
+  const c=catDe(slug); return c==='cat1' ? MEDIAS_MIN_CAT1 : c==='cat2' ? MEDIAS_MIN_CAT2 : MEDIAS_MIN;
+}
+function mediasMin(label, marca, slug){ const T=/aurelius/.test(normName(marca)) ? MEDIAS_MIN_AUR : mediasTablaSuc(slug);
   const k=String(label).toUpperCase().trim(); return T[k] || T[k.split(/[\s(]/)[0]] || 0; }
 
 /* ---------- Prioridad de reposición (regla de Juli 07/09/2026) ----------
@@ -1732,7 +1743,7 @@ function computar(histPrev, histSnaps){
           const rq=R.talles[t]||0;
           // MEDIAS: para el talle vendido el objetivo es el mínimo (S:12 M:24 L:36 XL:12),
           // aunque haya vendido menos; talle fuera de la tabla → objetivo = vendido.
-          const min = media ? (mediasMin(t, R.meta.marca||V.meta.marca) || accP) : 0;
+          const min = media ? (mediasMin(t, R.meta.marca||V.meta.marca, slug) || accP) : 0;
           // el piso es el stock objetivo del talle: con el stock por sucursal cargado se descuenta lo que ya tiene
           const stP = (min>0 && stock[id] && stock[id].porSuc[slug]) ? stock[id].porSuc[slug].talles||{} : null;
           const tieneP = stP ? Math.max(0, stP[t]||0) : null;
@@ -4267,7 +4278,8 @@ function repRepartirArt(perRem, cands, central, P, per){
   const base=t=>per ? (per[t]||1) : central.has(t)?P.uCentral:P.uResto;
   const tope=t=>per ? (per[t]||1) : central.has(t)?Math.max(P.uCentral,P.maxCentral):P.uResto;
   // «curva x1 plana» de la ficha de la marca: 1 por talle, sin agrandar centrales ni excedente
-  const baseS=(s,t)=>s.plana?1:base(t);
+  // s.per = curva propia de la sucursal (medias Mateu: el piso depende del tipo de local)
+  const baseS=(s,t)=>s.per ? (s.per[t]||1) : s.plana?1:base(t);
   // lo que ya tiene la sucursal: lo que se le mandó hace poco y/o su stock actual (reingresos), el mayor por talle.
   // Reingreso que se vende (Juli 17/09/2026): si la sucursal tiene el artículo y lo vende, su stock no le achica
   // la curva: recibe la curva entera igual (profundidad). Lo que se le mandó hace poco sí cuenta siempre.
@@ -4511,6 +4523,8 @@ function repCalcular(){
     if(!Array.isArray(S.destinos) && fichaOutletLinea(a.marca, C.G))
       destA = destA.concat(Object.keys(REP_SUC).filter(sl=>catDe(sl)==='outlet' && !destA.includes(sl)));
     const cands=repCandidatos(a, C.G, destA);
+    // medias de marca propia: el piso de cada talle depende de la sucursal (Cat 1 / Cat 2 / outlets)
+    if(C.medias && esMediaMateu(a)) cands.forEach(c=>{ const pr={}; labels.forEach(t=>{ pr[t]=mediasMin(t, a.marca, c.slug)||1; }); c.per=pr; });
     // Niño y fútbol se reparten enteros (Juli 17/09/2026): no se deja curva en el depósito y el
     // excedente se sigue repartiendo, como hace el depósito a mano
     const todoP = !C.tranquila && !C.medias && P.todoNinoFutbol!==false && repTodoAlSalon(a, C.G);

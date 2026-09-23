@@ -2073,6 +2073,10 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     locales Mateu Sports (`esMarcaMateu` / `esLocalMateu`: ni Aurelius ni tiendas Adidas; Ecommerce, Kids y outlets Mateu sí) y
     la marca **Aurelius** solo para los Aurelius (`esMarcaAurelius`). Va en `reglaSucursal`, así rige en Reparto inicial,
     «Abrir» y la Barrida; ninguna de las dos está en la Asignación de Marcas, así que `repAsig` las deja pasar a esos locales.
+    **Piso de las medias Mateu por tipo de local (23/09/2026, Juli)**: Cat 1 (y Ecommerce, que va como Cat 1) + Outlet
+    Gonnet = **S:60 M:96 L:180 XL:60**; Cat 2 + Outlet Calle 55 y Av. 44 = **S:36 M:72 L:120 XL:36**; Mateu Kids sigue con
+    `MEDIAS_MIN` (12/24/36/12). `mediasTablaSuc(slug)` + `mediasMin(talle, marca, slug)`; en el Reparto inicial cada candidato
+    lleva su curva (`c.per`, que `repRepartirArt` usa en `baseS`) y en la Barrida el piso sale de la sucursal de la fila.
     Las **medias Aurelius** también llevan piso (`esMediaMateu` acepta las dos marcas), con su curva: **S (chico) 24 · M (grande) 24** (`MEDIAS_MIN_AUR`; `mediasMin(talle, marca)`).
   - **Accesorios por tipo de producto (Grupo 1) (22/09/2026, Juli: «trabajar por docena o media docena por talle
     para que el producto no se pierda en el depósito de la sucursal ni quede sin exhibir»)**: tabla `ACC_TIPOS_DEF`
