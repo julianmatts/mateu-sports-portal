@@ -17,6 +17,8 @@
 <script src="plano-deposito.js"></script>
 <!-- Render del mapa del depósito (lo comparte con el kiosco); auto-inyecta su CSS -->
 <script src="plano-mapa.js"></script>
+<!-- Cargas por sucursal → remito interno → despacho (lo comparte con la tablet) -->
+<script src="despacho.js"></script>
 <style>
   :root{
     --navy:#0B1527;--navy-mid:#1a2f55;--red:#CC0000;--red-soft:#ff3b3b;--off:#f5f7fc;--card:#fff;--border:#dce3f0;
@@ -95,6 +97,7 @@
 <nav class="tabs" id="tabs">
   <button class="tab on" data-tab="panel">Panel</button>
   <button class="tab" data-tab="pickings">Pickings</button>
+  <button class="tab" data-tab="despacho">Despacho <span id="despBadge"></span></button>
   <button class="tab" data-tab="zonas">Zonas</button>
   <button class="tab" data-tab="operarios">Operarios</button>
 </nav>
@@ -173,6 +176,7 @@ async function cargar(){
   DATA.eventos=evs||{}; DATA.seq=num(seq)||1841; DATA.bar.ultima=ultima||null;
   try{ DATA.ingControl=(await fbGet('ingreso/control'))||{}; }catch(e){ DATA.ingControl={}; }
   try{ DATA.envio=(await fbGet(ROOT+'/envio'))||{}; }catch(e){ DATA.envio={}; }
+  await cargarDespacho();
   await sincronizarOperarios();
   if(ultima){
     const lk=fbKey(ultima);
@@ -282,6 +286,7 @@ function render(){
   if(state.tab==='panel') return renderPanel();
   if(state.tab==='zonas') return renderZonas();
   if(state.tab==='operarios') return renderOperarios();
+  if(state.tab==='despacho') return renderDespacho();
   return renderPickings();
 }
 
@@ -1010,6 +1015,69 @@ async function importarDotacionDeposito(){
 }
 
 /* ---- util ---- */
+/* ---- DESPACHO (23/09/2026): cargas abiertas por sucursal × rubro → remito interno → despacho ----
+   Lógica e impresiones en despacho.js (compartido con la tablet). Acá lo ve la oficina del depósito:
+   las cargas con su alerta (tope 300 u. / artículos de más de 48 h; nunca se cierran solas), generar el
+   remito a mano, anotarle el Nº de transferencia del sistema, reimprimirlo o anularlo mientras no salió. */
+async function cargarDespacho(){
+  try{ const [c,r]=await Promise.all([ fbGet(ROOT+'/cargas'), fbGet(ROOT+'/remitos','orderBy=%22%24key%22&limitToLast=300') ]); DATA.cargas=c||{}; DATA.remitos=r||{}; }
+  catch(e){ DATA.cargas=DATA.cargas||{}; DATA.remitos=DATA.remitos||{}; }
+  Despacho.revisarTodas(DATA.cargas); despBadge(); }
+function despBadge(){ const el=$('despBadge'); if(!el) return; const R=Despacho.resumenes(DATA.cargas), al=R.filter(r=>r.tope||r.alerta48).length, pend=vals(DATA.remitos).filter(r=>r&&r.estado!=='despachado').length;
+  el.innerHTML=(al?'<span class="pill dif" style="margin-left:4px" title="Cargas con alerta">'+al+'</span>':'')+(pend?'<span class="pill ctrl" style="margin-left:4px" title="Remitos para despachar">'+pend+'</span>':''); }
+function gondolaFam(slug,fam){ return envioDe(slug, fam==='calz'?'CALZADO':'INDUMENTARIA'); }
+function renderDespacho(){
+  const R=Despacho.resumenes(DATA.cargas), rems=vals(DATA.remitos).filter(Boolean).sort((a,b)=>num(b.generado_ms)-num(a.generado_ms));
+  const pend=rems.filter(r=>r.estado!=='despachado'), desp=rems.filter(r=>r.estado==='despachado');
+  const uCarga=R.reduce((n,r)=>n+r.u,0), al=R.filter(r=>r.tope||r.alerta48);
+  const despHoy=desp.filter(r=>Despacho.esHoy(r.despacho&&r.despacho.ms));
+  let h=seccionHead('Despacho','Lo que se controla en la tablet se junta por sucursal y rubro. El remito se genera a mano: a las '+Despacho.TOPE+' u. o con artículos de más de '+Despacho.HS+' h avisa, pero la carga no se cierra sola.',
+    '<button class="btn btn-outline btn-sm" id="dReload">↻ Actualizar</button>');
+  h+='<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr));margin-bottom:16px">'
+    +[['Cargas abiertas',R.length],['Unidades en carga',fmtInt(uCarga)],['Con alerta',al.length],['Para despachar',pend.length],['Despachados hoy',despHoy.length]]
+      .map(k=>'<div class="card" style="padding:12px 14px"><div class="pk-nro">'+k[1]+'</div><div class="hint">'+k[0]+'</div></div>').join('')+'</div>';
+  if(al.length) h+='<div class="demo-banner" style="display:block">'+al.map(r=>'<div>'+(r.tope?'⚠ <b>'+esc(nombreSuc(r.slug))+' · '+Despacho.FAM_LBL[r.fam]+'</b> llegó a '+fmtInt(r.u)+' u. ':'')+(r.alerta48?'⏱ <b>'+esc(nombreSuc(r.slug))+' · '+Despacho.FAM_LBL[r.fam]+'</b>: '+fmtInt(r.viejas)+' u. esperando hace más de '+Despacho.HS+' h':'')+'</div>').join('')+'</div>';
+  h+='<h2 style="font-family:var(--font-d);font-weight:400;font-size:22px;margin:6px 0 8px">Cargas abiertas</h2>';
+  h+=R.length?'<div class="tbl-wrap"><table><tr><th>Sucursal</th><th>Rubro</th><th>Góndola</th><th class="num">Unidades</th><th style="width:120px"></th><th class="num">Art.</th><th class="num">Tareas</th><th>Desde</th><th></th></tr>'
+    +R.map(r=>{ const k=r.slug+'|'+r.fam, pct=Math.min(100,Math.round(r.u/Despacho.TOPE*100));
+      return '<tr><td><b>'+esc(nombreSuc(r.slug))+'</b></td><td>'+esc(Despacho.FAM_LBL[r.fam])+'</td><td class="hint">'+esc(gondolaFam(r.slug,r.fam)||'—')+'</td>'
+        +'<td class="num"><b>'+fmtInt(r.u)+'</b>'+(r.tope?' <span class="pill ctrl">tope</span>':'')+'</td><td><div class="prog" style="margin:0"><span style="width:'+pct+'%;background:'+(r.tope?'var(--warn)':'var(--navy)')+'"></span></div></td>'
+        +'<td class="num">'+r.arts+'</td><td class="num">'+r.picks.length+'</td><td>'+Despacho.horas(r.desde)+(r.alerta48?' <span class="pill dif">+'+Despacho.HS+' h</span>':'')+'</td>'
+        +'<td style="white-space:nowrap"><button class="btn btn-outline btn-sm" data-cver="'+esc(k)+'">Ver</button> <button class="btn btn-primary btn-sm" data-cgen="'+esc(k)+'">Generar remito</button></td></tr>'; }).join('')+'</table></div>'
+    :'<div class="state" style="padding:20px">No hay cargas abiertas. Cuando se cierra un control en la tablet, lo de cada sucursal aparece acá.</div>';
+  const vista=state.despTab||'pend', lista=vista==='pend'?pend:desp.slice(0,80);
+  h+='<div class="subtabs" style="margin-top:22px">'+'<button class="subtab'+(vista==='pend'?' on':'')+'" data-dt="pend">Para despachar ('+pend.length+')</button><button class="subtab'+(vista==='desp'?' on':'')+'" data-dt="desp">Despachados</button></div>';
+  h+=lista.length?'<div class="tbl-wrap"><table><tr><th>Remito</th><th>Sucursal</th><th>Rubro</th><th class="num">Unid.</th><th>Generado</th><th>Nº en el sistema</th>'+(vista==='desp'?'<th>Despacho</th>':'<th>Avance</th>')+'<th></th></tr>'
+    +lista.map(r=>{ const d=r.despacho||{}, mk=Object.keys(r.marcas||{}).length;
+      return '<tr><td><b>'+esc(r.nro)+'</b></td><td>'+esc(nombreSuc(r.slug))+'</td><td>'+esc(Despacho.FAM_LBL[r.fam]||'')+'</td><td class="num">'+fmtInt(r.u)+'</td>'
+        +'<td class="hint">'+esc(Despacho.fecha(r.generado_ms))+(r.generado_por?' · '+esc(r.generado_por):'')+'</td>'
+        +'<td><input class="inp" data-nsis="'+esc(r.nro)+'" value="'+esc(r.nro_sistema||'')+'" placeholder="Nº transferencia" style="width:150px;padding:5px 8px;font-size:13px"></td>'
+        +(vista==='desp'?'<td class="hint">'+esc(d.por||'—')+' · '+esc(Despacho.fecha(d.ms))+' · '+Despacho.pl(num(d.cajas),'caja')+' · '+Despacho.pl(num(d.sunchos),'ensunchado')+(d.dif?' · <b style="color:var(--bad);cursor:pointer" data-rdif="'+esc(r.nro)+'">con diferencias ›</b>':'')+'</td>'
+          :'<td class="hint">'+(mk?mk+'/'+num(r.arts)+' revisados':'sin empezar')+'</td>')
+        +'<td style="white-space:nowrap"><button class="btn btn-outline btn-sm" data-rpr="'+esc(r.nro)+'" title="Imprimir el remito (y CSV para el sistema)">🖨</button>'+(vista==='pend'?' <button class="btn btn-outline btn-sm" data-ranu="'+esc(r.nro)+'" title="Anular: sus artículos vuelven a la carga">↩ Anular</button>':'')+'</td></tr>'; }).join('')+'</table></div>'
+    :'<div class="state" style="padding:20px">'+(vista==='pend'?'No hay remitos esperando despacho.':'Todavía no se despachó ningún remito.')+'</div>';
+  $('view').innerHTML=h; despBadge();
+  const rem=nro=>DATA.remitos[fbKey(nro)];
+  $('dReload').onclick=async()=>{ $('dReload').disabled=true; await cargarDespacho(); render(); toast('Actualizado','ok'); };
+  document.querySelectorAll('[data-dt]').forEach(b=>b.onclick=()=>{ state.despTab=b.dataset.dt; render(); });
+  document.querySelectorAll('[data-cver]').forEach(b=>b.onclick=()=>{ const [slug,fam]=b.dataset.cver.split('|'); const L=((DATA.cargas[slug]||{})[fam]||{}).lineas||{}; const ls=vals(L).filter(l=>l&&num(l.u)>0);
+    const arts=Despacho.artsDe(ls), tareas=[...new Set(ls.map(l=>'#'+l.pick+' '+(l.titulo||'')))];
+    openModal('<h2>'+esc(nombreSuc(slug))+' · '+esc(Despacho.FAM_LBL[fam])+'</h2><div class="msub">'+fmtInt(ls.reduce((n,l)=>n+num(l.u),0))+' u. · '+arts.length+' artículos · de '+tareas.map(esc).join(', ')+'</div>'
+      +'<div class="tbl-wrap"><table><tr><th>Artículo</th><th>Curva</th><th class="num">Unid.</th></tr>'+arts.map(a=>'<tr><td>'+esc(a.desc||a.cod)+' <span class="hint">'+esc(a.cod)+'</span></td><td><b>'+esc(Despacho.curvaTxt(a.t))+'</b></td><td class="num">'+a.u+'</td></tr>').join('')+'</table></div>'
+      +'<div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cerrar</button></div>'); });
+  document.querySelectorAll('[data-cgen]').forEach(b=>b.onclick=async()=>{ const [slug,fam]=b.dataset.cgen.split('|'); const r=R.find(x=>x.slug===slug&&x.fam===fam);
+    if(!confirm('¿Generar el remito de '+nombreSuc(slug)+' · '+Despacho.FAM_LBL[fam]+' con '+(r?r.u:0)+' unidades? La carga queda vacía; lo que se controle después arranca una nueva.')) return;
+    b.disabled=true; try{ const doc=await Despacho.generarRemito(slug,fam,(SESSION&&(SESSION.nombre||SESSION.email))||_mail); toast('Remito '+doc.nro+' generado','ok'); await cargarDespacho(); state.despTab='pend'; render(); Despacho.imprimirRemito(doc,gondolaFam(slug,fam)); }
+    catch(e){ b.disabled=false; toast('No se pudo: '+(e.message||e),'bad'); } });
+  document.querySelectorAll('[data-nsis]').forEach(i=>i.onchange=async()=>{ const r=rem(i.dataset.nsis); if(!r) return; const v=i.value.trim();
+    try{ await fbPut(ROOT+'/remitos/'+fbKey(r.nro)+'/nro_sistema', v); r.nro_sistema=v; toast(v?('Nº '+v+' anotado en '+r.nro):'Nº borrado','ok'); }catch(e){ toast('No se pudo guardar','bad'); } });
+  document.querySelectorAll('[data-rpr]').forEach(b=>b.onclick=()=>{ const r=rem(b.dataset.rpr); if(r && !Despacho.imprimirRemito(r,gondolaFam(r.slug,r.fam))) toast('Habilitá las ventanas emergentes','bad'); });
+  document.querySelectorAll('[data-ranu]').forEach(b=>b.onclick=async()=>{ const r=rem(b.dataset.ranu); if(!r) return; if(!confirm('¿Anular el remito '+r.nro+'? Sus '+r.u+' unidades vuelven a la carga de '+nombreSuc(r.slug)+'.')) return;
+    b.disabled=true; try{ await Despacho.deshacerRemito(r); toast('Remito '+r.nro+' anulado','ok'); await cargarDespacho(); render(); }catch(e){ b.disabled=false; toast('No se pudo: '+(e.message||e),'bad'); } });
+  document.querySelectorAll('[data-rdif]').forEach(b=>b.onclick=()=>{ const r=rem(b.dataset.rdif); if(!r) return; const A=Despacho.artsDe(r.lineas), M=(r.despacho&&r.despacho.arts)||{};
+    const filas=A.map(a=>{ const m=M[String(a.cod||a.id).trim().replace(/[.#$/\[\]]/g,'~')]; return m&&m.ok===false?'<tr><td>'+esc(a.desc||a.cod)+' <span class="hint">'+esc(a.cod)+'</span></td><td>'+esc(m.motivo||'')+'</td><td>'+((m.aj||[]).map(j=>esc(j.t)+': '+j.b+' → '+j.u).join(' · ')||'—')+'</td><td class="hint">'+esc(m.por||'')+'</td></tr>':''; }).join('');
+    openModal('<h2>Diferencias del remito '+esc(r.nro)+'</h2><div class="msub">'+esc(nombreSuc(r.slug))+' · '+esc(Despacho.FAM_LBL[r.fam]||'')+'</div><div class="tbl-wrap"><table><tr><th>Artículo</th><th>Motivo</th><th>Talles</th><th>Quién</th></tr>'+filas+'</table></div><div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cerrar</button></div>'); });
+}
 function seccionHead(title,sub,actions){ return '<div class="sec-head"><div><h1>'+esc(title)+'</h1>'+(sub?'<div class="sub">'+esc(sub)+'</div>':'')+'</div>'+(actions?'<div class="row-x">'+actions+'</div>':'')+'</div>'; }
 
 /* ---- tabs + init ---- */

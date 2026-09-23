@@ -245,7 +245,8 @@
       { ic:'👷', t:'2º — Operarios', d:'Cargá los nombres del equipo del depósito. El kiosco los muestra en una lista para que el operario elija quién arma o controla cada pedido (así queda el registro de quién hizo qué).' },
       { ic:'➕', t:'3º — Crear un picking', d:'En la pestaña Pickings, «+ Crear picking»: elegís la sucursal destino y, si querés, filtrás por marca y/o rubro. El detalle sale de la última barrida, ya ordenado por zona, y le podés poner prioridad (normal, alta o urgente).' },
       { ic:'🔀', t:'Estados y prioridad', d:'Cada pick recorre: Pendiente → En preparación → Listo para control → Finalizado (o Con diferencias si faltó algo). Los urgentes aparecen arriba y destacados.' },
-      { ic:'📱', t:'La tablet (kiosco)', d:'El operario entra a «…/recepciones/control/» (sin usuario, en la tablet del depósito), elige la tarea Picking, y el sistema lo va guiando zona → producto → cantidad, validando con el escáner. Después otra persona hace el Control final. Vos seguís todo desde el Panel.' }
+      { ic:'📱', t:'La tablet (kiosco)', d:'El operario entra a «…/recepciones/control/» (sin usuario, en la tablet del depósito), elige la tarea Picking, y el sistema lo va guiando zona → producto → cantidad, validando con el escáner. Después otra persona hace el Control final, sucursal por sucursal. Vos seguís todo desde el Panel.' },
+      { ic:'🚚', t:'Despacho', d:'Al cerrar cada control, lo de cada sucursal se suma a su carga abierta, separada por rubro (calzado, indumentaria, accesorios), mezclando remitos y barridas. En la pestaña Despacho (o en la tablet) generás el remito interno cuando quieras: a las 300 unidades o con artículos de más de 48 h avisa, pero nunca se cierra solo. Ahí le anotás el Nº de transferencia del sistema, lo reimprimís con el CSV o lo anulás si todavía no salió. El que pasa mercadería controla solo ese remito en la tablet, carga cajas y ensunchados y lo marca despachado.' }
     ]}
   };
 

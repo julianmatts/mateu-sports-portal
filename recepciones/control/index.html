@@ -14,6 +14,8 @@
 <!-- Plano del depósito: mapa que resalta dónde está cada ítem durante el picking -->
 <script src="../../picking/plano-deposito.js"></script>
 <script src="../../picking/plano-mapa.js"></script>
+<!-- Cargas por sucursal → remito interno → despacho (lógica compartida con picking/) -->
+<script src="../../picking/despacho.js"></script>
 <style>
   :root{
     --navy:#0B1527;--navy-mid:#1a2f55;--red:#CC0000;--off:#f5f7fc;--card:#fff;--border:#dce3f0;
@@ -228,6 +230,7 @@ function render(){
   if(state.task==='ingreso'){ tt.textContent='Control de Ingreso'; tg.textContent='A ciegas'; return (state.view==='control')?renderControl():renderIngLista(); }
   if(state.task==='picking'){ tt.textContent='Picking'; tg.textContent=(state.view==='op'?'Preparando':'Pedidos'); return renderPickView(); }
   if(state.task==='cfinal'){ tt.textContent='Control'; tg.textContent=(state.view==='op'?'Controlando':'Pedidos'); return renderCfView(); }
+  if(state.task==='despacho'){ tt.textContent='Despacho'; tg.textContent=(state.view==='rem'?'Remito':'Cargas'); return renderDespView(); }
 }
 function renderHome(){
   $('view').innerHTML =
@@ -235,12 +238,14 @@ function renderHome(){
     + '<div class="home">'
     + '<button class="task" id="tIng"><div class="ic">📦</div><div class="t">Control de Ingreso</div><div class="d">Controlar un remito que llegó al depósito, escaneando cada unidad.</div></button>'
     + '<button class="task" id="tRep"><div class="ic">📋</div><div class="t">Picking</div><div class="d">Preparar los pedidos asignados: te guía ubicación → producto → cantidad, con scan.</div></button>'
-    + '<button class="task" id="tCf"><div class="ic">✅</div><div class="t">Control</div><div class="d">Controlar un pedido ya preparado: re-escaneás y el sistema verifica contra el picking.</div></button>'
+    + '<button class="task" id="tCf"><div class="ic">✅</div><div class="t">Control</div><div class="d">Revisar lo preparado sucursal por sucursal. Al cerrarlo, se suma a la carga de cada sucursal.</div></button>'
+    + '<button class="task" id="tDesp"><div class="ic">🚚</div><div class="t">Despacho</div><div class="d">Cargas abiertas por sucursal y rubro → generar el remito → controlarlo y prepararlo (cajas / suncho).</div></button>'
     + '</div>'
     + '<div style="text-align:center;margin-top:26px"><button class="btn btn-outline btn-sm" id="btnSalirKio">🔒 Cerrar sesión del kiosco</button></div>';
   $('tIng').onclick=()=>enterTask('ingreso');
   $('tRep').onclick=()=>enterTask('picking');
   $('tCf').onclick=()=>enterTask('cfinal');
+  $('tDesp').onclick=()=>enterTask('despacho');
   $('btnSalirKio').onclick=salirKiosco;
 }
 async function enterTask(task){
@@ -249,6 +254,7 @@ async function enterTask(task){
   try{
     if(task==='ingreso') await cargarIngreso();
     else if(task==='picking' || task==='cfinal') await cargarPicking();
+    else if(task==='despacho') await cargarDespacho();
     render();
   }catch(e){ $('view').innerHTML='<div class="state">No pude cargar. Revisá la conexión.<br><br><button class="btn btn-outline" onclick="location.reload()">↻ Reintentar</button></div>'; }
 }
@@ -915,16 +921,23 @@ function renderCfSucursales(P){
     +'<div class="pk-progbar"><span style="width:'+(slugs.length?Math.round(hechas/slugs.length*100):0)+'%"></span></div><div class="pk-progtxt">'+hechas+' / '+slugs.length+' sucursales revisadas</div></div>'
     +'<div class="sub" style="font-family:var(--font-c);color:var(--muted);margin-bottom:4px">Revisá lo que quedó en la góndola de cada sucursal contra esta lista, al momento de despachar.</div>';
   h+=slugs.map(s=>{ const c=CS[s], g=pkEnvio(s,R[s].rubro);
+    if(state.cfEdit===s) return cfDifEditor(P,s,c,g);
+    const ajTxt=(c&&c.aj||[]).map(a=>{ const it=(P.items||{})[a.i]||{}; return esc(it.desc||it.codigo||'')+' <b>'+esc(a.t)+'</b>: '+fmtInt(a.b)+' → '+fmtInt(a.u); }).join('<br>');
     return '<div class="pk-rs'+(c?(c.ok?' ok':' bad'):'')+'"><div class="pk-rs-h"><b>'+esc(nombreSuc(s))+'</b>'+(g?'<small>'+esc(g)+'</small>':'')+'<span>'+fmtInt(R[s].u)+' u.</span></div>'
       +R[s].arts.map(a=>'<div class="pk-rs-a"><span>'+esc(a.desc)+' <small>'+esc(a.codigo)+'</small></span><span class="cv">'+esc(a.curva)+'</span><b>'+fmtInt(a.u)+'</b></div>').join('')
-      +(c&&c.ok===false?'<div style="color:var(--bad);font-weight:700;margin-top:6px">✗ '+esc(c.motivo||'Con diferencia')+'</div>':'')
+      +(c&&c.ok===false?'<div style="color:var(--bad);font-weight:700;margin-top:6px">✗ '+esc(c.motivo||'Con diferencia')+(ajTxt?'<div style="font-weight:400;font-size:13px;margin-top:3px">Va a la carga corregido: '+ajTxt+'</div>':'')+'</div>':'')
       +'<div class="row-actions" style="margin-top:8px;gap:8px"><button class="btn '+(c&&c.ok?'btn-primary':'btn-outline')+'" data-cok="'+esc(s)+'">✓ Coincide</button><button class="btn btn-outline" data-cno="'+esc(s)+'">✗ Hay diferencia</button></div></div>'; }).join('');
   h+='<div class="pk-bottom" style="gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-lg" id="cfCerrarSuc"'+(hechas<slugs.length?' disabled':'')+'>'+(difs.length?'Cerrar con diferencias':'Cerrar control')+'</button></div>'
     +'<div style="text-align:center;margin-top:10px"><button class="btn btn-outline btn-xs" id="cfModoScan">Prefiero controlar escaneando</button></div></div>';
   $('view').innerHTML=h;
-  const marca=(s,v)=>{ CS[s]=v; pkSaveField(P.nro,'control_suc',CS); renderCfSucursales(P); };
+  const marca=(s,v)=>{ CS[s]=v; state.cfEdit=null; pkSaveField(P.nro,'control_suc',CS); renderCfSucursales(P); };
   document.querySelectorAll('[data-cok]').forEach(b=>b.onclick=()=>marca(b.getAttribute('data-cok'),{ok:true,por:P.controlado_por||'',ts:Date.now()}));
-  document.querySelectorAll('[data-cno]').forEach(b=>b.onclick=()=>{ const s=b.getAttribute('data-cno'); const m=prompt('¿Qué diferencia hay en '+nombreSuc(s)+'? (artículo, talle y cantidad)'); if(m==null||!m.trim()) return; marca(s,{ok:false,motivo:m.trim(),por:P.controlado_por||'',ts:Date.now()}); });
+  document.querySelectorAll('[data-cno]').forEach(b=>b.onclick=()=>{ state.cfEdit=b.getAttribute('data-cno'); renderCfSucursales(P); const el=document.querySelector('.pk-rs.edit'); if(el) el.scrollIntoView({block:'center'}); });
+  const ce=$('cfEdCancel'); if(ce) ce.onclick=()=>{ state.cfEdit=null; renderCfSucursales(P); };
+  const cg=$('cfEdOk'); if(cg) cg.onclick=()=>{ const s=state.cfEdit, m=($('cfEdMot').value||'').trim();
+    const aj=[]; document.querySelectorAll('.cf-q').forEach(i=>{ const b=num(i.getAttribute('data-b')), u=Math.max(0,Math.round(num(i.value))); if(u!==b) aj.push({i:i.getAttribute('data-i'),t:i.getAttribute('data-t'),b:b,u:u}); });
+    if(!m){ toast('Contá qué diferencia hay','bad'); $('cfEdMot').focus(); return; }
+    marca(s,{ok:false,motivo:m,aj:aj,por:P.controlado_por||'',ts:Date.now()}); };
   $('salirC').onclick=()=>{ state.view='lista'; render(); };
   $('cfModoScan').onclick=()=>{ state.cfModo='scan'; render(); };
   $('cfCerrarSuc').onclick=async()=>{ const b=$('cfCerrarSuc'); b.disabled=true;
@@ -933,6 +946,19 @@ function renderCfSucursales(P){
     P.control_modo='sucursal'; await pkSaveField(P.nro,'control_modo','sucursal');
     await cfCerrar(P, difs.length>0, difs.map(s=>nombreSuc(s)+': '+(CS[s].motivo||'')).join(' · ')); };
 }
+/* ✗ Hay diferencia (23/09/2026): en vez de un texto libre, se corrige la CANTIDAD por artículo y talle, así lo
+   que pasa a la carga de la sucursal (y al remito) es lo que realmente quedó en su góndola. */
+function cfDifEditor(P,s,c,g){
+  const prev={}; (c&&c.aj||[]).forEach(a=>{ prev[a.i+'|'+a.t]=a.u; });
+  let h='<div class="pk-rs bad edit"><div class="pk-rs-h"><b>'+esc(nombreSuc(s))+'</b>'+(g?'<small>'+esc(g)+'</small>':'')+'<span>corregí lo que hay</span></div>'
+    +'<div class="sub" style="font-family:var(--font-c);color:var(--muted);margin-bottom:6px">Poné cuántas unidades hay de verdad en la góndola. Lo que no toques queda como se preparó.</div>';
+  pkItems(P).forEach(x=>{ const r=pkRepartoItem(x.it)[s]; if(!r) return; const orden=(x.it.talles||[]).map(t=>t.t).filter(t=>r[t]>0);
+    h+='<div class="pk-rs-a" style="flex-wrap:wrap;align-items:center"><span>'+esc(x.it.desc||x.it.codigo)+' <small>'+esc(x.it.codigo)+'</small></span>'
+      +'<span style="display:flex;gap:6px;flex-wrap:wrap">'+orden.map(t=>{ const k=x.iid+'|'+t, v=(prev[k]!=null)?prev[k]:r[t];
+        return '<label style="display:flex;align-items:center;gap:4px;font-family:var(--font-c);font-weight:700">'+esc(t)+' <input class="inp cf-q" type="number" inputmode="numeric" min="0" style="width:64px;padding:6px 8px" data-i="'+esc(x.iid)+'" data-t="'+esc(t)+'" data-b="'+r[t]+'" value="'+v+'"></label>'; }).join('')+'</span></div>'; });
+  h+='<div class="opname" style="margin-top:10px"><label for="cfEdMot">Motivo</label><input class="inp" id="cfEdMot" style="flex:1;max-width:none" placeholder="Ej: falta 1 par del 40, quedó en el picking" value="'+esc(c&&c.ok===false?c.motivo||'':'')+'"></div>'
+    +'<div class="row-actions" style="margin-top:8px;gap:8px"><button class="btn btn-primary" id="cfEdOk">Guardar diferencia</button><button class="btn btn-outline" id="cfEdCancel">Cancelar</button></div></div>';
+  return h; }
 function renderCfOperativo(){
   const P=pkGet(); if(!P){ state.view='lista'; return render(); }
   if(state.cfModo!=='scan' && pkTieneDest(P)) return renderCfSucursales(P);
@@ -1029,7 +1055,117 @@ async function cfCerrar(P,conDif,motivo){
   await Promise.all(saves);
   pkEvento({event_type:'control_completed',picking_id:P.nro,operator_id:P.controlado_por,value:{con_diferencias:conDif,motivo:motivo||''}});
   if(conDif) postAviso('⚠️ Control del PICK #'+P.nro+' ('+pkTitulo(P)+') cerrado CON DIFERENCIAS — '+motivo+(P.controlado_por?(' (controló '+P.controlado_por+')'):'')+'.');
-  toast(conDif?'Cerrado con diferencias':'Control correcto — cerrado','ok'); state.view='lista'; try{ await cargarPicking(); }catch(e){} render();
+  // lo controlado pasa a la carga abierta de cada sucursal (por rubro); de ahí sale el remito (ver «DESPACHO»)
+  let enCarga=null; try{ enCarga=await Despacho.aCargas(P,{enqueue:enqueueSave}); if(enCarga&&enCarga.u) pkSaveField(P.nro,'en_carga',nowISO()); }catch(e){ enCarga=null; }
+  const nSuc=enCarga&&enCarga.u?new Set(enCarga.cargas.map(c=>c.split('/')[0])).size:0;
+  toast((conDif?'Cerrado con diferencias':'Control correcto — cerrado')+(nSuc?(' · '+fmtInt(enCarga.u)+' u. a la carga de '+nSuc+' sucursal'+(nSuc===1?'':'es')):''),'ok'); state.view='lista'; try{ await cargarPicking(); }catch(e){} render();
+}
+
+/* ============================================================ DESPACHO ======== */
+/* Cargas por sucursal → remito interno → despacho (23/09/2026, prueba de Juli con Marce). La lógica y las
+   impresiones viven en picking/despacho.js (las comparte con el módulo Picking). Acá: ver las cargas abiertas
+   (sucursal × rubro, con alerta al tope de 300 u. o con artículos de más de 48 h — nunca se cierran solas),
+   generar el remito a mano y, quien pasa la mercadería, controlar SOLO ese remito y prepararlo (cajas / suncho). */
+DATA.desp={ cargas:{}, remitos:{} };
+async function cargarDespacho(){
+  const [c,r,ope,env]=await Promise.all([ fbGet('picking/cargas'), fbGet('picking/remitos','orderBy=%22%24key%22&limitToLast=200'), fbGet('picking/operarios').catch(()=>null), fbGet('picking/envio').catch(()=>null) ]);
+  DATA.desp={ cargas:c||{}, remitos:r||{} };
+  DATA.pick.operarios=ope||DATA.pick.operarios||{}; DATA.pick.envio=env||DATA.pick.envio||{};
+  Despacho.revisarTodas(DATA.desp.cargas);
+}
+function despGondola(slug,fam){ return pkEnvio(slug, fam==='calz'?'CALZADO':'INDUMENTARIA'); }
+function despOperarios(){ return Object.keys(DATA.pick.operarios||{}).map(id=>DATA.pick.operarios[id]).filter(o=>o&&o.activo!==false).sort((a,b)=>cmp(a.nombre,b.nombre)); }
+function despYoSel(id){ const yo=state.pickYo||''; return '<select class="inp" id="'+id+'" style="max-width:280px"><option value="">Elegí tu nombre…</option>'+despOperarios().map(o=>'<option'+(o.nombre===yo?' selected':'')+'>'+esc(o.nombre)+'</option>').join('')+'</select>'; }
+function despCss(){ if($('despCss')) return; const css='.dc-bar{height:9px;background:#eef1f7;border-radius:99px;overflow:hidden;margin-top:8px}.dc-bar span{display:block;height:100%;background:var(--navy)}'
+  +'.dc-bar.warn span{background:var(--warn)}.dc-al{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.pill.warn{background:#fff4e2;color:#9a5b00}.pill.bad{background:#fdecec;color:#b00020}'
+  +'.card.dc-alerta{border-color:var(--warn);box-shadow:0 0 0 1px var(--warn) inset}.dc-sec{font-family:var(--font-c);font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:20px 0 8px}'
+  +'.dc-det{margin-top:10px;border-top:1px solid var(--border);padding-top:8px;font-size:13px}.dc-det div{display:flex;gap:8px;padding:3px 0}.dc-det span:first-child{flex:1}.dc-det .cv{font-weight:700}'
+  +'.da{background:#fff;border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-bottom:8px}.da.ok{border-color:#bbe3c9;background:#f3fbf6}.da.bad{border-color:#f4c0c0;background:#fdf5f5}'
+  +'.da-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.da-h .d{flex:1;min-width:180px}.da-h .d small{color:var(--muted);display:block;font-family:var(--font-c)}.da-h .cv{font-family:var(--font-c);font-weight:700;font-size:15px}.da-h .u{font-family:var(--font-d);font-size:24px;min-width:40px;text-align:right}'
+  +'.bultos{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:14px}.bultos label{display:block;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);margin-bottom:4px}';
+  document.head.insertAdjacentHTML('beforeend','<style id="despCss">'+css+'</style>'); }
+function renderDespView(){ despCss(); if(state.view==='rem') return renderDespRemito(); return renderDespLista(); }
+function renderDespLista(){
+  const R=Despacho.resumenes(DATA.desp.cargas), rems=vals(DATA.desp.remitos).filter(Boolean);
+  const pend=rems.filter(r=>r.estado!=='despachado').sort((a,b)=>num(a.generado_ms)-num(b.generado_ms));
+  const desp=rems.filter(r=>r.estado==='despachado'&&Despacho.esHoy(r.despacho&&r.despacho.ms));
+  let h='<div class="sec-head"><div><h2>Despacho</h2><div class="sub">Lo controlado se junta por sucursal y rubro. Generá el remito cuando quieras; a las '+Despacho.TOPE+' u. o con más de '+Despacho.HS+' h avisa, pero no lo cierra solo.</div></div>'
+    +'<div style="display:flex;gap:8px"><button class="btn btn-outline" id="reloadD">↻ Actualizar</button><button class="btn btn-outline" id="home">← Tareas</button></div></div>'
+    +'<div class="opname" style="margin-bottom:6px"><label for="yoD">¿Quién sos?</label>'+despYoSel('yoD')+'</div>';
+  h+='<div class="dc-sec">Cargas abiertas ('+R.length+')</div>';
+  if(!R.length) h+='<div class="sub" style="color:var(--muted)">No hay nada esperando remito. Cuando se cierra un control, lo de cada sucursal aparece acá.</div>';
+  else h+='<div class="grid">'+R.map(r=>{ const k=r.slug+'|'+r.fam, al=r.tope||r.alerta48, g=despGondola(r.slug,r.fam), ver=state.despVer===k;
+    let det=''; if(ver){ const L=((DATA.desp.cargas[r.slug]||{})[r.fam]||{}).lineas||{}; det='<div class="dc-det">'+Despacho.artsDe(vals(L).filter(l=>l&&num(l.u)>0)).map(a=>'<div><span>'+esc(a.desc||a.cod)+' <small style="color:var(--muted)">'+esc(a.cod)+'</small></span><span class="cv">'+esc(Despacho.curvaTxt(a.t))+'</span><b>'+a.u+'</b></div>').join('')+'</div>'; }
+    return '<div class="card'+(al?' dc-alerta':'')+'" style="cursor:default"><div class="nro">'+esc(nombreSuc(r.slug))+'</div><div class="sub" style="color:var(--navy);font-weight:700">'+esc(Despacho.FAM_LBL[r.fam])+(g?' · '+esc(g):'')+'</div>'
+      +'<div class="sub">'+Despacho.pl(r.arts,'artículo')+' · '+Despacho.pl(r.picks.length,'tarea')+' · desde hace '+Despacho.horas(r.desde)+'</div>'
+      +'<div class="dc-bar'+(r.tope?' warn':'')+'"><span style="width:'+Math.min(100,Math.round(r.u/Despacho.TOPE*100))+'%"></span></div>'
+      +'<div class="foot" style="margin-top:8px"><span class="sub">tope '+Despacho.TOPE+' u.</span><div class="n">'+fmtInt(r.u)+'<small>unidades</small></div></div>'
+      +((r.tope||r.alerta48)?'<div class="dc-al">'+(r.tope?'<span class="pill warn">⚠ llegó al tope</span>':'')+(r.alerta48?'<span class="pill bad">⏱ '+r.viejas+' u. hace +'+Despacho.HS+' h</span>':'')+'</div>':'')
+      +det+'<div class="row-actions" style="margin-top:10px;gap:8px"><button class="btn btn-outline" data-dver="'+esc(k)+'">'+(ver?'Ocultar':'Ver')+'</button><button class="btn btn-primary" data-dgen="'+esc(k)+'">Generar remito</button></div></div>'; }).join('')+'</div>';
+  h+='<div class="dc-sec">Remitos para despachar ('+pend.length+')</div>';
+  h+=pend.length?'<div class="grid">'+pend.map(r=>{ const mk=Object.keys((r.marcas)||{}).length;
+      return '<div class="card" data-drem="'+esc(r.nro)+'"><div class="nro">'+esc(r.nro)+'</div><div class="sub" style="color:var(--navy);font-weight:700">'+esc(nombreSuc(r.slug))+' · '+esc(Despacho.FAM_LBL[r.fam]||'')+'</div>'
+        +'<div class="sub">Generado '+esc(Despacho.fecha(r.generado_ms))+(r.generado_por?(' · '+esc(r.generado_por)):'')+(r.nro_sistema?(' · Sist. '+esc(r.nro_sistema)):'')+'</div>'
+        +'<div class="foot"><span class="pill info">'+(mk?(mk+'/'+num(r.arts)+' revisados'):'Para despachar')+'</span><div class="n">'+fmtInt(r.u)+'<small>unidades</small></div></div></div>'; }).join('')+'</div>'
+    :'<div class="sub" style="color:var(--muted)">No hay remitos esperando.</div>';
+  if(desp.length) h+='<div class="dc-sec">Despachados hoy ('+desp.length+')</div><div class="oplist">'+desp.map(r=>'<div class="pk-rs-a" style="display:flex;gap:8px;padding:6px 0"><span style="flex:1"><b>'+esc(r.nro)+'</b> · '+esc(nombreSuc(r.slug))+' · '+esc(Despacho.FAM_LBL[r.fam]||'')+(r.despacho&&r.despacho.dif?' · <b style="color:var(--bad)">con diferencias</b>':'')+'</span><span>'+Despacho.pl(num(r.despacho&&r.despacho.cajas),'caja')+' · '+Despacho.pl(num(r.despacho&&r.despacho.sunchos),'ensunchado')+'</span><b>'+fmtInt(r.u)+' u.</b></div>').join('')+'</div>';
+  $('view').innerHTML=h;
+  const yo=$('yoD'); if(yo) yo.onchange=()=>{ state.pickYo=yo.value; };
+  $('home').onclick=backHome;
+  $('reloadD').onclick=async()=>{ const b=$('reloadD'); b.disabled=true; try{ await cargarDespacho(); render(); toast('Actualizado','ok'); }catch(e){ b.disabled=false; toast('No pude actualizar','bad'); } };
+  document.querySelectorAll('[data-dver]').forEach(b=>b.onclick=()=>{ const k=b.getAttribute('data-dver'); state.despVer=(state.despVer===k?null:k); render(); });
+  document.querySelectorAll('[data-dgen]').forEach(b=>b.onclick=async()=>{ const [slug,fam]=b.getAttribute('data-dgen').split('|'); const por=state.pickYo||'';
+    if(!por){ toast('Elegí tu nombre arriba','bad'); const s=$('yoD'); if(s) s.focus(); return; }
+    const r=R.find(x=>x.slug===slug&&x.fam===fam); if(!confirm('¿Generar el remito de '+nombreSuc(slug)+' · '+Despacho.FAM_LBL[fam]+' con '+(r?r.u:0)+' unidades? La carga queda vacía y lo que se controle después arranca una nueva.')) return;
+    b.disabled=true; try{ const doc=await Despacho.generarRemito(slug,fam,por); toast('Remito '+doc.nro+' generado','ok'); await cargarDespacho(); state.remNro=doc.nro; state.view='rem'; render(); }
+    catch(e){ b.disabled=false; toast('No se pudo: '+(e.message||e),'bad'); } });
+  document.querySelectorAll('[data-drem]').forEach(c=>c.onclick=()=>{ state.remNro=c.getAttribute('data-drem'); state.view='rem'; render(); });
+}
+function despRem(){ return DATA.desp.remitos[pkK(state.remNro)]||null; }
+function renderDespRemito(){
+  const D=despRem(); if(!D){ state.view='lista'; return render(); }
+  const M=D.marcas||(D.marcas={}), arts=Despacho.artsDe(D.lineas), g=despGondola(D.slug,D.fam), hechos=arts.filter(a=>M[evKey(a.cod||a.id)]).length;
+  let h='<div class="sec-head"><div><h2>Remito '+esc(D.nro)+'</h2><div class="sub">'+esc(nombreSuc(D.slug))+' · '+esc(Despacho.FAM_LBL[D.fam]||'')+(g?' · góndola '+esc(g):'')+' · '+fmtInt(D.u)+' u.</div></div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-outline" id="printR">🖨 Remito</button><button class="btn btn-outline" id="backD">← Volver</button></div></div>'
+    +'<div class="blind">Controlá solo lo de este remito: artículo por artículo, <b>✓ Está</b> o <b>✗ Falta / sobra</b> con la cantidad real. Después cargá los bultos y marcá «Despachado».</div>'
+    +'<div class="opname" style="margin:0 0 12px"><label for="yoR">Despacha</label>'+despYoSel('yoR')+'<span class="sub" style="margin-left:auto;font-family:var(--font-c);color:var(--muted)">'+hechos+' / '+arts.length+' revisados</span></div>';
+  h+=arts.map(a=>{ const ck=evKey(a.cod||a.id), m=M[ck], ed=state.despEd===ck, orden=Object.keys(a.t).sort(Despacho.ordT);
+    let x='<div class="da'+(m?(m.ok?' ok':' bad'):'')+'"><div class="da-h"><div class="d">'+esc(a.desc||a.cod)+'<small>'+esc(a.cod)+(a.marca?' · '+esc(a.marca):'')+'</small></div><span class="cv">'+esc(Despacho.curvaTxt(a.t))+'</span><span class="u">'+a.u+'</span>'
+      +'<button class="btn '+(m&&m.ok?'btn-primary':'btn-outline')+'" data-rok="'+esc(ck)+'">✓ Está</button><button class="btn btn-outline" data-rno="'+esc(ck)+'">✗ Falta / sobra</button></div>';
+    if(m&&m.ok===false&&!ed) x+='<div style="color:var(--bad);font-weight:700;margin-top:6px">✗ '+esc(m.motivo||'')+((m.aj||[]).length?' — '+m.aj.map(j=>esc(j.t)+': '+j.b+' → '+j.u).join(' · '):'')+'</div>';
+    if(ed){ const prev={}; ((m&&m.aj)||[]).forEach(j=>{ prev[j.t]=j.u; });
+      x+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'+orden.map(t=>'<label style="display:flex;align-items:center;gap:4px;font-family:var(--font-c);font-weight:700">'+esc(t)+' <input class="inp da-q" type="number" inputmode="numeric" min="0" style="width:64px;padding:6px 8px" data-t="'+esc(t)+'" data-b="'+a.t[t]+'" value="'+(prev[t]!=null?prev[t]:a.t[t])+'"></label>').join('')+'</div>'
+        +'<div class="opname" style="margin-top:8px"><label for="daMot">Motivo</label><input class="inp" id="daMot" style="flex:1;max-width:none" placeholder="Ej: faltó 1 del 40" value="'+esc(m&&m.motivo||'')+'"></div>'
+        +'<div class="row-actions" style="margin-top:8px;gap:8px"><button class="btn btn-primary" id="daOk" data-ck="'+esc(ck)+'">Guardar</button><button class="btn btn-outline" id="daCancel">Cancelar</button></div>'; }
+    return x+'</div>'; }).join('');
+  const b=D.bultos||{};
+  h+='<div class="bultos"><div><label for="bCaj">Cajas</label><input class="inp" id="bCaj" type="number" inputmode="numeric" min="0" style="width:90px" value="'+num(b.cajas)+'"></div>'
+    +'<div><label for="bSun">Ensunchados</label><input class="inp" id="bSun" type="number" inputmode="numeric" min="0" style="width:90px" value="'+num(b.sunchos)+'"></div>'
+    +'<div style="flex:1;min-width:200px"><label for="bNota">Nota</label><input class="inp" id="bNota" style="width:100%" value="'+esc(b.nota||'')+'" placeholder="Opcional"></div>'
+    +'<button class="btn btn-outline" id="bEtq">🏷 Etiquetas de bulto</button></div>'
+    +'<div class="row-actions" style="justify-content:flex-end"><button class="btn btn-outline" id="volverRem">Seguir después</button><button class="btn btn-primary btn-lg" id="despOk">✓ Despachado</button></div>';
+  $('view').innerHTML=h;
+  const guardarMarca=(ck,v)=>{ if(v) M[ck]=v; else delete M[ck]; state.despEd=null; enqueueSave('picking/remitos/'+pkK(D.nro)+'/marcas/'+ck, v||null); renderDespRemito(); };
+  const guardarBultos=()=>{ D.bultos={cajas:Math.max(0,Math.round(num($('bCaj').value))), sunchos:Math.max(0,Math.round(num($('bSun').value))), nota:($('bNota').value||'').trim()}; enqueueSave('picking/remitos/'+pkK(D.nro)+'/bultos', D.bultos); };
+  ['bCaj','bSun','bNota'].forEach(id=>{ $(id).onchange=guardarBultos; });
+  const yo=$('yoR'); if(yo) yo.onchange=()=>{ state.pickYo=yo.value; };
+  $('backD').onclick=$('volverRem').onclick=()=>{ state.view='lista'; state.despEd=null; render(); };
+  $('printR').onclick=()=>{ if(!Despacho.imprimirRemito(D,g)) toast('Habilitá las ventanas emergentes','bad'); };
+  $('bEtq').onclick=()=>{ guardarBultos(); const n=num(D.bultos.cajas)+num(D.bultos.sunchos); if(!n){ toast('Poné cuántas cajas o ensunchados son','bad'); return; } if(!Despacho.imprimirEtiquetas(D,n)) toast('Habilitá las ventanas emergentes','bad'); };
+  document.querySelectorAll('[data-rok]').forEach(x=>x.onclick=()=>{ const ck=x.getAttribute('data-rok'); guardarMarca(ck,{ok:true,por:state.pickYo||'',ts:Date.now()}); });
+  document.querySelectorAll('[data-rno]').forEach(x=>x.onclick=()=>{ state.despEd=x.getAttribute('data-rno'); renderDespRemito(); const i=document.querySelector('.da-q'); if(i) i.focus(); });
+  if($('daCancel')) $('daCancel').onclick=()=>{ state.despEd=null; renderDespRemito(); };
+  if($('daOk')) $('daOk').onclick=()=>{ const ck=$('daOk').getAttribute('data-ck'), mot=($('daMot').value||'').trim(), aj=[];
+    document.querySelectorAll('.da-q').forEach(i=>{ const bb=num(i.getAttribute('data-b')), u=Math.max(0,Math.round(num(i.value))); if(u!==bb) aj.push({t:i.getAttribute('data-t'),b:bb,u:u}); });
+    if(!mot){ toast('Contá qué pasó','bad'); $('daMot').focus(); return; }
+    guardarMarca(ck,{ok:false,motivo:mot,aj:aj,por:state.pickYo||'',ts:Date.now()}); };
+  $('despOk').onclick=async()=>{ guardarBultos(); const por=state.pickYo||'';
+    if(!por){ toast('Elegí quién despacha','bad'); $('yoR').focus(); return; }
+    const falta=arts.filter(a=>!M[evKey(a.cod||a.id)]).length; if(falta){ toast('Faltan revisar '+falta+' artículo'+(falta===1?'':'s'),'bad'); return; }
+    if(!(num(D.bultos.cajas)+num(D.bultos.sunchos))){ toast('Poné cuántas cajas o ensunchados son','bad'); $('bCaj').focus(); return; }
+    const bt=$('despOk'); bt.disabled=true;
+    try{ await Despacho.despachar(D,{por:por,cajas:D.bultos.cajas,sunchos:D.bultos.sunchos,nota:D.bultos.nota,arts:M}); toast('Remito '+D.nro+' despachado','ok'); state.view='lista'; await cargarDespacho(); render(); }
+    catch(e){ bt.disabled=false; toast('No se pudo guardar. Revisá la conexión.','bad'); } };
 }
 
 /* ============================================================ TUTORIAL ======== */
@@ -1042,7 +1178,8 @@ function kioTutorial(){
     {ic:'🔫',t:'El escáner',d:'Con la lectora: apuntás y disparás. El cursor queda solo en el campo, no toques nada. Verde + beep = correcto; rojo = incorrecto. Sin lectora, tocá «📷 Cámara» y apuntá la tablet a la etiqueta. Cada unidad se confirma leyendo su etiqueta: si es una etiqueta nueva te pregunta una sola vez si es ese artículo y talle. Si de verdad no se puede leer, «No puedo escanearla» pide el motivo y queda registrado.'},
     {ic:'📦',t:'Control de Ingreso',d:'Cuando llega un remito: lo elegís de la lista y escaneás cada unidad a ciegas (no ves las cantidades esperadas, para no redondear). Al terminar tocás «Terminé» y el encargado hace la conciliación.'},
     {ic:'📋',t:'Picking',d:'Elegís un pedido y tu nombre, y tocás «Iniciar». La pantalla te va guiando: la ZONA a la que ir, el producto, el talle y cuántas retirar. Escaneás cada unidad. Si no encontrás stock, tocás «No encuentro stock». Al final, «Enviar a control».'},
-    {ic:'✅',t:'Control',d:'Controlás un pedido que ya se preparó (mejor si lo armó otra persona): re-escaneás todo y el sistema verifica contra lo que se preparó. Si hay diferencias, ponés el motivo para poder cerrar.'}
+    {ic:'✅',t:'Control',d:'Revisás un pedido ya preparado (mejor si lo armó otra persona), sucursal por sucursal contra su góndola. Si algo no coincide, «✗ Hay diferencia» y corregís la cantidad. Al cerrar, lo de cada sucursal se suma a su carga.'},
+    {ic:'🚚',t:'Despacho',d:'Cada sucursal junta una carga por rubro con todo lo controlado (varios remitos y barridas mezclados). Cuando conviene, tocás «Generar remito»: a las 300 unidades o con artículos de más de 48 h avisa, pero no se cierra solo. El que pasa mercadería abre ese remito, marca cada artículo, carga las cajas o ensunchados y toca «Despachado».'}
   ];
   var VISTO='mtu_visto_kiosco';
   var css='.ktut-fab{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));width:46px;height:46px;border-radius:50%;background:var(--navy);color:#fff;border:2px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,.28);font-family:var(--font-d);font-size:24px;cursor:pointer;z-index:70;line-height:1}'

@@ -2272,6 +2272,24 @@ sucursal**: un remito trae artículos que van a una u otra sucursal.
   re-escaneo queda como link «Prefiero controlar escaneando» (`state.cfModo='scan'`) y para los picks viejos sin `dest`.
   (3) El cartel «Etiqueta nueva» muestra el código como está impreso: un UPC de 12 dígitos se GUARDA como EAN-13 con un 0
   adelante (`gtin13`, igual que el Buscador), pero ya no se muestra con ese 0.
+- **Cargas por sucursal → remito interno → despacho (23/09/2026, prueba de Juli con Marce: «el segundo control no
+  aporta si termina ahí»)** — lógica e impresiones en **`picking/despacho.js`** (`window.Despacho`, lo cargan la tablet y
+  `picking/`). Al cerrar el control de una tarea (`cfCerrar`, los dos modos), lo de cada sucursal se suma a su **carga
+  abierta separada por rubro** (`famDe`: calz · ind · acc) en `picking/cargas/<slug>/<fam>/lineas/<pick>_<iid>_<talle>`
+  (idempotente). Así se juntan remitos del Reparto y barridas mezclados. **«✗ Hay diferencia» del control por sucursal
+  ahora corrige la CANTIDAD** por artículo×talle (`cfDifEditor` → `control_suc[s].aj=[{i,t,b,u}]` + motivo) y eso es lo
+  que entra a la carga (`repartoDePick`). **El remito se genera SIEMPRE a mano** (Juli; lo puede generar cualquiera,
+  desde la tablet o desde Picking → Despacho): número interno correlativo `R-00001` (`picking/remitoSeq` con
+  `{".sv":{"increment":1}}`, atómico) → `picking/remitos/<nro>`; la carga se vacía solo de lo que entró. **Alertas, no
+  cierre**: al llegar a `TOPE` (300 u.) o con unidades de más de `HS` (48 h) en la carga, aviso a la campana UNA vez
+  (`aviso300`/`aviso48` en la carga, se borran al generar el remito) + resaltado en las dos pantallas. **Despacho** (tablet
+  → tarjeta «🚚 Despacho»): quien pasa mercadería abre el remito, marca cada artículo ✓ Está / ✗ Falta-sobra con la
+  cantidad real (`marcas/<cod>`), carga cajas y ensunchados (`bultos`), imprime etiquetas de bulto («Bulto 1/3») y
+  «Despachado» (`despacho={por,ms,cajas,sunchos,arts,dif}`; con diferencias avisa a la campana). En **Picking → Despacho**
+  (badge con alertas y pendientes): cargas abiertas (Ver / Generar remito), remitos para despachar / despachados, **Nº de
+  transferencia del sistema** anotado aparte (`nro_sistema`; cómo integrarlo al sistema sin afectar otros movimientos
+  quedó sin definir), 🖨 remito + CSV para el sistema (con las cantidades que realmente salieron) y ↩ Anular (solo sin
+  despachar: las líneas vuelven a la carga). Probado 23/09 con una base simulada en el navegador, sin la tablet real.
 - **Pendiente**: probar cámara y lector en la tablet real; validar el packing digital con un archivo de
   la marca; publicar al mapa del Buscador las etiquetas aprendidas que confirme el control final; hoja
   de apertura de cajas; otras marcas en el Ingreso (hoy solo Adidas).
