@@ -13,6 +13,10 @@ Indicadores del Portal (vistas «Panel General» y «Mi Sucursal»).
 El contrato general de la migración (otros módulos, para más adelante) está en
 `docs/API-CONTRATO-MYSQL.md`. Esta fase no depende de él.
 
+> **23/09/2026 — validación de la primera entrega:** ver `API-VENTAS-VALIDACION-2026-09-23.md`.
+> Cambió el §4 (criterio EXACTO, importe neto, signo de las Nc, omnicanalidad) y el §2 suma la
+> opción de proxy en el Portal en vez de CORS.
+
 ---
 
 ## 1. Qué reemplaza
@@ -47,7 +51,7 @@ gente **siguen en Firebase**. Esta API solo trae la VENTA.
 | Tema | Requisito |
 |---|---|
 | **Protocolo** | HTTPS obligatorio (el Portal es HTTPS; HTTP lo bloquea el navegador). |
-| **CORS** | `Access-Control-Allow-Origin` con el dominio del Portal (Cloudflare Pages + dominio propio si lo hay). Manejar el preflight `OPTIONS`. |
+| **CORS** | `Access-Control-Allow-Origin` con el dominio del Portal (Cloudflare Pages + dominio propio si lo hay). Manejar el preflight `OPTIONS` (los headers también en la respuesta 204). **Alternativa preferida (23/09/2026):** el Portal llama a la API desde una Pages Function (`/api/ventas/…`) con la key en un Secret de Cloudflare; ahí no hace falta CORS y la key nunca llega al navegador ni al repo, que es público. |
 | **Rutas** | Prefijo `/v1/` desde el día uno. |
 | **Formato** | `Content-Type: application/json; charset=utf-8`. Números como number, no string. Fechas `YYYY-MM-DD`. |
 | **Errores** | HTTP status correcto + `{ "error": "mensaje" }`. Semana/rango válido pero sin ventas → **200 con estructura vacía**, NO 404. Fecha malformada o que no es lunes → 400. |
@@ -80,37 +84,43 @@ gente **siguen en Firebase**. Esta API solo trae la VENTA.
 
 ---
 
-## 4. Criterios por línea y agregación (el corazón — OBLIGATORIO)
+## 4. Criterios de agregación (el corazón — OBLIGATORIO) — **reescrito el 23/09/2026**
 
-Cada línea de venta trae al menos: fecha, sucursal, vendedor, nº de comprobante,
-artículo, rubro, cantidad, importe. Antes de sumar, cada línea aporta
-`(cantidad, importe)` según su **rubro** (en MAYÚSCULAS, sin el prefijo `NN-`:
-«01-VARIOS» y «VARIOS» son lo mismo) y su **artículo**:
+> ⚠️ **Cambio de criterio.** La versión de agosto de este documento pedía descartar rubros
+> (Otros, Redondeo, cupones…) y atribuir el comprobante entero al vendedor de la línea más
+> grande. Desde el **17/09/2026 el Portal es EXACTO al sistema** (decisión de Juli): la venta que
+> ve el encargado en Mi Sucursal tiene que ser la misma que le da el sistema, línea por línea.
+> La API entregada el 23/09 aplica todavía el criterio viejo: hay que pasarla a este.
 
-| Rubro | Regla |
-|---|---|
-| `OTROS` | no suma nada |
-| `VARIOS` | artículo `REDONDEO` → nada; el resto → cantidad + importe |
-| `CONCEPTOS` | artículo que empieza con `CREDITO A FAVOR` → cantidad + importe; que empieza con `INGRESO CUPON` o contiene `LLAVERO COMPRA GRANDE` → nada; que empieza con `CONCEPTOS VARIOS` → nada; **el resto (promos/descuentos, envío) → solo importe** |
-| todo lo demás | cantidad + importe |
+Cada línea de venta trae: fecha, hora, sucursal, vendedor, nº de comprobante, artículo, rubro,
+cantidad e **importe neto** (ver abajo). Reglas:
 
-Comparaciones de artículo en MAYÚSCULAS y sin acentos.
+1. **Ninguna línea se descarta.** Todas suman cantidad e importe tal cual, con su signo:
+   rubro Otros, Varios (gift cards, redondeo), Conceptos (promos, cupones, crédito a favor,
+   envío), todo. Las líneas de promo con cantidad −1 e importe negativo restan.
+2. **Importe = el neto por línea, con el descuento de promoción ya aplicado**, que es el que
+   muestra la «Estadística de venta» del sistema (p.ej. 98.999,10 y no 109.999 en una remera
+   con 10 % off). Si la base guarda el bruto y el descuento aparte, aplicarlo antes de sumar.
+3. **Notas de crédito** (nº que empieza con `Nc`): **todas sus líneas van negativas** (artículo
+   y promos), exactamente como las exporta el sistema. En `/lineas` también.
+4. **Cada línea va a SU vendedor**: la venta, las unidades, el día y el rubro de una línea se
+   atribuyen al vendedor que figura en esa línea, no al de la línea más grande del comprobante.
+   Vendedor vacío → `"SIN ASIGNAR"`.
+5. **Ticket** = comprobante que **no** es Nc, **tenga o no unidades** (gift cards, señas y
+   entregas a cuenta cuentan). Por vendedor: suma 1 por cada comprobante en el que tiene al
+   menos una línea (un ticket compartido le cuenta a cada uno). En el `total` de la sucursal:
+   **comprobantes distintos** (NO la suma de los vendedores).
+6. **Omnicanalidad**: las líneas de los vendedores **WEB MATEU** y **WEB AURELIUS** en una
+   sucursal que no es Ecommerce (99) **se reasignan a `ecommerce`** (venta, unidades y ticket),
+   con su vendedor. En Ecommerce son vendedores reales y quedan.
+7. El día de cada línea es el de la fecha de su comprobante. Rubros crudos, en MAYÚSCULAS y sin
+   el prefijo `NN-` («01-VARIOS» → «VARIOS»).
+8. Líneas anuladas y recargadas (pares −1/+1, artículo con prefijo `%%%`): en `/lineas` pueden
+   venir tal cual (netean a cero); en los endpoints de semana no cambian nada.
 
-**Agregación por comprobante** (clave `sucursal + nº de comprobante`, atómico —
-nunca partir un comprobante):
-
-- `venta` / `unidades` del comprobante = Σ de sus líneas según la tabla. Los
-  importes negativos (notas de crédito, devoluciones) **restan tal cual**: no
-  forzar a 0, no tomar valor absoluto.
-- **Ticket** = comprobante que **NO** es nota de crédito (nº que empieza con `Nc`)
-  y con cantidad > 0.
-- **Vendedor del comprobante** = el de la línea de mayor `|importe|`; vacío →
-  `"SIN ASIGNAR"`. El comprobante entero se atribuye a ese vendedor y al día de
-  su fecha.
-- Importe por rubro del comprobante: sumar el importe de cada línea que cuenta
-  importe, bajo su rubro (sin prefijo `NN-`).
-
----
+Referencia de implementación: `veAgregarSemana` en `indicadores/index.html` (`VE_EXACTO`) y
+`scripts/validar-api-ventas.mjs` (subcomando `lineas`), que recalcula una semana desde
+`/v1/ventas/lineas` con estas reglas.
 
 ## 5. Etapa 1A — Venta de la semana (en vivo)
 
