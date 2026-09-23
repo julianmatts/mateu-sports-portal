@@ -237,6 +237,15 @@ td.talles .tw{display:flex;flex-wrap:wrap;align-items:flex-start;max-width:560px
 .tgx.amp{border-color:#b6e0e5}                       /* abrir a más sucursales: curva de arranque a una sucursal que no lo tiene */
 .tgx.amp .txl{background:#dff3f5;color:#0e7490;border-bottom-color:#b6e0e5}
 .tgx.amp .txn{color:#0e7490}
+/* edición a mano (ámbar): casillero editado, casillero en edición y la barra de botones */
+.tgx.edit{border-color:#e8c46a} .tgx.edit .txl{background:#fff4d6;color:#8a5a00;border-bottom-color:#e8c46a} .tgx.edit .txn{color:#8a5a00}
+.tgx.bed{border-color:#e8c46a;background:#fffaf0;cursor:text}
+.tgx.bed .binp{width:46px;border:0;border-bottom:1px dashed #e8c46a;text-align:center;font-family:var(--font-b);font-size:15px;font-weight:800;color:#8a5a00;background:transparent;padding:2px 0;outline:none;-moz-appearance:textfield}
+.tgx.bed .binp::-webkit-inner-spin-button,.tgx.bed .binp::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.tgx.bed .binp:focus{border-bottom-style:solid;background:#fff}
+.bedbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;width:100%;margin-top:6px;padding-top:6px;border-top:1px dashed #e8c46a;font-size:12px}
+.pill.mano{background:#fff4d6;color:#8a5a00} .c-mano b{color:#8a5a00}
+.bedit{opacity:.4;font-size:13px;align-self:center;margin-left:2px;text-decoration:none} tr:hover .bedit,.bedit:focus{opacity:1}
 .tgx.corto{border-color:#f0d67a}                      /* se manda, pero menos de lo pedido (la reserva no alcanzó): amarillo */
 .tgx.corto .txl{background:#fef6c3;color:#854d0e;border-bottom-color:#f0d67a}
 .tgx.corto .txn,.tgx.corto .txr{color:#a16207}
@@ -827,6 +836,7 @@ const state = {
   files:{ ventas:null, reserva:null, stock:null },   // {archivo, hoja, matrix, headerIdx, cols, talles}; stock = opcional
   stockSem:null,                         // stock por sucursal GUARDADO para la semana elegida: {semana, meta, data|null}
   resultado:null,                        // salida de computar()
+  manualBar:{}, manualBase:{}, editBar:null,   // edición a mano de la Barrida: {'<id>|<slug>': {talle: u}}, lo automático al abrir y la fila en edición
   semana: lunesDe(new Date()),           // lunes de la barrida
   histKeys:[],                           // lunes con barrida guardada
   // curva = tilde «Completar curva de talles» de Reposición: fusiona en cada fila los talles
@@ -1933,7 +1943,9 @@ function computar(histPrev, histSnaps){
   // "notable" = mejor vendido (>=3 u. en la semana), mismo umbral que el filtro por defecto de la vista Compras.
   const notable = c => c.vendido>=3 && noVarios(c);
   return {
-    reposicion, parada, compras, curva, vaciado, ampBase, ampliar:[], vacDejados:{}, vacArts:{}, curvaTalles, conStock:!!sRows, stockOrigen: fS ? 'archivo' : (sRows ? 'base' : ''), snapshot, segmentos, paredes, fueraFicha,
+    reposicion, parada, compras, curva, vaciado, ampBase, ampliar:[], vacDejados:{}, vacArts:{}, curvaTalles, conStock:!!sRows,
+    // reserva repartible por artículo × talle (ya sin lo nuevo retenido): es el tope de la edición a mano
+    reservaT:(function(){ const o={}; Object.entries(reserva).forEach(([id,R])=>{ o[id]=Object.assign({}, R.talles); }); return o; })(), stockOrigen: fS ? 'archivo' : (sRows ? 'base' : ''), snapshot, segmentos, paredes, fueraFicha,
     conDias, resDup, diasNuevo:N, nuevos:{ unidades:nuevosU, articulos:nuevosArts },
     tope:{ tope:TOPE, unidades:topeU, talles:topeTalles },
     totales:{
@@ -2219,17 +2231,20 @@ function viewReposicion(){
     +(ampN ? '<br>Con <b>Abrir a más sucursales</b> se suman casilleros turquesa: <span class="tgx amp"><span class="txl">41</span><span class="txn">+2</span><span class="txr">abrir</span></span> = el artículo lleva '+Math.max(1,f.diasNuevo|0)+' días o más en el depósito y, después de la venta, la curva y el vaciado, sigue sobrando: se le arma una <b>curva de arranque</b> (2 en los talles centrales, 1 en el resto, nunca una curva rota) a una sucursal que <b>no lo tiene</b> y tiene la marca asignada, en el mismo orden que el Reparto inicial. Las filas <span class="pill amp">sucursal nueva</span> son esas sucursales. Los outlets entran desde los '+state.filtrosAmp.outletDias+' días; Aurelius y los locales Adidas, nunca.' : '')
     +((f.topeCalzado|0)>0 && R.conStock ? '<br><b>Tope de calzado</b>: con lo que se le manda, ninguna sucursal pasa de <b>'+(f.topeCalzado|0)+' unidades por talle</b>, aunque haya vendido más. <span class="tgx"><span class="txl">41</span><span class="txn">1</span><span class="txr">de 13 · tiene 2</span></span> = vendió más, pero ya tiene 2: va 1. Con «Ver los talles que no hay» se ven también los que no van porque ya tienen el tope (<span class="tgx off"><span class="txl">42</span><span class="txn">—</span><span class="txr">tiene 3</span></span>).' : '')
     +'</div></details>';
-  const nFalta = rows.filter(faltaEn).length;
+  const nFalta = rows.filter(r=>!r.editado && faltaEn(r)).length;
+  const nMano = rows.filter(r=>r.editado).length, uMano = rows.reduce((a,r)=>a+(r.editado?r.sugerido:0),0);
   const queda = restantePorArt();                       // por artículo: lo que sobra en el depósito
   const artVacios = new Set(rows.filter(r=>queda[r.id]===0).map(r=>r.id)).size;
   const uCurva = rows.reduce((a,r)=>a+(r.curvaU||0),0), uVac = rows.reduce((a,r)=>a+(r.vacU||0),0), uAmp = rows.reduce((a,r)=>a+(r.ampU||0),0);
   const uTot = rows.reduce((a,r)=>a+r.sugerido,0);
-  const desg=[]; if(uCurva||uVac||uAmp){ desg.push('<b>'+fmtInt(uTot-uCurva-uVac-uAmp)+'</b> por venta');
+  const desg=[]; if(uCurva||uVac||uAmp||uMano){ desg.push('<b>'+fmtInt(uTot-uCurva-uVac-uAmp-uMano)+'</b> por venta');
+    if(uMano) desg.push('<span class="c-mano"><b>'+fmtInt(uMano)+'</b> a mano</span>');
     if(uCurva) desg.push('<span class="c-curva"><b>'+fmtInt(uCurva)+'</b> curva</span>');
     if(uVac) desg.push('<span class="c-vac"><b>'+fmtInt(uVac)+'</b> vaciado</span>');
     if(uAmp) desg.push('<span class="c-amp"><b>'+fmtInt(uAmp)+'</b> a otras sucursales</span>'); }
   html+='<div class="resu"><span><b>'+fmtInt(rows.length)+'</b> líneas</span>'
-    +'<span><b>'+fmtInt(uTot)+'</b> unidades a bajar'+(desg.length?' <small>('+desg.join(' · ')+')</small>':'')+'</span>'
+    +'<span><b data-butot>'+fmtInt(uTot)+'</b> unidades a bajar'+(desg.length?' <small>('+desg.join(' · ')+')</small>':'')+'</span>'
+    +(nMano?'<span class="c-mano" title="Líneas con las cantidades ajustadas a mano: se guardan y se exportan así"><b>'+fmtInt(nMano)+'</b> ajustada'+(nMano>1?'s':'')+' a mano · <button type="button" class="lnk" data-bed="resetall">descartar</button></span>':'')
     +(nFalta?'<button type="button" class="c-falta lnkr" id="verFaltaBtn" title="'+(verRojos?'Ocultar los talles que no se pueden reponer':'Ver en rojo los talles que la sucursal vendió y el depósito no puede reponer')+'"><b>'+fmtInt(nFalta)+'</b> con faltante de talle: la reserva no alcanza '+(verRojos?'▴':'▾')+'</button>':'')
     +(artVacios?'<span class="c-cero"><b>'+fmtInt(artVacios)+'</b> artículos salen enteros del depósito</span>':'')
     +((R.diasNuevo && R.nuevos && R.nuevos.unidades)?'<span class="c-nuevo" title="Talles con una compra de hace menos de '+R.diasNuevo+' días: no se reparten en la barrida (van por el Reparto inicial). Con «Ver los talles que no hay» se ven en ámbar en cada fila."><b>'+fmtInt(R.nuevos.unidades)+'</b> u. nuevas sin repartir <small>('+fmtInt(R.nuevos.articulos)+' artículos · menos de '+R.diasNuevo+' días)</small></span>':'')
@@ -2246,7 +2261,7 @@ function viewReposicion(){
     +thNum('Prioridad','prio')+thNum('Vendido','vendido')+thNum('Stock reserva','reservaTotal')+thNum('A reponer','sugerido')+'<th class="num noord" title="Lo que queda de este artículo en el depósito después de repartirlo entre todas las sucursales">Queda</th>'+(state.transf?'<th class="num noord" title="Unidades que el sistema registra como transferidas del depósito a esa sucursal">Enviado</th>':'')+'<th class="noord">Talles · cuántas unidades van de cada uno</th>'
     +'</tr></thead><tbody>';
   rows.forEach(r=>{
-    const falta=faltaEn(r);
+    const falta=!r.editado && faltaEn(r);
     const piso=r.pisoMedias;
     // Para armar la barrida solo importan los talles que bajan: los que quedan en cero
     // (el depósito no los tiene, o se los llevó otra sucursal) se ocultan salvo que se pidan.
@@ -2260,6 +2275,8 @@ function viewReposicion(){
     const pillNuevo = (nNuevo && R.diasNuevo) ? ' <span class="pill nuevo" title="'+nNuevo+' de los talles que vendió solo tienen mercadería nueva en el depósito (compra de hace menos de '+R.diasNuevo+' días): no se reparten en la barrida">nuevo · sin repartir</span>' : '';
     const rep = repiteDe(r);
     const pillRep = rep?' <span class="pill rep2" title="La semana del '+lunesLabel(R.previa.semana)+' ya se le sugirieron '+fmtInt(rep)+' unidades de este artículo. Si no se envió, va de nuevo; si se envió y volvió a vender, el artículo rota y conviene recomprarlo.">↻ repite</span>':'';
+    const bkey=barKey(r), editando = state.editBar===bkey;
+    const pillMano = r.editado ? ' <span class="pill mano" title="'+esc('Cantidades ajustadas a mano'+(r.soloManual?' (sucursal agregada a mano)':' · el automático proponía '+fmtInt(r.autoSug||0)))+'">✎ a mano</span>' : '';
     const prio = r.prio ? '<span class="pill '+(r.prio===1?'rec':'suc')+'" title="Prioridad '+r.prio+' de '+r.prioDe+' sucursales que piden este artículo · '+esc(prioTxt(r))+'">'+r.prio+' de '+r.prioDe+'</span>' : '—';
     // talles de curva (verde), vaciado (azul) y los que quedan en el depósito porque todas están cubiertas
     const ttCurva = curvaOn ? curvaChips(r.curvaFaltan, r).concat(engChips(r.curvaEng, r)) : [];
@@ -2268,25 +2285,27 @@ function viewReposicion(){
     const ttDej = vacOn ? dejChips(dejPorArt[r.id], fv.minSuc) : [];
     // un solo recorrido de menor a mayor talle (pedido de Juli 11/09/2026): reposición, curva,
     // vaciado y abrir intercalados en su lugar; a igual talle, en ese orden (el sort es estable)
-    const tt = ttRep.concat(ttCurva, ttVac, ttAmp, ttDej).sort((a,b)=>cmpTalle(a.t,b.t)).map(x=>x.h).join('');
+    const tt = editando ? barEditHtml(r) : r.editado ? barChipsManual(r) : ttRep.concat(ttCurva, ttVac, ttAmp, ttDej).sort((a,b)=>cmpTalle(a.t,b.t)).map(x=>x.h).join('');
+    // ✎ para ajustar la línea a mano (solo con la barrida procesada desde los archivos)
+    const ttEd = (!editando && barEditable()) ? '<button type="button" class="lnk bedit" data-bed="abrir" data-key="'+esc(bkey)+'" title="Ajustar a mano las cantidades de esta sucursal (o agregarle otra sucursal al artículo)">✎</button>' : '';
     // sucursal afuera del vaciado por tener poco stock del artículo
-    const ttFuera = (vacOn && r.vacFuera!=null) ? '<span class="pill fuera" title="No se le manda: tiene '+fmtInt(r.vacFuera)+' unidades de este artículo (el mínimo para mandarle es '+fv.minArt+'). Lo que le tocaba por venta se reparte entre las sucursales que sí lo tienen.">no va · tiene '+fmtInt(r.vacFuera)+'</span>' : '';
+    const ttFuera = (vacOn && r.vacFuera!=null && !r.editado && !editando) ? '<span class="pill fuera" title="No se le manda: tiene '+fmtInt(r.vacFuera)+' unidades de este artículo (el mínimo para mandarle es '+fv.minArt+'). Lo que le tocaba por venta se reparte entre las sucursales que sí lo tienen.">no va · tiene '+fmtInt(r.vacFuera)+'</span>' : '';
     const detBadge = [ (r.curvaU>0?fmtInt(r.curvaU)+' para completar la curva':''), (r.vacU>0?fmtInt(r.vacU)+' por vaciar la reserva':''), (r.ampU>0?fmtInt(r.ampU)+' para abrir el artículo en esta sucursal':'') ].filter(Boolean).join(' + ');
     const badgeTitle = detBadge ? ' title="'+fmtInt(r.sugRep||0)+' por venta + '+detBadge+'"' : '';
     html+='<tr><td><span class="pill suc">'+esc(r.sucNombre)+'</span></td>'
-      +'<td class="desc rep" title="'+esc(r.desc)+'"><span class="dtxt">'+esc(r.desc||'—')+'</span>'+pillPiso+pillCurva+pillVac+pillAmp+pillRep+pillNuevo+((falta&&verRojos)?(sinStockEn(r)
+      +'<td class="desc rep" title="'+esc(r.desc)+'"><span class="dtxt">'+esc(r.desc||'—')+'</span>'+pillPiso+pillCurva+pillVac+pillAmp+pillRep+pillMano+pillNuevo+((falta&&verRojos)?(sinStockEn(r)
         ? ' <span class="pill falta" title="Vendió talles que el depósito no tiene: no hay nada que bajar, hay que pedírselos a la marca">⚠ hay que comprar</span>'
         : ' <span class="pill rec2" title="Hay stock del talle pero no alcanza para todas las sucursales que lo piden: por prioridad esta recibe menos de lo que vendió">⚠ recortado</span>'):'')+'</td>'
       +'<td class="mono">'+esc(r.codigo||r.id)+'</td><td>'+esc(r.marca)+'</td>'
       +'<td class="num">'+prio+'</td>'
       +'<td class="num mono">'+fmtInt(r.vendido)+'</td><td class="num mono" style="color:var(--muted)"'+(r.reservaNueva?' title="'+fmtInt(r.reservaTotal)+' para repartir + '+fmtInt(r.reservaNueva)+' nuevas (compra de hace menos de '+R.diasNuevo+' días) que no se reparten"':'')+'>'+fmtInt(r.reservaTotal)+(r.reservaNueva?' <small style="color:#6d28d9;font-weight:700">+'+fmtInt(r.reservaNueva)+'</small>':'')+'</td>'
-      +'<td class="num"><span class="sug-badge'+(r.sugerido>0?'':' zero')+'"'+badgeTitle+'>'+fmtInt(r.sugerido)+((r.curvaU>0||r.vacU>0||r.ampU>0)?' <small style="font-weight:600;opacity:.8">(+'+fmtInt((r.curvaU||0)+(r.vacU||0)+(r.ampU||0))+')</small>':'')+'</span></td>'
-      +'<td class="num mono"><span class="queda'+(queda[r.id]===0?' cero':'')+'" title="'+(queda[r.id]===0?'El artículo se baja entero: no queda nada en el depósito':'Quedan '+fmtInt(queda[r.id]||0)+' unidades de este artículo en el depósito')+'">'+fmtInt(queda[r.id]||0)+'</span></td>'
+      +'<td class="num"><span class="sug-badge'+(r.sugerido>0?'':' zero')+'" data-bsug="'+esc(bkey)+'"'+badgeTitle+'>'+fmtInt(r.sugerido)+((r.curvaU>0||r.vacU>0||r.ampU>0)?' <small style="font-weight:600;opacity:.8">(+'+fmtInt((r.curvaU||0)+(r.vacU||0)+(r.ampU||0))+')</small>':'')+'</span></td>'
+      +'<td class="num mono"><span class="queda'+(queda[r.id]===0?' cero':'')+'" data-bqueda="'+esc(r.id)+'" title="'+(queda[r.id]===0?'El artículo se baja entero: no queda nada en el depósito':'Quedan '+fmtInt(queda[r.id]||0)+' unidades de este artículo en el depósito')+'">'+fmtInt(queda[r.id]||0)+'</span></td>'
       +(state.transf?(function(){ const e=estadoEnvio(r); if(!e) return '<td class="num mono" style="color:var(--muted-light)">—</td>';
           const T={ok:['env ok','✓ '],parcial:['env par','⚠ '],no:['env no','✗ '],extra:['env ex','+ ']}[e.k];
           const tip={ok:'Se envió todo lo sugerido',parcial:'Se envió solo una parte de lo sugerido',no:'Todavía no salió del depósito',extra:'Se transfirió sin estar en la barrida'}[e.k];
           return '<td class="num"><span class="'+T[0]+'" title="'+esc(tip)+' ('+fmtInt(e.e)+' de '+fmtInt(r.sugerido)+')">'+T[1]+fmtInt(e.e)+'</span></td>'; })():'')
-      +'<td class="talles"><div class="tw">'+((ttFuera+tt)||'—')+'</div></td></tr>';
+      +'<td class="talles"><div class="tw">'+((ttFuera+tt)||'—')+ttEd+'</div></td></tr>';
   });
   html+='</tbody></table></div>';
   return html;
@@ -2702,6 +2721,7 @@ async function procesarBarrida(){
   const prevRep = await cargarSemanaPrevia(state.semana);
   try{
     state.resultado=computar(histPrev, histSnaps);
+    state.manualBar={}; state.manualBase={}; state.editBar=null;   // archivos nuevos: los ajustes a mano se descartan
     state.resultado.prioFuentes={ stock: PRIO.stock?('meses de stock '+PRIO.stockMes):'', cats: PRIO.catsOrigen||'' };
     state.resultado.previa = prevRep;              // qué se le sugirió a cada sucursal la semana pasada
     // lo ya bajado de la base, para recalcular sin volver a pedirlo (recalcular())
@@ -2791,6 +2811,8 @@ function partesSemanaHtml(mini){
 async function guardarBarrida(){
   if(!state.resultado){ toast('Procesá primero','err'); return; }
   if(!FIREBASE_DB_URL){ toast('Sin base configurada','err'); return; }
+  // una línea que quedó en edición se cierra (saca los talles en cero) antes de guardar
+  if(state.editBar){ barEditPodar(state.editBar); state.editBar=null; }
   const R=state.resultado, sem=state.semana;
   // reposición agrupada por slug (para que cada sucursal baje solo lo suyo)
   // El vaciado de la reserva chica NO va en un nodo aparte: se SUMA a la reposición de cada
@@ -2845,9 +2867,28 @@ async function guardarBarrida(){
       .concat((r.engrosa||[]).filter(d=>d.s>0).map(d=>({t:d.t, r:d.r, s:d.s, tiene:d.q}))),
     tiene: Object.keys(r.tallesSuc||{}).sort(cmpTalle).map(t=>({t, q:r.tallesSuc[t]})),      // la curva que ya tiene
   }); });
+  // ajustes a mano (23/09/2026): la línea editada reemplaza a lo automático en reposicion/<slug> —talles [{t,v,r,s}]
+  // con la cantidad final y `editado:true`— y sale de curva/<slug> (la cantidad a mano ya incluye la curva)
+  let editados=0;
+  if(Object.keys(state.manualBar||{}).length){
+    const fus=reposFusionadas();
+    Object.keys(state.manualBar).forEach(key=>{
+      const fila=fus.find(r=>barKey(r)===key && r.editado); if(!fila) return;
+      const pool=(R.reservaT||{})[fila.id]||{}, slug=fila.slug, id=fila.id;
+      if(curBySlug[slug]){ curBySlug[slug]=curBySlug[slug].filter(x=>x.id!==id); if(!curBySlug[slug].length) delete curBySlug[slug]; }
+      const lista=repBySlug[slug]||[], i=lista.findIndex(x=>x.id===id);
+      const talles=Object.keys(fila.manualT||{}).filter(t=>fila.manualT[t]>0).sort(cmpTalle).map(t=>({ t, v:((fila.talles||{})[t]||{}).v||0, r:pool[t]||0, s:fila.manualT[t] }));
+      if(!talles.length){ if(i>=0) lista.splice(i,1); if(!lista.length) delete repBySlug[slug]; else repBySlug[slug]=lista; editados++; return; }
+      const base = i>=0 ? lista[i] : { id, codigo:fila.codigo, desc:fila.desc, marca:fila.marca, rubro:fila.rubro, tipo:fila.tipo, disc:fila.disc||'', genero:fila.genero||'',
+        vendido:fila.vendido||0, reservaTotal:fila.reservaTotal, prio:fila.prio||0, prioDe:fila.prioDe||0, pr:fila.pr||null };
+      const nuevo=Object.assign({}, base, { sugerido:fila.sugerido, talles, editado:true, vaciado:0, ampliar:0 }); delete nuevo.soloVaciado; delete nuevo.soloAmpliar;
+      if(i>=0) lista[i]=nuevo; else lista.push(nuevo);
+      repBySlug[slug]=lista; editados++;
+    });
+  }
   const fc=state.filtrosCur;
   const payload={
-    meta:{ generado_en:nowISO(), generado_por:SESSION.email||'', semana:sem,
+    meta:{ generado_en:nowISO(), generado_por:SESSION.email||'', semana:sem, editados,
       archivo_ventas:(state.files.ventas||{}).archivo||'', archivo_reserva:(state.files.reserva||{}).archivo||'',
       archivo_stock:(state.files.stock||{}).archivo||'',
       curva_param:{ activa:!!R.conStock, centralHasta:fc.centralHasta, unidades:fc.unidades, soloHuecos:fc.soloHuecos, soloRotan:fc.soloRotan, minTalles:fc.minTalles, incluirParados:fc.incluirParados },
@@ -2948,6 +2989,12 @@ function wireReposicion(){
   const pa=$('kParados'); if(pa) pa.onchange=e=>{ fc.incluirParados=e.target.checked; aplicarUnidadesCurva(); aplicarAmpliar(); render(); };
   const csv=$('btnCsvRep'); if(csv) csv.onclick=exportRepXlsx;
   wireSort('sortRep');
+  // edición a mano
+  document.querySelectorAll('[data-bed]').forEach(b=>b.onclick=()=>{ const a=b.getAttribute('data-bed'), k=b.getAttribute('data-key');
+    if(a==='abrir') barEditAbrir(k); else if(a==='ok') barEditCerrar(); else if(a==='reset') barEditReset(k); else if(a==='cero') barEditCero(k); else if(a==='resetall') barEditResetTodo(); });
+  document.querySelectorAll('.binp').forEach(i=>{ i.onchange=()=>barEditCelda(i); i.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); i.blur(); } }; });
+  document.querySelectorAll('.bsuc').forEach(sl=>sl.onchange=()=>{ if(sl.value) barAgregarSuc(sl.getAttribute('data-id'), sl.value); });
+  const enEd=document.querySelector('.binp'); if(enEd && state.editBar) enEd.focus();
 }
 // wiring del filtro multi-select: los cambios aplican al instante y el panel
 // queda abierto entre renders (state.mselOpen); clic afuera lo cierra
@@ -3028,6 +3075,7 @@ async function abrirBarrida(sem){
     { const sg={}; [].concat(reposicion, curva, b.parada||[]).forEach(r=>{ if(!r) return; const k=segDe(r.marca,r.rubro); if(!sg[k]) sg[k]={ marca:String(r.marca||'').trim(), rubro:stripNN(r.rubro), articulos:0 }; });
       state.resultado.segmentos=sg; state.resultado.desdeBase=true; }   // volver a guardarla no pregunta: es la misma semana
     state._proc=null;                         // viene de la base: no hay archivos para recalcular
+    state.manualBar={}; state.manualBase={}; state.editBar=null;   // y tampoco se edita a mano (no trae la reserva por talle)
     if(b.meta && b.meta.curva_param){ const cp=b.meta.curva_param; ['unidades','soloHuecos','soloRotan','minTalles','incluirParados'].forEach(k=>{ if(cp[k]!=null) state.filtrosCur[k]=cp[k]; }); }
     if(b.meta && b.meta.curva_param && b.meta.curva_param.centralHasta!=null) state.filtrosCur.centralHasta=b.meta.curva_param.centralHasta;
     // el vaciado ya viene sumado a las filas guardadas (R.vaciado queda vacío: no se vuelve a sumar)
@@ -3135,7 +3183,123 @@ function reposFusionadas(){
       vendido:a.vendido, reservaTotal:a.reservaTotal, talles:{}, pr:a.pr, prio:a.prio, prioDe:a.prioDe,
       soloAmpliar:true, sugRep:0, ampTalles:a.talles, ampU:a.sugerido, ampDias:a.dias, ampAsig:a.asig, sugerido:a.sugerido }));
   }
+  return aplicarManualBar(rows);
+}
+
+/* ---------- edición a mano de la Barrida (23/09/2026, pedido de Juli; mismo modelo que el Reparto inicial) ----------
+   state.manualBar['<id>|<slug>'] = {<talle>: unidades} es la cantidad FINAL de esa línea: reemplaza a la suma de
+   venta + curva + agrandar + vaciado + abrir. Se aplica arriba de reposFusionadas() en cada recálculo, así cambiar un
+   parámetro no la pisa. El tope de cada talle es la reserva repartible del artículo (R.reservaT, ya sin lo nuevo
+   retenido) menos lo que se llevan las otras sucursales; lo que se le saca a una vuelve a «Queda». Solo con la barrida
+   procesada desde los archivos: una semana abierta del historial no trae la reserva por talle y no se edita.
+   Al guardar, la línea va a reposicion/<slug> con talles [{t,v,r,s}] y `editado:true` (y sale de curva/<slug>), así
+   Mi Sucursal y el Picking la leen sin cambios. */
+const barKey = r => r.id+'|'+r.slug;
+function barEditable(){ const R=state.resultado; return !!(R && R.reservaT && state._proc); }
+const BAR_SRC = ['curvaFaltan','curvaEng','vacFaltan','ampTalles'];
+function barTallesRow(r){ const s=new Set(Object.keys(r.talles||{})); BAR_SRC.forEach(k=>(r[k]||[]).forEach(d=>s.add(d.t))); return [...s]; }
+// cantidad automática de un talle en la línea (venta + curva + agrandar + vaciado + abrir)
+function qRowAuto(r,t){ const d=(r.talles||{})[t]; let q=d?(d.s||0):0; BAR_SRC.forEach(k=>(r[k]||[]).forEach(x=>{ if(x.t===t) q+=(x.s||0); })); return q; }
+// cantidad efectiva: la editada a mano si la hay, si no la automática
+const qRow = (r,t) => r.manualT ? (r.manualT[t]||0) : qRowAuto(r,t);
+function aplicarManualBar(rows){
+  const M=state.manualBar||{}, keys=Object.keys(M); if(!keys.length) return rows;
+  const R=state.resultado, pools=(R&&R.reservaT)||{};
+  const byKey={}; rows.forEach((r,i)=>{ byKey[barKey(r)]=i; });
+  // lo que ya se llevan las líneas NO editadas, por artículo × talle
+  const uso={}; rows.forEach(r=>{ if(M[barKey(r)]) return; const u=uso[r.id]||(uso[r.id]={}); barTallesRow(r).forEach(t=>{ u[t]=(u[t]||0)+qRowAuto(r,t); }); });
+  keys.forEach(key=>{
+    const i=key.indexOf('|'), id=key.slice(0,i), slug=key.slice(i+1), pool=pools[id]; if(!pool) return;
+    let base;
+    if(byKey[key]!=null) base=rows[byKey[key]];
+    else { const ref=rows.find(r=>r.id===id); if(!ref) return;
+      base={ id, slug, sucNombre:nombreSuc(slug), codigo:ref.codigo, desc:ref.desc, marca:ref.marca, rubro:ref.rubro, tipo:ref.tipo, genero:ref.genero, disc:ref.disc,
+        vendido:0, reservaTotal:ref.reservaTotal, reservaNueva:ref.reservaNueva, talles:{}, pr:null, prio:0, prioDe:0, soloManual:true, sugRep:0 }; }
+    const ov=M[key], t={}, u=uso[id]||(uso[id]={});
+    Object.keys(ov).sort(cmpTalle).forEach(tt=>{ let q=Math.max(0, parseInt(ov[tt],10)||0); const tope=Math.max(0,(pool[tt]||0)-(u[tt]||0)); if(q>tope) q=tope; ov[tt]=q; if(q>0){ t[tt]=q; u[tt]=(u[tt]||0)+q; } });
+    const row=Object.assign({}, base, { manualT:t, sugerido:sumT(t), editado:true, autoSug:base.sugerido||0, curvaU:0, vacU:0, ampU:0 });
+    if(byKey[key]!=null) rows[byKey[key]]=row; else { byKey[key]=rows.length; rows.push(row); }
+  });
   return rows;
+}
+// lo que las OTRAS sucursales se llevan de cada talle del artículo (para el tope de la que se edita)
+function barUsoOtros(rows, id, slug){ const u={}; rows.forEach(r=>{ if(r.id!==id||r.slug===slug) return; const ts=r.manualT?Object.keys(r.manualT):barTallesRow(r); ts.forEach(t=>{ u[t]=(u[t]||0)+qRow(r,t); }); }); return u; }
+function barAutoDe(key){ const r=reposFusionadas().find(x=>barKey(x)===key), ov={}; if(r) barTallesRow(r).forEach(t=>{ const q=qRowAuto(r,t); if(q>0) ov[t]=q; }); return ov; }
+// casilleros de una línea editada (ámbar): la cantidad a mano y lo que proponía el automático
+function barChipsManual(r){
+  const pool=((state.resultado||{}).reservaT||{})[r.id]||{}; const ts=Object.keys(r.manualT||{}).filter(t=>r.manualT[t]>0).sort(cmpTalle);
+  if(!ts.length) return '<span class="pill fuera" title="Ajuste a mano: a esta sucursal no se le manda nada de este artículo">no va · a mano</span>';
+  return ts.map(t=>'<span class="tgx edit n-'+(nivelTalle(r,t)||'x')+'" title="'+esc('Talle '+t+': '+fmtInt(r.manualT[t])+' a mano · el automático proponía '+fmtInt(qRowAuto(r,t))+' · en el depósito hay '+fmtInt(pool[t]||0))+'">'
+    +'<span class="txl">'+esc(t)+'</span><span class="txn">'+fmtInt(r.manualT[t])+'</span><span class="txr">a mano</span></span>').join('');
+}
+// la línea en edición: un casillero numérico por talle del artículo (todos los que hay en el depósito) + botones
+function barEditHtml(r){
+  const key=barKey(r), pool=((state.resultado||{}).reservaT||{})[r.id]||{}, rows=reposFusionadas(), otros=barUsoOtros(rows, r.id, r.slug), ov=state.manualBar[key]||{};
+  const talles=[...new Set(Object.keys(pool).filter(t=>pool[t]>0).concat(Object.keys(ov)))].sort(cmpTalle);
+  const cajas=talles.map(t=>{ const tope=Math.max(0,(pool[t]||0)-(otros[t]||0)), q=ov[t]||0;
+    return '<label class="tgx bed" title="'+esc('Talle '+t+': en el depósito hay '+fmtInt(pool[t]||0)+' y las otras sucursales se llevan '+fmtInt(otros[t]||0)+': a esta le pueden ir hasta '+fmtInt(tope)+'.')+'">'
+      +'<span class="txl">'+esc(t)+'</span><input class="binp" type="number" min="0" max="'+tope+'" step="1" data-key="'+esc(key)+'" data-t="'+esc(t)+'" value="'+(q>0?q:'')+'" placeholder="0">'
+      +'<span class="txr">hasta '+fmtInt(tope)+'</span></label>'; }).join('');
+  const usadas=new Set(rows.filter(x=>x.id===r.id).map(x=>x.slug));
+  const opciones=Object.keys(REP_SUC).filter(sl=>!usadas.has(sl)).sort((a,b)=>cmp(nombreSuc(a),nombreSuc(b))).map(sl=>'<option value="'+esc(sl)+'">'+esc(nombreSuc(sl))+'</option>').join('');
+  return (cajas||'<span class="card-hs">No queda reserva de este artículo para repartir.</span>')
+    +'<div class="bedbar"><button type="button" class="btn btn-sm" data-bed="ok" data-key="'+esc(key)+'">✓ Listo</button>'
+    +(r.soloManual?'':'<button type="button" class="lnk" data-bed="reset" data-key="'+esc(key)+'">↺ volver al automático</button>')
+    +'<button type="button" class="lnk" data-bed="cero" data-key="'+esc(key)+'">✕ no mandarle nada</button>'
+    +(opciones?'<select class="sel bsuc" data-id="'+esc(r.id)+'" style="width:auto;padding:3px 6px;font-size:12px"><option value="">+ Agregar otra sucursal a este artículo…</option>'+opciones+'</select>':'')
+    +'</div>';
+}
+function barEditAbrir(key){
+  if(!barEditable()) return;
+  if(state.editBar && state.editBar!==key) barEditPodar(state.editBar);
+  if(!state.manualBar[key]){ const ov=barAutoDe(key); state.manualBar[key]=ov; state.manualBase[key]=Object.assign({}, ov); }
+  state.editBar=key; render();
+}
+// al cerrar: se sacan los talles en cero y, si quedó igual que el automático, el ajuste se descarta
+function barEditPodar(key){
+  const ov=state.manualBar[key]; if(!ov) return;
+  Object.keys(ov).forEach(t=>{ if(!(ov[t]>0)) delete ov[t]; });
+  const base=state.manualBase[key]||{}; const igual=Object.keys(base).length===Object.keys(ov).length && Object.keys(base).every(t=>base[t]===ov[t]);
+  if(igual){ delete state.manualBar[key]; delete state.manualBase[key]; }
+}
+function barEditCerrar(){ if(!state.editBar) return; barEditPodar(state.editBar); state.editBar=null; render(); }
+function barEditReset(key){
+  if(!state.manualBar[key]){ if(state.editBar===key){ state.editBar=null; render(); } return; }
+  if(!confirm('¿Descartar el ajuste a mano de esta línea y volver a lo automático?')) return;
+  delete state.manualBar[key]; delete state.manualBase[key]; if(state.editBar===key) state.editBar=null; render();
+}
+function barEditResetTodo(){
+  const n=Object.keys(state.manualBar).length; if(!n) return;
+  if(!confirm('¿Descartar los '+n+' ajustes a mano de esta barrida y volver a lo automático?')) return;
+  state.manualBar={}; state.manualBase={}; state.editBar=null; render();
+}
+// «no mandarle nada»: la línea queda en cero (una sucursal agregada a mano, directamente se saca)
+function barEditCero(key){
+  if(!barEditable()) return;
+  if(!state.manualBase[key]) state.manualBase[key]=barAutoDe(key);
+  if(!Object.keys(state.manualBase[key]).length){ delete state.manualBar[key]; delete state.manualBase[key]; }
+  else state.manualBar[key]={};
+  if(state.editBar===key) state.editBar=null; render();
+}
+function barAgregarSuc(id, slug){
+  if(!barEditable() || !id || !slug) return;
+  const key=id+'|'+slug; if(state.editBar && state.editBar!==key) barEditPodar(state.editBar);
+  if(!state.manualBar[key]){ state.manualBar[key]={}; state.manualBase[key]={}; }
+  state.editBar=key; render();
+}
+// cambio de un casillero: se ajusta al tope y se actualizan los totales sin redibujar (para no perder el foco al tabular)
+function barEditCelda(inp){
+  const key=inp.dataset.key, t=inp.dataset.t, ov=state.manualBar[key]; if(!ov) return;
+  const i=key.indexOf('|'), id=key.slice(0,i), slug=key.slice(i+1);
+  const pool=((state.resultado||{}).reservaT||{})[id]||{}, otros=barUsoOtros(reposFusionadas(), id, slug), tope=Math.max(0,(pool[t]||0)-(otros[t]||0));
+  let q=Math.max(0, parseInt(inp.value,10)||0);
+  if(q>tope){ q=tope; toast('Del talle '+t+' hay '+fmtInt(pool[t]||0)+' en el depósito y las otras sucursales se llevan '+fmtInt(otros[t]||0)+': a esta le pueden ir hasta '+fmtInt(tope),'err'); }
+  if(q>0) ov[t]=q; else delete ov[t];
+  inp.value = q>0 ? q : '';
+  const rows=reposFusionadas(), r=rows.find(x=>barKey(x)===key), queda=restantePorArt();
+  const b=document.querySelector('[data-bsug="'+CSS.escape(key)+'"]'); if(b&&r){ b.textContent=fmtInt(r.sugerido); b.classList.toggle('zero', !(r.sugerido>0)); }
+  document.querySelectorAll('[data-bqueda="'+CSS.escape(id)+'"]').forEach(el=>{ el.textContent=fmtInt(queda[id]||0); el.classList.toggle('cero', queda[id]===0); });
+  const ut=document.querySelector('[data-butot]'); if(ut) ut.textContent=fmtInt(reposFiltradas().reduce((a,x)=>a+(x.sugerido||0),0));
 }
 // lo que QUEDA en el depósito por artículo después de repartir todo (reposición + curva + vaciado + abrir)
 function restantePorArt(){
@@ -3148,7 +3312,7 @@ function reposFiltradas(){
   const f=state.filtros;
   let rows=reposFusionadas();
   if(f.excluirVarios) rows=rows.filter(r=>!/varios|facturacion/i.test(r.rubro+' '+r.tipo));
-  if(f.soloSugerido) rows=rows.filter(r=>r.sugerido>0 || recortadaPorPrio(r));   // las recortadas por el reparto se ven igual
+  if(f.soloSugerido) rows=rows.filter(r=>r.sugerido>0 || recortadaPorPrio(r) || r.editado || barKey(r)===state.editBar);   // las recortadas por el reparto y las ajustadas a mano se ven igual
   if(f.soloFaltante) rows=rows.filter(faltaEn);
   if(f.soloRepite) rows=rows.filter(r=>repiteDe(r)>0);
   if(f.verSoloCurva) rows=rows.filter(r=>(r.curvaU||0)>0);
@@ -3274,11 +3438,11 @@ async function exportRepXlsx(){
   const R=state.resultado; if(!R) return;
   const f=state.filtros;
   const verRojos = f.verRojos || f.soloFaltante;   // igual que en pantalla
-  const rows=reposFiltradas().filter(r=>r.vacFuera==null);   // las que quedaron afuera del vaciado no llevan nada
+  const rows=reposFiltradas().filter(r=>r.vacFuera==null || r.editado);   // las que quedaron afuera del vaciado no llevan nada (salvo ajuste a mano)
   if(!rows.length){ toast('No hay filas para exportar','err'); return; }
   // columnas de talle: las que se mandan y, solo si se piden, las que quedaron en cero;
   // más los talles de «Completar curva» y del vaciado.
-  const set=new Set(); rows.forEach(r=>{ Object.entries(r.talles).forEach(([t,d])=>{ if(d.s>0 || (verRojos&&d.v>0&&d.s<d.v&&!esNuevoRet(d))) set.add(t); }); (r.curvaFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); (r.curvaEng||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); (r.vacFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); (r.ampTalles||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); });
+  const set=new Set(); rows.forEach(r=>{ if(r.manualT){ Object.entries(r.manualT).forEach(([t,q])=>{ if(q>0) set.add(t); }); return; } Object.entries(r.talles).forEach(([t,d])=>{ if(d.s>0 || (verRojos&&d.v>0&&d.s<d.v&&!esNuevoRet(d))) set.add(t); }); (r.curvaFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); (r.curvaEng||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); (r.vacFaltan||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); (r.ampTalles||[]).forEach(d=>{ if(d.s>0) set.add(d.t); }); });
   const talles=[...set].sort(cmpTalle);
   const lbl=exportLabels(f.rubro, f.marca, [f.tipoprod, f.discs.join('+'), f.subrubros.join('+')]);
   const uCurva=rows.reduce((a,x)=>a+(x.curvaU||0),0), uVac=rows.reduce((a,x)=>a+(x.vacU||0),0);
@@ -3294,7 +3458,7 @@ async function exportRepXlsx(){
     rows, talles,
     // cantidad a mandar = reposición por venta + talles de curva + vaciado de esa sucursal
     // el 0 rojo del talle que no se puede reponer solo sale si se pidió verlo en pantalla
-    celda:(row,t)=>{ const d=row.talles[t]; const sug=(d?d.s:0)+curvaS(row,t)+vacS(row,t)+ampS(row,t); const esFalta=!!(d&&d.v>0&&d.s<d.v&&verRojos&&!esNuevoRet(d)); return { val: sug>0?sug:(esFalta?0:null), falta:esFalta }; },
+    celda:(row,t)=>{ if(row.manualT){ const q=row.manualT[t]||0; return { val:q>0?q:null, falta:false }; } const d=row.talles[t]; const sug=(d?d.s:0)+curvaS(row,t)+vacS(row,t)+ampS(row,t); const esFalta=!!(d&&d.v>0&&d.s<d.v&&verRojos&&!esNuevoRet(d)); return { val: sug>0?sug:(esFalta?0:null), falta:esFalta }; },
     derecha:[ {h:'Total',val:r=>r.sugerido,total:true} ],
     archivo:(f.verSoloVac?'vaciado-reserva':'reposicion')+lbl.file+'-'+state.semana+'.xlsx',
   });
@@ -4628,7 +4792,7 @@ function repPool(x){ const p={}; Object.entries(x.queda||{}).forEach(([t,q])=>{ 
   x.lineas.forEach(l=>Object.entries(l.t||{}).forEach(([t,q])=>{ if(q>0) p[t]=(p[t]||0)+q; })); return p; }
 function repAplicarManualX(rm, x){
   const ov=(state.rep.manual||{})[repManKey(rm.nro, x.art.id)];
-  if(!x.auto){ x.auto={}; x.lineas.forEach(l=>{ x.auto[l.slug]=Object.assign({}, l.t); }); x.lineasAuto=x.lineas; }
+  if(!x.auto){ x.auto={}; x.lineas.forEach(l=>{ x.auto[l.slug]=Object.assign({}, l.t); }); x.lineasAuto=x.lineas; x.quedaAuto=Object.assign({}, x.queda||{}); }
   if(!ov){ x.editado=false; return; }
   const pool=repPool(x), usado={}, prev={}; x.lineasAuto.forEach(l=>{ prev[l.slug]=l; });
   x.lineas=Object.keys(ov).filter(slug=>REP_SUC[slug]).map(slug=>{ const t={};
@@ -4639,6 +4803,19 @@ function repAplicarManualX(rm, x){
   x.queda=queda; x.uQueda=sumT(queda); x.editado=true;
 }
 function repAplicarManual(R){ R.remitos.forEach(rm=>rm.arts.forEach(x=>repAplicarManualX(rm, x))); return R; }
+// cuánto se alejó lo editado de la propuesta automática de ese artículo (Juli 23/09/2026: es la
+// vara para ver si el reparto automático converge con lo que hace el depósito). `lineas` = sucursales
+// cuya curva quedó distinta (sumadas, sacadas o con otras cantidades); `u` = unidades que cambiaron
+// de destino (Σ |editado − propuesto| por sucursal × talle, contando lo que volvió al depósito)
+function repDifAuto(x){
+  if(!x.editado || !x.auto) return null;
+  const man={}; x.lineas.forEach(l=>{ man[l.slug]=l.t||{}; });
+  const slugs=new Set([...Object.keys(x.auto), ...Object.keys(man)]); let lineas=0, u=0;
+  slugs.forEach(s=>{ const a=x.auto[s]||{}, b=man[s]||{}; let d=0;
+    new Set([...Object.keys(a), ...Object.keys(b)]).forEach(t=>{ d+=Math.abs((b[t]||0)-(a[t]||0)); });
+    if(d){ lineas++; u+=d; } });
+  return { lineas, lineasAuto:Object.keys(x.auto).length, u };
+}
 function repRetotalizar(R){
   const porSuc={}, conLineas=new Set(); let editados=0;
   R.remitos.forEach(rm=>{ rm.uRep=0; rm.uQueda=0;
@@ -4754,14 +4931,22 @@ async function repGuardar(){
     remitos[repKey(rm.nro)]={ nro:rm.nro, marca:rm.marca, rubro:rm.rubro, uRep:rm.uRep, uQueda:rm.uQueda,
       arts:rm.arts.map(x=>({ id:x.art.id, cod:x.art.cod||'', desc:x.art.desc||'', marca:x.art.marca||'', rubro:x.art.rubro||'', genero:x.art.genero||'',
         estimado:!!x.art.estimado, centrales:x.art.centrales||[], enRemitos:x.art.enRemitos||1, editado:x.editado?true:null,
-        lineas:x.lineas.filter(l=>l.u>0).map(l=>({ slug:l.slug, prio:l.prio, prioDe:l.prioDe, hist:!!l.hist, t:paresT(l.t) })), queda:paresT(x.queda) })) };
+        lineas:x.lineas.filter(l=>l.u>0).map(l=>({ slug:l.slug, prio:l.prio, prioDe:l.prioDe, hist:!!l.hist, t:paresT(l.t) })), queda:paresT(x.queda),
+        // en un artículo editado a mano se conserva la PROPUESTA automática al lado (Juli 23/09/2026):
+        // con eso se mide, línea por línea, cuánto se aleja el depósito de lo que propone el portal
+        auto: x.editado && x.lineasAuto ? x.lineasAuto.filter(l=>l.u>0).map(l=>({ slug:l.slug, prio:l.prio, prioDe:l.prioDe, t:paresT(l.t) })) : null,
+        quedaAuto: x.editado && x.quedaAuto ? paresT(x.quedaAuto) : null,
+        dif: repDifAuto(x) })) };
     rm.arts.forEach(x=>x.lineas.forEach(l=>{
       (porSuc[l.slug]=porSuc[l.slug]||[]).push({ remito:rm.nro, id:x.art.id, cod:x.art.cod||'', desc:x.art.desc||'', marca:x.art.marca||'', rubro:x.art.rubro||'', genero:x.art.genero||'', t:paresT(l.t) });
       const k=repKey(x.art.id)+'/'+l.slug; const o=suma[k]||(suma[k]={id:x.art.id, slug:l.slug, t:{}}); Object.entries(l.t).forEach(([t,q])=>{ o.t[t]=(o.t[t]||0)+q; });
     }));
   });
+  // vara de convergencia: líneas (artículo × sucursal) y unidades que quedaron distintas de la propuesta
+  const dif={ lineas:0, editLin:0, editU:0 };
+  R.remitos.forEach(rm=>rm.arts.forEach(x=>{ dif.lineas+=x.lineas.filter(l=>l.u>0).length; const d=repDifAuto(x); if(d){ dif.editLin+=d.lineas; dif.editU+=d.u; } }));
   const meta={ fecha:nowISO(), por:SESSION.email||'', archivo:(S.data||{}).archivo||'', anio:(S.data||{}).anio||'', mes:S.mes, conTalles:!!(S.data&&S.data.conTalles),
-    fuenteTalles:R.fuenteTalles||'', param:S.param, destinos:repDestinos(), totales:R.totales, remitos:R.remitos.map(r=>r.nro) };
+    fuenteTalles:R.fuenteTalles||'', param:S.param, destinos:repDestinos(), totales:Object.assign({}, R.totales, dif), remitos:R.remitos.map(r=>r.nro) };
   const upd={}, ahora=Date.now();
   Object.values(suma).forEach(x=>{ const tot=Object.assign({}, repHistDe(x.id, x.slug)||{}); Object.entries(x.t).forEach(([t,q])=>{ tot[t]=(tot[t]||0)+q; });
     upd['repartoHist/'+repKey(x.id)+'/'+x.slug]={ t:paresT(tot), ts:ahora, rep:key }; });
@@ -5033,6 +5218,14 @@ function repResultadoHtml(){
 function repRemTotHtml(rm){
   return '<b>'+fmtInt(rm.uRep)+'</b> a repartir · <span class="queda'+(rm.uQueda?'':' cero')+'">'+fmtInt(rm.uQueda)+' quedan</span>'+(rm.uSin?' · <span style="color:var(--bad)">'+fmtInt(rm.uSin)+' sin repartir</span>':'');
 }
+// «N de M líneas distintas de la propuesta · U u.»: en vivo mientras se edita, o lo guardado en un reparto abierto
+function repDifTxt(R){
+  const T=R.totales||{}; let lin=0, tot=0, u=0;
+  if(state.rep.abierto){ if(T.editLin==null) return ''; lin=T.editLin; tot=T.lineas||0; u=T.editU||0; }
+  else R.remitos.forEach(rm=>rm.arts.forEach(x=>{ tot+=x.lineas.filter(l=>l.u>0).length; const d=repDifAuto(x); if(d){ lin+=d.lineas; u+=d.u; } }));
+  if(!lin) return '';
+  return ' <small title="Líneas (artículo × sucursal) cuya curva quedó distinta de la que proponía el portal, y unidades que cambiaron de destino">· '+fmtInt(lin)+(tot?' de '+fmtInt(tot):'')+' líneas distintas de la propuesta · '+fmtInt(u)+' u.</small>';
+}
 function repResuInner(){
   const S=state.rep, R=S.res, T=R.totales;
   return '<span><b>'+fmtInt(T.remitos)+'</b> remitos</span><span><b>'+fmtInt(T.arts||0)+'</b> artículos</span>'
@@ -5042,7 +5235,7 @@ function repResuInner(){
     +(T.estimados?'<span class="c-rep"><b>'+fmtInt(T.estimados)+'</b> con talles de la reserva</span>':'')
     +(T.faltan?'<span title="La reserva del depósito que se cargó tiene menos unidades que las que entraron por estos remitos: esas ya salieron (o el stock es de antes del ingreso). Se reparte lo que hay."><b>'+fmtInt(T.faltan)+'</b> u. de los remitos ya no están en la reserva</span>':'')
     +(T.sinRemito?'<span class="c-nuevo" title="Tienen compra de hace menos de '+T.dias+' días en el reporte de stock y no figuran en ningún remito de la lista: la Barrida los deja por nuevos, así que se reparten acá."><b>'+fmtInt(T.sinRemito)+'</b> artículos nuevos sin remito</span>':'')
-    +(T.editados?'<span class="c-edit" title="Artículos con el reparto cambiado a mano: no siguen los parámetros hasta que los vuelvas al automático"><b>'+fmtInt(T.editados)+'</b> editados a mano'+(repEditable()?' <button class="lnk noprint" data-rresetall>descartar</button>':'')+'</span>':'')
+    +(T.editados?'<span class="c-edit" title="Artículos con el reparto cambiado a mano: no siguen los parámetros hasta que los vuelvas al automático"><b>'+fmtInt(T.editados)+'</b> editados a mano'+repDifTxt(R)+(repEditable()?' <button class="lnk noprint" data-rresetall>descartar</button>':'')+'</span>':'')
     +'<span style="margin-left:auto">'+(R.guardadoKey?'<span class="ok" style="color:var(--ok);font-weight:700">✓ guardado</span>':'<span style="color:var(--warn);font-weight:700">sin guardar</span>')+'</span>';
 }
 const CRI_LBL = { abrir:'abrir a más locales', profundidad:'mayor profundidad' };

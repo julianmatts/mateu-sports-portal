@@ -1949,6 +1949,13 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
   y Picking toman lo editado sin cambios; el artículo se guarda con `editado:true` y `meta.totales.editados`.
   Cargar otra estadística de remitos o guardar limpia los ajustes. La Barrida de reserva todavía no tiene
   edición a mano.
+  **Vara de convergencia (23/09/2026, preocupación de Juli: «siempre aparecen cosas»)**: en cada artículo editado el
+  reparto guarda también la **propuesta automática** (`auto` = líneas que proponía el portal, `quedaAuto`) y `dif` =
+  `{lineas, lineasAuto, u}` (`repDifAuto`: sucursales cuya curva quedó distinta y unidades que cambiaron de destino);
+  `meta.totales` suma `lineas`, `editLin` y `editU`, y la tira de resumen dice «N de M líneas distintas de la propuesta ·
+  U u.». `node scripts/editados-reparto.mjs [días]` lista el % por reparto guardado. Al 23/09 había solo 2 repartos
+  guardados (NB 21/09 y Salomon 22/09, los dos 100 % a mano, sin propuesta guardada) y ninguna barrida de septiembre: la
+  medición depende de que el depósito GUARDE cada reparto en el portal (se le pidió a Nehuen por la Bandeja ese día).
 - **El hueco entre los dos reportes (12/09/2026, planteo de Juli)**: esta pestaña sale de la
   estadística de **remitos** y la Barrida del reporte de **stock** con «Días u.compra», así que un
   artículo puede tener compra de hace pocos días (la Barrida no lo reparte: lo ve nuevo) y no figurar
