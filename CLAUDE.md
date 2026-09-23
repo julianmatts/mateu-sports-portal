@@ -2074,6 +2074,20 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     la marca **Aurelius** solo para los Aurelius (`esMarcaAurelius`). Va en `reglaSucursal`, así rige en Reparto inicial,
     «Abrir» y la Barrida; ninguna de las dos está en la Asignación de Marcas, así que `repAsig` las deja pasar a esos locales.
     Las **medias Aurelius** también llevan piso (`esMediaMateu` acepta las dos marcas), con su curva: **S (chico) 24 · M (grande) 24** (`MEDIAS_MIN_AUR`; `mediasMin(talle, marca)`).
+  - **Accesorios por tipo de producto (Grupo 1) (22/09/2026, Juli: «trabajar por docena o media docena por talle
+    para que el producto no se pierda en el depósito de la sucursal ni quede sin exhibir»)**: tabla `ACC_TIPOS_DEF`
+    (tipo normalizado con `accTipoKey` → unidades por talle = stock objetivo de la sucursal) editable en el Reparto
+    inicial, desplegable «Accesorios por tipo de producto (Grupo 1)» (`repAccHtml`; lista los de fábrica + los tipos de
+    accesorios que traen los remitos cargados), compartida en `barrida/repartoConfig/accTipos`. Valores de arranque
+    (cruzados con los envíos a mano de mar–ago 2026): 6 = medias de otras marcas, ropa interior, protectores bucales,
+    vendas, grip, antivibradores, tapones, muñequeras, vinchas, antiparras; 12 = llaveros; 3 = gorros, guantes,
+    canilleras, rodilleras, protecciones, cuellos, botellas, pelotas, infladores; 2 = mochilas, bolsos, riñoneras,
+    botineros, billeteras, cartucheras, lunchera; 1 = paletas, raquetas, palos de hockey; sin fila = como antes (1 por
+    talle). `accPiso(meta)` (0 para las medias de marca propia, que siguen con su curva). **Reparto inicial**:
+    `repCentrales` devuelve `per` = piso y `medias:true`, así corre igual que las medias (`pisoFijo`: descuenta lo que
+    la sucursal tiene, sin excedente ni curva de reserva, perfil base). **Barrida**: para el talle vendido el objetivo
+    es el piso (igual que las medias) y, con el stock por sucursal cargado, **se descuenta lo que la sucursal ya tiene**
+    (también en las medias de marca propia; antes el piso se mandaba entero cada semana). Pill «piso por talle».
   - **Excedente del Reparto inicial**: «Repartir el excedente» viene **destildado** (prefs `v:2`): lo que sobra
     después de las curvas queda de reserva (si queda menos de `reservaMin`, se reparte igual). New Balance
     exclusivos de Aurelius: Aurelius de línea y Ecommerce prioridad 1, Aurelius 10 (columna outlet, «como local
