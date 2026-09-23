@@ -3510,9 +3510,23 @@ consulta). Etapa 1 = guía + catálogo; etapa 2 = stock desde el Buscador (hecha
   mensaje y manda los de las últimas 2 respuestas como `contexto` → bloque «ARTÍCULOS QUE YA SE MOSTRARON EN ESTA CHARLA». Sugerencia
   «¿En qué sucursal hay stock de …»: un botón que termina en «…» deja la frase escrita en vez de mandarla. Probado en vivo como el
   puesto de Calle 49: «CAMPUS», «response 2 en 6 uk», «raquetas yones» y «de hombre, en 9.5» contestan directo.
+- **Equivalencias de talles por marca (23/09/2026)** — `lib/asistente-talles.mjs` (`MARCAS`, `tablaDe`, `aLaMarca`, `bloqueTalle`,
+  `talleEnTexto`; tests `node --test lib/asistente-talles.test.mjs`). Qué escala ROTULA cada marca se verificó contra los talles
+  cargados en el Buscador de las 8 sucursales: Adidas, Nike, New Balance, Asics, ON, Salomon, Skechers, Under Armour, Vans, Converse y
+  Crocs rotulan **US**; Puma **UK**; Head, Atomik, Fila, Le Coq, Montagne, Topper, Umbro, Timberland, 47 Street, Olympikus **número AR/EU**;
+  Havaianas, Rider, Bagunza y Hang Loose **BR** (talle doble «37/38» ≈ 39/40 AR). Fila = `[rótulo, AR/EU, US, UK, cm]` por marca y género,
+  alineada con la tabla de la casa (NB: dama US 7·7.5·8 = AR 37–38.5, hombre US 8.5·9·9.5 = AR 41–42; Puma UK 4.5–5.5 / 8–9). ⚠ Las
+  escribió Claude desde las tablas oficiales, sin validar con la casa: corregir ahí. Cómo se usa: (1) `stock_del_local` y `consultar_stock`
+  aceptan `escala` (AR/US/UK/CM) y llevan el talle pedido al rótulo de la marca de cada fila (`talleParaMarca`: «42 AR» = US 8.5 en Adidas,
+  UK 8 en Puma, 42 en Head; campos `talle_pedido_en_esta_marca` / `talle_pedido_en_la_escala_de_la_marca`); (2) la pre-búsqueda, si la
+  pregunta trae un talle (`talleEnTexto`: «6 uk», «talle 42», «calzo 9.5 us», un 33–47 suelto = AR, «en 9» = rótulo de la marca), marca
+  por artículo «talle pedido 42 AR = US 8.5: LO TIENE / no lo tiene»; (3) bloque automático «EQUIVALENCIAS DE TALLE» con la fila de cada
+  marca en juego (las de la pre-búsqueda o las nombradas; sin ninguna, Adidas/Nike/Puma/NB + número AR); (4) herramienta
+  `equivalencia_talle` para «¿qué talle es 42 en Nike y en Puma?». El prompt manda pasar `escala` y no convertir de memoria. Probado en vivo:
+  «response 2 en 6 uk», «qué talle es 42 en nike y en puma» (US 8.5 / UK 8), «duramo speed en 42» (US 8.5 ✓ con stock), «havaianas 39/40»
+  (≈ 41/42 AR). Límite: Haiku a veces redondea una fila del bloque de otra manera (dijo «AR 38» donde la fila decía 39.3).
 - Pendiente: la etapa 3, que Matts use los cursos de la Academia como fuente de producto, motivo de un toque en el voto «No» (solo 4 de 64
-  consultas tenían voto), atributos reales por artículo (forma, balance, drop…): hoy el catálogo solo trae el nombre, y tabla de
-  equivalencias de talles AR/US/UK por marca (hoy dice «convertir con la etiqueta»).
+  consultas tenían voto) y atributos reales por artículo (forma, balance, drop…): hoy el catálogo solo trae el nombre.
 
 ## API de ventas (fase 1) — estado 23/09/2026
 
