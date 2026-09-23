@@ -2094,6 +2094,16 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     la sucursal tiene, sin excedente ni curva de reserva, perfil base). **Barrida**: para el talle vendido el objetivo
     es el piso (igual que las medias) y, con el stock por sucursal cargado, **se descuenta lo que la sucursal ya tiene**
     (también en las medias de marca propia; antes el piso se mandaba entero cada semana). Pill «piso por talle».
+  - **Accesorios: la marca alcanza, y Aurelius solo moda (23/09/2026, reparto de antiparras Nike)**: para un accesorio
+    no hay ficha, así que en `repAsig` mandaba el texto libre de la asignación de **calzado** («running, casual, futbol»
+    de Nike en Calle 12, City Bell, D80, Plaza y Calle 49): una antiparra (NATACIÓN) no entraba y las Cat 1 quedaban
+    afuera mientras los outlets sí recibían. Ahora el filtro de disciplinas del texto viejo **solo aplica en calzado e
+    indumentaria** (`G.fam`): para un accesorio basta con que la marca esté asignada en cualquiera de los dos rubros.
+    Y **Aurelius —línea y Calle 10, aunque se trabaje como outlet— no recibe accesorio deportivo** (`esAccDeportivo` en
+    `reglaSucursal`, así rige en Reparto inicial, «Abrir» y Barrida): pasa solo lo de disciplina casual / Originals /
+    Jordan / escolar / skate (`RX_ACC_MODA`: mochilas, medias, gorros, bolsos, riñoneras, billeteras…) y nunca un tipo
+    de equipamiento (`RX_ACC_DEPORTE_TIPO`: pelotas, antiparras, canilleras, paletas, vendas, protecciones…). Contra el
+    maestro del 23/09: 672 accesorios pasan, 2.785 quedan afuera de Aurelius.
   - **Excedente del Reparto inicial**: «Repartir el excedente» viene **destildado** (prefs `v:2`): lo que sobra
     después de las curvas queda de reserva (si queda menos de `reservaMin`, se reparte igual). New Balance
     exclusivos de Aurelius: Aurelius de línea y Ecommerce prioridad 1, Aurelius 10 (columna outlet, «como local
