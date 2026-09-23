@@ -2029,14 +2029,15 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     criterio «profundidad»; **base** = Cat 2, Aurelius, tiendas Adidas y outlets de marca «como local de línea»: curva base
     SIN 3.ª unidad; **chata** = outlets: x1 por talle (entra como `plana`). Antes todas recibían la misma curva. También
     rige en «Abrir a más sucursales». **(3) Tope por meses de stock** (`REP_MS_TOPE` = 6, `repMsExcedida`): con 6+ meses de
-    la marca (dato de marca o subrubro, no el del rubro) la sucursal sale de los candidatos; no se aplica a Ecommerce, pared
+    la marca (dato de marca o subrubro, no el del rubro) la sucursal sale de los candidatos; no se aplica a pared
     incompleta, reingreso (tiene stock o memoria) ni a la que vendió el artículo esa semana; quedan en `a.msFuera` y en el
     texto de la regla / motivo de «Sin repartir». **Si TODAS las candidatas están pasadas el tope no se aplica** (21/09/2026, New Balance:
     solo D80 y City Bell, las dos con 6+ meses → quedaban 120 pares sin repartir): se reparte igual, los meses de stock solo
     ordenan y la regla lo aclara (`msIgnorado`). **Desde el 21/09/2026 (tarde) el tope YA NO EXCLUYE** (Juli, Montagne: 3 de 5
     sucursales afuera y 64 de 80 pares en el depósito): la sucursal con 6+ meses queda `msAlto` → recibe AL FINAL (`cmpReparto`,
     después de la ficha y deportes) con su curva NORMAL: el ratio solo ordena **— pero dentro de su grupo: los outlets van SIEMPRE después de todas las de línea, aunque la de línea tenga 6+ meses** (23/09/2026, reparto de Nike: Gonnet y Calle 55 quedaban antes que City Bell y Calle 47; campo `outlet` del candidato, no aplica a la marca con «Outlets como local de línea») (Juli lo confirmó el mismo día; se probó un
-    escalón menos de profundidad y se sacó). **Y el criterio «profundidad» sube un escalón a TODOS los perfiles** (`perfilDe`):
+    escalón menos de profundidad y se sacó). **Ecommerce ya no está exenta del tope (23/09/2026)**: la excepción «su ratio es el de toda la
+    web» la dejaba siempre primera (Nike indumentaria hombre: 216 meses y «1 de 10»); ahora entra como cualquier Cat 1 con su ratio por subrubro. **Y el criterio «profundidad» sube un escalón a TODOS los perfiles** (`perfilDe`):
     antes solo cambiaba a las «honda», así que en locales de curva base (Cat 2, Aurelius) elegirlo a mano no cambiaba nada. **(5) Fechas comerciales** (`repPico`, `REP_PICO_DIAS` = 28 días antes;
     fechas por regla con `tercerDomingo`): Día del Niño (3.er domingo de agosto → niño), Día de la Madre (3.er domingo de
     octubre → dama), Día del Padre (3.er domingo de junio → hombre), Navidad (25/12 → TODO) y Vuelta al cole (15/01–10/03 →
