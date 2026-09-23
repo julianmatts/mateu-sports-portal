@@ -522,16 +522,22 @@ async function prebuscar(texto, user) {
   const filas = r.filas.map(f => { const e = idx && idx.a[fbKey(f[0])]; return { f, a: e ? filaIndice(e) : null }; })
     .sort((x, y) => (y.a ? y.a.stock : 0) - (x.a ? x.a.stock : 0));
   const nLocal = filas.filter(x => x.a).length;
+  const tt = talleEnTexto(texto);   // «en 6 uk», «en 42»: el talle pedido, llevado al rótulo de cada marca, y si lo tiene
+  const marcas = [];
   const lineas = filas.slice(0, PRE_FILAS).map(x => {
     const f = x.f;   // [código, artículo, marca, disciplina, rubro, género, tipo]
+    if (f[2] && marcas.indexOf(f[2]) < 0) marcas.push(f[2]);
     let l = '- ' + f[0] + ' · ' + f[1] + ' · ' + f[2] + ' · ' + (f[5] || '') + ' · ' + (f[3] || '') + '/' + (f[4] || '');
-    if (x.a) l += ' · EN EL LOCAL: ' + x.a.stock + ' u.' + (x.a.talles.length ? ' (talles ' + tallesTxt(x.a.talles) + ')' : '') + (x.a.ubic ? ' · ' + x.a.ubic : ' · sin ubicar');
+    if (x.a) {
+      l += ' · EN EL LOCAL: ' + x.a.stock + ' u.' + (x.a.talles.length ? ' (talles ' + tallesTxt(x.a.talles) + ')' : '') + (x.a.ubic ? ' · ' + x.a.ubic : ' · sin ubicar');
+      if (tt && x.a.talles.length && f[4] === 'CALZADO') { const tp = talleParaMarca(tt.talle, tt.escala, f[2], f[5]); l += ' · talle pedido ' + tt.talle + (tt.escala ? ' ' + tt.escala : '') + (tp.txt ? ' = ' + tp.txt : '') + ': ' + (tp.rot == null ? 'sin equivalencia' : x.a.talles.some(z => mismoTalle(z.t, tp.rot)) ? 'LO TIENE' : 'no lo tiene'); }
+    }
     else if (idx) l += ' · no figura en el local';
     return l;
   });
-  const cab = 'BÚSQUEDA YA HECHA POR EL PORTAL sobre lo que escribió el usuario' + (r.corregidas && r.corregidas.length ? ' (interpretado: ' + r.corregidas.join(', ') + ')' : '') + ': ' + r.filas.length + ' artículo' + (r.filas.length === 1 ? '' : 's') + ' del catálogo' + (idx ? ', ' + nLocal + ' con stock en ' + SUC_UBIC[mio] + ' (stock del ' + fechaAR(con[mio].cargado) + ')' : '') + (r.filas.length > PRE_FILAS ? '; se listan ' + PRE_FILAS : '') + (r.parcial ? '; coincidencia parcial (no todas las palabras)' : '') + (r.ignoradas && r.ignoradas.length ? '. Palabras que no figuran en ningún artículo del catálogo: ' + r.ignoradas.join(', ') + ' (si es una marca o modelo, no se trabaja: decilo)' : '') + '.';
+  const cab = 'BÚSQUEDA YA HECHA POR EL PORTAL sobre lo que escribió el usuario' + (r.corregidas && r.corregidas.length ? ' (interpretado: ' + r.corregidas.join(', ') + ')' : '') + ': ' + r.filas.length + ' artículo' + (r.filas.length === 1 ? '' : 's') + ' del catálogo' + (idx ? ', ' + nLocal + ' con stock en ' + SUC_UBIC[mio] + ' (stock del ' + fechaAR(con[mio].cargado) + ')' : '') + (r.filas.length > PRE_FILAS ? '; se listan ' + PRE_FILAS : '') + (r.parcial ? '; coincidencia parcial (no todas las palabras)' : '') + (r.ignoradas && r.ignoradas.filter(w => !/^\d/.test(w)).length ? '. Palabras que no figuran en ningún artículo del catálogo: ' + r.ignoradas.filter(w => !/^\d/.test(w)).join(', ') + ' (si es una marca o modelo, no se trabaja: decilo)' : '') + '.';
   const pie = 'USALO DIRECTO: contestá con estos datos sin volver a buscar lo mismo' + (idx ? (nLocal ? ', empezando por lo que está en el local.' : '. Ninguno está en el local: decilo y usá consultar_stock (con los códigos de arriba) para ver qué otra sucursal lo tiene.') : '.') + ' Si el usuario pide otra sucursal, un talle que no figura o más opciones, ahí sí usá las herramientas.';
-  return { texto: cab + '\n' + lineas.join('\n') + '\n' + pie, ctx: filas.slice(0, 6).map(x => x.f[0] + ' ' + x.f[1] + (x.a ? ' [' + SUC_UBIC[mio] + ' ' + x.a.stock + 'u' + (x.a.talles.length ? ' ' + x.a.talles.map(z => z.t + ':' + z.c).join(',') : '') + (x.a.ubic ? ' · ' + x.a.ubic : '') + ']' : '')) };
+  return { marcas, texto: cab + '\n' + lineas.join('\n') + '\n' + pie, ctx: filas.slice(0, 6).map(x => x.f[0] + ' ' + x.f[1] + (x.a ? ' [' + SUC_UBIC[mio] + ' ' + x.a.stock + 'u' + (x.a.talles.length ? ' ' + x.a.talles.map(z => z.t + ':' + z.c).join(',') : '') + (x.a.ubic ? ' · ' + x.a.ubic : '') + ']' : '')) };
 }
 
 /* Memoria de la charla (23/09/2026): resumen compacto de los artículos que salieron de las herramientas en este
@@ -837,8 +843,7 @@ export async function onRequestPost(ctx) {
     const tt = talleEnTexto(mensajes[mensajes.length - 1].content);
     if (tt) {
       const marcasEn = [];
-      const sumar = txt => (String(txt || '').match(/·\s*([^·\n]+?)\s*·/g) || []).forEach(m => { const b = m.replace(/·/g, '').trim(); if (b && /^[A-Za-z0-9 .'&-]{2,20}$/.test(b) && tablaDe(b).marca !== 'general' && marcasEn.indexOf(tablaDe(b).marca) < 0) marcasEn.push(tablaDe(b).marca); });
-      if (pre) sumar(pre.texto);
+      if (pre) pre.marcas.forEach(b => { const k = tablaDe(b).marca; if (k !== 'general' && marcasEn.indexOf(k) < 0) marcasEn.push(k); });
       ['adidas', 'nike', 'puma', 'new balance', 'head', 'atomik', 'fila', 'crocs', 'havaianas', 'converse', 'vans', 'asics', 'salomon', 'montagne'].forEach(m => { if (plano(mensajes[mensajes.length - 1].content + ' ' + previo).indexOf(m) >= 0 && marcasEn.indexOf(m) < 0) marcasEn.push(m); });
       const bt = bloqueTalle(tt.talle, tt.escala, marcasEn.length ? marcasEn.concat(['general']) : null);
       if (bt) system.push({ type: 'text', text: bt });
