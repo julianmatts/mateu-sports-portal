@@ -175,23 +175,19 @@
   }
 
   /* Clave maestra por el camino del navegador (sin servidor). Resuelve el mail de quien entra
-     o null. El dispositivo se mira antes que el PIN, igual que en el servidor. */
+     o null. Vale desde CUALQUIER dispositivo (Juli, 23/09/2026: «al igual que yo, Cristian tiene
+     que poder entrar desde cualquier dispositivo aunque no esté autorizado»); solo se rechaza el
+     dispositivo que gerencia BLOQUEÓ para ese mail en el panel 🔒. Igual que en el servidor. */
   function claveMaestra(usuario, pin){
     var destino = ((usuario && usuario.email) || '').toLowerCase();
     if(!destino || MAESTRAS[destino]) return Promise.resolve(null);
     var mails = Object.keys(MAESTRAS).filter(function(m){ return MAESTRAS[m] === 'todas' || ROLES_LOCALES.indexOf(usuario.rol) !== -1; });
     pin = String(pin||'').trim();
-    var aprobadoDestino = null;
     function probar(i){
       if(i >= mails.length) return Promise.resolve(null);
       var mail = mails[i];
       return req('GET', urlDev(mail)).then(function(propio){
-        if(propio && propio.estado === 'revocado') return false;
-        if(propio && propio.estado === 'aprobado') return true;
-        if(aprobadoDestino !== null) return aprobadoDestino;
-        return req('GET', urlDev(destino)).then(function(d){ return (aprobadoDestino = !!(d && d.estado === 'aprobado')); });
-      }).then(function(conocido){
-        if(!conocido) return null;
+        if(propio && propio.estado === 'revocado') return null;
         return req('GET', FB+'/usuarios/'+mailKey(mail)+'.json').then(function(m){
           return (m && m.pin != null && !debeCambiarPin(m) && String(m.pin) === pin) ? mail : null;
         });
