@@ -4183,7 +4183,9 @@ function repCandidatos(a, G, destinos){
     const rot=repRotacion(a, slug, stockC);
     let perfil=repPerfil(slug, a, G, kidsArt && NINO_PRIO[slug]);
     if(rot && rot.r>=REP_ROT_ALTA) perfil='honda';                  // criterio 6: el reingreso que se agota
-    out.push({ slug, sucNombre:nombreSuc(slug), asig, plana:!!asig.plana, perfil, rot, vendeArtSemana: !!(VA && (VA[a.id]||{})[slug]>0), ninoPrio:(kidsArt && NINO_PRIO[slug]) ? 0 : 1, deportePrio:(DEPORTE_PRIO[slug] && esDeporteEsp(a)) ? DEPORTE_PRIO[slug] : 9, prioMS:fichaPrioMS(a.marca, a.rubro), pared:paredIncompleta(slug, a), pr:prioInfo(slug, a.marca, a.rubro, a.genero),
+    // outlet (salvo la marca que lo trabaja «como local de línea»): va después de todas las de línea
+    const outlet = catDe(slug)==='outlet' && !fichaOutletLinea(a.marca, G);
+    out.push({ slug, sucNombre:nombreSuc(slug), asig, plana:!!asig.plana, perfil, rot, outlet, vendeArtSemana: !!(VA && (VA[a.id]||{})[slug]>0), ninoPrio:(kidsArt && NINO_PRIO[slug]) ? 0 : 1, deportePrio:(DEPORTE_PRIO[slug] && esDeporteEsp(a)) ? DEPORTE_PRIO[slug] : 9, prioMS:fichaPrioMS(a.marca, a.rubro), pared:paredIncompleta(slug, a), pr:prioInfo(slug, a.marca, a.rubro, a.genero),
       venta:vm?vm.v:0, ventaNivel:vm?vm.nivel:'', vendeArt, hist:P.memoria?repHistDe(a.id, slug):null,
       stock:stockC });
   });
@@ -4210,6 +4212,9 @@ function cmpReparto(a,b){
   const oa=(a.asig&&a.asig.orden)||99, ob=(b.asig&&b.asig.orden)||99;          // «Prioridad» de la ficha de la marca (1 = primera)
   if(oa!==ob) return oa-ob;
   if((a.deportePrio||9)!==(b.deportePrio||9)) return (a.deportePrio||9)-(b.deportePrio||9); // deportes: Diagonal 80, City Bell
+  // 23/09/2026 (reparto Nike): los outlets van después de TODAS las de línea, aunque la de línea tenga el ratio alto;
+  // el ratio ordena dentro de cada grupo (antes Gonnet y Calle 55 quedaban antes que City Bell y Calle 47)
+  if(!!a.outlet!==!!b.outlet) return a.outlet ? 1 : -1;
   if(!!a.msAlto!==!!b.msAlto) return a.msAlto ? 1 : -1;                        // 6+ meses de stock de la marca: recibe al final
   if(!!a.pared!==!!b.pared) return a.pared ? -1 : 1;                           // pared de running incompleta: completarla
   if(a.prioMS && b.prioMS){                                                    // marca estratégica: por meses de stock

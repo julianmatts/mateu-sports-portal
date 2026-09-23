@@ -2027,7 +2027,7 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     solo D80 y City Bell, las dos con 6+ meses → quedaban 120 pares sin repartir): se reparte igual, los meses de stock solo
     ordenan y la regla lo aclara (`msIgnorado`). **Desde el 21/09/2026 (tarde) el tope YA NO EXCLUYE** (Juli, Montagne: 3 de 5
     sucursales afuera y 64 de 80 pares en el depósito): la sucursal con 6+ meses queda `msAlto` → recibe AL FINAL (`cmpReparto`,
-    después de la ficha y deportes) con su curva NORMAL: el ratio solo ordena (Juli lo confirmó el mismo día; se probó un
+    después de la ficha y deportes) con su curva NORMAL: el ratio solo ordena **— pero dentro de su grupo: los outlets van SIEMPRE después de todas las de línea, aunque la de línea tenga 6+ meses** (23/09/2026, reparto de Nike: Gonnet y Calle 55 quedaban antes que City Bell y Calle 47; campo `outlet` del candidato, no aplica a la marca con «Outlets como local de línea») (Juli lo confirmó el mismo día; se probó un
     escalón menos de profundidad y se sacó). **Y el criterio «profundidad» sube un escalón a TODOS los perfiles** (`perfilDe`):
     antes solo cambiaba a las «honda», así que en locales de curva base (Cat 2, Aurelius) elegirlo a mano no cambiaba nada. **(5) Fechas comerciales** (`repPico`, `REP_PICO_DIAS` = 28 días antes;
     fechas por regla con `tercerDomingo`): Día del Niño (3.er domingo de agosto → niño), Día de la Madre (3.er domingo de
