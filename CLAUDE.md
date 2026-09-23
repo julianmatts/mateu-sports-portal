@@ -2095,8 +2095,11 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     (cruzados con los envíos a mano de mar–ago 2026): 6 = medias de otras marcas, ropa interior, protectores bucales,
     vendas, grip, antivibradores, tapones, muñequeras, vinchas; 12 = llaveros y antiparras (23/09/2026, Juli: eran 6); 3 = gorros, guantes,
     canilleras, rodilleras, protecciones, cuellos, botellas, pelotas, infladores; 2 = mochilas, bolsos, riñoneras,
-    botineros, billeteras, cartucheras, lunchera; 1 = paletas, raquetas, palos de hockey; sin fila = como antes (1 por
-    talle). `accPiso(meta)` (0 para las medias de marca propia, que siguen con su curva). **Reparto inicial**:
+    botineros, billeteras, cartucheras, lunchera; 1 = paletas, raquetas, palos de hockey. **Tipos que faltaban (23/09/2026,
+    Juli)**: 6 = bandas, sogas, cordones, silbatos, brazaletes, tobilleras, fajas, pantorrilleras; 3 = termos, vasos, mates,
+    toallas, fundas, conos, pesas; 2 = carteras, colchonetas, redes, tableros y aros, set, pins; 1 = skates, patines, ruedas,
+    cabezales y máscaras, bolsas y peras. El tipo genérico «ACCESORIOS» (126 artículos, mezcla) queda sin fila a propósito.
+    Sin fila = como antes (1 por talle). `accPiso(meta)` (0 para las medias de marca propia, que siguen con su curva). **Reparto inicial**:
     `repCentrales` devuelve `per` = piso y `medias:true`, así corre igual que las medias (`pisoFijo`: descuenta lo que
     la sucursal tiene, sin excedente ni curva de reserva, perfil base). **Barrida**: para el talle vendido el objetivo
     es el piso (igual que las medias) y, con el stock por sucursal cargado, **se descuenta lo que la sucursal ya tiene**
