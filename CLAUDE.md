@@ -1984,7 +1984,9 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     Adidas en Aurelius 12), **salvo Aurelius City Bell, que recibe niño —calzado e indumentaria— solo de Adidas, Nike,
     Crocs y Puma, y de Vans solo calzado** (`AUR_NINO_MARCAS`); **subrubro VARIOS va a todos, Mateu Kids incluido**
     (Juli 23/09/2026: medias, gorros, accesorios sin género; `repGrupo` marca `G.varios` y «solo niño» de Kids, la
-    marca asignada «solo niño» y el texto libre viejo lo dejan pasar; no es niño, así que no lleva la prioridad de Kids/Gonnet); **los Aurelius (línea y
+    marca asignada «solo niño» y el texto libre viejo lo dejan pasar; no es niño, así que no lleva la prioridad de Kids/Gonnet).
+    **Outlet Gonnet (sector de niños) también entra a los destinos por defecto del Reparto inicial con VARIOS**, como
+    con niño (mismo día; en `repCalcular`, `kidsA || C.G.varios`); sigue ordenando como outlet, después de las de línea; **los Aurelius (línea y
     Calle 10) no reciben fútbol ni deportes** (`RX_AUR_DEPORTE` sobre disciplina/tipo), salvo un modelo que su
     ficha nombre. **Aurelius Calle 10 toma la mercadería de la columna Aurelius** de la ficha (en `barrida/`
     `fichaDe` y en `marcas/` `tipoDeSuc`/`fichaEfectiva`); de la columna Outlets solo la «Prioridad» (New
