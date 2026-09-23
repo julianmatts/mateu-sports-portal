@@ -1030,6 +1030,27 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
     códigos que no estaban (de a 250, sin pisar nunca un vínculo existente), así sirven en
     todas las sucursales. El resumen de la carga muestra cuántos y el ⇩ Excel del módulo
     suma la columna «Cód. barras». Tests: `node --test lib/ean.test.js`.
+- **Berisso «no me toma el EAN» (23/09/2026)** — dos causas, las dos arregladas: (1) el export
+  «stock diario» del sistema trae **«Código barras» = el SKU** y **«Código EAN» = el EAN**, y viene
+  ordenado por código, así que en las primeras filas (Addnice…) «Código EAN» trae la etiqueta del
+  proveedor con el talle pegado (`ADUC18903A29!03!34`), no un número: `columnaEsEan` miraba las
+  primeras 200 filas (63 %) y descartaba la columna → la carga entraba **sin ningún EAN**. Ahora
+  muestrea toda la columna salteando filas (Berisso da 88 %) y, con varios encabezados que suenan a
+  código de barras, `detectarEncabezado` elige el primero cuyo CONTENIDO es EAN. (2) **El mapa
+  compartido `ean/` estaba sucio**: una carga de Calle 49 del 09/09/2026 con la columna de código
+  apuntando al género/subrubro publicó 6.982 EAN (Nike, Adidas, Puma, 47 Street…) vinculados a
+  «02-HOMBRE», «03-DAMA», «06-UNISEX», «VARIOS», y `eanCompartir` nunca pisa lo que ya está, así que
+  las cargas correctas posteriores no lo corregían: en cualquier sucursal, escanear una etiqueta
+  Nike «tomaba el código» pero resolvía a un artículo que no existe. Se reparó con un script de la
+  sesión (6.675 reescritas desde los `eans` de los artículos de las sucursales + el export de
+  Berisso, 307 borradas; respaldo `Descargas/respaldo-ean-ubicaciones-2026-09-23.json`) y Berisso
+  recibió sus 5.994 EAN directo en `articulos/<key>/eans` (respaldo `respaldo-ubicaciones-berisso-…`).
+  Candados nuevos: `eanCodigoBasura` (`RX_COD_BASURA`) — un vínculo a género/subrubro/rubro cuenta
+  como «sin vincular» en `eanRemoto` y en `eanIndexCargar`, y `eanCompartir` no publica un «artículo»
+  con más de `EAN_MAX_ART` (80) códigos ni uno basura. Además **`mismoEan` tolera el EAN-13 leído con
+  12 dígitos** (la lectora que recorta el primer dígito: «le faltan números»): antes `gtin13` lo
+  tomaba por UPC-A y no coincidía nunca; ahora se compara por los últimos 11 cuando lo leído no
+  llega a 13. Tests en `lib/ean.test.js`.
 - **Etiquetas con el código del proveedor y el talle pegado (15/09/2026, reclamo de Calle 49 por
   Givova)**: la etiqueta de Givova escanea `CGE26010109033S` (sin el prefijo de marca y con el talle
   al final, sin símbolo) y el artículo es `GIVCGE26010109033`. `codigoConTallePegado` prueba el
