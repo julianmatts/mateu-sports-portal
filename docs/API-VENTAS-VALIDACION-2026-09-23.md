@@ -6,6 +6,12 @@ muestra el Portal. Este documento es **para pasarle al dev**: cada punto dice qu
 cómo se ve y qué tiene que cambiar. La key de la API no va en este repo (es público): se la
 pasa Juli por otro canal.
 
+> **Re-validación de la tarde (23/09/2026):** el dev desplegó correcciones y pidió evidencia del punto 3.
+> Resultado y respuesta en [API-VENTAS-RESPUESTA-PUNTO3-2026-09-23.md](API-VENTAS-RESPUESTA-PUNTO3-2026-09-23.md):
+> Nc ✅ y CORS ✅; importe ⚠️ a medias (falta el descuento del comprobante prorrateado por línea);
+> 500 ❌ (una de cada tres llamadas tarda ~20 s por un bloqueo cada ~30 s que el reintento tapa);
+> punto 3 con casos línea por línea de su propio /lineas y del export de agosto completo.
+
 ## Resumen
 
 La API está viva, responde rápido (0,2 s por semana), respeta el contrato de rutas, errores,
