@@ -3445,8 +3445,26 @@ consulta). Etapa 1 = guía + catálogo; etapa 2 = stock desde el Buscador (hecha
   **no le atribuye características a un modelo puntual** (del stock solo conoce nombres): cierra con «confirmá en la etiqueta que sea …».
   El log guarda `fichas`. **Para corregir o sumar criterio se edita el `texto` de la ficha y se pushea**; conviene que las revise Iván o el
   referente de cada deporte (las escribió Claude, sin validar con la gente de la casa). Sin precios ni consejos médicos (hay un test).
+- **Índice compacto de stock, pre-búsqueda y memoria (23/09/2026, tras 10 consultas reales del salón: 3 de 10 terminaban en
+  repregunta —«CAMPUS» → «¿qué necesitás?»— y «de hombre» perdía el hilo)**. (1) **Índice**: el Buscador escribe en cada carga de
+  stock `sucursales/<slug>/indice` = `{ts, n, a:{<clave>:[stock, "talle:cant,…", "ubicación en texto", idItem, descripción]}}`
+  (`indiceMatts`/`indiceMattsEntrada` en `ubicaciones/index.html`; `indiceMattsPatch` retoca la entrada al asignar/quitar una
+  ubicación; ~40–320 KB por sucursal, sembrado el 23/09 en las 8 que cargan stock con `sembrar_indice.mjs` de la sesión). La Function
+  lo baja en UN pedido y lo cachea 10 min (`indiceSucursal`, `filaIndice`): `stock_del_local` mira TODO el local sin pedidos por
+  artículo (ya no rige `MAX_LOCAL`; lista hasta 30 + `mas_con_stock_sin_listar`), `consultar_stock` resuelve en memoria las
+  sucursales con índice y `buscar_catalogo` trae unidades/talles/ubicación del local en `en_el_local`. Sin índice, camino viejo.
+  (2) **Pre-búsqueda** (`prebuscar`, antes de llamar al modelo): busca en el catálogo lo que escribió el usuario en modo ESTRICTO
+  (`filasPorTexto(texto, true)`: exacto o prefijo, sin corrección por distancia —«correr» daba «correa»—; números y palabras de ≤2
+  letras filtran pero no buscan y pesan 0,02 —«6 uk» hacía ganar a Reebok «UK»—; `RELLENO` sumó las palabras de pregunta/gestión) y,
+  si hay 1–120 coincidencias, inyecta al prompt hasta 15 filas con el stock del local ya resuelto, las palabras que no existen en el
+  catálogo («YONES» → «no se trabaja») y «USALO DIRECTO». El log guarda `pre:1`. (3) **Memoria**: la Function devuelve `ctx` (resumen
+  compacto de lo que salió de la pre-búsqueda y las herramientas, `resumenParaMemoria`, ≤1.500 caracteres); el widget lo guarda en el
+  mensaje y manda los de las últimas 2 respuestas como `contexto` → bloque «ARTÍCULOS QUE YA SE MOSTRARON EN ESTA CHARLA». Sugerencia
+  «¿En qué sucursal hay stock de …»: un botón que termina en «…» deja la frase escrita en vez de mandarla. Probado en vivo como el
+  puesto de Calle 49: «CAMPUS», «response 2 en 6 uk», «raquetas yones» y «de hombre, en 9.5» contestan directo.
 - Pendiente: la etapa 3, que Matts use los cursos de la Academia como fuente de producto, motivo de un toque en el voto «No» (solo 4 de 64
-  consultas tenían voto) y atributos reales por artículo (forma, balance, drop…): hoy el catálogo solo trae el nombre.
+  consultas tenían voto), atributos reales por artículo (forma, balance, drop…): hoy el catálogo solo trae el nombre, y tabla de
+  equivalencias de talles AR/US/UK por marca (hoy dice «convertir con la etiqueta»).
 
 ## API de ventas (fase 1) — estado 23/09/2026
 
