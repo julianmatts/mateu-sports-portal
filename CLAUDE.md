@@ -1982,7 +1982,9 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     `barrida/`, antes que la ficha (la usan `repAsig` y `fichaBloquea`, o sea Reparto inicial, «Abrir» y la
     Barrida): **Calle 49 no trabaja niño** (`SIN_NINO`, calzado e indumentaria); **Aurelius no recibe niño** (mismo día, informe Crocs; va antes que la ficha, así que pisa el «niño Originals» de
     Adidas en Aurelius 12), **salvo Aurelius City Bell, que recibe niño —calzado e indumentaria— solo de Adidas, Nike,
-    Crocs y Puma, y de Vans solo calzado** (`AUR_NINO_MARCAS`); **los Aurelius (línea y
+    Crocs y Puma, y de Vans solo calzado** (`AUR_NINO_MARCAS`); **subrubro VARIOS va a todos, Mateu Kids incluido**
+    (Juli 23/09/2026: medias, gorros, accesorios sin género; `repGrupo` marca `G.varios` y «solo niño» de Kids, la
+    marca asignada «solo niño» y el texto libre viejo lo dejan pasar; no es niño, así que no lleva la prioridad de Kids/Gonnet); **los Aurelius (línea y
     Calle 10) no reciben fútbol ni deportes** (`RX_AUR_DEPORTE` sobre disciplina/tipo), salvo un modelo que su
     ficha nombre. **Aurelius Calle 10 toma la mercadería de la columna Aurelius** de la ficha (en `barrida/`
     `fichaDe` y en `marcas/` `tipoDeSuc`/`fichaEfectiva`); de la columna Outlets solo la «Prioridad» (New

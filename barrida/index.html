@@ -3422,7 +3422,8 @@ const CENTRALES_LBL = [['calz-dama','Calzado dama (US Women)'],['calz-hombre','C
 const GRUPO_LBL = { 'calz-dama':'calzado dama','calz-hombre':'calzado hombre','calz-unisex':'calzado unisex','calz-nino':'calzado niño','calz-infante':'calzado infante',
   'ind-dama':'indumentaria dama','ind-hombre':'indumentaria hombre','ind-unisex':'indumentaria unisex','ind-nino':'indumentaria niño','ind-infante':'indumentaria infante' };
 const DISC_CONOCIDAS = ['running','casual','training','futbol','adventure','outdoor','basquet','basket','tenis','padel','originals','hockey','natacion','trekking','skate','voley','rugby','urbano','lifestyle'];
-// locales que venden solo niño: aunque tengan la marca asignada, no reciben artículos de adulto
+// locales que venden solo niño: aunque tengan la marca asignada, no reciben artículos de adulto.
+// Lo de subrubro VARIOS (G.varios) sí les llega: no es adulto (Juli 23/09/2026).
 const SOLO_NINO = { 'kids':true };
 // Niño y fútbol: no tiene sentido guardar curva en el depósito, va todo al salón (Juli 17/09/2026)
 const RX_FUTBOL = /futbol|futsal/;
@@ -3481,7 +3482,7 @@ function reglaSucursal(slug, a, G, fe){
   const kids = G.g==='nino' || G.g==='infante';
   if(esMarcaMateu(a) && !esLocalMateu(slug)) return 'marca Mateu: solo locales Mateu Sports';
   if(esMarcaAurelius(a) && !esAurelius(slug)) return 'marca Aurelius: solo locales Aurelius';
-  if(SOLO_NINO[slug] && G.fam && !kids) return 'solo niño';
+  if(SOLO_NINO[slug] && G.fam && !kids && !G.varios) return 'solo niño';
   if(SIN_NINO[slug] && G.fam && kids) return 'no trabaja niño';
   if(esAurelius(slug)){
     // Aurelius no recibe niño, ni calzado ni indumentaria (Juli 17/09/2026, informe Crocs). Excepción: Aurelius City Bell
@@ -3871,7 +3872,10 @@ function repGrupo(a){
   const fam = /CALZ/.test(rub)?'calz' : /INDUM/.test(rub)?'ind' : '';
   const g = /INFANT|BEBE|BABY/.test(gen)?'infante' : /\bNIN[OA]S?\b|\bKIDS?\b|JUNIOR/.test(gen)?'nino'
     : /DAMA|MUJER|FEMEN|WOMEN/.test(gen)?'dama' : /HOMBRE|MASCUL|\bMEN\b/.test(gen)?'hombre' : /UNISEX/.test(gen)?'unisex' : '';
-  return { fam, g, key: fam&&g ? fam+'-'+g : '' };
+  // subrubro VARIOS (medias, accesorios, indumentaria sin género): no es adulto ni niño, va a TODOS los locales,
+  // Mateu Kids incluido (Juli 23/09/2026). No cambia el género (sin talles centrales ni prioridad de niño).
+  const varios = /VARIOS/.test(sinAcento(stripNN(a.genero)).toUpperCase());
+  return { fam, g, key: fam&&g ? fam+'-'+g : '', varios };
 }
 /* Orden de talles del calzado de NIÑO en escala US (informe Crocs 17/09/2026): la escala infantil da la vuelta —
    C6·C8·C10·C12·C13 y después J1·J2·J3 (en Nike/adidas 10K…13.5K y después 1Y…6Y)—, así que el 1·2·3 son los MÁS
@@ -4036,13 +4040,13 @@ function repAsig(slug, a, G){
   const b=brands.find(x=>{ const n=normMarca(x&&x.n); return n && mk && (n===mk || (Math.min(n.length,mk.length)>=3 && (n.startsWith(mk)||mk.startsWith(n)))); });
   if(!b) return null;
   const kids = G.g==='nino' || G.g==='infante';
-  if(b.t==='nino' && !kids) return null;                         // asignada solo para niño
+  if(b.t==='nino' && !kids && !G.varios) return null;            // asignada solo para niño (VARIOS pasa igual)
   // con ficha de la marca, manda la ficha: el texto libre viejo de la sucursal ya no filtra
   const fe=fichaDe(slug, a.marca, G);
   const txt=fe ? '' : sinAcento((b.d||[]).join(' ')).toLowerCase();
   if(txt){
     if(kids && /adulto|hombre|dama/.test(txt) && !/nin/.test(txt)) return null;
-    if(!kids && /\bnin[oa]s?\b/.test(txt) && !/adulto|hombre|dama/.test(txt)) return null;
+    if(!kids && !G.varios && /\bnin[oa]s?\b/.test(txt) && !/adulto|hombre|dama/.test(txt)) return null;
     if(state.rep.param.respetarDisc){
       const pedidas=DISC_CONOCIDAS.filter(k=>txt.includes(k.slice(0,5)));
       const disc=sinAcento(a.disc).toLowerCase();
