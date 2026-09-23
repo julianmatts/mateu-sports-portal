@@ -4919,6 +4919,29 @@ async function sincronizarStock(lista){
     if(p) actualizados++; else nuevos.push(rec);
     out[key] = rec;
   }
+  /* Un código de barras es de UN artículo. Si la carga lo trae en dos o más
+     (Calle 47, 23/09/2026: la planilla repetía en un Givova, un Fila y un Under
+     Armour la curva de EAN de una campera Puma, una Salomon y una remera Nike),
+     se deja solo en el que dice el mapa compartido —que lo aprendió del export
+     del sistema o de otras sucursales— y se saca de los demás. Si el mapa no lo
+     conoce, se saca de todos y no se comparte: mejor sin vínculo que mal vinculado. */
+  const duenos = {};
+  for(const key in out) (out[key].eans||[]).forEach(x=>{ (duenos[x.e] = duenos[x.e]||[]).push(key); });
+  const conflictos = Object.keys(duenos).filter(g=>duenos[g].length>1);
+  let eansDudosos = 0;
+  for(let i=0; i<conflictos.length; i++){
+    const g = conflictos[i];
+    let rec = null;
+    if(i<300){ try{ rec = await fetchJSON(EAN_FB+'/'+g+'.json'); }catch(e){ rec = null; } }
+    const bueno = rec && rec.codigo && !eanCodigoBasura(rec.codigo) ? fbKey(rec.codigo) : '';
+    for(const key of duenos[g]){
+      if(key===bueno) continue;
+      out[key].eans = out[key].eans.filter(x=>x.e!==g);
+      if(!out[key].eans.length) delete out[key].eans;
+      eansTotal--; eansDudosos++;
+    }
+    for(let j=eansNuevos.length-1; j>=0; j--) if(eansNuevos[j].e===g) eansNuevos.splice(j,1);
+  }
   for(const key in prev){
     if(out[key] || migradas.has(key)) continue;
     eliminados.push(prev[key]);
@@ -4996,7 +5019,7 @@ async function sincronizarStock(lista){
   DATA.articulos = out;
   DATA.meta = {...DATA.meta, ultimaCargaStock:now, cargadoPor:nombreOperador(), totalArticulos:Object.keys(out).length, sinUbicar:sinUbi};
   lastHash='';
-  mostrarResumenCarga(nuevos, actualizados, eliminados, ubicacionesImportadas, {total:eansTotal, nuevos:eansNuevos});
+  mostrarResumenCarga(nuevos, actualizados, eliminados, ubicacionesImportadas, {total:eansTotal, nuevos:eansNuevos, dudosos:eansDudosos});
   renderVistaActiva(); renderStatusbar();
 }
 
@@ -5015,6 +5038,10 @@ function mostrarResumenCarga(nuevos, actualizados, eliminados, ubicacionesImport
         '<div class="hint" id="resEan" style="text-transform:none;letter-spacing:0;font-weight:400">'+
           (eans.nuevos.length ? eans.nuevos.length+' nuevos: compartiéndolos con las demás sucursales…' : 'Todos ya estaban cargados.')+
         '</div></div></div>'
+      : '')+
+    (eans.dudosos
+      ? '<div class="res-row"><div class="num" style="color:#b45309">'+eans.dudosos+'</div><div class="lbl">Códigos de barras que el Excel traía en dos artículos'+
+        '<div class="hint" style="text-transform:none;letter-spacing:0;font-weight:400">Se dejaron solo en el artículo que conoce el mapa compartido (o en ninguno). Revisá la columna de código de barras de la planilla.</div></div></div>'
       : '')+
     '<div class="res-row nuevos"><div class="num">'+nuevos.length+'</div><div class="lbl">Nuevos (sin ubicar)</div>'+
       (nuevos.length?'<button class="res-toggle" data-t="resNuevos">ver lista</button>':'')+'</div>'+

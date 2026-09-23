@@ -1051,6 +1051,15 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   12 dígitos** (la lectora que recorta el primer dígito: «le faltan números»): antes `gtin13` lo
   tomaba por UPC-A y no coincidía nunca; ahora se compara por los últimos 11 cuando lo leído no
   llega a 13. Tests en `lib/ean.test.js`.
+  **Revisión de las demás sucursales (mismo día)**: con el mapa reparado, todo lo que dicen los
+  locales (Calle 49, Aurelius 12 y 5, Plaza, Diagonal, Berisso) coincide entre sí y con el export del
+  sistema; Ensenada carga sin EAN (su planilla no los trae). La única otra falla estaba en **Calle
+  47**: su planilla del 23/09 traía 33 EAN repetidos en dos artículos (la curva de una campera Puma
+  también en un pantalón Givova, la de una Nike en un Under Armour, Salomon en Fila…), y `eanLocal`
+  devolvía el primero que encontraba. Se limpiaron (respaldo `respaldo-ubicaciones-calle-47-…`) y
+  la carga ahora lo resuelve sola: un EAN que viene en dos artículos queda solo en el que dice el
+  mapa compartido `ean/<gtin>` (si el mapa no lo conoce, en ninguno, y no se comparte); el resumen
+  de la carga lo cuenta en ámbar («Códigos de barras que el Excel traía en dos artículos»).
 - **Etiquetas con el código del proveedor y el talle pegado (15/09/2026, reclamo de Calle 49 por
   Givova)**: la etiqueta de Givova escanea `CGE26010109033S` (sin el prefijo de marca y con el talle
   al final, sin símbolo) y el artículo es `GIVCGE26010109033`. `codigoConTallePegado` prueba el
