@@ -226,7 +226,11 @@ Function + reglas de Firebase cerradas) queda como etapa futura.
   rrhh@/producto@ porque sería subirle el rol — para abrirlo, pasar su entrada a `'todas'`). Nunca abre
   la cuenta de otro de la lista. Dos candados para que un PIN de 4 dígitos no se pueda probar desde
   cualquier lado: (1) vale solo desde un **dispositivo conocido** = donde ese mail ya entró con SU cuenta
-  (al entrar queda `accesos/dispositivos/<su mailKey>/<devId>` con `origen:'propio'`; bloquearlo u
+  (al entrar queda `accesos/dispositivos/<su mailKey>/<devId>` con `origen:'propio'` — ⚠ 23/09/2026: esa
+  escritura se lanzaba sin esperar y la redirección del Portal a Indicadores la cortaba, así que Cristian
+  nunca quedó anotado y su clave maestra no abría nada; ahora `verificarLogin` la espera y `revalidar` la
+  repite una vez por pestaña para las sesiones ya abiertas; sus dispositivos 2U3U/WHVF y el Y4U3 de Juli se
+  anotaron a mano ese día; bloquearlo u
   olvidarlo en el panel 🔒 le saca la clave maestra a ese dispositivo) o ya aprobado para la cuenta a la
   que se entra (la PC del local); el dispositivo se mira ANTES de comparar el PIN y el error es el
   genérico; (2) no vale mientras el PIN propio esté sin renovar (`pinCambio` < `PIN_DESDE`). La sesión

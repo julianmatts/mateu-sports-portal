@@ -200,9 +200,13 @@
     return probar(0);
   }
   // El que tiene clave maestra deja anotado el dispositivo al entrar con SU cuenta.
+  // Devuelve la promesa: el Portal la ESPERA antes de seguir, porque después del login
+  // redirige (gerencia → Indicadores) y una escritura lanzada sin esperar se cortaba con
+  // la navegación (23/09/2026: Cristian entró tres veces desde su PC y nunca quedó anotada,
+  // así que su clave maestra no abría ninguna cuenta de local).
   function anotarDispositivoPropio(email){
     var ahora = Date.now();
-    req('GET', urlDev(email)).then(function(d){
+    return req('GET', urlDev(email)).then(function(d){
       if(d && d.estado === 'revocado') return;
       if(d) return req('PATCH', urlDev(email), {ultimo: ahora, etq: etiqueta()});
       return req('PUT', urlDev(email), {estado:'aprobado', cod: codigo(), etq: etiqueta(),
@@ -215,8 +219,10 @@
   function verificarLogin(usuario){
     var email = (usuario && usuario.email) || '', rol = usuario && usuario.rol;
     if(!controla(rol)){
-      if(MAESTRAS[email.toLowerCase()]) anotarDispositivoPropio(email);
-      registrar(email, rol, 'ok'); return Promise.resolve('ok');
+      var pendientes = [registrar(email, rol, 'ok')];
+      if(MAESTRAS[email.toLowerCase()]) pendientes.push(anotarDispositivoPropio(email));
+      // Las escrituras ya no fallan (tienen catch); el tope es por si la red se cuelga.
+      return Promise.race([Promise.all(pendientes), new Promise(function(r){ setTimeout(r, 4000); })]).then(function(){ return 'ok'; });
     }
     return req('GET', urlDev(email)).then(function(d){
       var ahora = Date.now();
@@ -276,7 +282,16 @@
     // Sesión abierta con la clave maestra: no se le pide el PIN nuevo de la cuenta (no es su dueño).
     var maestra = !!(s.maestra && MAESTRAS[String(s.maestra).toLowerCase()]);
     if(maestra) chequearPin = function(){};
-    if(!controla(s.rol)){ chequearPin(); return; }
+    if(!controla(s.rol)){
+      // Sesión abierta de quien tiene clave maestra (con su propia cuenta): deja anotado
+      // este dispositivo como propio, una vez por pestaña, así la clave maestra sirve
+      // desde acá aunque el ingreso haya sido antes de este control.
+      if(!maestra && MAESTRAS[(s.email||'').toLowerCase()] && !ssGet('mateu_acceso_propio')){
+        ssSet('mateu_acceso_propio', '1');
+        anotarDispositivoPropio(s.email);
+      }
+      chequearPin(); return;
+    }
     if(s.acc && s.acc !== devId()){ expulsar('reingresar'); return; }   // sesión copiada de otro dispositivo
     if(!s.acc && ahora > GRACIA_HASTA){ expulsar('reingresar'); return; }
 
