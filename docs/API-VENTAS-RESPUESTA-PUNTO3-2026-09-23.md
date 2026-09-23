@@ -200,7 +200,9 @@ Las lentas caen a intervalos regulares de **unos 30 segundos** (14:24:20, 14:24:
 14:25:37, 14:26:07, 14:26:37, 14:27:07, 14:27:37, 14:28:07, 14:28:34, 14:29:26): cada medio
 minuto hay una ventana de ~20 s en la que la consulta queda bloqueada, no una vez por hora. El
 reintento no arregla eso, lo esconde: el Portal esperaría 20 s en una de cada tres llamadas.
-Pistas: el bloqueo coincide con el proceso que sincroniza las ventas (locks sobre las tablas que
-lee la API). Opciones del lado de la API: leer sin bloqueo (en SQL Server,  /
- o snapshot isolation), bajar el timeout de la consulta a 3–5 s con reintento
-inmediato, o responder desde un cache propio de 5 minutos por semana (el ya declara que se puede) y refrescarlo por detrás, así una llamada nunca espera a la base.
+Pista: el bloqueo coincide con el proceso que sincroniza las ventas (locks sobre las tablas que
+lee la API). Opciones del lado de la API: leer sin bloqueo (en SQL Server, `WITH (NOLOCK)` /
+`READ UNCOMMITTED` o snapshot isolation), bajar el timeout de la consulta a 3–5 s con reintento
+inmediato, o responder desde un cache propio de 5 minutos por semana (el
+`Cache-Control: max-age=300` ya declara que se puede) y refrescarlo por detrás, así una llamada
+nunca espera a la base.

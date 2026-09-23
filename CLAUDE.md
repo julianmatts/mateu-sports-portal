@@ -3445,6 +3445,26 @@ consulta). Etapa 1 = guía + catálogo; etapa 2 = stock desde el Buscador (hecha
 - Pendiente: la etapa 3, que Matts use los cursos de la Academia como fuente de producto, motivo de un toque en el voto «No» (solo 4 de 64
   consultas tenían voto) y atributos reales por artículo (forma, balance, drop…): hoy el catálogo solo trae el nombre.
 
+## API de ventas (fase 1) — estado 23/09/2026
+
+El dev entregó la API de ventas sobre el SQL Server del sistema (`https://66-97-37-173.sslip.io`, key Bearer que
+**no va en el repo**: es público). Doc del dev en `docs/API-VENTAS-DOC-DEV-2026-09-23.md` (key tapada), spec en
+`docs/API-VENTAS-FASE1.md` (§4 reescrito ese día con el criterio EXACTO), **informe de validación para el dev en
+`docs/API-VENTAS-VALIDACION-2026-09-23.md`** y la respuesta de la tarde en `docs/API-VENTAS-RESPUESTA-PUNTO3-2026-09-23.md`.
+Resultado: la API responde y respeta el shape de `ventaEquipo`, pero **todavía no se conecta**: (1) el importe por
+línea venía bruto (a la tarde corrigieron `Imp_dto`, pero falta el descuento del comprobante que el reporte del
+sistema prorratea por línea: 10/15/20 % en todas las líneas del ticket), (2) Nc con el signo al revés (corregido a
+la tarde), (3) aplica el criterio viejo de agosto y el Portal es EXACTO desde el 17/09 — el dev lo cuestionó y pidió
+evidencia: está en la respuesta, con casos de su propio /lineas y del export de agosto (§4 baja los tickets 11 % y
+sube las unidades 5 %; WEB MATEU/AURELIUS es el campo Vendedor, no una sucursal); es decisión de Juli y no se reabre,
+(4) sin `Access-Control-Allow-Origin` (corregido a la tarde) y (5) 500 intermitentes, que en realidad son un bloqueo
+de ~20 s cada ~30 s en la base (1 de cada 3 llamadas tarda 20 s; su reintento lo esconde). Para volver a validar:
+`VENTAS_API_KEY=<key> node scripts/validar-api-ventas.mjs semana|sucursal|lineas …` (cruza contra Firebase y contra
+el export «Ventas agosto portal.csv» comprobante por comprobante; meta = diferencia 0 contra el export del sistema).
+Plan de conexión (cuando los números den): Pages Function `/api/ventas/…` como proxy con la key en Secret (sin CORS,
+key fuera del navegador, filtro de slug por rol con el token de `acceso.js`) e Indicadores leyendo la semana viva de
+ahí con fallback a `ventaEquipo`; la carga manual queda como plan B.
+
 ## Reglas
 
 - Responder y comentar el código en **español**.
