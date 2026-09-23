@@ -1137,11 +1137,22 @@ function eansDeCelda(v){
   return out;
 }
 function mismoEan(a, b){
-  const ga=gtin13(a), gb=gtin13(b); if(!ga||!gb) return false;
+  const da=eanDigits(a), db=eanDigits(b); if(!da||!db) return false;
+  const ga=gtin13(da), gb=gtin13(db);
   if(ga===gb) return true;
-  const sa=ga.slice(-11), sb=gb.slice(-11);
-  return (ga.length<13 || gb.length<13) && sa===sb;   // uno de los dos vino recortado
+  // Uno de los dos vino RECORTADO por la lectora: se compara por los últimos 11.
+  // Se mira el largo de lo leído (no del GTIN normalizado): un EAN-13 al que le
+  // falta el primer dígito llega con 12 y gtin13 lo tomaba como UPC-A («le faltan
+  // números», Berisso 23/09/2026), así que nunca coincidía con el guardado.
+  if(da.length>=13 && db.length>=13) return false;
+  return ga.slice(-11)===gb.slice(-11);
 }
+/* «Código» que no es un artículo: una carga con la columna de código apuntando
+   al género o al subrubro (Calle 49, 09/09/2026: 6.932 EAN quedaron vinculados a
+   «02-HOMBRE», «03-DAMA», «VARIOS»…). Ese vínculo no sirve en ninguna sucursal:
+   no se publica al mapa y, si ya está, se toma como «sin vincular». */
+const RX_COD_BASURA = /^(\d{1,2}[-_ ]*)?(varios|unisex|dama|hombre|mujer|ni[ñn][oa]s?|infantes?|kids?|junior|beb[eé]s?|adultos?|sin\s+g[eé]nero|calzado|indumentaria|accesorios|total|s\/d|n\/a|#n\/a|-+)$/i;
+function eanCodigoBasura(c){ const s=String(c==null?'':c).trim(); return !s || RX_COD_BASURA.test(s); }
 // 1) por los `eans` guardados en los artículos de ESTA sucursal (columna del export)
 function eanLocal(q){
   if(!esEan(q)) return null;
@@ -1174,7 +1185,7 @@ async function eanRemoto(q){
     delete _eanCache[g]; delete _eanCache['s'+suf];
     return {error:true};
   }
-  if(!rec || !rec.codigo) return null;
+  if(!rec || !rec.codigo || eanCodigoBasura(rec.codigo)) return null;   // vínculo basura = sin vincular (se puede corregir a mano)
   const key = fbKey(rec.codigo);
   return {key: DATA.articulos[key] ? key : null, codigo:rec.codigo, t:rec.t||'', origen:'mapa'};
 }
@@ -1202,7 +1213,7 @@ async function eanIndexCargar(){
     const map = await fetchJSON(EAN_FB+'.json') || {};
     for(const k in map){
       if(k==='suf') continue;
-      const r = map[k]; if(!r || !r.codigo) continue;
+      const r = map[k]; if(!r || !r.codigo || eanCodigoBasura(r.codigo)) continue;
       poner(gtin13(k), r.codigo);
     }
   }catch(e){}
@@ -1217,6 +1228,13 @@ function eanIdxBuscar(g){ if(!_eanIdx || !g) return ''; return _eanIdx[g] || _ea
    tandas, porque un reporte abierto por talle puede traer decenas de miles. */
 async function eanCompartir(nuevos, onProgreso){
   if(!nuevos || !nuevos.length) return 0;
+  /* Candado: un «artículo» con más códigos de barras que el tope por artículo no
+     es un artículo, es una columna equivocada (género, subrubro, rubro). Esos
+     vínculos ensuciarían todas las sucursales, así que no se publican. */
+  const porCod = {};
+  nuevos.forEach(x=>{ if(x && x.codigo) porCod[x.codigo] = (porCod[x.codigo]||0)+1; });
+  nuevos = nuevos.filter(x=> x && x.codigo && !eanCodigoBasura(x.codigo) && porCod[x.codigo] <= EAN_MAX_ART);
+  if(!nuevos.length) return 0;
   let ya = {};
   try{ ya = await fetchJSON(EAN_FB+'.json?shallow=true') || {}; }catch(e){ return 0; }
   const vistos = {};
@@ -2153,6 +2171,27 @@ function patchMetaContadores(){
 }
 // Para escrituras que no tocan contadores (estanterías, feedback, etc.)
 function bumpRev(){ patchJSON(sucPath()+'/meta.json', {rev:Date.now()}).catch(()=>{}); }
+
+/* Índice compacto de la sucursal para Matts (23/09/2026): `sucursales/<slug>/indice` =
+   {ts, n, a:{<clave>:[stock, "talle:cant,…", "ubicación en texto", idItem, descripción]}}.
+   El asistente lo baja en UN pedido (antes hacía uno por artículo y chocaba con el tope de
+   subrequests de Cloudflare). Se rehace entero en cada carga de stock y se retoca la entrada al
+   asignar / quitar una ubicación. Best-effort: si falla, Matts cae al camino viejo. */
+function indiceMattsEntrada(a){
+  if(!a) return null;
+  const t = Array.isArray(a.talles) ? a.talles.filter(x=>x && x.t!=null && +x.c>0).map(x=>String(x.t).replace(/[,:]/g,'.')+':'+(+x.c)).join(',') : '';
+  const u = Object.values(a.ubicaciones||{}).filter(x=>x && x.estanteriaId).map(nombreUbicacion).filter(x=>!/eliminada/.test(x));
+  return [+a.stock||0, t, u.join(' y '), String(a.articulo||''), String(a.descripcion||'').slice(0,48)];
+}
+function indiceMatts(arts){
+  const a = {}; let n = 0;
+  for(const k in (arts||{})){ const e = indiceMattsEntrada(arts[k]); if(e && e[0]>0){ a[k]=e; n++; } }
+  return {ts:Date.now(), n, a};
+}
+function indiceMattsPatch(artKey){
+  const a = (DATA.articulos||{})[artKey]; const e = a ? indiceMattsEntrada(a) : null;
+  patchJSON(sucPath()+'/indice/a.json', {[artKey]: (e && e[0]>0) ? e : null}).catch(()=>{});
+}
 
 /* ============================================================
    VISTA BUSCAR
@@ -3764,7 +3803,7 @@ async function asignarUbicacion(artKey, estId, modId){
     if(!a.ubicaciones) a.ubicaciones={};
     a.ubicaciones[r.name] = entrada;
     lastHash=''; renderVistaActiva(); renderStatusbar();
-    patchMetaContadores();
+    patchMetaContadores(); indiceMattsPatch(artKey);
     registrarMovimiento(artKey, 'asigna', nombreUbicacion(entrada));
     toast('Ubicación asignada ✓');
   }catch(e){ toast('No se pudo guardar. Probá de nuevo.'); }
@@ -3779,7 +3818,7 @@ async function quitarUbicacion(artKey, uid){
     delete a.ubicaciones[uid];
     registrarMovimiento(artKey, 'quita', nombreUbi);
     lastHash=''; renderVistaActiva(); renderStatusbar();
-    patchMetaContadores();
+    patchMetaContadores(); indiceMattsPatch(artKey);
     toastAccion('Ubicación quitada.', 'Deshacer', async ()=>{
       try{
         const r = await postJSON(sucPath()+'/articulos/'+encodeURIComponent(artKey)+'/ubicaciones.json', entrada);
@@ -4143,13 +4182,21 @@ const RX_EAN  = /(\bean\b|\bupc\b|\bgtin\b|barcode|c[oó]d(igo)?\.?\s*(de\s*)?ba
    de Drive llama «Código de barras» al SKU de la marca, que no es un EAN. */
 function columnaEsEan(rows, filaHdr, j){
   if(j==null || j<0) return false;
+  /* Se muestrea TODA la columna, salteando filas, no las primeras 200: el export
+     viene ordenado por código y en la columna «Código EAN» del sistema las
+     primeras marcas (Addnice…) traen la etiqueta del proveedor con el talle
+     pegado («ADUC18903A29!03!34») en vez de un EAN. Con las primeras 200 filas
+     Berisso daba 63 % y la columna se descartaba; en todo el archivo es el 88 %. */
+  const ini = Math.max(filaHdr,-1)+1, n = rows.length - ini;
+  if(n<=0) return false;
+  const paso = Math.max(1, Math.floor(n/400));
   let vals=0, ok=0;
-  for(let i=Math.max(filaHdr,-1)+1; i<rows.length && vals<200; i++){
+  for(let i=ini; i<rows.length && vals<400; i+=paso){
     const v = String((rows[i]||[])[j]==null?'':(rows[i]||[])[j]).trim();
     if(!v) continue;
     vals++; if(eanDigits(v).length>=12) ok++;
   }
-  return vals>=3 && ok/vals>=0.7;
+  return vals>=3 && ok/vals>=0.6;
 }
 // sin encabezado que lo diga, se busca una columna de EAN por su contenido
 function colEanPorContenido(rows, filaHdr, usadas){
@@ -4237,6 +4284,7 @@ function detectarEncabezado(rows){
   for(let i=0; i<Math.min(rows.length, 25); i++){
     const row = rows[i]||[];
     let iCod=-1, iDesc=-1, iStk=-1, iUbi=-1, iTalle=-1, iEan=-1;
+    const eanCands = [];
     row.forEach((c,j)=>{
       const t = String(c||'').trim();
       if(!t) return;
@@ -4245,14 +4293,19 @@ function detectarEncabezado(rows){
       if(iStk<0  && RX_STK.test(t))  iStk=j;
       if(iUbi<0  && RX_UBI.test(t))  iUbi=j;
       if(iTalle<0 && RX_TALLE.test(t)) iTalle=j;
-      if(iEan<0 && RX_EAN.test(t)) iEan=j;
+      if(RX_EAN.test(t)) eanCands.push(j);
     });
-    // «Código de barras» también matchea RX_COD: si cayó ahí, el código es la siguiente columna que matchee
-    let iCodAlt = -1;
-    if(iEan>=0 && iCod===iEan) row.forEach((c,j)=>{ const t=String(c||'').trim(); if(iCodAlt<0 && j!==iEan && RX_COD.test(t)) iCodAlt=j; });
-    if(iEan>=0){
-      if(columnaEsEan(rows, i, iEan)){ if(iCod===iEan && iCodAlt>=0) iCod=iCodAlt; }
-      else iEan = -1;   // el encabezado dice «código de barras» pero la columna trae otra cosa (en la planilla de Drive es el SKU)
+    /* Puede haber VARIOS encabezados que suenan a código de barras: el export
+       «stock diario» del sistema trae «Código barras» (que es el SKU de la marca)
+       y «Código EAN» (el EAN de verdad). Gana el primero cuyo CONTENIDO sea EAN;
+       si ninguno lo es (la planilla de Drive llama «Código de barras» al SKU),
+       queda sin columna y se busca por contenido más abajo. */
+    for(const j of eanCands){ if(columnaEsEan(rows, i, j)){ iEan=j; break; } }
+    // «Código de barras» también matchea RX_COD: si el código cayó en la columna del EAN, es la siguiente que matchee
+    if(iEan>=0 && iCod===iEan){
+      let iCodAlt = -1;
+      row.forEach((c,j)=>{ const t=String(c||'').trim(); if(iCodAlt<0 && j!==iEan && eanCands.indexOf(j)<0 && RX_COD.test(t)) iCodAlt=j; });
+      if(iCodAlt>=0) iCod=iCodAlt;
     }
     if(iEan<0) iEan = colEanPorContenido(rows, i, [iCod,iDesc,iStk,iUbi,iTalle]);
     /* «Articulo» rotula el código en unos exports y el Id.item en otros (la
@@ -4918,6 +4971,7 @@ async function sincronizarStock(lista){
 
   // una sola escritura grande (PUT del set completo) + meta
   await putJSON(sucPath()+'/articulos.json', out);
+  try{ await putJSON(sucPath()+'/indice.json', indiceMatts(out)); }catch(e){}
   if(Object.keys(memoPatch).length){ try{ await patchJSON(sucPath()+'/ubicMemoria.json', memoPatch); }catch(e){} }
   if(recuperadas) toast('↩ '+recuperadas+' artículo'+(recuperadas===1?'':'s')+' que habían salido del stock recuperaron su ubicación.');
 

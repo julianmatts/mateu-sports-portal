@@ -164,7 +164,7 @@ async function cargarVocab() {
   return VOCAB || {};
 }
 // palabras que no aportan al buscar un modelo por nombre, y sinónimos de la calle → como figura en el sistema
-const RELLENO = {}; 'ZAPATILLA ZAPATILLAS ZAPA ZAPAS CALZADO PARA CON SIN DE DEL LA EL LOS LAS UN UNA EN QUE HAY TIENEN TENES TENEMOS DONDE ESTA ESTAN BUSCO BUSCA QUIERO QUIERE MODELO MARCA TALLE NUMERO STOCK HOMBRE DAMA MUJER'.split(' ').forEach(w => { RELLENO[w] = 1; });
+const RELLENO = {}; 'ZAPATILLA ZAPATILLAS ZAPA ZAPAS CALZADO PARA CON SIN DE DEL LA EL LOS LAS UN UNA EN QUE HAY TIENEN TENES TENEMOS DONDE ESTA ESTAN BUSCO BUSCA QUIERO QUIERE MODELO MARCA TALLE NUMERO STOCK HOMBRE DAMA MUJER COMO CUAL CUALES CUANTO CUANTOS CUANTA PORQUE VENIMOS OBJETIVO PENDIENTE PENDIENTES SEMANA MES HOY EQUIPO VENTA VENTAS VENDIMOS VENDEMOS SUCURSAL SUCURSALES CARGAR CARGO PORTAL MODULO META USA USO USAR SIRVE HOLA BUENAS GRACIAS CRACK CLIENTE ALGUIEN ALGO EMPEZAR PRINCIPIANTE NIVEL ANOS ANO ME TE LE LO MI SU ES SON SI NO POR MAS MENOS OTRA OTRO OTRAS OTROS SABES SABE SOBRE TENGO TIENE ALGUN ALGUNA ALGUNOS QUERIA NECESITO NECESITA PASAME MOSTRAME DECIME DAME VER'.split(' ').forEach(w => { RELLENO[w] = 1; });
 const SINONIMOS = { PATINETA: 'SKATE', ROLLERS: 'ROLLER', PADEL: 'PADDLE', BOTINES: 'BOTIN', OJOTAS: 'OJOTA', CHANCLETAS: 'OJOTA', MEDIAS: 'MEDIA', GORRO: 'GORRO', CANILLERAS: 'CANILLERA', GUANTES: 'GUANTE', PELOTAS: 'PELOTA', PALETAS: 'PALETA', RAQUETAS: 'RAQUETA', MOCHILAS: 'MOCHILA', CAMPERAS: 'CAMPERA', REMERAS: 'REMERA', BUZOS: 'BUZO', CALZAS: 'CALZA', SHORTS: 'SHORT' };
 function tokens(s) { return String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^A-Z0-9]+/).filter(t => t.length >= 2 || /^\d$/.test(t)); }
 function distancia(a, b, max) {   // Levenshtein con corte
@@ -179,9 +179,10 @@ function distancia(a, b, max) {   // Levenshtein con corte
   return prev[b.length];
 }
 // palabra del usuario → palabra del catálogo: exacta, comienzo («ultraboo») o parecida («dropster» → DROPSET)
-function corregirPalabra(t, V) {
+function corregirPalabra(t, V, soloPrefijo) {
   if (V[t]) return t;
   if (t.length < 4 || /^\d+$/.test(t)) return null;
+  if (soloPrefijo) { let mejor = null; for (const w in V) if (w.indexOf(t) === 0 && (!mejor || V[w] > V[mejor])) mejor = w; return mejor; }
   let mejor = null, md = 99, mc = -1;
   const max = t.length <= 5 ? 1 : 2;
   for (const w in V) {
@@ -199,7 +200,7 @@ async function resolverCodigo(txt) {
   if (/\d/.test(c) && c.length >= 5) return await gj(FB_ASIS + '/catalogo/porCod/' + c + '.json');
   return null;
 }
-async function filasPorTexto(texto) {
+async function filasPorTexto(texto, estricto) {
   const toks = tokens(texto);
   if (!toks.length) return { filas: [] };
   if (toks.length === 1) { const f = await resolverCodigo(toks[0]); if (f) return { filas: [f], nota: 'Encontrado por código / Id.item.' }; }
@@ -208,17 +209,18 @@ async function filasPorTexto(texto) {
   toks.forEach(t0 => {
     if (RELLENO[t0]) return;
     const t = SINONIMOS[t0] || t0;
-    const w = corregirPalabra(t, V);
+    const w = corregirPalabra(t, V, estricto);
     if (!w) ignoradas.push(t0); else { if (usadas.indexOf(w) < 0) usadas.push(w); if (w !== t0) corregidas.push(t0 + ' → ' + w); }
   });
   if (!usadas.length) return { filas: [], ignoradas, inexistente: ignoradas.length > 0, generico: !ignoradas.length };
   // entradas = las palabras menos comunes; se prueban hasta 3 y se ordena por cuántas palabras (y cuán raras) tiene cada artículo
-  const entradas = usadas.filter(w => V[w] <= PALABRA_COMUN).sort((a, b) => V[a] - V[b]).slice(0, 3);
+  const menor = w => w.length <= 2 || /^\d+$/.test(w);   // talles, «UK», «2»: filtran, no buscan
+  const entradas = usadas.filter(w => V[w] <= PALABRA_COMUN && !menor(w)).sort((a, b) => V[a] - V[b]).slice(0, 3);
   if (!entradas.length) return { filas: [], generico: true, ignoradas };
   const listas = await Promise.all(entradas.map(w => gj(FB_ASIS + '/catalogo/palabras/' + w + '.json')));
   const vistos = {}, todas = [];
   listas.forEach(l => (l || []).forEach(f => { if (!vistos[f[0]]) { vistos[f[0]] = 1; todas.push(f); } }));
-  const peso = w => 1 / Math.sqrt(V[w] || 1);
+  const peso = w => menor(w) ? 0.02 : 1 / Math.sqrt(V[w] || 1);
   const total = usadas.reduce((a, w) => a + peso(w), 0);
   const punt = todas.map(f => { const tt = tokens(f[1] + ' ' + f[2]); let p = 0, n = 0; usadas.forEach(w => { if (tt.indexOf(w) >= 0) { p += peso(w); n++; } }); return [f, p, n]; }).sort((a, b) => b[1] - a[1]);
   const completas = punt.filter(x => x[2] === usadas.length);
@@ -291,7 +293,9 @@ async function buscarCatalogo(inp, user) {
   // si el usuario es de una sucursal que carga stock: primero lo que figura en SU local
   const mio = (user && (user.sucursal || user.outlet_id)) || '';
   let local = null;
-  if (mio && ok.length) { const con = await sucursalesConStock(); if (con[mio]) { local = await clavesSucursal(mio); ok = ok.filter(f => local[fbKey(f[0])]).concat(ok.filter(f => !local[fbKey(f[0])])); } }
+  let idx = null;
+  if (mio && ok.length) { const con = await sucursalesConStock(); if (con[mio]) { idx = await indiceSucursal(mio); local = idx ? idx.a : await clavesSucursal(mio); ok = ok.filter(f => local[fbKey(f[0])]).concat(ok.filter(f => !local[fbKey(f[0])])); } }
+  const enLocalTxt = f => { const e = idx && idx.a[fbKey(f[0])]; if (!e) return local ? !!local[fbKey(f[0])] : undefined; const a = filaIndice(e); return a.stock + ' u.' + (a.talles.length ? ' (' + tallesTxt(a.talles) + ')' : '') + (a.ubic ? ' · ' + a.ubic : ''); };
   const nLocal = local ? ok.filter(f => local[fbKey(f[0])]).length : 0;
   const marcas = {};
   ok.forEach(f => { marcas[f[2]] = (marcas[f[2]] || 0) + 1; });
@@ -301,8 +305,8 @@ async function buscarCatalogo(inp, user) {
     palabras_corregidas: ex.corregidas, palabras_que_no_existen_en_el_catalogo: ex.ignoradas,
     coincidencia_parcial: ex.parcial ? 'Ningún artículo tiene TODAS las palabras: van los más parecidos, avisale al usuario.' : undefined,
     en_el_local_del_usuario: local ? nLocal + ' de ' + ok.length + ' figuran en el stock cargado de ' + SUC_UBIC[mio] : undefined,
-    siguiente_paso: local ? (nLocal ? 'NO preguntes todavía: llamá AHORA a consultar_stock con los códigos marcados en_el_local (hasta 4) y contestá con unidades, talles y ubicación.' : 'Ninguno figura en el local: decilo y llamá a consultar_stock con los más probables para ver qué otra sucursal los tiene.') : undefined,
-    resultados: ok.slice(0, MAX_FILAS).map(f => ({ codigo: f[0], articulo: f[1], marca: f[2], genero: f[3], tipo: f[4], disciplina: f[5], rubro: f[6], en_el_local: local ? !!local[fbKey(f[0])] : undefined })),
+    siguiente_paso: local ? (nLocal ? (idx ? 'Los marcados en_el_local ya traen unidades, talles y ubicación en ' + SUC_UBIC[mio] + ': contestá con eso; consultar_stock solo si piden otra sucursal.' : 'NO preguntes todavía: llamá AHORA a consultar_stock con los códigos marcados en_el_local (hasta 4) y contestá con unidades, talles y ubicación.') : 'Ninguno figura en el local: decilo y llamá a consultar_stock con los más probables para ver qué otra sucursal los tiene.') : undefined,
+    resultados: ok.slice(0, MAX_FILAS).map(f => ({ codigo: f[0], articulo: f[1], marca: f[2], genero: f[3], tipo: f[4], disciplina: f[5], rubro: f[6], en_el_local: enLocalTxt(f) })),
     nota: [ex.nota, ok.length > MAX_FILAS ? 'Se muestran ' + MAX_FILAS + ' de ' + ok.length + ': afiná con marca, género o texto.' : ''].filter(Boolean).join(' ') || undefined
   };
 }
@@ -332,18 +336,23 @@ async function consultarStock(inp, user) {
   const con = await sucursalesConStock();
   const slugs = Object.keys(con);
   const q = 'orderBy=' + encodeURIComponent('"$key"');
-  const pedidos = [];
-  codigos.forEach(c => slugs.forEach(sl => pedidos.push(
-    fetch(FB_UBIC + '/' + sl + '/articulos.json?' + q + '&equalTo=' + encodeURIComponent(JSON.stringify(fbKey(c)))).then(r => r.json()).then(o => ({ c, sl, a: o && Object.values(o)[0] })).catch(() => ({ c, sl, a: null, fallo: true }))
-  )));
-  const res = await Promise.all(pedidos);
+  // sucursales con índice compacto: se resuelve en memoria; las otras, un pedido por código
+  const idxs = {};
+  await Promise.all(slugs.map(async sl => { idxs[sl] = await indiceSucursal(sl); }));
+  const pedidos = [], res = [];
+  codigos.forEach(c => slugs.forEach(sl => {
+    if (idxs[sl]) { const e = idxs[sl].a[fbKey(c)]; res.push({ c, sl, a: e ? Object.assign(filaIndice(e), { deIndice: true }) : null }); return; }
+    pedidos.push(fetch(FB_UBIC + '/' + sl + '/articulos.json?' + q + '&equalTo=' + encodeURIComponent(JSON.stringify(fbKey(c)))).then(r => r.json()).then(o => ({ c, sl, a: o && Object.values(o)[0] })).catch(() => ({ c, sl, a: null, fallo: true })));
+  }));
+  (await Promise.all(pedidos)).forEach(x => res.push(x));
   // Ubicación en el depósito: los artículos guardan ids (est29 / mod1); los nombres salen de estanterias/<id>.
   // Se baja solo la estantería que hace falta, una vez.
   const estPed = {};
-  res.forEach(x => { if (x.a && x.a.ubicaciones) Object.values(x.a.ubicaciones).forEach(u => { if (u && u.estanteriaId) estPed[x.sl + '|' + u.estanteriaId] = 1; }); });
+  res.forEach(x => { if (x.a && !x.a.deIndice && x.a.ubicaciones) Object.values(x.a.ubicaciones).forEach(u => { if (u && u.estanteriaId) estPed[x.sl + '|' + u.estanteriaId] = 1; }); });
   const estDoc = {};
   await Promise.all(Object.keys(estPed).slice(0, 24).map(k => { const [sl, id] = k.split('|'); return fetch(FB_UBIC + '/' + sl + '/estanterias/' + id + '.json').then(r => r.json()).then(d => { estDoc[k] = d; }).catch(() => {}); }));
   function ubicTxt(sl, a) {
+    if (a.deIndice) return a.ubic ? [a.ubic] : [];
     return Object.values(a.ubicaciones || {}).filter(u => u && u.estanteriaId).map(u => {
       const d = estDoc[sl + '|' + u.estanteriaId] || {};
       const nEst = parseInt(String(u.estanteriaId).replace(/\D/g, ''), 10);
@@ -379,8 +388,27 @@ async function consultarStock(inp, user) {
 /* Qué hay EN UNA SUCURSAL de lo que sirve para el pedido: catálogo (disciplina/rubro/marca/género/texto) ∩ artículos
    cargados en el Buscador de esa sucursal (claves con shallow, liviano) y después el stock real de hasta MAX_LOCAL. */
 const MAX_LOCAL = 24;
+/* Índice compacto de la sucursal (23/09/2026): lo escribe el Buscador en cada carga de stock en
+   `sucursales/<slug>/indice` = {ts, n, a:{<clave>:[stock, "talle:cant,…", "ubicación", idItem, descripción]}}.
+   Se baja en UN pedido (~40–300 KB) y queda 10 min en memoria: con él, stock_del_local y consultar_stock
+   no hacen un pedido por artículo. Sin índice (sucursal que todavía no volvió a cargar) se cae al camino viejo. */
+const INDICE_SUC = {};
+async function indiceSucursal(slug) {
+  const c = INDICE_SUC[slug];
+  if (c && Date.now() - c.ts < 600e3) return c.i;
+  const i = await gj(FB_UBIC + '/' + slug + '/indice.json');
+  INDICE_SUC[slug] = { i: (i && i.a) ? i : null, ts: Date.now() };
+  return INDICE_SUC[slug].i;
+}
+function filaIndice(e) {   // [stock, talles, ubic, idItem, desc] → objeto
+  const t = e[1] ? String(e[1]).split(',').map(x => { const p = x.split(':'); return { t: p[0], c: +p[1] || 0 }; }).filter(x => x.t && x.c > 0) : [];
+  return { stock: +e[0] || 0, talles: t, ubic: e[2] || '', idItem: e[3] || '', descripcion: e[4] || '' };
+}
+const tallesTxt = t => t.map(z => z.t + ' (' + z.c + ')').join(', ');
 const CLAVES_SUC = {};
 async function clavesSucursal(slug) {
+  const idx = await indiceSucursal(slug);
+  if (idx) return idx.a;
   const c = CLAVES_SUC[slug];
   if (c && Date.now() - c.ts < 600e3) return c.k;
   const k = await gj(FB_UBIC + '/' + slug + '/articulos.json?shallow=true');
@@ -410,22 +438,35 @@ async function stockDelLocal(inp, user) {
   const claves = await clavesSucursal(slug);
   const enLocal = r.filas.filter(f => claves[fbKey(f[0])]);
   if (!enLocal.length) return { sucursal: SUC_UBIC[slug], stock_del: fechaAR(con[slug].cargado), articulos_del_catalogo_que_cumplen: r.filas.length, en_el_local: 0, nota: 'Ninguno de esos artículos figura en el stock cargado de ' + SUC_UBIC[slug] + '. Decilo así y, si sirve, ofrecé ver otras sucursales con consultar_stock.' };
-  // hasta MAX_LOCAL, alternando marcas para que no salga todo de una sola
-  const porMarca = {}; enLocal.forEach(f => (porMarca[f[2]] = porMarca[f[2]] || []).push(f));
-  const elegidos = []; let quedan = true;
-  while (elegidos.length < MAX_LOCAL && quedan) { quedan = false; Object.keys(porMarca).forEach(m => { const f = porMarca[m].shift(); if (f && elegidos.length < MAX_LOCAL) { elegidos.push(f); quedan = true; } }); }
-  const docs = await Promise.all(elegidos.map(f => gj(FB_UBIC + '/' + slug + '/articulos/' + encodeURIComponent(fbKey(f[0])) + '.json')));
+  const idx = await indiceSucursal(slug);
   const talle = String(inp.talle || '').trim().toUpperCase().replace(',', '.');
   let abrePorTalle = false;
   const filas = [];
-  elegidos.forEach((f, i) => {
-    const a = docs[i]; if (!a || !(a.stock > 0)) return;
-    const t = (a.talles || []).filter(z => z && z.t && /[0-9A-Z]/i.test(String(z.t)) && z.c > 0);
-    if (t.length) abrePorTalle = true;
-    const tieneTalle = !talle || !t.length || t.some(z => String(z.t).toUpperCase().replace(',', '.') === talle);
-    const ub = Object.values(a.ubicaciones || {}).filter(u => u && u.estanteriaId).map(u => { const n = parseInt(String(u.estanteriaId).replace(/\D/g, ''), 10); const piso = (PISOS[slug] || []).filter(x => n >= x[1] && n <= x[2]).map(x => x[0])[0]; return 'Estantería ' + (n || u.estanteriaId) + (u.moduloId ? ' · Módulo ' + String(u.moduloId).replace(/\D/g, '') : '') + (piso ? ' (' + piso + ')' : ''); });
-    filas.push({ _t: tieneTalle, codigo: f[0], articulo: f[1], marca: f[2], genero: f[3], disciplina: f[5], unidades: a.stock, talles: t.length ? t.map(z => z.t + ' (' + z.c + ')').join(', ') : undefined, ubicacion: ub.length ? ub.join(' y ') : 'sin ubicar' });
-  });
+  let elegidos;
+  if (idx) {
+    // con índice se mira TODO lo que hay en el local, sin pedidos por artículo
+    elegidos = enLocal;
+    enLocal.forEach(f => {
+      const a = filaIndice(idx.a[fbKey(f[0])]); if (!(a.stock > 0)) return;
+      if (a.talles.length) abrePorTalle = true;
+      const tieneTalle = !talle || !a.talles.length || a.talles.some(z => String(z.t).toUpperCase().replace(',', '.') === talle);
+      filas.push({ _t: tieneTalle, codigo: f[0], articulo: f[1], marca: f[2], genero: f[3], disciplina: f[5], unidades: a.stock, talles: a.talles.length ? tallesTxt(a.talles) : undefined, ubicacion: a.ubic || 'sin ubicar' });
+    });
+  } else {
+    // hasta MAX_LOCAL, alternando marcas para que no salga todo de una sola
+    const porMarca = {}; enLocal.forEach(f => (porMarca[f[2]] = porMarca[f[2]] || []).push(f));
+    elegidos = []; let quedan = true;
+    while (elegidos.length < MAX_LOCAL && quedan) { quedan = false; Object.keys(porMarca).forEach(m => { const f = porMarca[m].shift(); if (f && elegidos.length < MAX_LOCAL) { elegidos.push(f); quedan = true; } }); }
+    const docs = await Promise.all(elegidos.map(f => gj(FB_UBIC + '/' + slug + '/articulos/' + encodeURIComponent(fbKey(f[0])) + '.json')));
+    elegidos.forEach((f, i) => {
+      const a = docs[i]; if (!a || !(a.stock > 0)) return;
+      const t = (a.talles || []).filter(z => z && z.t && /[0-9A-Z]/i.test(String(z.t)) && z.c > 0);
+      if (t.length) abrePorTalle = true;
+      const tieneTalle = !talle || !t.length || t.some(z => String(z.t).toUpperCase().replace(',', '.') === talle);
+      const ub = Object.values(a.ubicaciones || {}).filter(u => u && u.estanteriaId).map(u => { const n = parseInt(String(u.estanteriaId).replace(/\D/g, ''), 10); const piso = (PISOS[slug] || []).filter(x => n >= x[1] && n <= x[2]).map(x => x[0])[0]; return 'Estantería ' + (n || u.estanteriaId) + (u.moduloId ? ' · Módulo ' + String(u.moduloId).replace(/\D/g, '') : '') + (piso ? ' (' + piso + ')' : ''); });
+      filas.push({ _t: tieneTalle, codigo: f[0], articulo: f[1], marca: f[2], genero: f[3], disciplina: f[5], unidades: a.stock, talles: t.length ? t.map(z => z.t + ' (' + z.c + ')').join(', ') : undefined, ubicacion: ub.length ? ub.join(' y ') : 'sin ubicar' });
+    });
+  }
   filas.sort((a, b) => b.unidades - a.unidades);
   let notaTalle;
   if (talle && abrePorTalle) {
@@ -439,12 +480,53 @@ async function stockDelLocal(inp, user) {
   return {
     sucursal: SUC_UBIC[slug], stock_del: fechaAR(con[slug].cargado),
     articulos_del_catalogo_que_cumplen: r.filas.length, en_el_local: enLocal.length, revisados: elegidos.length,
-    con_stock: filas,
+    con_stock: filas.slice(0, 30),
+    mas_con_stock_sin_listar: filas.length > 30 ? filas.length - 30 : undefined,
     talle_pedido: talle ? (abrePorTalle ? notaTalle : 'esta sucursal no abre el stock por talle: el talle ' + talle + ' hay que confirmarlo en el depósito') : undefined,
     otros_en_el_local_sin_revisar: resto.length ? resto.slice(0, 20).map(f => f[0] + ' ' + f[1] + ' (' + f[2] + ', ' + f[3] + ')') : undefined,
     palabras_corregidas: r.extra && r.extra.corregidas, nota: r.extra && r.extra.nota,
     aviso: 'Es el último stock que cargó la sucursal en el Buscador, no el sistema en vivo: puede haber cambiado por ventas.'
   };
+}
+
+/* Pre-búsqueda (23/09/2026): antes de llamar al modelo, el servidor busca en el catálogo lo que escribió el
+   usuario (nombre de modelo, código, Id.item) y, si hay coincidencias acotadas, se las pasa ya resueltas con el
+   stock del local (índice). Así Haiku no tiene que «decidir» buscar: el 30 % de las consultas del salón
+   terminaban en una repregunta («CAMPUS» → «¿qué necesitás?»). Sin coincidencias no agrega nada. */
+const PRE_MAX = 120, PRE_FILAS = 15;
+async function prebuscar(texto, user) {
+  const toks = tokens(texto).filter(t => !RELLENO[t]);
+  if (!toks.length || toks.length > 8) return null;
+  const r = await filasPorTexto(texto, true);   // estricto: sin corregir tipeo por distancia («correr» no es «correa»)
+  if (!r || r.generico || r.inexistente || !r.filas || !r.filas.length || r.filas.length > PRE_MAX) return null;
+  const mio = user.sucursal || user.outlet_id || '';
+  let idx = null, con = null;
+  if (mio && SUC_UBIC[mio]) { con = await sucursalesConStock(); if (con[mio]) idx = await indiceSucursal(mio); }
+  const filas = r.filas.map(f => { const e = idx && idx.a[fbKey(f[0])]; return { f, a: e ? filaIndice(e) : null }; })
+    .sort((x, y) => (y.a ? y.a.stock : 0) - (x.a ? x.a.stock : 0));
+  const nLocal = filas.filter(x => x.a).length;
+  const lineas = filas.slice(0, PRE_FILAS).map(x => {
+    const f = x.f;   // [código, artículo, marca, disciplina, rubro, género, tipo]
+    let l = '- ' + f[0] + ' · ' + f[1] + ' · ' + f[2] + ' · ' + (f[5] || '') + ' · ' + (f[3] || '') + '/' + (f[4] || '');
+    if (x.a) l += ' · EN EL LOCAL: ' + x.a.stock + ' u.' + (x.a.talles.length ? ' (talles ' + tallesTxt(x.a.talles) + ')' : '') + (x.a.ubic ? ' · ' + x.a.ubic : ' · sin ubicar');
+    else if (idx) l += ' · no figura en el local';
+    return l;
+  });
+  const cab = 'BÚSQUEDA YA HECHA POR EL PORTAL sobre lo que escribió el usuario' + (r.corregidas && r.corregidas.length ? ' (interpretado: ' + r.corregidas.join(', ') + ')' : '') + ': ' + r.filas.length + ' artículo' + (r.filas.length === 1 ? '' : 's') + ' del catálogo' + (idx ? ', ' + nLocal + ' con stock en ' + SUC_UBIC[mio] + ' (stock del ' + fechaAR(con[mio].cargado) + ')' : '') + (r.filas.length > PRE_FILAS ? '; se listan ' + PRE_FILAS : '') + (r.parcial ? '; coincidencia parcial (no todas las palabras)' : '') + (r.ignoradas && r.ignoradas.length ? '. Palabras que no figuran en ningún artículo del catálogo: ' + r.ignoradas.join(', ') + ' (si es una marca o modelo, no se trabaja: decilo)' : '') + '.';
+  const pie = 'USALO DIRECTO: contestá con estos datos sin volver a buscar lo mismo' + (idx ? (nLocal ? ', empezando por lo que está en el local.' : '. Ninguno está en el local: decilo y usá consultar_stock (con los códigos de arriba) para ver qué otra sucursal lo tiene.') : '.') + ' Si el usuario pide otra sucursal, un talle que no figura o más opciones, ahí sí usá las herramientas.';
+  return { texto: cab + '\n' + lineas.join('\n') + '\n' + pie, ctx: filas.slice(0, 6).map(x => x.f[0] + ' ' + x.f[1] + (x.a ? ' [' + SUC_UBIC[mio] + ' ' + x.a.stock + 'u' + (x.a.talles.length ? ' ' + x.a.talles.map(z => z.t + ':' + z.c).join(',') : '') + (x.a.ubic ? ' · ' + x.a.ubic : '') + ']' : '')) };
+}
+
+/* Memoria de la charla (23/09/2026): resumen compacto de los artículos que salieron de las herramientas en este
+   turno. Se devuelve al widget (`ctx`), que lo manda de vuelta con la pregunta siguiente; así «de hombre» o
+   «¿y en 42?» se contestan sobre lo que ya se mostró, sin buscar de nuevo ni perder el hilo. */
+function resumenParaMemoria(nombre, res) {
+  const out = [];
+  if (!res || res.error) return out;
+  if (nombre === 'buscar_catalogo') (res.resultados || []).slice(0, 8).forEach(x => out.push(x.codigo + ' ' + x.articulo + (typeof x.en_el_local === 'string' ? ' [local ' + x.en_el_local + ']' : '')));
+  if (nombre === 'stock_del_local') (res.con_stock || []).slice(0, 8).forEach(x => out.push(x.codigo + ' ' + x.articulo + ' [' + res.sucursal + ' ' + x.unidades + 'u' + (x.talles ? ' ' + x.talles : '') + ' · ' + x.ubicacion + ']'));
+  if (nombre === 'consultar_stock') (res.articulos || []).forEach(a => out.push(a.codigo + (a.descripcion ? ' ' + a.descripcion : '') + ' [' + (a.con_stock || []).map(c => c.sucursal.replace(/ \(.*\)/, '') + ' ' + c.unidades + 'u' + (c.talles && !/confirmar/.test(c.talles) ? ' ' + c.talles.replace(/ u\./g, '') : '')).join('; ') + ']'));
+  return out;
 }
 
 /* Gestión del local: objetivo, venta provisoria, equipo y pendientes. Los permisos se resuelven ACÁ. */
@@ -710,9 +792,16 @@ export async function onRequestPost(ctx) {
   const fichas = fichasPara(mensajes.filter(m => m.role === 'user').map(m => m.content));
   const NL = String.fromCharCode(10);
   if (fichas.length) system.push({ type: 'text', text: 'FICHA TÉCNICA DE LA CASA (es el criterio con que se asesora en Mateu Sports: el punto (a) de tu recomendación sale de acá. Usá SOLO lo que aplica a este cliente, en una o dos oraciones; no la recites ni la contradigas. Si algo no está en la ficha, decilo en general y sin inventar números):' + NL + NL + fichas.map(f => f.texto).join(NL + NL) + NL + NL + 'CÓMO USARLA: tu respuesta ABRE con el criterio que aplica a este cliente (si dieron altura, edad, nivel o cancha, el dato concreto de la ficha: el largo del palo, la suela, las onzas, la forma). La ficha describe QUÉ BUSCAR, no los artículos: del stock solo conocés nombres. Por cada artículo que nombres escribí a lo sumo por qué entra por su NOMBRE o tipo (junior, TF, WNS, el largo) y cerrá con «confirmá en la etiqueta que sea …» con la característica que pide la ficha. Prohibido escribir que un modelo puntual «es redonda», «tiene goma blanda», «es de fibra» o similar.' });
+  // Lo que ya se mostró en esta charla (lo manda el widget: `ctx` de las últimas respuestas)
+  const previo = (Array.isArray(body.contexto) ? body.contexto : [body.contexto]).filter(x => typeof x === 'string' && x.trim()).join('\n').slice(0, 2500);
+  if (previo) system.push({ type: 'text', text: 'ARTÍCULOS QUE YA SE MOSTRARON EN ESTA CHARLA (datos del portal; código, nombre y, entre corchetes, sucursal · unidades · talles · ubicación):' + NL + previo + NL + 'Si el usuario dice «esa», «la primera», «de hombre», «¿y en 42?», «¿en qué estantería?», se refiere a estos: contestá con estos datos. Si necesitás otra sucursal o un dato que no está acá, consultá por el CÓDIGO.' });
+  // Pre-búsqueda en el catálogo con lo que escribió el usuario (solo si hay coincidencias acotadas)
+  let pre = null;
+  try { pre = await prebuscar(mensajes[mensajes.length - 1].content, user); } catch (e) { pre = null; }
+  if (pre) system.push({ type: 'text', text: pre.texto });
   const tools = herramientas(guia).filter(t => (t.name !== 'guia_modulo' || !esPuesto) && (t.name !== 'resumen_gestion' || conGestion));
   const conv = mensajes.slice();
-  const usadas = [];
+  const usadas = [], memoria = pre ? pre.ctx.slice() : [];
   let tin = 0, tout = 0, data = null;
   try {
     for (let vuelta = 0; vuelta < MAX_VUELTAS; vuelta++) {
@@ -733,6 +822,7 @@ export async function onRequestPost(ctx) {
           else if (p.name === 'resumen_gestion') res = conGestion ? await resumenGestion(p.input || {}, user) : { error: 'Esta cuenta no tiene acceso a los datos de gestión.' };
           else res = { error: 'herramienta desconocida' };
         } catch (e) { res = { error: String(e.message || e) }; }
+        try { resumenParaMemoria(p.name, res).forEach(l => memoria.push(l)); } catch (e) {}
         return { type: 'tool_result', tool_use_id: p.id, content: JSON.stringify(res), is_error: !!res.error };
       }));
       conv.push({ role: 'assistant', content: data.content });
@@ -751,8 +841,9 @@ export async function onRequestPost(ctx) {
   const lid = dia.slice(0, 7) + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   ctx.waitUntil(Promise.all([
     fetch(FB_ASIS + '/uso/' + dia + '.json', { method: 'PATCH', body: JSON.stringify({ [mk]: inc, _total: inc }) }),
-    fetch(FB_ASIS + '/log/' + dia.slice(0, 7) + '/' + lid + '.json', { method: 'PUT', body: JSON.stringify({ ts: { '.sv': 'timestamp' }, mail: email, rol: user.rol || '', suc, modulo, q: pregunta.slice(0, 500), r: respuesta.slice(0, 800), tools: usadas, fichas: fichas.length ? fichas.map(f => f.id) : null, tin, tout, modelo }) })
+    fetch(FB_ASIS + '/log/' + dia.slice(0, 7) + '/' + lid + '.json', { method: 'PUT', body: JSON.stringify({ ts: { '.sv': 'timestamp' }, mail: email, rol: user.rol || '', suc, modulo, q: pregunta.slice(0, 500), r: respuesta.slice(0, 800), tools: usadas, pre: pre ? 1 : 0, fichas: fichas.length ? fichas.map(f => f.id) : null, tin, tout, modelo }) })
   ]).catch(() => {}));
 
-  return json({ respuesta, restantes: Math.max(0, tope - usados - 1), id: lid });
+  const ctxMem = memoria.filter((l, i, a) => a.indexOf(l) === i).join('\n').slice(0, 1500);
+  return json({ respuesta, restantes: Math.max(0, tope - usados - 1), id: lid, ctx: ctxMem || undefined });
 }

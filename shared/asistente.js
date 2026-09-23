@@ -253,11 +253,11 @@
   }
 
   var SUGERENCIAS = {
-    _puesto: ['Zapatilla para empezar a correr', 'Paleta de pádel para principiante', '¿En qué sucursal hay stock de un artículo?'],
-    _def: ['¿Cómo se usa este módulo?', '¿En qué sucursal hay stock de un artículo?', 'Un cliente quiere empezar a correr, ¿qué zapatilla le recomiendo?', '¿Qué raquetas de tenis trabajamos?'],
+    _puesto: ['Zapatilla para empezar a correr', 'Paleta de pádel para principiante', '¿En qué sucursal hay stock de …'],
+    _def: ['¿Cómo se usa este módulo?', '¿En qué sucursal hay stock de …', 'Un cliente quiere empezar a correr, ¿qué zapatilla le recomiendo?', '¿Qué raquetas de tenis trabajamos?'],
     ubicaciones: ['¿Cómo cargo el stock del día?', '¿Cómo vinculo una etiqueta que no encuentra?', 'Un cliente busca paleta de pádel para principiante'],
     indicadores: ['¿Cómo venimos esta semana?', '¿Qué tengo pendiente hoy?', '¿Cómo viene el equipo?'],
-    portal: ['¿Cómo venimos esta semana?', '¿En qué sucursal hay stock de un artículo?', '¿Cómo se usa este módulo?'],
+    portal: ['¿Cómo venimos esta semana?', '¿En qué sucursal hay stock de …', '¿Cómo se usa este módulo?'],
     'gestion-stock': ['¿Cómo comento un discontinuo?', '¿Cómo se lee meses de stock?'],
     barrida: ['¿Qué archivos necesito para la barrida?', '¿Qué hace «Abrir a más sucursales»?'],
     tareas: ['¿Cómo registro un cambio de vidriera?', '¿Cómo cargo el checklist de limpieza?']
@@ -315,9 +315,12 @@
     ESPERANDO = true; $send.disabled = true; $txt.value = ''; $txt.style.height = '40px';
     guardar(); pintar();
     var mensajes = CHAT.slice(-12).map(function(m){ return { role:m.role, content:m.content }; });
-    pedir('POST', { email:SESSION.email, tok:SESSION.tok||'', modulo:modulo(), mensajes:mensajes }, function(st, d){
+    // memoria: lo que las últimas respuestas ya mostraron (artículos con stock), para que «de hombre» o «¿y en 42?» sigan el hilo
+    var contexto = [];
+    for(var i = CHAT.length - 1; i >= 0 && contexto.length < 2; i--) if(CHAT[i].role === 'assistant' && CHAT[i].ctx) contexto.unshift(CHAT[i].ctx);
+    pedir('POST', { email:SESSION.email, tok:SESSION.tok||'', modulo:modulo(), mensajes:mensajes, contexto:contexto }, function(st, d){
       ESPERANDO = false; $send.disabled = false;
-      if(st === 200 && d && d.respuesta) CHAT.push({ role:'assistant', content:d.respuesta, id:d.id || '' });
+      if(st === 200 && d && d.respuesta) CHAT.push({ role:'assistant', content:d.respuesta, id:d.id || '', ctx:d.ctx || '' });
       else CHAT.push({ role:'assistant', err:true, content:(d && d.error) || 'No me pude conectar. Revisá internet y probá de nuevo.' });
       guardar(); pintar();
       try{ $txt.focus(); }catch(e){}
@@ -370,7 +373,7 @@
       while(t && t !== w){
         if(t.getAttribute){
           var sug = t.getAttribute('data-sug'), act = t.getAttribute('data-act');
-          if(sug){ enviar(sug); return; }
+          if(sug){ if(/…$/.test(sug)){ $txt.value = sug.replace(/…$/, ''); try{ $txt.focus(); }catch(e){} } else enviar(sug); return; }   // «… » = deja la frase escrita para completar
           var vid = t.getAttribute('data-vid');
           if(vid){ votar(vid, t.getAttribute('data-voto') === '-1' ? -1 : 1); return; }
           if(act === 'cerrar'){ abrir(false); return; }
