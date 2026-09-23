@@ -2088,7 +2088,7 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     inicial, desplegable «Accesorios por tipo de producto (Grupo 1)» (`repAccHtml`; lista los de fábrica + los tipos de
     accesorios que traen los remitos cargados), compartida en `barrida/repartoConfig/accTipos`. Valores de arranque
     (cruzados con los envíos a mano de mar–ago 2026): 6 = medias de otras marcas, ropa interior, protectores bucales,
-    vendas, grip, antivibradores, tapones, muñequeras, vinchas, antiparras; 12 = llaveros; 3 = gorros, guantes,
+    vendas, grip, antivibradores, tapones, muñequeras, vinchas; 12 = llaveros y antiparras (23/09/2026, Juli: eran 6); 3 = gorros, guantes,
     canilleras, rodilleras, protecciones, cuellos, botellas, pelotas, infladores; 2 = mochilas, bolsos, riñoneras,
     botineros, billeteras, cartucheras, lunchera; 1 = paletas, raquetas, palos de hockey; sin fila = como antes (1 por
     talle). `accPiso(meta)` (0 para las medias de marca propia, que siguen con su curva). **Reparto inicial**:
