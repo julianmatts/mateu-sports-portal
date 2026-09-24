@@ -2035,14 +2035,64 @@ function renderOC(){
         <label class="btn secondary" style="cursor:pointer;display:inline-flex;align-items:center">⇪ Importar planilla<input type="file" accept=".xlsx,.xlsm" style="display:none" onchange="importarPlanilla('oc', this)"></label>
       </div>
     </div>
+    ${ocFiltrosHtml()}
     <div class="notice">Una OC se envia por proveedor. Dentro de cada proveedor esta agrupada por linea y coleccion - usa <b>Abrir</b> para cargar talles, costos, etc., o el <b>tacho</b> 🗑️ para eliminar toda esa OC. Usa <b>Confirmar y enviar OC</b> una sola vez. Con <b>⇩ Planilla modelo</b> bajas el Excel para armar el pedido afuera y despues lo subis con <b>⇪ Importar planilla</b>.</div>
     ${ocTable()}
   `;
 }
 
+// ---- Filtros del Paso 2: Proveedor y Linea (pedido de Juli 24/09/2026, los mismos
+// del Desarrollo). Solo acotan lo que se lista: las acciones de la cabecera de cada
+// proveedor (Confirmar, Excel, PDF, mail) siguen abarcando la OC completa. ----
+let ocFiltro = { proveedor:'', linea:'' };
+
+function hayOCFiltro(){ return !!(ocFiltro.proveedor || ocFiltro.linea); }
+
+function ordenPasaFiltro(o){
+  if(ocFiltro.proveedor && providerKey(o.proveedor) !== providerKey(ocFiltro.proveedor)) return false;
+  if(ocFiltro.linea && (String(o.linea || '').trim() || 'Sin linea') !== ocFiltro.linea) return false;
+  return true;
+}
+
+function setOCFiltro(campo, valor){
+  ocFiltro[campo] = String(valor || '');
+  render();
+}
+
+function limpiarOCFiltros(){
+  ocFiltro = { proveedor:'', linea:'' };
+  render();
+}
+
+function ocFiltrosHtml(){
+  const base = filteredOrdenes();
+  const provMap = new Map();
+  const lineas = new Set();
+  base.forEach(o => {
+    const n = String(o.proveedor || '').trim();
+    if(n && !provMap.has(providerKey(n))) provMap.set(providerKey(n), n);
+    lineas.add(String(o.linea || '').trim() || 'Sin linea');
+  });
+  const provs = [...provMap.values()].sort((a,b)=>a.localeCompare(b));
+  const lins = [...lineas].sort((a,b) => a === 'Sin linea' ? 1 : b === 'Sin linea' ? -1 : a.localeCompare(b));
+  if(ocFiltro.proveedor && !provs.some(f => providerKey(f) === providerKey(ocFiltro.proveedor))) provs.unshift(ocFiltro.proveedor);
+  if(ocFiltro.linea && !lins.includes(ocFiltro.linea)) lins.unshift(ocFiltro.linea);
+  const opt = (v, sel) => `<option value="${escapeAttr(v)}" ${sel ? 'selected' : ''}>${escapeHtml(v)}</option>`;
+  return `
+    <div class="dev-filtros">
+      <div class="field"><label>Proveedor</label>
+        <select onchange="setOCFiltro('proveedor',this.value)"><option value="">Todos los proveedores</option>${provs.map(f => opt(f, !!ocFiltro.proveedor && providerKey(f) === providerKey(ocFiltro.proveedor))).join('')}</select>
+      </div>
+      <div class="field"><label>Linea</label>
+        <select onchange="setOCFiltro('linea',this.value)"><option value="">Todas las lineas</option>${lins.map(l => opt(l, l === ocFiltro.linea)).join('')}</select>
+      </div>
+      ${hayOCFiltro() ? '<button class="btn secondary" type="button" onclick="limpiarOCFiltros()">✕ Limpiar filtros</button>' : ''}
+    </div>`;
+}
+
 function ocTable(){
-  const ordenes = filteredOrdenes();
-  if(!ordenes.length) return '<div class="empty">Todavia no hay ordenes de compra para la marca seleccionada. Primero aprobá comercialmente una prenda en Paso 1 y procesala desde la colección.</div>';
+  const ordenes = filteredOrdenes().filter(ordenPasaFiltro);
+  if(!ordenes.length) return '<div class="empty">' + (hayOCFiltro() ? 'Ninguna orden de compra coincide con los filtros de proveedor / linea.' : 'Todavia no hay ordenes de compra para la marca seleccionada. Primero aprobá comercialmente una prenda en Paso 1 y procesala desde la colección.') + '</div>';
   return groupedByProvider(ordenes).map(group => {
     const unidades = group.items.reduce((sum,o)=>sum + totalTalles(o.talles), 0);
     const valorizado = group.items.reduce((sum,o)=>sum + valorizadoLinea(o), 0);
@@ -2055,7 +2105,7 @@ function ocTable(){
         <div class="po-head" style="background:${col.t}">
           <div>
             <h3>${escapeHtml(group.proveedor)}</h3>
-            <div class="po-meta">${codigos} codigo${codigos === 1 ? '' : 's'} · ${unidades} unidades pedidas · Total OC ${money(valorizado)}${anticipoTotal > 0 ? ' · Anticipo ' + money(anticipoTotal) + ' · Saldo ' + money(valorizado - anticipoTotal) : ''}</div>
+            <div class="po-meta">${codigos} codigo${codigos === 1 ? '' : 's'} · ${unidades} unidades pedidas · Total OC ${money(valorizado)}${anticipoTotal > 0 ? ' · Anticipo ' + money(anticipoTotal) + ' · Saldo ' + money(valorizado - anticipoTotal) : ''}${ocFiltro.linea ? ' · <span style="color:var(--warn);font-weight:700">solo la linea ' + escapeHtml(ocFiltro.linea) + ' (los botones de la derecha abarcan toda la OC del proveedor)</span>' : ''}</div>
           </div>
           <div class="actions">${accionesProveedor(group)}</div>
         </div>

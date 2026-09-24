@@ -2831,6 +2831,10 @@ Pedidos de Juli aplicados ese día, todos en `managment/index.html`:
   embebido; los exports hacen `await logoListo()` antes de armarse). Hasta ese día el PNG se buscaba en el
   header propio del módulo (`.header-logo img`), que no existe desde el header unificado, y salía el
   texto «MATEU SPORTS» en su lugar. En la lista de OC la lupa pasó a ser el botón verde «Abrir».
+- **Filtros del Paso 2** (mismo día): barra `.dev-filtros` con **Proveedor** y **Línea** arriba de la lista
+  de OC (`ocFiltro`, `ordenPasaFiltro`, `ocFiltrosHtml`; estado aparte del de Desarrollo). Solo acotan lo
+  que se lista: con la línea filtrada, la cabecera del proveedor avisa que Confirmar / Excel / PDF / mail
+  abarcan la OC completa del proveedor (esas acciones buscan el grupo en `state.ordenes`, no en lo filtrado).
 - **Compartir el desarrollo**: botones «📲 WhatsApp» (abre `wa.me` con el mensaje armado, sin número) y
   «🔗 Link» en cada colección y dentro de la colección abierta. El link es `managment/?col=<id>`:
   `abrirDesarrolloDesdeUrl` abre esa colección al entrar (se reintenta cuando llega Firebase). Si el que
