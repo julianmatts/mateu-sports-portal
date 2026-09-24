@@ -3089,7 +3089,7 @@ async function renderObjCadena(){
     if(!vistaCadena || token!==_objCadToken) return;
     todas.forEach((r,i)=>{
       const t=tots[i]; if(!t) return;
-      if(!r.real && +t.venta>0){ r.real=Math.round(+t.venta); r.prov=true; }
+      if(!r.real && +t.venta>0){ r.real=Math.round(+t.venta); r.prov=true; r.vivo=(t.fuente==='api'); }
       const tk=+t.tickets||0;
       if(tk>0){ r.upt=(+t.unidades||0)/tk; r.tp=(+t.venta||0)/tk; r.tk=tk; r.un=+t.unidades||0; r.vt=+t.venta||0; }
       const full=SLUG_SUC[r.slug]||OUTLET_SUC[r.slug];
@@ -3227,7 +3227,7 @@ async function renderObjCadena(){
         +(r.tph?' data-tph="'+r.tph+'"':'');
       return '<tr'+dat+'><td class="L">'+esc(r.nombre)+'</td>'
         +'<td><span class="num">'+objMoney(r.meta)+'</span></td>'
-        +'<td><span class="num">'+(r.real?objMoney(r.real):'—')+(r.prov?'<span class="pprov" style="margin-left:4px" title="Venta provisoria de la semana (ventaEquipo), no el real oficial">prov</span>':'')+'</span></td>'
+        +'<td><span class="num">'+(r.real?objMoney(r.real):'—')+(r.prov?(r.vivo?'<span class="pprov" style="margin-left:4px;background:var(--vivo-pill,#e3ecff);color:var(--vivo,#1d4ed8)" title="Venta de la semana leída en vivo del sistema (API de ventas), no el real oficial">vivo</span>':'<span class="pprov" style="margin-left:4px" title="Venta provisoria de la semana (ventaEquipo), no el real oficial">prov</span>'):'')+'</span></td>'
         +difTd(r.real, r.meta)
         +'<td><b style="color:'+c+'">'+(r.real?Math.round(p*100)+'%':'—')+'</b></td>'
         +(!_objCadDetalle ? espera : '')
@@ -3247,7 +3247,7 @@ async function renderObjCadena(){
       +'<th data-col="tp" title="Ticket promedio de la semana (venta cargada) · % vs. el mes cerrado">Ticket prom. sem.<span class="pprov">prov</span></th>'
       +(hayH?'<th data-col="tph" title="Tickets por hora asignada del equipo de la semana (o del último equipo guardado)'+(hbase==='h_act'?' · % vs. el mes cerrado con horas asignadas':'')+'">Tickets/h sem.<span class="pprov">prov</span></th>':'')
       +'</tr></thead><tbody>'+trs+'</tbody></table></div>'
-      +((hayProv||hayK)?'<div style="padding:2px 15px 12px"><p class="hint" style="margin-top:8px">«prov» = dato de la semana en curso cargado desde «Cargar venta de la semana» (o por el encargado). El real oficial se completa desde el HISTÓRICO del Excel PMS en el módulo Objetivos. <b>Ritmo</b> = venta vs. lo esperado a esta altura de la semana (curva por día de cada sucursal). UPT, ticket promedio'+(hbase==='h_act'?' y tickets por hora':'')+' de la semana llevan debajo el % contra '+esc(perLabel(per))+' (cierre)'+(hbase!=='h_act'?'; tickets por hora no se compara con el cierre en base horas contratadas':'')+'.</p></div>':'')
+      +((hayProv||hayK)?'<div style="padding:2px 15px 12px"><p class="hint" style="margin-top:8px">«vivo» = venta de la semana leída del sistema en vivo (API de ventas, se actualiza sola); «prov» = dato cargado desde «Cargar venta de la semana» (o por el encargado). El real oficial se completa desde el HISTÓRICO del Excel PMS en el módulo Objetivos. <b>Ritmo</b> = venta vs. lo esperado a esta altura de la semana (curva por día de cada sucursal). UPT, ticket promedio'+(hbase==='h_act'?' y tickets por hora':'')+' de la semana llevan debajo el % contra '+esc(perLabel(per))+' (cierre)'+(hbase!=='h_act'?'; tickets por hora no se compara con el cierre en base horas contratadas':'')+'.</p></div>':'')
       +'</details>';
   }
   html+='<p class="hint" style="margin-top:12px"><a href="../objetivos/" style="color:var(--red,#CC0000);font-weight:600;text-decoration:none">Abrir Objetivos de Venta →</a> para cargar o corregir las metas de la semana. <b>⇧ Cargar venta de la semana</b> sube la estadística de venta detallada del sistema (todas las sucursales, por día y vendedor) y la publica como venta provisoria para que cada sucursal la vea en Mi Sucursal.</p>';
@@ -3442,6 +3442,50 @@ let _objActiveSem = null;          // semana activa del selector (para el upload
 let _vePreview = null;             // {slug, sem, data, fileName} pendiente de guardar
 let _veXlsxP = null;               // lazy-load de SheetJS
 const _veCache = {};               // "slug|sem" -> Promise<payload|null>
+/* --- API de ventas del sistema (24/09/2026). La SEMANA EN CURSO se lee en vivo por el proxy
+   /api/ventas (Pages Function: la key vive en un Secret de Cloudflare y la respuesta se cachea
+   5 min, así el bloqueo de la base del sistema no llega al encargado). Las semanas anteriores
+   siguen saliendo de ventaEquipo (lo que cargó gerencia o el encargado) y solo si no hay nada
+   se piden a la API. Sin el proxy configurado (o abierto como archivo suelto), todo sigue por
+   ventaEquipo como siempre. El payload de la API tiene el mismo shape que ventaEquipo y viene
+   marcado con fuente:'api'. Lógica del proxy: lib/ventas-proxy.mjs. --- */
+const VENTAS_API = '/api/ventas';
+let _vapiDispP = null;             // Promise<boolean>: ¿el proxy tiene la key cargada?
+const _vapiSem = {};               // sem → Promise<{sucursales,actualizado}|null>
+const _vapiSuc = {};               // "slug|sem" → Promise<payload|null>
+const _veManual = {};              // "slug|sem" → true: el encargado acaba de cargar su Excel y quiere ver eso
+function ventasApiDisponible(){
+  if(_vapiDispP) return _vapiDispP;
+  if(!/^https?:$/.test(location.protocol)) return (_vapiDispP=Promise.resolve(false));
+  try{ const c=JSON.parse(sessionStorage.getItem('ind_ventas_api')||'null'); if(c && Date.now()-c.ts<10*60*1000) return (_vapiDispP=Promise.resolve(!!c.ok)); }catch(e){}
+  _vapiDispP = fetch(VENTAS_API).then(r=>r.ok?r.json():null).then(j=>!!(j&&j.disponible)).catch(()=>false)
+    .then(ok=>{ try{ sessionStorage.setItem('ind_ventas_api', JSON.stringify({ok, ts:Date.now()})); }catch(e){} return ok; });
+  return _vapiDispP;
+}
+function vapiGet(qs){
+  const h={'X-Mateu-Email':(SESSION&&SESSION.email)||'', 'X-Mateu-Tok':(SESSION&&SESSION.tok)||''};
+  return fetch(VENTAS_API+'?'+qs,{headers:h}).then(r=>r.ok?r.json():null).catch(()=>null);
+}
+// lunes de la semana de hoy (fecha local): desde ahí manda el sistema en vivo
+function lunesHoyISO(){ const d=new Date(); d.setDate(d.getDate()-((d.getDay()+6)%7)); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function vapiPrimero(sem){ return !!sem && sem >= lunesHoyISO(); }
+function vapiSemana(sem){
+  if(!_vapiSem[sem]) _vapiSem[sem]=ventasApiDisponible().then(ok=>ok?vapiGet('semana='+encodeURIComponent(sem)):null)
+    .then(j=>(j && j.sucursales && typeof j.sucursales==='object') ? j : null);
+  return _vapiSem[sem];
+}
+function vapiSucursal(slug, sem){
+  const k=slug+'|'+sem;
+  if(!_vapiSuc[k]) _vapiSuc[k]=ventasApiDisponible().then(ok=>ok?vapiGet('semana='+encodeURIComponent(sem)+'&sucursal='+encodeURIComponent(slug)):null)
+    .then(j=>{ if(!j || !Array.isArray(j.vendedores)) return null; j.fuente='api'; j.semana=j.semana||sem; return veTotales(j)?j:null; });
+  return _vapiSuc[k];
+}
+// «● en vivo · hasta 24/09 19:00»: fuente y hora del dato cuando viene del sistema
+function vapiPill(ve){
+  if(!ve || ve.fuente!=='api') return '';
+  let h=''; try{ if(ve.actualizado){ const d=new Date(ve.actualizado); h=d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}); } }catch(e){}
+  return '<span class="pprov" style="background:var(--vivo-pill,#e3ecff);color:var(--vivo,#1d4ed8)" title="Venta leída en vivo del sistema (API de ventas), con el mismo criterio que la carga manual. No hace falta subir el Excel.">● en vivo'+(h?' · hasta '+esc(h):'')+'</span>';
+}
 function loadXLSX(){
   if(window.XLSX) return Promise.resolve(window.XLSX);
   if(_veXlsxP) return _veXlsxP;
@@ -3454,8 +3498,12 @@ function fetchVentaEquipo(slug, sem){
   const key=slug+'|'+sem;
   if(_veCache[key]) return _veCache[key];
   const base=OBJETIVOS_URL.replace(/\/+$/,'');
-  _veCache[key]=fetch(base+'/ventaEquipo/'+encodeURIComponent(slug)+'/'+encodeURIComponent(sem)+'.json')
+  const fb=()=>fetch(base+'/ventaEquipo/'+encodeURIComponent(slug)+'/'+encodeURIComponent(sem)+'.json')
     .then(r=>r.ok?r.json():null).catch(()=>null);
+  // semana en curso: el sistema en vivo (salvo que el encargado acabe de cargar su Excel); antes, lo cargado
+  _veCache[key] = (vapiPrimero(sem) && !_veManual[key])
+    ? vapiSucursal(slug, sem).then(j=>j||fb())
+    : fb().then(j=>j||vapiSucursal(slug, sem));
   return _veCache[key];
 }
 async function saveVentaEquipo(slug, sem, data){
@@ -3464,7 +3512,7 @@ async function saveVentaEquipo(slug, sem, data){
     metaTienda:data.metaTienda||0, minimoTienda:data.minimoTienda||0};
   const r=await fetch(base+'/ventaEquipo/'+encodeURIComponent(slug)+'/'+encodeURIComponent(sem)+'.json',{method:'PUT',body:JSON.stringify(payload)});
   if(!r.ok) throw new Error('No se pudo guardar');
-  delete _veCache[slug+'|'+sem];
+  _veManual[slug+'|'+sem]=true; delete _veCache[slug+'|'+sem]; delete _vapiSuc[slug+'|'+sem];
   return payload;
 }
 // número tolerante a formato AR ("1.234.567,89") y a celdas que ya vienen numéricas
@@ -4370,6 +4418,7 @@ function veSectionHtml(slug, sem, v, ve, eqData, pesos, prevVe){
   else if(editando) sum += ' · <span style="color:var(--red)">editando equipo</span>';
   else if(hayEquipo) sum += ' · '+eqData.equipo.length+' persona'+(eqData.equipo.length===1?'':'s');
   else if(hayExcel) sum += ' · '+ve.vendedores.length+' vendedor'+(ve.vendedores.length===1?'':'es');
+  if(!prev && !editando && ve && ve.fuente==='api') sum += ' '+vapiPill(ve);
   let body;
   if(prev){
     // previsualización del Excel de venta real por vendedor
@@ -4394,7 +4443,7 @@ function veSectionHtml(slug, sem, v, ve, eqData, pesos, prevVe){
     if(hayExcel) body += veDetailHtml(ve, metaVal, prevVe);
     body += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">'
       + '<button type="button" id="veUpload" class="tb-btn">⇧ '+(hayExcel?'Actualizar':'Cargar')+' venta por vendedor (Excel)</button>'
-      + '<span class="hint" style="margin:0">El Excel también sirve como venta real cuando el equipo está armado.</span></div>';
+      + '<span class="hint" style="margin:0">'+(ve && ve.fuente==='api' ? 'La venta de esta semana ya viene del sistema en vivo; el Excel solo hace falta para corregirla.' : 'El Excel también sirve como venta real cuando el equipo está armado.')+'</span></div>';
   }
   const key=slug+'|'+sem; let visto=false; try{ visto=!!localStorage.getItem('ind_eq_visto_'+key); }catch(e){}
   const open = (prev || editando || (_eqOpenState[key]!=null ? _eqOpenState[key] : (!visto && (hayEquipo || hayExcel)))) ? ' open' : '';
@@ -6096,9 +6145,13 @@ function fetchVentaEquipoTotal(slug, sem){
   const key=slug+'|'+sem;
   if(_veTotCache[key]) return _veTotCache[key];
   const base=OBJETIVOS_URL.replace(/\/+$/,'');
-  _veTotCache[key]=fetch(base+'/ventaEquipo/'+encodeURIComponent(slug)+'/'+encodeURIComponent(sem)+'/total.json')
+  const fb=()=>fetch(base+'/ventaEquipo/'+encodeURIComponent(slug)+'/'+encodeURIComponent(sem)+'/total.json')
     .then(r=>r.ok?r.json():null).catch(()=>null)
     .then(t=> typeof t==='number' ? {venta:t} : (t && typeof t==='object' ? t : null));
+  // la API trae las 21 sucursales en una sola llamada (cacheada por semana)
+  const api=()=>vapiSemana(sem).then(j=>{ const t=j&&j.sucursales[slug];
+    return (t && (+t.venta>0 || +t.tickets>0)) ? {venta:+t.venta||0, tickets:+t.tickets||0, unidades:+t.unidades||0, fuente:'api'} : null; });
+  _veTotCache[key] = (vapiPrimero(sem) && !_veManual[key]) ? api().then(t=>t||fb()) : fb().then(t=>t||api());
   return _veTotCache[key];
 }
 // HTML de la previsualización (tabla por sucursal vs. meta) + Publicar/Cancelar

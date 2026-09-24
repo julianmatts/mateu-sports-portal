@@ -3668,7 +3668,7 @@ consulta). Etapa 1 = guía + catálogo; etapa 2 = stock desde el Buscador (hecha
 - Pendiente: la etapa 3, que Matts use los cursos de la Academia como fuente de producto, motivo de un toque en el voto «No» (solo 4 de 64
   consultas tenían voto) y atributos reales por artículo (forma, balance, drop…): hoy el catálogo solo trae el nombre.
 
-## API de ventas (fase 1) — estado 23/09/2026
+## API de ventas (fase 1) — estado 24/09/2026
 
 El dev entregó la API de ventas sobre el SQL Server del sistema (`https://66-97-37-173.sslip.io`, key Bearer que
 **no va en el repo**: es público). Doc del dev en `docs/API-VENTAS-DOC-DEV-2026-09-23.md` (key tapada), spec en
@@ -3687,6 +3687,8 @@ el export «Ventas agosto portal.csv» comprobante por comprobante; meta = difer
 Plan de conexión (cuando los números den): Pages Function `/api/ventas/…` como proxy con la key en Secret (sin CORS,
 key fuera del navegador, filtro de slug por rol con el token de `acceso.js`) e Indicadores leyendo la semana viva de
 ahí con fallback a `ventaEquipo`; la carga manual queda como plan B.
+
+**Conexión HECHA (24/09/2026 tarde)** — ver `docs/API-VENTAS-CONEXION.md`. El deploy del dev de ese día dejó el criterio EXACTO y la omnicanalidad bien (Kids 317 tickets, Diagonal 908/1.412, vendedores iguales al recálculo); quedan pendientes de ellos el descuento de cabecera del comprobante (Kids 24/08: +329.320 en 26 comprobantes) y el bloqueo de la base. Del lado del Portal: **`functions/api/ventas.js` → `lib/ventas-proxy.mjs`** (tests `node --test lib/ventas-proxy.test.mjs`): `GET /api/ventas` → `{disponible}`, `?semana=<lunes>` (totales por sucursal) y `?semana=&sucursal=<slug>` (detalle, shape `ventaEquipo` + `fuente:'api'`). La key vive en el Secret **`VENTAS_API_KEY`** de Cloudflare Pages (⚠ **pendiente de que Juli lo cargue** + Retry deployment; hasta entonces `disponible:false` y todo sigue por `ventaEquipo`). Identidad por headers `X-Mateu-Email` / `X-Mateu-Tok` contra `usuarios/`: admin/supervisor cualquier sucursal, sucursal/outlet solo la propia (totales filtrados). Cache en memoria + R2 (`LEGAJOS`, prefijo `_cache/ventas/`): fresco 5 min, viejo hasta 24 h servido al toque y refrescado con `waitUntil`, una consulta en vuelo por ruta, fallos recordados 60 s, timeout 40 s: el bloqueo de 20 s de la base lo paga a lo sumo la primera consulta. En `indicadores/` (bloque «API de ventas del sistema»: `ventasApiDisponible`, `vapiSemana`, `vapiSucursal`, `lunesHoyISO`, `vapiPrimero`): la **semana en curso** (lunes de hoy o posterior) sale primero del proxy y cae a `ventaEquipo`; las anteriores al revés (Firebase primero, API si no hay nada); el Excel recién subido por el encargado gana en esa visita (`_veManual`). Pills: «● en vivo · hasta DD/MM HH:MM» en «Cómo viene el equipo» y «vivo» (en vez de «prov») en la tabla del Panel General. Probado el 24/09 contra la API real con un servidor local que monta la librería (Panel General + Kids, semana del 21/09). Hallazgo al conectar: los **500 de 0,15 s** de la API aparecen justo después de un 500 de 16–20 s (repitiendo Kids 14/09 cada 4 s: 500 en 20,6 s y las dos llamadas siguientes 500 al instante): no es por sucursal ni por semana, es que durante la ventana de bloqueo, cuando una llamada agota los reintentos, las siguientes fallan sin intentar (pool de conexiones agotado) — pendiente del dev.
 
 ## Reglas
 
