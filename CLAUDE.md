@@ -1103,6 +1103,15 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   y el pendiente lleva «🏬 Va en el salón» + desplegable «🗺 Ver en el plano». En **Tareas → Sectores de
   marcas**, «Dónde» se puede elegir tocando el plano del salón y el 📍 de la tarjeta lo abre. Sucursal
   nueva = correr el generador con su Excel (sin tocar código).
+  **Berisso (24/09/2026)**: su plano («PLANO DEPOSITO BERISSO.xlsx», dos hojas «Depo Arriba Calzado» y «Depo Arriba
+  Ind.», sin salón) está dibujado con **formas** (Insertar → Formas), no con celdas: el generador ahora lee el dibujo
+  (`leer_formas`) y lo pasa a una grilla cuadrada de `UNIDAD_EMU` (aspecto 1): rectángulo gris con rótulo = estantería,
+  blanco con rótulo / globo = servicio, rayado = **pared** (tipo nuevo `pared`, gris en `plano-suc.js`); flechas, vidrios
+  e imágenes se ignoran; los girados 90° se enderezan. El número sale de lo que sigue a «Estantería» («IND. HOMBRE
+  ESTANTERIA 1» = 1): **1–6 indumentaria y 7–23 calzado, los mismos que Berisso ya usa en el Buscador**; los muebles con
+  nombre (Accesorios ×4, Medias ×3, Calzado verano, Reservas, Garantías, Pelotas, Bolsos, Mochilas) toman 24–36 y el
+  botón «🗺 Crear las N estanterías del plano» los ofrece. Sin salón dibujado, `renderPlanoBox` pone los dos primeros
+  depósitos arriba, y todo lo del sector del salón queda oculto.
   **El plano vive debajo de la búsqueda (17/09/2026, pedido de Juli)** — desde el 18/09 **debajo de los
   resultados** (`#planoBox` va después de `#searchResults`: primero se ve el artículo, después el plano): panel `#planoBox`
   (`renderPlanoBox`, plegable y recordado en localStorage `ubic_plano_open`) con el salón y el/los
