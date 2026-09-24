@@ -2811,6 +2811,12 @@ Pedidos de Juli aplicados ese día, todos en `managment/index.html`:
   que todas las líneas tengan código. Se borraron `nextCodigo` / `reservarCodigos` / contadores del ⚙;
   `state.contadores` y el nodo `contadoresCodigos` quedan por compatibilidad. El import de OC deja vacío
   lo que la planilla no trae.
+- **Cantidades editables en Desarrollo** (mismo día): en la fila de cada prenda (color) hay una grilla
+  de talles S…ÚN (`tallesEditHtml` / `setTallePrenda`) que escribe `p.talles` y marca `tallesEditado`
+  (así una curva dejada en cero no vuelve a la nota vieja del import). Al tipear no se re-renderiza: se
+  actualizan por DOM el total de la fila (`data-ptot`), el chip del color en la fila del artículo
+  (`data-pchip`) y el total del artículo (`data-gtot`). Esas unidades pasan solas a la OC al aprobar; si
+  la prenda ya es OC, la curva de la orden se corrige en el Paso 2.
 - **Compartir el desarrollo**: botones «📲 WhatsApp» (abre `wa.me` con el mensaje armado, sin número) y
   «🔗 Link» en cada colección y dentro de la colección abierta. El link es `managment/?col=<id>`:
   `abrirDesarrolloDesdeUrl` abre esa colección al entrar (se reintenta cuando llega Firebase). Si el que

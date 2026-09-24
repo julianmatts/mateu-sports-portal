@@ -45,6 +45,7 @@ main{max-width:1320px;margin:0 auto;padding:24px 20px 46px}
 .pill{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase}.pill.ok{background:#e9f8ef;color:var(--ok)}.pill.warn{background:#fff6df;color:var(--warn)}.pill.bad{background:#fff0f0;color:var(--bad)}.pill.violet{background:#f1eaff;color:var(--violet)}
 /* Celdas de estado del Desarrollo: ambar = falta aprobar, verde = aprobado y ya es OC, rojo = desaprobado */
 td.celda-falta{background:#fff6df}td.celda-ok{background:#e9f8ef}td.celda-bad{background:#fff0f0}
+.ptalles{display:flex;gap:4px;flex-wrap:wrap;align-items:flex-end;margin-top:6px}.ptalles label{margin:0}.ptalles span{display:block;font-size:9px;color:var(--muted);font-family:var(--font-c);font-weight:700;text-align:center}.ptalles input{width:44px;padding:5px 3px;text-align:center}.ptalles .ptot{font-family:var(--font-c);font-size:12px;font-weight:700;padding-bottom:6px;margin-left:4px;white-space:nowrap}
 .dev-filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:0 0 14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fbfcff}.dev-filtros .field{margin:0;min-width:200px}.dev-filtros .field select{padding:7px 9px;font-size:13px}
 .actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.action{border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:6px;padding:7px 9px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;cursor:pointer;line-height:1}.action.primary{background:var(--navy);border-color:var(--navy);color:#fff}.action.danger{color:var(--red);border-color:#f3caca}
 .action.ico{padding:5px 9px;letter-spacing:0;display:inline-flex;align-items:center;justify-content:center;line-height:0}.action.ico svg{display:block}.muted{color:var(--muted)}
@@ -1443,11 +1444,11 @@ function grupoRow(c, g){
       : pill('Falta aprobar · pasos mixtos','warn');
   return `
     <tr class="grp-row" onclick="toggleGrupoPrendas('${keyEnc}')" title="${abierto ? 'Ocultar' : 'Ver'} los colores de este articulo">
-      <td><span class="grp-caret">${abierto ? '▾' : '▸'}</span><b>${escapeHtml(p0.nombre)}</b><div class="muted">${MARCAS[p0.marca] || ''} · ${g.items.length} colores${(()=>{ const tot = g.items.reduce((s,p)=>{ const t = tallesDePrenda(p); return s + (t ? totalTalles(t) : 0); }, 0); return tot ? ' · ' + tot + ' u' : ''; })()}</div></td>
+      <td><span class="grp-caret">${abierto ? '▾' : '▸'}</span><b>${escapeHtml(p0.nombre)}</b><div class="muted">${MARCAS[p0.marca] || ''} · ${g.items.length} colores<span data-gtot="${escapeAttr(g.key)}">${(()=>{ const tot = g.items.reduce((s,p)=>{ const t = tallesDePrenda(p); return s + (t ? totalTalles(t) : 0); }, 0); return tot ? ' · ' + tot + ' u' : ''; })()}</span></div></td>
       <td>${provs.length === 1 ? escapeHtml(provs[0]) : (provs.length ? 'Varios' : '-')}</td>
       <td>${pvps.length === 1 ? money(pvps[0]) : 'Varios'}${costos.length === 1 ? `<div class="muted" style="font-size:11px">Costo ${money(costos[0])}</div>` : ''}</td>
       <td>${margenes.length === 1 ? margenPill(p0) : '<span class="muted">Varios</span>'}</td>
-      <td colspan="4"><div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">${g.items.map(p => { const t = tallesDePrenda(p); return `<span class="color-pill">${escapeHtml(p.color || 'Sin color')}${t ? ' · ' + totalTalles(t) : ''}</span>`; }).join('')} ${pasoPill}</div></td>
+      <td colspan="4"><div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">${g.items.map(p => { const t = tallesDePrenda(p); return `<span class="color-pill" data-pchip="${p.id}" data-color="${escapeAttr(p.color || 'Sin color')}">${escapeHtml(p.color || 'Sin color')}${t ? ' · ' + totalTalles(t) : ''}</span>`; }).join('')} ${pasoPill}</div></td>
       <td colspan="2"><button class="action" type="button" onclick="event.stopPropagation();toggleGrupoPrendas('${keyEnc}')">${abierto ? 'Ocultar' : 'Ver colores'}</button></td>
     </tr>`;
 }
@@ -1474,6 +1475,8 @@ function lineaPanel(c, group){
 function tallesDePrenda(p){
   const t = p.talles || {};
   if(TALLES.some(k => Number(t[k]) > 0)) return t;
+  // Editada a mano y dejada en cero: no volver a la nota vieja del import.
+  if(p.tallesEditado) return null;
   const m = /Curva planilla:\s*([^|]+)/i.exec(String(p.notas || ''));
   if(!m) return null;
   const out = {};
@@ -1488,13 +1491,6 @@ function tallesDePrenda(p){
 function curvaLabel(t){ return TALLES.filter(k => Number(t[k]) > 0).map(k => talleLabel(k) + ':' + t[k]).join(' '); }
 function totalTalles(t){ return TALLES.reduce((s,k) => s + (Number(t[k]) || 0), 0); }
 
-// Linea "150 u · S:10 M:20 ..." para la celda Nombre (o '' si no hay curva).
-function unidadesPrendaHTML(p){
-  const t = tallesDePrenda(p);
-  if(!t) return '';
-  return `<div class="muted" style="font-size:11px;margin-top:2px"><b>${totalTalles(t)} u</b> · ${escapeHtml(curvaLabel(t))}</div>`;
-}
-
 // esVariante: fila dentro de un grupo expandido → el color pasa a ser el titulo.
 function prendaRow(c, p, esVariante){
   return `
@@ -1502,7 +1498,7 @@ function prendaRow(c, p, esVariante){
           <td>${esVariante
             ? `<b>${escapeHtml(p.color || 'Sin color')}</b><div class="muted">${escapeHtml(p.nombre)}</div>`
             : `<b>${escapeHtml(p.nombre)}</b><div class="muted">${MARCAS[p.marca] || ''} / ${escapeHtml(p.color || '-')}</div>`}
-            ${unidadesPrendaHTML(p)}
+            ${tallesEditHtml(c, p)}
             <input class="small-input" style="width:120px;margin-top:4px" value="${escapeAttr(p.codigoManual || '')}" placeholder="Codigo sistema" title="Codigo que asigna el deposito en el sistema. Si queda vacio, se completa en la OC." onchange="setCodigoManualPrenda('${c.id}','${p.id}',this.value)"></td>
           <td>${escapeHtml(p.proveedor || '-')}</td>
           <td>${money(p.pvpObjetivo)}<div class="muted" style="font-size:11px">Costo ${money(p.costo)}</div></td>
@@ -1615,6 +1611,43 @@ function setVersionPrenda(colId, prendaId, value){
   if(!p) return;
   p.version = String(value || '').trim();
   saveState();
+}
+
+// Curva de talles editable en Desarrollo (pedido de Juli 24/09/2026): las unidades
+// por talle de cada prenda se cargan o corrigen aca y pasan solas a la OC al
+// aprobar. Si la prenda ya es OC, la curva de la OC se edita en el Paso 2.
+function tallesEditHtml(c, p){
+  const t = tallesDePrenda(p) || {};
+  const oc = ocDePrenda(p);
+  return `<div class="ptalles" title="${oc ? 'Esta prenda ya es OC: la curva de la orden se edita en el Paso 2' : 'Unidades por talle. Pasan solas a la OC al aprobar la prenda.'}">${TALLES.map(k => `<label><span>${talleLabel(k)}</span><input class="small-input ptalle" type="number" min="0" step="1" value="${Number(t[k]) || 0}" onchange="setTallePrenda('${c.id}','${p.id}','${k}',this.value)" onfocus="this.select()"></label>`).join('')}<b class="ptot" data-ptot="${p.id}">${totalTalles(t)} u</b></div>`;
+}
+
+function setTallePrenda(colId, prendaId, talle, value){
+  const p = findPrenda(colId, prendaId);
+  if(!p || !TALLES.includes(talle)) return;
+  const base = tallesDePrenda(p) || {};
+  const t = {};
+  TALLES.forEach(k => { t[k] = Math.max(0, Math.round(Number(base[k]) || 0)); });
+  t[talle] = Math.max(0, Math.round(Number(value) || 0));
+  p.talles = t;
+  p.tallesEditado = true;
+  saveState();
+  // Se actualizan solo los totales en pantalla, sin re-renderizar (para no perder el foco al tabular).
+  const tot = totalTalles(t);
+  const el = document.querySelector('[data-ptot="' + p.id + '"]');
+  if(el) el.textContent = tot + ' u';
+  const chip = document.querySelector('[data-pchip="' + p.id + '"]');
+  if(chip) chip.textContent = (chip.dataset.color || 'Sin color') + (tot ? ' · ' + tot : '');
+  const c = state.colecciones.find(x=>x.id===colId);
+  if(c){
+    const key = grupoKey(String(p.tipo || '').trim() || 'Sin linea', p);
+    const gEl = document.querySelector('[data-gtot="' + CSS.escape(key) + '"]');
+    if(gEl){
+      const gt = c.prendas.filter(x => grupoKey(String(x.tipo || '').trim() || 'Sin linea', x) === key)
+        .reduce((s,x)=>{ const tt = tallesDePrenda(x); return s + (tt ? totalTalles(tt) : 0); }, 0);
+      gEl.textContent = gt ? ' · ' + gt + ' u' : '';
+    }
+  }
 }
 
 function setCodigoManualPrenda(colId, prendaId, value){
