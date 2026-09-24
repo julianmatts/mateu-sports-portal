@@ -1947,8 +1947,26 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
   totales de fila, pie, remito y resumen) para no perder el foco al tabular. Un artículo que «quedaba todo
   en el depósito» también se puede repartir a mano (sale de «Sin repartir»). Guardar, ⇩ Excel, Mi Sucursal
   y Picking toman lo editado sin cambios; el artículo se guarda con `editado:true` y `meta.totales.editados`.
-  Cargar otra estadística de remitos o guardar limpia los ajustes. La Barrida de reserva todavía no tiene
-  edición a mano.
+  Cargar otra estadística de remitos o guardar limpia los ajustes.
+  **La Barrida de reserva también se edita a mano (24/09/2026, pedido de Juli)**, con el mismo modelo: botón ✎ al final de
+  la columna Talles de cada línea (solo con la barrida procesada desde los archivos: una semana abierta del historial no
+  trae la reserva por talle y no se edita) → casilleros numéricos por TODOS los talles que el artículo tiene en el
+  depósito, cada uno con su tope («hasta N» = reserva repartible del talle, `R.reservaT` de `computar`, menos lo que se
+  llevan las otras sucursales; al pasarse se recorta y avisa); botones «✓ Listo», «↺ volver al automático», «✕ no
+  mandarle nada» (la línea queda en cero con el pill «no va · a mano») y «+ Agregar otra sucursal a este artículo…»
+  (cualquiera de `REP_SUC`; queda marcada «sucursal agregada a mano», sin prioridad). El ajuste es la cantidad FINAL de
+  la línea: reemplaza a la suma de venta + curva + agrandar + vaciado + abrir. Vive en `state.manualBar['<id>|<slug>'] =
+  {talle: u}` (+ `manualBase` = lo automático al abrir) y `aplicarManualBar` lo aplica al final de `reposFusionadas()`,
+  así cambiar un parámetro lo vuelve a aplicar; «Listo» saca los talles en cero y, si quedó igual al automático,
+  descarta el ajuste. Al tipear no se redibuja (`barEditCelda`: actualiza «A reponer», «Queda» del artículo y el total
+  de la tira). En pantalla: casilleros ámbar «a mano», pill «✎ a mano» (tooltip con lo que proponía el automático),
+  la tira suma «N a mano» al desglose y «N ajustadas a mano · descartar». Excel: la celda es la cantidad a mano; una
+  línea puesta en cero no va a la planilla. **Guardar**: la línea editada reemplaza a lo automático en
+  `reposicion/<slug>` (talles `[{t,v,r,s}]` con la cantidad final, `editado:true`, `vaciado`/`ampliar` en 0), sale de
+  `curva/<slug>` (la cantidad a mano ya incluye la curva) y `meta.editados` cuenta las líneas; Mi Sucursal y el Picking
+  la leen sin cambios. Procesar archivos nuevos o abrir del historial descarta los ajustes. Probado 24/09 en el
+  navegador con los reportes de Puma (252 líneas): tope por talle, sucursal agregada, línea en cero, Excel y el
+  payload del guardado (interceptando las escrituras).
   **Vara de convergencia (23/09/2026, preocupación de Juli: «siempre aparecen cosas»)**: en cada artículo editado el
   reparto guarda también la **propuesta automática** (`auto` = líneas que proponía el portal, `quedaAuto`) y `dif` =
   `{lineas, lineasAuto, u}` (`repDifAuto`: sucursales cuya curva quedó distinta y unidades que cambiaron de destino);
