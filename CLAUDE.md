@@ -2881,6 +2881,11 @@ Pedidos de Juli aplicados ese día, todos en `managment/index.html`:
   exports no cambiaron. **Fecha de creación**: columna «Creada» en la lista de OC y «Creada el …» (+
   «Enviada el …» si hay `fechaEnvio`) en el subtítulo del detalle (`fechaCreacionOC` = la `fecha` más
   vieja de las filas de esa OC; las filas siempre la tuvieron, solo no se mostraba).
+- **El pill del color se pinta del color real (mismo día)**: la barra lateral y la cabecera del artículo siguen
+  con `colorBloque` (hash del nombre), pero el botón que encapsula el color de cada variante usa `colorDeNombre` /
+  `pillColorStyle` (mapa `COLORES_PRENDA`: «Chocolate» marrón, «Negro» negro, «Gris Chevy» gris; los compuestos como
+  «azul marino» van antes que «azul»; claros con texto oscuro y borde; nombre desconocido cae al color del bloque).
+  Vale en el Desarrollo, el detalle de la OC y las tarjetas de avíos. Color nuevo = una entrada más en el mapa.
 - **Compartir el desarrollo**: botones «📲 WhatsApp» (abre `wa.me` con el mensaje armado, sin número) y
   «🔗 Link» en cada colección y dentro de la colección abierta. El link es `managment/?col=<id>`:
   `abrirDesarrolloDesdeUrl` abre esa colección al entrar (se reintenta cuando llega Firebase). Si el que

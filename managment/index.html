@@ -370,6 +370,38 @@ function colorBloque(clave){
   return PALETA_BLOQUES[h % PALETA_BLOQUES.length];
 }
 
+// Color REAL de la prenda para el pill de cada variante (pedido de Juli 24/09/2026): la barra
+// lateral y la cabecera del articulo siguen con colorBloque (por hash del nombre), pero el
+// boton que encapsula el color se pinta del color que dice ("Chocolate" marron, "Negro" negro).
+// Los compuestos van primero ("azul marino" antes que "azul"); lo que no se reconoce cae al
+// color del bloque. `f` = texto oscuro + borde, para los claros (blanco, beige, amarillo...).
+const COLORES_PRENDA = [
+  ['azul marino','#1f2a56'], ['azul francia','#1d5fd1'], ['azul petroleo','#1f4e5f'], ['azul cielo','#8ec5f2','f'], ['celeste','#8ec5f2','f'],
+  ['verde militar','#4b5320'], ['verde oliva','#6b7a2a'], ['verde agua','#7fd3c4','f'], ['verde manzana','#8bc34a','f'], ['verde botella','#0b4a2f'], ['verde menta','#98e2c6','f'],
+  ['rosa viejo','#c98a94'], ['rosa bebe','#f4c2d1','f'], ['rosa chicle','#f06fa8'], ['fucsia','#d81b7a'], ['magenta','#c2185b'],
+  ['gris oscuro','#4a4e55'], ['gris claro','#c9ccd1','f'], ['gris melange','#9a9ea3'], ['gris topo','#8c857a'], ['gris plomo','#5b6066'], ['grafito','#3a3d42'], ['plomo','#6b7075'],
+  ['rojo vino','#7b1e2e'], ['bordo','#7b1e2e'], ['bordeaux','#7b1e2e'], ['vino','#7b1e2e'], ['borravino','#6b1d34'], ['cereza','#b3123d'], ['coral','#f4766a'], ['salmon','#f2a08a','f'],
+  ['naranja','#f07c1c'], ['mandarina','#ff8c42'], ['durazno','#f7b58c','f'], ['mostaza','#d4a017'], ['ocre','#c58a2a'], ['amarillo','#f2d43b','f'], ['limon','#e2ef4a','f'], ['dorado','#c9a227'], ['oro','#c9a227'],
+  ['chocolate','#5b3a29'], ['marron','#6d4c41'], ['cafe','#6d4c41'], ['camel','#c19a6b'], ['tostado','#a67c52'], ['habano','#8b5a2b'], ['caramelo','#b8722c'], ['cobre','#b87333'], ['terracota','#c65a3b'], ['ladrillo','#b5442e'],
+  ['beige','#d9c8a9','f'], ['arena','#e0cfae','f'], ['crema','#f2e8d5','f'], ['crudo','#efe6d4','f'], ['natural','#efe6d4','f'], ['hueso','#f1ece2','f'], ['marfil','#f3eee0','f'], ['tiza','#f2f2f0','f'], ['blanco','#ffffff','f'], ['white','#ffffff','f'],
+  ['lila','#c8a2e0','f'], ['lavanda','#b9a3dc','f'], ['violeta','#6a3fb0'], ['purpura','#6a1b9a'], ['morado','#5e2b8a'], ['uva','#5a2a6b'], ['ciruela','#6b2c4e'],
+  ['turquesa','#1fb5b5'], ['aqua','#2bc4c4'], ['cian','#00acc1'], ['petroleo','#1f4e5f'], ['esmeralda','#1d8a5b'], ['verde','#2e7d32'], ['lima','#9ccc3c','f'], ['oliva','#6b7a2a'], ['militar','#4b5320'], ['kaki','#8a7d55'], ['khaki','#8a7d55'],
+  ['marino','#1f2a56'], ['navy','#1f2a56'], ['azul','#1e4fa3'], ['royal','#1d4fd8'], ['indigo','#3949ab'], ['denim','#3b5b8c'], ['jean','#3b5b8c'],
+  ['rojo','#c62828'], ['red','#c62828'], ['carmin','#b3123d'], ['rosa','#e88aa8'], ['pink','#e88aa8'],
+  ['gris','#8a8f96'], ['grey','#8a8f96'], ['gray','#8a8f96'], ['plata','#b8bcc2','f'], ['plateado','#b8bcc2','f'], ['silver','#b8bcc2','f'],
+  ['negro','#1a1a1a'], ['black','#1a1a1a'], ['carbon','#2b2b2b'], ['antracita','#2f3338']
+];
+function colorDeNombre(nombre, fallback){
+  const n = String(nombre || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const hit = COLORES_PRENDA.find(([k]) => n.includes(k));
+  if(!hit) return { c: (fallback && fallback.c) || '#8a8f96', txt: '#fff', borde: 'transparent' };
+  return { c: hit[1], txt: hit[2] ? '#1a1a1a' : '#fff', borde: hit[2] ? '#c9ccd1' : 'transparent' };
+}
+function pillColorStyle(nombre, fallback){
+  const k = colorDeNombre(nombre, fallback);
+  return 'background:' + k.c + ';color:' + k.txt + ';border:1px solid ' + k.borde;
+}
+
 const $ = id => document.getElementById(id);
 // Espacio no separable entre el simbolo y el numero: si la celda es angosta,
 // el precio baja de linea entero ("$ 12.992,4") y el $ nunca queda suelto.
@@ -1548,7 +1580,7 @@ function prendaLinea(c, p, col){
     <div class="oc-line" style="border-left:6px solid ${col.c}">
       <div class="oc-l1">
         <div class="oc-blk oc-art-blk">
-          <div><span class="oc-colpill" style="background:${col.c}" data-pchip="${p.id}" data-color="${escapeAttr(p.color || 'Sin color')}">${escapeHtml(p.color || 'Sin color')}${tot ? ' · ' + tot : ''}</span></div>
+          <div><span class="oc-colpill" style="${pillColorStyle(p.color, col)}" data-pchip="${p.id}" data-color="${escapeAttr(p.color || 'Sin color')}">${escapeHtml(p.color || 'Sin color')}${tot ? ' · ' + tot : ''}</span></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <div><span class="oc-lbl">Color</span><input class="small-input" style="width:120px;text-align:left" value="${escapeAttr(p.color || '')}" placeholder="Color" title="Color de esta variante (editable)" onchange="setDescPrenda('${c.id}','${p.id}','color',this.value)"></div>
             <div><span class="oc-lbl">Nombre del articulo</span><input class="small-input" style="width:190px;text-align:left" value="${escapeAttr(p.nombre || '')}" placeholder="Nombre" title="Si lo cambias, este color pasa a ese articulo" onchange="setDescPrenda('${c.id}','${p.id}','nombre',this.value)"></div>
@@ -2332,7 +2364,7 @@ function curvaPanel(group, editMode){
     <div class="oc-line${locked ? ' oc-locked' : ''}" style="border-left:6px solid ${col.c}">
       <div class="oc-l1">
         <div class="oc-blk oc-art-blk">
-          <div><span class="oc-colpill" style="background:${col.c}">${escapeHtml(o.color || 'Sin color')}<span class="oc-n">${escapeHtml(MARCAS[o.marca] || '')}</span></span></div>
+          <div><span class="oc-colpill" style="${pillColorStyle(o.color, col)}">${escapeHtml(o.color || 'Sin color')}<span class="oc-n">${escapeHtml(MARCAS[o.marca] || '')}</span></span></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <div><span class="oc-lbl">Codigo sistema</span><input class="small-input" style="width:120px;font-weight:700" ${locked ? dis(locked) : 'title="Codigo del sistema (lo asigna el deposito)"'} value="${escapeAttr(o.codigo || '')}" placeholder="Codigo" onchange="setOCCodigo('${o.id}',this.value)"></div>
             <div><span class="oc-lbl">Color</span><input class="small-input" style="width:120px" ${dis(locked)} value="${escapeAttr(o.color || '')}" onchange="setOCField('${o.id}','color',this.value)"></div>
@@ -2449,7 +2481,7 @@ function aviosCard(o, group){
         <span class="oc-swatch" style="background:${col.c}"></span>
         <b class="av-cod">${escapeHtml(o.codigo || '(sin codigo)')}</b>
         <span class="av-art">${escapeHtml(o.articulo || '')}</span>
-        <span class="oc-colpill" style="background:${col.c}">${escapeHtml(o.color || '-')}</span>
+        <span class="oc-colpill" style="${pillColorStyle(o.color, col)}">${escapeHtml(o.color || '-')}</span>
         <span class="muted">${u} u pedidas</span>
         <span class="av-tot">Avios <b data-avtot="${o.id}">${money(costoAvios(o))}</b> por prenda · <b data-avval="${o.id}">${money(valorizadoAvios(o))}</b> en la OC</span>
       </div>
