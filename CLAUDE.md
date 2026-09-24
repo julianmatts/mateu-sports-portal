@@ -2816,7 +2816,12 @@ Pedidos de Juli aplicados ese día, todos en `managment/index.html`:
   (así una curva dejada en cero no vuelve a la nota vieja del import). Al tipear no se re-renderiza: se
   actualizan por DOM el total de la fila (`data-ptot`), el chip del color en la fila del artículo
   (`data-pchip`) y el total del artículo (`data-gtot`). Esas unidades pasan solas a la OC al aprobar; si
-  la prenda ya es OC, la curva de la orden se corrige en el Paso 2.
+  la prenda ya es OC, la curva de la orden se corrige en el Paso 2. **Copiar la curva de un artículo a
+  otro** (mismo día): handle «⠿» arrastrable de una grilla a la otra (`curvaDragStart` / `curvaDragOver` /
+  `curvaDrop`, la grilla destino se marca con borde rojo punteado), botones «⧉ Copiar» / «⤓ Pegar» y
+  Ctrl+C / Ctrl+V parado en un talle (`copiarCurvaPrenda` / `pegarCurvaPrenda` / `aplicarCurvaPrenda`).
+  Comparte el portapapeles interno `copiedCurve` con el Paso 2, así una curva copiada en Desarrollo se
+  pega en una fila de OC y al revés.
 - **Compartir el desarrollo**: botones «📲 WhatsApp» (abre `wa.me` con el mensaje armado, sin número) y
   «🔗 Link» en cada colección y dentro de la colección abierta. El link es `managment/?col=<id>`:
   `abrirDesarrolloDesdeUrl` abre esa colección al entrar (se reintenta cuando llega Firebase). Si el que

@@ -45,7 +45,7 @@ main{max-width:1320px;margin:0 auto;padding:24px 20px 46px}
 .pill{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase}.pill.ok{background:#e9f8ef;color:var(--ok)}.pill.warn{background:#fff6df;color:var(--warn)}.pill.bad{background:#fff0f0;color:var(--bad)}.pill.violet{background:#f1eaff;color:var(--violet)}
 /* Celdas de estado del Desarrollo: ambar = falta aprobar, verde = aprobado y ya es OC, rojo = desaprobado */
 td.celda-falta{background:#fff6df}td.celda-ok{background:#e9f8ef}td.celda-bad{background:#fff0f0}
-.ptalles{display:flex;gap:4px;flex-wrap:wrap;align-items:flex-end;margin-top:6px}.ptalles label{margin:0}.ptalles span{display:block;font-size:9px;color:var(--muted);font-family:var(--font-c);font-weight:700;text-align:center}.ptalles input{width:44px;padding:5px 3px;text-align:center}.ptalles .ptot{font-family:var(--font-c);font-size:12px;font-weight:700;padding-bottom:6px;margin-left:4px;white-space:nowrap}
+.ptalles{display:flex;gap:4px;flex-wrap:wrap;align-items:flex-end;margin-top:6px}.ptalles label{margin:0}.ptalles span{display:block;font-size:9px;color:var(--muted);font-family:var(--font-c);font-weight:700;text-align:center}.ptalles input{width:44px;padding:5px 3px;text-align:center}.ptalles .ptot{font-family:var(--font-c);font-size:12px;font-weight:700;padding-bottom:6px;margin-left:4px;white-space:nowrap}.ptalles .pgrip{cursor:grab;color:var(--muted-2,#9aa3b5);font-size:16px;padding:0 4px 6px 0;user-select:none;line-height:1}.ptalles .pgrip:active{cursor:grabbing}.ptalles .pact{border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:6px;padding:4px 7px;font-family:var(--font-c);font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;cursor:pointer;margin-bottom:6px}.ptalles.drop-ok{outline:2px dashed var(--red);outline-offset:3px;border-radius:6px;background:#fff5f5}
 .dev-filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:0 0 14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fbfcff}.dev-filtros .field{margin:0;min-width:200px}.dev-filtros .field select{padding:7px 9px;font-size:13px}
 .actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.action{border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:6px;padding:7px 9px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;cursor:pointer;line-height:1}.action.primary{background:var(--navy);border-color:var(--navy);color:#fff}.action.danger{color:var(--red);border-color:#f3caca}
 .action.ico{padding:5px 9px;letter-spacing:0;display:inline-flex;align-items:center;justify-content:center;line-height:0}.action.ico svg{display:block}.muted{color:var(--muted)}
@@ -1619,7 +1619,7 @@ function setVersionPrenda(colId, prendaId, value){
 function tallesEditHtml(c, p){
   const t = tallesDePrenda(p) || {};
   const oc = ocDePrenda(p);
-  return `<div class="ptalles" title="${oc ? 'Esta prenda ya es OC: la curva de la orden se edita en el Paso 2' : 'Unidades por talle. Pasan solas a la OC al aprobar la prenda.'}">${TALLES.map(k => `<label><span>${talleLabel(k)}</span><input class="small-input ptalle" type="number" min="0" step="1" value="${Number(t[k]) || 0}" onchange="setTallePrenda('${c.id}','${p.id}','${k}',this.value)" onfocus="this.select()"></label>`).join('')}<b class="ptot" data-ptot="${p.id}">${totalTalles(t)} u</b></div>`;
+  return `<div class="ptalles" data-pcol="${c.id}" data-pid="${p.id}" title="${oc ? 'Esta prenda ya es OC: la curva de la orden se edita en el Paso 2' : 'Unidades por talle. Pasan solas a la OC al aprobar la prenda.'}" ondragover="curvaDragOver(event,this)" ondragleave="this.classList.remove('drop-ok')" ondrop="curvaDrop(event,this)"><span class="pgrip" draggable="true" title="Arrastra esta curva y soltala sobre otro articulo para copiarla" ondragstart="curvaDragStart(event,'${c.id}','${p.id}')" ondragend="document.querySelectorAll('.ptalles.drop-ok').forEach(e=>e.classList.remove('drop-ok'))">⠿</span>${TALLES.map(k => `<label><span>${talleLabel(k)}</span><input class="small-input ptalle" type="number" min="0" step="1" value="${Number(t[k]) || 0}" data-pcol="${c.id}" data-pid="${p.id}" onchange="setTallePrenda('${c.id}','${p.id}','${k}',this.value)" onfocus="this.select()"></label>`).join('')}<b class="ptot" data-ptot="${p.id}">${totalTalles(t)} u</b><button class="pact" type="button" title="Copiar esta curva (tambien Ctrl+C parado en un talle)" onclick="copiarCurvaPrenda('${c.id}','${p.id}')">⧉ Copiar</button><button class="pact" type="button" title="Pegar la curva copiada (tambien Ctrl+V parado en un talle)" onclick="pegarCurvaPrenda('${c.id}','${p.id}')">⤓ Pegar</button></div>`;
 }
 
 function setTallePrenda(colId, prendaId, talle, value){
@@ -1632,6 +1632,74 @@ function setTallePrenda(colId, prendaId, talle, value){
   p.talles = t;
   p.tallesEditado = true;
   saveState();
+  pintarTotalesPrenda(colId, p);
+}
+
+// Copiar la curva de una prenda a otra: botones ⧉ / ⤓, Ctrl+C / Ctrl+V parado en un
+// talle, o arrastrando el handle ⠿ de una grilla y soltandolo sobre la otra. Usa el
+// mismo portapapeles interno que el Paso 2 (copiedCurve), asi una curva copiada en
+// Desarrollo se pega en una OC y al reves.
+let _dragCurva = null;
+
+function curvaDePrendaCompleta(p){
+  const base = tallesDePrenda(p) || {};
+  const t = {};
+  TALLES.forEach(k => { t[k] = Math.max(0, Math.round(Number(base[k]) || 0)); });
+  return t;
+}
+
+function aplicarCurvaPrenda(colId, prendaId, talles){
+  const p = findPrenda(colId, prendaId);
+  if(!p) return false;
+  const t = {};
+  TALLES.forEach(k => { t[k] = Math.max(0, Math.round(Number((talles || {})[k]) || 0)); });
+  p.talles = t;
+  p.tallesEditado = true;
+  saveState();
+  const grid = document.querySelector('.ptalles[data-pid="' + p.id + '"]');
+  if(grid) grid.querySelectorAll('input.ptalle').forEach((input, i) => { input.value = t[TALLES[i]]; });
+  pintarTotalesPrenda(colId, p);
+  return true;
+}
+
+function copiarCurvaPrenda(colId, prendaId){
+  const p = findPrenda(colId, prendaId);
+  if(!p) return;
+  const talles = curvaDePrendaCompleta(p);
+  copiedCurve = { talles };
+  try{ navigator.clipboard?.writeText(TALLES.map(k => talleLabel(k) + ':' + talles[k]).join(' / ')); }catch(e){}
+  showToast('Curva de ' + (p.nombre || 'la prenda') + (p.color ? ' ' + p.color : '') + ' copiada (' + totalTalles(talles) + ' u). Pegala con ⤓ o Ctrl+V en otro articulo.');
+}
+
+function pegarCurvaPrenda(colId, prendaId){
+  if(!copiedCurve){ showToast('Primero copia una curva (⧉ en un articulo, o Ctrl+C parado en un talle).'); return; }
+  if(aplicarCurvaPrenda(colId, prendaId, copiedCurve.talles)) showToast('Curva pegada');
+}
+
+function curvaDragStart(ev, colId, prendaId){
+  const p = findPrenda(colId, prendaId);
+  if(!p) return;
+  _dragCurva = { colId, prendaId, talles: curvaDePrendaCompleta(p) };
+  try{ ev.dataTransfer.setData('text/plain', 'curva:' + prendaId); ev.dataTransfer.effectAllowed = 'copy'; }catch(e){}
+}
+
+function curvaDragOver(ev, el){
+  if(!_dragCurva || el.dataset.pid === _dragCurva.prendaId) return;
+  ev.preventDefault();
+  try{ ev.dataTransfer.dropEffect = 'copy'; }catch(e){}
+  el.classList.add('drop-ok');
+}
+
+function curvaDrop(ev, el){
+  el.classList.remove('drop-ok');
+  if(!_dragCurva || el.dataset.pid === _dragCurva.prendaId) return;
+  ev.preventDefault();
+  if(aplicarCurvaPrenda(el.dataset.pcol, el.dataset.pid, _dragCurva.talles)) showToast('Curva copiada al articulo');
+  _dragCurva = null;
+}
+
+function pintarTotalesPrenda(colId, p){
+  const t = tallesDePrenda(p) || {};
   // Se actualizan solo los totales en pantalla, sin re-renderizar (para no perder el foco al tabular).
   const tot = totalTalles(t);
   const el = document.querySelector('[data-ptot="' + p.id + '"]');
@@ -4318,6 +4386,11 @@ document.addEventListener('keydown', e => {
   if(key === 'c' && selectedSizes.size){
     e.preventDefault();
     copySelectedSizes();
+  }
+  const activo = document.activeElement;
+  if(activo && activo.classList && activo.classList.contains('ptalle')){
+    if(key === 'c' && !selectedSizes.size){ e.preventDefault(); copiarCurvaPrenda(activo.dataset.pcol, activo.dataset.pid); return; }
+    if(key === 'v' && copiedCurve){ e.preventDefault(); pegarCurvaPrenda(activo.dataset.pcol, activo.dataset.pid); return; }
   }
   if(key === 'v' && copiedCurve){
     // Solo pegar la curva si el foco esta en un input de talle. En cualquier otro
