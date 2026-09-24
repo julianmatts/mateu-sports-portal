@@ -2835,6 +2835,16 @@ Pedidos de Juli aplicados ese día, todos en `managment/index.html`:
   de OC (`ocFiltro`, `ordenPasaFiltro`, `ocFiltrosHtml`; estado aparte del de Desarrollo). Solo acotan lo
   que se lista: con la línea filtrada, la cabecera del proveedor avisa que Confirmar / Excel / PDF / mail
   abarcan la OC completa del proveedor (esas acciones buscan el grupo en `state.ordenes`, no en lo filtrado).
+- **Detalle de la OC a pantalla completa** (mismo día, Juli: «muy compactado, incómodo a la vista, no quiero
+  barra para deslizar»): «Abrir» ya no abre un modal sino la vista `ocdet` (`openOCDetalle` → `renderOCDetallePage`,
+  cuelga de la pestaña Paso 2; «← Volver» = `closeOCDetalle`). `curvaPanel` dejó de ser una tabla de 17 columnas:
+  una **tarjeta por artículo** (`.oc-artgrp`, color por hash del nombre con `colorBloque`, cabecera con colores ·
+  unidades · valorizado) y adentro **una línea por color** (`.oc-line`, pill del color con el mismo acento). Fila 1:
+  código · color · género, los **7 talles en una sola fila** (`.oc-sizes`), unidades grandes y costo/valorizado; fila
+  2: entrega · seguimiento · ficha · notas · estado · acciones (+ línea/colección/proveedor en modo edición). Los
+  bloques envuelven (`flex-wrap`): nunca hay scroll horizontal. Conserva `data-total-id` / `data-val-id` /
+  `.size-copy` (Ctrl+C/V y `updateLineTotals` siguen igual). El modal `#ocDetalleModal` se eliminó.
+  `providerOptions` compara por `providerKey` (el select mostraba «Seleccionar proveedor» con «RA INT» vs «RA Int»).
 - **Compartir el desarrollo**: botones «📲 WhatsApp» (abre `wa.me` con el mensaje armado, sin número) y
   «🔗 Link» en cada colección y dentro de la colección abierta. El link es `managment/?col=<id>`:
   `abrirDesarrolloDesdeUrl` abre esa colección al entrar (se reintenta cuando llega Firebase). Si el que
