@@ -55,10 +55,14 @@ td.celda-falta{background:#fff6df}td.celda-ok{background:#e9f8ef}td.celda-bad{ba
 .oc-line{padding:16px 18px 14px;border-bottom:1px solid var(--line)}.oc-line:last-child{border-bottom:0}.oc-line.oc-locked{background:#f7f8fb}.oc-line:nth-child(even):not(.oc-locked){background:#fbfcfe}
 .oc-l1{display:flex;flex-wrap:wrap;gap:16px 30px;align-items:flex-start}.oc-l2{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:flex-end;margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
 .oc-blk{display:flex;flex-direction:column;gap:8px;min-width:0}.oc-lbl{display:block;font-family:var(--font-c);font-size:10px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
-.oc-art-blk{flex:1 1 260px}.oc-colpill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 12px;font-family:var(--font-c);font-size:14px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#fff}.oc-colpill .oc-n{opacity:.8;font-weight:400;font-size:12px;letter-spacing:0;text-transform:none}
+.oc-art-blk{flex:1 1 300px;max-width:520px}.oc-colpill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 12px;font-family:var(--font-c);font-size:14px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#fff}.oc-colpill .oc-n{opacity:.8;font-weight:400;font-size:12px;letter-spacing:0;text-transform:none}
 .oc-sizes{display:grid;grid-template-columns:repeat(7,54px);gap:6px;align-items:end}.oc-sizes .field{margin:0}.oc-sizes input{width:54px;padding:8px 4px;text-align:center}
 .oc-tot{font-family:var(--font-c);font-size:26px;font-weight:700;color:var(--navy);line-height:1}.oc-val{font-family:var(--font-c);font-size:16px;font-weight:700;color:var(--navy)}
 .oc-line select,.oc-line input.small-input{padding:8px 9px}.oc-l2 .actions{margin-left:auto}
+/* Detalle de la coleccion (Paso 1) a pantalla completa, mismo formato que el de la OC */
+.oc-est{border-radius:8px;padding:8px 10px;display:inline-block;min-width:150px}.oc-est.celda-ok{background:#e9f8ef}.oc-est.celda-falta{background:#fff6df}.oc-est.celda-bad{background:#fff0f0}
+.oc-arthead .oc-pills{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}.oc-arthead .grp-ren{font-size:15px}
+.oc-l2 .foto-slot{display:inline-block}
 .dev-filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:0 0 14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fbfcff}.dev-filtros .field{margin:0;min-width:200px}.dev-filtros .field select{padding:7px 9px;font-size:13px}
 .actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.action{border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:6px;padding:7px 9px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;cursor:pointer;line-height:1}.action.primary{background:var(--navy);border-color:var(--navy);color:#fff}.action.danger{color:var(--red);border-color:#f3caca}
 .action.abrir{background:var(--ok);border-color:var(--ok);color:#fff;min-width:78px;display:inline-flex;justify-content:center}.action.abrir:hover{filter:brightness(1.08)}
@@ -149,18 +153,6 @@ tr.grp-var td:first-child{border-left:3px solid var(--line);padding-left:16px}
   </section>
 </main>
 
-<div class="modal" id="itemsModal">
-  <div class="modal-card maximized">
-    <div class="modal-head">
-      <div>
-        <h3 id="itemsTitle">Coleccion</h3>
-        <div class="collection-note" id="itemsSubtitle">Control pormenorizado por silueta textil.</div>
-      </div>
-      <button class="xbtn" type="button" onclick="closeItemsModal()">×</button>
-    </div>
-    <div class="modal-body" id="itemsBody"></div>
-  </div>
-</div>
 
 <div class="modal" id="exportProvModal" style="z-index:30">
   <div class="modal-card" style="width:min(620px,100%)">
@@ -1001,6 +993,7 @@ function render(){
   renderBrandFilter();
   if(currentView === 'oc') renderOC();
   else if(currentView === 'ocdet') renderOCDetallePage();
+  else if(currentView === 'coldet') renderItemsModal();
   else if(currentView === 'ingresos') renderIngresos();
   else if(currentView === 'config') renderConfig();
   else renderDesarrollo();
@@ -1219,7 +1212,7 @@ function nuevoDesarrollo(){
   saveState();
   render();
   openItemsModal(col.id);
-  setTimeout(()=>document.querySelector('#itemsBody input[name="colNombre"]')?.focus(), 0);
+  setTimeout(()=>document.querySelector('#view input[name="colNombre"]')?.focus(), 0);
 }
 
 function setColeccionCampo(colId, campo, valor){
@@ -1227,8 +1220,6 @@ function setColeccionCampo(colId, campo, valor){
   if(!c) return;
   c[campo] = String(valor||'').trim();
   saveState();
-  const t = $('itemsTitle');
-  if(t) t.textContent = 'Coleccion: ' + (c.nombre || '(sin nombre)') + (itemsLineaFilter ? '  ·  Linea: ' + itemsLineaFilter : '');
   render();
 }
 
@@ -1241,7 +1232,8 @@ function closeItemsModal(){
     saveState();
   }
   itemsLineaFilter = null;
-  closeModal('itemsModal');
+  if(currentView === 'coldet') currentView = 'desarrollo';
+  setActiveTab();
   render();
 }
 
@@ -1268,8 +1260,10 @@ function openItemsModal(id, lineaEnc){
   itemsLineaFilter = lineaEnc ? decodeURIComponent(lineaEnc) : null;
   const c = state.colecciones.find(x=>x.id===id);
   itemsTab = (c && c.prendas.length) ? 'activos' : 'nuevo';
-  renderItemsModal();
-  openModal('itemsModal');
+  currentView = 'coldet';
+  setActiveTab();
+  render();
+  try{ window.scrollTo({ top: Math.max(0, ($('view')?.getBoundingClientRect().top || 0) + window.scrollY - 90), behavior:'smooth' }); }catch(e){}
 }
 
 // Cambia de pestaña sin re-renderizar (para no perder lo que se este cargando en Nuevo).
@@ -1278,7 +1272,7 @@ function setItemsTab(t){
   const paneN = $('itemsPaneNuevo'), paneA = $('itemsPaneActivos');
   if(paneN) paneN.style.display = t === 'nuevo' ? '' : 'none';
   if(paneA) paneA.style.display = t === 'activos' ? '' : 'none';
-  document.querySelectorAll('#itemsBody .items-tabs .tab').forEach(btn => btn.classList.toggle('active', btn.dataset.itab === t));
+  document.querySelectorAll('#view .items-tabs .tab').forEach(btn => btn.classList.toggle('active', btn.dataset.itab === t));
 }
 
 function renderItemsModal(){
@@ -1287,19 +1281,41 @@ function renderItemsModal(){
   let prendasVis = c.prendas.filter(prendaPasaFiltro);
   if(itemsLineaFilter) prendasVis = prendasVis.filter(p => (String(p.tipo||'').trim() || 'Sin linea') === itemsLineaFilter);
   const nPrendas = prendasVis.length;
-  $('itemsTitle').textContent = 'Coleccion: ' + (c.nombre || '(sin nombre)') + (itemsLineaFilter ? '  ·  Linea: ' + itemsLineaFilter : '');
-  $('itemsSubtitle').textContent = itemsLineaFilter
+  const nArts = new Set(prendasVis.map(p => grupoKey(String(p.tipo||'').trim() || 'Sin linea', p))).size;
+  const nLineas = new Set(prendasVis.map(p => String(p.tipo||'').trim() || 'Sin linea')).size;
+  const unidades = prendasVis.reduce((s,p)=>{ const t = tallesDePrenda(p); return s + (t ? totalTalles(t) : 0); }, 0);
+  const conOC = prendasVis.filter(p => ocDePrenda(p)).length;
+  const aprob = prendasVis.filter(p => p.paso === '4. Aprobado Comercial').length;
+  const subtitulo = itemsLineaFilter
     ? 'Estas viendo solo la linea "' + itemsLineaFilter + '". Usa "Ver toda la coleccion" para ver el resto.'
     : 'Control por prenda. Los cambios se guardan automaticamente. Solo las prendas en Aprobado Comercial pasan a orden de compra.';
-  $('itemsBody').innerHTML = `
+  $('view').innerHTML = `
+    <div class="ocd-head">
+      <div>
+        <div class="btn-row" style="margin-bottom:10px"><button class="btn secondary" type="button" onclick="closeItemsModal()">← Volver a los desarrollos</button></div>
+        <h2 id="colTitulo">${escapeHtml(c.nombre || '(sin nombre)')}</h2>
+        <div class="ocd-sub">${escapeHtml(c.tipo || 'Desarrollo')}${itemsLineaFilter ? ' · Linea <b>' + escapeHtml(itemsLineaFilter) + '</b>' : ''} · ${escapeHtml(subtitulo)}</div>
+      </div>
+      <div class="btn-row" style="gap:8px">
+        <button class="btn secondary" type="button" title="Mandar el link de este desarrollo por WhatsApp" onclick="compartirDesarrollo('${c.id}')">📲 Mandar por WhatsApp</button>
+        <button class="btn secondary" type="button" title="Copiar el link de este desarrollo" onclick="copiarLinkDesarrollo('${c.id}')">🔗 Copiar link</button>
+        <button class="btn" type="button" onclick="procesarColeccionOC('${c.id}')" ${c.prendas.some(p=>p.paso === '4. Aprobado Comercial' && !ocDePrenda(p)) ? '' : 'disabled'}>Procesar aprobados y armar OC</button>
+      </div>
+    </div>
+    <div class="ocd-kpis">
+      <div class="mini"><b>${nArts}</b><span>Articulo${nArts === 1 ? '' : 's'}</span></div>
+      <div class="mini"><b>${nPrendas}</b><span>Prendas (art. + color)</span></div>
+      <div class="mini"><b>${nLineas}</b><span>Linea${nLineas === 1 ? '' : 's'}</span></div>
+      <div class="mini"><b>${unidades}</b><span>Unidades</span></div>
+      <div class="mini"><b>${aprob}/${nPrendas}</b><span>Aprobadas</span></div>
+      <div class="mini"><b>${conOC}</b><span>Ya son OC</span></div>
+    </div>
     <div class="row" style="margin-bottom:14px">
       <div class="field"><label>Nombre del desarrollo / coleccion</label><input name="colNombre" value="${escapeAttr(c.nombre||'')}" placeholder="Ej: Axis 2027" onchange="setColeccionCampo('${c.id}','nombre',this.value)"></div>
       <div class="field"><label>Tipo de modulo / linea</label><input name="colTipo" value="${escapeAttr(c.tipo||'')}" placeholder="Ej: Invierno, Capsula Technical" onchange="setColeccionCampo('${c.id}','tipo',this.value)"></div>
     </div>
     <div class="btn-row" style="margin-bottom:12px">
       ${itemsLineaFilter ? `<button class="btn secondary" type="button" onclick="openItemsModal('${c.id}')">← Ver toda la coleccion</button>` : ''}
-      <button class="btn secondary" type="button" title="Mandar el link de este desarrollo por WhatsApp" onclick="compartirDesarrollo('${c.id}')">📲 Mandar por WhatsApp</button>
-      <button class="btn secondary" type="button" title="Copiar el link de este desarrollo" onclick="copiarLinkDesarrollo('${c.id}')">🔗 Copiar link</button>
       ${hayDevFiltro() ? `<span class="muted" style="font-size:12px;align-self:center">Filtrado por ${devFiltro.proveedor ? 'fabrica "' + escapeHtml(devFiltro.proveedor) + '"' : ''}${devFiltro.proveedor && devFiltro.linea ? ' y ' : ''}${devFiltro.linea ? 'linea "' + escapeHtml(devFiltro.linea) + '"' : ''}.</span>` : ''}
     </div>
     <div class="tabs items-tabs" style="margin:0 0 14px">
@@ -1352,8 +1368,8 @@ function renderItemsModal(){
     </div>
     <div class="notice" style="margin-top:12px">Para pasar al Paso 2, la prenda tiene que estar en <b>4. Aprobado Comercial</b>.</div>
     <div class="btn-row" style="margin-top:12px;justify-content:space-between">
-      <button class="btn secondary" type="button" onclick="closeItemsModal()">Cerrar coleccion</button>
-      <button class="btn" type="button" onclick="procesarColeccionOC('${c.id}')" ${c.prendas.some(p=>p.paso === '4. Aprobado Comercial') ? '' : 'disabled'}>Procesar aprobados y armar orden de compra</button>
+      <button class="btn secondary" type="button" onclick="closeItemsModal()">← Volver a los desarrollos</button>
+      <button class="btn" type="button" onclick="procesarColeccionOC('${c.id}')" ${c.prendas.some(p=>p.paso === '4. Aprobado Comercial' && !ocDePrenda(p)) ? '' : 'disabled'}>Procesar aprobados y armar orden de compra</button>
     </div>
   `;
   $('itemForm').addEventListener('submit', createItem);
@@ -1412,12 +1428,9 @@ function margenPill(p){
   return pill(m.toFixed(2) + 'x', m >= margenObjetivo() ? 'ok' : 'bad');
 }
 
-// Variantes de color acumulables: dentro de una linea, las prendas con el mismo
-// nombre y la misma marca se muestran como UNA fila resumen con los colores
-// acumulados; se expande para ver/editar cada color. Simplifica la vista cuando
-// un articulo viene en 3-4 colores. Clave del grupo = linea|marca|nombre.
-let gruposPrendasAbiertos = new Set();
-
+// Dentro de una linea, las prendas con el mismo nombre y la misma marca son UN
+// articulo con varios colores: se muestran como una tarjeta por articulo con una
+// linea por color (mismo formato que el detalle de la OC). Clave = linea|marca|nombre.
 function grupoKey(linea, p){
   return linea + '|' + (p.marca || '') + '|' + String(p.nombre || '').trim().toLowerCase();
 }
@@ -1432,54 +1445,51 @@ function groupedByNombre(linea, items){
   return [...map.entries()].map(([key, its]) => ({ key, items: its }));
 }
 
-function toggleGrupoPrendas(keyEnc){
-  const key = decodeURIComponent(keyEnc);
-  if(gruposPrendasAbiertos.has(key)) gruposPrendasAbiertos.delete(key);
-  else gruposPrendasAbiertos.add(key);
-  renderItemsModal();
-}
-
-// Fila resumen del articulo con varias variantes de color.
-function grupoRow(c, g){
-  const abierto = gruposPrendasAbiertos.has(g.key);
-  const keyEnc = encodeURIComponent(g.key);
-  const p0 = g.items[0];
-  const provs = [...new Set(g.items.map(p => String(p.proveedor || '').trim()).filter(Boolean))];
-  const pvps = [...new Set(g.items.map(p => Number(p.pvpObjetivo || 0)))];
-  const costos = [...new Set(g.items.map(p => Number(p.costo || 0)))];
-  const margenes = [...new Set(g.items.map(p => { const m = margenPrenda(p); return m === null ? '-' : m.toFixed(2); }))];
-  const pasos = [...new Set(g.items.map(p => p.paso))];
-  const todasOC = g.items.every(p => ocDePrenda(p));
-  const pasoPill = todasOC
-    ? pill('Aprobado · OC','ok')
-    : pasos.length === 1
-      ? pill(pasos[0] === '4. Aprobado Comercial' ? '4. Aprobado Comercial' : pasos[0] === '5. Desaprobado' ? pasos[0] : 'Falta aprobar · ' + pasos[0], pasos[0] === '4. Aprobado Comercial' ? 'ok' : pasos[0] === '5. Desaprobado' ? 'bad' : 'warn')
-      : pill('Falta aprobar · pasos mixtos','warn');
-  return `
-    <tr class="grp-row" onclick="toggleGrupoPrendas('${keyEnc}')" title="${abierto ? 'Ocultar' : 'Ver'} los colores de este articulo">
-      <td><span class="grp-caret">${abierto ? '▾' : '▸'}</span><b>${escapeHtml(p0.nombre)}</b><button class="grp-ren" type="button" title="Renombrar el articulo (todos sus colores)" onclick="event.stopPropagation();renombrarGrupo('${c.id}','${keyEnc}')">✎</button><div class="muted">${MARCAS[p0.marca] || ''} · ${g.items.length} colores<span data-gtot="${escapeAttr(g.key)}">${(()=>{ const tot = g.items.reduce((s,p)=>{ const t = tallesDePrenda(p); return s + (t ? totalTalles(t) : 0); }, 0); return tot ? ' · ' + tot + ' u' : ''; })()}</span></div></td>
-      <td>${provs.length === 1 ? escapeHtml(provs[0]) : (provs.length ? 'Varios' : '-')}</td>
-      <td>${pvps.length === 1 ? money(pvps[0]) : 'Varios'}${costos.length === 1 ? `<div class="muted" style="font-size:11px">Costo ${money(costos[0])}</div>` : ''}</td>
-      <td>${margenes.length === 1 ? margenPill(p0) : '<span class="muted">Varios</span>'}</td>
-      <td colspan="4"><div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">${g.items.map(p => { const t = tallesDePrenda(p); return `<span class="color-pill" data-pchip="${p.id}" data-color="${escapeAttr(p.color || 'Sin color')}">${escapeHtml(p.color || 'Sin color')}${t ? ' · ' + totalTalles(t) : ''}</span>`; }).join('')} ${pasoPill}</div></td>
-      <td colspan="2"><button class="action" type="button" onclick="event.stopPropagation();toggleGrupoPrendas('${keyEnc}')">${abierto ? 'Ocultar' : 'Ver colores'}</button></td>
-    </tr>`;
-}
-
 function lineaPanel(c, group){
   const grupos = groupedByNombre(group.linea, group.items);
   const nArt = grupos.length;
   return `
-    <div style="margin-bottom:16px">
-      <div class="section-title" style="margin-bottom:6px">Linea: ${escapeHtml(group.linea)} <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px">(${group.items.length} prenda${group.items.length === 1 ? '' : 's'}${nArt !== group.items.length ? ` · ${nArt} articulo${nArt === 1 ? '' : 's'}` : ''})</span></div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Nombre</th><th>Proveedor</th><th>PVP Obj.</th><th>Margen</th><th>Referencia</th><th>Paso actual</th><th>Version</th><th>Fotos</th><th>OC</th><th>Acciones</th></tr></thead>
-        <tbody>${grupos.map(g => g.items.length === 1
-          ? prendaRow(c, g.items[0], false)
-          : grupoRow(c, g) + (gruposPrendasAbiertos.has(g.key) ? g.items.map(p => prendaRow(c, p, true)).join('') : '')
-        ).join('')}</tbody>
-      </table></div>
+    <div style="margin-bottom:22px">
+      <div class="section-title" style="margin-bottom:10px">Linea: ${escapeHtml(group.linea)} <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px">(${group.items.length} prenda${group.items.length === 1 ? '' : 's'}${nArt !== group.items.length ? ` · ${nArt} articulo${nArt === 1 ? '' : 's'}` : ''})</span></div>
+      ${grupos.map(g => articuloCard(c, g)).join('')}
     </div>`;
+}
+
+// Tarjeta del articulo: cabecera con color propio (hash del nombre), ✎ para
+// renombrar todos los colores, resumen y estado; adentro una linea por color.
+function articuloCard(c, g){
+  const p0 = g.items[0];
+  const col = colorBloque(p0.nombre);
+  const keyEnc = encodeURIComponent(g.key);
+  const provs = [...new Set(g.items.map(p => String(p.proveedor || '').trim()).filter(Boolean))];
+  const items = g.items.slice().sort((a,b) => String(a.color||'').localeCompare(String(b.color||'')));
+  const tot = g.items.reduce((s,p)=>{ const t = tallesDePrenda(p); return s + (t ? totalTalles(t) : 0); }, 0);
+  return `
+    <section class="oc-artgrp">
+      <div class="oc-arthead" style="background:${col.t}">
+        <span class="oc-swatch" style="background:${col.c}"></span>
+        <h4>${escapeHtml(p0.nombre || '(sin nombre)')}</h4>
+        <button class="grp-ren" type="button" title="Renombrar el articulo (todos sus colores)" onclick="renombrarGrupo('${c.id}','${keyEnc}')">✎</button>
+        ${marcaLogo(p0.marca, 14)}
+        <span class="muted">${g.items.length} color${g.items.length === 1 ? '' : 'es'}<span data-gtot="${escapeAttr(g.key)}">${tot ? ' · ' + tot + ' u' : ''}</span>${provs.length ? ' · ' + escapeHtml(provs.join(', ')) : ''}</span>
+        <div class="oc-pills">${estadoPillsPrendas(g.items)}</div>
+      </div>
+      ${items.map(p => prendaLinea(c, p, col)).join('')}
+    </section>`;
+}
+
+// Pills de estado de un articulo (cuantos colores faltan aprobar / ya son OC...).
+function estadoPillsPrendas(prendas){
+  const conOC = prendas.filter(p => ocDePrenda(p)).length;
+  const aprobSinOC = prendas.filter(p => p.paso === '4. Aprobado Comercial' && !ocDePrenda(p)).length;
+  const desap = prendas.filter(p => p.paso === '5. Desaprobado').length;
+  const faltan = prendas.length - conOC - aprobSinOC - desap;
+  const partes = [];
+  if(faltan) partes.push(pill('Falta aprobar ' + faltan, 'warn'));
+  if(aprobSinOC) partes.push(pill('Aprobado sin OC ' + aprobSinOC, 'ok'));
+  if(conOC) partes.push(pill('Aprobado · OC ' + conOC, 'ok'));
+  if(desap) partes.push(pill('Desaprobado ' + desap, 'bad'));
+  return partes.join('');
 }
 
 // Talles declarados en Desarrollo: campo estructurado p.talles (viene del
@@ -1504,57 +1514,63 @@ function tallesDePrenda(p){
 function curvaLabel(t){ return TALLES.filter(k => Number(t[k]) > 0).map(k => talleLabel(k) + ':' + t[k]).join(' '); }
 function totalTalles(t){ return TALLES.reduce((s,k) => s + (Number(t[k]) || 0), 0); }
 
-// esVariante: fila dentro de un grupo expandido → el color pasa a ser el titulo.
-function prendaRow(c, p, esVariante){
+// Linea de un color dentro de la tarjeta del articulo. Fila 1: color (pill con el
+// acento del articulo) + color/nombre/codigo editables · talles en una fila (con
+// ⠿ arrastrar, Copiar/Pegar) · paso actual (fondo ambar/verde/rojo) · OC. Fila 2:
+// proveedor · PVP y costo · margen · referencia · version e historial · fotos · borrar.
+function prendaLinea(c, p, col){
+  const t = tallesDePrenda(p);
+  const tot = t ? totalTalles(t) : 0;
+  const claseEst = p.paso === '4. Aprobado Comercial' ? 'celda-ok' : p.paso === '5. Desaprobado' ? 'celda-bad' : 'celda-falta';
   return `
-        <tr${esVariante ? ' class="grp-var"' : ''}>
-          <td>${esVariante
-            ? `<div class="pdesc"><input class="pnom" value="${escapeAttr(p.color || '')}" placeholder="Color" title="Color de esta variante (editable)" onchange="setDescPrenda('${c.id}','${p.id}','color',this.value)"></div><div class="pdesc"><input class="pcol" style="width:190px" value="${escapeAttr(p.nombre || '')}" placeholder="Nombre" title="Nombre del articulo (editable; si lo cambias, este color pasa a ese articulo)" onchange="setDescPrenda('${c.id}','${p.id}','nombre',this.value)"></div>`
-            : `<div class="pdesc"><input class="pnom" value="${escapeAttr(p.nombre || '')}" placeholder="Nombre" title="Nombre del articulo (editable)" onchange="setDescPrenda('${c.id}','${p.id}','nombre',this.value)"></div><div class="pdesc"><span class="muted">${MARCAS[p.marca] || ''} /</span><input class="pcol" value="${escapeAttr(p.color || '')}" placeholder="Color" title="Color (editable)" onchange="setDescPrenda('${c.id}','${p.id}','color',this.value)"></div>`}
-            ${tallesEditHtml(c, p)}
-            <input class="small-input" style="width:120px;margin-top:4px" value="${escapeAttr(p.codigoManual || '')}" placeholder="Codigo sistema" title="Codigo que asigna el deposito en el sistema. Si queda vacio, se completa en la OC." onchange="setCodigoManualPrenda('${c.id}','${p.id}',this.value)"></td>
-          <td>${escapeHtml(p.proveedor || '-')}</td>
-          <td>${money(p.pvpObjetivo)}<div class="muted" style="font-size:11px">Costo ${money(p.costo)}</div></td>
-          <td>${margenPill(p)}</td>
-          <td>
-            <input class="small-input" style="width:120px" type="url" value="${escapeAttr(p.referenciaLink || '')}" placeholder="Link" onchange="setReferenciaLink('${c.id}','${p.id}',this.value)">
-            ${p.referenciaLink ? `<a href="${escapeAttr(p.referenciaLink)}" target="_blank" rel="noopener" style="display:block;margin-top:4px;font-size:11px">Abrir</a>` : ''}
-          </td>
-          <td class="${p.paso === '4. Aprobado Comercial' ? 'celda-ok' : p.paso === '5. Desaprobado' ? 'celda-bad' : 'celda-falta'}"><select onchange="setPasoPrenda('${c.id}','${p.id}',this.value)">${ESTADOS_PRENDA.map(e=>`<option ${p.paso===e?'selected':''}>${e}</option>`).join('')}</select>${diasEnEstadoLabel(p)}</td>
-          <td>
-            <input class="small-input" value="${escapeHtml(p.version || '')}" onchange="setVersionPrenda('${c.id}','${p.id}',this.value)">
-            ${(p.historial||[]).length ? `<button class="action" style="margin-top:6px" onclick="openHistorialModal('${c.id}','${p.id}')">Historial (${p.historial.length})</button>` : ''}
-          </td>
-          <td>
-            <div style="display:flex;gap:10px">
-              <div class="foto-slot">
-                <div class="muted" style="font-size:10px;font-weight:700;text-transform:uppercase">Referencia</div>
-                ${p.fotoReferencia ? `<img class="thumb" src="${p.fotoReferencia}" alt="Foto referencia" onclick="openFotoViewer('${c.id}','${p.id}')">` : '<div class="thumb" style="display:grid;place-items:center;color:var(--muted-2);font-size:16px">-</div>'}
-                <label class="file-btn">Subir<input type="file" accept="image/*" onchange="setFotoPrenda('${c.id}','${p.id}','referencia',this.files[0])"></label>
-              </div>
-              <div class="foto-slot">
-                <div class="muted" style="font-size:10px;font-weight:700;text-transform:uppercase">Prototipo</div>
-                ${p.fotoPrototipo ? `<img class="thumb" src="${p.fotoPrototipo}" alt="Foto prototipo" onclick="openFotoViewer('${c.id}','${p.id}')">` : '<div class="thumb" style="display:grid;place-items:center;color:var(--muted-2);font-size:16px">-</div>'}
-                <label class="file-btn">Subir<input type="file" accept="image/*" onchange="setFotoPrenda('${c.id}','${p.id}','prototipo',this.files[0])"></label>
-              </div>
-            </div>
-          </td>
-          ${celdaOCPrenda(c, p)}
-          <td><button class="action danger" onclick="borrarPrenda('${c.id}','${p.id}')">Borrar</button></td>
-        </tr>`;
+    <div class="oc-line" style="border-left:6px solid ${col.c}">
+      <div class="oc-l1">
+        <div class="oc-blk oc-art-blk">
+          <div><span class="oc-colpill" style="background:${col.c}" data-pchip="${p.id}" data-color="${escapeAttr(p.color || 'Sin color')}">${escapeHtml(p.color || 'Sin color')}${tot ? ' · ' + tot : ''}</span></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <div><span class="oc-lbl">Color</span><input class="small-input" style="width:120px;text-align:left" value="${escapeAttr(p.color || '')}" placeholder="Color" title="Color de esta variante (editable)" onchange="setDescPrenda('${c.id}','${p.id}','color',this.value)"></div>
+            <div><span class="oc-lbl">Nombre del articulo</span><input class="small-input" style="width:190px;text-align:left" value="${escapeAttr(p.nombre || '')}" placeholder="Nombre" title="Si lo cambias, este color pasa a ese articulo" onchange="setDescPrenda('${c.id}','${p.id}','nombre',this.value)"></div>
+            <div><span class="oc-lbl">Codigo sistema</span><input class="small-input" style="width:120px;font-weight:700" value="${escapeAttr(p.codigoManual || '')}" placeholder="Codigo" title="Codigo que asigna el deposito en el sistema. Si queda vacio, se completa en la OC." onchange="setCodigoManualPrenda('${c.id}','${p.id}',this.value)"></div>
+          </div>
+        </div>
+        <div class="oc-blk"><span class="oc-lbl">Talles (unidades por talle)</span>${tallesEditHtml(c, p)}</div>
+        <div class="oc-blk"><span class="oc-lbl">Paso actual</span><div class="oc-est ${claseEst}"><select onchange="setPasoPrenda('${c.id}','${p.id}',this.value)">${ESTADOS_PRENDA.map(e=>`<option ${p.paso===e?'selected':''}>${e}</option>`).join('')}</select>${diasEnEstadoLabel(p)}</div></div>
+        <div class="oc-blk"><span class="oc-lbl">Orden de compra</span>${ocPrendaBox(c, p)}</div>
+      </div>
+      <div class="oc-l2">
+        <div><span class="oc-lbl">Proveedor</span><b>${escapeHtml(p.proveedor || '-')}</b></div>
+        <div><span class="oc-lbl">PVP objetivo</span><b>${money(p.pvpObjetivo)}</b><div class="muted" style="font-size:11px">Costo ${money(p.costo)}</div></div>
+        <div><span class="oc-lbl">Margen</span>${margenPill(p)}</div>
+        <div><span class="oc-lbl">Referencia${p.referenciaLink ? ` · <a href="${escapeAttr(p.referenciaLink)}" target="_blank" rel="noopener">abrir</a>` : ''}</span><input class="small-input" style="width:170px;text-align:left" type="url" value="${escapeAttr(p.referenciaLink || '')}" placeholder="Link a Drive, Pinterest…" onchange="setReferenciaLink('${c.id}','${p.id}',this.value)"></div>
+        <div><span class="oc-lbl">Version</span><input class="small-input" style="width:64px" value="${escapeHtml(p.version || '')}" onchange="setVersionPrenda('${c.id}','${p.id}',this.value)">${(p.historial||[]).length ? ` <button class="action" type="button" onclick="openHistorialModal('${c.id}','${p.id}')">Historial (${p.historial.length})</button>` : ''}</div>
+        <div style="display:flex;gap:10px">
+          <div class="foto-slot">
+            <div class="muted" style="font-size:10px;font-weight:700;text-transform:uppercase">Referencia</div>
+            ${p.fotoReferencia ? `<img class="thumb" src="${p.fotoReferencia}" alt="Foto referencia" onclick="openFotoViewer('${c.id}','${p.id}')">` : '<div class="thumb" style="display:grid;place-items:center;color:var(--muted-2);font-size:16px">-</div>'}
+            <label class="file-btn">Subir<input type="file" accept="image/*" onchange="setFotoPrenda('${c.id}','${p.id}','referencia',this.files[0])"></label>
+          </div>
+          <div class="foto-slot">
+            <div class="muted" style="font-size:10px;font-weight:700;text-transform:uppercase">Prototipo</div>
+            ${p.fotoPrototipo ? `<img class="thumb" src="${p.fotoPrototipo}" alt="Foto prototipo" onclick="openFotoViewer('${c.id}','${p.id}')">` : '<div class="thumb" style="display:grid;place-items:center;color:var(--muted-2);font-size:16px">-</div>'}
+            <label class="file-btn">Subir<input type="file" accept="image/*" onchange="setFotoPrenda('${c.id}','${p.id}','prototipo',this.files[0])"></label>
+          </div>
+        </div>
+        <div class="actions"><button class="action danger" onclick="borrarPrenda('${c.id}','${p.id}')">Borrar</button></div>
+      </div>
+    </div>`;
 }
 
-// Columna OC de la prenda: verde cuando ya se convirtio en orden de compra (con
-// el codigo y un acceso directo a esa OC), boton "Crear OC" si esta aprobada y
+// Caja OC de la prenda: verde cuando ya se convirtio en orden de compra (con el
+// codigo y un acceso directo a esa OC), boton "Crear OC" si esta aprobada y
 // todavia no tiene, ambar "Falta aprobar" en el resto.
-function celdaOCPrenda(c, p){
+function ocPrendaBox(c, p){
   const oc = ocDePrenda(p);
   if(oc){
-    return `<td class="celda-ok">${pill('Aprobado · OC','ok')}<div style="margin-top:4px"><b>${escapeHtml(oc.codigo || 'sin codigo')}</b>${oc.ocNumero ? `<div class="muted" style="font-size:11px">${escapeHtml(oc.ocNumero)}</div>` : ''}</div><button class="action" style="margin-top:6px" type="button" onclick="currentView='oc';setActiveTab();render();openOCDetalle('${encodeURIComponent(providerKey(oc.proveedor))}','${encodeURIComponent(String(oc.linea||'').trim()||'Sin linea')}','${encodeURIComponent(String(oc.coleccion||'').trim()||'Sin coleccion')}')">Ver OC</button></td>`;
+    return `<div class="oc-est celda-ok">${pill('Aprobado · OC','ok')}<div style="margin-top:4px"><b>${escapeHtml(oc.codigo || 'sin codigo')}</b>${oc.ocNumero ? `<div class="muted" style="font-size:11px">${escapeHtml(oc.ocNumero)}</div>` : ''}</div><button class="action" style="margin-top:6px" type="button" onclick="openOCDetalle('${encodeURIComponent(providerKey(oc.proveedor))}','${encodeURIComponent(String(oc.linea||'').trim()||'Sin linea')}','${encodeURIComponent(String(oc.coleccion||'').trim()||'Sin coleccion')}')">Ver OC</button></div>`;
   }
-  if(p.paso === '4. Aprobado Comercial') return `<td class="celda-ok"><button class="action primary" onclick="crearOCDesdePrenda('${c.id}','${p.id}')">Crear OC</button></td>`;
-  if(p.paso === '5. Desaprobado') return `<td class="celda-bad">${pill('Desaprobado','bad')}</td>`;
-  return `<td class="celda-falta">${pill('Falta aprobar','warn')}<div class="muted" style="font-size:11px;margin-top:4px">Pasa a OC en 4. Aprobado Comercial</div></td>`;
+  if(p.paso === '4. Aprobado Comercial') return `<div class="oc-est celda-ok"><button class="action primary" onclick="crearOCDesdePrenda('${c.id}','${p.id}')">Crear OC</button></div>`;
+  if(p.paso === '5. Desaprobado') return `<div class="oc-est celda-bad">${pill('Desaprobado','bad')}</div>`;
+  return `<div class="oc-est celda-falta">${pill('Falta aprobar','warn')}<div class="muted" style="font-size:11px;margin-top:4px">Pasa a OC en 4. Aprobado Comercial</div></div>`;
 }
 
 function createItem(ev){
@@ -1764,8 +1780,6 @@ async function renombrarGrupo(colId, keyEnc){
       if(o.prendaId === p.id && o.estado === 'Borrador') o.articulo = [p.tipo, nuevo].filter(Boolean).join(' ') || nuevo;
     });
   });
-  const nuevaKey = grupoKey(String(items[0].tipo || '').trim() || 'Sin linea', items[0]);
-  if(gruposPrendasAbiertos.has(key)){ gruposPrendasAbiertos.delete(key); gruposPrendasAbiertos.add(nuevaKey); }
   saveState();
   renderItemsModal();
   render();
@@ -1893,7 +1907,7 @@ async function procesarColeccionOC(colId){
   const aprobadas = c.prendas.filter(p=>p.paso === '4. Aprobado Comercial');
   for(const p of aprobadas){ await crearOCDesdePrenda(colId, p.id, true); }
   currentView = 'oc';
-  closeModal('itemsModal');
+  itemsLineaFilter = null;
   setActiveTab();
   render();
 }
@@ -4466,7 +4480,7 @@ function emptySizes(){
 }
 
 function setActiveTab(){
-  const v = currentView === 'ocdet' ? 'oc' : currentView;
+  const v = currentView === 'ocdet' ? 'oc' : currentView === 'coldet' ? 'desarrollo' : currentView;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === v));
 }
 
@@ -4520,7 +4534,6 @@ document.addEventListener('mouseup', () => { draggingSizes = false; });
 // anidados de proveedor/linea, despues el modal de fondo).
 function cerrarModalEsc(id){
   switch(id){
-    case 'itemsModal': closeItemsModal(); break;
     case 'ingresoDetalleModal': closeIngresoDetalle(); break;
     case 'actionModal': closeActionModal(false); break;
     default: closeModal(id);

@@ -2845,6 +2845,16 @@ Pedidos de Juli aplicados ese día, todos en `managment/index.html`:
   bloques envuelven (`flex-wrap`): nunca hay scroll horizontal. Conserva `data-total-id` / `data-val-id` /
   `.size-copy` (Ctrl+C/V y `updateLineTotals` siguen igual). El modal `#ocDetalleModal` se eliminó.
   `providerOptions` compara por `providerKey` (el select mostraba «Seleccionar proveedor» con «RA INT» vs «RA Int»).
+- **Detalle de la colección a pantalla completa** (mismo día, «aplicar la misma vista para los desarrollos»):
+  «Abrir colección» / «Abrir línea» / `?col=` abren la vista `coldet` (`openItemsModal` → `renderItemsModal`, que
+  ahora pinta en `#view`; cuelga de la pestaña Paso 1; «← Volver a los desarrollos» = `closeItemsModal`). Cabecera
+  con nombre, tipo, WhatsApp / link / «Procesar aprobados», seis números resumen y las pestañas «+ Nuevo artículo» /
+  «Activos». Las prendas van como en la OC: por línea, **una tarjeta por artículo** (`articuloCard`: color por hash
+  del nombre, ✎ renombrar, marca, colores · unidades · proveedor, pills de estado `estadoPillsPrendas`) con **una
+  línea por color** (`prendaLinea`: pill del color, color/nombre/código editables, talles en una fila con ⠿ y
+  Copiar/Pegar, paso actual con fondo ámbar/verde/rojo, caja OC `ocPrendaBox`; segunda fila con proveedor, PVP y
+  costo, margen, referencia, versión e historial, fotos y Borrar). Sin scroll horizontal. Se eliminaron el modal
+  `#itemsModal`, `grupoRow` (colores plegados) y `prendaRow`.
 - **Compartir el desarrollo**: botones «📲 WhatsApp» (abre `wa.me` con el mensaje armado, sin número) y
   «🔗 Link» en cada colección y dentro de la colección abierta. El link es `managment/?col=<id>`:
   `abrirDesarrolloDesdeUrl` abre esa colección al entrar (se reintenta cuando llega Firebase). Si el que
