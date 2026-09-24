@@ -2855,6 +2855,21 @@ Pedidos de Juli aplicados ese día, todos en `managment/index.html`:
   Copiar/Pegar, paso actual con fondo ámbar/verde/rojo, caja OC `ocPrendaBox`; segunda fila con proveedor, PVP y
   costo, margen, referencia, versión e historial, fotos y Borrar). Sin scroll horizontal. Se eliminaron el modal
   `#itemsModal`, `grupoRow` (colores plegados) y `prendaRow`.
+- **Gestión de avíos por código + tres costos + fecha de creación** (mismo día, pedido de Juli): en la
+  pestaña «Gestion de Avios» del Paso 2 cada fila de OC (código = artículo + color) tiene su **lista de
+  avíos** (`o.avios = [{id, nombre, costo, resp, nota}]`; `aviosDe` tolera el mapa de Firebase): nombre con
+  sugerencias (`AVIOS_TIPICOS`), **costo unitario por prenda**, quién lo provee (`AVIOS_RESP`, por defecto el
+  de la OC) y detalle; «+ Agregar avio», ✕, **«⧉ Copiar a los demas colores»** / «a toda la OC» (reemplaza
+  con confirmación) y el texto libre viejo queda como «Notas de avios» (`aviosNotas`). Al tipear el costo no
+  se redibuja (`refrescarTotalesAvios` actualiza por DOM). **Tres costos por línea**: producción
+  (`o.costo`), avíos (`costoAvios`, suma por prenda) y final (`costoFinal` = ambos; `valorizadoFinal`).
+  Se ven en el detalle de la OC (bloque `.oc-costos`, botón «N avios / + Avios» → `irAvios` vuelve a la
+  lista con la pestaña abierta), en los KPIs del detalle (Valorizado producción · Avíos · Valorizado
+  final), en la lista de OC (columna «Avios» y «· Avios $» en el encabezado del proveedor). ⚠ **La OC que
+  se envía al proveedor (Excel / PDF / mail) lleva SOLO el costo de producción**: `valorizadoLinea` y los
+  exports no cambiaron. **Fecha de creación**: columna «Creada» en la lista de OC y «Creada el …» (+
+  «Enviada el …» si hay `fechaEnvio`) en el subtítulo del detalle (`fechaCreacionOC` = la `fecha` más
+  vieja de las filas de esa OC; las filas siempre la tuvieron, solo no se mostraba).
 - **Compartir el desarrollo**: botones «📲 WhatsApp» (abre `wa.me` con el mensaje armado, sin número) y
   «🔗 Link» en cada colección y dentro de la colección abierta. El link es `managment/?col=<id>`:
   `abrirDesarrolloDesdeUrl` abre esa colección al entrar (se reintenta cuando llega Firebase). Si el que

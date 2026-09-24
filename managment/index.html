@@ -59,6 +59,13 @@ td.celda-falta{background:#fff6df}td.celda-ok{background:#e9f8ef}td.celda-bad{ba
 .oc-sizes{display:grid;grid-template-columns:repeat(7,54px);gap:6px;align-items:end}.oc-sizes .field{margin:0}.oc-sizes input{width:54px;padding:8px 4px;text-align:center}
 .oc-tot{font-family:var(--font-c);font-size:26px;font-weight:700;color:var(--navy);line-height:1}.oc-val{font-family:var(--font-c);font-size:16px;font-weight:700;color:var(--navy)}
 .oc-line select,.oc-line input.small-input{padding:8px 9px}.oc-l2 .actions{margin-left:auto}
+.oc-costos{border-left:1px dashed var(--line);padding-left:18px}.oc-val.oc-av{color:var(--muted)}.oc-val.oc-fin{color:var(--red)}
+/* Gestion de avios por codigo (24/09/2026) */
+.av-top{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;justify-content:space-between}.av-kpis{display:flex;gap:10px;flex-wrap:wrap}.av-kpis .mini{min-width:170px}
+.av-card{border:1px solid var(--line);border-radius:10px;background:#fff;margin-bottom:12px;overflow:hidden}.av-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 14px;border-bottom:1px solid var(--line)}.av-head .av-cod{font-family:var(--font-c);font-size:16px;letter-spacing:.6px}.av-head .av-art{font-weight:700}.av-head .av-tot{margin-left:auto;font-size:13px;color:var(--muted)}.av-head .av-tot b{color:var(--navy)}
+.av-wrap{border:0;border-radius:0}.av-tabla th{white-space:nowrap}.av-tabla input.av-nom{width:240px}.av-tabla input.av-costo{width:120px}.av-tabla input.av-nota{width:260px}.av-tabla select.av-resp{padding:7px 8px}.av-tabla tr.av-vacio td{padding:12px 14px}
+.av-foot{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;padding:10px 14px;border-top:1px dashed var(--line);background:#fbfcfe}.av-foot .av-notas{flex:1 1 260px;margin-left:auto}.av-foot .av-notas input{width:100%;border:1px solid var(--line);border-radius:6px;padding:7px 9px}
+@media(max-width:620px){.av-tabla input.av-nom,.av-tabla input.av-nota{width:100%}}
 /* Detalle de la coleccion (Paso 1) a pantalla completa, mismo formato que el de la OC */
 .oc-est{border-radius:8px;padding:8px 10px;display:inline-block;min-width:150px}.oc-est.celda-ok{background:#e9f8ef}.oc-est.celda-falta{background:#fff6df}.oc-est.celda-bad{background:#fff0f0}
 .oc-arthead .oc-pills{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}.oc-arthead .grp-ren{font-size:15px}
@@ -747,6 +754,7 @@ function normalizeState(next){
     o.seguimiento = o.seguimiento || '';
     o.linea = o.linea || '';
     o.coleccion = o.coleccion || '';
+    o.avios = aviosDe(o);
   });
   delete next.desarrollos;
   return next;
@@ -870,6 +878,20 @@ function totalTalles(obj){
 
 function valorizadoLinea(linea){
   return totalTalles(linea.talles) * Number(linea.costo || 0);
+}
+
+// Tres costos por linea (pedido de Juli 24/09/2026): produccion (= o.costo, el
+// unico que va en la OC al proveedor), avios (suma de los avios cargados) y
+// final (la suma de ambos). Los exports al proveedor siguen usando solo o.costo.
+function costoFinal(linea){ return Number(linea.costo || 0) + costoAvios(linea); }
+function valorizadoFinal(linea){ return totalTalles(linea.talles) * costoFinal(linea); }
+function fechaCorta(iso){
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  return m ? m[3] + '/' + m[2] + '/' + m[1] : '';
+}
+// Fecha de creacion de una OC (grupo de lineas): la mas vieja de sus filas.
+function fechaCreacionOC(items){
+  return (items || []).map(o => o.fecha).filter(Boolean).sort()[0] || '';
 }
 
 function costoIngreso(linea){
@@ -2122,7 +2144,7 @@ function ocTable(){
         <div class="po-head" style="background:${col.t}">
           <div>
             <h3>${escapeHtml(group.proveedor)}</h3>
-            <div class="po-meta">${codigos} codigo${codigos === 1 ? '' : 's'} · ${unidades} unidades pedidas · Total OC ${money(valorizado)}${anticipoTotal > 0 ? ' · Anticipo ' + money(anticipoTotal) + ' · Saldo ' + money(valorizado - anticipoTotal) : ''}${ocFiltro.linea ? ' · <span style="color:var(--warn);font-weight:700">solo la linea ' + escapeHtml(ocFiltro.linea) + ' (los botones de la derecha abarcan toda la OC del proveedor)</span>' : ''}</div>
+            <div class="po-meta">${codigos} codigo${codigos === 1 ? '' : 's'} · ${unidades} unidades pedidas · Total OC ${money(valorizado)}<span data-avmeta="${escapeAttr(group.key)}">${aviosGrupo(group.items) > 0 ? ' · Avios ' + money(aviosGrupo(group.items)) : ''}</span>${anticipoTotal > 0 ? ' · Anticipo ' + money(anticipoTotal) + ' · Saldo ' + money(valorizado - anticipoTotal) : ''}${ocFiltro.linea ? ' · <span style="color:var(--warn);font-weight:700">solo la linea ' + escapeHtml(ocFiltro.linea) + ' (los botones de la derecha abarcan toda la OC del proveedor)</span>' : ''}</div>
           </div>
           <div class="actions">${accionesProveedor(group)}</div>
         </div>
@@ -2139,19 +2161,23 @@ function resumenLineaColeccion(group){
   const subgrupos = groupedByLineaColeccion(group.items);
   return `
     <div class="table-wrap"><table>
-      <thead><tr><th>Linea</th><th>Coleccion</th><th>Codigos</th><th>Unidades</th><th>Valorizado</th><th>Anticipo abonado</th><th>Saldo</th><th>Estado</th><th>Acciones</th></tr></thead>
+      <thead><tr><th>Creada</th><th>Linea</th><th>Coleccion</th><th>Codigos</th><th>Unidades</th><th>Valorizado</th><th>Avios</th><th>Anticipo abonado</th><th>Saldo</th><th>Estado</th><th>Acciones</th></tr></thead>
       <tbody>${subgrupos.map(sg => {
         const unidades = sg.items.reduce((sum,o)=>sum + totalTalles(o.talles), 0);
         const valorizado = sg.items.reduce((sum,o)=>sum + valorizadoLinea(o), 0);
         const anticipo = sg.items.reduce((m,o)=>Math.max(m, Number(o.anticipoOC || 0)), 0);
         const saldo = valorizado - anticipo;
+        const aviosSg = aviosGrupo(sg.items);
+        const creada = fechaCreacionOC(sg.items);
         return `
         <tr>
+          <td title="Fecha en que se creo la OC (la fila mas vieja)">${creada ? fechaCorta(creada) : '<span class="muted">-</span>'}</td>
           <td><b>${escapeHtml(sg.linea)}</b></td>
           <td>${escapeHtml(sg.coleccion)}</td>
           <td>${sg.items.length}</td>
           <td>${unidades}</td>
           <td>${money(valorizado)}</td>
+          <td title="Costo de avios (unidades x costo por prenda); no va en la OC al proveedor">${aviosSg > 0 ? money(aviosSg) : '<span class="muted">-</span>'}</td>
           <td><input class="small-input" style="width:120px" type="number" min="0" step="0.01" value="${anticipo}" title="Cuanto se abono de anticipo en esta OC" onchange="setAnticipoOC('${encodeURIComponent(group.key)}','${encodeURIComponent(sg.linea)}','${encodeURIComponent(sg.coleccion)}',this.value)"></td>
           <td><b style="color:${saldo <= 0 ? 'var(--ok)' : 'var(--navy)'}">${money(saldo)}</b></td>
           <td>${estadoResumenOC(sg.items)}</td>
@@ -2255,15 +2281,18 @@ function renderOCDetallePage(){
   if(!group || !items.length){ closeOCDetalle(); return; }
   const unidades = items.reduce((s,o)=>s + totalTalles(o.talles), 0);
   const valorizado = items.reduce((s,o)=>s + valorizadoLinea(o), 0);
+  const avios = items.reduce((s,o)=>s + valorizadoAvios(o), 0);
   const arts = new Set(items.map(o => String(o.articulo || '').trim().toLowerCase())).size;
   const enviadas = items.filter(o => o.estado !== 'Borrador').length;
+  const creada = fechaCreacionOC(items);
+  const enviadaEl = items.map(o => o.fechaEnvio).filter(Boolean).sort()[0] || '';
   const kEnc = encodeURIComponent(group.key), lEnc = encodeURIComponent(ocDetalleActual.linea), cEnc = encodeURIComponent(ocDetalleActual.coleccion);
   $('view').innerHTML = `
     <div class="ocd-head">
       <div>
         <div class="btn-row" style="margin-bottom:10px"><button class="btn secondary" type="button" onclick="closeOCDetalle()">← Volver a las ordenes de compra</button></div>
         <h2>${escapeHtml(group.proveedor)}</h2>
-        <div class="ocd-sub">Linea <b>${escapeHtml(ocDetalleActual.linea)}</b> · Coleccion <b>${escapeHtml(ocDetalleActual.coleccion)}</b>${items[0]?.ocNumero ? ' · ' + escapeHtml(items[0].ocNumero) : ''}</div>
+        <div class="ocd-sub">Linea <b>${escapeHtml(ocDetalleActual.linea)}</b> · Coleccion <b>${escapeHtml(ocDetalleActual.coleccion)}</b>${items[0]?.ocNumero ? ' · ' + escapeHtml(items[0].ocNumero) : ''}${creada ? ' · Creada el <b>' + fechaCorta(creada) + '</b>' : ''}${enviadaEl ? ' · Enviada el <b>' + fechaCorta(enviadaEl) + '</b>' : ''}</div>
       </div>
       <div class="btn-row" style="gap:8px">
         ${items.length >= 2 ? `<button class="btn secondary" type="button" onclick="copiarPrimeroOC('${kEnc}','${lEnc}','${cEnc}')" title="Copia talles, costo, genero, proveedor, entrega, seguimiento y notas del primer articulo a los demas">Copiar 1er articulo a todos</button>` : ''}
@@ -2276,7 +2305,9 @@ function renderOCDetallePage(){
       <div class="mini"><b>${arts}</b><span>Articulo${arts === 1 ? '' : 's'}</span></div>
       <div class="mini"><b>${items.length}</b><span>Codigos (art. + color)</span></div>
       <div class="mini"><b>${unidades}</b><span>Unidades pedidas</span></div>
-      <div class="mini"><b>${money(valorizado)}</b><span>Valorizado</span></div>
+      <div class="mini"><b>${money(valorizado)}</b><span>Valorizado produccion (va en la OC)</span></div>
+      <div class="mini"><b>${money(avios)}</b><span>Avios</span></div>
+      <div class="mini"><b>${money(valorizado + avios)}</b><span>Valorizado final</span></div>
       <div class="mini"><b>${enviadas}/${items.length}</b><span>Lineas enviadas</span></div>
     </div>
     <div class="notice" style="${editModeOC ? '' : 'display:none'};margin-bottom:14px">Modo edicion: podes reasignar Linea, Coleccion y Proveedor de cada codigo. Las lineas ya Enviadas necesitan abrirse primero (boton verde "OC enviada" en el encabezado de la OC).</div>
@@ -2314,8 +2345,13 @@ function curvaPanel(group, editMode){
         </div>
         <div class="oc-blk"><span class="oc-lbl">Unidades</span><b class="oc-tot" data-total-id="${o.id}">${totalTalles(o.talles)}</b></div>
         <div class="oc-blk">
-          <div><span class="oc-lbl">Costo unit. ARS</span><input class="small-input" style="width:130px" type="number" min="0" step="0.01" value="${Number(o.costo||0)}" title="Podes corregir el costo aunque la OC ya este creada" onchange="setCostoOC('${o.id}',this.value)"></div>
-          <div><span class="oc-lbl">Valorizado</span><b class="oc-val" data-val-id="${o.id}">${money(valorizadoLinea(o))}</b></div>
+          <div><span class="oc-lbl">Costo produccion ARS</span><input class="small-input" style="width:130px" type="number" min="0" step="0.01" value="${Number(o.costo||0)}" title="Costo unitario del proveedor: es el unico que va en la OC que se envia" onchange="setCostoOC('${o.id}',this.value)"></div>
+          <div><span class="oc-lbl">Valorizado (produccion)</span><b class="oc-val" data-val-id="${o.id}">${money(valorizadoLinea(o))}</b></div>
+        </div>
+        <div class="oc-blk oc-costos">
+          <div><span class="oc-lbl">Costo avios ARS</span><b class="oc-val oc-av" data-avu-id="${o.id}">${money(costoAvios(o))}</b> <button class="action" type="button" style="margin-left:6px" title="Cargar los avios de este codigo (pestaña Gestion de Avios)" onclick="irAvios('${encodeURIComponent(group.key)}')">${aviosDe(o).length ? aviosDe(o).length + ' avio' + (aviosDe(o).length === 1 ? '' : 's') : '+ Avios'}</button></div>
+          <div><span class="oc-lbl">Costo final ARS</span><b class="oc-val oc-fin" data-fin-id="${o.id}">${money(costoFinal(o))}</b></div>
+          <div><span class="oc-lbl">Valorizado final</span><b class="oc-val" data-valfin-id="${o.id}">${money(valorizadoFinal(o))}</b></div>
         </div>
       </div>
       <div class="oc-l2">
@@ -2350,28 +2386,155 @@ function curvaPanel(group, editMode){
   }).join('');
 }
 
+// --- Gestion de avios por codigo (24/09/2026, pedido de Juli) -----------------
+// Cada fila de OC (codigo = articulo + color) lleva su lista de avios: nombre,
+// costo unitario por prenda y quien lo provee. El costo de avios NO entra al
+// valorizado de la OC (que sigue siendo talles x costo del proveedor): se muestra
+// aparte, por prenda y por el total de unidades pedidas.
+const AVIOS_TIPICOS = ['Etiqueta de marca','Etiqueta de composicion','Etiqueta EAN','Hangtag','Bolsa','Cierre','Boton','Hilo','Elastico','Cordon','Broche','Percha','Sticker de talle','Bordado','Estampa'];
+
+function aviosDe(o){
+  const a = o && o.avios;
+  if(Array.isArray(a)) return a.filter(Boolean);
+  if(a && typeof a === 'object') return Object.values(a).filter(Boolean);   // por si Firebase lo devuelve como mapa
+  return [];
+}
+function costoAvios(o){ return aviosDe(o).reduce((s,a)=>s + Number(a.costo || 0), 0); }          // $ por prenda
+function valorizadoAvios(o){ return totalTalles(o.talles) * costoAvios(o); }                    // $ en la OC
+function aviosGrupo(items){ return (items || []).reduce((s,o)=>s + valorizadoAvios(o), 0); }
+function respCorta(r){ return /dise/i.test(String(r||'')) ? 'Diseñador / Marca' : 'Fabrica / Taller'; }
+
 function aviosPanel(group){
+  const kEnc = encodeURIComponent(group.key);
+  const items = group.items.slice().sort((a,b) => String(a.articulo||'').localeCompare(String(b.articulo||'')) || String(a.color||'').localeCompare(String(b.color||'')));
+  const totalOC = aviosGrupo(group.items);
+  const conAvios = group.items.filter(o => aviosDe(o).length).length;
   return `
     <div style="padding:0 14px 14px">
-      <div class="field">
-        <label>Responsabilidad de suministro</label>
-        <select onchange="setAviosProveedor('${encodeURIComponent(group.key)}',this.value)">
-          ${AVIOS_RESP.map(opt=>`<option ${groupAviosResp(group)===opt?'selected':''}>${opt}</option>`).join('')}
-        </select>
+      <datalist id="aviosTipicos">${AVIOS_TIPICOS.map(a=>`<option value="${escapeAttr(a)}">`).join('')}</datalist>
+      <div class="av-top">
+        <div class="field" style="margin:0;min-width:320px">
+          <label>Responsabilidad de suministro (por defecto para toda la OC)</label>
+          <select onchange="setAviosProveedor('${kEnc}',this.value)">
+            ${AVIOS_RESP.map(opt=>`<option ${groupAviosResp(group)===opt?'selected':''}>${opt}</option>`).join('')}
+          </select>
+        </div>
+        <div class="av-kpis">
+          <div class="mini"><b data-avgrp="${escapeAttr(group.key)}">${money(totalOC)}</b><span>Avios de la OC (unidades x costo)</span></div>
+          <div class="mini"><b data-avgrpn="${escapeAttr(group.key)}">${conAvios}/${group.items.length}</b><span>Codigos con avios cargados</span></div>
+        </div>
       </div>
-      <div class="table-wrap" style="margin-top:12px"><table>
-        <thead><tr><th>Codigo</th><th>Articulo</th><th>Color</th><th>Avios / notas</th><th>Responsable</th></tr></thead>
-        <tbody>${group.items.map(o=>`
-          <tr>
-            <td><b>${o.codigo}</b></td>
-            <td>${escapeHtml(o.articulo)}</td>
-            <td>${escapeHtml(o.color || '-')}</td>
-            <td><input style="width:260px" value="${escapeHtml(o.aviosNotas || '')}" placeholder="Ej: etiqueta, bolsa, hangtag..." onchange="setOCField('${o.id}','aviosNotas',this.value)"></td>
-            <td>${escapeHtml(o.aviosResponsable || AVIOS_RESP[0])}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div>
+      <div class="hint" style="margin:6px 0 12px">Cargá en cada codigo los avios que lleva la prenda con su costo unitario. «Copiar a los demas colores» pasa la misma lista a los otros colores del articulo. El costo de avios se muestra aparte: no suma al valorizado de la OC.</div>
+      ${items.map(o => aviosCard(o, group)).join('')}
     </div>`;
+}
+
+function aviosCard(o, group){
+  const kEnc = encodeURIComponent(group.key);
+  const lista = aviosDe(o);
+  const u = totalTalles(o.talles);
+  const col = colorBloque(o.articulo || o.codigo || '');
+  const mismos = group.items.filter(x => x.id !== o.id && String(x.articulo||'').trim().toLowerCase() === String(o.articulo||'').trim().toLowerCase()).length;
+  const fila = a => `
+    <tr data-avrow="${escapeAttr(a.id)}">
+      <td><input class="av-nom" list="aviosTipicos" value="${escapeAttr(a.nombre || '')}" placeholder="Ej: etiqueta, cierre, hangtag..." onchange="setAvio('${o.id}','${escapeAttr(a.id)}','nombre',this.value)"></td>
+      <td><input class="small-input av-costo" type="number" min="0" step="0.01" value="${Number(a.costo || 0)}" oninput="setAvio('${o.id}','${escapeAttr(a.id)}','costo',this.value,true)" onchange="setAvio('${o.id}','${escapeAttr(a.id)}','costo',this.value)"></td>
+      <td><select class="av-resp" onchange="setAvio('${o.id}','${escapeAttr(a.id)}','resp',this.value)">${AVIOS_RESP.map(opt=>`<option value="${escapeAttr(opt)}" ${(a.resp || o.aviosResponsable || AVIOS_RESP[0])===opt?'selected':''}>${escapeHtml(respCorta(opt))}</option>`).join('')}</select></td>
+      <td><input class="av-nota" value="${escapeAttr(a.nota || '')}" placeholder="Detalle (medida, color, proveedor del avio...)" onchange="setAvio('${o.id}','${escapeAttr(a.id)}','nota',this.value)"></td>
+      <td><button class="action ico danger" type="button" title="Quitar este avio" aria-label="Quitar este avio" onclick="quitarAvio('${o.id}','${escapeAttr(a.id)}')">${ICO_TACHO}</button></td>
+    </tr>`;
+  return `
+    <section class="av-card" data-avcard="${o.id}">
+      <div class="av-head" style="background:${col.t}">
+        <span class="oc-swatch" style="background:${col.c}"></span>
+        <b class="av-cod">${escapeHtml(o.codigo || '(sin codigo)')}</b>
+        <span class="av-art">${escapeHtml(o.articulo || '')}</span>
+        <span class="oc-colpill" style="background:${col.c}">${escapeHtml(o.color || '-')}</span>
+        <span class="muted">${u} u pedidas</span>
+        <span class="av-tot">Avios <b data-avtot="${o.id}">${money(costoAvios(o))}</b> por prenda · <b data-avval="${o.id}">${money(valorizadoAvios(o))}</b> en la OC</span>
+      </div>
+      <div class="table-wrap av-wrap"><table class="av-tabla">
+        <thead><tr><th>Avio</th><th>Costo unit. ARS</th><th>Quien lo provee</th><th>Detalle</th><th></th></tr></thead>
+        <tbody data-avbody="${o.id}">${lista.length ? lista.map(fila).join('') : `<tr class="av-vacio"><td colspan="5" class="muted">Sin avios cargados para este codigo.</td></tr>`}</tbody>
+      </table></div>
+      <div class="av-foot">
+        <button class="action primary" type="button" onclick="agregarAvio('${o.id}')">+ Agregar avio</button>
+        ${mismos && lista.length ? `<button class="action" type="button" title="Pasa esta misma lista de avios a los otros ${mismos} color${mismos === 1 ? '' : 'es'} del articulo" onclick="copiarAvios('${o.id}','${kEnc}','articulo')">⧉ Copiar a los demas colores (${mismos})</button>` : ''}
+        ${group.items.length > 1 && lista.length ? `<button class="action" type="button" title="Pasa esta misma lista de avios a TODOS los codigos de la OC" onclick="copiarAvios('${o.id}','${kEnc}','oc')">⧉ Copiar a toda la OC</button>` : ''}
+        <label class="av-notas"><span class="oc-lbl">Notas de avios</span><input value="${escapeAttr(o.aviosNotas || '')}" placeholder="Observaciones generales del codigo" onchange="setOCField('${o.id}','aviosNotas',this.value)"></label>
+      </div>
+    </section>`;
+}
+
+function agregarAvio(id){
+  const o = state.ordenes.find(x=>x.id===id);
+  if(!o) return;
+  o.avios = aviosDe(o);
+  o.avios.push({ id:uid('av'), nombre:'', costo:0, resp:o.aviosResponsable || AVIOS_RESP[0], nota:'' });
+  saveState();
+  render();
+  try{ const inp = document.querySelector(`[data-avbody="${id}"] tr:last-child .av-nom`); if(inp) inp.focus(); }catch(e){}
+}
+
+// Al tipear el costo no se redibuja la pantalla (se perderia el foco): se
+// actualizan por DOM los totales del codigo y de la OC.
+function setAvio(id, avioId, field, value, soloTotales){
+  const o = state.ordenes.find(x=>x.id===id);
+  if(!o) return;
+  o.avios = aviosDe(o);
+  const a = o.avios.find(x => x.id === avioId);
+  if(!a) return;
+  a[field] = field === 'costo' ? Math.max(0, Number(value || 0)) : String(value || '').trim();
+  saveState();
+  if(soloTotales){ refrescarTotalesAvios(o); return; }
+  if(field === 'costo') refrescarTotalesAvios(o);
+}
+
+function refrescarTotalesAvios(o){
+  const t = document.querySelector(`[data-avtot="${o.id}"]`);
+  const v = document.querySelector(`[data-avval="${o.id}"]`);
+  if(t) t.textContent = money(costoAvios(o));
+  if(v) v.textContent = money(valorizadoAvios(o));
+  const group = groupedByProvider(state.ordenes).find(g => g.items.some(x => x.id === o.id));
+  if(!group) return;
+  document.querySelectorAll('[data-avgrp]').forEach(el => { if(el.getAttribute('data-avgrp') === group.key) el.textContent = money(aviosGrupo(group.items)); });
+  document.querySelectorAll('[data-avmeta]').forEach(el => { if(el.getAttribute('data-avmeta') === group.key) el.textContent = aviosGrupo(group.items) > 0 ? ' · Avios ' + money(aviosGrupo(group.items)) : ''; });
+}
+
+async function quitarAvio(id, avioId){
+  const o = state.ordenes.find(x=>x.id===id);
+  if(!o) return;
+  const a = aviosDe(o).find(x => x.id === avioId);
+  if(a && (a.nombre || Number(a.costo) > 0)){
+    const ok = await askConfirm('¿Quitar el avio «' + (a.nombre || 'sin nombre') + '» de ' + (o.codigo || o.articulo) + '?');
+    if(!ok) return;
+  }
+  o.avios = aviosDe(o).filter(x => x.id !== avioId);
+  saveState();
+  render();
+}
+
+// Copia la lista de avios de un codigo a los otros colores del mismo articulo
+// ('articulo') o a todos los codigos de la OC del proveedor ('oc'). Reemplaza
+// la lista del destino (con confirmacion si ya tenia algo cargado).
+async function copiarAvios(id, keyEnc, alcance){
+  const o = state.ordenes.find(x=>x.id===id);
+  if(!o) return;
+  const group = groupedByProvider(state.ordenes).find(g => g.key === decodeURIComponent(keyEnc));
+  if(!group) return;
+  const art = String(o.articulo||'').trim().toLowerCase();
+  const destinos = group.items.filter(x => x.id !== o.id && (alcance === 'oc' || String(x.articulo||'').trim().toLowerCase() === art));
+  if(!destinos.length){ showToast('No hay otros codigos a los que copiar.'); return; }
+  const conDatos = destinos.filter(x => aviosDe(x).length).length;
+  if(conDatos){
+    const ok = await askConfirm(conDatos + ' de los ' + destinos.length + ' codigos destino ya tienen avios cargados: se reemplazan por los de ' + (o.codigo || o.articulo) + '. ¿Seguir?');
+    if(!ok) return;
+  }
+  const base = aviosDe(o);
+  destinos.forEach(x => { x.avios = base.map(a => ({ ...a, id:uid('av') })); });
+  saveState();
+  render();
+  showToast('Avios copiados a ' + destinos.length + ' codigo' + (destinos.length === 1 ? '' : 's') + '.');
 }
 
 function sizeInput(id, grupo, talle, value, locked){
@@ -2394,6 +2557,15 @@ function updateLineTotals(o){
   const valEl = document.querySelector(`[data-val-id="${o.id}"]`);
   if(totalEl) totalEl.textContent = totalTalles(o.talles);
   if(valEl) valEl.textContent = money(valorizadoLinea(o));
+  const finEl = document.querySelector(`[data-valfin-id="${o.id}"]`);
+  if(finEl) finEl.textContent = money(valorizadoFinal(o));
+}
+
+// Desde el detalle de la OC: vuelve a la lista con la pestaña «Gestion de Avios»
+// abierta para ese proveedor.
+function irAvios(keyEnc){
+  ocMode[decodeURIComponent(keyEnc)] = 'avios';
+  closeOCDetalle();
 }
 
 function sizeSelectionKey(el){
