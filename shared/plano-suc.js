@@ -31,6 +31,7 @@
       '.ps-mueble rect{fill:#cfe2f3}',
       '.ps-serv rect{fill:#eef1f7}.ps-serv text{fill:#8a96ad;font-weight:600}',
       '.ps-hueco rect{fill:#f7f8fb}',
+      '.ps-pared rect{fill:#aeb8cb;stroke:none}',
       '.ps-hot rect{fill:#16a34a}.ps-hot text{fill:#fff}',
       '.ps-here rect{fill:var(--marca-red,#CC0000)}.ps-here text{fill:#fff}',
       '.ps-pick .ps-mueble{cursor:pointer}.ps-pick .ps-mueble:hover rect{stroke:#0B1527;stroke-width:.3}',
@@ -56,7 +57,7 @@
     var out=(planta.celdas||[]).map(function(c){
       var x=c.c0*A, y=c.r0, w=(c.c1-c.c0+1)*A, h=c.r1-c.r0+1;
       var mueble=c.tipo==='sector'||c.tipo==='estanteria';
-      var cls='ps-c '+(mueble?'ps-mueble':(c.tipo==='servicio'?'ps-serv':'ps-hueco'))+(hot.has(c.id)?' '+hotCls:'');
+      var cls='ps-c '+(mueble?'ps-mueble':(c.tipo==='servicio'?'ps-serv':(c.tipo==='pared'?'ps-pared':'ps-hueco')))+(hot.has(c.id)?' '+hotCls:'');
       var g='<g class="'+cls+'"'+(mueble?' data-ps="'+esc(c.id)+'" data-pl="'+esc(planta.id)+'" data-nm="'+esc(c.nombre)+'"':'')+'>'
         +'<rect x="'+x.toFixed(2)+'" y="'+y+'" width="'+w.toFixed(2)+'" height="'+h+'" rx="0.25"/>';
       if(c.nombre){

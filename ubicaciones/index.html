@@ -949,7 +949,7 @@ function numEstanteria(est){
   const n = parseInt(String((est&&est.nombre)||'').replace(/\D+/g,''),10);
   return isNaN(n) ? null : n;
 }
-/* Plano de la sucursal (shared/planos-sucursal.js, hoy Ensenada): salón con sus
+/* Plano de la sucursal (shared/planos-sucursal.js, Ensenada y Berisso): salón con sus
    sectores y depósitos con sus estanterías, dibujado por shared/plano-suc.js.
    La estantería del Buscador se cruza con el plano por su NÚMERO (E5 ↔ est5). */
 function planoDepositos(){ return (window.PlanoSuc && SUC) ? PlanoSuc.plantas(SUC,'deposito') : []; }
@@ -3443,8 +3443,11 @@ function renderPlanoBox(){
      secundarios más chicos (en Ensenada el Depósito 2 casi no se usa). */
   const plantas = PlanoSuc.plantas(SUC);
   const deps = plantas.filter(pl=>pl.tipo!=='salon');
-  const arriba = plantas.filter(pl=>pl.tipo==='salon').concat(deps.slice(0,1));
-  const abajo = deps.slice(1);
+  // sin salón dibujado (Berisso: solo sus dos depósitos), los dos primeros depósitos van arriba
+  const salon = plantas.filter(pl=>pl.tipo==='salon');
+  const nArriba = salon.length ? 1 : 2;
+  const arriba = salon.concat(deps.slice(0,nArriba));
+  const abajo = deps.slice(nArriba);
   const tarjetaPlanta = pl =>
     '<div class="ps-planta" data-pl="'+esc(pl.id)+'" title="Tocá para verlo en grande">'+
       '<h4>'+esc(pl.nombre)+'<span class="zoom">⤢</span></h4>'+PlanoSuc.svg(P, pl, {})+'</div>';
