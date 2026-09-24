@@ -1110,7 +1110,8 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   e imágenes se ignoran; los girados 90° se enderezan. El número sale de lo que sigue a «Estantería» («IND. HOMBRE
   ESTANTERIA 1» = 1): **1–6 indumentaria y 7–23 calzado, los mismos que Berisso ya usa en el Buscador**; los muebles con
   nombre (Accesorios ×4, Medias ×3, Calzado verano, Reservas, Garantías, Pelotas, Bolsos, Mochilas) toman 24–36 y el
-  botón «🗺 Crear las N estanterías del plano» los ofrece. Sin salón dibujado, `renderPlanoBox` pone los dos primeros
+  botón «🗺 Crear las N estanterías del plano» los ofrece. Nombres de las plantas (Juli): **«Depósito izquierda · calzado»**
+  (7–23) y **«Depósito derecha · indumentaria»** (1–6), fijados en `NOMBRES_PLANTA` del generador. Sin salón dibujado, `renderPlanoBox` pone los dos primeros
   depósitos arriba, y todo lo del sector del salón queda oculto.
   **El plano vive debajo de la búsqueda (17/09/2026, pedido de Juli)** — desde el 18/09 **debajo de los
   resultados** (`#planoBox` va después de `#searchResults`: primero se ve el artículo, después el plano): panel `#planoBox`

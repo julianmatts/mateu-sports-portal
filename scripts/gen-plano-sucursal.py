@@ -45,6 +45,11 @@ MUEBLE = 'FF8FC1E3'
 PARED = 'PARED'
 UNIDAD_EMU = 127000   # una celda de la grilla = 0,133" del dibujo
 DEST = os.path.join('shared', 'planos-sucursal.js')
+# nombre con que la sucursal llama a cada planta (hoja del Excel → nombre en el portal)
+NOMBRES_PLANTA = {
+    'berisso': {'Depo Arriba Calzado': 'Depósito izquierda · calzado',        # estanterías 7 a 23
+                'Depo Arriba Ind.': 'Depósito derecha · indumentaria'},       # estanterías 1 a 6
+}
 
 
 def slugify(s):
@@ -179,6 +184,8 @@ def main():
     dibujos = dibujo_de_hojas(xlsx)
     hojas = [h for h in ((leer_hoja(ws) or (leer_formas(ws, dibujos[ws.title]) if ws.title in dibujos else None))
                          for ws in wb) if h]
+    for ws, h in zip([ws for ws in wb if leer_hoja(ws) or ws.title in dibujos], hojas):
+        h['nombre'] = NOMBRES_PLANTA.get(slug, {}).get(ws.title, h['nombre'])
 
     # números de estantería ya ocupados
     usados = set()
