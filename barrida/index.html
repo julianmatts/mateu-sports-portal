@@ -369,6 +369,8 @@ td.talles .tw{display:flex;flex-wrap:wrap;align-items:flex-start;max-width:560px
 .rgrid tr.rg-sum td.q{color:var(--navy)}
 .rgrid tr.rg-queda td{background:#fafbfe;color:var(--muted);font-weight:600;border-bottom:0}
 .rgrid tr.rg-queda td.q{color:var(--muted);font-size:13.5px}
+.rgrid tr.rg-queda td.q.sobre{color:#b45309;font-weight:800;background:#fff7e6}
+.rg-newt{width:190px;margin-right:8px;font:inherit;font-size:13px;padding:6px 8px}
 .rgrid tfoot td.rg-dest{font-size:11.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase}
 .rgrid tr.rg-sum td.rg-dest{background:#eef3fc}
 .rgrid tr.rg-queda td.rg-dest{background:#fafbfe}
@@ -3729,7 +3731,9 @@ function repCsvMatriz(buf){
 function repEsTalle(l){
   const s=nrmT(l); if(!s || /TOTAL|CANT|COSTO|IMPORTE/.test(s)) return false;
   const n=Number(s); if(isFinite(n)) return n>0 && n<70;
-  return TALLES_LETRA.includes(s) || /^(UNI|UNICO|U|\d{1,2}A|\d{1,2}-\d{1,2}|XS\/S|S\/M|M\/L|L\/XL|XL\/XXL|SM|ML|YS|YM|YL|JR|SR)$/.test(s);
+  // 24/09/2026: los talles dobles de las ojotas (Havaianas, Rider: «37/38») no se reconocían y las columnas
+  // del export se salteaban → el remito quedaba en cero y no se listaba
+  return TALLES_LETRA.includes(s) || /^(UNI|UNICO|U|\d{1,2}A|\d{1,2}-\d{1,2}|\d{2}\/\d{2}|XS\/S|S\/M|M\/L|L\/XL|XL\/XXL|SM|ML|YS|YM|YL|JR|SR)$/.test(s);
 }
 function repParseRemitos(M, archivo){
   const txt=c=>String(c==null?'':c).trim();
@@ -4802,19 +4806,25 @@ function repCalcular(){
    `state.rep.manual` y se vuelven a aplicar arriba de cada recálculo, así cambiar un parámetro
    no los pisa. */
 function repManKey(nro, id){ return nro+'|'+id; }
-function repPool(x){ const p={}; Object.entries(x.queda||{}).forEach(([t,q])=>{ if(q>0) p[t]=q; });
-  x.lineas.forEach(l=>Object.entries(l.t||{}).forEach(([t,q])=>{ if(q>0) p[t]=(p[t]||0)+q; })); return p; }
+// lo que hay para repartir del artículo en el remito, por talle: sale de la PROPUESTA automática
+// (lineasAuto + quedaAuto), no de lo ya editado, así una corrección a mano no se vuelve «pool»
+function repPool(x){ const p={}; Object.entries(x.quedaAuto||x.queda||{}).forEach(([t,q])=>{ if(q>0) p[t]=q; });
+  (x.lineasAuto||x.lineas).forEach(l=>Object.entries(l.t||{}).forEach(([t,q])=>{ if(q>0) p[t]=(p[t]||0)+q; })); return p; }
 function repAplicarManualX(rm, x){
   const ov=(state.rep.manual||{})[repManKey(rm.nro, x.art.id)];
   if(!x.auto){ x.auto={}; x.lineas.forEach(l=>{ x.auto[l.slug]=Object.assign({}, l.t); }); x.lineasAuto=x.lineas; x.quedaAuto=Object.assign({}, x.queda||{}); }
-  if(!ov){ x.editado=false; return; }
+  if(!ov){ x.editado=false; x.corregido=null; return; }
   const pool=repPool(x), usado={}, prev={}; x.lineasAuto.forEach(l=>{ prev[l.slug]=l; });
+  // 24/09/2026 (Nehuen, TIMTB110361713: el remito vino con los talles mal cargados y la curva real empieza
+  // en 35): ya no se recorta al tope del remito. Lo que se pone de más —o un talle que el remito no trae— es
+  // una CORRECCIÓN del remito: se reparte igual y queda anotado en `corregido` (por talle, cuánto de más)
   x.lineas=Object.keys(ov).filter(slug=>REP_SUC[slug]).map(slug=>{ const t={};
-    Object.entries(ov[slug]||{}).forEach(([tt,q])=>{ q=Math.min(Math.max(0, parseInt(q,10)||0), (pool[tt]||0)-(usado[tt]||0)); if(q>0){ t[tt]=q; usado[tt]=(usado[tt]||0)+q; } });
+    Object.entries(ov[slug]||{}).forEach(([tt,q])=>{ q=Math.max(0, parseInt(q,10)||0); if(q>0){ t[tt]=q; usado[tt]=(usado[tt]||0)+q; } });
     ov[slug]=Object.assign({}, t);
     return Object.assign({}, prev[slug]||{ slug, sucNombre:nombreSuc(slug), prio:null, prioDe:null, manual:true }, { t, u:sumT(t) }); });
-  const queda={}; Object.keys(pool).forEach(t=>{ const q=pool[t]-(usado[t]||0); if(q>0) queda[t]=q; });
-  x.queda=queda; x.uQueda=sumT(queda); x.editado=true;
+  const queda={}, corregido={};
+  new Set([...Object.keys(pool), ...Object.keys(usado)]).forEach(t=>{ const q=(pool[t]||0)-(usado[t]||0); if(q>0) queda[t]=q; else if(q<0) corregido[t]=-q; });
+  x.queda=queda; x.uQueda=sumT(queda); x.corregido=Object.keys(corregido).length?corregido:null; x.editado=true;
 }
 function repAplicarManual(R){ R.remitos.forEach(rm=>rm.arts.forEach(x=>repAplicarManualX(rm, x))); return R; }
 // cuánto se alejó lo editado de la propuesta automática de ese artículo (Juli 23/09/2026: es la
@@ -4831,9 +4841,9 @@ function repDifAuto(x){
   return { lineas, lineasAuto:Object.keys(x.auto).length, u };
 }
 function repRetotalizar(R){
-  const porSuc={}, conLineas=new Set(); let editados=0;
+  const porSuc={}, conLineas=new Set(); let editados=0, corregidos=0;
   R.remitos.forEach(rm=>{ rm.uRep=0; rm.uQueda=0;
-    rm.arts.forEach(x=>{ if(x.editado) editados++; x.uQueda=sumT(x.queda); rm.uQueda+=x.uQueda;
+    rm.arts.forEach(x=>{ if(x.editado) editados++; if(x.corregido) corregidos++; x.uQueda=sumT(x.queda); rm.uQueda+=x.uQueda;
       x.lineas.forEach(l=>{ l.u=sumT(l.t); if(!l.u) return; rm.uRep+=l.u; conLineas.add(x.art.id);
         const ps=porSuc[l.slug]||(porSuc[l.slug]={ slug:l.slug, nombre:l.sucNombre||nombreSuc(l.slug), u:0, arts:new Set(), remitos:new Set() });
         ps.u+=l.u; ps.arts.add(x.art.id); ps.remitos.add(rm.nro); }); }); });
@@ -4841,7 +4851,7 @@ function repRetotalizar(R){
   // un artículo que «quedaba todo en el depósito» y se repartió a mano ya no está sin repartir
   R.sin=(R.sin||[]).filter(s=>!(s.queda && conLineas.has(s.a.id)));
   Object.assign(R.totales, { uRep:R.remitos.reduce((s,r)=>s+r.uRep,0), uQueda:R.remitos.reduce((s,r)=>s+r.uQueda,0),
-    sucursales:R.porSuc.length, sinRep:R.sin.length, editados });
+    sucursales:R.porSuc.length, sinRep:R.sin.length, editados, corregidos });
   return R;
 }
 function repBuscarX(key){ const R=state.rep.res; if(!R) return null;
@@ -4852,9 +4862,9 @@ function repEditable(){ const S=state.rep; return !!(S.res && !S.abierto && !S.r
 // automático, el ajuste se descarta (así el artículo vuelve a seguir los parámetros)
 function repEditPodar(key){
   const S=state.rep, ov=S.manual[key]; if(!ov) return;
-  Object.keys(ov).forEach(s=>{ if(!sumT(ov[s])) delete ov[s]; });
+  Object.keys(ov).forEach(s=>{ if(s[0]==='_') return; if(!sumT(ov[s])) delete ov[s]; });
   const f=repBuscarX(key), auto=f && f.x.auto; if(!auto) return;
-  const limpio=o=>{ const r={}; Object.keys(o).forEach(s=>{ const t={}; Object.entries(o[s]||{}).forEach(([k,q])=>{ if(q>0) t[k]=q; }); if(Object.keys(t).length) r[s]=t; }); return r; };
+  const limpio=o=>{ const r={}; Object.keys(o).forEach(s=>{ if(s[0]==='_') return; const t={}; Object.entries(o[s]||{}).forEach(([k,q])=>{ if(q>0) t[k]=q; }); if(Object.keys(t).length) r[s]=t; }); return r; };
   const A=limpio(auto), B=limpio(ov);
   const igual = Object.keys(A).length===Object.keys(B).length && Object.keys(A).every(s=>B[s] && Object.keys(A[s]).length===Object.keys(B[s]).length && Object.keys(A[s]).every(t=>A[s][t]===B[s][t]));
   if(igual) delete S.manual[key];
@@ -4879,7 +4889,7 @@ function repEditCelda(inp){
   const slug=inp.dataset.slug, t=inp.dataset.t, ov=S.manual[key]; if(!ov || !ov[slug]) return;
   const pool=repPool(f.x), otros=f.x.lineas.reduce((s,l)=>s+(l.slug===slug?0:((l.t||{})[t]||0)),0), tope=Math.max(0,(pool[t]||0)-otros);
   let q=Math.max(0, parseInt(inp.value,10)||0);
-  if(q>tope){ q=tope; toast('Del talle '+t+' hay '+fmtInt(pool[t]||0)+' en total: a esta sucursal le pueden ir hasta '+fmtInt(tope),'err'); }
+  if(q>tope) toast('Del talle '+t+' el remito trae '+fmtInt(pool[t]||0)+(pool[t]?'':' (no lo trae)')+': te pasás en '+fmtInt(q-tope)+'. Se reparte igual y queda anotado como corrección del remito.');
   if(q>0) ov[slug][t]=q; else delete ov[slug][t];
   inp.value = q>0 ? q : '';
   repAplicarManualX(f.rm, f.x); repRetotalizar(S.res);
@@ -4887,10 +4897,19 @@ function repEditCelda(inp){
   const set=(sel,v,vacioSi0)=>{ const el=box.querySelector(sel); if(el){ el.textContent = (vacioSi0 && !v) ? '·' : fmtInt(v); if(vacioSi0) el.classList.toggle('vacio', !v); } };
   const l=f.x.lineas.find(z=>z.slug===slug); set('[data-rtot="'+slug+'"]', l?l.u:0);
   const rep=f.x.lineas.reduce((s,z)=>s+((z.t||{})[t]||0),0);
-  set('[data-rrep="'+CSS.escape(t)+'"]', rep, true); set('[data-rqueda="'+CSS.escape(t)+'"]', (f.x.queda||{})[t]||0, true);
+  set('[data-rrep="'+CSS.escape(t)+'"]', rep, true);
+  const qc=box.querySelector('[data-rqueda="'+CSS.escape(t)+'"]'); if(qc) repQuedaCelda(qc, f.x, t, pool);
   set('[data-rrept]', f.x.lineas.reduce((s,z)=>s+z.u,0)); set('[data-rquedat]', f.x.uQueda||0);
   const card=inp.closest('.rcard'), rt=card && card.querySelector('.rtot'); if(rt) rt.innerHTML=repRemTotHtml(f.rm);
   const resu=$('repResu'); if(resu) resu.innerHTML=repResuInner();
+}
+// celda «Queda en el depósito» de un talle: lo que queda, o «+N» en ámbar si a mano se puso más de lo que
+// trae el remito (corrección del remito)
+function repQuedaCelda(el, x, t, pool){
+  const c=(x.corregido||{})[t]||0, q=(x.queda||{})[t]||0, tr=(pool||repPool(x))[t]||0;
+  el.classList.toggle('sobre', c>0); el.classList.toggle('vacio', !q && !c);
+  el.textContent = c>0 ? '+'+fmtInt(c) : (q>0 ? fmtInt(q) : '·');
+  el.title = c>0 ? 'El remito trae '+fmtInt(tr)+' de este talle y se reparten '+fmtInt(tr+c)+': corrección a mano del remito (venía mal cargado)' : '';
 }
 function repDestinos(){ const S=state.rep; if(Array.isArray(S.destinos)) return S.destinos.filter(s=>REP_SUC[s]); return Object.keys(REP_SUC).filter(s=>catDe(s)!=='outlet'); }
 async function repArmar(){
@@ -4950,7 +4969,9 @@ async function repGuardar(){
         // con eso se mide, línea por línea, cuánto se aleja el depósito de lo que propone el portal
         auto: x.editado && x.lineasAuto ? x.lineasAuto.filter(l=>l.u>0).map(l=>({ slug:l.slug, prio:l.prio, prioDe:l.prioDe, t:paresT(l.t) })) : null,
         quedaAuto: x.editado && x.quedaAuto ? paresT(x.quedaAuto) : null,
-        dif: repDifAuto(x) })) };
+        dif: repDifAuto(x),
+        // talles repartidos por encima de lo que trae el remito (remito mal cargado, corregido a mano el 24/09/2026)
+        corregido: x.corregido ? paresT(x.corregido) : null })) };
     rm.arts.forEach(x=>x.lineas.forEach(l=>{
       (porSuc[l.slug]=porSuc[l.slug]||[]).push({ remito:rm.nro, id:x.art.id, cod:x.art.cod||'', desc:x.art.desc||'', marca:x.art.marca||'', rubro:x.art.rubro||'', genero:x.art.genero||'', t:paresT(l.t) });
       const k=repKey(x.art.id)+'/'+l.slug; const o=suma[k]||(suma[k]={id:x.art.id, slug:l.slug, t:{}}); Object.entries(l.t).forEach(([t,q])=>{ o.t[t]=(o.t[t]||0)+q; });
@@ -5250,6 +5271,7 @@ function repResuInner(){
     +(T.faltan?'<span title="La reserva del depósito que se cargó tiene menos unidades que las que entraron por estos remitos: esas ya salieron (o el stock es de antes del ingreso). Se reparte lo que hay."><b>'+fmtInt(T.faltan)+'</b> u. de los remitos ya no están en la reserva</span>':'')
     +(T.sinRemito?'<span class="c-nuevo" title="Tienen compra de hace menos de '+T.dias+' días en el reporte de stock y no figuran en ningún remito de la lista: la Barrida los deja por nuevos, así que se reparten acá."><b>'+fmtInt(T.sinRemito)+'</b> artículos nuevos sin remito</span>':'')
     +(T.editados?'<span class="c-edit" title="Artículos con el reparto cambiado a mano: no siguen los parámetros hasta que los vuelvas al automático"><b>'+fmtInt(T.editados)+'</b> editados a mano'+repDifTxt(R)+(repEditable()?' <button class="lnk noprint" data-rresetall>descartar</button>':'')+'</span>':'')
+    +(T.corregidos?'<span class="c-edit" title="Artículos en los que a mano se repartió más de lo que trae el remito, o un talle que no trae: el remito venía mal cargado"><b>'+fmtInt(T.corregidos)+'</b> con el remito corregido</span>':'')
     +'<span style="margin-left:auto">'+(R.guardadoKey?'<span class="ok" style="color:var(--ok);font-weight:700">✓ guardado</span>':'<span style="color:var(--warn);font-weight:700">sin guardar</span>')+'</span>';
 }
 const CRI_LBL = { abrir:'abrir a más locales', profundidad:'mayor profundidad' };
@@ -5294,6 +5316,7 @@ function repVistaRemitos(){
         +(a.regla?'<small title="'+esc(a.regla)+'">'+esc(a.regla)+'</small>':'')
         +repCriArtHtml(a)
         +(x.editado && !ed?'<span class="pill edit" title="El reparto de este artículo se cambió a mano: no sigue los parámetros">✎ editado a mano</span>':'')
+        +(x.corregido?'<span class="pill edit" title="A mano se repartió más de lo que trae el remito (o un talle que no trae): el remito venía mal cargado. Lo de más, por talle.">remito corregido: '+esc(Object.keys(x.corregido).sort(cmpTalle).map(t=>t+' +'+fmtInt(x.corregido[t])).join(' · '))+'</span>':'')
         +(repEditable()?'<span class="rart-acc noprint">'
           +(ed?'<button class="btn btn-primary btn-sm" data-redok>✓ Listo</button>':'<button class="btn btn-outline btn-sm" data-redit="'+esc(mk)+'" title="Cambiar a mano las cantidades por talle, sumar o sacar sucursales">✎ Editar</button>')
           +((ed||x.editado)?'<button class="lnk" data-rreset="'+esc(mk)+'">↺ volver al automático</button>':'')+'</span>':'')
@@ -5303,7 +5326,9 @@ function repVistaRemitos(){
       const C=new Set(a.centrales||[]), lineas=x.lineas.filter(l=>ed||l.u>0).sort((p,q)=>(p.prio||99)-(q.prio||99));
       const tset=new Set(); lineas.forEach(l=>Object.keys(l.t||{}).forEach(t=>{ if(l.t[t]>0) tset.add(t); }));
       Object.keys(x.queda||{}).forEach(t=>{ if(x.queda[t]>0) tset.add(t); });
-      const tl=[...tset].sort(cmpTalle);
+      // editando: también los talles agregados a mano (aunque todavía estén en cero)
+      if(ed){ const ov=state.rep.manual[mk]||{}; (ov._talles||[]).forEach(t=>tset.add(t)); Object.keys(ov).forEach(s=>{ if(REP_SUC[s]) Object.keys(ov[s]||{}).forEach(t=>tset.add(t)); }); }
+      const tl=[...tset].sort(cmpTalle), pool=repPool(x);
       const rep={}; lineas.forEach(l=>tl.forEach(t=>{ rep[t]=(rep[t]||0)+((l.t||{})[t]||0); }));
       const totRep=tl.reduce((s0,t)=>s0+(rep[t]||0),0);
       const celda=(q,t,cls)=>'<td class="rg-t'+(C.has(t)?' c':'')+(q>0?' '+cls:' vacio')+'">'+(q>0?fmtInt(q):'·')+'</td>';
@@ -5325,11 +5350,13 @@ function repVistaRemitos(){
         const libres=Object.keys(REP_SUC).filter(s=>!ya.has(s)).sort((p,q)=>cmp(stripNN(nombreSuc(p)),stripNN(nombreSuc(q))));
         h+='<tr class="rg-add noprint"><td class="rg-dest" colspan="'+(tl.length+3)+'">'
           +(libres.length?'<select class="inp" data-rsumar><option value="">+ Agregar sucursal…</option>'+libres.map(s=>'<option value="'+esc(s)+'">'+esc(stripNN(nombreSuc(s)))+'</option>').join('')+'</select>':'')
-          +' <small>Lo que le sacás a una sucursal vuelve a «Queda en el depósito»; lo que agregás sale de ahí. Tab pasa al talle siguiente.</small></td></tr>';
+          +'<input class="inp rg-newt" data-rnuevot placeholder="+ Agregar talle (p.ej. 35)" title="Si el remito vino con los talles mal cargados, sumá acá el talle que falta. Enter o Tab lo agrega como columna.">'
+          +' <small>Lo que le sacás a una sucursal vuelve a «Queda en el depósito»; lo que agregás sale de ahí. Si ponés más de lo que trae el remito (o un talle que no trae), se reparte igual y queda anotado como corrección del remito. Tab pasa al talle siguiente.</small></td></tr>';
       }
       h+='</tbody><tfoot>'
         +'<tr class="rg-sum"><td class="rg-dest">Repartido</td><td class="rg-prio">'+fmtInt(lineas.filter(l=>l.u>0).length)+' suc.</td>'+tl.map(t=>celdaPie(rep[t]||0, t, 'data-rrep')).join('')+'<td class="rg-tot" data-rrept>'+fmtInt(totRep)+'</td></tr>'
-        +'<tr class="rg-queda"><td class="rg-dest">Queda en el depósito</td><td class="rg-prio"></td>'+tl.map(t=>celdaPie((x.queda||{})[t]||0, t, 'data-rqueda')).join('')+'<td class="rg-tot" data-rquedat>'+fmtInt(x.uQueda||0)+'</td></tr>'
+        +'<tr class="rg-queda"><td class="rg-dest">Queda en el depósito</td><td class="rg-prio"></td>'+tl.map(t=>{ const c=(x.corregido||{})[t]||0, q=(x.queda||{})[t]||0;
+            return '<td class="rg-t q'+(C.has(t)?' c':'')+(c>0?' sobre':(q>0?'':' vacio'))+'" data-rqueda="'+esc(t)+'"'+(c>0?' title="El remito trae '+fmtInt(pool[t]||0)+' de este talle y se reparten '+fmtInt((pool[t]||0)+c)+': corrección a mano del remito (venía mal cargado)"':'')+'>'+(c>0?'+'+fmtInt(c):(q>0?fmtInt(q):'·'))+'</td>'; }).join('')+'<td class="rg-tot" data-rquedat>'+fmtInt(x.uQueda||0)+'</td></tr>'
         +'</tfoot></table></div></div>';
     });
     h+='</div>';
@@ -5440,9 +5467,16 @@ function wireReparto(){
     i.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); i.blur(); } }; });
   document.querySelectorAll('[data-rquitar]').forEach(b=>b.onclick=()=>{ const ov=S.manual[S.edit]; if(!ov) return; delete ov[b.dataset.rquitar]; repRecalc(); });
   document.querySelectorAll('[data-rsumar]').forEach(s=>s.onchange=()=>{ const ov=S.manual[S.edit]; if(!ov || !s.value) return; ov[s.value]={}; S._focusSuc=s.value; repRecalc(); });
+  // talle que el remito no trae (24/09/2026): se suma como columna y lo que se le cargue es corrección del remito
+  document.querySelectorAll('[data-rnuevot]').forEach(i=>{
+    i.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); i.blur(); } };
+    i.onchange=()=>{ const ov=S.manual[S.edit], t=nrmT(i.value); if(!ov || !t) return;
+      if(!repEsTalle(t)){ toast('«'+i.value+'» no parece un talle','err'); return; }
+      ov._talles=ov._talles||[]; if(!ov._talles.includes(t)) ov._talles.push(t); S._focusT=t; repRecalc(); }; });
   const resu=$('repResu'); if(resu) resu.onclick=e=>{ if(!e.target.closest('[data-rresetall]')) return;
     if(!confirm('¿Descartar TODOS los cambios a mano y volver al reparto automático?')) return; S.manual={}; S.edit=null; repRecalc(); };
   if(S._focusSuc){ const el=document.querySelector('.rg-in[data-slug="'+S._focusSuc+'"]'); S._focusSuc=null; if(el) el.focus(); }
+  if(S._focusT){ const el=document.querySelector('.rg-in[data-t="'+CSS.escape(S._focusT)+'"]'); S._focusT=null; if(el) el.focus(); }
   on('repXlsx','onclick',repExportXlsx);
   on('repPrint','onclick',()=>{ S.vista='remito'; render(); setTimeout(()=>window.print(),150); });
   on('repGuardar','onclick',repGuardar);

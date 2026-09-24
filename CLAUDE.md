@@ -1958,6 +1958,15 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
   en el depósito» también se puede repartir a mano (sale de «Sin repartir»). Guardar, ⇩ Excel, Mi Sucursal
   y Picking toman lo editado sin cambios; el artículo se guarda con `editado:true` y `meta.totales.editados`.
   Cargar otra estadística de remitos o guardar limpia los ajustes.
+  **Remito mal cargado: la edición ya no recorta al remito (24/09/2026, Nehuen, TIMTB110361713: los talles del
+  remito venían corridos y la curva real empieza en 35)**: en la grilla de edición hay **«+ Agregar talle»** (Enter/Tab
+  suma la columna; `ov._talles`, clave que no es sucursal) y una celda puede llevar **más de lo que trae el remito**
+  (o un talle que no trae): se reparte igual, el pie «Queda en el depósito» muestra **«+N» en ámbar** y el artículo
+  lleva el pill «remito corregido: 35 +2 · 36 +2» (`x.corregido`, por talle lo de más). `repPool` sale de la propuesta
+  automática (`lineasAuto` + `quedaAuto`), no de lo editado, así reaplicar el ajuste no infla el pool. Se guarda
+  `corregido` en el artículo y `meta.totales.corregidos`; Mi Sucursal y el Picking leen las líneas sin cambios.
+  **Talles dobles de las ojotas (mismo día, Havaianas)**: `repEsTalle` no reconocía «37/38» / «39/40», así que en el
+  export con columnas por talle esas columnas se salteaban, el remito quedaba en cero y no aparecía en la lista.
   **La Barrida de reserva también se edita a mano (24/09/2026, pedido de Juli)**, con el mismo modelo: botón ✎ al final de
   la columna Talles de cada línea (solo con la barrida procesada desde los archivos: una semana abierta del historial no
   trae la reserva por talle y no se edita) → casilleros numéricos por TODOS los talles que el artículo tiene en el
