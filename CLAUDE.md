@@ -2050,6 +2050,17 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
     ficha nombre. **Aurelius Calle 10 toma la mercadería de la columna Aurelius** de la ficha (en `barrida/`
     `fichaDe` y en `marcas/` `tipoDeSuc`/`fichaEfectiva`); de la columna Outlets solo la «Prioridad» (New
     Balance). Para destinos por defecto y días de outlet sigue contando como outlet (`COMO_OUTLET`).
+    **Aurelius = solo moda (24/09/2026, reparto Adidas: un short de RUNNING se abría a los tres Aurelius)**: la
+    regla pasó a ser positiva — en calzado e indumentaria Aurelius (línea y Calle 10) recibe solo la disciplina de
+    moda (`RX_AUR_MODA`: CASUAL, ORIGINALS, JORDAN, CALZADO VERANO, lifestyle/urbano, jeans); RUNNING, TRAINING,
+    ADVENTURE, NATACIÓN… quedan afuera como el fútbol, salvo el modelo que su ficha nombre (Asics GEL, Nike P-6000).
+    Sin disciplina en el artículo se mira el tipo con `RX_AUR_DEPORTE`. Vale en Reparto inicial, «Abrir» y Barrida.
+    **Y la causa de que los Aurelius salieran PRIMEROS (1, 2 y 3 de 14)**: la Asignación de Marcas de
+    INDUMENTARIA solo está cargada para los Aurelius y las tiendas Adidas; los Mateu no tienen nada y entraban con
+    el rango más bajo («sin asignación cargada») en toda la indumentaria de Adidas / Nike / Puma. Ahora `repAsig`,
+    si la sucursal no tiene asignación de indumentaria, usa la de CALZADO de la marca (principal / secundaria /
+    niño; nota «asignación de calzado (indumentaria sin cargar)») y las disciplinas del texto libre de calzado no
+    filtran la ropa. Cuando Juli cargue la asignación de indumentaria en `marcas/`, manda esa sola.
   - **Calzado niño/infante — curva progresiva o chata (17/09/2026)**: no usa la tabla de centrales. Select
     «Calzado niño» en «2 · Cómo repartir» (`param.ninoCurva`, default `prog`): **progresiva** = la mitad más chica
     de los talles del artículo x1 y la más grande x2 (8 talles → 4 x1 + 4 x2; impar, la mitad grande lleva el del

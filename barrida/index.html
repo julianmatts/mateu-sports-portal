@@ -3635,8 +3635,12 @@ function fueraDeTemporada(a, G, hoy){
 // locales que no trabajan niño, ni calzado ni indumentaria (Juli 17/09/2026: Calle 49)
 const SIN_NINO = { 'calle-49':true };
 // Aurelius (las de línea y Calle 10) trabaja casual moda: nunca fútbol ni deportes (Juli 17/09/2026),
-// salvo un modelo que su ficha nombre a propósito
-const RX_AUR_DEPORTE = /futbol|futsal|hockey|voley|volley|rugby|padel|paddle|tenis|tennis|basquet|basket|\bbox/;
+// salvo un modelo que su ficha nombre a propósito. 24/09/2026 (reparto Adidas: un short de RUNNING se abría a los
+// tres Aurelius): la regla pasa a ser POSITIVA — en calzado e indumentaria entra solo la disciplina de moda
+// (CASUAL, ORIGINALS, JORDAN, CALZADO VERANO, lifestyle/urbano, jeans); RUNNING, TRAINING, ADVENTURE, NATACIÓN…
+// quedan afuera como el fútbol. Sin disciplina en el artículo, se mira el tipo con la lista vieja de deportes.
+const RX_AUR_MODA = /casual|originals|jordan|lifestyle|urbano|\bmoda\b|jeans|calzado verano|sandal|ojota|chinela/;
+const RX_AUR_DEPORTE = /futbol|futsal|hockey|voley|volley|rugby|padel|paddle|tenis|tennis|basquet|basket|\bbox|running|training|adventure|outdoor|natacion|handball|yoga/;
 // ACCESORIOS en Aurelius (línea y Calle 10; Juli 23/09/2026, reparto de antiparras Nike): solo lo de moda —
 // mochilas, bolsos, riñoneras, gorros, medias, billeteras…— de disciplina casual. Nada de accesorio deportivo:
 // ni por disciplina (natación, training, arquero, hidratación…) ni por tipo (pelotas, antiparras, canilleras…)
@@ -3675,11 +3679,15 @@ function reglaSucursal(slug, a, G, fe){
     // accesorios (Juli 23/09/2026): Aurelius —también Calle 10, aunque se trabaje como outlet— no recibe
     // accesorio deportivo; solo lo de moda de disciplina casual
     if(!G.fam && esAccDeportivo(a)) return 'Aurelius: no recibe accesorios deportivos';
-    const txt=sinAcento([a.disc, a.tipo].filter(Boolean).join(' ')).toLowerCase();
-    if(RX_AUR_DEPORTE.test(txt)){
-      const desc=sinAcento([a.desc, a.disc, a.tipo].filter(Boolean).join(' ')).toLowerCase();
-      const nombrado = fe && fe.modelos.some(m=>{ const k=sinAcento(m).toLowerCase().trim(); return k && desc.includes(k); });
-      if(!nombrado) return 'Aurelius: no trabaja fútbol ni deportes';
+    if(G.fam){
+      const disc=sinAcento(a.disc||'').toLowerCase().replace(/^desconocida$/,'');
+      // con disciplina: solo moda; sin disciplina: que el tipo no diga deporte
+      const deporte = disc ? !RX_AUR_MODA.test(disc) : RX_AUR_DEPORTE.test(sinAcento(a.tipo||'').toLowerCase());
+      if(deporte){
+        const desc=sinAcento([a.desc, a.disc, a.tipo].filter(Boolean).join(' ')).toLowerCase();
+        const nombrado = fe && fe.modelos.some(m=>{ const k=sinAcento(m).toLowerCase().trim(); return k && desc.includes(k); });
+        if(!nombrado) return 'Aurelius: solo moda (casual / Originals), no '+(disc||'deportes');
+      }
     }
   }
   return '';
@@ -4215,7 +4223,13 @@ function repAsig(slug, a, G){
   if(esMarcaAurelius(a)) return { tipo:'prio', rank:1, plana:false, orden:0, nota:'marca Aurelius: solo locales Aurelius' };
   const A=PRIO.asig, id=SLUG2MARCAS[slug];
   if(!A || !id) return { tipo:'sin', rank:4, nota:'sin datos de Asignación de Marcas' };
-  const listas = G.fam==='calz' ? [A.calz[id]] : G.fam==='ind' ? [A.ind[id]] : [A.calz[id], A.ind[id]];
+  // INDUMENTARIA (24/09/2026, reparto Adidas): la asignación de indumentaria solo está cargada para los Aurelius y
+  // las tiendas Adidas; los Mateu no tienen nada y entraban con el rango más bajo («sin asignación»), detrás de los
+  // Aurelius, en toda la indumentaria de Adidas / Nike / Puma. Sin asignación de indumentaria, la sucursal usa la de
+  // CALZADO de la marca (marca principal / secundaria / niño); las disciplinas del texto libre de calzado no filtran.
+  let listas = G.fam==='calz' ? [A.calz[id]] : G.fam==='ind' ? [A.ind[id]] : [A.calz[id], A.ind[id]];
+  let prestada = false;
+  if(G.fam==='ind' && !(A.ind[id]&&A.ind[id].length) && A.calz[id] && A.calz[id].length){ listas=[A.calz[id]]; prestada=true; }
   const brands=[].concat(...listas.map(l=>l||[]));
   if(!brands.length) return { tipo:'sin', rank:4, nota:'la sucursal todavía no tiene cargada la asignación de '+(G.fam==='ind'?'indumentaria':G.fam==='calz'?'calzado':'marcas') };
   const mk=normMarca(a.marca);
@@ -4233,7 +4247,7 @@ function repAsig(slug, a, G){
     // sus disciplinas («running, casual, futbol» de Nike en Calle 12, City Bell, D80, Plaza y Calle 49) describen
     // el calzado, no los accesorios. Dejaban afuera a las Cat 1 y entraban antes los outlets. Para un accesorio
     // alcanza con que la marca esté asignada.
-    if(state.rep.param.respetarDisc && G.fam){
+    if(state.rep.param.respetarDisc && G.fam && !prestada){
       const pedidas=DISC_CONOCIDAS.filter(k=>txt.includes(k.slice(0,5)));
       const disc=sinAcento(a.disc).toLowerCase();
       if(pedidas.length && disc && !pedidas.some(k=>disc.includes(k.slice(0,5)))) return null;
@@ -4243,7 +4257,7 @@ function repAsig(slug, a, G){
   const rank = (b.t==='prio'||b.t==='nino') ? 1 : b.t==='especial' ? 2 : 3;
   const plana = !!(fe && (fe.plana==='todo' || (fe.plana==='nino' && kids)));
   const notaFicha = fe ? [fe.disc.join('/'), fe.modelos.join('/'), fe.genero.join('/'), plana?'curva x1 plana':'', fe.nota].filter(Boolean).join(' · ') : '';
-  return { tipo:b.t||'sec', rank, plana, orden:(fe&&fe.orden>0)?fe.orden:0, nota:[(b.d&&b.d.length)?b.d.join(', '):'', notaFicha].filter(Boolean).join(' · ') };
+  return { tipo:b.t||'sec', rank, plana, orden:(fe&&fe.orden>0)?fe.orden:0, nota:[prestada?'asignación de calzado (indumentaria sin cargar)':'', (b.d&&b.d.length&&!prestada)?b.d.join(', '):'', notaFicha].filter(Boolean).join(' · ') };
 }
 const ASIG_LBL = { prio:'marca principal', nino:'marca de niño', especial:'marca especial', sec:'marca secundaria', sin:'sin asignación cargada' };
 function repHistDe(id, slug){
