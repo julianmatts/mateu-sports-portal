@@ -2822,6 +2822,10 @@ Pedidos de Juli aplicados ese día, todos en `managment/index.html`:
   Ctrl+C / Ctrl+V parado en un talle (`copiarCurvaPrenda` / `pegarCurvaPrenda` / `aplicarCurvaPrenda`).
   Comparte el portapapeles interno `copiedCurve` con el Paso 2, así una curva copiada en Desarrollo se
   pega en una fila de OC y al revés.
+- **Nombre y color editables** (mismo día): en la fila de cada prenda, nombre y color son inputs
+  (`setDescPrenda`; cambiar el nombre de un color lo mueve al artículo que se llame así). En la fila del
+  artículo con varios colores, «✎» (`renombrarGrupo`) renombra todos los colores juntos. Los cambios se
+  copian al artículo/color de la OC de esa prenda solo si está en Borrador; una OC enviada no se toca.
 - **Compartir el desarrollo**: botones «📲 WhatsApp» (abre `wa.me` con el mensaje armado, sin número) y
   «🔗 Link» en cada colección y dentro de la colección abierta. El link es `managment/?col=<id>`:
   `abrirDesarrolloDesdeUrl` abre esa colección al entrar (se reintenta cuando llega Firebase). Si el que

@@ -45,6 +45,7 @@ main{max-width:1320px;margin:0 auto;padding:24px 20px 46px}
 .pill{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase}.pill.ok{background:#e9f8ef;color:var(--ok)}.pill.warn{background:#fff6df;color:var(--warn)}.pill.bad{background:#fff0f0;color:var(--bad)}.pill.violet{background:#f1eaff;color:var(--violet)}
 /* Celdas de estado del Desarrollo: ambar = falta aprobar, verde = aprobado y ya es OC, rojo = desaprobado */
 td.celda-falta{background:#fff6df}td.celda-ok{background:#e9f8ef}td.celda-bad{background:#fff0f0}
+.pdesc{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.pdesc input{border:1px solid transparent;border-radius:6px;padding:4px 6px;background:transparent;font-size:14px;color:var(--navy)}.pdesc input.pnom{font-weight:700;width:190px}.pdesc input.pcol{width:120px;color:var(--muted)}.pdesc input:hover{border-color:var(--line);background:#fff}.pdesc input:focus{border-color:var(--navy);background:#fff;outline:none}.grp-ren{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:13px;padding:0 4px;vertical-align:middle}.grp-ren:hover{color:var(--red)}
 .ptalles{display:flex;gap:4px;flex-wrap:wrap;align-items:flex-end;margin-top:6px}.ptalles label{margin:0}.ptalles span{display:block;font-size:9px;color:var(--muted);font-family:var(--font-c);font-weight:700;text-align:center}.ptalles input{width:44px;padding:5px 3px;text-align:center}.ptalles .ptot{font-family:var(--font-c);font-size:12px;font-weight:700;padding-bottom:6px;margin-left:4px;white-space:nowrap}.ptalles .pgrip{cursor:grab;color:var(--muted-2,#9aa3b5);font-size:16px;padding:0 4px 6px 0;user-select:none;line-height:1}.ptalles .pgrip:active{cursor:grabbing}.ptalles .pact{border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:6px;padding:4px 7px;font-family:var(--font-c);font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;cursor:pointer;margin-bottom:6px}.ptalles.drop-ok{outline:2px dashed var(--red);outline-offset:3px;border-radius:6px;background:#fff5f5}
 .dev-filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:0 0 14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fbfcff}.dev-filtros .field{margin:0;min-width:200px}.dev-filtros .field select{padding:7px 9px;font-size:13px}
 .actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.action{border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:6px;padding:7px 9px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;cursor:pointer;line-height:1}.action.primary{background:var(--navy);border-color:var(--navy);color:#fff}.action.danger{color:var(--red);border-color:#f3caca}
@@ -1444,7 +1445,7 @@ function grupoRow(c, g){
       : pill('Falta aprobar · pasos mixtos','warn');
   return `
     <tr class="grp-row" onclick="toggleGrupoPrendas('${keyEnc}')" title="${abierto ? 'Ocultar' : 'Ver'} los colores de este articulo">
-      <td><span class="grp-caret">${abierto ? '▾' : '▸'}</span><b>${escapeHtml(p0.nombre)}</b><div class="muted">${MARCAS[p0.marca] || ''} · ${g.items.length} colores<span data-gtot="${escapeAttr(g.key)}">${(()=>{ const tot = g.items.reduce((s,p)=>{ const t = tallesDePrenda(p); return s + (t ? totalTalles(t) : 0); }, 0); return tot ? ' · ' + tot + ' u' : ''; })()}</span></div></td>
+      <td><span class="grp-caret">${abierto ? '▾' : '▸'}</span><b>${escapeHtml(p0.nombre)}</b><button class="grp-ren" type="button" title="Renombrar el articulo (todos sus colores)" onclick="event.stopPropagation();renombrarGrupo('${c.id}','${keyEnc}')">✎</button><div class="muted">${MARCAS[p0.marca] || ''} · ${g.items.length} colores<span data-gtot="${escapeAttr(g.key)}">${(()=>{ const tot = g.items.reduce((s,p)=>{ const t = tallesDePrenda(p); return s + (t ? totalTalles(t) : 0); }, 0); return tot ? ' · ' + tot + ' u' : ''; })()}</span></div></td>
       <td>${provs.length === 1 ? escapeHtml(provs[0]) : (provs.length ? 'Varios' : '-')}</td>
       <td>${pvps.length === 1 ? money(pvps[0]) : 'Varios'}${costos.length === 1 ? `<div class="muted" style="font-size:11px">Costo ${money(costos[0])}</div>` : ''}</td>
       <td>${margenes.length === 1 ? margenPill(p0) : '<span class="muted">Varios</span>'}</td>
@@ -1496,8 +1497,8 @@ function prendaRow(c, p, esVariante){
   return `
         <tr${esVariante ? ' class="grp-var"' : ''}>
           <td>${esVariante
-            ? `<b>${escapeHtml(p.color || 'Sin color')}</b><div class="muted">${escapeHtml(p.nombre)}</div>`
-            : `<b>${escapeHtml(p.nombre)}</b><div class="muted">${MARCAS[p.marca] || ''} / ${escapeHtml(p.color || '-')}</div>`}
+            ? `<div class="pdesc"><input class="pnom" value="${escapeAttr(p.color || '')}" placeholder="Color" title="Color de esta variante (editable)" onchange="setDescPrenda('${c.id}','${p.id}','color',this.value)"></div><div class="pdesc"><input class="pcol" style="width:190px" value="${escapeAttr(p.nombre || '')}" placeholder="Nombre" title="Nombre del articulo (editable; si lo cambias, este color pasa a ese articulo)" onchange="setDescPrenda('${c.id}','${p.id}','nombre',this.value)"></div>`
+            : `<div class="pdesc"><input class="pnom" value="${escapeAttr(p.nombre || '')}" placeholder="Nombre" title="Nombre del articulo (editable)" onchange="setDescPrenda('${c.id}','${p.id}','nombre',this.value)"></div><div class="pdesc"><span class="muted">${MARCAS[p.marca] || ''} /</span><input class="pcol" value="${escapeAttr(p.color || '')}" placeholder="Color" title="Color (editable)" onchange="setDescPrenda('${c.id}','${p.id}','color',this.value)"></div>`}
             ${tallesEditHtml(c, p)}
             <input class="small-input" style="width:120px;margin-top:4px" value="${escapeAttr(p.codigoManual || '')}" placeholder="Codigo sistema" title="Codigo que asigna el deposito en el sistema. Si queda vacio, se completa en la OC." onchange="setCodigoManualPrenda('${c.id}','${p.id}',this.value)"></td>
           <td>${escapeHtml(p.proveedor || '-')}</td>
@@ -1716,6 +1717,47 @@ function pintarTotalesPrenda(colId, p){
       gEl.textContent = gt ? ' · ' + gt + ' u' : '';
     }
   }
+}
+
+// Nombre y color de la prenda editables en la fila (pedido de Juli 24/09/2026).
+// Si la prenda ya tiene una OC en Borrador, el articulo / color de esa fila de OC
+// se actualiza tambien; una OC ya enviada al proveedor no se toca.
+function setDescPrenda(colId, prendaId, campo, valor){
+  const p = findPrenda(colId, prendaId);
+  if(!p || !['nombre','color'].includes(campo)) return;
+  const v = String(valor || '').trim();
+  if(campo === 'nombre' && !v){ showToast('El nombre no puede quedar vacio.'); renderItemsModal(); return; }
+  p[campo] = v;
+  state.ordenes.forEach(o => {
+    if(o.prendaId !== p.id || o.estado !== 'Borrador') return;
+    if(campo === 'color') o.color = v;
+    else o.articulo = [p.tipo, v].filter(Boolean).join(' ') || v;
+  });
+  saveState();
+  renderItemsModal();
+  render();
+}
+
+async function renombrarGrupo(colId, keyEnc){
+  const c = state.colecciones.find(x=>x.id===colId);
+  if(!c) return;
+  const key = decodeURIComponent(keyEnc);
+  const items = c.prendas.filter(p => grupoKey(String(p.tipo || '').trim() || 'Sin linea', p) === key);
+  if(!items.length) return;
+  const nuevo = String((await askPrompt('Nuevo nombre del articulo (se aplica a sus ' + items.length + ' colores):', items[0].nombre || '')) || '').trim();
+  if(!nuevo || nuevo === items[0].nombre) return;
+  items.forEach(p => {
+    p.nombre = nuevo;
+    state.ordenes.forEach(o => {
+      if(o.prendaId === p.id && o.estado === 'Borrador') o.articulo = [p.tipo, nuevo].filter(Boolean).join(' ') || nuevo;
+    });
+  });
+  const nuevaKey = grupoKey(String(items[0].tipo || '').trim() || 'Sin linea', items[0]);
+  if(gruposPrendasAbiertos.has(key)){ gruposPrendasAbiertos.delete(key); gruposPrendasAbiertos.add(nuevaKey); }
+  saveState();
+  renderItemsModal();
+  render();
+  showToast('Articulo renombrado: ' + nuevo);
 }
 
 function setCodigoManualPrenda(colId, prendaId, value){
