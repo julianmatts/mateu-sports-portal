@@ -2826,6 +2826,11 @@ Pedidos de Juli aplicados ese día, todos en `managment/index.html`:
   (`setDescPrenda`; cambiar el nombre de un color lo mueve al artículo que se llame así). En la fila del
   artículo con varios colores, «✎» (`renombrarGrupo`) renombra todos los colores juntos. Los cambios se
   copian al artículo/color de la OC de esa prenda solo si está en Borrador; una OC enviada no se toca.
+- **Logo en el Excel y el PDF** (mismo día, pedido de Juli): los exports de OC, la planilla modelo y el
+  Excel para proveedor llevan el logo de Mateu (`LOGO_PNG`, convertido por canvas desde el `LOGO_MATEU`
+  embebido; los exports hacen `await logoListo()` antes de armarse). Hasta ese día el PNG se buscaba en el
+  header propio del módulo (`.header-logo img`), que no existe desde el header unificado, y salía el
+  texto «MATEU SPORTS» en su lugar. En la lista de OC la lupa pasó a ser el botón verde «Abrir».
 - **Compartir el desarrollo**: botones «📲 WhatsApp» (abre `wa.me` con el mensaje armado, sin número) y
   «🔗 Link» en cada colección y dentro de la colección abierta. El link es `managment/?col=<id>`:
   `abrirDesarrolloDesdeUrl` abre esa colección al entrar (se reintenta cuando llega Firebase). Si el que

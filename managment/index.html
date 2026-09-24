@@ -377,23 +377,31 @@ const uid = prefix => prefix + '_' + Date.now().toString(36) + '_' + Math.random
 function isFirebaseMode(){ return !!FIREBASE_URL; }
 
 
-// El logo del header esta embebido como webp, pero jsPDF y ExcelJS solo aceptan
-// PNG/JPEG: se convierte una vez via canvas al cargar la pagina.
+// El logo de Mateu esta embebido como webp (LOGO_MATEU), pero jsPDF y ExcelJS solo
+// aceptan PNG/JPEG: se convierte una vez via canvas. Hasta el 24/09/2026 se buscaba
+// en el header propio del modulo (.header-logo), que ya no existe desde el header
+// unificado, asi que LOGO_PNG quedaba en null y los exports salian con el nombre
+// escrito. Los exports esperan logoListo() antes de armarse.
 let LOGO_PNG = null;
-(function(){
+const _logoPromesa = new Promise(resolve => {
   try{
-    const src = document.querySelector('.header-logo img')?.src;
-    if(!src) return;
     const img = new Image();
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
-      canvas.getContext('2d').drawImage(img, 0, 0);
-      LOGO_PNG = { dataUri: canvas.toDataURL('image/png'), width: img.naturalWidth, height: img.naturalHeight };
+      try{
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        LOGO_PNG = { dataUri: canvas.toDataURL('image/png'), width: img.naturalWidth, height: img.naturalHeight };
+      }catch(e){}
+      resolve();
     };
-    img.src = src;
-  }catch(e){}
-})();
+    img.onerror = () => resolve();
+    img.src = LOGO_MATEU;
+  }catch(e){ resolve(); }
+});
+function logoListo(){
+  return Promise.race([_logoPromesa, new Promise(r => setTimeout(r, 2500))]);
+}
 
 async function fbGet(path){
   const res = await fetch(`${FIREBASE_URL}/${path}.json`);
@@ -2686,6 +2694,7 @@ async function descargarExcelOC(key){
   key = decodeURIComponent(key);
   const group = groupedByProvider(state.ordenes).find(g => g.key === key);
   if(!group) return;
+  await logoListo();
   const { wb, ocNumero } = buildExcelOCWorkbook(group);
   const nombreArchivo = 'OC_' + ocNumero.replace(/[^A-Za-z0-9-]+/g,'_') + '_' + providerKey(group.proveedor).replace(/\s+/g,'_') + '.xlsx';
   await downloadWorkbook(wb, nombreArchivo);
@@ -2699,6 +2708,7 @@ async function descargarExcelOC(key){
 const PLANILLA_HEADERS = ['Marca','Codigo','Articulo','Color','Genero','Linea','Coleccion','Proveedor','Costo unit. ARS','PVP objetivo ARS', ...TALLES, 'Notas','Link referencia'];
 
 async function descargarPlanillaModelo(kind){
+  await logoListo();
   const esOC = kind === 'oc';
   const titulo = esOC ? 'Planilla de carga - Orden de compra (Paso 2)' : 'Planilla de carga - Desarrollo (Paso 1)';
   const leyenda = esOC
@@ -3078,7 +3088,7 @@ async function exportarDesarrolloProveedor(provEnc){
   const provName = provEnc ? decodeURIComponent(provEnc) : '';
   const grupos = prendasPorProveedor().filter(g => !provName || g.proveedor === provName);
   if(!grupos.length){ showToast('No hay prendas para exportar.'); return; }
-
+  await logoListo();
   const wb = new ExcelJS.Workbook();
   grupos.forEach(g => sheetDesarrolloProveedor(wb, g));
 
@@ -3267,10 +3277,11 @@ function buildPdfOC(group){
   return { doc, ocNumero };
 }
 
-function descargarPdfOC(key){
+async function descargarPdfOC(key){
   key = decodeURIComponent(key);
   const group = groupedByProvider(state.ordenes).find(g => g.key === key);
   if(!group) return;
+  await logoListo();
   const { doc, ocNumero } = buildPdfOC(group);
   doc.save('OC_' + ocNumero.replace(/[^A-Za-z0-9-]+/g,'_') + '_' + providerKey(group.proveedor).replace(/\s+/g,'_') + '.pdf');
 }
@@ -3289,6 +3300,7 @@ async function enviarOC(key){
     return;
   }
 
+  await logoListo();
   const { wb, ocNumero, totalUnidades, totalValorizado } = buildExcelOCWorkbook(group);
   const archivo = 'OC_' + ocNumero.replace(/[^A-Za-z0-9-]+/g,'_') + '_' + providerKey(group.proveedor).replace(/\s+/g,'_');
   await downloadWorkbook(wb, archivo + '.xlsx');
