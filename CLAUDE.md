@@ -2777,6 +2777,27 @@ mismas pantallas y estética, con datos reales.
 - Las pantallas `.dc.html` + `support.js` + `sesion.js` son el **prototipo de Design**
   que originó el módulo; quedan como referencia visual (siguen gateadas).
 
+## Managment (`managment/`) — Desarrollo → OC → Ingresos (24/09/2026)
+
+Pedidos de Juli aplicados ese día, todos en `managment/index.html`:
+- **Filtros del Desarrollo**: barra `.dev-filtros` con **Fábrica / taller** y **Línea** (`devFiltro`,
+  `prendaPasaFiltro` = único filtro de prendas junto con la marca del encabezado; vale para el listado y
+  para la colección abierta). Las opciones salen de las prendas cargadas.
+- **Celdas de estado con color** (`td.celda-falta` ámbar · `td.celda-ok` verde · `td.celda-bad` rojo):
+  en el listado, la celda Status por línea cuenta «Falta aprobar N · Aprobado sin OC N · Aprobado · OC N»
+  (`estadoCelda`); en cada prenda, la celda del paso y la columna OC (`celdaOCPrenda`: «Aprobado · OC» con el
+  código y «Ver OC» cuando ya se convirtió en orden de compra; «Crear OC» si está aprobada; «Falta aprobar»).
+- **Sin códigos automáticos**: el código es el que asigna el depósito en el sistema. Se carga en la prenda
+  (`codigoManual`) o en la fila de la OC (input en el Paso 2, `setOCCodigo`, que lo copia a la prenda). Un
+  código repetido **no frena** la OC (recompra del mismo artículo + color): solo avisa. Confirmar una OC exige
+  que todas las líneas tengan código. Se borraron `nextCodigo` / `reservarCodigos` / contadores del ⚙;
+  `state.contadores` y el nodo `contadoresCodigos` quedan por compatibilidad. El import de OC deja vacío
+  lo que la planilla no trae.
+- **Compartir el desarrollo**: botones «📲 WhatsApp» (abre `wa.me` con el mensaje armado, sin número) y
+  «🔗 Link» en cada colección y dentro de la colección abierta. El link es `managment/?col=<id>`:
+  `abrirDesarrolloDesdeUrl` abre esa colección al entrar (se reintenta cuando llega Firebase). Si el que
+  abre el link no tiene sesión, el Portal lo manda al login y tiene que volver a tocar el link.
+
 ## Conversor de OC de marca (pestaña "Pedidos de compra" de `recepciones/`)
 
 Botón **⇆ Convertir OC de marca**: Juli sube la planilla que manda **cualquier**

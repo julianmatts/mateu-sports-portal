@@ -43,6 +43,9 @@ main{max-width:1320px;margin:0 auto;padding:24px 20px 46px}
 .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:13px}.mini{border:1px solid var(--line);border-radius:7px;padding:11px;background:#fbfcff}.mini b{display:block;font-family:var(--font-d);font-size:25px;letter-spacing:1px}.mini span{font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
 .po-group{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff;margin-bottom:13px}.po-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;background:#f9fbff;border-bottom:1px solid var(--line)}.po-head h3{font-family:var(--font-c);font-size:18px;letter-spacing:.8px;text-transform:uppercase}.po-meta{color:var(--muted);font-size:13px;margin-top:2px}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:8px}.po-group .table-wrap{border:0;border-radius:0}table{width:100%;border-collapse:collapse;min-width:920px;background:#fff}.tbl-compacta{min-width:0}.tbl-compacta th:last-child,.tbl-compacta td:last-child{text-align:right;white-space:nowrap}.tbl-compacta th:not(:last-child),.tbl-compacta td:not(:last-child){width:1%;white-space:nowrap}th,td{padding:10px 11px;border-bottom:1px solid var(--line);text-align:left;font-size:13px;vertical-align:middle}th{font-family:var(--font-c);font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);background:#f9fbff}tr:last-child td{border-bottom:none}
 .pill{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase}.pill.ok{background:#e9f8ef;color:var(--ok)}.pill.warn{background:#fff6df;color:var(--warn)}.pill.bad{background:#fff0f0;color:var(--bad)}.pill.violet{background:#f1eaff;color:var(--violet)}
+/* Celdas de estado del Desarrollo: ambar = falta aprobar, verde = aprobado y ya es OC, rojo = desaprobado */
+td.celda-falta{background:#fff6df}td.celda-ok{background:#e9f8ef}td.celda-bad{background:#fff0f0}
+.dev-filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:0 0 14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fbfcff}.dev-filtros .field{margin:0;min-width:200px}.dev-filtros .field select{padding:7px 9px;font-size:13px}
 .actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.action{border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:6px;padding:7px 9px;font-family:var(--font-c);font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;cursor:pointer;line-height:1}.action.primary{background:var(--navy);border-color:var(--navy);color:#fff}.action.danger{color:var(--red);border-color:#f3caca}
 .action.ico{padding:5px 9px;letter-spacing:0;display:inline-flex;align-items:center;justify-content:center;line-height:0}.action.ico svg{display:block}.muted{color:var(--muted)}
 .size-grid{display:grid;grid-template-columns:repeat(6,64px);gap:7px;align-items:end}.size-grid input{padding:8px;text-align:center}.small-input{width:64px;border:1px solid var(--line);border-radius:6px;padding:7px;text-align:center}.size-copy{cursor:cell}.size-copy.selected{outline:2px solid var(--red);border-color:var(--red);background:#fff5f5}
@@ -104,7 +107,7 @@ tr.grp-var td:first-child{border-left:3px solid var(--line);padding-left:16px}
   <section class="hero">
     <div class="panel intro">
       <h2>Gestion de ordenes y produccion</h2>
-      <p>Desarrollo de producto, ordenes de compra, codigos automaticos y control de ingresos por proveedor.</p>
+      <p>Desarrollo de producto, ordenes de compra y control de ingresos por proveedor.</p>
       <div class="hint">Los datos se sincronizan en la nube: todos los usuarios ven y editan la misma informacion desde cualquier dispositivo.</div>
       <div class="brand-filter" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
         <div class="field">
@@ -881,31 +884,10 @@ function codigoExiste(codigo){
   return state.ordenes.some(o => o.codigo === codigo);
 }
 
-async function nextCodigo(marca){
-  if(!isFirebaseMode()){
-    let candidato;
-    do{
-      state.contadores[marca] = Number(state.contadores[marca] || 0) + 1;
-      candidato = PREFIJOS[marca] + state.contadores[marca];
-    }while(codigoExiste(candidato));
-    return candidato;
-  }
-  for(let intento = 0; intento < 6; intento++){
-    const crudo = await fbGet('contadoresCodigos/' + marca);
-    const base = (crudo !== null && crudo !== undefined && Number.isFinite(Number(crudo)))
-      ? Number(crudo)
-      : Number(state.contadores[marca] || CONTADORES_INICIALES[marca] || 0);
-    const next = base + 1;
-    await fbPut('contadoresCodigos/' + marca, next);
-    const verificacion = Number(await fbGet('contadoresCodigos/' + marca));
-    const candidato = PREFIJOS[marca] + next;
-    if(verificacion === next && !codigoExiste(candidato)){
-      state.contadores[marca] = next;
-      return candidato;
-    }
-  }
-  throw new Error('No se pudo generar un codigo unico para ' + marca + '. Intenta de nuevo.');
-}
+// Los codigos automaticos (MAT/RUG/AUR + contador) se sacaron el 24/09/2026:
+// el codigo real lo asigna el deposito en el sistema y el modulo lo toma tal
+// cual. state.contadores y el nodo contadoresCodigos quedan solo por
+// compatibilidad con los datos guardados.
 
 function pill(texto, tipo){
   return '<span class="pill '+tipo+'">'+escapeHtml(texto)+'</span>';
@@ -1011,12 +993,6 @@ function render(){
   if(document.getElementById('ingresoDetalleModal')?.classList.contains('show')) renderIngresoDetalleModal();
 }
 
-function renderCounters(){
-  return Object.keys(PREFIJOS).map(k => `
-    <span class="next-code">Proximo ${MARCAS[k]} <b>${PREFIJOS[k]}${Number(state.contadores[k] || 0) + 1}</b></span>
-  `).join('');
-}
-
 // Resumen historico (antes en el sidebar de Paso 1, ahora en Configuracion).
 // Toma todos los datos, respetando el filtro de marca del encabezado.
 function resumenHistorico(){
@@ -1054,18 +1030,73 @@ function renderDesarrollo(){
         <button class="btn" type="button" onclick="nuevoDesarrollo()">+ Nuevo Desarrollo</button>
       </div>
     </div>
+    ${devFiltrosHtml()}
     ${collectionsTable()}
   `;
 }
 
+// ---- Filtros del Desarrollo: Fabrica (proveedor / taller) y Linea. Se suman al
+// filtro de marca del encabezado y valen para el listado y para la coleccion
+// abierta. prendaPasaFiltro() es el unico lugar que decide que prenda se ve. ----
+let devFiltro = { proveedor:'', linea:'' };
+
+function hayDevFiltro(){ return !!(devFiltro.proveedor || devFiltro.linea); }
+
+function prendaPasaFiltro(p){
+  if(brandFilter !== 'all' && p.marca !== brandFilter) return false;
+  if(devFiltro.proveedor && providerKey(p.proveedor) !== providerKey(devFiltro.proveedor)) return false;
+  if(devFiltro.linea && (String(p.tipo || '').trim() || 'Sin linea') !== devFiltro.linea) return false;
+  return true;
+}
+
+function setDevFiltro(campo, valor){
+  devFiltro[campo] = String(valor || '');
+  render();
+}
+
+function limpiarDevFiltros(){
+  devFiltro = { proveedor:'', linea:'' };
+  render();
+}
+
+// Fabricas con prendas cargadas en algun desarrollo (respeta el filtro de marca).
+function fabricasEnDesarrollo(){
+  const map = new Map();
+  state.colecciones.forEach(c => (c.prendas || []).forEach(p => {
+    if(brandFilter !== 'all' && p.marca !== brandFilter) return;
+    const n = String(p.proveedor || '').trim();
+    if(n && !map.has(providerKey(n))) map.set(providerKey(n), n);
+  }));
+  return [...map.values()].sort((a,b)=>a.localeCompare(b));
+}
+
+function devFiltrosHtml(){
+  const fabricas = fabricasEnDesarrollo();
+  const lineas = lineasExistentes();
+  if(devFiltro.proveedor && !fabricas.some(f => providerKey(f) === providerKey(devFiltro.proveedor))) fabricas.unshift(devFiltro.proveedor);
+  if(devFiltro.linea && !lineas.includes(devFiltro.linea)) lineas.unshift(devFiltro.linea);
+  const opt = (v, sel) => `<option value="${escapeAttr(v)}" ${sel ? 'selected' : ''}>${escapeHtml(v)}</option>`;
+  return `
+    <div class="dev-filtros">
+      <div class="field"><label>Fabrica / taller</label>
+        <select onchange="setDevFiltro('proveedor',this.value)"><option value="">Todas las fabricas</option>${fabricas.map(f => opt(f, providerKey(f) === providerKey(devFiltro.proveedor) && !!devFiltro.proveedor)).join('')}</select>
+      </div>
+      <div class="field"><label>Linea</label>
+        <select onchange="setDevFiltro('linea',this.value)"><option value="">Todas las lineas</option>${lineas.map(l => opt(l, l === devFiltro.linea)).join('')}</select>
+      </div>
+      ${hayDevFiltro() ? '<button class="btn secondary" type="button" onclick="limpiarDevFiltros()">✕ Limpiar filtros</button>' : ''}
+    </div>`;
+}
+
 function collectionsTable(){
-  const colecciones = filteredColecciones();
-  if(!colecciones.length) return '<div class="empty">Todavia no hay colecciones para la marca seleccionada.</div>';
+  let colecciones = filteredColecciones();
+  if(hayDevFiltro()) colecciones = colecciones.filter(c => c.prendas.some(prendaPasaFiltro));
+  if(!colecciones.length) return '<div class="empty">' + (hayDevFiltro() ? 'Ninguna prenda coincide con los filtros de fabrica / linea.' : 'Todavia no hay colecciones para la marca seleccionada.') + '</div>';
   return colecciones.map(c => coleccionPanel(c)).join('');
 }
 
 function coleccionPanel(c){
-  const prendas = brandFilter === 'all' ? c.prendas : c.prendas.filter(p => p.marca === brandFilter);
+  const prendas = c.prendas.filter(prendaPasaFiltro);
   const grupos = groupedByLinea(prendas);
   const col = colorBloque(c.nombre);
   return `
@@ -1076,6 +1107,8 @@ function coleccionPanel(c){
           <div class="po-meta">${escapeHtml(c.tipo || '-')} · ${prendas.length} prenda${prendas.length === 1 ? '' : 's'} · ${grupos.length} linea${grupos.length === 1 ? '' : 's'}</div>
         </div>
         <div class="actions">
+          <button class="action" type="button" title="Mandar el link de este desarrollo por WhatsApp" onclick="compartirDesarrollo('${c.id}')">📲 WhatsApp</button>
+          <button class="action" type="button" title="Copiar el link de este desarrollo" onclick="copiarLinkDesarrollo('${c.id}')">🔗 Link</button>
           <button class="action primary" onclick="openItemsModal('${c.id}')">Abrir coleccion</button>
           <button class="action danger" onclick="borrarColeccion('${c.id}')">Borrar</button>
         </div>
@@ -1088,12 +1121,78 @@ function coleccionPanel(c){
             <td><b>${escapeHtml(g.linea)}</b></td>
             <td>${marcaBadges(g.items)}</td>
             <td>${g.items.length}</td>
-            <td>${estadoResumen(g.items)}</td>
+            ${estadoCelda(g.items)}
             <td><button class="action primary" onclick="openItemsModal('${c.id}','${encodeURIComponent(g.linea)}')">Abrir linea</button></td>
           </tr>`).join('')}
         </tbody>
       </table></div>` : `<div class="empty" style="margin:0 14px 14px">Sin items creados. Abri la coleccion para cargar la primera prenda.</div>`}
     </section>`;
+}
+
+// ---- Compartir un desarrollo: link directo (?col=<id>) que abre la coleccion
+// al entrar al modulo. "WhatsApp" arma el mensaje y abre wa.me sin numero (se
+// elige el contacto en el telefono); "Link" lo copia al portapapeles. ----
+function urlDesarrollo(colId){
+  return location.origin + location.pathname.replace(/[^/]*$/, '') + '?col=' + encodeURIComponent(colId);
+}
+
+function compartirDesarrollo(colId){
+  const c = state.colecciones.find(x=>x.id===colId);
+  if(!c) return;
+  const n = (c.prendas || []).length;
+  const msg = 'Hola! Te mando el desarrollo "' + (c.nombre || '(sin nombre)') + '"' + (n ? ' (' + n + ' prenda' + (n === 1 ? '' : 's') + ')' : '') + ' para aprobar en Managment: ' + urlDesarrollo(colId);
+  window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank', 'noopener');
+}
+
+async function copiarLinkDesarrollo(colId){
+  const url = urlDesarrollo(colId);
+  try{
+    await navigator.clipboard.writeText(url);
+    showToast('Link copiado: ' + url);
+  }catch(e){
+    await askPrompt('Copia el link del desarrollo:', url);
+  }
+}
+
+// Al entrar con ?col=<id>, abre esa coleccion. Se intenta con lo que hay en el
+// navegador y de nuevo cuando llega Firebase (por si el link es de otro equipo).
+let _colDesdeUrlAbierta = false;
+function abrirDesarrolloDesdeUrl(){
+  if(_colDesdeUrlAbierta) return true;
+  let id = '';
+  try{ id = new URLSearchParams(location.search).get('col') || ''; }catch(e){}
+  if(!id) return true;
+  const c = state.colecciones.find(x=>x.id===id);
+  if(!c) return false;
+  _colDesdeUrlAbierta = true;
+  brandFilter = 'all';
+  devFiltro = { proveedor:'', linea:'' };
+  currentView = 'desarrollo';
+  setActiveTab();
+  render();
+  openItemsModal(c.id);
+  return true;
+}
+
+// Celda de estado de una linea del listado: cuenta cuantas prendas faltan
+// aprobar y cuantas ya son orden de compra, y tiñe la celda entera.
+function ocDePrenda(p){
+  return state.ordenes.find(o => o.prendaId === p.id) || null;
+}
+
+function estadoCelda(prendas){
+  if(!prendas.length) return '<td class="celda-falta">' + pill('Sin items creados','warn') + '</td>';
+  const conOC = prendas.filter(p => ocDePrenda(p)).length;
+  const aprobSinOC = prendas.filter(p => p.paso === '4. Aprobado Comercial' && !ocDePrenda(p)).length;
+  const desap = prendas.filter(p => p.paso === '5. Desaprobado').length;
+  const faltan = prendas.length - conOC - aprobSinOC - desap;
+  const partes = [];
+  if(faltan) partes.push(pill('Falta aprobar ' + faltan, 'warn'));
+  if(aprobSinOC) partes.push(pill('Aprobado sin OC ' + aprobSinOC, 'ok'));
+  if(conOC) partes.push(pill('Aprobado · OC ' + conOC, 'ok'));
+  if(desap) partes.push(pill('Desaprobado ' + desap, 'bad'));
+  const clase = (conOC + aprobSinOC) === prendas.length ? 'celda-ok' : (!faltan && desap ? 'celda-bad' : 'celda-falta');
+  return '<td class="' + clase + '"><div style="display:flex;gap:4px;flex-wrap:wrap">' + partes.join('') + '</div></td>';
 }
 
 // Creacion unificada: "+ Nuevo Desarrollo" crea el contenedor y abre directo la
@@ -1130,15 +1229,6 @@ function closeItemsModal(){
   itemsLineaFilter = null;
   closeModal('itemsModal');
   render();
-}
-
-function estadoResumen(prendas){
-  if(!prendas.length) return pill('Sin items creados','warn');
-  const aprobadas = prendas.filter(p=>p.paso === '4. Aprobado Comercial').length;
-  const desaprobadas = prendas.filter(p=>p.paso === '5. Desaprobado').length;
-  if(aprobadas === prendas.length) return pill('Listos para Produccion','ok');
-  if(desaprobadas) return pill(desaprobadas + ' desaprobada(s)','bad');
-  return pill('En desarrollo','warn');
 }
 
 function bloqueadoPorDetalle(prendas){
@@ -1180,7 +1270,7 @@ function setItemsTab(t){
 function renderItemsModal(){
   const c = state.colecciones.find(x=>x.id===activeCollectionId);
   if(!c) return;
-  let prendasVis = brandFilter === 'all' ? c.prendas : c.prendas.filter(p => p.marca === brandFilter);
+  let prendasVis = c.prendas.filter(prendaPasaFiltro);
   if(itemsLineaFilter) prendasVis = prendasVis.filter(p => (String(p.tipo||'').trim() || 'Sin linea') === itemsLineaFilter);
   const nPrendas = prendasVis.length;
   $('itemsTitle').textContent = 'Coleccion: ' + (c.nombre || '(sin nombre)') + (itemsLineaFilter ? '  ·  Linea: ' + itemsLineaFilter : '');
@@ -1192,7 +1282,12 @@ function renderItemsModal(){
       <div class="field"><label>Nombre del desarrollo / coleccion</label><input name="colNombre" value="${escapeAttr(c.nombre||'')}" placeholder="Ej: Axis 2027" onchange="setColeccionCampo('${c.id}','nombre',this.value)"></div>
       <div class="field"><label>Tipo de modulo / linea</label><input name="colTipo" value="${escapeAttr(c.tipo||'')}" placeholder="Ej: Invierno, Capsula Technical" onchange="setColeccionCampo('${c.id}','tipo',this.value)"></div>
     </div>
-    ${itemsLineaFilter ? `<div class="btn-row" style="margin-bottom:12px"><button class="btn secondary" type="button" onclick="openItemsModal('${c.id}')">← Ver toda la coleccion</button></div>` : ''}
+    <div class="btn-row" style="margin-bottom:12px">
+      ${itemsLineaFilter ? `<button class="btn secondary" type="button" onclick="openItemsModal('${c.id}')">← Ver toda la coleccion</button>` : ''}
+      <button class="btn secondary" type="button" title="Mandar el link de este desarrollo por WhatsApp" onclick="compartirDesarrollo('${c.id}')">📲 Mandar por WhatsApp</button>
+      <button class="btn secondary" type="button" title="Copiar el link de este desarrollo" onclick="copiarLinkDesarrollo('${c.id}')">🔗 Copiar link</button>
+      ${hayDevFiltro() ? `<span class="muted" style="font-size:12px;align-self:center">Filtrado por ${devFiltro.proveedor ? 'fabrica "' + escapeHtml(devFiltro.proveedor) + '"' : ''}${devFiltro.proveedor && devFiltro.linea ? ' y ' : ''}${devFiltro.linea ? 'linea "' + escapeHtml(devFiltro.linea) + '"' : ''}.</span>` : ''}
+    </div>
     <div class="tabs items-tabs" style="margin:0 0 14px">
       <button class="tab ${itemsTab==='nuevo'?'active':''}" data-itab="nuevo" type="button" onclick="setItemsTab('nuevo')">+ Nuevo articulo</button>
       <button class="tab ${itemsTab==='activos'?'active':''}" data-itab="activos" type="button" onclick="setItemsTab('activos')">Activos (${nPrendas})</button>
@@ -1226,8 +1321,8 @@ function renderItemsModal(){
         <div class="field"><label>Version</label><input name="version" placeholder="1"></div>
       </div>
       <div class="row">
-        <div class="field"><label>Codigo (opcional)</label><input name="codigoManual" placeholder="Vacio = automatico al crear la OC"></div>
-        <div class="field"><label>&nbsp;</label><span class="muted" style="display:block;font-size:12px;padding-top:9px">Dejalo vacio para que el sistema lo genere, o escribi un codigo propio.</span></div>
+        <div class="field"><label>Codigo del sistema (opcional)</label><input name="codigoManual" placeholder="Ej: MAT441 (el que asigna el deposito)"></div>
+        <div class="field"><label>&nbsp;</label><span class="muted" style="display:block;font-size:12px;padding-top:9px">Es el codigo que le da el deposito en el sistema. Si todavia no lo tenes, lo cargas despues en la prenda o en la OC.</span></div>
       </div>
       <div class="row">
         <div class="field"><label>PVP objetivo ARS</label><input name="pvpObjetivo" type="number" min="0" step="0.01" value="0"></div>
@@ -1280,9 +1375,9 @@ function lineaOptions(selected){
 }
 
 function itemsTable(c){
-  let prendas = brandFilter === 'all' ? c.prendas : c.prendas.filter(p => p.marca === brandFilter);
+  let prendas = c.prendas.filter(prendaPasaFiltro);
   if(itemsLineaFilter) prendas = prendas.filter(p => (String(p.tipo||'').trim() || 'Sin linea') === itemsLineaFilter);
-  if(!prendas.length) return '<div class="empty">No hay prendas cargadas para la marca seleccionada en esta coleccion.</div>';
+  if(!prendas.length) return '<div class="empty">No hay prendas cargadas para ' + (hayDevFiltro() ? 'los filtros de fabrica / linea' : 'la marca seleccionada') + ' en esta coleccion.</div>';
   return groupedByLinea(prendas).map(g => lineaPanel(c, g)).join('');
 }
 
@@ -1340,9 +1435,12 @@ function grupoRow(c, g){
   const costos = [...new Set(g.items.map(p => Number(p.costo || 0)))];
   const margenes = [...new Set(g.items.map(p => { const m = margenPrenda(p); return m === null ? '-' : m.toFixed(2); }))];
   const pasos = [...new Set(g.items.map(p => p.paso))];
-  const pasoPill = pasos.length === 1
-    ? pill(pasos[0], pasos[0] === '4. Aprobado Comercial' ? 'ok' : pasos[0] === '5. Desaprobado' ? 'bad' : 'warn')
-    : pill('Pasos mixtos','warn');
+  const todasOC = g.items.every(p => ocDePrenda(p));
+  const pasoPill = todasOC
+    ? pill('Aprobado · OC','ok')
+    : pasos.length === 1
+      ? pill(pasos[0] === '4. Aprobado Comercial' ? '4. Aprobado Comercial' : pasos[0] === '5. Desaprobado' ? pasos[0] : 'Falta aprobar · ' + pasos[0], pasos[0] === '4. Aprobado Comercial' ? 'ok' : pasos[0] === '5. Desaprobado' ? 'bad' : 'warn')
+      : pill('Falta aprobar · pasos mixtos','warn');
   return `
     <tr class="grp-row" onclick="toggleGrupoPrendas('${keyEnc}')" title="${abierto ? 'Ocultar' : 'Ver'} los colores de este articulo">
       <td><span class="grp-caret">${abierto ? '▾' : '▸'}</span><b>${escapeHtml(p0.nombre)}</b><div class="muted">${MARCAS[p0.marca] || ''} · ${g.items.length} colores${(()=>{ const tot = g.items.reduce((s,p)=>{ const t = tallesDePrenda(p); return s + (t ? totalTalles(t) : 0); }, 0); return tot ? ' · ' + tot + ' u' : ''; })()}</div></td>
@@ -1405,7 +1503,7 @@ function prendaRow(c, p, esVariante){
             ? `<b>${escapeHtml(p.color || 'Sin color')}</b><div class="muted">${escapeHtml(p.nombre)}</div>`
             : `<b>${escapeHtml(p.nombre)}</b><div class="muted">${MARCAS[p.marca] || ''} / ${escapeHtml(p.color || '-')}</div>`}
             ${unidadesPrendaHTML(p)}
-            <input class="small-input" style="width:120px;margin-top:4px" value="${escapeAttr(p.codigoManual || '')}" placeholder="Codigo (auto)" title="Vacio = codigo automatico al crear la OC" onchange="setCodigoManualPrenda('${c.id}','${p.id}',this.value)"></td>
+            <input class="small-input" style="width:120px;margin-top:4px" value="${escapeAttr(p.codigoManual || '')}" placeholder="Codigo sistema" title="Codigo que asigna el deposito en el sistema. Si queda vacio, se completa en la OC." onchange="setCodigoManualPrenda('${c.id}','${p.id}',this.value)"></td>
           <td>${escapeHtml(p.proveedor || '-')}</td>
           <td>${money(p.pvpObjetivo)}<div class="muted" style="font-size:11px">Costo ${money(p.costo)}</div></td>
           <td>${margenPill(p)}</td>
@@ -1413,7 +1511,7 @@ function prendaRow(c, p, esVariante){
             <input class="small-input" style="width:120px" type="url" value="${escapeAttr(p.referenciaLink || '')}" placeholder="Link" onchange="setReferenciaLink('${c.id}','${p.id}',this.value)">
             ${p.referenciaLink ? `<a href="${escapeAttr(p.referenciaLink)}" target="_blank" rel="noopener" style="display:block;margin-top:4px;font-size:11px">Abrir</a>` : ''}
           </td>
-          <td><select onchange="setPasoPrenda('${c.id}','${p.id}',this.value)">${ESTADOS_PRENDA.map(e=>`<option ${p.paso===e?'selected':''}>${e}</option>`).join('')}</select>${diasEnEstadoLabel(p)}</td>
+          <td class="${p.paso === '4. Aprobado Comercial' ? 'celda-ok' : p.paso === '5. Desaprobado' ? 'celda-bad' : 'celda-falta'}"><select onchange="setPasoPrenda('${c.id}','${p.id}',this.value)">${ESTADOS_PRENDA.map(e=>`<option ${p.paso===e?'selected':''}>${e}</option>`).join('')}</select>${diasEnEstadoLabel(p)}</td>
           <td>
             <input class="small-input" value="${escapeHtml(p.version || '')}" onchange="setVersionPrenda('${c.id}','${p.id}',this.value)">
             ${(p.historial||[]).length ? `<button class="action" style="margin-top:6px" onclick="openHistorialModal('${c.id}','${p.id}')">Historial (${p.historial.length})</button>` : ''}
@@ -1432,9 +1530,22 @@ function prendaRow(c, p, esVariante){
               </div>
             </div>
           </td>
-          <td>${p.paso === '4. Aprobado Comercial' ? `<button class="action primary" onclick="crearOCDesdePrenda('${c.id}','${p.id}')">Crear OC</button>` : '<span class="muted">Requiere aprobado comercial</span>'}</td>
+          ${celdaOCPrenda(c, p)}
           <td><button class="action danger" onclick="borrarPrenda('${c.id}','${p.id}')">Borrar</button></td>
         </tr>`;
+}
+
+// Columna OC de la prenda: verde cuando ya se convirtio en orden de compra (con
+// el codigo y un acceso directo a esa OC), boton "Crear OC" si esta aprobada y
+// todavia no tiene, ambar "Falta aprobar" en el resto.
+function celdaOCPrenda(c, p){
+  const oc = ocDePrenda(p);
+  if(oc){
+    return `<td class="celda-ok">${pill('Aprobado · OC','ok')}<div style="margin-top:4px"><b>${escapeHtml(oc.codigo || 'sin codigo')}</b>${oc.ocNumero ? `<div class="muted" style="font-size:11px">${escapeHtml(oc.ocNumero)}</div>` : ''}</div><button class="action" style="margin-top:6px" type="button" onclick="currentView='oc';setActiveTab();render();openOCDetalle('${encodeURIComponent(providerKey(oc.proveedor))}','${encodeURIComponent(String(oc.linea||'').trim()||'Sin linea')}','${encodeURIComponent(String(oc.coleccion||'').trim()||'Sin coleccion')}')">Ver OC</button></td>`;
+  }
+  if(p.paso === '4. Aprobado Comercial') return `<td class="celda-ok"><button class="action primary" onclick="crearOCDesdePrenda('${c.id}','${p.id}')">Crear OC</button></td>`;
+  if(p.paso === '5. Desaprobado') return `<td class="celda-bad">${pill('Desaprobado','bad')}</td>`;
+  return `<td class="celda-falta">${pill('Falta aprobar','warn')}<div class="muted" style="font-size:11px;margin-top:4px">Pasa a OC en 4. Aprobado Comercial</div></td>`;
 }
 
 function createItem(ev){
@@ -1641,17 +1752,11 @@ async function crearOCDesdePrenda(colId, prendaId, silent){
     if(!silent){ currentView = 'oc'; setActiveTab(); render(); }
     return;
   }
-  let codigo;
-  const manual = String(d.codigoManual || '').trim().toUpperCase();
-  if(manual){
-    if(codigoExiste(manual)){
-      showToast('El codigo ' + manual + ' ya existe en otra OC. Cambialo o dejalo vacio para generar uno automatico.');
-      return;
-    }
-    codigo = manual;
-  }else{
-    codigo = await nextCodigo(d.marca);
-  }
+  // El codigo es el del sistema (lo asigna el deposito): se toma tal cual. Un
+  // codigo repetido no frena la OC (una recompra del mismo articulo + color lleva
+  // el mismo codigo); solo se avisa. Vacio = se completa despues en la OC.
+  const codigo = String(d.codigoManual || '').trim().toUpperCase();
+  if(codigo && codigoExiste(codigo)) showToast('Ojo: el codigo ' + codigo + ' ya esta en otra OC. Se creo igual; revisalo en el Paso 2.');
   state.ordenes.unshift({
     id:uid('oc'),
     desarrolloId:d.id,
@@ -1952,7 +2057,7 @@ function curvaPanel(group, editMode){
           <td><input class="small-input" style="width:110px" ${locked ? 'disabled title="Reabrí la OC para editar"' : ''} value="${escapeAttr(o.linea || '')}" onchange="setOCField('${o.id}','linea',this.value)"></td>
           <td><input class="small-input" style="width:110px" ${locked ? 'disabled title="Reabrí la OC para editar"' : ''} value="${escapeAttr(o.coleccion || '')}" onchange="setOCField('${o.id}','coleccion',this.value)"></td>
           ` : ''}
-          <td>${o.codigo}<div class="muted">${MARCAS[o.marca]}</div></td>
+          <td><input class="small-input" style="width:100px;font-weight:700" ${locked ? 'disabled title="Reabrí la OC para editar"' : 'title="Codigo del sistema (lo asigna el deposito)"'} value="${escapeAttr(o.codigo || '')}" placeholder="Codigo" onchange="setOCCodigo('${o.id}',this.value)"><div class="muted">${MARCAS[o.marca]}</div></td>
           <td><b>${escapeHtml(o.articulo)}</b></td>
           <td><select ${locked ? 'disabled title="Reabrí la OC para editar"' : ''} onchange="setOCField('${o.id}','proveedor',this.value)">${providerOptions(o.proveedor)}</select></td>
           <td><input class="small-input" style="width:110px" ${locked ? 'disabled title="Reabrí la OC para editar"' : ''} value="${escapeHtml(o.color || '')}" onchange="setOCField('${o.id}','color',this.value)"></td>
@@ -2163,6 +2268,24 @@ function setOCField(id, field, value){
   render();
 }
 
+// Codigo del sistema en la fila de OC. Se guarda en mayusculas; si ya esta en
+// otra fila solo se avisa (una recompra lleva el mismo codigo). Tambien se copia
+// a la prenda de Desarrollo de la que salio, asi las dos pantallas coinciden.
+function setOCCodigo(id, value){
+  const o = state.ordenes.find(x=>x.id===id);
+  if(!o) return;
+  if(o.estado === 'Enviada') return;
+  const codigo = String(value || '').trim().toUpperCase();
+  if(codigo && state.ordenes.some(x => x.id !== id && x.codigo === codigo)) showToast('Ojo: el codigo ' + codigo + ' ya esta en otra fila de OC.');
+  o.codigo = codigo;
+  if(o.prendaId && o.coleccionId){
+    const p = findPrenda(o.coleccionId, o.prendaId);
+    if(p) p.codigoManual = codigo;
+  }
+  saveState();
+  render();
+}
+
 function setOCMode(key, mode){
   ocMode[decodeURIComponent(key)] = mode;
   render();
@@ -2235,6 +2358,11 @@ function confirmarProveedor(key){
   if(!group) return;
   const lineas = group.items.filter(o => o.estado === 'Borrador');
   if(!lineas.length) return;
+  const sinCodigo = lineas.filter(o => !String(o.codigo || '').trim());
+  if(sinCodigo.length){
+    showToast('Hay ' + sinCodigo.length + ' linea(s) sin codigo del sistema: ' + sinCodigo.map(o => o.articulo + (o.color ? ' ' + o.color : '')).join(', ') + '. Cargalo en la columna Codigo antes de confirmar la OC.');
+    return;
+  }
   const sinCantidades = lineas.filter(o => totalTalles(o.talles) <= 0);
   if(sinCantidades.length){
     showToast('Hay lineas sin unidades pedidas. Cargalas antes de confirmar la OC: ' + sinCantidades.map(o => o.codigo).join(', '));
@@ -2616,7 +2744,8 @@ async function importarPlanilla(kind, input){
     if(!articulo) err.push('Falta el articulo');
     const codigo = get(colIdx.codigo).toUpperCase();
     if(codigo){
-      if(codigoExiste(codigo)) err.push('El codigo ' + codigo + ' ya existe en el sistema');
+      // Un codigo que ya esta en otra OC no frena la fila (recompra del mismo
+      // articulo + color); solo se marca repetido dentro de la misma planilla.
       if(codigosEnArchivo.has(codigo)) err.push('Codigo ' + codigo + ' repetido en la planilla');
       codigosEnArchivo.add(codigo);
     }
@@ -2661,7 +2790,7 @@ function renderImportPreview(){
     const curva = TALLES.filter(t=>f.talles[t]).map(t=>talleLabel(t)+':'+f.talles[t]).join(' ');
     return `<tr>
       <td>${marcaLogo(f.marca,13)}</td>
-      <td>${escapeHtml(f.codigo || '(auto)')}</td>
+      <td>${f.codigo ? escapeHtml(f.codigo) : '<span class="muted">(sin codigo)</span>'}</td>
       <td><b>${escapeHtml(f.articulo)}</b>${f.color ? ' · ' + escapeHtml(f.color) : ''}</td>
       <td>${escapeHtml(f.linea || '-')}</td>
       <td>${escapeHtml(f.coleccion || '-')}</td>
@@ -2680,47 +2809,12 @@ function renderImportPreview(){
       <tbody>${filas.map(filaRow).join('')}</tbody>
     </table></div>
     <div class="notice" style="margin-top:12px">${esOC
-      ? 'Las ordenes entran en estado <b>Borrador</b>, agrupadas por proveedor. Los codigos vacios se generan automaticos. Despues las revisas y usas "Confirmar y enviar OC".'
+      ? 'Las ordenes entran en estado <b>Borrador</b>, agrupadas por proveedor. El codigo es el del sistema (lo asigna el deposito): las filas sin codigo entran igual y lo cargas en la OC antes de confirmarla.'
       : 'Las prendas entran en <b>1. Diseño</b>. Si la coleccion indicada ya existe, se suman ahi; si no, se crea. Los proveedores nuevos se dan de alta solos. Las unidades por talle quedan en la prenda y pasan solas a la OC al aprobar.'}</div>` : '<div class="empty">Ninguna fila valida para importar.</div>'}
     <div class="btn-row" style="margin-top:14px;justify-content:flex-end">
       <button class="btn secondary" type="button" onclick="closeModal('importModal')">Cancelar</button>
       <button class="btn" type="button" id="importConfirmBtn" onclick="confirmarImportacion()" ${filas.length ? '' : 'disabled'}>Importar ${filas.length} fila${filas.length===1?'':'s'}</button>
     </div>`;
-}
-
-// Reserva un bloque de codigos correlativos por marca (version en bloque de
-// nextCodigo, para no ir a Firebase una vez por fila).
-async function reservarCodigos(marca, cantidad){
-  if(!cantidad) return [];
-  if(!isFirebaseMode()){
-    const out = [];
-    while(out.length < cantidad){
-      state.contadores[marca] = Number(state.contadores[marca] || 0) + 1;
-      const cand = PREFIJOS[marca] + state.contadores[marca];
-      if(!codigoExiste(cand)) out.push(cand);
-    }
-    return out;
-  }
-  for(let intento = 0; intento < 6; intento++){
-    const crudo = await fbGet('contadoresCodigos/' + marca);
-    const base = (crudo !== null && crudo !== undefined && Number.isFinite(Number(crudo)))
-      ? Number(crudo)
-      : Number(state.contadores[marca] || CONTADORES_INICIALES[marca] || 0);
-    const codes = [];
-    let n = base;
-    while(codes.length < cantidad){
-      n++;
-      const cand = PREFIJOS[marca] + n;
-      if(!codigoExiste(cand)) codes.push(cand);
-    }
-    await fbPut('contadoresCodigos/' + marca, n);
-    const verificacion = Number(await fbGet('contadoresCodigos/' + marca));
-    if(verificacion === n){
-      state.contadores[marca] = n;
-      return codes;
-    }
-  }
-  throw new Error('No se pudieron reservar codigos para ' + marca + '. Intenta de nuevo.');
 }
 
 async function confirmarImportacion(){
@@ -2769,15 +2863,10 @@ async function confirmarImportacion(){
       });
       showToast('Se importaron ' + filas.length + ' prendas de desarrollo.');
     }else{
-      // Codigos automaticos: se reserva un bloque por marca de una sola vez
-      const sinCodigo = {};
-      filas.forEach(f => { if(!f.codigo) sinCodigo[f.marca] = (sinCodigo[f.marca] || 0) + 1; });
-      const bloques = {};
-      for(const marca of Object.keys(sinCodigo)){
-        bloques[marca] = await reservarCodigos(marca, sinCodigo[marca]);
-      }
+      // El codigo es el del sistema: si la planilla no lo trae, la fila entra sin
+      // codigo y se completa en la OC.
       filas.forEach(f => {
-        const codigo = f.codigo || bloques[f.marca].shift();
+        const codigo = String(f.codigo || '').trim().toUpperCase();
         state.ordenes.unshift({
           id:uid('oc'), desarrolloId:null, coleccionId:null, prendaId:null,
           codigo, marca:f.marca, articulo:f.articulo, linea:f.linea, coleccion:f.coleccion,
@@ -3130,7 +3219,7 @@ async function duplicarOC(id){
   if(!o) return;
   const color = await askPrompt('Color de la nueva fila de OC:', o.color);
   if(!color) return;
-  const codigo = await nextCodigo(o.marca);
+  const codigo = String((await askPrompt('Codigo del sistema de la nueva fila (podes dejarlo vacio y cargarlo despues):', '')) || '').trim().toUpperCase();
   state.ordenes.unshift({
     ...JSON.parse(JSON.stringify(o)),
     id:uid('oc'),
@@ -3846,8 +3935,7 @@ function renderConfig(){
     <div class="section-title">Resumen historico</div>
     ${resumenHistorico()}
     <div class="section-title" style="margin-top:18px">Configuracion local</div>
-    <div class="notice">Los codigos se generan por fila de OC, es decir articulo + color. Los contadores actuales salen de los maestros: MAT395, RUG963 y AUR201.</div>
-    <div class="next-codes">${renderCounters()}</div>
+    <div class="notice">Los codigos de los articulos son los que asigna el deposito en el sistema: se cargan en la prenda (Paso 1) o en la fila de la OC (Paso 2). El modulo ya no genera codigos automaticos.</div>
     <div class="section-title" style="margin-top:18px">Alertas de prendas trabadas</div>
     <div class="field" style="max-width:340px">
       <label>Dias en un mismo estado antes de marcar la prenda como trabada</label>
@@ -3858,15 +3946,6 @@ function renderConfig(){
       <label>Margen minimo (PVP objetivo / costo) antes de marcar la prenda en rojo</label>
       <input type="number" min="1" step="0.1" value="${margenObjetivo()}" onchange="setMargenObjetivo(this.value)">
     </div>
-    <div class="notice" style="margin-top:12px">Podes editar a mano el <b>ultimo codigo usado</b> de cada marca. El proximo codigo que genere el sistema sera ese numero + 1.</div>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Marca</th><th>Prefijo</th><th>Ultimo usado</th><th>Proximo</th><th>Regex maestro</th></tr></thead>
-      <tbody>${Object.keys(PREFIJOS).map(k=>`
-        <tr><td>${MARCAS[k]}</td><td><b>${PREFIJOS[k]}</b></td>
-          <td><input class="small-input" style="width:100px" type="number" min="0" step="1" value="${Number(state.contadores[k]||0)}" onchange="setUltimoCodigo('${k}',this.value)"></td>
-          <td><b>${PREFIJOS[k]}${Number(state.contadores[k])+1}</b></td><td>^${PREFIJOS[k]}\\d+\\s*-</td></tr>
-      `).join('')}</tbody>
-    </table></div>
     <div class="section-title" style="margin-top:18px">Curvas prearmadas</div>
     <form class="form" id="curveForm">
       <div class="field"><label>Nombre de curva</label><input name="nombre" required placeholder="Ej: Curva remera adulto"></div>
@@ -3903,7 +3982,7 @@ function renderConfig(){
     <div class="table-wrap"><table>
       <thead><tr><th>Nodo</th><th>Uso</th></tr></thead>
       <tbody>
-        <tr><td><b>contadoresCodigos</b></td><td>Ultimo numero usado por marca (mateu / ruge / aurelius) para generar codigos sin pisarse.</td></tr>
+        <tr><td><b>contadoresCodigos</b></td><td>Contadores de los codigos automaticos viejos. Ya no se usan (el codigo lo asigna el deposito); quedan por compatibilidad.</td></tr>
         <tr><td><b>colecciones</b></td><td>Colecciones del Paso 1, con las prendas anidadas (estado, fotos comprimidas, historial de versiones).</td></tr>
         <tr><td><b>ordenes</b></td><td>Lineas de OC del Paso 2: talles pedidos, costos, estado, y talles recibidos + costo de ingreso del Paso 3.</td></tr>
         <tr><td><b>proveedores</b></td><td>Ficha de cada proveedor (contacto, email, CUIT).</td></tr>
@@ -3947,22 +4026,6 @@ function setDiasAlerta(value){
   state.config = state.config || {};
   state.config.diasAlertaPrenda = Math.max(1, Number(value || CONFIG_INICIAL.diasAlertaPrenda));
   saveState();
-  renderConfig();
-  render();
-}
-
-// Edicion manual del ultimo codigo usado por marca. En Firebase el contador vive
-// en contadoresCodigos/<marca> (de ahi lo lee nextCodigo), fuera del sync general,
-// asi que se escribe directo ademas de cachearlo local.
-async function setUltimoCodigo(marca, value){
-  if(!(marca in PREFIJOS)) return;
-  const n = Math.max(0, Math.floor(Number(value) || 0));
-  state.contadores[marca] = n;
-  cacheStateLocally();
-  if(isFirebaseMode()){
-    try{ await fbPut('contadoresCodigos/' + marca, n); }
-    catch(e){ showToast('No se pudo guardar el contador en Firebase. Quedo guardado en este navegador.'); }
-  }
   renderConfig();
   render();
 }
@@ -4262,6 +4325,7 @@ async function initFirebaseSync(){
     });
     cacheStateLocally();
     render();
+    if(!abrirDesarrolloDesdeUrl()) showToast('No encontre el desarrollo del link. Puede que lo hayan borrado.');
   }catch(e){
     showToast('No se pudo conectar a Firebase. Seguis viendo los datos guardados en este navegador.');
   }
@@ -4287,6 +4351,7 @@ async function pollOrdenesFirebase(){
 }
 
 render();
+abrirDesarrolloDesdeUrl();
 initFirebaseSync();
 pollOrdenesFirebase();
 </script>
