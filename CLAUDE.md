@@ -1113,6 +1113,10 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   botón «🗺 Crear las N estanterías del plano» los ofrece. Nombres de las plantas (Juli): **«Depósito izquierda · calzado»**
   (7–23) y **«Depósito derecha · indumentaria»** (1–6), fijados en `NOMBRES_PLANTA` del generador. Sin salón dibujado, `renderPlanoBox` pone los dos primeros
   depósitos arriba, y todo lo del sector del salón queda oculto.
+  **Aurelius 5 (25/09/2026)**: «PLANO DEPOSITO aurelius 5.xlsx», una hoja con formas (como Berisso), un solo
+  depósito («Depósito», `NOMBRES_PLANTA`) con las estanterías 1 a 23, los mismos números que ya usa en el Buscador
+  (ahí falta crear la 6). La 1 y la 9 están dibujadas en DOS tramos con el mismo id (`est1`/`est9`): se resaltan
+  juntos y `planoEstFaltantes` las cuenta una sola vez.
   **El plano vive debajo de la búsqueda (17/09/2026, pedido de Juli)** — desde el 18/09 **debajo de los
   resultados** (`#planoBox` va después de `#searchResults`: primero se ve el artículo, después el plano): panel `#planoBox`
   (`renderPlanoBox`, plegable y recordado en localStorage `ubic_plano_open`) con el salón y el/los

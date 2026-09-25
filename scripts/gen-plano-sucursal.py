@@ -49,6 +49,7 @@ DEST = os.path.join('shared', 'planos-sucursal.js')
 NOMBRES_PLANTA = {
     'berisso': {'Depo Arriba Calzado': 'Depósito izquierda · calzado',        # estanterías 7 a 23
                 'Depo Arriba Ind.': 'Depósito derecha · indumentaria'},       # estanterías 1 a 6
+    'aurelius-5': {'depo Aur 5': 'Depósito'},   # estanterías 1 a 23 (la 1 y la 9 dibujadas en dos tramos)
 }
 
 
