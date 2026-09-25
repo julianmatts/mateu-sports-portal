@@ -184,6 +184,7 @@ td .sub{display:block;font-size:11px;color:var(--muted)}
 @media print{.hero .acts,.filters,.pager,.search,#tutBtn,.cargando,.banner .btn{display:none!important}.chartbox{break-inside:avoid}}
 </style>
 <script src="../shared/marca.js"></script>
+<script src="../shared/ventas-api.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <script src="../shared/header.js" defer></script>
 <script src="../shared/tutorial.js" defer></script>
@@ -325,6 +326,7 @@ let META = {};        // por ym: {envios:{…}, ingresos:{…}}
 let MESES_YM = [];    // TODOS los meses que existen en Firebase (ordenados)
 const CARGADOS = new Set();   // meses ya bajados
 let VENTA = {};       // ym -> { sucursal: unidades_netas } (data/indicadores, períodos retail)
+let VENTA_API = {};   // ym -> true cuando el mes salió de la API de ventas en vivo (meses sin período de Indicadores)
 let PERIODOS_IND = null;      // ids de data/indicadores/periodos.json
 const FERIADOS = {};  // año -> Set('YYYY-MM-DD')
 let MODO_ING = 'u';   // 'u' unidades | '$' costo, para los gráficos de ingresos
@@ -368,6 +370,20 @@ async function cargarVenta(yms){
     try{ const c = await fetch(`../data/indicadores/${ym}/cadena.json`).then(r=>r.json()); const m={}; Object.values(c.sucursales||{}).forEach(s=>{ if(s && s.sucursal) m[s.sucursal] = Number(s.unidades_netas!=null?s.unidades_netas:s.unidades)||0; }); VENTA[ym]=m; }
     catch(e){ VENTA[ym] = null; }
   }));
+  // meses SIN período cerrado de Indicadores (el mes en curso, el anterior hasta que corra el ETL):
+  // las unidades vendidas salen de la API de ventas en vivo (shared/ventas-api.js), sumando las
+  // semanas retail del mes. El nombre de la sucursal se toma de los envíos (mismo «NN-Nombre»).
+  if(window.VentasApi){
+    // cargarVenta corre en paralelo con cargarMeses, así que ENV puede estar vacío todavía: hay un mapa fijo de respaldo
+    const NOMBRE_FIJO = { plaza:'01-MS Plaza Italia', kids:'02-Mateu Kids', 'calle-55':'03-Outlet Calle 55', 'aurelius-12':'04-Aurelius Calle 12', 'city-bell':'06-MS City Bell', 'aurelius-10':'07-Aurelius Calle 10', 'calle-47':'08-MS Calle 47', adidas:'09-Adidas Av. 7', diagonal:'10-MS Diagonal 80', ensenada:'11-MS Ensenada', 'calle-12':'12-MS Calle 12', 'los-hornos':'13-MS Los Hornos', gonnet:'14-Outlet Gonnet', originals:'15-Adidas Originals', berisso:'16-MS Berisso', 'aurelius-cb':'17-Aurelius City Bell', 'aurelius-5':'18-Aurelius Calle 5', 'calle-49':'19-MS Calle 49', 'av-44':'20-Outlet Av. 44', 'adidas-12':'21-Adidas Calle 12', ecommerce:'99-Ecommerce' };
+    const nombrePorSlug = Object.assign({}, NOMBRE_FIJO); ENV.forEach(r=>{ const s = slugDe(r.suc); if(s) nombrePorSlug[s] = r.suc; });
+    await Promise.all(yms.filter(ym => !PERIODOS_IND.has(ym) && !VENTA[ym]).map(async ym => {
+      try{ const r = await VentasApi.totalesMes(ym); if(!r) return;
+        const m = {}; Object.entries(r.porSlug).forEach(([slug,t])=>{ const n = nombrePorSlug[slug]; if(n && t.unidades>0) m[n] = t.unidades; });
+        if(Object.keys(m).length){ VENTA[ym] = m; VENTA_API[ym] = r.completo ? 'completo' : 'parcial'; } }
+      catch(e){}
+    }));
+  }
 }
 /* feriados del calendario retail del shell (fecha fija y rangos; las reglas móviles no se resuelven acá) */
 async function cargarFeriados(anio){
@@ -740,7 +756,8 @@ function ventaVsEnvios(){
   const tEnv = rows.reduce((s,r)=>s+r.env,0), tVta = rows.reduce((s,r)=>s+r.vta,0), tRatio = tVta ? tEnv/tVta*100 : 0, max = Math.max(...rows.map(r=>r.ratio||0), 1);
   const filtros = FILTROS.filter(f=>!['suc','ym'].includes(f.k) && SEL[f.k] && SEL[f.k].size).length;
   sec.style.display='';
-  $('ventaNota').textContent = `Venta neta de ${rangoLbl(vis)} (períodos retail de Indicadores)` + (filtros ? ' · la venta es el total de cada local: no filtra por rubro, marca ni tipo' : '') + (vis.length<mesesVisibles().length ? ' · sin venta cargada para el resto de los meses' : '');
+  const enVivo = vis.filter(ym=>VENTA_API[ym]);
+  $('ventaNota').textContent = `Venta neta de ${rangoLbl(vis)} (períodos retail de Indicadores` + (enVivo.length ? `; ${enVivo.map(ymLabel).join(', ')} en vivo del sistema${enVivo.some(ym=>VENTA_API[ym]==='parcial')?', mes en curso':''}` : '') + ')' + (filtros ? ' · la venta es el total de cada local: no filtra por rubro, marca ni tipo' : '') + (vis.length<mesesVisibles().length ? ' · sin venta cargada para el resto de los meses' : '');
   $('ventaBody').innerHTML = `<div class="kpi-mini"><div><b>${fmt(tEnv)}</b>unidades enviadas</div><div><b>${fmt(tVta)}</b>unidades vendidas</div><div><b>${Math.round(tRatio)}</b>enviadas por cada 100 vendidas (total)</div></div>
     <div class="tbl-wrap" style="max-height:420px"><table><thead><tr><th>Sucursal</th><th class="num">Enviadas</th><th class="num">Vendidas</th><th class="num">Env. c/100 vend.</th><th style="min-width:180px"></th></tr></thead><tbody>
     ${rows.map(r=>{ const c = r.ratio==null?'':r.ratio>tRatio*1.25?'r':r.ratio<tRatio*0.75?'a':''; return `<tr><td>${esc(r.suc)}</td><td class="num">${fmt(r.env)}</td><td class="num">${fmt(r.vta)}</td><td class="num" style="font-weight:700">${r.ratio==null?'—':Math.round(r.ratio)}</td><td><div class="bar"><i class="${c}" style="width:${r.ratio==null?0:Math.round(r.ratio/max*100)}%"></i></div></td></tr>`; }).join('')}

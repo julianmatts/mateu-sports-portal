@@ -156,6 +156,7 @@ tfoot .gtot td:first-child{font-family:var(--font-c);letter-spacing:1px}
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
 <script src="../shared/marca.js"></script>
+<script src="../shared/ventas-api.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <!-- Header unificado del shell: barra Menú + logo + calendario retail + drawer -->
 <script src="../shared/header.js" defer></script>
@@ -687,7 +688,7 @@ function viewDashboard(){
   if(!d){ return html+'<div class="state"><div class="spinner"></div>Cargando semana…</div>'; }
 
   const UMBRAL_DIF = 5;   // % de diferencia encargado vs oficial para marcar
-  const enc = state.dashEnc || {};
+  const enc = state.dashEnc || {}, deApi = state.dashApi || {};
   const rows = STORES.map(s=>{
     const v = (d.porSlug&&d.porSlug[s.slug])||null;
     if(!v || !(v.meta>0)) return null;
@@ -696,7 +697,7 @@ function viewDashboard(){
     const dif=(usaOf&&realEnc>0)?(realEnc-realOf):0, difPct=(usaOf&&realOf)?(dif/realOf*100):0;
     const est=estadoCumpl(v.meta, real);
     return {s, meta:v.meta, minimo:v.minimo||r0(v.meta*F_MIN), s120:v.s120||r0(v.meta*F_120),
-      real, realOf, realEnc, usaOf, provisorio, dif, difPct, nota:v.nota||'', est};
+      real, realOf, realEnc, usaOf, provisorio, sistema:provisorio&&!!deApi[s.slug], dif, difPct, nota:v.nota||'', est};
   }).filter(Boolean);
 
   const totMeta = rows.reduce((a,r)=>a+r.meta,0);
@@ -711,7 +712,7 @@ function viewDashboard(){
     +'<div class="kpi cum"><div class="k">Cumplimiento</div><div class="v">'+(totReal?totEst.label:'—')+'</div></div>'
     +'<div class="kpi"><div class="k">Sucursales que llegan</div><div class="v">'+cumplen+' <small>/ '+rows.length+'</small></div></div>'
     +'</div>';
-  if(hayProv) html+='<div class="banner info" style="margin-bottom:14px">La venta marcada <b>«prov»</b> es la que reportó el <b>encargado</b> durante la semana (todavía sin el real oficial). Al subir el Excel del lunes, HISTÓRICO la reemplaza por el real y calcula la diferencia.</div>';
+  if(hayProv) html+='<div class="banner info" style="margin-bottom:14px">La venta marcada <b>«prov»</b> es la que reportó el <b>encargado</b> durante la semana y la marcada <b>«sistema»</b> la leída en vivo de la API de ventas (todavía sin el real oficial). Al subir el Excel del lunes, HISTÓRICO la reemplaza por el real y calcula la diferencia.</div>';
 
   // orden
   const sk=state.dashSort;
@@ -730,7 +731,7 @@ function viewDashboard(){
   rows.forEach(r=>{
     const w=Math.min(100, Math.round(r.est.pct*100));
     const realCell = r.real
-      ? fmtMoney(r.real)+(r.provisorio?' <span class="pill warn" title="Venta reportada por el encargado, aún sin real oficial">prov</span>':'')
+      ? fmtMoney(r.real)+(r.provisorio?(r.sistema?' <span class="pill" style="background:#e3ecff;color:#1d4ed8" title="Venta leída en vivo del sistema (API de ventas), aún sin real oficial">sistema</span>':' <span class="pill warn" title="Venta reportada por el encargado, aún sin real oficial">prov</span>'):'')
       : '—';
     let vsCell='—';
     if(r.usaOf && r.realEnc>0){
@@ -1085,7 +1086,7 @@ function viewMesDash(){
     +'<div class="kpi"><div class="k">Sucursales que llegan</div><div class="v">'+cumplen+' <small>/ '+rows.length+'</small></div></div>'
     +'<div class="kpi"><div class="k">vs '+esc(mesLabel(mesAnioAnt(D.periodo)))+'</div><div class="v">'+(crecTot!=null?(crecTot>=0?'+':'−')+Math.abs(crecTot*100).toFixed(1)+'%':'—')+'</div></div>'
     +'</div>';
-  if(hayProv) html+='<div class="banner info" style="margin-bottom:14px">La venta marcada <b>«x sem»</b> es la <b>suma de las semanas ya cargadas</b> de este mes ('+((D.semanal&&D.semanal.semanas)||0)+'), no el real oficial del mes. Al subir el Excel del mes siguiente se reemplaza por el real.</div>';
+  if(hayProv) html+='<div class="banner info" style="margin-bottom:14px">La venta marcada <b>«x sem»</b> es la <b>suma de las semanas ya cargadas</b> de este mes ('+((D.semanal&&D.semanal.semanas)||0)+((D.semanal&&D.semanal.api)?', '+D.semanal.api+' leída'+(D.semanal.api===1?'':'s')+' en vivo del sistema':'')+'), no el real oficial del mes. Al subir el Excel del mes siguiente se reemplaza por el real.</div>';
 
   const sk=D.sort;
   const val=r=>({suc:r.s.pfx, meta:r.meta, real:r.real, cumpl:(r.real&&r.meta?r.real/r.meta:-1), crec:(r.crec!=null?r.crec:-99)}[sk.k]);
@@ -1267,15 +1268,23 @@ function mesDeSemana(iso){
    Excel del mes siguiente. Solo lo usa gerencia (baja todas las semanas). */
 async function acumuladoSemanal(per){
   const semanas = await fbGet(ROOT+'/semanas'); if(!semanas) return null;
-  const out={}; let nSem=0;
-  Object.keys(semanas).forEach(iso=>{
-    if(mesDeSemana(iso)!==per) return;
-    const wk=semanas[iso]; if(!wk || !wk.porSlug) return;
-    let hay=false;
-    STORES.forEach(s=>{ const v=wk.porSlug[s.slug]; if(v && v.real>0){ out[s.slug]=(out[s.slug]||0)+r0(v.real); hay=true; } });
-    if(hay) nSem++;
+  const out={}; let nSem=0, nApi=0;
+  const delMes=Object.keys(semanas).filter(iso=>mesDeSemana(iso)===per && semanas[iso] && semanas[iso].porSlug);
+  // semanas del mes sin real oficial en alguna sucursal: la venta del sistema en vivo (proxy /api/ventas)
+  const api={};
+  if(window.VentasApi){
+    const faltan=delMes.filter(iso=>STORES.some(s=>{ const v=semanas[iso].porSlug[s.slug]; return v && v.meta>0 && !(v.real>0); }));
+    await Promise.all(faltan.map(async iso=>{ try{ const j=await VentasApi.semana(iso); if(j) api[iso]=j.sucursales; }catch(e){} }));
+  }
+  delMes.forEach(iso=>{
+    const wk=semanas[iso];
+    let hay=false, deApi=false;
+    STORES.forEach(s=>{ const v=wk.porSlug[s.slug]; if(!v) return;
+      if(v.real>0){ out[s.slug]=(out[s.slug]||0)+r0(v.real); hay=true; }
+      else if(api[iso] && api[iso][s.slug] && +api[iso][s.slug].venta>0){ out[s.slug]=(out[s.slug]||0)+r0(+api[iso][s.slug].venta); hay=true; deApi=true; } });
+    if(hay) nSem++; if(deApi) nApi++;
   });
-  return nSem ? {porSlug:out, semanas:nSem} : null;
+  return nSem ? {porSlug:out, semanas:nSem, api:nApi} : null;
 }
 
 /* ============================================================
@@ -1634,6 +1643,12 @@ async function abrirDash(sem){
       const n = typeof t==='number' ? t : (t&&t.venta)||0; if(n>0) enc[s.slug]=r0(n); });
     state.dashEnc=enc;
   }catch(e){ state.dashEnc={}; }
+  // la venta del sistema en vivo (proxy /api/ventas) completa lo que nadie cargó: pill «sistema»
+  state.dashApi={};
+  try{
+    if(window.VentasApi){ const j=await VentasApi.semana(sem);
+      if(j && state.dashWeek===sem) STORES.forEach(s=>{ const t=j.sucursales[s.slug]; if(t && +t.venta>0 && !state.dashEnc[s.slug]){ state.dashEnc[s.slug]=r0(+t.venta); state.dashApi[s.slug]=true; } }); }
+  }catch(e){}
   if(state.tab==='dashboard') render();
 }
 

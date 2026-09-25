@@ -145,6 +145,7 @@ td .nm{font-weight:600}
 }
 </style>
 <script src="../shared/marca.js"></script>
+<script src="../shared/ventas-api.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <script src="../shared/header.js" defer></script>
 <script src="../shared/notificaciones.js" defer></script>
@@ -286,6 +287,30 @@ function met(fila){
   };
 }
 function filaDe(slug, p){ const s = D.sucursales[slug]; return s && s.serie[p] ? met(s.serie[p]) : null; }
+
+/* Tickets del sistema en vivo (API de ventas vía shared/ventas-api.js, 24/09/2026): el mes
+   que Iván manda suele venir SIN la columna de tickets (se carga después). Si el proxy está
+   configurado, esos meses toman los tickets de las semanas retail del mes (la semana es del
+   mes de su domingo), marcados tApi — una aproximación al mes calendario del Excel; cuando
+   Iván cargue la columna, el generador la pisa. Solo meses desde julio 2026 (el sistema no
+   tiene antes) y solo con sesión (el informe público ?pres= no lo usa). */
+async function ticketsDelSistema(parcial){
+  if (!window.VentasApi || PRES) return false;
+  const meses = D.periodos.filter(p => p >= '2026-07' && parcial(p));
+  if (!meses.length) return false;
+  let hubo = false;
+  await Promise.all(meses.map(async p => {
+    try{
+      const r = await VentasApi.totalesMes(p); if (!r) return;
+      Object.keys(D.sucursales).forEach(slug => {
+        const fila = D.sucursales[slug].serie[p], t = r.porSlug[slug];
+        if (fila && !fila.t && t && t.tickets > 0){ fila.t = t.tickets; fila.tApi = true; hubo = true; }
+      });
+      if (hubo){ D.tApi = D.tApi || {}; D.tApi[p] = r.completo ? 'completo' : 'parcial'; }
+    }catch(e){}
+  }));
+  return hubo;
+}
 
 // Período anterior con dato para esa sucursal.
 function periodoPrevio(slug, p){
@@ -1240,18 +1265,23 @@ function init(){
   // se puede ver, pero conviene que se note en el selector.
   const parcial = p => !Object.keys(D.sucursales)
     .some(s => { const f = filaDe(s, p); return f && f.t; });
-  $('selMes').innerHTML = D.periodos.slice().reverse()
-    .map(p => '<option value="' + p + '">' + mesLargo(p)
-      + (parcial(p) ? ' · sin tickets' : '') + '</option>').join('');
-  $('selMes').value = MES;
+  const pintarSel = () => {
+    $('selMes').innerHTML = D.periodos.slice().reverse()
+      .map(p => '<option value="' + p + '">' + mesLargo(p)
+        + (parcial(p) ? ' · sin tickets' : (D.tApi && D.tApi[p] ? ' · tickets del sistema' : '')) + '</option>').join('');
+    $('selMes').value = MES;
+  };
+  pintarSel();
+  ticketsDelSistema(parcial).then(hubo => { if (hubo){ pintarSel(); pintarNota(); pintar(); } });
 
-  $('nota').innerHTML = 'Los datos salen de la planilla de reseñas de Iván '
+  function pintarNota(){ $('nota').innerHTML = (D.tApi && D.tApi[MES] ? '<b>Tickets del sistema:</b> este mes no trae la columna de tickets en la planilla; la captación se calcula con los tickets leídos en vivo de la API de ventas (semanas retail del mes'+(D.tApi[MES]==='parcial'?', mes todavía incompleto':'')+'). ' : '') + 'Los datos salen de la planilla de reseñas de Iván '
     + '(<b>' + esc(D.fuente || 'Excel de reseñas') + '</b>, actualizada al ' + esc(D.generado || '—') + ') '
     + 'y cubren ' + D.periodos.length + ' meses, de ' + mesLargo(D.periodos[0]) + ' a '
     + mesLargo(D.periodos[D.periodos.length - 1]) + '. '
     + '<b>Captación</b> es reseñas buenas sobre tickets emitidos — cuántos de los que compran dejan '
     + 'una reseña. <b>% positivas</b> es qué proporción de las reseñas del mes fue buena. '
-    + 'El texto de cada reseña no está en la planilla: figura sólo el nombre de la última opinión leída.';
+    + 'El texto de cada reseña no está en la planilla: figura sólo el nombre de la última opinión leída.'; }
+  pintarNota();
 
   $('selMes').onchange = e => { MES = e.target.value; pintar(); };
   // Abre el informe del mes que se está mirando, en una pestaña aparte.

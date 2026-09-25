@@ -69,3 +69,41 @@ del repo (así se validó el 24/09/2026: Panel General y Mi Sucursal de Kids, se
   0,12 s; un minuto después, lo mismo). No es una sucursal ni una semana en particular: mientras dura
   la ventana de bloqueo, cuando una llamada agota sus reintentos las siguientes fallan al instante,
   como si el pool de conexiones quedara agotado o roto. Es lo que hay que mirar en el log de la API.
+
+## Segunda tanda (24/09/2026, noche): la API en los demás módulos
+
+- **Espejo en Firebase** (`espejar` en `lib/ventas-proxy.mjs`): cada vez que el proxy trae de la API el
+  detalle de una sucursal, copia el payload a `recepciones-mateu/ventaEquipo/<slug>/<lunes>` con
+  `por:'api'` y `fuente:'api'`, de fondo (`waitUntil`), **solo si ese nodo no existe o ya era del
+  proxy**: lo que cargó a mano un encargado o gerencia no se pisa. Así los módulos que leen
+  `ventaEquipo` directo (Academia «resultados en la venta», Matts, conciliación de RRHH, avance del
+  objetivo mensual, curva de venta de Diagonal 80) siguen teniendo la semana aunque nadie suba el
+  Excel. Se apaga con la variable `VENTAS_ESPEJO=0`.
+- **`shared/ventas-api.js`** (`window.VentasApi`): el acceso al proxy para cualquier módulo, con una
+  línea en el `<head>`: `disponible()`, `semana(lunes)`, `sucursal(slug, lunes)`, `totalesMes(ym)`
+  (suma las semanas retail del mes, las que ya empezaron; `completo` dice si el mes cerró),
+  `semanasDelMes(ym)`, `lunesHoyISO()`. Sin sesión o sin proxy devuelve `null` y el módulo sigue
+  con su fuente de siempre.
+- **Objetivos**: en el dashboard semanal, la sucursal sin real oficial ni carga del encargado muestra
+  la venta del sistema con el pill **«sistema»** (`state.dashApi`); en el dashboard mensual,
+  `acumuladoSemanal` suma la venta del sistema de las semanas publicadas que no tienen real y el
+  banner cuenta cuántas («4, 1 leída en vivo del sistema»). Nada se escribe en `real`: el oficial
+  sigue saliendo del HISTÓRICO del Excel PMS.
+- **Reseñas de Google**: los meses de la planilla que vienen SIN la columna de tickets (el que Iván
+  manda) toman los tickets de las semanas retail del mes desde la API (`ticketsDelSistema`, marca
+  `tApi`; opción «· tickets del sistema» en el selector y aclaración en la nota). Es una aproximación
+  al mes calendario del Excel; cuando Iván carga la columna, el generador la pisa. El informe público
+  `?pres=` no lo usa (no hay sesión).
+- **Logística, «Abastecimiento vs. venta»**: los meses sin período cerrado de Indicadores (el mes en
+  curso, el anterior hasta que corra el ETL) toman las unidades vendidas de la API por semanas retail
+  (`VENTA_API[ym]`, nota «Septiembre 2026 en vivo del sistema, mes en curso»).
+- **`scripts/ventas-api-lineas.mjs`** (key por `VENTAS_API_KEY`): `csv <desde> <hasta> <salida.csv>`
+  baja las líneas crudas y escribe el mismo CSV que el export «Estadística de venta» del sistema (sirve
+  para `etl_indicadores.py` con `csv=True` y para «⇧ Cargar venta del mes»); `pesos YYYY-MM
+  [--publicar]` arma la matriz de pesos por turno × día (la que Objetivos publica en
+  `objetivos/pesosTurnos`) desde el campo `hora` de las líneas y reemplaza el Excel «PESOS TURNOS».
+  ⚠ Hasta que la API aplique el descuento de cabecera, el importe de las líneas sale 1–3 % arriba del
+  sistema: el CSV no sirve todavía para un cierre mensual oficial.
+- **Lo que necesita campos nuevos en `/lineas`** (pedido al dev): ID ITEM y talle para el Reparto de
+  Mercadería (la venta semanal por artículo × talle × sucursal), código de artículo y cliente para
+  Regalías RUGE.
