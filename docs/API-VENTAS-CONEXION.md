@@ -138,3 +138,40 @@ Conceptos/envíos), **`codigo`** = el código del artículo del sistema (`RUG858
 Verificado con la semana 15–22/09 (10.000 líneas) y el Depósito de septiembre. Con esto quedan habilitados,
 como trabajos aparte: la venta semanal por sucursal × ID ITEM × talle del **Reparto de Mercadería** (hoy se
 sube la estadística de ventas) y el reporte de ventas por cliente de **Regalías / Entregas EDLP**.
+
+## Reparto de Mercadería y Regalías conectados a `/lineas` (25/09/2026, tarde)
+
+- **Proxy**: ruta nueva `GET /api/ventas?lineas=1&desde=YYYY-MM-DD&hasta=YYYY-MM-DD[&sucursal=NN][&cursor=…]`,
+  **solo admin / supervisor** (las líneas traen clientes). Es un passthrough: el texto de la API se devuelve tal
+  cual, sin `JSON.parse` en el Worker (una página son 10.000 líneas, ~2 MB) y se cachea SOLO en R2 (fresco 5
+  min, viejo 24 h con refresco de fondo). Rango máximo 62 días; `sucursal` es el código de dos dígitos del
+  sistema. Un fallo se recuerda 3 s (no 60 como las semanas) porque el navegador reintenta.
+  ⚠ **La API no aguanta la semana de TODAS las sucursales en una consulta** (`/lineas` sin `sucursal`, 7 días:
+  500 a los 48 s): los módulos piden **sucursal por sucursal** (medio segundo cada una).
+- **`shared/ventas-api.js`**: `VentasApi.lineas(desde, hasta, {sucursal, onPagina})` recorre las páginas por
+  `cursor` y reintenta cada página hasta 3 veces esperando 5 s (el bloqueo de la base).
+- **Reparto de Mercadería** (`barrida/`): botón **«⇩ del sistema»** al lado de «Ventas por sucursal»
+  (`ventasDesdeSistema`): baja las líneas de la semana elegida (lunes a domingo) de las 21 sucursales de a
+  3 en paralelo, arma en memoria la misma hoja que exporta el sistema (`apiVentasHoja`: Sucursal · Rubro ·
+  Marca · Grupo 1 · Disciplina · Subrubro · Articulo · Id Item · Codigo de barras · una columna por talle,
+  sumando cantidad por sucursal × ID ITEM × talle; marca / tipo / disciplina / subrubro salen del maestro
+  `logistica/arts` + `barrida/artsNuevos` por el código, `cargarMaestroArts`) y la mete por
+  `clasificarHoja` como si fuera el Excel: prioridad, curva, vaciado, abrir, reparto inicial y guardado no
+  cambian. Reserva y stock por sucursal siguen saliendo del reporte de stock del depósito (la API no lo
+  tiene). Se saltean Conceptos (sin talle), el Depósito (05) y las sucursales que la Barrida no conoce.
+  Probado con la semana del 21/09: 17.853 líneas → 7.095 artículos × sucursal en 20 s, y con la reserva y
+  el stock de Puma del 24/09 la barrida procesa igual que con el Excel (66 artículos en reserva, 42
+  reponibles, 125 líneas). 665 códigos (Footy, Atomik, Topper, Umbro…) no están en el maestro de
+  logística: quedan sin marca/disciplina en la hoja de ventas, pero para el cruce manda la meta del reporte
+  de reserva, así que no afecta lo que se reparte.
+- **Regalías** (`regalias/`): **Entregas EDLP → «⇩ Traer del sistema»** (`enTraerDelSistema`, un mes): las
+  ventas del Depósito (sucursal 05, donde se facturan Pincha Store, Tienda Pincha y el cliente del
+  contrato) de artículos RUGE, armadas con el layout del «reporte de ventas por cliente» (Cliente · Día ·
+  Rubro · Nro.comprobante · Artículo · Código barras · «mes Cant.» · «mes Imp.») y pasadas por el mismo
+  importador (`enImportarEntregasDesde`: canal por cliente, disciplina del contrato por el mapa de remitos,
+  dedupe por comprobante; nada se guarda hasta confirmar). **Ventas Mayorista → «⇩ Traer del sistema»**
+  (`mayDesdeSistema`, el mes elegido en ①): ventas del Depósito a clientes de artículos RUGE / EDLP, sin el
+  cliente del contrato (va sin cargo), con las columnas del Excel «Ventas Mayorista» y por `finalizarCarga`.
+  **Ventas Mateu (minorista) NO**: la API no trae Grupo 2, Grupo 3 ni Lista de precios, que son lo que
+  clasifica cada línea (vigente / outlet / minorista). Pedido al dev: esos tres campos por línea (o un
+  endpoint de artículos con ellos).

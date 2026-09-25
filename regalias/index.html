@@ -260,6 +260,7 @@ table.grid.en .ib.del:hover{ border-color:var(--red); color:var(--red); }
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
 <script src="../shared/marca.js"></script>
+<script src="../shared/ventas-api.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <!-- Header unificado del shell: barra Menú + logo + calendario retail + drawer -->
 <script src="../shared/header.js" defer></script>
@@ -349,6 +350,7 @@ table.grid.en .ib.del:hover{ border-color:var(--red); color:var(--red); }
       <div class="dz" id="dzMateu">
         <div class="big">Soltá acá el Excel de Ventas Mateu</div>
         <div class="sm2">o hacé clic para elegirlo · Obligatorias: RUBRO · GRUPO 2 · GRUPO 3 · LISTA PRECIOS · ARTÍCULO · CANTIDAD · IMPORTE</div>
+        <div class="sm2 hidden" id="mateuApiNota" style="margin-top:4px">Del sistema todavía no: la API de ventas no trae Grupo 2, Grupo 3 ni Lista de precios (pedido al dev).</div>
         <div class="file-info" id="infoMateu"></div>
       </div>
       <div id="mapMateu" class="hidden" style="margin-top:12px"></div>
@@ -359,6 +361,10 @@ table.grid.en .ib.del:hover{ border-color:var(--red); color:var(--red); }
   <section class="step">
     <div class="step-hd"><div class="step-num">3</div><h2>Ventas Mayorista <span class="sub">— depósito → Superfútbol / Club EDLP</span></h2><span class="badge-ok hidden" id="okMay">CARGADO</span></div>
     <div class="step-bd">
+      <div id="mayApiBar" class="hidden" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn sm" id="btnMayApi" title="Baja del sistema las ventas del Depósito a clientes del mes elegido arriba (artículos RUGE / EDLP, sin el cliente del contrato) y las carga acá como Ventas Mayorista">⇩ Traer del sistema</button>
+        <span class="muted" style="font-size:12px">ventas del Depósito a clientes, del mes elegido en ①; artículos RUGE / EDLP, sin el contrato (que va sin cargo)</span>
+      </div>
       <div class="dz" id="dzMay">
         <div class="big">Soltá acá el Excel de Ventas Mayorista</div>
         <div class="sm2">opcional · Obligatorias: RUBRO · ARTÍCULO · CANTIDAD · IMPORTE</div>
@@ -545,6 +551,7 @@ table.grid.en .ib.del:hover{ border-color:var(--red); color:var(--red); }
       <div id="enV_entregas" class="hidden">
         <div class="en-tools">
           <button class="btn red sm" id="enBtnImportar">⇧ Importar del sistema</button>
+          <button class="btn sm hidden" id="enBtnApi" title="Trae directo de la API de ventas las ventas del Depósito a los clientes de RUGE de un mes (Pincha Store, Tienda Pincha y el contrato), sin subir el reporte">⇩ Traer del sistema</button>
           <button class="btn sm" id="enBtnManual">+ Cargar a mano</button>
           <button class="btn ghost sm" id="enBtnRemitos" title="Qué disciplina es cada remito del cliente RUGE CONTRATO">🗂 Remitos → disciplina <span class="chip" id="enBadgeRem" style="margin-left:4px">0</span></button>
           <select class="ctl" id="enFCanalEnt"><option value="">Todos los canales</option></select>
@@ -1894,6 +1901,41 @@ async function procesarArchivo(file, tipo){
     finalizarCarga(tipo, mapa);
   }catch(err){ toast('No pude leer el Excel: '+err.message); }
 }
+/* ---- Ventas Mayorista desde el SISTEMA (API de ventas, 25/09/2026) ----
+   Las ventas del Depósito (sucursal 05) a clientes del mes elegido en ①, de artículos RUGE / EDLP
+   (código RUG… o el nombre con una palabra EDLP), sin el cliente del contrato (sale sin cargo, no es
+   base de regalías). Se arma en memoria la misma tabla que el Excel «Ventas Mayorista» (CLIENTE ·
+   DIA · NRO COMPROBANTE · RUBRO · ARTICULO · COD BARRAS · CANTIDAD · IMPORTE) y entra por
+   finalizarCarga como si se hubiera soltado el archivo. La parte MINORISTA no se puede todavía: la
+   API no trae Grupo 2, Grupo 3 ni Lista de precios. */
+async function mayDesdeSistema(){
+  const btn=$('btnMayApi'); if(!window.VentasApi) return;
+  const m=+$('selMes').value, y=+$('selAnio').value; const ym=y+'-'+String(m+1).padStart(2,'0');
+  const {desde,hasta}=enApiRango(ym);
+  btn.disabled=true; const txt=btn.textContent; btn.textContent='Bajando…';
+  try{
+    const lineas=await VentasApi.lineas(desde, hasta, { sucursal:'05', onPagina:(n,acc)=>{ btn.textContent=acc+' líneas…'; } });
+    if(!lineas) throw new Error('La API de ventas no está disponible');
+    const rows={};
+    lineas.forEach(l=>{
+      const cli=String(l.cliente||'').trim(), cod=up(String(l.codigo||'')).trim(); if(!cli) return;
+      if(enCanalDe(cli)==='contrato') return;                            // el contrato va sin cargo
+      if(!/^RUG/.test(cod) && !esEDLPtxt(l.articulo||'')) return;        // solo lo que liquida regalías
+      const k=[cli,l.comprobante||'',cod].join('|');
+      const r=rows[k]=rows[k]||{ cli, dia:enFmtFecha(l.fecha), comp:String(l.comprobante||''), rubro:String(l.rubro||''), art:String(l.articulo||''), cod, cant:0, imp:0 };
+      r.cant+=Number(l.cantidad)||0; r.imp+=Number(l.importe)||0;
+    });
+    const headers=['CLIENTE','DIA','NRO COMPROBANTE','RUBRO','ARTICULO','COD BARRAS','CANTIDAD','IMPORTE'];
+    const aoa=[headers];
+    Object.values(rows).forEach(r=>{ if(!r.cant&&!r.imp) return; aoa.push([r.cli,r.dia,r.comp,r.rubro,r.art,r.cod,r.cant,Math.round(r.imp*100)/100]); });
+    if(aoa.length<2) throw new Error('El Depósito no tiene ventas mayoristas de RUGE en '+MESES[m]+' '+y);
+    const nombre='Sistema · Depósito · '+MESES[m]+' '+y;
+    LAST.may={ aoa, hRow:0, headers, campos:CAMPOS_MAY, req:REQUERIDOS_MAY, nombre };
+    finalizarCarga('may', autoMapa(headers, CAMPOS_MAY));
+    toast('Ventas mayoristas del sistema: '+(aoa.length-1)+' renglones');
+  }catch(e){ toast(e.message||'No pude bajar las ventas del sistema'); }
+  finally{ btn.disabled=false; btn.textContent=txt; }
+}
 function finalizarCarga(tipo, mapa){
   const ctx=LAST[tipo];
   if(tipo==='mateu'){
@@ -2460,6 +2502,54 @@ function enElegirHoja(wb){
 async function enImportarEntregas(file){
   let wb; try{ wb=await enLeerLibro(file); }catch(e){ toast('No pude leer el archivo'); return; }
   const hoja=enElegirHoja(wb); if(!hoja){ toast('El archivo no tiene datos'); return; }
+  return enImportarEntregasDesde(hoja, file.name);
+}
+/* ---- TRAER DEL SISTEMA (API de ventas, 25/09/2026) ----
+   Las ventas del Depósito (sucursal 05 del sistema, donde se facturan Pincha Store, Tienda Pincha y
+   el cliente del contrato) de un mes, bajadas por el proxy /api/ventas (shared/ventas-api.js), armadas
+   EN MEMORIA con el mismo layout que el «reporte de ventas por cliente» que se importaba a mano
+   (Cliente · Día · Rubro · Nro.comprobante · Artículo · Código barras · «mes Cant.» · «mes Imp.») y
+   pasadas por el mismo importador: canal por el cliente, disciplina del contrato por el mapa de
+   remitos, dedupe por comprobante. Solo los artículos de RUGE (código RUG… o ya en el maestro). */
+const EN_SUC_DEPOSITO = '05';
+function enApiRango(ym){
+  const [y,m]=ym.split('-').map(Number); const hoy=enHoy();
+  const fin=new Date(y,m,0); const finISO=y+'-'+String(m).padStart(2,'0')+'-'+String(fin.getDate()).padStart(2,'0');
+  return { desde: ym+'-01', hasta: finISO<hoy ? finISO : hoy };
+}
+function enTraerDelSistema(){
+  const ym0=enHoy().slice(0,7);
+  const ovl=enModal('Traer las entregas del sistema', `<div class="banner info"><span class="ic">⇩</span><span>Baja de la API de ventas las ventas del <b>Depósito</b> a los clientes de RUGE del mes elegido (Pincha Store, Tienda Pincha y el cliente del contrato, cuya disciplina sale del mapa de remitos) y las muestra en la misma pantalla de importación de siempre: nada se guarda hasta que confirmes.</span></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:10px"><label class="fld" style="margin:0">Mes</label><input class="ctl" type="month" id="enApiMes" value="${ym0}" style="max-width:170px"><span class="muted" id="enApiEstado"></span></div>`,
+    `<button class="btn ghost" data-x>Cancelar</button><button class="btn red" id="enApiOk">Bajar del sistema</button>`);
+  ovl.querySelector('#enApiOk').addEventListener('click',async()=>{
+    const ym=ovl.querySelector('#enApiMes').value; if(!/^\d{4}-\d{2}$/.test(ym)){ toast('Elegí el mes'); return; }
+    const st=ovl.querySelector('#enApiEstado'), btn=ovl.querySelector('#enApiOk'); btn.disabled=true; st.textContent='Bajando…';
+    try{
+      const {desde,hasta}=enApiRango(ym);
+      const lineas=await VentasApi.lineas(desde, hasta, { sucursal:EN_SUC_DEPOSITO, onPagina:(n,acc)=>{ st.textContent=acc+' líneas…'; } });
+      if(!lineas) throw new Error('La API de ventas no está disponible');
+      const idx=enIdxCod();
+      const rows={};
+      lineas.forEach(l=>{
+        const cli=String(l.cliente||'').trim(), cod=enCod(l.codigo||''); if(!cli || !cod) return;
+        if(!/^RUG/.test(cod) && !idx[cod]) return;
+        const dia=+String(l.fecha||'').slice(8,10)||0;
+        const k=[cli,l.comprobante||'',cod,dia].join('|');
+        const r=rows[k]=rows[k]||{ cli, dia, rubro:String(l.rubro||''), comp:String(l.comprobante||''), art:String(l.articulo||''), cod, cant:0, imp:0 };
+        r.cant+=Number(l.cantidad)||0; r.imp+=Number(l.importe)||0;
+      });
+      const lbl=enMesLbl(ym);
+      const aoa=[['Cliente','Día','Rubro','Nro.comprobante','Artículo','Código barras', lbl+' Cant.', lbl+' Imp.']];
+      Object.values(rows).sort((a,b)=>a.dia-b.dia||a.cli.localeCompare(b.cli)||a.comp.localeCompare(b.comp)).forEach(r=>{ if(!r.cant) return; aoa.push([r.cli,r.dia,r.rubro,r.comp,r.art,r.cod,r.cant,Math.round(r.imp*100)/100]); });
+      if(aoa.length<2) throw new Error('El Depósito no tiene ventas de RUGE a clientes en '+lbl+' (entre el '+enFmtFecha(desde)+' y el '+enFmtFecha(hasta)+')');
+      ovl.remove();
+      await enImportarEntregasDesde({ n:'Depósito · '+lbl, aoa }, 'Sistema · '+lbl);
+    }catch(e){ st.textContent=''; btn.disabled=false; toast(e.message||'No pude bajar las ventas del sistema'); }
+  });
+}
+async function enImportarEntregasDesde(hoja, nombreArchivo){
+  const file={ name: nombreArchivo };
   const det=enDetectarEntregas(hoja.aoa);
   if(det.error){ toast(det.error); return; }
   const idx=enIdxCod(); const R=enCalc();
@@ -2753,6 +2843,10 @@ function enInit(){
   $('enBtnRemitos').addEventListener('click',enModalRemitos);
   $('enBtnNuevoArt').addEventListener('click',()=>enModalArticulo(null));
   $('enBtnImportar').addEventListener('click',()=>{ enFileTarget='entregas'; $('enFile').click(); });
+  $('enBtnApi').addEventListener('click',enTraerDelSistema);
+  $('btnMayApi').addEventListener('click',mayDesdeSistema);
+  // ¿está la API de ventas del sistema? → botones «⇩ Traer del sistema» (Entregas y Mayorista)
+  if(window.VentasApi) VentasApi.disponible().then(ok=>{ if(ok){ $('enBtnApi').classList.remove('hidden'); $('mayApiBar').classList.remove('hidden'); $('mateuApiNota').classList.remove('hidden'); } }).catch(()=>{});
   $('enBtnImportarMaestro').addEventListener('click',()=>{ enFileTarget='maestro'; $('enFile').click(); });
   $('enFile').addEventListener('change',e=>{ const f=e.target.files[0]; e.target.value=''; if(!f) return; if(enFileTarget==='maestro') enImportarMaestro(f); else enImportarEntregas(f); });
   const q=new URLSearchParams(location.search).get('tab');

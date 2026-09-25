@@ -412,6 +412,7 @@ td.talles .tw{display:flex;flex-wrap:wrap;align-items:flex-start;max-width:560px
 </style>
 <!-- Iconos SVG (reemplazan emojis que Windows 7 / navegadores viejos no dibujan) -->
 <script src="../shared/marca.js"></script>
+<script src="../shared/ventas-api.js"></script>
 <script src="../shared/iconos.js" defer></script>
 <!-- Header unificado del shell: barra Menú + logo + calendario retail + drawer -->
 <script src="../shared/header.js" defer></script>
@@ -836,6 +837,7 @@ async function fbPatch(path, data){ const r=await fetch(fbUrl(path),{method:'PAT
 const state = {
   tab:'reposicion',
   files:{ ventas:null, reserva:null, stock:null },   // {archivo, hoja, matrix, headerIdx, cols, talles}; stock = opcional
+  apiVentas:false,                                   // ¿el proxy de la API de ventas tiene la key? (botón «⇩ del sistema»)
   stockSem:null,                         // stock por sucursal GUARDADO para la semana elegida: {semana, meta, data|null}
   resultado:null,                        // salida de computar()
   manualBar:{}, manualBase:{}, editBar:null,   // edición a mano de la Barrida: {'<id>|<slug>': {talle: u}}, lo automático al abrir y la fila en edición
@@ -1057,6 +1059,75 @@ async function cargarFilesComo(tipo, fileList){
   }catch(err){ toast(err.message||'No pude leer el archivo','err'); render(); }
 }
 const cargarFiles = fl => cargarFilesComo(null, fl);
+
+/* ---------- Ventas por sucursal desde el SISTEMA (API de ventas, 25/09/2026) ----------
+   Botón «⇩ del sistema» al lado de «Ventas por sucursal»: en vez de subir la estadística de
+   ventas, se bajan las líneas crudas de la semana (lunes a domingo) por el proxy /api/ventas
+   (shared/ventas-api.js; solo gerencia) y se arma EN MEMORIA la misma hoja que exporta el
+   sistema — Sucursal · Rubro · Marca · Grupo 1 · Disciplina · Subrubro · Articulo · Id Item ·
+   Codigo de barras · una columna por talle — sumando cantidad por sucursal × ID ITEM × talle.
+   Marca, tipo (Grupo 1), disciplina y subrubro no vienen en la línea: salen del maestro de
+   logística (`logistica/arts`, + `barrida/artsNuevos`) por el código del artículo. La hoja
+   entra por clasificarHoja / filasDeHoja igual que el Excel, así todo lo de abajo (prioridad,
+   curva, vaciado, abrir, reparto inicial) no cambia. Reserva y stock por sucursal siguen
+   viniendo del reporte de stock del depósito (la API no lo tiene). Se saltean las líneas sin
+   talle (Conceptos: envíos, créditos), las del Depósito (05) y las de sucursales que la
+   Barrida no conoce. */
+const COD2NOMBRE = {};
+Object.values(Object.assign({}, SLUG_SUC, OUTLET_SUC, SUC_EXTRA)).forEach(n=>{ const m=String(n).match(/^(\d{2})-/); if(m) COD2NOMBRE[m[1]]=n; });
+let ARTS_MAESTRO = null;
+async function cargarMaestroArts(){
+  if(ARTS_MAESTRO) return ARTS_MAESTRO;
+  const [arts, ext] = await Promise.all([ conTimeout(fbGet(LOGI+'/arts'), 90000), conTimeout(fbGet(ROOT+'/artsNuevos'), 10000).catch(()=>null) ]);
+  ARTS_MAESTRO = Object.assign({}, arts||{}, ext||{});
+  return ARTS_MAESTRO;
+}
+function apiSumarDias(iso, n){ const [y,m,d]=iso.split('-').map(Number); const x=new Date(y,m-1,d+n); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
+// líneas crudas → matriz con el layout de la hoja «ventas por sucursal» del sistema
+function apiVentasHoja(lineas, arts){
+  const rows={}, tallesSet=new Set(), sinMaestro=new Set(), sinSuc=new Set(); let descartadas=0;
+  lineas.forEach(l=>{
+    const t=String(l.talle==null?'':l.talle).trim(), id=String(l.idItem==null?'':l.idItem).trim();
+    if(!t || !id || id==='0' || /^concept/i.test(String(l.rubro||''))){ descartadas++; return; }
+    const cod=String(l.sucursal==null?'':l.sucursal).padStart(2,'0'), nombre=COD2NOMBRE[cod];
+    if(!nombre){ sinSuc.add(cod); return; }
+    const A=arts[repArtClave(l.codigo)]||null; if(!A) sinMaestro.add(String(l.codigo||id));
+    const k=nombre+'|'+id;
+    const r=rows[k]=rows[k]||{ suc:nombre, rubro:String(l.rubro||''), marca:A?String(A[3]||''):'', tipo:A?String(A[6]||''):'', disc:A?String(A[2]||''):'', gen:A?String(A[1]||''):'', desc:String(l.articulo||''), id, cod:String(l.codigo||''), talles:{} };
+    r.talles[t]=(r.talles[t]||0)+(Number(l.cantidad)||0); tallesSet.add(t);
+  });
+  const talles=[...tallesSet].sort(cmpTalle);
+  const matrix=[['Sucursal','Rubro','Marca','Grupo 1','Disciplina','Subrubro','Articulo','Id Item','Codigo de barras', ...talles]];
+  Object.values(rows).sort((a,b)=>cmp(a.suc,b.suc)||cmp(a.id,b.id)).forEach(r=>{
+    if(!Object.values(r.talles).some(q=>q!==0)) return;
+    matrix.push([r.suc,r.rubro,r.marca,r.tipo,r.disc,r.gen,r.desc,r.id,r.cod, ...talles.map(t=>r.talles[t]||'')]);
+  });
+  return { matrix, filas:matrix.length-1, lineas:lineas.length, descartadas, sinMaestro:[...sinMaestro], sinSuc:[...sinSuc].sort() };
+}
+async function ventasDesdeSistema(){
+  if(!window.VentasApi || !state.apiVentas){ toast('La API de ventas no está disponible','err'); return; }
+  const desde=state.semana, hasta=apiSumarDias(desde,6);
+  toast('Bajando la venta de la semana del sistema…');
+  try{
+    // sucursal por sucursal (de a 3): la API tarda medio segundo por sucursal y más de 40 s —y falla— si se
+    // le pide la semana entera de todas juntas
+    const codigos=Object.keys(COD2NOMBRE).sort(); let hechas=0; const partes=[];
+    const bajar=async cod=>{ const ls=await VentasApi.lineas(desde, hasta, { sucursal:cod }); if(ls===null) throw new Error('La API de ventas no está disponible'); partes.push(...ls); hechas++; toast('Venta del sistema: '+hechas+' de '+codigos.length+' sucursales · '+fmtInt(partes.length)+' líneas…'); };
+    const cola=codigos.slice(); const obreros=[0,1,2].map(async()=>{ while(cola.length){ await bajar(cola.shift()); } });
+    const [arts]=await Promise.all([ cargarMaestroArts(), ...obreros ]);
+    const lineas=partes;
+    if(!lineas.length) throw new Error('El sistema no tiene ventas entre el '+lunesLabel(desde)+' y el '+lunesLabel(hasta));
+    const H=apiVentasHoja(lineas, arts);
+    if(!H.filas) throw new Error('Las líneas del sistema no traen artículos con talle para esa semana');
+    const c=clasificarHoja({ name:'API de ventas', matrix:H.matrix }, 'ventas');
+    if(!c || c.cols.suc<0) throw new Error('No pude armar la hoja de ventas desde el sistema');
+    state.files.ventas={ archivo:'Sistema · semana del '+lunesLabel(desde), hoja:'API de ventas', matrix:H.matrix, headerIdx:c.headerIdx, cols:c.cols, talles:c.talles, conDias:false,
+      api:{ desde, hasta, lineas:H.lineas, filas:H.filas, descartadas:H.descartadas, sinMaestro:H.sinMaestro, sinSuc:H.sinSuc, ts:Date.now() } };
+    state.resultado=null; state.resultadoSemana=null; render();
+    toast('Venta del sistema: '+fmtInt(H.filas)+' artículos × sucursal en '+fmtInt(H.lineas)+' líneas'+(H.sinMaestro.length?' · '+fmtInt(H.sinMaestro.length)+' códigos sin maestro':''),'ok');
+    if(state.files.reserva) await procesarBarrida();
+  }catch(err){ toast(err.message||'No pude bajar la venta del sistema','err'); render(); }
+}
 /* ---------- Stock por sucursal de la SEMANA (guardado en la base) ----------
    El stock por sucursal se sube una vez por semana y sirve para todas las barridas de esa
    semana (otro día, otra compu): al subirlo se guarda en
@@ -2009,7 +2080,15 @@ function cargaHtml(){
   const listo = fl.ventas && fl.reserva;
   const ss=state.stockSem, ssOk = ss && ss.semana===state.semana && ss.meta;   // stock guardado para la semana elegida
   const btn=(tipo,label,opc)=>{ const f=fl[tipo];
-    const swap=(f && (tipo==='ventas'||tipo==='stock')) ? ' <button type="button" class="lnk" data-swap="1" title="Ventas y stock por sucursal tienen el mismo formato: si esta hoja es la otra, intercambialas">↔</button>' : '';
+    const swap=(f && !f.api && (tipo==='ventas'||tipo==='stock')) ? ' <button type="button" class="lnk" data-swap="1" title="Ventas y stock por sucursal tienen el mismo formato: si esta hoja es la otra, intercambialas">↔</button>' : '';
+    // ventas: además del Excel, la semana se puede bajar del sistema por la API de ventas (solo gerencia)
+    if(tipo==='ventas' && state.apiVentas){
+      const a=f&&f.api;
+      const tip = a ? 'Bajado del sistema: '+fmtInt(a.lineas)+' líneas entre el '+lunesLabel(a.desde)+' y el '+lunesLabel(a.hasta)+' → '+fmtInt(a.filas)+' artículos × sucursal'+(a.sinMaestro.length?' · '+fmtInt(a.sinMaestro.length)+' códigos sin marca/disciplina en el maestro de logística: '+a.sinMaestro.slice(0,8).join(', ')+(a.sinMaestro.length>8?'…':''):'')+(a.sinSuc.length?' · sucursales salteadas: '+a.sinSuc.join(', '):'') : 'Bajar del sistema la venta de la semana elegida (lunes a domingo), por sucursal, artículo y talle. Reemplaza al Excel de ventas.';
+      return '<div class="cbtn"><div style="display:flex;gap:6px;align-items:center"><button type="button" class="btn '+(f?'btn-outline':'btn-primary')+' btn-sm" data-cargar="ventas">'+(f?'✓ ':'⇧ ')+esc(label)+'</button>'
+        +'<button type="button" class="btn btn-outline btn-sm" data-api-ventas="1" title="'+esc(tip)+'">'+(a?'↻':'⇩')+' del sistema</button></div>'
+        +(f ? '<div class="cfile" title="'+esc(tip)+'">'+esc(f.archivo)+swap+(a&&a.sinMaestro.length?' <span class="warn" title="'+esc(a.sinMaestro.slice(0,20).join(', '))+'">'+fmtInt(a.sinMaestro.length)+' sin maestro</span>':'')+'</div>' : '<div class="cfile muted">Excel o del sistema</div>')+'</div>';
+    }
     // stock sin archivo pero guardado en la base para esta semana: se usa ese
     if(tipo==='stock' && !f && ssOk){
       const m=ss.meta; const sub=String(m.subido||'').slice(0,16);
@@ -2096,6 +2175,7 @@ function wireCarga(){
   const bp=$('btnProcesar'); if(bp) bp.onclick=procesarBarrida;
   const bg=$('btnGuardar'); if(bg) bg.onclick=guardarBarrida;
   card.querySelectorAll('[data-swap]').forEach(b=>b.onclick=swapVentasStock);
+  card.querySelectorAll('[data-api-ventas]').forEach(b=>b.onclick=ventasDesdeSistema);
   card.querySelectorAll('[data-quitar]').forEach(b=>b.onclick=()=>{ state.transf=null; render(); });
   const ab=$('btnAbrirCarga'); if(ab) ab.onclick=()=>{ state.cargaOpen=true; render(); };
   const ce=$('btnCerrarCarga'); if(ce) ce.onclick=()=>{ state.cargaOpen=false; render(); };
@@ -5609,6 +5689,8 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab)
   if(FIREBASE_DB_URL) cargarStockSemana();
   // ¿qué marcas-rubros ya se barrieron esta semana?
   if(FIREBASE_DB_URL) cargarPartesSemana();
+  // ¿está la API de ventas del sistema? → botón «⇩ del sistema» en la tarjeta de carga
+  if(window.VentasApi) VentasApi.disponible().then(ok=>{ if(ok){ state.apiVentas=true; render(); } }).catch(()=>{});
 })();
 </script>
 </body>

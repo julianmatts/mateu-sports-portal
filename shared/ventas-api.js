@@ -12,6 +12,12 @@
      totalesMes(ym)        → Promise<{porSlug:{slug:{venta,tickets,unidades}}, semanas:[lunes…], completo}|null>
                              suma las semanas del mes RETAIL (la semana es del mes de su domingo),
                              solo las que ya empezaron
+     lineas(desde, hasta, {sucursal:'NN', onPagina}) → Promise<Array de líneas crudas | null>
+                             (25/09/2026) recorre todas las páginas del proxy (10.000 por página, cursor);
+                             solo gerencia. `sucursal` es el código de dos dígitos del sistema; `onPagina(n,
+                             acumuladas)` avisa el avance. Cada línea: {fecha, hora, sucursal, vendedor,
+                             comprobante, articulo, rubro, cantidad, importe, idItem, talle, codigo,
+                             codigoArticulo (= código de barras), cliente, clienteCuit}.
      lunesHoyISO() · lunesDe(iso) · semanasDelMes(ym)
    Sin sesión, sin proxy o abierto como archivo suelto → todo devuelve null y
    el módulo sigue con su fuente de siempre. Indicadores tiene su propia copia
@@ -19,7 +25,7 @@
    ============================================================ */
 (function(){
   var API = '/api/ventas', SS = 'ventas_api_disp', DIEZ_MIN = 10 * 60 * 1000;
-  var _disp = null, _sem = {}, _suc = {};
+  var _disp = null, _sem = {}, _suc = {}, _lin = {};
   function sesion(){ try{ return JSON.parse(localStorage.getItem('mateu_portal_session') || 'null'); }catch(e){ return null; } }
   function pad(n){ return (n < 10 ? '0' : '') + n; }
   function iso(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
@@ -60,6 +66,42 @@
       .then(function(j){ if (!j || !Array.isArray(j.vendedores)) return null; j.fuente = 'api'; j.semana = j.semana || lunes; return j; });
     return _suc[k];
   }
+  function getCrudo(qs){
+    var s = sesion() || {};
+    return fetch(API + '?' + qs, { headers: { 'X-Mateu-Email': s.email || '', 'X-Mateu-Tok': s.tok || '' } })
+      .then(function(r){ return r.json().then(function(j){ if (!r.ok) throw new Error((j && j.error) || ('El proxy respondió ' + r.status)); return j; }); });
+  }
+  // Las líneas crudas del sistema entre dos fechas (inclusive), todas las páginas juntas.
+  function lineas(desde, hasta, opts){
+    opts = opts || {};
+    var k = desde + '|' + hasta + '|' + (opts.sucursal || '');
+    if (_lin[k]) return _lin[k];
+    _lin[k] = disponible().then(function(ok){
+      if (!ok) return null;
+      var todas = [], n = 0;
+      // la base del sistema se bloquea ~20 s cada tanto y la API devuelve 500: se reintenta la página
+      // hasta 3 veces esperando 5 s entre intentos
+      function conReintento(qs, intento){
+        return getCrudo(qs).catch(function(e){
+          if (intento >= 3) throw e;
+          return new Promise(function(r){ setTimeout(r, 5000); }).then(function(){ return conReintento(qs, intento + 1); });
+        });
+      }
+      function pagina(cursor){
+        var qs = 'lineas=1&desde=' + encodeURIComponent(desde) + '&hasta=' + encodeURIComponent(hasta)
+          + (opts.sucursal ? '&sucursal=' + encodeURIComponent(opts.sucursal) : '') + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+        return conReintento(qs, 1).then(function(j){
+          var ls = (j && j.lineas) || []; n++;
+          for (var i = 0; i < ls.length; i++) todas.push(ls[i]);
+          if (typeof opts.onPagina === 'function') { try { opts.onPagina(n, todas.length); } catch (e) {} }
+          if (j && j.cursor && ls.length && n < 40) return pagina(j.cursor);
+          return todas;
+        });
+      }
+      return pagina(null);
+    }).catch(function(e){ delete _lin[k]; throw e; });
+    return _lin[k];
+  }
   function totalesMes(ym){
     var hoy = iso(new Date()), sems = semanasDelMes(ym).filter(function(l){ return l <= hoy; });
     if (!sems.length) return Promise.resolve(null);
@@ -77,5 +119,5 @@
       return { porSlug: por, semanas: sems, completo: n === sems.length && iso(fin) < hoy && semanasDelMes(ym).length === sems.length };
     });
   }
-  window.VentasApi = { disponible: disponible, semana: semana, sucursal: sucursal, totalesMes: totalesMes, lunesHoyISO: lunesHoyISO, lunesDe: lunesDe, semanasDelMes: semanasDelMes };
+  window.VentasApi = { disponible: disponible, semana: semana, sucursal: sucursal, lineas: lineas, totalesMes: totalesMes, lunesHoyISO: lunesHoyISO, lunesDe: lunesDe, semanasDelMes: semanasDelMes };
 })();
