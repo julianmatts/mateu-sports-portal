@@ -107,3 +107,13 @@ del repo (así se validó el 24/09/2026: Panel General y Mi Sucursal de Kids, se
 - **Lo que necesita campos nuevos en `/lineas`** (pedido al dev): ID ITEM y talle para el Reparto de
   Mercadería (la venta semanal por artículo × talle × sucursal), código de artículo y cliente para
   Regalías RUGE.
+
+## Cadencia de la API (medido el 25/09/2026, 10:21–13:21)
+
+108 consultas a Kids, Plaza y Diagonal 80 cada 5 minutos (`Downloads/medicion-api-ventas-2026-09-25.csv`):
+la venta **cambia cada 30 minutos, en punto y a la media** (10:31 · 11:01 · 11:31 · 12:01 · 12:31 · 13:01, las
+tres sucursales a la vez), así que la base de la API se carga con un job de media hora. El campo `actualizado`
+viene **redondeado a la hora** y queda hasta 30 minutos atrás del corte real (a las 12:31 Diagonal ya traía
+la venta de las 12:30 y decía «11:00»). Ningún 500 en las 3 horas, promedio 91 ms, máximo 420 ms. Con eso, el
+refresco de 5 minutos del proxy alcanza de sobra; lo que falta pedirle al dev es que `actualizado` sea la hora
+real de la última carga, para que el pill «hasta HH:MM» no mienta por media hora.
