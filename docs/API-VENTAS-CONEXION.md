@@ -127,3 +127,14 @@ Originals 50.749.370 · Calle 12 92.376.157 · Kids 21.950.916 · Diagonal 80 89
 cuatro, 0 comprobantes distintos**. Con esto el CSV de `scripts/ventas-api-lineas.mjs` ya sirve para el
 cierre mensual del ETL. Sigue pendiente del dev el bloqueo de la base (hoy hubo dos 500 con reintento en
 `/lineas`) y la hora real en `actualizado`.
+
+## Campos nuevos en `/v1/ventas/lineas` (25/09/2026, tarde)
+
+El dev sumó por línea: **`idItem`** (100 % de las líneas), **`talle`** (todas las líneas de artículo; vacío en
+Conceptos/envíos), **`codigo`** = el código del artículo del sistema (`RUG858`, `ADIJS2852`, `NB2T000172550`;
+100 %), **`codigoArticulo`** = el código de barras del talle (EAN o etiqueta con «!»; vacío en RUGE) y
+**`cliente` / `clienteCuit`** (vienen en el Depósito y en la web: «CLUB ESTUDIANTES RUGE CONTRATO» sin CUIT,
+«CLUB ESTUDIANTES DE LA PLATA» 30-52841228-5; los remitos «Rem.0094-…» salen como líneas con cantidad).
+Verificado con la semana 15–22/09 (10.000 líneas) y el Depósito de septiembre. Con esto quedan habilitados,
+como trabajos aparte: la venta semanal por sucursal × ID ITEM × talle del **Reparto de Mercadería** (hoy se
+sube la estadística de ventas) y el reporte de ventas por cliente de **Regalías / Entregas EDLP**.
