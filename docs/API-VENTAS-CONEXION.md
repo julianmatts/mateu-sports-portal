@@ -117,3 +117,13 @@ viene **redondeado a la hora** y queda hasta 30 minutos atrás del corte real (a
 la venta de las 12:30 y decía «11:00»). Ningún 500 en las 3 horas, promedio 91 ms, máximo 420 ms. Con eso, el
 refresco de 5 minutos del proxy alcanza de sobra; lo que falta pedirle al dev es que `actualizado` sea la hora
 real de la última carga, para que el pill «hasta HH:MM» no mienta por media hora.
+
+## Ajuste de cabecera resuelto (25/09/2026, tarde)
+
+El dev aplicó el prorrateo del recargo/descuento del comprobante con la participación de cada línea
+**truncada a 4 decimales** (el algoritmo del reporte del sistema, deducido de los comprobantes con 12 % de
+recargo de Adidas Originals). Verificado línea por línea contra «Ventas agosto portal.csv», semana 24–30/08:
+Originals 50.749.370 · Calle 12 92.376.157 · Kids 21.950.916 · Diagonal 80 89.544.347, **diferencia 0 en los
+cuatro, 0 comprobantes distintos**. Con esto el CSV de `scripts/ventas-api-lineas.mjs` ya sirve para el
+cierre mensual del ETL. Sigue pendiente del dev el bloqueo de la base (hoy hubo dos 500 con reintento en
+`/lineas`) y la hora real en `actualizado`.
