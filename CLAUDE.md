@@ -1967,6 +1967,10 @@ de la **estadística de remitos**. Código en el bloque «REPARTO INICIAL» de `
   `corregido` en el artículo y `meta.totales.corregidos`; Mi Sucursal y el Picking leen las líneas sin cambios.
   **Talles dobles de las ojotas (mismo día, Havaianas)**: `repEsTalle` no reconocía «37/38» / «39/40», así que en el
   export con columnas por talle esas columnas se salteaban, el remito quedaba en cero y no aparecía en la lista.
+  **Y en Excel llegan pegados (25/09/2026)**: el export del sistema en .xlsx escribe «37/38» como el número **378** («39/40» =
+  390, «35/36» = 356, «17/18» = 178), así que seguían descartándose (número > 70). `talleDoble` los vuelve a «37/38» (tres
+  dígitos con el último = el del talle siguiente; 104/116/128 de bebé no cumplen la regla) en todos los lectores:
+  `detectarCols` (reserva, stock por sucursal y ventas de la Barrida) y `repParseRemitos` (columnas y columna de talle).
   **La Barrida de reserva también se edita a mano (24/09/2026, pedido de Juli)**, con el mismo modelo: botón ✎ al final de
   la columna Talles de cada línea (solo con la barrida procesada desde los archivos: una semana abierta del historial no
   trae la reserva por talle y no se edita) → casilleros numéricos por TODOS los talles que el artículo tiene en el

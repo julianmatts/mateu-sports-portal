@@ -880,6 +880,16 @@ const state = {
 /* ============================================================
    PARSEO DEL EXCEL
    ============================================================ */
+/* ---------- talles dobles pegados (25/09/2026, Havaianas) ----------
+   El export del sistema en Excel escribe los talles dobles de las ojotas como UN número: «37/38»
+   llega como 378, «39/40» como 390, «35/36» como 356, «17/18» como 178. Tres dígitos donde el último
+   es el del talle siguiente: se vuelve a «37/38». Los talles de bebé en cm (104, 116, 128…) no
+   cumplen esa regla y no se tocan. */
+function talleDoble(l){
+  const s=String(l==null?'':l).trim().replace(/\.0+$/,'');
+  const m=s.match(/^([1-4]\d)(\d)$/); if(!m) return s;
+  const a=+m[1], b=a+1; return (b%10)===+m[2] ? a+'/'+b : s;
+}
 // Detecta la fila de encabezado y las columnas relevantes de una hoja.
 function detectarCols(matrix){
   // Busca en las primeras 8 filas la que tenga 'ID ITEM' o 'DESCRIP' o 'Sucursal'.
@@ -941,7 +951,7 @@ function detectarCols(matrix){
   const conDias = headerIdx>0 && H.slice(desdeIdx+1).some(esDias);
   if(conDias){
     const arriba = matrix[headerIdx-1]||[];
-    const rot = j => String(arriba[j]==null?'':arriba[j]).trim();
+    const rot = j => talleDoble(arriba[j]);
     for(let j=desdeIdx+1;j<H.length;j++){
       if(esDias(H[j])) continue;
       const lbl=rot(j);
@@ -951,7 +961,7 @@ function detectarCols(matrix){
     }
   } else {
     for(let j=desdeIdx+1;j<H.length;j++){
-      const lbl=String(matrix[headerIdx][j]==null?'':matrix[headerIdx][j]).trim();
+      const lbl=talleDoble(matrix[headerIdx][j]);
       if(lbl!=='' && normName(lbl)!=='total') talles.push({idx:j,label:lbl});
     }
   }
@@ -989,7 +999,7 @@ function detectarColsPosicional(matrix){
     : { suc:-1, rubro:0, marca:1, tipo:2, disc:3, gen:4, desc:5, id:6, cod:7 };
   const talles=[];
   for(let j=talleStart;j<matrix[headerIdx].length;j++){
-    const lbl=String(matrix[headerIdx][j]==null?'':matrix[headerIdx][j]).trim();
+    const lbl=talleDoble(matrix[headerIdx][j]);
     if(lbl!=='' && normName(lbl)!=='total') talles.push({idx:j,label:lbl});
   }
   return { headerIdx, cols, talles };
@@ -3729,7 +3739,7 @@ function repCsvMatriz(buf){
   return lineas.map(l=>l.split(sep).map(c=>c.trim().replace(/^"(.*)"$/,'$1')));
 }
 function repEsTalle(l){
-  const s=nrmT(l); if(!s || /TOTAL|CANT|COSTO|IMPORTE/.test(s)) return false;
+  const s=nrmT(talleDoble(l)); if(!s || /TOTAL|CANT|COSTO|IMPORTE/.test(s)) return false;
   const n=Number(s); if(isFinite(n)) return n>0 && n<70;
   // 24/09/2026: los talles dobles de las ojotas (Havaianas, Rider: «37/38») no se reconocían y las columnas
   // del export se salteaban → el remito quedaba en cero y no se listaba
@@ -3761,7 +3771,7 @@ function repParseRemitos(M, archivo){
     // plano: columna Remito + columnas de talle (o una de cantidad)
     const H=M[hRow]||[]; porNombre(hRow, H.length);
     const ident=Object.values(col); const ultimo=ident.length?Math.max(...ident):0;
-    for(let j=ultimo+1;j<H.length;j++){ const l=txt(H[j]); if(repEsTalle(l)) tcols.push({j, t:l.replace(/\.0+$/,'')}); else if(/cant|unid/i.test(l) && !tcols.length) qcols.push({j, mes:null}); }
+    for(let j=ultimo+1;j<H.length;j++){ const l=txt(H[j]); if(repEsTalle(l)) tcols.push({j, t:talleDoble(l)}); else if(/cant|unid/i.test(l) && !tcols.length) qcols.push({j, mes:null}); }
     if(!tcols.length && !qcols.length) throw new Error('Hay una columna «Remito» pero no encontré la cantidad ni columnas de talle.');
     start=hRow+1; primeraQ=(tcols[0]||qcols[0]).j;
   } else {
@@ -3780,7 +3790,7 @@ function repParseRemitos(M, archivo){
   pick('genero', j=>frac(j,/HOMBRE|DAMA|MUJER|NI.O|UNISEX|INFANT|VARIOS/i), .6);
   pick('cod', j=>{ const v=vals(j); if(!v.length) return 0; const f=v.filter(x=>/^\S{5,}$/.test(x)&&/[A-Z]/i.test(x)&&/\d/.test(x)).length/v.length; return f>=.7 ? f+new Set(v).size/v.length : 0; }, .7);
   // columna de talle sin rótulo: casi todos los valores son talles (38, 8.5, M, XL, 10A…) y pocos distintos
-  if(!tcols.length) pick('talle', j=>{ const v=vals(j); if(v.length<5) return 0; const f=v.filter(x=>repEsTalle(x.replace(/\.0+$/,''))).length/v.length; return (f>=.9 && new Set(v).size<=80) ? f : 0; }, .89);
+  if(!tcols.length) pick('talle', j=>{ const v=vals(j); if(v.length<5) return 0; const f=v.filter(x=>repEsTalle(x)).length/v.length; return (f>=.9 && new Set(v).size<=80) ? f : 0; }, .89);
   pick('desc', j=>{ const v=vals(j); if(!v.length) return 0; const f=v.filter(x=>/\s/.test(x)).length/v.length; return f>=.6 ? v.reduce((a,x)=>a+x.length,0)/v.length : 0; }, 0);
   pick('disc', j=>frac(j,/RUNNING|CASUAL|TRAINING|FUTBOL|ADVENTURE|OUTDOOR|BASQUET|TENIS|PADEL|HOCKEY|NATACION|ORIGINALS|TREKKING|SKATE|VOLEY|RUGBY/i), .3);
   pick('tipo', j=>frac(j,/CALZADO|REMERA|PANTAL|CAMPER|BUZO|SHORT|MEDIA|MOCHIL|BOLSO|GORRO|CAMISET|CALZA|SANDAL|CHINEL|OJOTA|PELOTA|MUSCUL|CHOMBA|CONJUNT|MALLA|TOP|GUANTE|BERMUDA|ANTIPARR|CANILLER|GIFT/i), .4);
@@ -3799,7 +3809,7 @@ function repParseRemitos(M, archivo){
     if(tcols.length) tcols.forEach(q=>{ const u=numR(r[q.j]); if(u>0){ f.talles[q.t]=(f.talles[q.t]||0)+u; f.total+=u; } });
     else {
       // con columna de talle, cada fila es un talle: se abre por mes y por talle (exacto, sin estimar)
-      const t = col.talle!=null ? g(r,'talle').replace(/\.0+$/,'') : '';
+      const t = col.talle!=null ? talleDoble(g(r,'talle')) : '';
       if(col.talle!=null && (!t || /total/i.test(t))) continue;
       qcols.forEach(q=>{ const u=numR(r[q.j]); if(u>0){ const m=q.mes!=null?String(q.mes):''; f.porMes[m]=(f.porMes[m]||0)+u; f.total+=u;
         if(t){ f.talles[t]=(f.talles[t]||0)+u; const tm=(f.tallesMes=f.tallesMes||{}); (tm[m]=tm[m]||{})[t]=(tm[m][t]||0)+u; } } });
