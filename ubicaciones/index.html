@@ -4858,6 +4858,21 @@ async function sincronizarStock(lista){
       porIdItem[id] = (id in porIdItem && porIdItem[id]!==k) ? '' : k;   // Id.item repetido: no se arriesga
     }
   }
+  /* Mismo problema con la DESCRIPCIÓN (25/09/2026, Diagonal): una carga tomó la
+     columna de descripción como código (claves «AA 75 NEGRO») y la siguiente, ya
+     con el SKU, dejó las 2.364 ubicaciones en la memoria. Si la clave vieja (o su
+     código) es la descripción del artículo que llega y esa clave ya no viene, es
+     el mismo artículo. Descripción repetida en dos SKU: se usa una vez sola. */
+  const nDesc = s => String(s||'').toUpperCase().replace(/\s+/g,' ').trim();
+  const porDesc = {}, memoPorDesc = {};
+  for(const k in prev){
+    if(clavesNuevas.has(k)) continue;
+    for(const d of new Set([nDesc(k), nDesc(prev[k].codigo)])) if(d && /\s/.test(d)) (porDesc[d] = porDesc[d]||[]).push(k);
+  }
+  for(const k in memo){
+    const d = nDesc(memo[k] && memo[k].codigo);
+    if(d && /\s/.test(d) && !clavesNuevas.has(k)) (memoPorDesc[d] = memoPorDesc[d]||[]).push(k);
+  }
   const migradas = new Set();
   const out = {};
   const nuevos = [], eliminados = [];
@@ -4872,6 +4887,16 @@ async function sincronizarStock(lista){
       const kv = porIdItem[String(art.articulo).trim()];
       if(kv && prev[kv] && !migradas.has(kv)){ p = prev[kv]; migradas.add(kv); }
     }
+    let memoKey = key;
+    if(!p && !memo[key] && art.descripcion){
+      const d = nDesc(art.descripcion);
+      const kv = (porDesc[d]||[]).find(k=>!migradas.has(k));
+      if(kv){ p = prev[kv]; migradas.add(kv); }
+      else {
+        const km = (memoPorDesc[d]||[]).find(k=>!migradas.has('memo:'+k));
+        if(km){ memoKey = km; migradas.add('memo:'+km); }
+      }
+    }
     // si el Excel trae la descripción vacía o basura (= el mismo código, el Id.item
     // o cualquier número pelado), se conserva la descripción buena que ya estaba guardada
     const descExcel = esDescBasura(art.descripcion, art.codigo) ? '' : art.descripcion;
@@ -4883,17 +4908,17 @@ async function sincronizarStock(lista){
       fechaAlta: p && p.fechaAlta ? p.fechaAlta : now,
     };
     if(p && p.ubicaciones) rec.ubicaciones = p.ubicaciones;
-    else if(!p && memo[key] && memo[key].ubicaciones){
+    else if(!p && memo[memoKey] && memo[memoKey].ubicaciones){
       // vuelve un artículo que había salido del Excel: recupera su lugar (si la estantería sigue)
       const ub = {};
-      for(const uid in memo[key].ubicaciones){
-        const u = memo[key].ubicaciones[uid], e = ests[u.estanteriaId];
+      for(const uid in memo[memoKey].ubicaciones){
+        const u = memo[memoKey].ubicaciones[uid], e = ests[u.estanteriaId];
         if(e && (!u.moduloId || (e.modulos||{})[u.moduloId])) ub[uid] = u;
       }
       if(Object.keys(ub).length){ rec.ubicaciones = ub; recuperadas++; }
-      if(memo[key].fechaAlta) rec.fechaAlta = memo[key].fechaAlta;
+      if(memo[memoKey].fechaAlta) rec.fechaAlta = memo[memoKey].fechaAlta;
     }
-    if(!p && memo[key]) memoPatch[key] = null;
+    if(!p && memo[memoKey]) memoPatch[memoKey] = null;
     // desglose por talle: solo si ESTA carga vino abierta por talle (una carga
     // sin talle lo deja sin desglose, para no mostrar talles viejos como vigentes)
     if(art.talles){
@@ -4902,7 +4927,7 @@ async function sincronizarStock(lista){
     }
     // sector del salón marcado por el equipo: se conserva (y vuelve de la memoria)
     if(p && p.salon) rec.salon = p.salon;
-    else if(!p && memo[key] && memo[key].salon) rec.salon = memo[key].salon;
+    else if(!p && memo[memoKey] && memo[memoKey].salon) rec.salon = memo[memoKey].salon;
     // Id.item del sistema (lo trae la planilla de Drive); se conserva si ya estaba
     if(art.articulo) rec.articulo = String(art.articulo); else if(p && p.articulo) rec.articulo = p.articulo;
     // códigos de barras de marca (columna opcional): [{e:gtin13, t:talle}]. Se
@@ -4984,6 +5009,13 @@ async function sincronizarStock(lista){
   // Red de seguridad: si la carga borra una parte grande de las ubicaciones
   // existentes (artículos que desaparecen del Excel o claves que no matchean),
   // frenar y pedir confirmación con los números en la mano.
+  // Un SKU no lleva espacios: si la mayoría de los «códigos» los tiene, se eligió
+  // la columna de descripción como código (lo que desarmó Diagonal el 25/09/2026).
+  const conEspacio = lista.filter(a=>/\s/.test(String(a.codigo).trim())).length;
+  if(lista.length >= 20 && conEspacio > lista.length*0.4){
+    const seguir = confirm('⚠ ATENCIÓN\n\n'+conEspacio+' de '+lista.length+' códigos tienen espacios, por ejemplo «'+(lista.find(a=>/\s/.test(String(a.codigo).trim())).codigo)+'».\n\nParece que la columna elegida como CÓDIGO es la DESCRIPCIÓN. Si se carga así, los artículos quedan con otra clave y la próxima carga correcta los toma como nuevos.\n\nCancelá y elegí la columna del código (SKU). ¿Continuar igual?');
+    if(!seguir){ cerrarModal(); toast('Carga cancelada. No se cambió nada.'); return; }
+  }
   const conUbi = o => Object.values(o).filter(a=>a.ubicaciones && Object.keys(a.ubicaciones).length).length;
   const ubisPrev = conUbi(prev), ubisAhora = conUbi(out);
   const perdidas = ubisPrev - ubisAhora;

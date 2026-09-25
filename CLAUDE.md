@@ -993,6 +993,13 @@ sucursal (pisa avatares/ajustes a mano; lo dispara el encargado). No se duplica 
   sigue tipeando se refina la MISMA fila (`zap` → `zapatilla run`, ventana de 3 min) y
   se mantiene el dedupe de 10 min por perfil. Tocar una búsqueda del historial la
   repite en el buscador.
+- **Cambio de clave por descripción (25/09/2026, Diagonal)**: una carga tomó la columna de
+  descripción como código (claves «AA 75 NEGRO», sin Id.item) y la carga correcta siguiente, con el
+  SKU, mandó las 2.364 ubicaciones a `ubicMemoria` y dejó todo «sin ubicar». Se restauraron cruzando
+  la memoria por descripción (respaldo `Descargas/respaldo-ubicaciones-diagonal-2026-09-25-*.json`).
+  Ahora `sincronizarStock` hereda también por descripción (clave vieja o su código = descripción del
+  artículo que llega, en `prev` y en `ubicMemoria`; cada una se usa una vez) y, si más del 40 % de los
+  códigos del archivo tienen espacios, pide confirmación antes de cargar («parece la descripción»).
 - **Etiquetas de marca — código de barras EAN/UPC (04/09/2026)**: las etiquetas de
   Under Armour, adidas, Nike… traen el EAN del talle, no el código del sistema, y el
   export de stock NO puede traer ese dato (Juli). Se resuelve con un **mapa compartido
