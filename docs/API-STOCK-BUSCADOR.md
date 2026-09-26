@@ -198,3 +198,30 @@ Checklist de entrega:
 - [ ] Sucursal sin stock → 200 vacío; NN desconocido → 404; `Cache-Control: max-age=600`.
 - [ ] (Etapa 2) `GET /v1/stock/articulo/{codigo}` con `?idItem=` y `?ean=`.
 - [ ] Validación de §7 contra un export del mismo momento, junto con Juli.
+
+---
+
+## 8. Etapa 2b — Precio de venta (para las etiquetas QR del salón)
+
+Agregado el 26/09/2026. El Portal va a imprimir **etiquetas con QR** que el cliente escanea en el
+salón y ve **precio + talles disponibles** en esa sucursal y en las demás (`docs/ETIQUETAS-QR.md`).
+El stock sale de §3/§4; el **precio** hoy no existe en ninguna API, así que se pide acá:
+
+- En `GET /v1/stock/articulo/{codigo}` (§4) y en cada artículo de `GET /v1/stock/sucursal/{NN}`
+  (§3), sumar:
+
+```jsonc
+"precio": {
+  "lista": 189999,            // PVP vigente de la lista de precios minorista, número entero en $
+  "listaNombre": "MINORISTA", // qué lista es (la misma que imprime el ticket)
+  "vigenteDesde": "2026-09-20",
+  "promo": null               // o { "precio": 159999, "nombre": "3x2 running", "hasta": "2026-10-05" } si el sistema tiene un precio promocional activo
+}
+```
+
+- Es **el precio que se cobra en caja** para ese artículo, el que figura en la etiqueta física.
+  Si el precio varía por sucursal (outlets), el de la sucursal pedida en §3 y, en §4, un
+  `precio` por sucursal dentro de `sucursales[NN]` además del general.
+- `null` si el artículo no tiene precio cargado (no 0).
+- Es el mismo dato que Regalías está esperando como «Lista de precios» en `/v1/ventas/lineas`:
+  con una sola definición alcanza para las dos cosas.
