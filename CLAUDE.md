@@ -3705,6 +3705,65 @@ ahí con fallback a `ventaEquipo`; la carga manual queda como plan B.
 
 **Conexión HECHA (24/09/2026 tarde)** — ver `docs/API-VENTAS-CONEXION.md`. El deploy del dev de ese día dejó el criterio EXACTO y la omnicanalidad bien (Kids 317 tickets, Diagonal 908/1.412, vendedores iguales al recálculo); quedan pendientes de ellos el descuento de cabecera del comprobante (Kids 24/08: +329.320 en 26 comprobantes) y el bloqueo de la base. Del lado del Portal: **`functions/api/ventas.js` → `lib/ventas-proxy.mjs`** (tests `node --test lib/ventas-proxy.test.mjs`): `GET /api/ventas` → `{disponible}`, `?semana=<lunes>` (totales por sucursal) y `?semana=&sucursal=<slug>` (detalle, shape `ventaEquipo` + `fuente:'api'`). La key vive en el Secret **`VENTAS_API_KEY`** de Cloudflare Pages (⚠ **pendiente de que Juli lo cargue** + Retry deployment; hasta entonces `disponible:false` y todo sigue por `ventaEquipo`). Identidad por headers `X-Mateu-Email` / `X-Mateu-Tok` contra `usuarios/`: admin/supervisor cualquier sucursal, sucursal/outlet solo la propia (totales filtrados). Cache en memoria + R2 (`LEGAJOS`, prefijo `_cache/ventas/`): fresco 5 min, viejo hasta 24 h servido al toque y refrescado con `waitUntil`, una consulta en vuelo por ruta, fallos recordados 60 s, timeout 40 s: el bloqueo de 20 s de la base lo paga a lo sumo la primera consulta. En `indicadores/` (bloque «API de ventas del sistema»: `ventasApiDisponible`, `vapiSemana`, `vapiSucursal`, `lunesHoyISO`, `vapiPrimero`): la **semana en curso** (lunes de hoy o posterior) sale primero del proxy y cae a `ventaEquipo`; las anteriores al revés (Firebase primero, API si no hay nada); el Excel recién subido por el encargado gana en esa visita (`_veManual`). **Desde el 26/09/2026 gana el dato MÁS NUEVO** (`veMasNuevo`, por `actualizado`; el espejo `por:'api'` cuenta como API): ese día la API devolvía 500 a todo desde el 25/09 ~17 h, el proxy servía la copia vieja (hasta 24 h) y tapaba el Excel que Aurelius 5 y Diagonal subieron a mano. Pills: «● en vivo · hasta DD/MM HH:MM» en «Cómo viene el equipo» y «vivo» (en vez de «prov») en la tabla del Panel General. Probado el 24/09 contra la API real con un servidor local que monta la librería (Panel General + Kids, semana del 21/09). Hallazgo al conectar: los **500 de 0,15 s** de la API aparecen justo después de un 500 de 16–20 s (repitiendo Kids 14/09 cada 4 s: 500 en 20,6 s y las dos llamadas siguientes 500 al instante): no es por sucursal ni por semana, es que durante la ventana de bloqueo, cuando una llamada agota los reintentos, las siguientes fallan sin intentar (pool de conexiones agotado) — pendiente del dev. **Segunda tanda (misma noche, «avanzá con todos»)**: (1) el proxy **espeja** cada detalle de sucursal que trae de la API en `ventaEquipo/<slug>/<lunes>` con `por:'api'` (solo si el nodo no existe o ya era del proxy; `VENTAS_ESPEJO=0` lo apaga), así Academia, Matts, RRHH, el objetivo mensual y la curva de Diagonal siguen leyendo Firebase sin que nadie suba el Excel; (2) **`shared/ventas-api.js`** (`window.VentasApi`: disponible · semana · sucursal · totalesMes · semanasDelMes) para los demás módulos; (3) **Objetivos**: pill «sistema» en el dashboard semanal y semanas en vivo en el mensual (sin escribir `real`); (4) **Reseñas**: tickets del sistema en los meses sin la columna (`ticketsDelSistema`, `tApi`); (5) **Logística**: «Abastecimiento vs. venta» del mes en curso desde la API (`VENTA_API`); (6) **`scripts/ventas-api-lineas.mjs`**: `csv` (el mismo CSV del export del sistema, para el ETL y «Cargar venta del mes») y `pesos YYYY-MM --publicar` (matriz de pesos por turno desde `hora`, reemplaza el Excel PESOS TURNOS). Pedido al dev para Reparto y Regalías: ID ITEM, talle, código de artículo y cliente en `/lineas`. **25/09/2026**: cadencia medida (la venta cambia cada 30 min; `actualizado` viene redondeado a la hora) y **el ajuste de cabecera quedó resuelto** (participación por línea truncada a 4 decimales, el algoritmo del reporte del sistema): Originals, Calle 12, Kids y Diagonal 80 dan diferencia 0 contra el export de agosto; el CSV de `/lineas` ya sirve para el cierre mensual. **Tarde del 25/09**: `/lineas` trae idItem, talle, `codigo` (el del sistema), `codigoArticulo` (= código de barras) y cliente/CUIT, y con eso **Reparto de Mercadería y Regalías leen la API**: ruta `?lineas=1&desde&hasta[&sucursal=NN]` del proxy (solo admin/supervisor, passthrough en texto cacheado en R2; ⚠ la API no aguanta la semana de todas las sucursales junta: se pide sucursal por sucursal, `VentasApi.lineas` con reintentos), botón **«⇩ del sistema»** en la tarjeta de carga de `barrida/` (`ventasDesdeSistema` arma en memoria la hoja de ventas del sistema con el maestro `logistica/arts` y entra por `clasificarHoja`; reserva y stock siguen del reporte de stock), y en `regalias/` **«⇩ Traer del sistema»** en Entregas EDLP (`enTraerDelSistema`, Depósito 05, mismo importador) y en Ventas Mayorista (`mayDesdeSistema`). **Ventas Mateu (minorista) no**: falta Grupo 2 / Grupo 3 / Lista de precios en la API (pedido al dev). Detalle en `docs/API-VENTAS-CONEXION.md`.
 
+## Etiquetas QR del salón (`qr/` + Buscador de Artículos, 26/09/2026)
+
+Pedido de Juli: una etiqueta con QR por artículo que el cliente escanea con el celular y ve **precio +
+talles disponibles en esa sucursal y en las demás**. Propuesta y maqueta en `docs/ETIQUETAS-QR.md` y
+`docs/maquetas/etiqueta-qr.html` (imágenes para WhatsApp en `docs/maquetas/wsp/`). Hecho ese día, con
+las mejoras 1 a 5 de la propuesta («avanzá con 1 a 5»):
+
+- **Imprimir desde el Buscador** (`ubicaciones/index.html`, bloque «ETIQUETAS QR DEL SALÓN»): botón
+  **«🏷 Etiqueta QR»** en la tarjeta del artículo, **para todos los roles** (encargado, depósito y puesto).
+  La hoja (`abrirSheetEtiqueta`) muestra la vista previa, formato (`QR_FORMATOS`: térmica 60×40 · 50×30 ·
+  cartel de góndola 105×74 —6 por A4— · hoja A4 de 21), cantidad, **precio a mano** (opcional; se guarda por
+  artículo en `qrEtiquetas/<clave>.precio` y sale solo cuando la API de stock lo traiga) y lotes: los N
+  resultados de la búsqueda, los N nuevos sin ubicar, y el **cartel genérico de la sucursal** (QR a la
+  página con buscador + cámara). `qrImprimir` arma `#printArea` con `@page` del tamaño de la etiqueta (una
+  por página en la térmica, grilla en A4) y llama a `print()`; registra `sucursales/<slug>/qrEtiquetas/<clave>`
+  = `{ts, por, fmt, n, precio}`. El QR se genera con **`shared/qr.js`** (qrcode-generator 1.4.4 vendoreado,
+  sin CDN, así imprime sin internet), corrección 'H' con la «m» (`icons/logo-m.png`) en el centro. **La
+  etiqueta lleva el código + el NN de la sucursal, nunca el precio dentro del QR: no vence**; el precio
+  impreso sí queda viejo al cambiar la lista (hay que reimprimir). Diseño: «¿Está tu talle?» navy/rojo +
+  «Escaneá y mirá precio y talles disponibles, acá y en todas las sucursales»; con precio, el precio grande
+  arriba y el gancho más chico. En sucursales Aurelius el logo lo cambia `marca.js` (sale en negro).
+- **Página pública `qr/index.html`** (sin sesión, como `?pres=`): `?c=<código>&s=<slug|NN>` → producto
+  (catálogo de Matts `asistente/catalogo/porCod`), precio (hoy «consultá en caja»), **talles de esta
+  sucursal** como fichas (tachado = no queda, «último» = queda 1, equivalencia AR de la marca según
+  `lib/asistente-talles.mjs` al medio punto), **otras sucursales** ordenadas por zona (`SUCS` de la
+  librería) y botones: **«📲 Pedir que lo traigan»** y **«🔔 Avisame cuando llegue mi talle»** (formularios
+  con WhatsApp del cliente), comprar online, WhatsApp del local y **reseña de Google** (los tres solo si
+  están configurados). Solo con `?s=` es el **buscador del local** (QR genérico): texto, código, Id.item o
+  cámara sobre el código de barras (ZXing por CDN, resuelve por el mapa `ean/`). **Matts** va como asesor
+  de producto para el cliente (`window.MATTS_PUBLICO = {sucursal}` → `shared/asistente.js` arma una sesión
+  sintética `cliente@qr` rol puesto; la Function acepta `body.publico` y cuenta el tope por IP, `qr_<ip>`).
+  Aurelius: `Marca.vista(slug)` pinta la página con su estética. `?nolog=1` no registra el escaneo (pruebas).
+- **Function `functions/api/qr.js` → `lib/qr-publico.mjs`** (tests `node --test lib/qr-publico.test.mjs`,
+  fetch simulado). Fuente del stock: el **índice compacto del Buscador** (`sucursales/<slug>/indice`, el
+  mismo que usa Matts; 10 min en memoria) de `SUC_BUSCADOR`; cuando esté la API de stock del sistema,
+  `stockDe` y `precioDe` cambian de fuente (`STOCK_API_URL` + `STOCK_API_KEY`) y nada más se toca. ⚠ La fila
+  del catálogo es `[código, artículo, marca, disciplina, rubro, género, tipo]`. Un stock > 9999 sin talles
+  se toma como sin dato (Ensenada cargó el Id.item en la columna de stock). Nunca devuelve ubicaciones,
+  comentarios ni costos. Tope por IP en memoria (`crearTope`: 120/min las consultas, 15/hora los formularios).
+  Escrituras (`recepciones-mateu/qr/`): `scans/<slug>/<YYYY-MM>` (registro de cada escaneo, `waitUntil`),
+  `avisos/<slug>` = `{c, desc, marca, talle, nombre, tel, ts, estado: pendiente|avisado|cerrado, llego?}`,
+  `pedidos/<slug>` = `{c, desc, talle, desde, nombre, tel, ts, estado}`, y un **directo por la Bandeja** a las
+  cuentas del local desde `etiquetas-qr@mateu.com.ar` (`REMITENTE`, no es una cuenta real). Config:
+  `qr/config/global` = `{ecommerce, promoTexto}` y `qr/config/sucursales/<slug>` = `{resena, whatsapp,
+  promoTexto}`, se editan desde el Buscador → 🏷 → «⚙ Datos de la página del QR» (encargado/admin).
+- **Lo que devuelve el QR se trabaja en Buscador → Actividad** (arriba de todo): **«👤 Clientes que esperan
+  un talle»** (pendientes con ✔ cuando el talle ya está en el stock cargado; **«📲 Avisar»** abre WhatsApp con
+  el mensaje armado y marca `avisado`; ✕ cierra), **«📦 Pedidos de clientes»** y **«📱 Escaneos del QR — 30
+  días»** (ranking de artículos más escaneados). Al terminar cada carga de stock, `qrAvisosLlegaron` marca
+  `llego` en los avisos cuyo talle entró y manda un directo a la sucursal. El cruce «escaneado y no vendido»
+  espera el detalle de venta por artículo de la API (`/lineas`).
+- **Reparto de Mercadería**: `cargarClientesEsperando` baja `qr/avisos` al procesar la barrida
+  (`state.resultado.esperan`, se conserva al recalcular); `esperanDe(r)` cruza por código y por Id.item, y un
+  cliente esperando es el **primer criterio de `cmpPrioridad`** (antes que niño y deportes); pill ámbar
+  «👤 espera 42» en la fila y en `prioTxt`.
+- Pendientes: dominio corto para el QR (`m.mateu.com.ar`, custom domain de Pages; hoy sale
+  `mateu-sports-portal.pages.dev/qr/…`), el precio (API §8 de `docs/API-STOCK-BUSCADOR.md`), links de reseña
+  de Google y WhatsApp de cada local (los carga cada encargado), probar la impresión en una térmica real.
+
 ## Reglas
 
 - Responder y comentar el código en **español**.

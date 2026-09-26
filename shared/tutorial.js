@@ -110,6 +110,7 @@
       { ic:'🔎', t:'Buscar', d:'Escaneá o tipeá el código del artículo y te dice la estantería y la ubicación exacta.' },
       { ic:'🗄️', t:'Estanterías', d:'El mapa de estanterías: desde ahí se cargan artículos a una ubicación o se corrigen las existentes.' },
       { ic:'👤', t:'Perfiles', d:'Cada movimiento queda firmado por la persona que lo hizo. El encargado administra los perfiles y puede importar la dotación desde Indicadores.' },
+      { ic:'🏷', t:'Etiqueta QR', d:'En la tarjeta del artículo, «🏷 Etiqueta QR» imprime una etiqueta (térmica 60×40, 50×30, cartel de góndola u hoja A4) con un QR: el cliente lo escanea con el celular y ve el precio y los talles disponibles en tu sucursal y en las demás, puede pedir que le avisen cuando llegue su talle o que se lo traigan de otra sucursal. El precio se tipea a mano hasta que lo traiga el sistema. Lo que devuelve el QR (escaneos, clientes esperando un talle, pedidos) está en Actividad.' },
       { ic:'📋', t:'Resumen y Actividad', d:'El estado general del depósito y el historial de todos los movimientos.' }
     ]},
 

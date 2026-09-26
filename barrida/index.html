@@ -207,6 +207,7 @@ tbody tr:hover td{background:#f8f9fe}
 .pill.amp{background:#dff3f5;color:#0e7490}
 .pill.fuera{background:#f1f4fa;color:var(--muted)}
 .pill.rep2{background:#fef3c7;color:#92400e}
+.pill.esp{ background:#fff4e5; color:#8a4b00; border:1px solid #f3cf95; }
 .pill.rec2{background:#fef6c3;color:#854d0e}
 .pill.nuevo{background:#ede9fe;color:#6d28d9}
 .talles{font-size:12px;color:var(--muted);font-family:var(--font-c)}
@@ -782,6 +783,7 @@ function cmpVaciado(a,b){
   return cmpPrioridad(a,b);
 }
 function cmpPrioridad(a,b){
+  const ea=esperanDe(a).length?1:0, eb=esperanDe(b).length?1:0; if(ea!==eb) return eb-ea;   // un cliente esperando el talle (QR del salón) va primero
   const na=ninoPrioDe(a), nb=ninoPrioDe(b); if(na!==nb) return na-nb;
   const da=deportePrioDe(a), db=deportePrioDe(b); if(da!==db) return da-db;
   if(a._pms==null) a._pms=fichaPrioMS(a.marca, a.rubro);
@@ -797,12 +799,37 @@ function cmpPrioridad(a,b){
 }
 // texto corto de los parámetros de prioridad de una fila (para tooltips y export)
 function prioTxt(r){
+  const esp=esperanDe(r); const espTxt = esp.length ? '👤 cliente esperando talle '+esp.map(e=>e.talle+(e.n>1?' ×'+e.n:'')).join(', ')+' · ' : '';
   const p=r.pr||{}; const ms = p.ms!=null ? p.ms.toLocaleString('es-AR')+' meses de stock'+(p.msNivel==='rubro'?' (rubro)':p.msNivel==='subrubro'?' (subrubro)':'') : 'sin meses de stock';
-  return 'vendió '+fmtInt(r.vendido||0)+' · '+ms+' · '+(CAT_LABEL[p.cat]||'sin categoría');
+  return espTxt+'vendió '+fmtInt(r.vendido||0)+' · '+ms+' · '+(CAT_LABEL[p.cat]||'sin categoría');
 }
 // La misma sucursal ya tenía este artículo en la barrida anterior: o no se ejecutó el envío,
 // o el artículo rota fuerte y hay que recomprarlo. Devuelve las unidades de aquella vez.
 function repiteDe(r){ const P=state.resultado&&state.resultado.previa; return P? (P.map[r.id+'|'+r.slug]||0) : 0; }
+/* Clientes que esperan un talle (26/09/2026): «Avisame cuando llegue mi talle» de la página del QR del salón
+   (recepciones-mateu/qr/avisos/<slug>, pendientes). Se cruzan por código del sistema y por Id.item.
+   Devuelve [{talle, n, desde}] para esa sucursal y artículo; vacío si nadie espera. Es el primer criterio
+   de prioridad de la barrida: un cliente concreto esperando pesa más que la venta promedio. */
+function esperanDe(r){
+  const E=state.resultado&&state.resultado.esperan; if(!E) return [];
+  const k1=r.codigo?String(r.codigo).toUpperCase().replace(/[.#$\/\[\]]/g,'-')+'|'+r.slug:null, k2=r.id?'#'+r.id+'|'+r.slug:null;
+  return (k1&&E.map[k1])||(k2&&E.map[k2])||[];
+}
+async function cargarClientesEsperando(){
+  if(!FIREBASE_DB_URL) return null;
+  try{
+    const av=await conTimeout(fbGet('qr/avisos'), 8000);
+    if(!av) return null;
+    const map={}; let n=0;
+    Object.entries(av).forEach(([slug,lista])=>{ Object.values(lista||{}).forEach(x=>{
+      if(!x||x.estado!=='pendiente'||!x.c) return; n++;
+      const add=k=>{ if(!map[k]) map[k]=[]; const e=map[k].find(z=>z.talle===x.talle); if(e) e.n++; else map[k].push({talle:x.talle, n:1, desde:x.ts||0}); };
+      add(String(x.c).toUpperCase().replace(/[.#$\/\[\]]/g,'-')+'|'+slug);
+      if(x.idItem) add('#'+x.idItem+'|'+slug);
+    }); });
+    return { map, n };
+  }catch(e){ return null; }
+}
 const faltaEn = r => Object.values(r.talles||{}).some(d=>d.v>0 && d.s<d.v && !esNuevoRet(d));   // algún talle recortado (la reserva no alcanzó)
 // algún talle vendido que el depósito NO tiene: no hay nada que repartir, hay que comprarlo
 const sinStockEn = r => Object.values(r.talles||{}).some(d=>d.v>0 && d.r<=0 && !esNuevoRet(d));
@@ -2365,6 +2392,8 @@ function viewReposicion(){
     // vendió talles que en el depósito son todos mercadería nueva (filtro de días de ingreso)
     const nNuevo = Object.values(r.talles||{}).filter(d=>d.v>0 && esNuevoRet(d)).length;
     const pillNuevo = (nNuevo && R.diasNuevo) ? ' <span class="pill nuevo" title="'+nNuevo+' de los talles que vendió solo tienen mercadería nueva en el depósito (compra de hace menos de '+R.diasNuevo+' días): no se reparten en la barrida">nuevo · sin repartir</span>' : '';
+    const esp = esperanDe(r);
+    const pillEsp = esp.length ? ' <span class="pill esp" title="'+esc('Un cliente escaneó la etiqueta QR en '+r.sucNombre+' y pidió que le avisen cuando llegue el talle '+esp.map(e=>e.talle+(e.n>1?' ('+e.n+' clientes)':'')).join(', ')+'. Va primero en la prioridad; cuando el talle entre al stock de la sucursal, el Buscador le avisa a la sucursal para que le escriba.')+'">👤 espera '+esc(esp.map(e=>e.talle).join(', '))+'</span>' : '';
     const rep = repiteDe(r);
     const pillRep = rep?' <span class="pill rep2" title="La semana del '+lunesLabel(R.previa.semana)+' ya se le sugirieron '+fmtInt(rep)+' unidades de este artículo. Si no se envió, va de nuevo; si se envió y volvió a vender, el artículo rota y conviene recomprarlo.">↻ repite</span>':'';
     const bkey=barKey(r), editando = state.editBar===bkey;
@@ -2385,7 +2414,7 @@ function viewReposicion(){
     const detBadge = [ (r.curvaU>0?fmtInt(r.curvaU)+' para completar la curva':''), (r.vacU>0?fmtInt(r.vacU)+' por vaciar la reserva':''), (r.ampU>0?fmtInt(r.ampU)+' para abrir el artículo en esta sucursal':'') ].filter(Boolean).join(' + ');
     const badgeTitle = detBadge ? ' title="'+fmtInt(r.sugRep||0)+' por venta + '+detBadge+'"' : '';
     html+='<tr><td><span class="pill suc">'+esc(r.sucNombre)+'</span></td>'
-      +'<td class="desc rep" title="'+esc(r.desc)+'"><span class="dtxt">'+esc(r.desc||'—')+'</span>'+pillPiso+pillCurva+pillVac+pillAmp+pillRep+pillMano+pillNuevo+((falta&&verRojos)?(sinStockEn(r)
+      +'<td class="desc rep" title="'+esc(r.desc)+'"><span class="dtxt">'+esc(r.desc||'—')+'</span>'+pillPiso+pillCurva+pillVac+pillAmp+pillRep+pillEsp+pillMano+pillNuevo+((falta&&verRojos)?(sinStockEn(r)
         ? ' <span class="pill falta" title="Vendió talles que el depósito no tiene: no hay nada que bajar, hay que pedírselos a la marca">⚠ hay que comprar</span>'
         : ' <span class="pill rec2" title="Hay stock del talle pero no alcanza para todas las sucursales que lo piden: por prioridad esta recibe menos de lo que vendió">⚠ recortado</span>'):'')+'</td>'
       +'<td class="mono">'+esc(r.codigo||r.id)+'</td><td>'+esc(r.marca)+'</td>'
@@ -2811,13 +2840,15 @@ async function procesarBarrida(){
   try{ await asegurarStockData(); }catch(e){ toast('No pude bajar el stock por sucursal guardado; sigo sin él','err'); }
   // qué se le sugirió a cada sucursal en la última barrida guardada (para marcar lo que se repite)
   const prevRep = await cargarSemanaPrevia(state.semana);
+  const esperan = await cargarClientesEsperando();   // clientes que esperan un talle (QR del salón)
   try{
     state.resultado=computar(histPrev, histSnaps);
     state.manualBar={}; state.manualBase={}; state.editBar=null;   // archivos nuevos: los ajustes a mano se descartan
     state.resultado.prioFuentes={ stock: PRIO.stock?('meses de stock '+PRIO.stockMes):'', cats: PRIO.catsOrigen||'' };
     state.resultado.previa = prevRep;              // qué se le sugirió a cada sucursal la semana pasada
+    state.resultado.esperan = esperan;
     // lo ya bajado de la base, para recalcular sin volver a pedirlo (recalcular())
-    state._proc = { histPrev, histSnaps, prioFuentes:state.resultado.prioFuentes, previa:prevRep };
+    state._proc = { histPrev, histSnaps, prioFuentes:state.resultado.prioFuentes, previa:prevRep, esperan };
     state.transf=null;                            // el cruce de transferencias es de la semana que se abrió
     aplicarReparto();
     state.resultadoSemana=null;
@@ -2835,7 +2866,7 @@ function recalcular(){
   try{
     const transf=state.transf;
     state.resultado=computar(P.histPrev, P.histSnaps);
-    state.resultado.prioFuentes=P.prioFuentes; state.resultado.previa=P.previa;
+    state.resultado.prioFuentes=P.prioFuentes; state.resultado.previa=P.previa; state.resultado.esperan=P.esperan;
     state.transf=transf;
     aplicarReparto();
     state.resultadoSemana=null;                    // cambió lo que se reparte: hay que volver a guardar

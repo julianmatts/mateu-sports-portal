@@ -29,6 +29,10 @@
   var NOMBRE = 'Matts';
   var SESSION = null;
   try{ var s = localStorage.getItem('mateu_portal_session'); SESSION = s ? JSON.parse(s) : null; }catch(e){}
+  // Página pública del QR del salón (qr/): sin sesión, el cliente charla con Matts como asesor de producto
+  // de ESA sucursal (window.MATTS_PUBLICO = {sucursal}); la Function lo trata como el puesto, con tope por IP.
+  var PUBLICO = (window.MATTS_PUBLICO && window.MATTS_PUBLICO.sucursal) ? { sucursal: String(window.MATTS_PUBLICO.sucursal) } : null;
+  if(PUBLICO) SESSION = { email: 'cliente@qr', rol: 'puesto', sucursal: PUBLICO.sucursal, tok: '' };
   if(!SESSION || !SESSION.email) return;
   var PUESTO = SESSION.rol === 'puesto';   // quiosco del salón: solo asesor de producto, y la charla se borra sola
   if(/[?&]pres=/.test(location.search)) return;
@@ -318,7 +322,7 @@
     // memoria: lo que las últimas respuestas ya mostraron (artículos con stock), para que «de hombre» o «¿y en 42?» sigan el hilo
     var contexto = [];
     for(var i = CHAT.length - 1; i >= 0 && contexto.length < 2; i--) if(CHAT[i].role === 'assistant' && CHAT[i].ctx) contexto.unshift(CHAT[i].ctx);
-    pedir('POST', { email:SESSION.email, tok:SESSION.tok||'', modulo:modulo(), mensajes:mensajes, contexto:contexto }, function(st, d){
+    pedir('POST', { email:SESSION.email, tok:SESSION.tok||'', modulo:modulo(), mensajes:mensajes, contexto:contexto, publico:PUBLICO||undefined }, function(st, d){
       ESPERANDO = false; $send.disabled = false;
       if(st === 200 && d && d.respuesta) CHAT.push({ role:'assistant', content:d.respuesta, id:d.id || '', ctx:d.ctx || '' });
       else CHAT.push({ role:'assistant', err:true, content:(d && d.error) || 'No me pude conectar. Revisá internet y probá de nuevo.' });

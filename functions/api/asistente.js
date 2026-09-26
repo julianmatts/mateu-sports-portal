@@ -764,7 +764,10 @@ export async function onRequestPost(ctx) {
 
   let body;
   try { body = await ctx.request.json(); } catch (e) { return json({ error: 'JSON inválido' }, 400); }
-  const email = String(body.email || '').trim().toLowerCase();
+  // Página pública del QR del salón (qr/, 26/09/2026): el CLIENTE charla con Matts como asesor de producto de esa
+  // sucursal, sin sesión. Va como el puesto (solo producto + stock), con tope por IP en vez de por cuenta.
+  const publico = body.publico && body.publico.sucursal ? { sucursal: String(body.publico.sucursal).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 30) } : null;
+  const email = publico ? 'cliente@qr' : String(body.email || '').trim().toLowerCase();
   if (!email) return json({ error: 'Falta la sesión del Portal.' }, 401);
 
   // 👍 / 👎 de una respuesta: se anota en su entrada del log (no gasta modelo ni cuenta para el tope)
@@ -784,16 +787,23 @@ export async function onRequestPost(ctx) {
   if (!mensajes.length || mensajes[mensajes.length - 1].role !== 'user') return json({ error: 'Falta la pregunta.' }, 400);
 
   // Usuario contra Firebase (clave arbitraria: se busca por el campo email)
-  let usuarios = null;
-  try { usuarios = await (await fetch(FB_USUARIOS)).json(); } catch (e) {}
-  if (!usuarios) return json({ error: 'No pude verificar tu usuario. Probá de nuevo en un minuto.' }, 502);
   let user = null;
-  for (const k in usuarios) { const u = usuarios[k]; if (u && u.email && String(u.email).toLowerCase() === email) { user = u; break; } }
-  if (!user) return json({ error: 'Tu usuario no está en el Portal.' }, 403);
+  if (publico) {
+    if (!SUC_UBIC[publico.sucursal]) return json({ error: 'No reconozco la sucursal.' }, 400);
+    user = { email, rol: 'puesto', sucursal: publico.sucursal, nombre: 'Cliente' };
+  } else {
+    let usuarios = null;
+    try { usuarios = await (await fetch(FB_USUARIOS)).json(); } catch (e) {}
+    if (!usuarios) return json({ error: 'No pude verificar tu usuario. Probá de nuevo en un minuto.' }, 502);
+    for (const k in usuarios) { const u = usuarios[k]; if (u && u.email && String(u.email).toLowerCase() === email) { user = u; break; } }
+    if (!user) return json({ error: 'Tu usuario no está en el Portal.' }, 403);
+  }
   const esPuesto = user.rol === 'puesto';   // quiosco del salón, a la vista de clientes: solo asesor de producto + stock
 
-  // Topes del día (por cuenta y total)
-  const dia = hoyAR(), mk = mailKey(email);
+  // Topes del día (por cuenta y total; el cliente del QR cuenta por IP)
+  const dia = hoyAR();
+  const ipCliente = ctx.request.headers.get('CF-Connecting-IP') || ctx.request.headers.get('X-Forwarded-For') || 'x';
+  const mk = publico ? 'qr_' + mailKey(ipCliente).replace(/[^a-z0-9_]/gi, '_').slice(0, 40) : mailKey(email);
   const tope = (parseInt(env.ASISTENTE_TOPE, 10) || TOPE_DEF) * (esPuesto ? 2 : 1),   // el puesto lo usa todo el salón
          topeTotal = parseInt(env.ASISTENTE_TOPE_TOTAL, 10) || TOPE_TOTAL_DEF;
   let usados = 0, usadosTotal = 0;

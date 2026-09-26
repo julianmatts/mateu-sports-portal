@@ -6,7 +6,13 @@ disponibles en esa sucursal y en las demás + el precio de venta**. Todos los us
 Buscador (encargado, depósito y puesto) tienen que poder imprimirla desde la tarjeta del artículo.
 
 Maqueta visual: [`maquetas/etiqueta-qr.html`](maquetas/etiqueta-qr.html) (abrirla en el navegador;
-render en `maquetas/etiqueta-qr.png`). Este documento es el plan; **nada de esto está programado**.
+render en `maquetas/etiqueta-qr.png`; imágenes para WhatsApp en `maquetas/wsp/`).
+
+> **Estado 26/09/2026 (tarde): HECHO** — etapas A, B y D y las mejoras 1 a 5 («avanzá con 1 a 5», Juli), con
+> el stock del índice del Buscador. Sumado a pedido de Juli el mismo día: **el precio también va en la
+> etiqueta** (a mano por artículo hasta que lo traiga la API). Cómo quedó: sección «Etiquetas QR del salón»
+> de `CLAUDE.md`. Falta: dominio corto, precio de la API (etapa C), reseña/WhatsApp de cada local y la prueba
+> en una térmica real. Lo que sigue es el plan original.
 
 ---
 
