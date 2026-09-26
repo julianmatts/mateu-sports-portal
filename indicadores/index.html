@@ -3480,6 +3480,14 @@ function vapiSucursal(slug, sem){
     .then(j=>{ if(!j || !Array.isArray(j.vendedores)) return null; j.fuente='api'; j.semana=j.semana||sem; return veTotales(j)?j:null; });
   return _vapiSuc[k];
 }
+// entre lo que trae la API y lo cargado en ventaEquipo, el de `actualizado` más reciente
+// (el espejo del proxy, por:'api', cuenta como API)
+function veTs(x){ const t=x&&x.actualizado?Date.parse(x.actualizado):NaN; return isNaN(t)?0:t; }
+function veMasNuevo(api, fb){
+  if(!fb || fb.por==='api') return api||fb||null;
+  if(!api) return fb;
+  return veTs(fb)>veTs(api) ? fb : api;
+}
 // «● en vivo · hasta 24/09 19:00»: fuente y hora del dato cuando viene del sistema
 function vapiPill(ve){
   if(!ve || ve.fuente!=='api') return '';
@@ -3500,9 +3508,11 @@ function fetchVentaEquipo(slug, sem){
   const base=OBJETIVOS_URL.replace(/\/+$/,'');
   const fb=()=>fetch(base+'/ventaEquipo/'+encodeURIComponent(slug)+'/'+encodeURIComponent(sem)+'.json')
     .then(r=>r.ok?r.json():null).catch(()=>null);
-  // semana en curso: el sistema en vivo (salvo que el encargado acabe de cargar su Excel); antes, lo cargado
-  _veCache[key] = (vapiPrimero(sem) && !_veManual[key])
-    ? vapiSucursal(slug, sem).then(j=>j||fb())
+  // semana en curso: el sistema en vivo, salvo que lo cargado a mano sea MÁS NUEVO que lo que trae la
+  // API (26/09/2026: la API quedó caída y el proxy servía la copia del día anterior, tapando el Excel
+  // que el encargado subió hoy); antes, lo cargado
+  _veCache[key] = _veManual[key] ? fb().then(j=>j||vapiSucursal(slug, sem))
+    : vapiPrimero(sem) ? Promise.all([vapiSucursal(slug, sem), fb()]).then(([a,f])=>veMasNuevo(a,f))
     : fb().then(j=>j||vapiSucursal(slug, sem));
   return _veCache[key];
 }
@@ -6151,7 +6161,15 @@ function fetchVentaEquipoTotal(slug, sem){
   // la API trae las 21 sucursales en una sola llamada (cacheada por semana)
   const api=()=>vapiSemana(sem).then(j=>{ const t=j&&j.sucursales[slug];
     return (t && (+t.venta>0 || +t.tickets>0)) ? {venta:+t.venta||0, tickets:+t.tickets||0, unidades:+t.unidades||0, fuente:'api'} : null; });
-  _veTotCache[key] = (vapiPrimero(sem) && !_veManual[key]) ? api().then(t=>t||fb()) : fb().then(t=>t||api());
+  // semana en curso: gana el más nuevo (ver veMasNuevo); por eso también se pide cuándo y quién cargó
+  const meta=()=>Promise.all(['actualizado','por'].map(c=>fetch(base+'/ventaEquipo/'+encodeURIComponent(slug)+'/'+encodeURIComponent(sem)+'/'+c+'.json')
+    .then(r=>r.ok?r.json():null).catch(()=>null)));
+  _veTotCache[key] = _veManual[key] ? fb().then(t=>t||api())
+    : vapiPrimero(sem) ? Promise.all([api(), fb(), meta(), vapiSemana(sem)]).then(([a,f,m,j])=>{
+        if(a) a.actualizado=j&&j.actualizado;
+        if(f){ f.actualizado=m[0]; f.por=m[1]; }
+        const g=veMasNuevo(a,f); if(g){ delete g.actualizado; delete g.por; } return g; })
+    : fb().then(t=>t||api());
   return _veTotCache[key];
 }
 // HTML de la previsualización (tabla por sucursal vs. meta) + Publicar/Cancelar
